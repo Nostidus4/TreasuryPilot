@@ -30,3 +30,13 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 - **Chấp nhận khuyến nghị:** OQ-04, 05, 06, 07, 08, 09, 10, 12, 13, 15, 16, 17, 18.
 - **Còn mở:** OQ-01 — cần email ban tổ chức; giả định làm việc là testnet được chấp nhận.
 - **Chuyển sang Phase 3 (cổng G2):** OQ-02, 03, 11, 14.
+
+## Cập nhật Phase 3 (11/10/2026)
+
+| ID | Kết quả |
+|---|---|
+| OQ-02 | **Còn mở, anh Phúc phụ trách.** Chọn chain cho M1. Khuyến nghị: Base Sepolia; dự phòng: Ethereum Sepolia. Cần kiểm chứng: Safe đã triển khai chưa, faucet USDC testnet của Circle, EAS, nhà cung cấp RPC, explorer. **Đang chặn:** manifest triển khai, F-010, F-013, F-074, F-151. Ticket: DOM-001. |
+| OQ-03 | **Còn mở, anh Phúc phụ trách.** Chọn stablecoin cho M1. Khuyến nghị: USDC testnet của Circle cho demo, cộng `tUSDC` tự triển khai (ghi nhãn TEST) cho test tự động và benchmark. Cần kiểm chứng: giới hạn faucet so với khoảng 40 lần chạy. **Đang chặn:** F-013, script seed, runbook demo. Ticket: DOM-002. |
+| OQ-11 | **Đã chốt:** Anthropic Claude qua SDK, có adapter (quyết định Q27). |
+| OQ-14 | **Đã chốt:** tự xây magic link + SIWE (quyết định Q33). |
+| OQ-01 | **Còn mở.** Cần email ban tổ chức về việc chấp nhận testnet. Ticket: DOM-003. |

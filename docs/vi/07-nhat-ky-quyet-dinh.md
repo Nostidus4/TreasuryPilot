@@ -26,3 +26,18 @@
 | Q20 | Hóa đơn M1 chỉ tính bằng stablecoin thanh toán; fiat và FX để `Later`. |
 | Q21 | Mô hình dữ liệu: một tổ chức có nhiều treasury; M1 cấu hình một treasury gồm T + O1 + O2. |
 | Q22 | Billing để `Later`, ở mức tối thiểu. |
+| Q23 | Team khoảng 5 người: **2 dev chính**, 3 thành viên cố vấn về tài chính và blockchain. Dev thạo **Python**. Trợ lý lập bảng chia việc; trưởng nhóm phân người. |
+| Q24 | Chain cho M1: **còn mở, anh Phúc phụ trách** (OQ-02). Giả định làm việc: Base Sepolia. |
+| Q25 | Stablecoin cho M1: **còn mở, anh Phúc phụ trách** (OQ-03). Giả định làm việc: USDC testnet của Circle cho demo, `tUSDC` cho test tự động. |
+| Q26 | Smart account: **Safe + `TreasuryPilotModule` tự viết**, mỗi treasury một module dùng chung cho T, O1, O2. |
+| Q27 | LLM: **Anthropic Claude**, gọi trực tiếp SDK, orchestrator tự viết mỏng, không dùng framework agent. |
+| Q28 | Khóa executor: keystore mã hóa trong container signer riêng ở M1; production dùng KMS. |
+| Q29 | Môi trường M1: **Docker Compose trên một máy ảo cloud**. |
+| Q30 | Backend: Python 3.12 + FastAPI + Pydantic v2 + SQLAlchemy 2 + Alembic; quản lý môi trường bằng **uv**; web3.py, safe-eth-py, SDK Anthropic. |
+| Q31 | Frontend: React + Vite + TypeScript, wagmi/viem + RainbowKit, TanStack Query, Tailwind + shadcn/ui. |
+| Q32 | Job: **Celery + Redis** (trưởng nhóm chọn). Outbox và khóa tuần tự theo treasury vẫn nằm trong PostgreSQL. |
+| Q33 | Đăng nhập tự xây: magic link qua email + SIWE, cookie phiên httpOnly, RBAC trong DB. |
+| Q34 | Monorepo: `apps/web`, `services/{api,worker,signer}`, `packages/py-core`, `contracts/`, `infra/`, `docs/`, `planning/`. |
+| Q35 | Giám sát: structlog + OpenTelemetry + Sentry + Prometheus. |
+| Q36 | Có epic riêng **"Domain & Evidence"** với ticket `non-code` cho 3 thành viên cố vấn. |
+| G2 | Đã duyệt bộ tài liệu kiến trúc Phase 3–8 ngày 11/10/2026. Điểm chỉnh sau duyệt: tách `worker-ai` để tiến trình gọi LLM không giữ khóa ký nào. |

@@ -58,4 +58,4 @@ O1–O8 from the source docs are **closed** by decision Q8: their proposed optio
 | OQ-02 | **Open — owner: anh Phúc.** Choose the M1 chain. BA recommendation: Base Sepolia. Facts to verify: Safe deployment, Circle testnet USDC faucet, EAS availability, RPC providers and explorer. Fallback: Ethereum Sepolia. **Blocks:** contract deployment manifest, F-010, F-013, F-074, F-151. |
 | OQ-03 | **Open — owner: anh Phúc.** Choose the M1 stablecoin. BA recommendation: Circle testnet USDC for the demo, plus a team-deployed `tUSDC` (labelled TEST) for automated and benchmark runs. Facts to verify: faucet limits per request/day vs ~40+ runs. **Blocks:** F-013, seed scripts, demo runbook. |
 | OQ-11 | **Resolved:** Anthropic Claude via the SDK, with an adapter (decision Q27). |
-| OQ-14 | Pending: answered in the Phase 3 round 2 stack questions. |
+| OQ-14 | **Resolved:** in-house magic link + SIWE (decision Q33, ADR-009). |
