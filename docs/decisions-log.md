@@ -1,0 +1,28 @@
+# Planning Decisions Log
+
+Decisions agreed between the project lead and the planning assistant during the design interview (10/10/2026). These are **planning and scope decisions**, not architecture decisions. Architecture decisions are recorded as ADRs in `docs/adr/`.
+
+| ID | Decision | Consequence |
+|---|---|---|
+| Q1 | The feature inventory draws on **all** sources: (a) `TreasuryPilot.md` v0.2 (UC/R/AT/AD/D/O items); (b) the score-improvement plan (T1–T8, S1–S8, N1–N7); (c) mechanisms adopted from GuardianAI (plan attestation, coverage labels, evidence bundle); (d) the existing FigJam board "End-to-End Product Flow & Architecture". | Every feature carries a `Source` field that traces it back to one of these. |
+| Q2 | Items the source docs list as "out of MVP" are split in two. **Deferrable** items (multi-chain, bridge, multiple stablecoins, recurring schedules, ERP, real DEX swap, on-chain reserve/hold, signed quotes, refill from other operational wallets) are features tagged `Phase: Later`. **Contrary-to-product** items (speculation, yield, lending, portfolio management, custody of customer funds, paying unapproved invoices, the agent buying services by itself) become **Non-goals / prohibiting Business Rules**. | See `FEATURES.md §Non-goals` and `BUSINESS_RULES.md`. |
+| Q3 | We design for a **real multi-tenant product**. **Milestone 1 (M1)** is the FinTechathon 2026 competition build. | Every feature has a `Phase` field (`M1` or `Later`) and an M1 `Priority` (P0/P1/P2). |
+| Q4 | Repository docs and GitHub issues are written in **English**. The Google Doc mirror is written in **Vietnamese**. | `PROJECT_OVERVIEW.vi.md` is the Vietnamese summary. |
+| Q5 | **This GitHub repository is the single source of truth.** The Google Doc and FigJam board are mirrors or diagrams. | Changes land in the repo first. |
+| Q6 | Repository: `Nostidus4/TreasuryPilot` (private for now). | It will be made public before the competition submission. |
+| Q7 | We build a **GitHub Project** pre-filled with tickets that are defined together with the lead, plus an **Excel tracker** showing per-module progress. | See Q18 and Q19. |
+| Q8 | Open points O1–O8 from the source docs **adopt the proposed options as defaults**. Only contested points move to `OPEN_QUESTIONS.md`. | Recorded in `BUSINESS_RULES.md`; ADRs are written in Phase 3. |
+| Q9 | There are three review gates: **G1** after BA docs, **G2** after architecture (Phases 3–8), and **G3** after ticket drafts. | Nothing is pushed or issued without passing the relevant gate. |
+| Q10 | The Google Doc mirror has **one tab per document**. Tickets appear only as the backlog table. | |
+| Q11 | The FigJam board is treated as an **input**. Diagrams are authored as Mermaid in `docs/diagrams/`, and the team ports them to FigJam. Gaps between the board and the inventory are listed explicitly. | |
+| Q12 | The local working copy is `~/Documents/GitHub/TreasuryPilot`. The first commit contains the docs skeleton. Nothing is pushed without approval. | |
+| Q13 | There are **8 roles**: Org Owner, Approver, Treasury Operator, Finance/Accountant, Guardian, Org Admin, Auditor, Platform Admin. Maker-checker applies: the operator who creates an invoice can never approve that same invoice. | |
+| Q14 | Threshold-based multi-level approval (n-of-m) is in the inventory as `Later`. M1 uses 1 approver. | |
+| Q15 | There are five invoice intake channels: manual, PDF/image upload, CSV, email inbox, API/webhook. M1 = manual + upload + CSV. | |
+| Q16 | Notification channels: in-app, email, Telegram, webhook (Slack, Lark and WeCom are `Later`). M1 = in-app + Telegram. | |
+| Q17 | Compliance covers KYB, KYT/sanctions, Travel Rule, and privacy/retention, each behind provider adapters. M1 = a labelled sanctions/blocklist fixture. The rest is `Later`. | |
+| Q18 | We use one GitHub Project (v2) with the fields Status (Draft → … → Done), Module, Epic, Priority, Phase, Size, Blocked by. Tickets are drafted and reviewed module by module. Ticket size is 0.5–1 dev-day; anything over 2 days must be split. | |
+| Q19 | The Excel tracker is **regenerated from GitHub by a script** (GitHub = truth). Sheets: Issues, Module Progress, Dependencies. | Lives in `planning/tracker/`. |
+| Q20 | M1 invoices are denominated in the payment stablecoin only. Fiat invoices + FX + depeg checks are `Later`. | |
+| Q21 | The data model supports an Organization → many Treasuries (one chain each; one T wallet + N operational wallets). M1 configures 1 treasury with T + O1 + O2. | |
+| Q22 | Billing/subscription is in the inventory as `Later` and is minimal. | |
