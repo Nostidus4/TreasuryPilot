@@ -7,6 +7,7 @@
 - **Per-treasury sequencing:** tasks acquire `pg_advisory_xact_lock(hash(treasury_id))` before planning or executing, and re-read state.
 - **Truth:** tasks never carry state that is not in Postgres. A task payload is just ids.
 - Flower runs for operations visibility (internal only).
+- **Two queues and containers:** `core` (planning, validation, attestation, execution, recovery; holds the policy attestation key) and `ai` (all LLM calls; no signing secrets). This keeps BR-092 true: LLM-calling processes hold no secrets.
 
 ## Alternatives
 - A Postgres-only queue (SKIP LOCKED): fewer components.

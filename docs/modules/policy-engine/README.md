@@ -15,7 +15,7 @@ Plan, snapshot, mandate, approvals, exceptions, operation states.
 Validation records; attestations.
 
 ## APIs
-Package API: `validate(plan, ctx) -> Decision`; worker-side `attest(plan) -> Attestation` (uses the policy signing key, separate from the executor key).
+Package API: `validate(plan, ctx) -> Decision`; worker-side `attest(plan) -> Attestation` (uses the policy signing key, separate from the executor key; runs only in the core `worker` container, never in `worker-ai`).
 
 ## Data model
 validations, attestations

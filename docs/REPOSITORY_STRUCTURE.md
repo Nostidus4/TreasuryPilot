@@ -23,7 +23,7 @@ TreasuryPilot/
 │   │   ├── src/treasurypilot_api/{identity,treasury,mandate,invoices,reconciliation,notifications,audit,copilot,common}
 │   │   ├── migrations/              # Alembic
 │   │   └── tests/
-│   ├── worker/                      # Celery (M06, M08 attest, M09, M10, M11, M12, M13)
+│   ├── worker/                      # Celery; one codebase, two containers: `core` queue (M06, M08 attest, M10–M13) and `ai` queue (M09)
 │   │   ├── src/treasurypilot_worker/{trigger,planner,agent,executor,tracker,recovery,reconcile,notify}
 │   │   ├── agent/config.yaml        # model routing, budgets, prompt versions
 │   │   └── tests/

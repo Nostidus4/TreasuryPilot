@@ -9,7 +9,7 @@
 |---|---|---|
 | AP-1 | **The contract is the final authority over money.** | Every C-rule in `BUSINESS_RULES.md` is checked in `TreasuryPilotModule`; the backend mirrors the checks but is never trusted alone. |
 | AP-2 | **AI proposes; deterministic code decides; humans authorize.** | The LLM has read-only tools only. Amounts come from `py-core`. Approvals and exceptions are human EIP-712 signatures. |
-| AP-3 | **Keys live in exactly one place.** | Owner keys stay in users' wallets. The executor key lives only in `signer`. LLM processes hold no secrets. |
+| AP-3 | **Keys live in exactly one place.** | Owner keys stay in users' wallets. The executor key lives only in `signer`. The policy attestation key lives only in `worker` (core). **All LLM calls run in `worker-ai`, which holds no signing secrets** (it has only the LLM API key and read-only DB credentials for the tables it needs). |
 | AP-4 | **Write before you act; never guess outcomes.** | Transactional outbox in Postgres. Unknown ≠ failed. Recovery happens before new work. |
 | AP-5 | **Modular monolith off-chain.** | One API, one worker codebase and one shared core package. Boundaries are enforced by module structure, not by network calls (except `signer`). |
 | AP-6 | **Evidence by construction.** | Every decision, AI call, transaction and verification is recorded with ids that join into an evidence bundle. |
@@ -52,7 +52,8 @@ flowchart TB
   end
   subgraph VM["Docker Compose (one VM)"]
     API["api (FastAPI): REST /v1, SSE, auth, RBAC"]
-    WK["worker (Celery): trigger, planner, executor client, tracker, recovery, notifier"]
+    WK["worker (Celery, queue core): trigger, deterministic planning, validation, attestation signing, executor client, tracker, recovery, notifier"]
+    WAI["worker-ai (Celery, queue ai): LLM tasks only, holds NO secrets except the LLM API key"]
     BEAT["celery-beat: schedules"]
     SG["signer (FastAPI, internal only): executor key, attestation check"]
     PG[("PostgreSQL: system of record, outbox, audit")]
@@ -84,8 +85,10 @@ flowchart TB
   MOD --> S1
   MOD --> S2
   ST --> TOK
-  WK -->|Claude API| LLMX[[Claude]]
-  API -->|Copilot / extraction| LLMX
+  RD --> WAI
+  WAI --> PG
+  WAI -->|Claude API| LLMX[[Claude]]
+  API -->|enqueue copilot/extraction| RD
 ```
 
 **Trust boundaries**
@@ -214,7 +217,7 @@ Web builds the EIP-712 `PaymentApproval` from the API → the wallet signs → t
 
 ## 8. Deployment (M1)
 
-Compose services: `web` (nginx serving the static build), `api`, `worker`, `beat`, `signer`, `postgres`, `redis`, `minio`, optional `anvil` (local profile), `flower` (ops). Only `web` and `api` are exposed through a reverse proxy with TLS. `signer`, `postgres`, `redis` and `minio` stay on the internal network only.
+Compose services: `web` (nginx serving the static build), `api`, `worker` (core queue, holds the policy attestation key), `worker-ai` (ai queue, no signing secrets), `beat`, `signer`, `postgres`, `redis`, `minio`, optional `anvil` (local profile), `flower` (ops). Only `web` and `api` are exposed through a reverse proxy with TLS. `signer`, `postgres`, `redis` and `minio` stay on the internal network only.
 
 Profiles: `local` (Anvil + seeded scenario) · `testnet` (chain RPCs from env) · `ci`.
 
