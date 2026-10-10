@@ -1,5 +1,5 @@
 # ADR-009: Authentication: magic link + SIWE, cookie sessions, RBAC
-**Status:** Proposed · **Decision:** Q33 · **Features:** F-001–F-005
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q33 · **Features:** F-001–F-005
 
 ## Decision
 - Login by email magic link: a single-use 15-minute token, hashed in the DB, sent via Resend (printed to the console in `local`).

@@ -1,5 +1,5 @@
 # ADR-004: PostgreSQL as system of record + transactional outbox
-**Status:** Proposed · **Rules:** BR-060, BR-061, BR-097 · **NFR:** REL-02/03
+**Status:** Accepted (G2, 2026-10-11) · **Rules:** BR-060, BR-061, BR-097 · **NFR:** REL-02/03
 
 ## Decision
 - PostgreSQL 16 is the single source of off-chain truth.

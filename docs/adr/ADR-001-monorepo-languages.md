@@ -1,5 +1,5 @@
 # ADR-001: Monorepo, languages and module boundaries
-**Status:** Proposed · **Date:** 2026-10-11 · **Decisions:** Q23, Q30, Q34
+**Status:** Accepted (G2, 2026-10-11) · **Date:** 2026-10-11 · **Decisions:** Q23, Q30, Q34
 
 ## Context
 The team has 2 developers who prefer Python. The browser needs JS for wallet signing. The contracts are Solidity. The financial core must be testable in isolation and shared by the API, the worker and the benchmark.

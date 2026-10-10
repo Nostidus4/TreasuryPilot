@@ -1,5 +1,5 @@
 # ADR-002: Safe + custom TreasuryPilotModule, one instance per treasury
-**Status:** Proposed · **Decision:** Q26 · **Rules:** BR-010–BR-030, BR-040–BR-042, BR-071, BR-090–091
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q26 · **Rules:** BR-010–BR-030, BR-040–BR-042, BR-071, BR-090–091
 
 ## Context
 Enforcement must be on-chain (AP-1). The rules include EIP-712 approval verification, payee cooling, fingerprints, buffers, treasury-wide UTC counters and one-time exceptions. Customer funds stay in customer-owned Safes (BR-091).

@@ -1,0 +1,36 @@
+name: Task
+description: An implementation ticket (0.5–1 dev-day; split if > 2 days)
+title: "[MODULE] Action + Object"
+labels: ["status: draft"]
+body:
+  - type: textarea
+    id: context
+    attributes: {label: Context, description: Why is this needed? Link features (F-xxx), requirements (FR-xxx) and rules (BR-xxx).}
+    validations: {required: true}
+  - type: textarea
+    id: objective
+    attributes: {label: Objective}
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Scope}
+    validations: {required: true}
+  - type: textarea
+    id: out_of_scope
+    attributes: {label: Out of scope}
+  - type: textarea
+    id: tech_notes
+    attributes: {label: Technical notes}
+  - type: textarea
+    id: dependencies
+    attributes: {label: Dependencies, description: Issues that must be done first.}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance criteria, value: "- [ ] \n- [ ] "}
+    validations: {required: true}
+  - type: textarea
+    id: testing
+    attributes: {label: Testing requirements, value: "- Unit:\n- Integration:\n- E2E:\n- Security:"}
+  - type: textarea
+    id: dod
+    attributes: {label: Definition of Done, value: "- [ ] Code completed\n- [ ] Tests pass\n- [ ] Review completed\n- [ ] Docs updated"}

@@ -1,5 +1,5 @@
 # ADR-005: Claude via SDK; AI is advisory, never authoritative
-**Status:** Proposed · **Decision:** Q27 · **Rules:** BR-002, BR-034, BR-055–058, BR-070
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q27 · **Rules:** BR-002, BR-034, BR-055–058, BR-070
 
 ## Decision
 - Use the Anthropic Python SDK directly, with tool use and structured outputs (JSON schema).

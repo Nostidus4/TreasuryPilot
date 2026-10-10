@@ -1,5 +1,5 @@
 # ADR-006: Signer service and executor key management
-**Status:** Proposed · **Decision:** Q28 · **Rules:** BR-092 · **NFR:** SEC-03
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q28 · **Rules:** BR-092 · **NFR:** SEC-03
 
 ## Decision
 `services/signer` is a minimal internal FastAPI service with one endpoint, `POST /sign-and-send`. It:

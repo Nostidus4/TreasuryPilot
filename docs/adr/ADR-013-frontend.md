@@ -1,5 +1,5 @@
 # ADR-013: Frontend: React + Vite + wagmi
-**Status:** Proposed · **Decision:** Q31
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q31
 
 ## Decision
 - React 18 + Vite + TypeScript.

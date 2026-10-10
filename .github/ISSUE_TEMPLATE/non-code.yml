@@ -1,0 +1,20 @@
+name: Non-code task
+description: Domain, data, research, documentation or evidence work
+title: "[DOMAIN] Action + Object"
+labels: ["non-code", "status: draft"]
+body:
+  - type: textarea
+    id: context
+    attributes: {label: Context}
+    validations: {required: true}
+  - type: textarea
+    id: deliverable
+    attributes: {label: Deliverable, description: Exact file(s) or decision to produce, and where they go in the repo.}
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance criteria, value: "- [ ] \n- [ ] "}
+    validations: {required: true}
+  - type: textarea
+    id: dependencies
+    attributes: {label: Dependencies}

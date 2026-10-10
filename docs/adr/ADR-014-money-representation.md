@@ -1,5 +1,5 @@
 # ADR-014: Money as integer base units end-to-end
-**Status:** Proposed · **Rules:** BR-020, BR-083 · **FR:** FR-109
+**Status:** Accepted (G2, 2026-10-11) · **Rules:** BR-020, BR-083 · **FR:** FR-109
 
 ## Decision
 Amounts are non-negative integers in the asset's smallest unit everywhere:

@@ -1,5 +1,5 @@
 # ADR-010: FastAPI REST + OpenAPI-generated TS client + SSE
-**Status:** Proposed
+**Status:** Accepted (G2, 2026-10-11)
 
 ## Decision
 - Resource-oriented REST under `/v1`, JSON bodies, RFC 9457 problem+json errors with stable `code`s.

@@ -1,5 +1,5 @@
 # ADR-007: Celery + Redis for job execution, Postgres for truth
-**Status:** Proposed · **Decision:** Q32 (lead's choice; BA had recommended a Postgres-only queue)
+**Status:** Accepted (G2, 2026-10-11) · **Decision:** Q32 (lead's choice; BA had recommended a Postgres-only queue)
 
 ## Decision
 - Celery 5 with a Redis broker. Celery beat handles the scheduler ticks (trigger, receipt polling, screening refresh, daily jobs).

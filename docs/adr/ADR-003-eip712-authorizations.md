@@ -1,5 +1,5 @@
 # ADR-003: EIP-712 for approvals, exceptions and plan attestations
-**Status:** Proposed · **Rules:** BR-003, BR-004, BR-041, BR-059
+**Status:** Accepted (G2, 2026-10-11) · **Rules:** BR-003, BR-004, BR-041, BR-059
 
 ## Context
 Human authority (approve, grant exception) and system authority (validated plan) must be bound to exact fields, verifiable on-chain and replay-safe.
