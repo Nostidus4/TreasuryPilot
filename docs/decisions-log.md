@@ -26,3 +26,10 @@ Decisions agreed between the project lead and the planning assistant during the 
 | Q20 | M1 invoices are denominated in the payment stablecoin only. Fiat invoices + FX + depeg checks are `Later`. | |
 | Q21 | The data model supports an Organization → many Treasuries (one chain each; one T wallet + N operational wallets). M1 configures 1 treasury with T + O1 + O2. | |
 | Q22 | Billing/subscription is in the inventory as `Later` and is minimal. | |
+| Q23 | Team: ~5 people. **2 main developers**; 3 members act as finance/blockchain advisors. The developers prefer **Python**. The planning assistant prepares the work breakdown, and the project lead assigns people. | Stack favours Python off-chain; tickets include advisor (non-coding) work. |
+| Q24 | M1 chain: **open; owner Phúc** (tracked as OQ-02). | Working assumption: Base Sepolia. |
+| Q25 | M1 stablecoin: **open; owner Phúc** (tracked as OQ-03). | Working assumption: Circle testnet USDC for the demo + team `tUSDC` for automated runs. |
+| Q26 | Smart account and enforcement: **Safe + a custom `TreasuryPilotModule`**, one module instance per treasury, shared by T, O1 and O2 (treasury-wide counters). | ADR-002. |
+| Q27 | LLM: **Anthropic Claude**, called directly through the SDK with tool use and a thin in-house orchestrator. No agent framework. Claude reads PDFs natively, so there is no separate OCR. | ADR-005. |
+| Q28 | Executor key: an encrypted keystore in a separate signer container for M1; cloud KMS for production. Listed as a known risk. | ADR-006. |
+| Q29 | M1 runtime: **Docker Compose on one cloud VM**. The same compose file is used for local, CI and the public demo. | ADR-008. |

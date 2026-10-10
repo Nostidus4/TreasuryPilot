@@ -50,3 +50,12 @@ O1–O8 from the source docs are **closed** by decision Q8: their proposed optio
 | OQ-18 | **Accepted.** Aim for 2–3 interviews; report the true number. |
 | OQ-01 | **Still open.** Action: email the organizers (wangyr@pbcsf.tsinghua.edu.cn). Working assumption: testnet accepted. |
 | OQ-02, OQ-03, OQ-11, OQ-14 | **Deferred to Phase 3 (gate G2).** |
+
+### Phase 3 interview — 2026-10-11
+
+| ID | Resolution |
+|---|---|
+| OQ-02 | **Open — owner: anh Phúc.** Choose the M1 chain. BA recommendation: Base Sepolia. Facts to verify: Safe deployment, Circle testnet USDC faucet, EAS availability, RPC providers and explorer. Fallback: Ethereum Sepolia. **Blocks:** contract deployment manifest, F-010, F-013, F-074, F-151. |
+| OQ-03 | **Open — owner: anh Phúc.** Choose the M1 stablecoin. BA recommendation: Circle testnet USDC for the demo, plus a team-deployed `tUSDC` (labelled TEST) for automated and benchmark runs. Facts to verify: faucet limits per request/day vs ~40+ runs. **Blocks:** F-013, seed scripts, demo runbook. |
+| OQ-11 | **Resolved:** Anthropic Claude via the SDK, with an adapter (decision Q27). |
+| OQ-14 | Pending: answered in the Phase 3 round 2 stack questions. |
