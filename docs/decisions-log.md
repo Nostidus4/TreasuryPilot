@@ -33,3 +33,10 @@ Decisions agreed between the project lead and the planning assistant during the 
 | Q27 | LLM: **Anthropic Claude**, called directly through the SDK with tool use and a thin in-house orchestrator. No agent framework. Claude reads PDFs natively, so there is no separate OCR. | ADR-005. |
 | Q28 | Executor key: an encrypted keystore in a separate signer container for M1; cloud KMS for production. Listed as a known risk. | ADR-006. |
 | Q29 | M1 runtime: **Docker Compose on one cloud VM**. The same compose file is used for local, CI and the public demo. | ADR-008. |
+| Q30 | Backend, agent and worker: Python 3.12 + FastAPI + Pydantic v2 + SQLAlchemy 2 + Alembic. Environments managed with **uv**. web3.py + eth-account; safe-eth-py; Anthropic Python SDK. | ADR-001, ADR-010. |
+| Q31 | Frontend: React + Vite + TypeScript, wagmi/viem + RainbowKit, TanStack Query, Tailwind + shadcn/ui, OpenAPI-generated client. | ADR-013. |
+| Q32 | Job execution: **Celery + Redis** (lead's choice). Outbox and per-treasury serialization stay in PostgreSQL (transactional outbox + advisory locks). | ADR-007. |
+| Q33 | Auth: in-house FastAPI auth. Email magic link (Resend) + SIWE, httpOnly cookie sessions, DB-backed RBAC. | ADR-009. |
+| Q34 | Monorepo: `apps/web`, `services/{api,worker,signer}`, `packages/py-core`, `contracts/`, `infra/`, `docs/`, `planning/`. | ADR-001, REPOSITORY_STRUCTURE.md. |
+| Q35 | Observability: structlog + OpenTelemetry + Sentry + Prometheus `/metrics`. | ADR-011. |
+| Q36 | A dedicated **"Domain & Evidence"** epic with `non-code` tickets for the 3 advisors. | Phase 10. |

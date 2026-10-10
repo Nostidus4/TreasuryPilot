@@ -1,0 +1,23 @@
+# ADR-002: Safe + custom TreasuryPilotModule, one instance per treasury
+**Status:** Proposed · **Decision:** Q26 · **Rules:** BR-010–BR-030, BR-040–BR-042, BR-071, BR-090–091
+
+## Context
+Enforcement must be on-chain (AP-1). The rules include EIP-712 approval verification, payee cooling, fingerprints, buffers, treasury-wide UTC counters and one-time exceptions. Customer funds stay in customer-owned Safes (BR-091).
+
+## Decision
+- Deploy one `TreasuryPilotModule` per treasury and enable it on Safes T, O1 and O2.
+- The module executes only typed actions (`refill`, `pay`, `swapForGas`) through `execTransactionFromModule` on the relevant Safe.
+- Governance functions are callable only by Safe T itself (the Owner signs a Safe transaction). `pause` is also callable by the Guardian.
+- The module is not upgradeable in M1. Changing it means a disable/enable by the Owner.
+- Coverage verification (F-012) checks that no other module is enabled.
+
+## Alternatives
+- **Zodiac Roles Modifier:** cannot express the rules above.
+- **Safe Guard:** guards do not cover module execution paths (GA p.4).
+- **ERC-4337/7579 + session keys:** bundler and paymaster complexity, less mature tooling in Python.
+- **One module per Safe:** cannot share treasury-wide counters without cross-contract calls.
+
+## Consequences
+- The module is critical, unaudited code; it needs invariant/fuzz tests and Slither (F-163).
+- `approve` must be executed by the Safe, not the module (GA p.23).
+- Return data must be checked (`execTransactionFromModuleReturnData`).
