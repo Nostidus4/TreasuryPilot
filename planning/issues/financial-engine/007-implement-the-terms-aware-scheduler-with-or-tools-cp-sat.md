@@ -37,6 +37,7 @@ Find the feasible schedule that maximizes value under the BR-052 priority order.
 - EDF fallback with status FALLBACK
 - bounds guard (< 2^63) before model build
 - add ortools to py-core (pinned)
+- fee term: an early payment is preferred only if discount > fee in asset units;days held by the fee policy are infeasible for today
 
 ## Out of scope
 

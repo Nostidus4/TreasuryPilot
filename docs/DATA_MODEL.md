@@ -92,7 +92,9 @@ erDiagram
 | `vendors` | id, org_id, name, normalized_ref, tax_id null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
 | `payees` | id, treasury_id, vendor_id, label, address, status enum(Screening,Cooling,Active,Deactivated), active_from, registration_tx_hash, deactivated_at | unique(treasury_id,address) where status≠Deactivated |
 | `screenings` | id, payee_id or address, provider, result enum(CLEAR,HIT,ERROR), source_ref, checked_at, ttl_until | idx(address, checked_at desc) |
-| `exceptions` | id, request_id, mandate_version, amount, expiry, nonce, owner_signature, status enum(Requested,Granted,Consumed,Expired,Invalidated,Rejected), draft_ai_call_id | unique(request_id) where status in (Granted) |
+| `exceptions` | id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested,Proposed,Granted,Consumed,Expired,Invalidated,Rejected,Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status in (Proposed, Granted) |
+| `governance_txs` / `governance_signatures` | Safe transactions built by the app and owner signatures (M03-D1) | see docs/modules/mandate §4 |
+| `guardian_setups`, `treasury_fee_policies`, `fee_acceptances`, `backend_pause` | Guardian Safe + sentinel, fee policy (M03) | see docs/modules/mandate §4 |
 
 ### 2.4 Invoices & requests (M05)
 

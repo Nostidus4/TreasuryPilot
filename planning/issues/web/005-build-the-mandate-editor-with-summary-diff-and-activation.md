@@ -51,6 +51,7 @@ Split form and activation flow into two PRs if needed.
 
 - WEB-004: Build the treasury setup wizard
 - MDT-003: Implement mandate activation and read-back
+- WEB-025: Build the governance signing inbox
 
 ## Acceptance criteria
 

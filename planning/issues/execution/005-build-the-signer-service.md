@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-092, ADR-006, FR-507 |
-| **Blocks** | EXE-006, EXE-007, EXE-L01 |
+| **Blocks** | EXE-006, EXE-007, EXE-L01, EXE-013 |
 | **Submission cut** | A |
 
 ## Context

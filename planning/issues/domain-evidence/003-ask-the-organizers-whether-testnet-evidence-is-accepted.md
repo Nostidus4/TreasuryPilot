@@ -5,7 +5,7 @@
 | **ID** | DOM-003 |
 | **Epic** | M20 · Domain & Evidence (non-code) |
 | **Module** | `domain-evidence` ([spec](../../../docs/modules/domain-evidence/README.md)) |
-| **Phase / Priority** | M1 / P0 |
+| **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
 | **Status** | Ready for Assignment |
@@ -37,7 +37,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+PH-3: anh Phúc confirms public testnet evidence is acceptable; keep asking for a written confirmation.
 
 ## Dependencies
 

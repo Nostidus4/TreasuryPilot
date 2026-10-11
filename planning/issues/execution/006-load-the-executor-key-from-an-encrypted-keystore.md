@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | NFR-SEC-03 |
-| **Blocks** | — |
+| **Blocks** | EXE-013 |
 | **Submission cut** | A |
 
 ## Context

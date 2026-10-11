@@ -29,10 +29,10 @@ Repeatable deployment to Anvil and the chosen testnet, with addresses recorded.
 
 ## Scope
 
-- forge script deploying TestUSDC (local), the module implementation and the factory
-- demo setup script that has Safe T call factory.create and enables the module on T, O1, O2 (MultiSend)
-- write deployments/<chainId>.json with implementation, factory, token addresses and code hashes
-- verify on the explorer for testnet
+- forge script deploying tUSDC (local and Sepolia), the module implementation and the factory with CREATE2 and a fixed salt (PH-10)
+- demo setup script (Safe T calls factory.create, enable module on T/O1/O2 via MultiSend)
+- write deployments/<chainId>.json with implementation, factory, token(s), EAS schema UID and code hashes
+- verify on Etherscan for Sepolia
 
 ## Out of scope
 
@@ -46,12 +46,14 @@ Local deployment must not depend on DOM-001; testnet deployment does.
 
 - SC-010: Implement pause, resume, revoke and guardian
 - SC-021: Implement the module factory with EIP-1167 clones
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
 
 ## Acceptance criteria
 
 - [ ] `make deploy-local` produces deployments/31337.json
-- [ ] The manifest contains module, token and Safe addresses plus code hashes
-- [ ] Testnet deploy is a parameterized run of the same script
+- [ ] Sepolia deployment produces the same implementation and factory addresses as a second dry run (CREATE2)
+- [ ] Contracts are verified on Etherscan
+- [ ] The manifest contains token, module, factory and Safe addresses plus code hashes
 
 ## Testing requirements
 

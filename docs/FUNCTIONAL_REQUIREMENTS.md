@@ -72,6 +72,7 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-222 | The system shall auto-pause the backend and notify the Owner when circuit-breaker thresholds are crossed. | F-027 | BR-065 |
 | FR-223 | *(Later)* The contract shall store and enforce reservations and execution holds for registered obligations. | F-028 | BR-035 |
 | FR-224 | *(Later)* The contract shall enforce k-of-n approval thresholds by amount band. | F-029 | |
+| FR-225 | The system shall build Safe transactions for every governance change (bundled with MultiSend), collect and verify owner signatures in the app, give the last owner the execution call, and track the result. | F-020–F-026 | BR-008 |
 
 ## FR-3xx · Invoices & Requests
 
@@ -136,6 +137,8 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-507 | The signer service shall sign only payloads that carry a valid attestation from the validator. | F-061 | BR-092 |
 | FR-508 | The contract shall execute REFILL only to the approval's paying wallet, once per request per wallet, within refill limits and the source buffer, with the post-refill balance ≤ approval amount + target, and mark the step id used. | F-062 | BR-012, BR-030, BR-036 |
 | FR-509 | The contract shall execute PAY only after verifying approval, payee status, fingerprint, request unused, limits or exception, buffer, and that the mandate is not paused. It shall then mark the request used and update counters atomically. | F-063 | BR-001, BR-010 |
+| FR-517 | The system shall propose a per-plan fee threshold, a daily fee budget and a speed preset from recent fee history, for the Owner to accept. | F-066 | BR-084 |
+| FR-518 | The system shall hold plans above the fee threshold or budget, defer them while the deadline allows, and request fee acceptance from Finance, Operator or Owner on the last safe day. | F-066 | BR-084 |
 | FR-510 | The contract shall emit events for every REFILL, PAY, SWAP, exception consumption, pause, resume and mandate change, including request and step ids. | F-062, F-063, F-120 | |
 | FR-511 | The contract shall execute SWAP only via an allowlisted adapter, router and pair, within the swap budget, with engine-computed minOut, exact allowance, and allowance reset to 0. | F-064 | BR-081, BR-082 |
 | FR-512 | The system shall label the M1 test router as a test router everywhere. | F-064 | BR-095 |

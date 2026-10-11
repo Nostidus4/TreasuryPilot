@@ -33,6 +33,7 @@ Operators can propose payees; nothing becomes payable without screening and the 
 - POST /payees under a vendor creating a payee in Screening and running the screening adapter
 - result stored
 - hit → blocked
+- POST /payees/{id}/verify-oob recording method and note (Owner only), audited
 
 ## Out of scope
 
@@ -53,6 +54,7 @@ Follow the module spec and the relevant ADRs.
 - [ ] Provider error blocks registration
 - [ ] Duplicate address is rejected
 - [ ] A second vendor with the same normalized_ref returns VENDOR_REF_EXISTS
+- [ ] Registration-tx is refused with OOB_NOT_VERIFIED until verify-oob is recorded
 
 ## Testing requirements
 

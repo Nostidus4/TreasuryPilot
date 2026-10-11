@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-204 |
-| **Blocks** | TRS-007, MDT-003 |
+| **Blocks** | TRS-007, MDT-003, MDT-010 |
 | **Submission cut** | A |
 
 ## Context
@@ -46,6 +46,7 @@ For a 1-of-1 Safe the UI signs and executes directly.
 - TRS-004: Implement treasury creation with Safe verification
 - SC-016: Write deployment scripts and the deployments manifest
 - SC-021: Implement the module factory with EIP-1167 clones
+- MDT-009: Build governance transactions and collect owner signatures in the app
 
 ## Acceptance criteria
 

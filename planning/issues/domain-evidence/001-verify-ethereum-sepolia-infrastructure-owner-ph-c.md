@@ -1,4 +1,4 @@
-# [DOMAIN] Decide the M1 chain (owner: Phúc)
+# [DOMAIN] Verify Ethereum Sepolia infrastructure (owner: Phúc)
 
 | Field | Value |
 |---|---|
@@ -9,8 +9,8 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
 | **Status** | Ready for Assignment |
-| **Traces to** | OQ-02, ADR-012 |
-| **Blocks** | DEV-010, SC-019, DOM-002 |
+| **Traces to** | OQ-02, ADR-012, PH-1 |
+| **Blocks** | DEV-010, SC-016, SC-019, DOM-002 |
 | **Submission cut** | A |
 
 ## Context
@@ -27,12 +27,16 @@ Problem behind this work (from `docs/FEATURES.md`):
 
 ## Objective
 
-Choose the testnet and record the evidence for the choice.
+Confirm that everything the build assumes exists on Ethereum Sepolia and record it.
 
 ## Scope
 
-- Verify on the candidate chain: Safe deployments and safe-eth-py support, stablecoin faucet, EAS, two RPC providers, explorer
-- update ADR-012 with the decision and links
+- Verify Safe v1.4.1 singleton, proxy factory, MultiSendCallOnly and fallback handler addresses
+- Safe Transaction Service endpoint
+- EAS and SchemaRegistry addresses
+- Alchemy + public RPC endpoints
+- Etherscan API key for verification
+- update ADR-012 and the deployments manifest template
 
 ## Out of scope
 
@@ -40,7 +44,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Recommendation: Base Sepolia; fallback Ethereum Sepolia.
+Decision taken 2026-10-11 (PH-1): Ethereum Sepolia. This ticket now records the verification.
 
 ## Dependencies
 
@@ -48,8 +52,9 @@ Recommendation: Base Sepolia; fallback Ethereum Sepolia.
 
 ## Acceptance criteria
 
-- [ ] ADR-012 is Accepted with the chain id and verification links
-- [ ] A short test transaction through a Safe on that chain is recorded
+- [ ] ADR-012 lists every address with a link
+- [ ] A test Safe transaction on Sepolia is recorded
+- [ ] Both RPC endpoints answer eth_chainId = 11155111
 
 ## Testing requirements
 

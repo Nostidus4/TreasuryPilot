@@ -29,9 +29,10 @@ Pausing takes effect in the backend immediately and on-chain after confirmation.
 
 ## Scope
 
-- POST /pause sets the backend pause flag at once and returns the pause Safe transaction (or guardian call)
-- resume-tx for the Owner
-- status sync from Paused/Resumed events
+- POST /pause sets the backend pause flag at once and calls the sentinel (EXE-013) when configured, else returns a Guardian-Safe tx for the human guardian
+- resume-tx and revoke-tx (typed name confirmation) via MDT-009
+- status sync from Paused/Resumed/Revoked
+- re-plan all queued requests after Resumed
 - list of pending transactions at pause time
 
 ## Out of scope
@@ -45,10 +46,13 @@ The trigger and executor check the flag before every action.
 ## Dependencies
 
 - MDT-003: Implement mandate activation and read-back
+- MDT-009: Build governance transactions and collect owner signatures in the app
+- EXE-013: Add the pause-only sentinel to the signer
 
 ## Acceptance criteria
 
 - [ ] After POST /pause no new operation is created
+- [ ] With a sentinel configured the module is Paused within 2 blocks on Anvil
 - [ ] Guardian can pause but resume-tx is refused for them
 - [ ] UI data distinguishes requested from effective
 

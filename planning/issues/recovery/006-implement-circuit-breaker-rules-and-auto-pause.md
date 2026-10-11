@@ -40,12 +40,13 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Pause action uses the guardian sentinel (ADR-017) so the module is paused on-chain within about one block.
 
 ## Dependencies
 
 - REC-001: Verify post-conditions after each confirmed step
 - MDT-007: Implement pause and resume (backend and transactions)
+- EXE-013: Add the pause-only sentinel to the signer
 
 ## Acceptance criteria
 

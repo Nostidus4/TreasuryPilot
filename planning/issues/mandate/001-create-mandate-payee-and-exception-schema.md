@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | DATA_MODEL §2.3 |
-| **Blocks** | MDT-002, MDT-004, INV-001, CMP-001 |
+| **Blocks** | MDT-002, MDT-004, INV-001, CMP-001, MDT-009, EXE-012 |
 | **Submission cut** | A |
 
 ## Context
@@ -37,9 +37,9 @@ Tables for mandate versions and events, vendors, payees, screenings and exceptio
 
 ## Scope
 
-- Alembic migration and models
-- immutability trigger on mandate_versions rows
-- constraints from DATA_MODEL §2.3
+- Alembic migration and models per docs/modules/mandate §4 (mandate_versions, mandate_status_events, payees with OOB fields, screenings, exceptions, governance_txs, governance_signatures, guardian_setups, treasury_fee_policies, fee_acceptances, backend_pause)
+- immutability triggers
+- constraints
 
 ## Out of scope
 
@@ -57,6 +57,7 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] Migration applies and downgrades
 - [ ] Updating a mandate_versions config row is rejected by the database
+- [ ] Two open governance txs with the same Safe nonce are rejected
 
 ## Testing requirements
 

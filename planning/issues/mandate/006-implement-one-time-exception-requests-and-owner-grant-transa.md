@@ -29,11 +29,13 @@ Owners can grant an exception for one over-cap request, with full context.
 
 ## Scope
 
-- GET exception request (numbers from the engine, AI draft if present)
-- endpoint building the Safe T transaction grantException(requestId, amount, payee, expiry)
-- track ExceptionGranted event → status Granted
-- reject endpoint
-- pre-check that the daily limit would still hold
+- GET exception with numbers (amount, cap, daily used, remaining after, value if granted) and AI draft
+- grant-tx (default expiry 72 h, ≤ approval expiry) after the pre-check in docs/modules/mandate §8.5
+- revoke-tx
+- reject
+- allow-duplicate-tx
+- status from ExceptionGranted/ExceptionRevoked/PaymentExecuted(usedException) events
+- Invalidated on mandate version change
 
 ## Out of scope
 
@@ -46,7 +48,7 @@ M04-D3: no EIP-712 exception signature.
 ## Dependencies
 
 - MDT-003: Implement mandate activation and read-back
-- ENG-010: Build EIP-712 typed data for payment approvals and attestations
+- MDT-009: Build governance transactions and collect owner signatures in the app
 - INV-010: Implement approval typed data and signature verification
 
 ## Acceptance criteria

@@ -30,7 +30,8 @@ Expired mandates stop planning before the contract has to reject.
 ## Scope
 
 - Periodic task marking mandates Expired at expiresAt
-- notification to the Owner 48h and 1h before expiry
+- notifications to the Owner 7 d, 48 h and 1 h before expiry
+- renewal shortcut = clone with a new expiry
 
 ## Out of scope
 

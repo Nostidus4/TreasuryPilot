@@ -29,10 +29,11 @@ A mandate becomes Active only when the chain says so.
 
 ## Scope
 
-- activation-tx endpoint building the configureMandate Safe transaction
-- activation endpoint recording the tx hash
-- tracker task waits for confirmations, reads the on-chain mandate and compares with the draft hash
+- governance-tx endpoint building the bundle (configureMandate only when mandate fields change, setApprovers, setBuffer)
+- tracking via MDT-009
+- read-back of mandate(), approvers and buffers and hash compare (§8.4)
 - status events
+- Discrepancy review item
 
 ## Out of scope
 
@@ -45,12 +46,14 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - MDT-002: Validate mandate drafts and generate summary and diff
+- MDT-009: Build governance transactions and collect owner signatures in the app
 - TRS-006: Build the module deploy-and-enable Safe transaction
 - CHR-003: Implement the transaction tracker
 
 ## Acceptance criteria
 
 - [ ] Status moves Draft → PendingActivation → Active only after matching on-chain state
+- [ ] A buffer-only change does not call configureMandate
 - [ ] A mismatch sets Discrepancy and does not activate
 - [ ] Version history is immutable
 

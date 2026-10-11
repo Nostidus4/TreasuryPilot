@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | NFR-REL-04 |
-| **Blocks** | TRS-003, CHR-002, CHR-003, CHR-005 |
+| **Blocks** | TRS-003, CHR-002, CHR-003, CHR-005, EXE-012 |
 | **Submission cut** | A |
 
 ## Context

@@ -30,9 +30,11 @@ Owners see exactly what they are about to authorize.
 ## Scope
 
 - POST /mandates creating a draft
-- completeness and consistency validation
-- human-readable summary in display units and base units
-- diff against the active version
+- validation per docs/modules/mandate §8.1
+- human summary in display and base units
+- diff against the active version with looser/stricter markers (§8.2)
+- bundle preview (§8.3)
+- clone and discard
 
 ## Out of scope
 
@@ -52,6 +54,7 @@ Only the Owner role may call it.
 - [ ] Incomplete drafts return MANDATE_INCOMPLETE with the missing fields
 - [ ] target < buffer returns TARGET_BELOW_BUFFER
 - [ ] Summary amounts equal the config in base units
+- [ ] A higher limit is marked looser and requires confirmation
 
 ## Testing requirements
 

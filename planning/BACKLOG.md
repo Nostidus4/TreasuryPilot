@@ -9,9 +9,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 132 | 46 | 10 | 188 |
+| M1 | 136 | 50 | 8 | 194 |
 | Later | – | – | – | 38 |
-| **All** | | | | **226** |
+| **All** | | | | **232** |
 
 ## Epics
 
@@ -23,17 +23,17 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
-| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 8 | 1 | [`issues/mandate/`](issues/mandate/) |
+| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 10 | 1 | [`issues/mandate/`](issues/mandate/) |
 | M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 5 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
-| M10 · Orchestration & Execution | `execution` | 11 | 4 | [`issues/execution/`](issues/execution/) |
+| M10 · Orchestration & Execution | `execution` | 13 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 0 | [`issues/recovery/`](issues/recovery/) |
 | M13 · Notifications | `notifications` | 3 | 4 | [`issues/notifications/`](issues/notifications/) |
 | M14 · Compliance | `compliance` | 3 | 4 | [`issues/compliance/`](issues/compliance/) |
 | M15 · Audit & Evidence | `audit` | 4 | 1 | [`issues/audit/`](issues/audit/) |
-| M16 · Web Application | `web` | 23 | 0 | [`issues/web/`](issues/web/) |
+| M16 · Web Application | `web` | 25 | 0 | [`issues/web/`](issues/web/) |
 | M17 · Observability & Analytics | `observability` | 5 | 0 | [`issues/observability/`](issues/observability/) |
 | M18 · Platform Admin & Billing | `admin` | 0 | 3 | [`issues/admin/`](issues/admin/) |
 | M20 · Domain & Evidence (non-code) | `domain-evidence` | 17 | 0 | [`issues/domain-evidence/`](issues/domain-evidence/) |
@@ -68,10 +68,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | SC-013 | contracts | M04 | [Write the contract acceptance test suite (AT cases)](issues/contracts/013-write-the-contract-acceptance-test-suite-at-cases.md) | F-163 | M1 | P0 | M | A | SC-009, SC-010, SC-012 | Ready for Assignment |
 | SC-014 | contracts | M04 | [Write the invariant and fuzz suite](issues/contracts/014-write-the-invariant-and-fuzz-suite.md) | F-163 | M1 | P0 | M | A | SC-013, SC-022 | Ready for Assignment |
 | SC-015 | contracts | M04 | [Run static analysis and write the findings report](issues/contracts/015-run-static-analysis-and-write-the-findings-report.md) | F-163 | M1 | P0 | S | A | SC-013 | Ready for Assignment |
-| SC-016 | contracts | M04 | [Write deployment scripts and the deployments manifest](issues/contracts/016-write-deployment-scripts-and-the-deployments-manifest.md) | F-151 | M1 | P0 | M | A | SC-010, SC-021 | Ready for Assignment |
+| SC-016 | contracts | M04 | [Write deployment scripts and the deployments manifest](issues/contracts/016-write-deployment-scripts-and-the-deployments-manifest.md) | F-151 | M1 | P0 | M | A | SC-010, SC-021, DOM-001 | Ready for Assignment |
 | SC-017 | contracts | M04 | [Publish EIP-712 golden vectors](issues/contracts/017-publish-eip-712-golden-vectors.md) | F-038, F-056 | M1 | P0 | S | A | SC-005 | Ready for Assignment |
 | SC-018 | contracts | M04 | [Add the test router and swapForGas](issues/contracts/018-add-the-test-router-and-swapforgas.md) | F-064 | M1 | P2 | M | After submission | SC-009 | Ready for Assignment |
-| SC-019 | contracts | M04 | [Register the attestation schema and add an attest helper](issues/contracts/019-register-the-attestation-schema-and-add-an-attest-helper.md) | F-074 | M1 | P2 | S | After submission | DOM-001 | Ready for Assignment |
+| SC-019 | contracts | M04 | [Register the attestation schema and add an attest helper](issues/contracts/019-register-the-attestation-schema-and-add-an-attest-helper.md) | F-074 | M1 | P1 | S | A | DOM-001 | Ready for Assignment |
 | SC-020 | contracts | M04 | [Write direct-call bypass tests](issues/contracts/020-write-direct-call-bypass-tests.md) | F-163 | M1 | P0 | S | A | SC-013 | Ready for Assignment |
 | SC-L01 | contracts | M04 | [Enforce reserves and execution holds on-chain](issues/contracts/l01-enforce-reserves-and-execution-holds-on-chain.md) | F-028 | Later | - | L | After submission | SC-014 | Accepted |
 | SC-L02 | contracts | M04 | [Enforce n-of-m approval thresholds by amount band](issues/contracts/l02-enforce-n-of-m-approval-thresholds-by-amount-band.md) | F-029 | Later | - | L | After submission | SC-005 | Accepted |
@@ -115,18 +115,18 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | TRS-003 | treasury | M02 | [Implement the asset registry with on-chain decimals check](issues/treasury/003-implement-the-asset-registry-with-on-chain-decimals-check.md) | F-013 | M1 | P0 | S | A | TRS-002, CHR-001 | Ready for Assignment |
 | TRS-004 | treasury | M02 | [Implement treasury creation with Safe verification](issues/treasury/004-implement-treasury-creation-with-safe-verification.md) | F-010, F-011 | M1 | P0 | M | A | TRS-003, IDN-006 | Ready for Assignment |
 | TRS-005 | treasury | M02 | [Read and snapshot Safe configuration](issues/treasury/005-read-and-snapshot-safe-configuration.md) | F-011 | M1 | P0 | S | A | TRS-004 | Ready for Assignment |
-| TRS-006 | treasury | M02 | [Build the module deploy-and-enable Safe transaction](issues/treasury/006-build-the-module-deploy-and-enable-safe-transaction.md) | F-012 | M1 | P0 | M | A | TRS-004, SC-016, SC-021 | Ready for Assignment |
+| TRS-006 | treasury | M02 | [Build the module deploy-and-enable Safe transaction](issues/treasury/006-build-the-module-deploy-and-enable-safe-transaction.md) | F-012 | M1 | P0 | M | A | TRS-004, SC-016, SC-021, MDT-009 | Ready for Assignment |
 | TRS-007 | treasury | M02 | [Compute coverage and handle acknowledgment](issues/treasury/007-compute-coverage-and-handle-acknowledgment.md) | F-012 | M1 | P0 | M | A | TRS-005, TRS-006 | Ready for Assignment |
 | TRS-008 | treasury | M02 | [Build a Safe deployment transaction from the UI](issues/treasury/008-build-a-safe-deployment-transaction-from-the-ui.md) | F-011 | M1 | P2 | S | After submission | TRS-004 | Ready for Assignment |
 | TRS-L01 | treasury | M02 | [Support multiple treasuries with a consolidated view](issues/treasury/l01-support-multiple-treasuries-with-a-consolidated-view.md) | F-014 | Later | - | M | After submission | TRS-004 | Accepted |
 | TRS-L02 | treasury | M02 | [Support multiple stablecoins per treasury](issues/treasury/l02-support-multiple-stablecoins-per-treasury.md) | F-015 | Later | - | M | After submission | TRS-L01, SC-L05 | Accepted |
 | MDT-001 | mandate | M03 | [Create mandate, payee and exception schema](issues/mandate/001-create-mandate-payee-and-exception-schema.md) | F-020–F-026 | M1 | P0 | S | A | TRS-001 | Ready for Assignment |
 | MDT-002 | mandate | M03 | [Validate mandate drafts and generate summary and diff](issues/mandate/002-validate-mandate-drafts-and-generate-summary-and-diff.md) | F-020 | M1 | P0 | M | A | MDT-001, ENG-001 | Ready for Assignment |
-| MDT-003 | mandate | M03 | [Implement mandate activation and read-back](issues/mandate/003-implement-mandate-activation-and-read-back.md) | F-021 | M1 | P0 | M | A | MDT-002, TRS-006, CHR-003 | Ready for Assignment |
+| MDT-003 | mandate | M03 | [Implement mandate activation and read-back](issues/mandate/003-implement-mandate-activation-and-read-back.md) | F-021 | M1 | P0 | M | A | MDT-002, MDT-009, TRS-006, CHR-003 | Ready for Assignment |
 | MDT-004 | mandate | M03 | [Implement vendor and payee proposals with screening](issues/mandate/004-implement-vendor-and-payee-proposals-with-screening.md) | F-022 | M1 | P0 | M | A | MDT-001, CMP-001 | Ready for Assignment |
-| MDT-005 | mandate | M03 | [Build payee registration and deactivation transactions and sync status](issues/mandate/005-build-payee-registration-and-deactivation-transactions-and-s.md) | F-022 | M1 | P0 | M | B | MDT-004, CHR-005 | Ready for Assignment |
-| MDT-006 | mandate | M03 | [Implement one-time exception requests and owner grant transactions](issues/mandate/006-implement-one-time-exception-requests-and-owner-grant-transa.md) | F-025 | M1 | P1 | M | B | MDT-003, ENG-010, INV-010 | Ready for Assignment |
-| MDT-007 | mandate | M03 | [Implement pause and resume (backend and transactions)](issues/mandate/007-implement-pause-and-resume-backend-and-transactions.md) | F-026 | M1 | P0 | M | A | MDT-003 | Ready for Assignment |
+| MDT-005 | mandate | M03 | [Build payee registration and deactivation transactions and sync status](issues/mandate/005-build-payee-registration-and-deactivation-transactions-and-s.md) | F-022 | M1 | P0 | M | B | MDT-004, MDT-009, CHR-005 | Ready for Assignment |
+| MDT-006 | mandate | M03 | [Implement one-time exception requests and owner grant transactions](issues/mandate/006-implement-one-time-exception-requests-and-owner-grant-transa.md) | F-025 | M1 | P1 | M | B | MDT-003, MDT-009, INV-010 | Ready for Assignment |
+| MDT-007 | mandate | M03 | [Implement pause and resume (backend and transactions)](issues/mandate/007-implement-pause-and-resume-backend-and-transactions.md) | F-026 | M1 | P0 | M | A | MDT-003, MDT-009, EXE-013 | Ready for Assignment |
 | MDT-008 | mandate | M03 | [Sync mandate expiry and status](issues/mandate/008-sync-mandate-expiry-and-status.md) | F-021 | M1 | P1 | S | After submission | MDT-003 | Ready for Assignment |
 | MDT-L01 | mandate | M03 | [Configure threshold-based approval policies](issues/mandate/l01-configure-threshold-based-approval-policies.md) | F-029 | Later | - | M | After submission | MDT-002, SC-L02 | Accepted |
 | INV-001 | invoices | M05 | [Create invoice and request schema](issues/invoices/001-create-invoice-and-request-schema.md) | F-030–F-039 | M1 | P0 | S | A | MDT-001 | Ready for Assignment |
@@ -139,7 +139,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-008 | invoices | M05 | [Implement payment-terms confirmation](issues/invoices/008-implement-payment-terms-confirmation.md) | F-035 | M1 | P0 | S | A | INV-003, ENG-005 | Ready for Assignment |
 | INV-009 | invoices | M05 | [Implement submit-for-approval and flag acknowledgment](issues/invoices/009-implement-submit-for-approval-and-flag-acknowledgment.md) | F-036, F-038 | M1 | P0 | S | A | INV-007, INV-008 | Ready for Assignment |
 | INV-010 | invoices | M05 | [Implement approval typed data and signature verification](issues/invoices/010-implement-approval-typed-data-and-signature-verification.md) | F-038 | M1 | P0 | M | A | INV-009, ENG-010, IDN-008 | Ready for Assignment |
-| INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022 | Ready for Assignment |
+| INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022, MDT-009 | Ready for Assignment |
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
 | INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | M | After submission | INV-003 | Accepted |
 | INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
@@ -152,7 +152,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | EXE-001 | execution | M10 | [Create operations (outbox), transactions and gas ledger schema](issues/execution/001-create-operations-outbox-transactions-and-gas-ledger-schema.md) | F-061 | M1 | P0 | S | A | INV-001 | Ready for Assignment |
 | EXE-002 | execution | M10 | [Set up Celery with core and ai queues](issues/execution/002-set-up-celery-with-core-and-ai-queues.md) | F-060, F-061 | M1 | P0 | M | A | DEV-002 | Ready for Assignment |
 | EXE-003 | execution | M10 | [Implement the deadline trigger](issues/execution/003-implement-the-deadline-trigger.md) | F-060 | M1 | P0 | M | A | EXE-002, INV-010, MDT-007, TRS-007 | Ready for Assignment |
-| EXE-004 | execution | M10 | [Implement the planning pipeline task](issues/execution/004-implement-the-planning-pipeline-task.md) | F-052–F-056 | M1 | P0 | L | A | EXE-003, CHR-002, ENG-008, POL-006, AGT-009 | Ready for Assignment |
+| EXE-004 | execution | M10 | [Implement the planning pipeline task](issues/execution/004-implement-the-planning-pipeline-task.md) | F-052–F-056 | M1 | P0 | L | A | EXE-003, CHR-002, ENG-008, POL-006, AGT-009, EXE-012 | Ready for Assignment |
 | EXE-005 | execution | M10 | [Build the signer service](issues/execution/005-build-the-signer-service.md) | F-061 | M1 | P0 | L | A | POL-006, POL-007, SC-016 | Ready for Assignment |
 | EXE-006 | execution | M10 | [Load the executor key from an encrypted keystore](issues/execution/006-load-the-executor-key-from-an-encrypted-keystore.md) | F-061 | M1 | P0 | S | A | EXE-005 | Ready for Assignment |
 | EXE-007 | execution | M10 | [Implement the executor with outbox semantics](issues/execution/007-implement-the-executor-with-outbox-semantics.md) | F-061–F-063 | M1 | P0 | M | A | EXE-005, EXE-001 | Ready for Assignment |
@@ -168,7 +168,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | REC-002 | reconciliation | M11 | [Build reconciliation records with classification](issues/reconciliation/002-build-reconciliation-records-with-classification.md) | F-072 | M1 | P0 | M | A | REC-001 | Ready for Assignment |
 | REC-003 | reconciliation | M11 | [Implement match, discrepancy and auto-match](issues/reconciliation/003-implement-match-discrepancy-and-auto-match.md) | F-072 | M1 | P0 | S | B | REC-002 | Ready for Assignment |
 | REC-004 | reconciliation | M11 | [Export reconciliation CSV and journal lines](issues/reconciliation/004-export-reconciliation-csv-and-journal-lines.md) | F-073 | M1 | P1 | M | B | REC-003 | Ready for Assignment |
-| REC-005 | reconciliation | M11 | [Publish on-chain payment attestations](issues/reconciliation/005-publish-on-chain-payment-attestations.md) | F-074 | M1 | P2 | S | After submission | REC-003, SC-019 | Ready for Assignment |
+| REC-005 | reconciliation | M11 | [Publish on-chain payment attestations](issues/reconciliation/005-publish-on-chain-payment-attestations.md) | F-074 | M1 | P1 | S | A | REC-002, SC-019 | Ready for Assignment |
 | REC-L01 | reconciliation | M11 | [Build the ERP integration framework with Xero](issues/reconciliation/l01-build-the-erp-integration-framework-with-xero.md) | F-075 | Later | - | L | After submission | REC-004 | Accepted |
 | REC-L02 | reconciliation | M11 | [Add the QuickBooks connector](issues/reconciliation/l02-add-the-quickbooks-connector.md) | F-075 | Later | - | M | After submission | REC-L01 | Accepted |
 | REC-L03 | reconciliation | M11 | [Add the NetSuite connector](issues/reconciliation/l03-add-the-netsuite-connector.md) | F-075 | Later | - | M | After submission | REC-L01 | Accepted |
@@ -177,7 +177,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | RCV-003 | recovery | M12 | [Handle partial completion and resume](issues/recovery/003-handle-partial-completion-and-resume.md) | F-081 | M1 | P0 | S | After submission | EXE-008 | Ready for Assignment |
 | RCV-004 | recovery | M12 | [Implement the review queue and routing](issues/recovery/004-implement-the-review-queue-and-routing.md) | F-082 | M1 | P0 | M | B | INV-002 | Ready for Assignment |
 | RCV-005 | recovery | M12 | [Implement retry policy and error classification](issues/recovery/005-implement-retry-policy-and-error-classification.md) | F-083 | M1 | P0 | S | B | EXE-007 | Ready for Assignment |
-| RCV-006 | recovery | M12 | [Implement circuit-breaker rules and auto-pause](issues/recovery/006-implement-circuit-breaker-rules-and-auto-pause.md) | F-027 | M1 | P2 | M | After submission | REC-001, MDT-007 | Ready for Assignment |
+| RCV-006 | recovery | M12 | [Implement circuit-breaker rules and auto-pause](issues/recovery/006-implement-circuit-breaker-rules-and-auto-pause.md) | F-027 | M1 | P2 | M | After submission | REC-001, MDT-007, EXE-013 | Ready for Assignment |
 | RCV-007 | recovery | M12 | [Automate the crash-recovery test](issues/recovery/007-automate-the-crash-recovery-test.md) | F-080 | M1 | P0 | S | A | RCV-002 | Ready for Assignment |
 | AGT-001 | agent | M09 | [Build the LLM adapter with routing and timeouts](issues/agent/001-build-the-llm-adapter-with-routing-and-timeouts.md) | F-094 | M1 | P0 | M | A | EXE-002 | Ready for Assignment |
 | AGT-002 | agent | M09 | [Log every AI call and fail closed](issues/agent/002-log-every-ai-call-and-fail-closed.md) | F-093 | M1 | P0 | S | A | AGT-001 | Ready for Assignment |
@@ -227,7 +227,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | WEB-002 | web | M16 | [Build login, org selection and onboarding checklist](issues/web/002-build-login-org-selection-and-onboarding-checklist.md) | F-001, F-003 | M1 | P0 | M | A | WEB-001, IDN-005 | Ready for Assignment |
 | WEB-003 | web | M16 | [Add wallet connection and SIWE linking](issues/web/003-add-wallet-connection-and-siwe-linking.md) | F-002 | M1 | P0 | S | A | WEB-002, IDN-004 | Ready for Assignment |
 | WEB-004 | web | M16 | [Build the treasury setup wizard](issues/web/004-build-the-treasury-setup-wizard.md) | F-010–F-012 | M1 | P0 | M | A | WEB-003, TRS-007 | Ready for Assignment |
-| WEB-005 | web | M16 | [Build the mandate editor with summary, diff and activation](issues/web/005-build-the-mandate-editor-with-summary-diff-and-activation.md) | F-134, F-020, F-021 | M1 | P0 | L | B | WEB-004, MDT-003 | Ready for Assignment |
+| WEB-005 | web | M16 | [Build the mandate editor with summary, diff and activation](issues/web/005-build-the-mandate-editor-with-summary-diff-and-activation.md) | F-134, F-020, F-021 | M1 | P0 | L | B | WEB-004, MDT-003, WEB-025 | Ready for Assignment |
 | WEB-006 | web | M16 | [Build the payee registry UI](issues/web/006-build-the-payee-registry-ui.md) | F-134, F-022 | M1 | P0 | M | B | WEB-004, MDT-005 | Ready for Assignment |
 | WEB-007 | web | M16 | [Build the request list and manual entry form](issues/web/007-build-the-request-list-and-manual-entry-form.md) | F-030 | M1 | P0 | M | A | WEB-002, INV-003 | Ready for Assignment |
 | WEB-008 | web | M16 | [Build upload and extraction review](issues/web/008-build-upload-and-extraction-review.md) | F-031, F-035 | M1 | P0 | L | A | WEB-007, AGT-005 | Ready for Assignment |
@@ -246,9 +246,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | WEB-021 | web | M16 | [Build the runway forecast chart](issues/web/021-build-the-runway-forecast-chart.md) | F-058 | M1 | P2 | S | After submission | WEB-010, ENG-011 | Ready for Assignment |
 | WEB-022 | web | M16 | [Run the accessibility and responsive pass](issues/web/022-run-the-accessibility-and-responsive-pass.md) | F-130–F-135 | M1 | P1 | S | After submission | WEB-014 | Ready for Assignment |
 | WEB-023 | web | M16 | [Write the Playwright end-to-end happy path](issues/web/023-write-the-playwright-end-to-end-happy-path.md) | F-161 | M1 | P1 | M | After submission | WEB-012 | Ready for Assignment |
-| DOM-001 | domain-evidence | M20 | [Decide the M1 chain (owner: Phúc)](issues/domain-evidence/001-decide-the-m1-chain-owner-ph-c.md) | F-010, F-151 | M1 | P0 | S | A | — | Ready for Assignment |
-| DOM-002 | domain-evidence | M20 | [Decide the M1 stablecoin (owner: Phúc)](issues/domain-evidence/002-decide-the-m1-stablecoin-owner-ph-c.md) | F-013 | M1 | P0 | S | A | DOM-001 | Ready for Assignment |
-| DOM-003 | domain-evidence | M20 | [Ask the organizers whether testnet evidence is accepted](issues/domain-evidence/003-ask-the-organizers-whether-testnet-evidence-is-accepted.md) | — | M1 | P0 | S | A | — | Ready for Assignment |
+| DOM-001 | domain-evidence | M20 | [Verify Ethereum Sepolia infrastructure (owner: Phúc)](issues/domain-evidence/001-verify-ethereum-sepolia-infrastructure-owner-ph-c.md) | F-010, F-151 | M1 | P0 | S | A | — | Ready for Assignment |
+| DOM-002 | domain-evidence | M20 | [Set up tUSDC and the Circle USDC evidence run (owner: Phúc)](issues/domain-evidence/002-set-up-tusdc-and-the-circle-usdc-evidence-run-owner-ph-c.md) | F-013 | M1 | P0 | S | A | DOM-001 | Ready for Assignment |
+| DOM-003 | domain-evidence | M20 | [Ask the organizers whether testnet evidence is accepted](issues/domain-evidence/003-ask-the-organizers-whether-testnet-evidence-is-accepted.md) | — | M1 | P1 | S | A | — | Ready for Assignment |
 | DOM-004 | domain-evidence | M20 | [Author the labelled invoice dataset (30)](issues/domain-evidence/004-author-the-labelled-invoice-dataset-30.md) | F-092 | M1 | P0 | M | B | — | Ready for Assignment |
 | DOM-005 | domain-evidence | M20 | [Author planner scenarios with ground truth (≥30)](issues/domain-evidence/005-author-planner-scenarios-with-ground-truth-30.md) | F-092 | M1 | P0 | L | A | — | Ready for Assignment |
 | DOM-006 | domain-evidence | M20 | [Author the red-team invoice set (20)](issues/domain-evidence/006-author-the-red-team-invoice-set-20.md) | F-091, F-163 | M1 | P0 | M | A | — | Ready for Assignment |
@@ -268,3 +268,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | POL-007 | policy-engine | M08 | [Simulate each step with eth_call before signing](issues/policy-engine/007-simulate-each-step-with-eth-call-before-signing.md) | F-055, F-061 | M1 | P0 | S | A | POL-003, POL-001, CHR-002, SC-016 | Ready for Assignment |
 | INV-012 | invoices | M05 | [Detect near-duplicate requests](issues/invoices/012-detect-near-duplicate-requests.md) | F-036, F-037 | M1 | P0 | S | A | INV-006 | Ready for Assignment |
 | SC-022 | contracts | M04 | [Add on-chain request cancellation](issues/contracts/022-add-on-chain-request-cancellation.md) | F-039 | M1 | P0 | S | A | SC-006, SC-009 | Ready for Assignment |
+| MDT-009 | mandate | M03 | [Build governance transactions and collect owner signatures in the app](issues/mandate/009-build-governance-transactions-and-collect-owner-signatures-i.md) | F-020, F-021, F-022, F-025, F-026 | M1 | P0 | L | A | MDT-001, TRS-005 | Ready for Assignment |
+| MDT-010 | mandate | M03 | [Set up the Guardian Safe with the sentinel](issues/mandate/010-set-up-the-guardian-safe-with-the-sentinel.md) | F-026, F-027 | M1 | P0 | S | A | MDT-009, EXE-013, TRS-006 | Ready for Assignment |
+| EXE-013 | execution | M10 | [Add the pause-only sentinel to the signer](issues/execution/013-add-the-pause-only-sentinel-to-the-signer.md) | F-026, F-027 | M1 | P0 | S | A | EXE-005, EXE-006 | Ready for Assignment |
+| EXE-012 | execution | M10 | [Implement the fee policy, fee holds and fee acceptance](issues/execution/012-implement-the-fee-policy-fee-holds-and-fee-acceptance.md) | F-066 | M1 | P0 | M | A | MDT-001, CHR-001, ENG-001 | Ready for Assignment |
+| WEB-024 | web | M16 | [Build the fee policy and fee acceptance UI](issues/web/024-build-the-fee-policy-and-fee-acceptance-ui.md) | F-066 | M1 | P1 | S | B | WEB-010, EXE-012 | Ready for Assignment |
+| WEB-025 | web | M16 | [Build the governance signing inbox](issues/web/025-build-the-governance-signing-inbox.md) | F-020–F-026 | M1 | P0 | M | A | WEB-003, MDT-009 | Ready for Assignment |

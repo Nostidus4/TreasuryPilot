@@ -165,6 +165,8 @@ late(p):
 value(p) = discount(p) − late(p)
 ```
 
+**Fee term (FEE-2, added in M03):** when choosing *early* payment for a discount, the optimizer uses `discount(p) − feeInAsset` where `feeInAsset = estimatedPlanFeeWei × reference_eth_price / 1e18` (treasury fee policy; reference price is a labelled setting in M1). If `discount ≤ feeInAsset`, paying early brings no value and the request is scheduled by its due day. Today's fee hold (threshold / budget) is applied by M10 before attestation; days marked held become infeasible for today only.
+
 | Invoice | Terms | Pay day (relative to issue) | Value |
 |---|---|---|---|
 | 1,000 | 2/10 net 30 | day 8 | +20 |
@@ -266,6 +268,7 @@ ENG-001 money & models → ENG-002 calculator → ENG-003 refill decision (with 
 | M07-D7 | Deterministic solving: 1 worker, fixed seed, sorted inputs. |
 | M07-D8 | Exhaustive **oracle** solver (N ≤ 8) used only in tests to prove optimality. |
 | M07-D9 | Requests above the per-request cap without an Owner grant are excluded and reported `NEEDS_EXCEPTION`; the scheduler also reports the value they would add if granted (input for the AI exception draft). |
+| M07-D10 | Gas is a cost in the value of early payment (FEE-2); an early payment whose discount does not exceed the fee is not preferred. |
 
 | Open | Question | Owner |
 |---|---|---|

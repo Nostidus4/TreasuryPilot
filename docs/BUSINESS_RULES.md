@@ -22,6 +22,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-005 | Maker-checker: the creator or last editor of a request cannot approve it. Solo mode, if enabled, is visibly flagged and audited. | B (C: approver set) | Q13 |
 | BR-006 | Signer roles (Owner, Approver, Guardian) act only through linked wallets. App login alone grants no on-chain authority. | C, B | GA p.11 |
 | BR-007 | In M1 one valid signature from a current Approver authorizes a request. Additional control comes from the Owner multisig (mandate, payees, exceptions) and the per-request cap. Multi-approver tiers are Later. *(new M05)* | C, B | M05-D1 |
+| BR-008 | Governance changes take effect only through Safe T transactions signed by the Safe's owners up to its threshold. The app collects and verifies the signatures but never holds an owner key. *(new M03)* | C, B | M03-D1 |
 
 ## 2. Mandate & permission structure
 
@@ -98,6 +99,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-065 | Circuit-breaker defaults: at least 3 contract rejections in 10 minutes, any AI plan out of mandate, a coverage drop, or a post-condition discrepancy → backend auto-pause and notify the Owner. | B | S7 *(default)* |
 | BR-066 | A request with a HIGH-severity flag can execute only if the approval records an explicit acknowledgment of that flag. A HIGH flag raised after the approval requires a new approval. *(new M08)* | B | FR-313, M08-D4 |
 | BR-067 | Every step is simulated with `eth_call` from the executor address on fresh state immediately before signing. A revert or an unavailable simulation blocks the step; the revert is decoded into a reason code. *(new M08)* | B | FR-505, M08-D5 |
+| BR-068 | A pause-only sentinel key may pause the module through the Guardian Safe. It can never resume, change governance or move funds. Pause requested in the app triggers it immediately. *(new M03)* | C, B | M03-D2 |
 
 ## 8. Invoices & data
 
@@ -120,6 +122,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-081 | Swaps go only through allowlisted adapter, router and pairs, within the swap budget, with a fresh quote from the configured source. `minOut = ceil(quoteOut × (10000 − maxSlippageBps) / 10000)` is computed by the engine and cannot be lowered by the agent. | C, B | R5 |
 | BR-082 | The swap allowance equals exactly the input and is reset to 0 in the same transaction. | C | GA p.22 |
 | BR-083 | Assets are identified by `(chainId, address)`. Decimals are verified on-chain. All arithmetic uses integer base units. | B, C | Domain §2 |
+| BR-084 | The agent executes a plan automatically only if its estimated fee is within the treasury's per-plan fee threshold and the daily fee budget, both proposed by the system and accepted by the Owner. Otherwise it waits while the deadline allows, and asks Finance, Operator or Owner only on the last safe day. Paying early for a discount is scheduled only if the discount exceeds the fee. *(new M03)* | B | FEE-1–3 |
 
 ## 10. Compliance & platform
 

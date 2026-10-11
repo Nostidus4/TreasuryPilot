@@ -5,13 +5,13 @@
 | **ID** | REC-005 |
 | **Epic** | M11 · Verification & Reconciliation |
 | **Module** | `reconciliation` ([spec](../../../docs/modules/reconciliation/README.md)) |
-| **Phase / Priority** | M1 / P2 |
+| **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-608 |
+| **Traces to** | FR-608, ADR-018, BR-074 |
 | **Blocks** | — |
-| **Submission cut** | After submission |
+| **Submission cut** | A |
 
 ## Context
 
@@ -29,9 +29,11 @@ A third party can verify a payment without access to the app.
 
 ## Scope
 
-- Task that attests after Matched (or Paid by setting)
-- store UID
-- retry without affecting payment status
+- Task that attests after the request is Paid and reconciled
+- dedicated receipt key in the core worker with low-gas alert
+- store attestation UID
+- retry with backoff without affecting payment status
+- easscan link in the request detail and evidence bundle
 
 ## Out of scope
 
@@ -43,13 +45,14 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- REC-003: Implement match, discrepancy and auto-match
+- REC-002: Build reconciliation records with classification
 - SC-019: Register the attestation schema and add an attest helper
 
 ## Acceptance criteria
 
-- [ ] The UID resolves on the explorer
+- [ ] The UID resolves on easscan
 - [ ] The attestation contains no personal data
+- [ ] An EAS failure leaves the payment Paid and is retried
 
 ## Testing requirements
 

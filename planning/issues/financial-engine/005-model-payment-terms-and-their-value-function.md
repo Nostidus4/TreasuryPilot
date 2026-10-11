@@ -35,6 +35,7 @@ Compute what paying on a given date is worth in stablecoin.
 - LateFee kinds: fixed, percent per started period (simple), optional total cap (M07-D1)
 - request_value(req, pay_day) = floor discount − late fee (M07-D2, no cost of capital)
 - validation of ranges and day order
+- early-payment value net of the estimated fee in asset units (FEE-2, M07-D10)
 
 ## Out of scope
 

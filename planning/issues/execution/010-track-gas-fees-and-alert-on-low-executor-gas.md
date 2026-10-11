@@ -40,7 +40,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-M04-D10: M1 never moves native tokens from the treasury; the executor is topped up manually and alerts fire below the threshold.
+M04-D10: M1 never moves native tokens from the treasury. Low-gas alerts cover the executor, the sentinel (ADR-017) and the EAS receipt key (ADR-018).
 
 ## Dependencies
 

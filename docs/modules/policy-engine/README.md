@@ -319,7 +319,7 @@ Mandate: pay 2,000/10,000; refill 2,500/12,000; O1 buffer 10, target 150; payee 
 
 | Parameter | Default | Notes |
 |---|---|---|
-| Snapshot max age | 30 s and ≤ 5 blocks behind head, read at `latest` | M08-D6 |
+| Snapshot max age | 30 s and ≤ 2 blocks behind head (Ethereum Sepolia, 12 s blocks), read at `latest` | M08-D6, PH-1 |
 | Attestation validity | 15 min | M08-D2 |
 | Attestation nonce | random 128-bit | |
 | Trusted policy signers (signer config) | current + previous address | rotation window (§10) |

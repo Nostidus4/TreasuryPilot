@@ -5,13 +5,13 @@
 | **ID** | SC-019 |
 | **Epic** | M04 · Smart Contracts |
 | **Module** | `contracts` ([spec](../../../docs/modules/contracts/README.md)) |
-| **Phase / Priority** | M1 / P2 |
+| **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-608 |
+| **Traces to** | FR-608, ADR-018, PH-11 |
 | **Blocks** | REC-005 |
-| **Submission cut** | After submission |
+| **Submission cut** | A |
 
 ## Context
 
@@ -29,9 +29,10 @@ Publish a verifiable on-chain record for each paid request.
 
 ## Scope
 
-- EAS schema {fingerprintHash, requestId, payTxHash, amount, payee, timestamp}
-- script to register it
-- helper used by the worker
+- EAS schema 'TreasuryPilot Payment Receipt v1' (requestId, invoiceHash, approvalHash, planHash, payTxHash, payee, amount, policyVersion), non-revocable
+- script to register it on Sepolia
+- Python attest helper
+- schema UID in the manifest
 
 ## Out of scope
 
@@ -39,16 +40,17 @@ Worker integration (REC-005).
 
 ## Technical notes
 
-Only if EAS exists on the chosen chain; otherwise close as not applicable.
+ADR-018. Only hashes and addresses — no personal data.
 
 ## Dependencies
 
-- DOM-001: Decide the M1 chain (owner: Phúc)
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
 
 ## Acceptance criteria
 
 - [ ] Schema UID recorded in the deployments manifest
-- [ ] A sample attestation resolves on the explorer
+- [ ] A sample attestation resolves on easscan (Sepolia)
+- [ ] The helper refuses any field that is not in the schema
 
 ## Testing requirements
 

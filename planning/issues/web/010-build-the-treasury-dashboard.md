@@ -10,7 +10,7 @@
 | **Area** | frontend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-915 |
-| **Blocks** | WEB-011, WEB-014, WEB-016, WEB-018, WEB-019, WEB-021 |
+| **Blocks** | WEB-011, WEB-014, WEB-016, WEB-018, WEB-019, WEB-021, WEB-024 |
 | **Submission cut** | A |
 
 ## Context

@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-096, FR-605 |
-| **Blocks** | REC-003 |
+| **Blocks** | REC-003, REC-005 |
 | **Submission cut** | A |
 
 ## Context

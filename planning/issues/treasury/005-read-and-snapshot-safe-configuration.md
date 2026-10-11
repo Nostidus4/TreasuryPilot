@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-103, FR-105 |
-| **Blocks** | TRS-007 |
+| **Blocks** | TRS-007, MDT-009 |
 | **Submission cut** | A |
 
 ## Context

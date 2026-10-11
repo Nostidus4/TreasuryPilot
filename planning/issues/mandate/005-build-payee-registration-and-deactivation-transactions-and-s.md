@@ -29,10 +29,11 @@ Payee status in the app always reflects the on-chain allowlist and cooling perio
 
 ## Scope
 
-- registration-tx and deactivation-tx endpoints
+- registration-tx and deactivation-tx endpoints building governance txs (MDT-009)
 - status sync from PayeeAdded/PayeeDeactivated events
-- activeFrom stored
+- activeFrom from the event
 - address change creates a new payee and deactivates the old one
+- screening must be CLEAR within 24 h
 
 ## Out of scope
 
@@ -40,11 +41,12 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Cooling seconds come from org settings (24h default, 5 min demo).
+Cooling seconds come from the mandate (M04-D5); changing cooling affects only payees added afterwards (M03-D8).
 
 ## Dependencies
 
 - MDT-004: Implement vendor and payee proposals with screening
+- MDT-009: Build governance transactions and collect owner signatures in the app
 - CHR-005: Index module and Safe events
 
 ## Acceptance criteria

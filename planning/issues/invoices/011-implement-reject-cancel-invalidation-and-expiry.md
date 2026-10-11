@@ -50,6 +50,7 @@ Follow the module spec and the relevant ADRs.
 
 - INV-010: Implement approval typed data and signature verification
 - SC-022: Add on-chain request cancellation
+- MDT-009: Build governance transactions and collect owner signatures in the app
 
 ## Acceptance criteria
 

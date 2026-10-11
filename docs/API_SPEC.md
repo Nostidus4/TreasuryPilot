@@ -59,10 +59,11 @@
 | POST | `/orgs/{o}/treasuries/{t}/payees` | Propose or add a payee (runs screening) | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `SCREENING_HIT` |
 | POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build the Safe tx `addPayee` (cooling starts on-chain) | OWN | → `{safeTx}` | 409 `SCREENING_NOT_CLEAR` |
 | POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build the deactivation tx | OWN | → `{safeTx}` | |
-| POST | `/orgs/{o}/treasuries/{t}/pause` 🔁 | Backend pause now + build the on-chain pause tx | OWN, GRD | `{reason}` → `{backendPaused: true, safeTx?}` | |
+| POST | `/orgs/{o}/treasuries/{t}/pause` 🔁 | Backend pause now + sentinel on-chain pause (or Guardian-Safe tx for a human) | OWN, GRD | `{reason}` → `{backendPaused: true, onchain, sentinelTxHash?, guardianSafeTx?}` | |
+| | Governance txs, signatures, fee policy, payee OOB verification, revoke | see docs/modules/mandate §6 | | | |
 | POST | `/orgs/{o}/treasuries/{t}/resume-tx` | Build the resume tx | OWN | → `{safeTx}` | 403 for GRD |
-| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + numbers) | OWN, OPR, FIN | → `{exception, typedData}` | 404 |
-| POST | `/orgs/{o}/requests/{rId}/exception` 🔁 | Submit the Owner's EIP-712 signature | OWN | `{signature}` → `{exception: Granted}` | 400 `SIGNATURE_INVALID`, 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP` |
+| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + numbers) | OWN, OPR, FIN | → `{exception, numbers, aiDraft?}` | 404 |
+| POST | `/orgs/{o}/requests/{rId}/exception/grant-tx` | Build the `grantException` governance tx (M04-D3; signed in-app, M03-D1) | OWN | `{expiryHours?}` → `{governanceTx}` | 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP`, `PAYEE_NOT_ACTIVE` |
 | POST | `/orgs/{o}/requests/{rId}/exception/reject` | Reject | OWN | `{reason}` → `{exception: Rejected}` | |
 
 **`MandateConfig` (request body)**

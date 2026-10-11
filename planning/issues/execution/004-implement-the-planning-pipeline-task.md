@@ -59,6 +59,7 @@ Split into two PRs if needed: deterministic path first, then AI integration.
 - ENG-008: Expose plan scoring and binding-constraint reporting
 - POL-006: Sign and verify EIP-712 plan attestations with the policy key
 - AGT-009: Score AI proposals and select the plan
+- EXE-012: Implement the fee policy, fee holds and fee acceptance
 
 ## Acceptance criteria
 
