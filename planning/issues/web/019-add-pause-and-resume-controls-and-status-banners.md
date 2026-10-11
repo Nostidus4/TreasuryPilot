@@ -29,9 +29,9 @@ Stop the agent from the UI and always see its state.
 
 ## Scope
 
-- Pause button for Owner and Guardian with reason
-- Owner resume flow
-- banners for pause requested, paused on-chain, partial coverage, expired mandate
+- Pause button for Owner and Guardian with reason (sentinel on-chain pause, or Guardian-Safe tx from the wallet when no sentinel)
+- Owner resume via governance tx
+- banners for pause requested, paused on-chain, protected mode off, expired mandate, unexpected outflow
 - pending transactions list
 
 ## Out of scope

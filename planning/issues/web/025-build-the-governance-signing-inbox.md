@@ -10,7 +10,7 @@
 | **Area** | frontend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-225, M03-D1 |
-| **Blocks** | WEB-005 |
+| **Blocks** | WEB-004, WEB-005, WEB-006, WEB-013 |
 | **Submission cut** | A |
 
 ## Context

@@ -31,8 +31,9 @@ One place where all LLM calls go, with per-task model choice.
 
 - Adapter interface (complete with schema, tool loop)
 - Anthropic SDK implementation with structured outputs and tool use
-- config.yaml: model per task, timeouts, max tool calls, token budgets
-- typed errors (AiTimeout, AiUnavailable, AiSchemaError)
+- config/ai.yaml: model per task (docs/modules/agent §9), timeouts, max tool calls, token budgets
+- per-org monthly AI budget with degrade-to-fallback
+- typed errors (AiTimeout, AiUnavailable, AiSchemaError, AiBudgetExceeded)
 
 ## Out of scope
 

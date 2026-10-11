@@ -29,10 +29,12 @@ Stop automatically when something looks wrong.
 
 ## Scope
 
-- Rule evaluation on events: ≥3 contract rejections in 10 minutes, AI plan out of mandate, coverage drop, post-condition discrepancy
-- action alert or pause
-- circuit_events
-- cool-down
+- Rules per docs/modules/recovery §8.4 (≥3 rejections in 10 min, AI plan out of mandate, coverage drop, DISCREPANCY → PAUSE
+- unexpected outflow → ALERT or PAUSE above 20 % of balance)
+- PAUSE = backend pause + sentinel + notify
+- circuit_rules and circuit_events
+- 30-min cool-down
+- rules can be tightened, PAUSE rules not disabled
 
 ## Out of scope
 

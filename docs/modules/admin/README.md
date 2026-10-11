@@ -1,33 +1,75 @@
-# M18 · Platform Admin & Billing
+# M18 · Platform Admin & Billing (Later)
 
-**Status:** Draft for gate G2 · **Path:** `docs/modules/admin/`
+**Status:** Detailed at Later level (spec completion pass, 2026-10-11) · **Path:** `docs/modules/admin/` · **Epic:** `[EPIC] M18 · Platform Admin & Billing`
+**Decisions:** M18-D1 … M18-D6 (§14)
 
-## Purpose
-Platform configuration (M1 via seed/config), tenant admin and billing (Later).
+---
 
-## Features
-F-150 (Later), F-151, F-152 (Later)
+## 1. Purpose and boundaries
 
-## Inputs
-Config files, admin actions.
+M18 is how **TreasuryPilot the company** operates the platform: tenant management, support access with consent, usage metering and subscription billing. In M1 only platform configuration exists (files validated at startup, M02-D8); everything else is Later.
 
-## Outputs
-Validated configuration; tenant states.
+**Hard boundary (BR-094, BR-091):** PlatformAdmin can never sign, approve, move customer funds or deduct fees from a customer treasury.
 
-## APIs
-`/platform/*` (Later UI).
+| M1 | Later |
+|---|---|
+| Config + deployments manifest validated at startup (TRS-002) | Admin console (ADM-L01), usage metering (ADM-L02), subscriptions and invoicing (ADM-L03) |
 
-## Data model
-platform_settings, billing_* (Later)
+## 2. Features
 
-## Dependencies
-M02.
+F-150 (FR-924), F-151 (FR-925, M1 via TRS-002), F-152 (FR-926).
 
-## Security concerns
-No fund-moving capability (BR-094); all admin actions audited.
+## 3. Concepts
 
-## Failure scenarios
-Invalid config → refuse to start.
+| Term | Definition |
+|---|---|
+| **PlatformAdmin** | Staff role outside any org; sees tenant metadata only. |
+| **Support access** | Time-boxed, read-only access to one org, granted by an OrgAdmin, fully audited. |
+| **Usage** | Paid requests count and paid volume per org per month (from events). |
 
-## Open questions
-Pricing model (Later).
+## 4. Data model (Later)
+
+`platform_settings`, `tenants_status` (active/suspended), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
+
+## 5. State
+
+Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). Support grant `Requested → Granted → Expired | Revoked`.
+
+## 6. Interfaces (Later)
+
+`/admin/tenants`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with its own auth (staff SSO) and IP allowlist.
+
+## 7–8. Flows and algorithms
+
+Support access: OrgAdmin grants 24 h read-only → staff sees the org via the normal API with a `support` session flag → every request audited in the org's audit log. Metering: monthly job over `request_status_events` (Paid) and `reconciliation_lines` (EXTERNAL_EXPENSE).
+
+## 9. Configuration
+
+Pricing model to be decided (Later); suspension policy; support grant max 72 h.
+
+## 10. Security
+
+Admin router isolated; no signer access; support sessions read-only and audited; suspension cannot pause on-chain (only Owners/Guardians can).
+
+## 11. Failure scenarios
+
+Invalid platform config → services refuse to start (M1).
+
+## 12. Test plan (Later)
+
+No admin endpoint can call signer or governance builders (static route test); support grant expiry; usage reconciles with the event store.
+
+## 13. Tickets
+
+ADM-L01 → ADM-L02 → ADM-L03 (all Later). M1 config: TRS-002.
+
+## 14. Decisions
+
+| ID | Decision |
+|---|---|
+| M18-D1 | No admin console in M1; config files only. |
+| M18-D2 | PlatformAdmin can never sign or move funds (BR-094). |
+| M18-D3 | Support access only by OrgAdmin grant, read-only, ≤ 72 h, audited. |
+| M18-D4 | Fees are never deducted from customer treasuries (BR-091). |
+| M18-D5 | Suspension stops planning only; on-chain pause stays with Owners/Guardians. |
+| M18-D6 | Pricing model is a Later business decision. |

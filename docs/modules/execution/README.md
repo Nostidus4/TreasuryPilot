@@ -1,33 +1,231 @@
-# M10 · Orchestration & Execution
+# M10 · Orchestration & Execution (`worker` + `signer`)
 
-**Status:** Draft for gate G2 · **Path:** `docs/modules/execution/`
+**Status:** Detailed (spec completion pass, 2026-10-11 — decisions marked *(mặc định)* are proposals accepted by default, open for review) · **Path:** `docs/modules/execution/` · **Code:** `services/worker/.../{trigger,planning,executor}`, `services/signer/` · **Epic:** `[EPIC] M10 · Orchestration & Execution`
+**ADRs:** ADR-004 (outbox), ADR-006 (signer), ADR-007 (Celery/Redis), ADR-016 (attestation + simulation), ADR-017 (sentinel) · **Decisions:** M10-D1 … M10-D14 (§14)
 
-## Purpose
-Deadline-driven trigger, per-treasury sequencing, outbox, executor client, signer service, gas management, swap execution (P2).
+---
 
-## Features
-F-060, F-061, F-062, F-063, F-064, F-065 (Later), F-066, F-067 (Later)
+## 1. Purpose and boundaries
 
-## Inputs
-Approved requests, attested plans, schedules (Celery beat).
+M10 is the **engine room**: it decides *when* to act, runs the planning pipeline, and moves each attested step through the outbox, the signer and the chain — one request at a time per treasury — without ever paying twice.
 
-## Outputs
-Operations, transactions, executor gas alerts.
+| In scope (M1) | Out of scope |
+|---|---|
+| Scheduling cycle and execution trigger (time + events) | Computing amounts/schedules (M07) |
+| Per-treasury single-flight lock | Allow/block decisions and attestation (M08) |
+| Planning pipeline: snapshot → engine → AI proposal → score → validate → fee hold → attest | AI prompting (M09) |
+| Outbox executor: operation before signing, tx hash before anything else | Tracking receipts (M06) |
+| Step sequencing with PRE_STEP + SIMULATION + post-condition gate | Post-condition rules and reconciliation (M11) |
+| Signer service (executor key, attestation check, nonce lane, replacement) and sentinel endpoint | Recovery of Unknown/partial (M12) |
+| Gas ledger, low-gas alerts, fee policy enforcement (EXE-012) | Contracts (M04) |
+| Run-now; swap step (P2) | KMS, production swaps, bridging, worker partitioning (Later) |
 
-## APIs
-`/treasuries/{t}/run-now`, `/operations/{id}`; internal signer `/sign-and-send` (API_SPEC §5, internal).
+## 2. Features, requirements and rules
 
-## Data model
-operations, transactions, gas_ledger
+| Feature | FR | BR |
+|---|---|---|
+| F-060 Trigger | FR-501–504 | BR-050, BR-060, BR-063 |
+| F-061 Executor & signer | FR-505–507 | BR-061, BR-092 |
+| F-062/F-063 REFILL / PAY execution | FR-508–510 | BR-012, BR-019, BR-036, BR-053, BR-054 |
+| F-064 Swap for gas (P2) | FR-511, FR-512 | BR-081, BR-082, BR-095 |
+| F-066 Gas | FR-514, FR-515, FR-517, FR-518 | BR-025, BR-080, BR-084 |
+| F-052–F-056 (pipeline orchestration) | FR-405–413 | BR-052, BR-055–059 |
 
-## Dependencies
-M06, M07, M08, M09, M12, M04, Redis/Celery.
+## 3. Concepts
 
-## Security concerns
-Key isolation (signer); payload mismatch (signer re-checks the attestation); duplicate delivery (idempotent tasks + unique step_id); concurrency (advisory lock).
+| Term | Definition |
+|---|---|
+| **Scheduling cycle** | Runs the M07 scheduler for a treasury and stores the day schedule (advisory). |
+| **Execution cycle** | Picks today's next request for a treasury, plans, attests and executes it. |
+| **Plan** | One request's execution plan (M08-D1): ≤ 2 steps (REFILL?, PAY), plus SWAP in P2. |
+| **Operation** | Outbox row for one step (`step_id` unique). The unit the signer, tracker and recovery talk about. |
+| **Nonce lane** | The executor address's transaction nonces, allocated only by the signer. |
+| **Lead time** | How early before the due date (or discount date) a request becomes eligible today (OQ-06: 24 h, demo minutes). |
 
-## Failure scenarios
-Worker crash mid-flight → M12 recovery. Signer down → operation stays NotSubmitted, retried. Simulation revert → no broadcast, review item.
+## 4. Data model (DATA_MODEL §2.5–2.6)
 
-## Open questions
-None.
+| Table | Columns | Notes |
+|---|---|---|
+| `schedules` | id, treasury_id, computed_at, snapshot_id, solver, status, objective, items jsonb, infeasible jsonb | advisory, append-only |
+| `plans` | id, treasury_id, request_id, schedule_id, snapshot_id, planner_source enum(AI, DETERMINISTIC, RULE_BASED), plan_hash, chosen_reason, ai_call_ids uuid[], status enum(Draft, Blocked, AwaitingAuthority, AwaitingFeeAcceptance, Attested, Executing, Completed, PartiallyCompleted, Superseded, Expired), attestation_id, fee_estimate_wei, created_at | one active plan per request |
+| `plan_steps` | id, plan_id, seq, step_id, action, from_wallet, to_address, asset, amount, status enum(Pending, Submitted, Confirmed, Verified, Reverted, Skipped) | unique(step_id) across active plans |
+| `operations` (outbox) | id, treasury_id, plan_step_id, request_id, step_id, kind, payload jsonb (to, data, value 0), idempotency_key, status enum(NotSubmitted, Submitted, Pending, Confirmed, Reverted, Unknown, Abandoned), attempts, last_error, created_at | unique(step_id) |
+| `transactions` | M06 §4 | one operation → 1..n transactions (replacements) |
+| `gas_ledger` | id, treasury_id, transaction_id, payer enum(EXECUTOR, SENTINEL, RECEIPT), fee_wei, reverted, day | |
+| `signer.nonces` *(signer schema)* | address, next_nonce, updated_at | the only nonce allocator |
+| `signer.attestation_uses` | M08 §4.2 | |
+
+## 5. State machines
+
+**Plan:** `Draft → (Blocked | AwaitingAuthority | AwaitingFeeAcceptance | Attested)`; `Attested → Executing → (Completed | PartiallyCompleted)`; `Attested/Executing → Expired` (attestation timed out before the next step; a new plan for the remaining steps is created); any open plan → `Superseded` when a new plan replaces it.
+
+**Operation:** `NotSubmitted → Submitted` (signer returned a hash) → `Pending → Confirmed | Reverted`; `→ Unknown` (M06) → resolved by M12 to `Confirmed | Reverted | Abandoned` (never re-sent while Unknown).
+
+**Request (driven here):** `Approved → Scheduled` (in a schedule) → `Planning` (execution cycle picked it) → `Preparing` (attested) → `Paying` (PAY submitted) → `Paid` (PAY Confirmed + Verified); branches to `AwaitingAuthority`, `NeedsReview` per M05 §5.
+
+## 6. Interfaces
+
+### 6.1 Public API
+
+| Method | Endpoint | Perm | Request → Response | Errors |
+|---|---|---|---|---|
+| POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | OPR, OWN | → `202 {jobId}` | 409 `TREASURY_PAUSED`, `UNKNOWN_OPERATION_PENDING`, `COVERAGE_INCOMPLETE`, `MANDATE_NOT_ACTIVE` |
+| GET | `/orgs/{o}/treasuries/{t}/schedule` | ANY | → `{schedule, items[{requestId, day, value, refill}], infeasible[]}` | |
+| GET | `/orgs/{o}/plans/{p}` | ANY | → `{plan, steps[], validations[], attestation, aiRationale?, why}` | |
+| GET | `/orgs/{o}/operations/{id}` | ANY | → `{operation, transactions[], verification}` | |
+| GET | `/orgs/{o}/treasuries/{t}/events` (SSE) | ANY | plan/operation/request status stream | |
+
+### 6.2 Signer (internal network only, shared secret header + allowlisted caller)
+
+| Method | Endpoint | Request → Response | Errors |
+|---|---|---|---|
+| POST | `/sign-and-send` | `{plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED{selector}`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `INSUFFICIENT_GAS` |
+| POST | `/replace` | `{txHash, fees}` → `{txHash, nonce}` (same nonce, same payload, higher fees) | `NOT_PENDING`, `FEE_CAP_EXCEEDED` |
+| POST | `/sentinel/pause` | `{treasuryId}` → `{txHash}` | `NOT_CONFIGURED` |
+| GET | `/sentinel/address`, `/health` | → addresses and gas balances only | |
+
+## 7. Flows
+
+### 7.1 Cycles
+
+```
+every 15 min and on events (approval, exception granted, resume, inflow, payee Active):
+  scheduling_cycle(treasury)  → schedules row (M07 EDF + CP-SAT)
+
+every 60 s (and right after a scheduling cycle):
+  for treasury in active treasuries:
+    with advisory_lock(treasury) (non-blocking; skip if held):
+      gates: backend pause, mandate Active, coverage COMPLETE/ack, no Unknown op, no Executing plan
+      req = first item of today's schedule whose window is open
+      if req: planning_pipeline(req)
+```
+
+### 7.2 Planning pipeline (EXE-004)
+
+```mermaid
+sequenceDiagram
+  participant W as worker (core)
+  participant AI as worker-ai
+  participant E as engine (M07)
+  participant V as validator (M08)
+  W->>W: snapshot (PLAN)
+  W->>E: deterministic plan for req (refill decision + pay)
+  W->>AI: propose (timeout 20 s)  [optional: only if > 1 candidate or terms matter]
+  AI-->>W: proposal or timeout
+  W->>E: score proposal vs deterministic → choose (chosen_reason)
+  W->>V: validate_plan
+  alt BLOCK / NEEDS_APPROVAL
+    W-->>W: plan Blocked / AwaitingAuthority, review item / exception request
+  else ALLOW
+    W->>W: fee estimate + fee policy (EXE-012) → proceed / defer / AwaitingFeeAcceptance
+    W->>W: attest (policy key) → plan Attested → request Preparing
+    W->>W: enqueue execute(plan)
+  end
+```
+
+### 7.3 Step execution (EXE-007/008)
+
+For each step in order:
+1. **PRE_STEP** snapshot + `validate_step`; **SIMULATION** `eth_call` (M08). Not ALLOW → stop.
+2. Outbox: in one DB transaction set step `Submitted`-intent and insert operation `NotSubmitted` (if not already there for this `step_id`).
+3. Call signer `/sign-and-send`. On success persist `txHash` + nonce → operation `Submitted` → hand to tracker. On a typed refusal → stop with that code.
+4. Wait (task re-schedules itself) until M06 says `Confirmed` (or `Reverted`/`Unknown`).
+5. M11 post-condition check (REC-001) must be **PASSED** before the next step (M10-D6). DISCREPANCY → stop, review item, circuit-breaker signal.
+6. After PAY Verified → request `Paid`, plan `Completed`; EAS receipt and reconciliation follow (M11).
+
+Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, completed steps stay (BR-054).
+
+### 7.4 Gas replacement
+
+Tracker sees a tx Pending longer than the preset's `resend_after` (NORMAL 60 s) → executor calls `/replace` with fees × 1.125, never above the plan's accepted fee cap; after the cap, it waits (no further bumps) and the request may become NeedsReview at the deadline.
+
+## 8. Algorithms
+
+### 8.1 Eligibility (today)
+
+Request is in today's schedule **and** `now ≥ windowStart`, where `windowStart = min(dueDate, discountDate if the schedule chose early payment) − leadTime` (24 h prod; demo profile 2 min). Ties: schedule order (BR-052).
+
+### 8.2 Lock and idempotency
+
+`pg_try_advisory_xact_lock(hash('treasury', id))` around each cycle (skip when held). Celery tasks are `acks_late` + idempotent by `(plan_id, step_seq)`; a redelivered task finds the existing operation by `step_id` and continues from its status — it never calls the signer for an operation that is already `Submitted` (BR-061).
+
+### 8.3 Nonce lane (signer)
+
+`nonce = max(eth_getTransactionCount(executor, "pending"), signer.nonces.next_nonce)`; increment in the signer schema in the same transaction that records the attestation use. Replacements reuse the original nonce. One executor address serves all treasuries in M1, so signing is serialized in the signer (one in-flight `sign-and-send` at a time).
+
+### 8.4 Worked example (UC-02)
+
+O1 = 20 tUSDC, buffer 10, target 10 (UC-02 values), invoice 100. Engine: Shortage 90, Preferred 90, Bound 90 → REFILL 90 then PAY 100.
+- t0 plan Attested (planHash h, validUntil t0 + 15 min).
+- t0+5 s REFILL: PRE_STEP ALLOW, SIMULATION ok, op#1 NotSubmitted → Submitted (0xaa…, nonce 41).
+- t0+41 s (3 blocks) Confirmed, cross-check Match; post-condition: O1 = 110, T −90 → PASSED.
+- PAY: PRE_STEP ALLOW (110 − 100 = 10 ≥ 10), op#2 → Submitted (nonce 42) → Confirmed → PASSED → request Paid; EAS receipt queued.
+
+## 9. Configuration and defaults
+
+| Parameter | Default |
+|---|---|
+| Scheduling cycle | 15 min + events |
+| Execution cycle | 60 s |
+| Lead time | 24 h (demo 2 min) *(mặc định, OQ-06)* |
+| AI proposal timeout | 20 s, then deterministic/rule-based fallback (BR-055) |
+| Attestation validity | 15 min (M08) |
+| Replacement | per fee preset (NORMAL: after 60 s, +12.5 %, capped by accepted fee) |
+| Low-gas thresholds | executor 0.05 ETH, sentinel 0.01 ETH, receipt key 0.01 ETH (Sepolia) |
+| Celery | `acks_late`, `reject_on_worker_lost`, visibility timeout 1 h |
+
+## 10. Security
+
+| Threat | Control | Test |
+|---|---|---|
+| Compromised worker-ai signs | worker-ai has no policy key, no signer secret (ADR-005/006) | container secret test |
+| Compromised core worker | signer still requires a valid attestation over the exact payload, simulates, and the contract enforces everything | signer forged-attestation tests |
+| Double payment by retry/redelivery | unique `step_id`, outbox before signing, contract `stepUsed`/`requestPaid` | RCV-007 crash test |
+| Concurrent plans in one treasury | advisory lock + "no Executing plan" gate + contract counters | concurrency test |
+| Fee drain | accepted fee cap enforced in the signer (`FEE_CAP_EXCEEDED`) | fee cap test |
+| Signer endpoint abuse | internal network, shared secret, caller allowlist, only 5 endpoints | network policy test |
+| Key exposure | encrypted keystores, Docker secrets, no key in logs/health | log scan test |
+
+## 11. Failure scenarios
+
+| Failure | Behaviour |
+|---|---|
+| Worker crash after signer returned but before DB write | Signer persisted the attestation use; tracker finds the tx by (from, nonce) during M12 recovery; operation reconciled by `step_id` |
+| Signer down | operation stays NotSubmitted; retried with backoff; plan may expire → re-plan |
+| Simulation revert in signer | no broadcast; typed error; plan Blocked/NeedsReview |
+| Tx stuck | replacement up to the fee cap; then wait; Unknown after 10 min without data → M12 |
+| Reverted step | no counters changed (BR-025); fee recorded; stop; review item; circuit-breaker input |
+| Out of gas | `INSUFFICIENT_GAS`, stop before signing, alert |
+| AI timeout | fallback (BR-055), plan source RULE_BASED |
+
+## 12. Test plan
+
+| Level | Content | Ticket |
+|---|---|---|
+| Unit | eligibility, lock, idempotent re-entry, nonce allocation, replacement math | EXE-003, EXE-007, EXE-005 |
+| Integration (Anvil) | UC-02 end-to-end; Owner withdrawal between steps (M08 ex. 10); signer refusals; replacement; out of gas | EXE-004…EXE-010 |
+| Fault injection | kill worker between signer and DB write; redeliver tasks; signer restart | RCV-007 |
+| Security | worker-ai secrets; payload mismatch; fee cap | EXE-005, EXE-002 |
+
+## 13. Tickets (order of work)
+
+EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee policy → EXE-004 pipeline → EXE-005 signer → EXE-006 keystore → EXE-013 sentinel → EXE-007 outbox executor → EXE-008 sequencing → EXE-010 gas ledger → EXE-009 run-now → EXE-011 swap (P2). Later: EXE-L01…L04.
+
+## 14. Decisions
+
+| ID | Decision |
+|---|---|
+| M10-D1 | Two cycles: scheduling (15 min + events) and execution (60 s); only today's schedule items execute. *(mặc định)* |
+| M10-D2 | Per-treasury Postgres advisory lock, non-blocking; plus "no Executing plan" gate. |
+| M10-D3 | AI proposal timeout 20 s; deterministic plan always computed first. *(mặc định)* |
+| M10-D4 | Fee policy applied after ALLOW and before attestation (EXE-012). |
+| M10-D5 | Outbox: operation row before signing; tx hash persisted before any other step. |
+| M10-D6 | The next step requires the previous step's post-condition **PASSED** (M11). *(mặc định)* |
+| M10-D7 | One executor address for all treasuries in M1; the signer is the only nonce allocator and serializes signing. *(mặc định)* |
+| M10-D8 | Replacements reuse nonce and payload, bump +12.5 %, never above the accepted fee cap. |
+| M10-D9 | Lead time 24 h before due/discount date, demo 2 min (OQ-06). |
+| M10-D10 | Signer API limited to sign-and-send, replace, sentinel pause, sentinel address, health. |
+| M10-D11 | Signer enforces the fee cap carried with the attested plan. |
+| M10-D12 | Partial completion → plan PartiallyCompleted, request NeedsReview; resumption creates a new plan for the remaining steps (M12). |
+| M10-D13 | Low-gas thresholds per key (executor/sentinel/receipt). *(mặc định)* |
+| M10-D14 | Run-now uses the same gates and enqueues exactly one execution cycle. |

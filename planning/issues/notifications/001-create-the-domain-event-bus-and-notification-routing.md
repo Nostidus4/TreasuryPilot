@@ -29,10 +29,11 @@ Domain events reach the right people.
 
 ## Scope
 
-- Event publisher (in-process + outbox table)
-- routing table event type → roles
+- domain_events outbox written in the same transaction
+- publisher with SKIP LOCKED
+- routing table per docs/modules/notifications §5 (incl. GovernanceSignatureNeeded, FeeAcceptanceNeeded, UnexpectedOutflow, CircuitBreakerTripped)
 - notifications schema
-- dedup by event id
+- dedup by (user, event)
 
 ## Out of scope
 

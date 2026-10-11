@@ -29,10 +29,10 @@ Watch steps go from submitted to confirmed in real time.
 
 ## Scope
 
-- SSE subscription
-- per-step status with explorer links
+- SSE subscription with Last-Event-ID
+- per-step status using the wording table in docs/modules/web §5 (Submitted, Pending, Confirmed-verifying, Paid, Dropped/replaced, Unknown 'checking the chain')
+- explorer links
 - verification result
-- explicit 'checking chain…' state for Unknown
 - partial completion view
 
 ## Out of scope

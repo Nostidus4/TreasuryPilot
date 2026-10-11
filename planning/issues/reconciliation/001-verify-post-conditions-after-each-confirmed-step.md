@@ -29,10 +29,11 @@ Confirm the chain state matches what the plan expected.
 
 ## Scope
 
-- Expected deltas per step type
-- read post-state
-- verification record PASSED, DISCREPANCY or UNKNOWN
-- discrepancy creates a review item and a circuit-breaker signal
+- Expected effects per step type (docs/modules/reconciliation §8.1)
+- observed = state at block B minus B−1 via Multicall3, concurrent token movements subtracted
+- verification PASSED / DISCREPANCY / UNKNOWN (after 3 read failures)
+- DISCREPANCY → review item + circuit-breaker signal
+- called by EXE-008 before the next step
 
 ## Out of scope
 

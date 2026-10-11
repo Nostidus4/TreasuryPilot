@@ -29,9 +29,9 @@ Decide the true outcome of an uncertain operation without guessing.
 
 ## Scope
 
-- Resolution order: receipt by tx hash, then account nonce, then module used(stepId)/used(requestId)
-- outcomes: Confirmed, Reverted, still Pending, or safe to submit with the same ids
-- escalate to review after a threshold
+- Resolution order per docs/modules/recovery §8.1: receipt (primary + secondary), executor nonce, module stepUsed/requestPaid
+- outcomes Confirmed, Reverted, Abandoned (never broadcast), still Pending
+- escalate to UNCERTAIN_TX after 30 min with the treasury blocked
 
 ## Out of scope
 

@@ -30,8 +30,8 @@ Finance can close out a payment with evidence.
 ## Scope
 
 - GET list with filters
-- POST match and discrepancy
-- auto-match when the org setting is on and all evidence matches
+- POST match (requires finalized PAY block and complete evidence), discrepancy, resolve (Finance note + Owner ack)
+- auto-match per docs/modules/reconciliation §8.3 when the org setting is on
 
 ## Out of scope
 

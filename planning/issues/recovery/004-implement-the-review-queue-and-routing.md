@@ -29,11 +29,11 @@ Every stop becomes one actionable item for the right role.
 
 ## Scope
 
-- review_items schema
-- creation rules per outcome type
-- routing table (over-cap → Owner, payee/budget → Owner policy edit, amount/payee → re-approval, infra → Operator)
-- list and action endpoints
-- SLA due time
+- review_items schema with types POLICY_BLOCK, NEEDS_AUTHORITY, FEE_APPROVAL, UNCERTAIN_TX, DISCREPANCY, AI_REJECTED, INFRA, UNEXPECTED_OUTFLOW
+- creation rules per outcome
+- routing table and SLAs per docs/modules/recovery §8.3
+- list and action endpoints with optimistic version
+- overdue escalation to Owner
 
 ## Out of scope
 

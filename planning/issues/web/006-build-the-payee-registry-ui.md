@@ -31,9 +31,10 @@ Manage payees with screening and cooling visible.
 
 ## Scope
 
-- List with status, screening result and cooling countdown
-- propose form (Operator)
-- Owner sign for registration and deactivation
+- Vendors and payees list with status, screening result and cooling countdown
+- propose form (Operator/OrgAdmin/Owner) under a vendor
+- Owner out-of-band verification form (method + note)
+- registration and deactivation governance txs
 - address-change flow that explains the new cooling period
 
 ## Out of scope
@@ -48,6 +49,7 @@ Follow the module spec and the relevant ADRs.
 
 - WEB-004: Build the treasury setup wizard
 - MDT-005: Build payee registration and deactivation transactions and sync status
+- WEB-025: Build the governance signing inbox
 
 ## Acceptance criteria
 

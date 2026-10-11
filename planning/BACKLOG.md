@@ -226,16 +226,16 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | WEB-001 | web | M16 | [Create the web app shell](issues/web/001-create-the-web-app-shell.md) | F-130 | M1 | P0 | M | A | DEV-001 | Ready for Assignment |
 | WEB-002 | web | M16 | [Build login, org selection and onboarding checklist](issues/web/002-build-login-org-selection-and-onboarding-checklist.md) | F-001, F-003 | M1 | P0 | M | A | WEB-001, IDN-005 | Ready for Assignment |
 | WEB-003 | web | M16 | [Add wallet connection and SIWE linking](issues/web/003-add-wallet-connection-and-siwe-linking.md) | F-002 | M1 | P0 | S | A | WEB-002, IDN-004 | Ready for Assignment |
-| WEB-004 | web | M16 | [Build the treasury setup wizard](issues/web/004-build-the-treasury-setup-wizard.md) | F-010–F-012 | M1 | P0 | M | A | WEB-003, TRS-007 | Ready for Assignment |
+| WEB-004 | web | M16 | [Build the treasury setup wizard](issues/web/004-build-the-treasury-setup-wizard.md) | F-010–F-012 | M1 | P0 | M | A | WEB-003, TRS-007, WEB-025 | Ready for Assignment |
 | WEB-005 | web | M16 | [Build the mandate editor with summary, diff and activation](issues/web/005-build-the-mandate-editor-with-summary-diff-and-activation.md) | F-134, F-020, F-021 | M1 | P0 | L | B | WEB-004, MDT-003, WEB-025 | Ready for Assignment |
-| WEB-006 | web | M16 | [Build the payee registry UI](issues/web/006-build-the-payee-registry-ui.md) | F-134, F-022 | M1 | P0 | M | B | WEB-004, MDT-005 | Ready for Assignment |
+| WEB-006 | web | M16 | [Build the payee registry UI](issues/web/006-build-the-payee-registry-ui.md) | F-134, F-022 | M1 | P0 | M | B | WEB-004, MDT-005, WEB-025 | Ready for Assignment |
 | WEB-007 | web | M16 | [Build the request list and manual entry form](issues/web/007-build-the-request-list-and-manual-entry-form.md) | F-030 | M1 | P0 | M | A | WEB-002, INV-003 | Ready for Assignment |
 | WEB-008 | web | M16 | [Build upload and extraction review](issues/web/008-build-upload-and-extraction-review.md) | F-031, F-035 | M1 | P0 | L | A | WEB-007, AGT-005 | Ready for Assignment |
 | WEB-009 | web | M16 | [Build the approval inbox and EIP-712 signing](issues/web/009-build-the-approval-inbox-and-eip-712-signing.md) | F-131, F-038 | M1 | P0 | L | A | WEB-008, INV-010 | Ready for Assignment |
 | WEB-010 | web | M16 | [Build the treasury dashboard](issues/web/010-build-the-treasury-dashboard.md) | F-130 | M1 | P0 | M | A | WEB-004, CHR-002 | Ready for Assignment |
 | WEB-011 | web | M16 | [Build plan cards and the Why panel](issues/web/011-build-plan-cards-and-the-why-panel.md) | F-132 | M1 | P0 | M | A | WEB-010, EXE-004 | Ready for Assignment |
 | WEB-012 | web | M16 | [Build the live execution timeline](issues/web/012-build-the-live-execution-timeline.md) | F-132 | M1 | P0 | M | A | WEB-011, NTF-002 | Ready for Assignment |
-| WEB-013 | web | M16 | [Build the exception and review console](issues/web/013-build-the-exception-and-review-console.md) | F-135 | M1 | P0 | L | B | WEB-011, RCV-004, MDT-006 | Ready for Assignment |
+| WEB-013 | web | M16 | [Build the exception and review console](issues/web/013-build-the-exception-and-review-console.md) | F-135 | M1 | P0 | L | B | WEB-011, RCV-004, MDT-006, WEB-025 | Ready for Assignment |
 | WEB-014 | web | M16 | [Build the reconciliation view and export](issues/web/014-build-the-reconciliation-view-and-export.md) | F-133 | M1 | P0 | M | B | WEB-010, REC-004 | Ready for Assignment |
 | WEB-015 | web | M16 | [Build the notifications center](issues/web/015-build-the-notifications-center.md) | F-100 | M1 | P1 | S | After submission | WEB-001, NTF-002 | Ready for Assignment |
 | WEB-016 | web | M16 | [Build the Copilot chat UI](issues/web/016-build-the-copilot-chat-ui.md) | F-090 | M1 | P1 | M | After submission | WEB-010, AGT-012 | Ready for Assignment |

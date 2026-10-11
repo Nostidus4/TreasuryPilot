@@ -338,7 +338,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | INV-011 | Implement reject, cancel, invalidation and expiry | P0 | S | INV-010, SC-022, MDT-009 |
 | RCV-001 | Scan in-flight operations at startup | P0 | S | EXE-007 |
 | RCV-005 | Implement retry policy and error classification | P0 | S | EXE-007 |
-| WEB-004 | Build the treasury setup wizard | P0 | M | WEB-003, TRS-007 |
+| WEB-004 | Build the treasury setup wizard | P0 | M | WEB-003, TRS-007, WEB-025 |
 | WEB-009 | Build the approval inbox and EIP-712 signing | P0 | L | WEB-008, INV-010 |
 | DEV-006 | Write seed script for the local environment | P1 | M | SC-016, TRS-004, MDT-003, INV-003 |
 | EXE-010 | Track gas fees and alert on low executor gas | P1 | S | EXE-007 |
@@ -356,7 +356,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | RCV-003 | Handle partial completion and resume | P0 | S | EXE-008 |
 | REC-001 | Verify post-conditions after each confirmed step | P0 | M | EXE-008 |
 | WEB-005 | Build the mandate editor with summary, diff and activation | P0 | L | WEB-004, MDT-003, WEB-025 |
-| WEB-006 | Build the payee registry UI | P0 | M | WEB-004, MDT-005 |
+| WEB-006 | Build the payee registry UI | P0 | M | WEB-004, MDT-005, WEB-025 |
 | WEB-010 | Build the treasury dashboard | P0 | M | WEB-004, CHR-002 |
 | AGT-011 | Draft exception requests with a numeric post-check | P1 | S | AGT-001, MDT-006 |
 | OBS-004 | Compute operational metrics | P1 | M | AUD-001, EXE-008 |
@@ -402,7 +402,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | WEB-012 | Build the live execution timeline | P0 | M | WEB-011, NTF-002 |
-| WEB-013 | Build the exception and review console | P0 | L | WEB-011, RCV-004, MDT-006 |
+| WEB-013 | Build the exception and review console | P0 | L | WEB-011, RCV-004, MDT-006, WEB-025 |
 | WEB-014 | Build the reconciliation view and export | P0 | M | WEB-010, REC-004 |
 
 ### Wave 19 (2 tickets)

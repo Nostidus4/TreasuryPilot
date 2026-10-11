@@ -29,10 +29,10 @@ Resolve stops quickly with the right action per role.
 
 ## Scope
 
-- Review queue list with type and SLA
+- Review queue by type, routed role and SLA (incl. FEE_APPROVAL, UNEXPECTED_OUTFLOW, UNCERTAIN_TX)
 - detail with reason codes and completed steps
-- exception request view with AI draft and numbers, Owner signs EIP-712
-- actions retry, cancel, edit and re-approve
+- exception request view with AI draft and engine numbers, Owner creates the grantException governance tx (no EIP-712)
+- allowed actions per routing table (docs/modules/recovery §8.3)
 - stale-item handling
 
 ## Out of scope
@@ -48,6 +48,7 @@ Follow the module spec and the relevant ADRs.
 - WEB-011: Build plan cards and the Why panel
 - RCV-004: Implement the review queue and routing
 - MDT-006: Implement one-time exception requests and owner grant transactions
+- WEB-025: Build the governance signing inbox
 
 ## Acceptance criteria
 

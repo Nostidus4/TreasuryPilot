@@ -33,11 +33,11 @@ Owners author and sign a mandate knowing exactly what it allows.
 
 ## Scope
 
-- Form for all mandate fields with display/base unit conversion
+- Form for all mandate fields with bigint display/base unit conversion
 - human-readable summary
-- diff against the active version
-- sign and execute the activation transaction
-- status PendingActivation → Active
+- diff against the active version with looser/stricter markers and confirm for looser changes
+- create the governance tx and hand off to the governance inbox
+- status PendingActivation → Active / Discrepancy
 
 ## Out of scope
 

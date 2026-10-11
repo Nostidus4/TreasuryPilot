@@ -31,9 +31,10 @@ Finance matches payments and downloads files.
 
 - Table of requests, transactions, fees, classification and status
 - filters
-- mark matched and discrepancy notes
+- mark matched (requires finalized + evidence) and discrepancy notes
 - export buttons
 - evidence bundle download
+- EAS receipt link
 
 ## Out of scope
 

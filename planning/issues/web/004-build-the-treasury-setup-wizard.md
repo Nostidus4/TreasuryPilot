@@ -33,8 +33,11 @@ Owners register Safes, enable the module and see coverage.
 
 ## Scope
 
-- Wizard: chain and asset, wallet addresses with validation feedback, module deploy and enable transactions signed in the wallet, coverage result
-- TEST labels for test assets
+- Wizard: chain (Sepolia) and asset (tUSDC or Circle USDC) with TEST labels
+- wallet addresses with Safe verification feedback
+- module governance tx created and signed through the governance inbox
+- coverage result
+- Guardian Safe setup step (MDT-010)
 
 ## Out of scope
 
@@ -48,6 +51,7 @@ Follow the module spec and the relevant ADRs.
 
 - WEB-003: Add wallet connection and SIWE linking
 - TRS-007: Compute coverage and handle acknowledgment
+- WEB-025: Build the governance signing inbox
 
 ## Acceptance criteria
 
