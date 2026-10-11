@@ -45,7 +45,7 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - POL-001: Define the reason-code catalogue and decision model
-- ENG-010: Build EIP-712 typed data for approvals, exceptions and attestations
+- ENG-010: Build EIP-712 typed data for payment approvals and attestations
 
 ## Acceptance criteria
 

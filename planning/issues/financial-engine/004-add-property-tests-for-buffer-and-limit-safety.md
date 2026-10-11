@@ -30,7 +30,7 @@ Prove with random inputs that engine outputs never breach buffers or limits.
 ## Scope
 
 - hypothesis strategies for wallet states, policies and requests
-- properties: post-plan balances ≥ buffer, refill ≤ Cap, no negative amounts
+- properties: post-plan balances ≥ buffer, refill ≤ Cap, refill ≤ Bound, no negative amounts, determinism (same input twice ⇒ identical output)
 
 ## Out of scope
 

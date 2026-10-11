@@ -43,7 +43,7 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- ENG-007: Implement the terms-aware scheduler
+- ENG-007: Implement the terms-aware scheduler with OR-Tools CP-SAT
 - POL-003: Validate limits, buffers, deadlines, coverage and unknown operations
 
 ## Acceptance criteria

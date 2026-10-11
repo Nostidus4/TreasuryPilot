@@ -1,33 +1,272 @@
-# M07 · Financial Engine (py-core)
+# M07 · Financial Engine (`py-core`)
 
-**Status:** Draft for gate G2 · **Path:** `docs/modules/financial-engine/`
+**Status:** Detailed (grilling round M07, 2026-10-11) · **Path:** `docs/modules/financial-engine/` · **Code:** `packages/py-core/src/treasurypilot_core/{money,domain,engine}` · **Epic:** `[EPIC] M07 · Financial Engine (py-core)`
+**ADRs:** ADR-014 (money), **ADR-015 (CP-SAT solver, new)** · **Decisions:** M07-D1 … M07-D9 (§14)
 
-## Purpose
-Pure deterministic money logic: liquidity formulas, refill decisions, terms-aware scheduler/objective, forecast, minOut, fingerprint normalization.
+---
 
-## Features
-F-051, F-052, F-058, F-059 (Later); helpers for F-037, F-064
+## 1. Purpose and boundaries
 
-## Inputs
-Snapshot data, approved requests with confirmed terms, mandate limits, date.
+The engine is the **only place where amounts and schedules are computed** (BR-034). It is pure: no database, network, chain or LLM access. API, worker, validator, AI tools (`simulate_schedule`) and the benchmark all call the same functions.
 
-## Outputs
-Funding numbers, schedules with objective scores, feasibility reasons, runway projections.
+| In scope (M1) | Out of scope |
+|---|---|
+| Money type (integer base units), domain models | Reading chain state (M06), persisting (API/worker) |
+| Liquidity calculator: Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity, Cap, refill decision | Deciding *whether* a step is allowed (M08 validator does that, using engine numbers) |
+| Payment-terms model and value function (discounts, late fees) | Extracting terms from text (M09) |
+| Scheduler: B1 baseline (EDF) and B2 optimizer (CP-SAT) + exhaustive oracle for tests | Calling the LLM; the AI proposes orderings that the engine scores (M09 → M07) |
+| Plan scoring, binding constraints, infeasibility reasons | FX / depeg (F-041, Later), multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
+| 7-day forecast (P2) | |
 
-## APIs
-Python package API (no HTTP): `compute_shortage(...)`, `decide_refill(...)`, `schedule(requests, state, policy) -> Schedule`, `score(plan)`, `forecast(...)`.
+## 2. Features, requirements and rules
 
-## Data model
-None (pure functions; inputs/outputs are Pydantic models).
+| Feature | FR | BR |
+|---|---|---|
+| F-051 Liquidity calculator | FR-403, FR-404 | BR-030–BR-036 |
+| F-052 Terms-aware scheduler | FR-405 (revised) | BR-052 (revised) |
+| F-035 Terms (model side) | FR-310, FR-311 | BR-075 |
+| F-037 Fingerprint | FR-314 | BR-071 |
+| F-058 Forecast | FR-415 | — |
+| F-092 Benchmark (B1/B2 objective) | FR-805 | BR-052 |
 
-## Dependencies
-None. Must not import I/O (import-linter contract).
+## 3. Concepts
 
-## Security concerns
-Correctness is security: property tests (hypothesis) that no output breaches the buffer or limits, plus Domain §3.4 golden tests.
+| Term | Definition |
+|---|---|
+| **BaseUnits** | Non-negative `int` in the asset's smallest unit. Never `float`. |
+| **Day** | UTC calendar day `d = unix_seconds // 86400`. **Cut-over:** if `now` is within 30 min of the next UTC midnight, "today" is treated as the next day (M07-D3). |
+| **Horizon** | Days `today … today + H`, `H = min(30, max due-day − today + 1)` (M07-D3). |
+| **Execution window** | Only actions assigned to *today* are executed; later days are a projection, re-planned every cycle (rolling horizon). |
+| **Value** | `discount captured − late fees incurred` for a request paid on a given day (M07-D2: no cost of capital). |
+| **Feasible deadline** | A request can be confirmed on-chain on or before its due day (OQ-16), given limits, liquidity, cooling and exceptions. |
 
-## Failure scenarios
-Invalid inputs raise typed errors; never partial results.
+## 4. Data model (Pydantic, frozen)
 
-## Open questions
-None.
+```python
+class Asset(BaseModel):          chain_id: int; address: str; decimals: int; symbol: str; is_test: bool
+class LateFee(BaseModel):
+    kind: Literal["fixed", "percent_per_period"]
+    amount: BaseUnits | None = None        # fixed
+    rate_bps: int | None = None            # percent_per_period, e.g. 150 = 1.5 %
+    period_days: int | None = None         # e.g. 7
+    cap: BaseUnits | None = None           # optional total cap (M07-D1)
+class PaymentTerms(BaseModel):
+    net_due_day: int                       # UTC day number
+    discount_bps: int = 0                  # 200 = 2 %
+    discount_deadline_day: int | None = None
+    late_fee: LateFee | None = None
+    priority_note: str | None = None       # free text; the engine ignores it (AI may use it)
+class WalletState(BaseModel):    address: str; balance: BaseUnits; buffer: BaseUnits; target: BaseUnits
+class Limits(BaseModel):         per_request: BaseUnits; daily: BaseUnits
+class PolicyView(BaseModel):     pay: Limits; refill: Limits; cooling_seconds: int
+class Snapshot(BaseModel):
+    day: int; source: WalletState; operational: dict[str, WalletState]
+    used_today: dict[Literal["pay", "refill"], BaseUnits]
+    payee_active_day: dict[str, int]       # payee address → first day it can be paid
+class ApprovedRequest(BaseModel):
+    id: str; paying_wallet: str; payee: str; amount: BaseUnits
+    approved_seq: int                      # approval order (tie-break)
+    terms: PaymentTerms                    # confirmed terms only (BR-075)
+    exception_granted: bool = False        # Owner grant exists on-chain (M04-D3)
+class RefillDecision(BaseModel):
+    kind: Literal["none", "preferred", "shortage", "stop"]; amount: BaseUnits; reason: ReasonCode
+class ScheduledItem(BaseModel):  request_id: str; day: int; refill: BaseUnits; value: int
+class Infeasible(BaseModel):     request_id: str; reason: ReasonCode; detail: str
+class Schedule(BaseModel):
+    items: list[ScheduledItem]; infeasible: list[Infeasible]
+    objective: tuple[int, int, int, int]   # (violations, missed_feasible_deadlines, -value, tx_count) — lexicographic, lower is better
+    binding: list[BindingConstraint]; solver: Literal["EDF", "CPSAT", "ORACLE"]; status: Literal["OPTIMAL", "FEASIBLE", "FALLBACK"]
+```
+
+All models are immutable; serialization writes `BaseUnits` as decimal strings (ADR-014).
+
+## 5. State
+
+The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ byte-identical outputs (M07-D7).
+
+## 6. Public API (Python, no HTTP)
+
+| Function | Returns | Notes |
+|---|---|---|
+| `available(w, protected_other) → BaseUnits` | `max(0, B − R − L − F)` | Domain §3.1 |
+| `funding_deficit(w, protected_other) → BaseUnits` | `max(0, R + L + F − B)` | |
+| `shortage(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + F − B)` | |
+| `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
+| `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
+| `decide_refill(req, wallet, source, policy, used_today, protected_other) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4) |
+| `request_value(req, pay_day) → int` | discount − late fee | §8.2 |
+| `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
+| `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
+| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, N ≤ 8 | **tests only** |
+| `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
+| `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
+| `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
+| `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
+
+Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
+
+## 7. Main flows
+
+```mermaid
+sequenceDiagram
+  participant W as worker (planning task)
+  participant E as engine
+  participant S as CP-SAT
+  participant A as agent (worker-ai)
+  W->>E: schedule_edf(requests, snapshot, policy)
+  E-->>W: B1 schedule
+  W->>E: schedule_optimal(...)
+  E->>S: build model, solve (≤ 5 s, 1 worker, fixed seed)
+  S-->>E: solution / timeout
+  E-->>W: B2 schedule (OPTIMAL / FEASIBLE / FALLBACK=EDF)
+  W->>A: propose ordering + rationale (gets B2 + binding constraints)
+  A-->>W: proposal
+  W->>E: score(proposal) vs score(B2)
+  E-->>W: objective tuples → pick lower; today's items go to the validator
+```
+
+## 8. Algorithms and worked examples
+
+### 8.1 Refill decision (BR-032/033/036, M07-D4)
+
+```
+D        = amount of this request (gas term 0 in M1)
+Shortage = max(0, P_o + D + F − B)
+Pref     = max(0, P_o + D + H − B)
+Bound    = max(0, D + H − B)                  # contract: balance after refill ≤ amount + target
+Cap      = min(SourceCapacity, refill.per_request, refill.daily − used_today.refill)
+if Shortage == 0:                 → none
+elif Shortage > Bound:            → stop (REFILL_BOUND)        # buffer/other holds exceed target
+elif Cap ≥ min(Pref, Bound):      → preferred, amount = min(Pref, Bound)
+elif Cap ≥ Shortage:              → shortage,  amount = Shortage   (report TARGET_NOT_REACHED)
+else:                             → stop (SOURCE_INSUFFICIENT or OVER_REFILL_DAILY)
+```
+
+| Example | B | P_o | D | F | H | Shortage | Pref | Bound | Cap | Decision |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| UC-02 | 20 | 0 | 100 | 10 | 10 | 90 | 90 | 90 | 2,500 | preferred 90 |
+| Domain §3.4 a | 300 | 100 | 400 | 50 | 150 | 250 | 350 | 250 | 350 | preferred **250** (bound caps 350 → 250) |
+| Domain §3.4 b | 300 | 100 | 400 | 50 | 150 | 250 | 350 | 250 | 300 | preferred 250 |
+| Domain §3.4 c | 300 | 100 | 400 | 50 | 150 | 250 | 350 | 250 | 200 | stop SOURCE_INSUFFICIENT |
+| Bound stop | 0 | 300 | 50 | 40 | 60 | 390 | 410 | 110 | 2,500 | stop REFILL_BOUND |
+
+Note on row a: the source document expected 350; with the contract bound (M04-D4) the engine refills 250 and the other held request refills for itself when it is processed. The goldens in ENG-002/ENG-003 use these updated values.
+
+### 8.2 Value of paying on day `p` (M07-D1, D2)
+
+```
+discount(p) = floor(amount · discount_bps / 10000)  if discount_deadline_day and p ≤ discount_deadline_day else 0
+late(p):
+  if p ≤ net_due_day or no late_fee: 0
+  fixed:               amount_fee
+  percent_per_period:  periods = ceil((p − net_due_day) / period_days)
+                       floor(amount · rate_bps · periods / 10000)
+  then min(late, cap) if cap is set
+value(p) = discount(p) − late(p)
+```
+
+| Invoice | Terms | Pay day (relative to issue) | Value |
+|---|---|---|---|
+| 1,000 | 2/10 net 30 | day 8 | +20 |
+| 1,000 | 2/10 net 30 | day 12 | 0 |
+| 1,000 | net 30, 1.5 %/7 days | day 31 | −15 (1 period) |
+| 1,000 | net 30, 1.5 %/7 days | day 45 | −45 (3 periods) |
+| 1,000 | net 30, fixed 25, cap 25 | day 60 | −25 |
+
+### 8.3 Baseline B1 — EDF
+
+Sort by `(net_due_day, approved_seq)`. For each day from today, take requests in order while: payee active that day, per-request cap respected (or exception granted), daily pay cap not exceeded, refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day; anything not placed in the horizon is `Infeasible` with its first blocking reason.
+
+### 8.4 Optimizer B2 — CP-SAT model (M07-D5)
+
+**Variables:** `x[r,d] ∈ {0,1}` request `r` paid on day `d` (d in horizon); `u[r] = 1 − Σ_d x[r,d]` (unscheduled); `ref[r] ∈ [0, Bound_r]` refill amount (int).
+
+**Constraints**
+1. `Σ_d x[r,d] ≤ 1`.
+2. Cooling: `x[r,d] = 0` if `d < payee_active_day[payee(r)]`.
+3. Per-request cap: if `amount_r > pay.per_request` and no exception → `x[r,·] = 0` (reported `NEEDS_EXCEPTION`).
+4. Daily pay cap: `Σ_r amount_r · x[r,d] ≤ pay.daily − used_today.pay·[d = today]`.
+5. Daily refill cap: `Σ_r ref_r(d) ≤ refill.daily − used_today.refill·[d = today]`, where `ref_r(d)` is the refill attributed to day d.
+6. Source: cumulative refills up to day d ≤ `SourceCapacity`.
+7. Wallet buffer: for each operational wallet w and day d, `B_w + Σ refills into w (≤ d) − Σ payments from w (≤ d) ≥ F_w`.
+8. Refill bound per request: `ref[r] ≤ amount_r + H_w − B_w(at payment)` (linearized with the cumulative balance).
+
+**Objective (lexicographic, solved in stages, M07-D6)**
+1. Maximize the number of requests paid by their due day (among those that can be).
+2. Maximize total value `Σ value(r,d)·x[r,d]`.
+3. Minimize the number of transactions (pays + refills > 0).
+4. Tie-break: earlier `approved_seq` first (deterministic secondary key).
+
+Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a share of the time limit (default 5 s total). **Determinism:** `num_workers = 1`, fixed `random_seed`, inputs sorted by id (M07-D7). **Fallback:** status `UNKNOWN`/error/no solution in time ⇒ return EDF with `status = FALLBACK` and log it.
+
+**Oracle (tests):** enumerate all day assignments for N ≤ 8 requests and horizon ≤ 5 days; CP-SAT must match its objective on generated cases (hypothesis).
+
+### 8.5 Fingerprint
+
+`normalize(s) = s.strip().casefold()` then remove spaces, `-`, `_`, `/`, `.`, `#`. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`. Vectors are shared with the contracts (SC-017) and the web.
+
+## 9. Configuration and defaults
+
+| Parameter | Default | Where |
+|---|---|---|
+| Horizon cap | 30 days | engine constant (overridable for tests) |
+| Midnight cut-over | 30 minutes | engine constant |
+| CP-SAT time limit | 5 s per cycle (split across stages) | worker config |
+| CP-SAT workers / seed | 1 / 42 | engine constant |
+| Oracle limit | N ≤ 8, horizon ≤ 5 | tests |
+| Discount rounding | floor | engine |
+| Forecast window | 7 days | API query param |
+
+## 10. Security and correctness
+
+| Risk | Control | Proof |
+|---|---|---|
+| Float rounding on money | `BaseUnits` type rejects floats; CP-SAT is integer-only | type tests; ruff rule banning `float(` in engine |
+| LLM-supplied numbers | Engine ignores any amount from AI; AI proposals are reorderings scored by the engine | AGT-009 tests |
+| Plan violates a hard rule | Constraints mirror BR-013/022/030/036; validator re-checks; contract enforces | property tests + POL-004 differential |
+| Non-determinism (benchmark noise) | 1 worker, fixed seed, sorted inputs | determinism test: same input twice ⇒ same output |
+| Solver hang | Time limit + EDF fallback | timeout test |
+| Overflow | Python ints unbounded; CP-SAT bounds checked (< 2⁶³) before model build | guard test |
+
+## 11. Failure scenarios
+
+| Failure | Behaviour |
+|---|---|
+| Invalid terms (negative, dates out of order) | `InvalidTerms`; the request is excluded with reason `TERMS_INVALID` (should not happen: validated at confirmation) |
+| Snapshot stale/partial | Engine refuses (`InvalidSnapshot`); validator will BLOCK |
+| CP-SAT not installed / crashes | EDF fallback, `status = FALLBACK`, metric + log |
+| Everything infeasible | Empty schedule; every request listed in `infeasible` with a reason → review items |
+
+## 12. Test plan
+
+| Level | Content | Ticket |
+|---|---|---|
+| Golden | Domain §3.4 rows (updated per §8.1), UC-02, value table §8.2 | ENG-002, ENG-003, ENG-005 |
+| Property (hypothesis, ≥ 1,000 cases) | no buffer breach, refill ≤ bound and ≤ Cap, schedule respects caps/cooling, CP-SAT never worse than EDF | ENG-004, ENG-007 |
+| Oracle equivalence | CP-SAT objective == oracle objective for N ≤ 8 | ENG-012 |
+| Determinism | identical input ⇒ identical output | ENG-007 |
+| Timeout/fallback | forced tiny limit ⇒ FALLBACK = EDF | ENG-007 |
+| Vectors | fingerprint matches Solidity | ENG-009 |
+| Coverage | ≥ 85 % lines (NFR-MAINT-03) | CI |
+
+## 13. Tickets (order of work)
+
+ENG-001 money & models → ENG-002 calculator → ENG-003 refill decision (with bound) → ENG-004 property tests → ENG-005 terms & value (3 late-fee kinds) → ENG-006 EDF → **ENG-012 exhaustive oracle (new)** → ENG-007 CP-SAT optimizer → ENG-008 scoring & binding constraints → ENG-009 fingerprint → ENG-010 EIP-712 builders → ENG-011 forecast (P2).
+
+## 14. Decisions and open questions
+
+| ID | Decision |
+|---|---|
+| M07-D1 | Late fees: **fixed**, **percent per started period (simple)**, optional **total cap**. No compounding. |
+| M07-D2 | Value = discount captured − late fees. **No cost of capital.** |
+| M07-D3 | **Rolling horizon** in UTC days, up to 30 days; only today's items execute; 30-minute cut-over before UTC midnight. |
+| M07-D4 | Refill amount is capped by the contract bound `amount + target − balance`; if even the Shortage exceeds it → STOP `REFILL_BOUND`. |
+| M07-D5 | Optimizer: **Google OR-Tools CP-SAT**, behind a `Solver` interface (ADR-015). |
+| M07-D6 | Lexicographic objective solved in stages: deadlines met → value → transaction count → approval order. |
+| M07-D7 | Deterministic solving: 1 worker, fixed seed, sorted inputs. |
+| M07-D8 | Exhaustive **oracle** solver (N ≤ 8) used only in tests to prove optimality. |
+| M07-D9 | Requests above the per-request cap without an Owner grant are excluded and reported `NEEDS_EXCEPTION`; the scheduler also reports the value they would add if granted (input for the AI exception draft). |
+
+| Open | Question | Owner |
+|---|---|---|
+| M07-Q1 | Should incoming receivables (future inflows) enter the forecast? (Later: needs an AR data source) | Product, Later |

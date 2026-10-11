@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-052, BR-075 |
+| **Traces to** | BR-052, BR-075, M07-D1, M07-D2 |
 | **Blocks** | ENG-006, ENG-L02, INV-008, AGT-005 |
 | **Submission cut** | A |
 
@@ -31,9 +31,10 @@ Compute what paying on a given date is worth in stablecoin.
 
 ## Scope
 
-- PaymentTerms: discount pct and deadline, net due date, late-fee schedule, priority note
-- value(pay_date) = discount captured − late fee incurred
-- validation of ranges and date order
+- PaymentTerms with net due day, discount bps and deadline, optional LateFee
+- LateFee kinds: fixed, percent per started period (simple), optional total cap (M07-D1)
+- request_value(req, pay_day) = floor discount − late fee (M07-D2, no cost of capital)
+- validation of ranges and day order
 
 ## Out of scope
 
@@ -41,7 +42,7 @@ Extraction of terms from text (AGT-005).
 
 ## Technical notes
 
-Percentages as basis points (integers).
+Percentages as basis points (integers). Discounts round down.
 
 ## Dependencies
 
@@ -49,9 +50,9 @@ Percentages as basis points (integers).
 
 ## Acceptance criteria
 
-- [ ] '2/10 net 30' on a 1,000 unit invoice yields 20 units if paid by day 10 and 0 after
-- [ ] A late fee of 1.5%/week accrues per started week
-- [ ] Invalid terms raise typed errors
+- [ ] Every row of docs/modules/financial-engine §8.2 returns the documented value
+- [ ] A percent late fee accrues per started period and stops at the cap
+- [ ] Invalid terms raise InvalidTerms
 
 ## Testing requirements
 

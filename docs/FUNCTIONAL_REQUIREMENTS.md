@@ -106,9 +106,9 @@ Wording: **shall** = mandatory · **should** = recommended.
 |---|---|---|---|
 | FR-401 | The system shall read balances, mandate state, counters, payee status and module configuration at a single block, and record the block number, hash, time and coverage. | F-050 | BR-051 |
 | FR-402 | The system shall refuse to plan or execute on a snapshot that is stale beyond the configured threshold, or that has coverage other than COMPLETE. | F-050 | |
-| FR-403 | The system shall compute Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity and Cap per the domain formulas using integer arithmetic. | F-051 | BR-032, BR-034 |
+| FR-403 | The system shall compute Available, FundingDeficit, Shortage, PreferredRefill, refill Bound, SourceCapacity and Cap per the domain formulas using integer arithmetic. | F-051 | BR-032, BR-034, BR-036 |
 | FR-404 | The system shall stop and report when `Cap < Shortage`. | F-051 | BR-033 |
-| FR-405 | The system shall compute a feasible schedule that optimizes the BR-052 objective, and report binding constraints and infeasible items with reasons. | F-052 | BR-052 |
+| FR-405 | The system shall compute a schedule over a rolling horizon (≤ 30 UTC days) that optimizes the BR-052 objective with a CP-SAT solver (EDF fallback), deterministically, and report binding constraints and infeasible items with reasons. | F-052 | BR-052, ADR-015 |
 | FR-406 | The system shall obtain an AI plan proposal as structured output (order, deferrals, exception requests, rationale, evidence ids) using read-only tools only. | F-053 | BR-002 |
 | FR-407 | The system shall score the AI proposal with the deterministic objective and choose the better feasible plan, logging the comparison. | F-053 | BR-052 |
 | FR-408 | The system shall discard invalid or out-of-mandate AI plans and route them to NeedsReview. | F-053 | BR-056 |

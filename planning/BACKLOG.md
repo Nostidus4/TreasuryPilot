@@ -9,9 +9,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 128 | 46 | 10 | 184 |
+| M1 | 129 | 46 | 10 | 185 |
 | Later | – | – | – | 38 |
-| **All** | | | | **222** |
+| **All** | | | | **223** |
 
 ## Epics
 
@@ -19,7 +19,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 11 | 0 | [`issues/devex/`](issues/devex/) |
 | M04 · Smart Contracts | `contracts` | 21 | 6 | [`issues/contracts/`](issues/contracts/) |
-| M07 · Financial Engine (py-core) | `financial-engine` | 11 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
+| M07 · Financial Engine (py-core) | `financial-engine` | 12 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 6 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
@@ -85,10 +85,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | ENG-004 | financial-engine | M07 | [Add property tests for buffer and limit safety](issues/financial-engine/004-add-property-tests-for-buffer-and-limit-safety.md) | F-051 | M1 | P0 | S | After submission | ENG-003 | Ready for Assignment |
 | ENG-005 | financial-engine | M07 | [Model payment terms and their value function](issues/financial-engine/005-model-payment-terms-and-their-value-function.md) | F-035, F-052 | M1 | P0 | S | A | ENG-001 | Ready for Assignment |
 | ENG-006 | financial-engine | M07 | [Implement the baseline scheduler B1 (earliest deadline first)](issues/financial-engine/006-implement-the-baseline-scheduler-b1-earliest-deadline-first.md) | F-052, F-092 | M1 | P0 | S | A | ENG-003, ENG-005 | Ready for Assignment |
-| ENG-007 | financial-engine | M07 | [Implement the terms-aware scheduler](issues/financial-engine/007-implement-the-terms-aware-scheduler.md) | F-052 | M1 | P0 | L | A | ENG-006 | Ready for Assignment |
+| ENG-007 | financial-engine | M07 | [Implement the terms-aware scheduler with OR-Tools CP-SAT](issues/financial-engine/007-implement-the-terms-aware-scheduler-with-or-tools-cp-sat.md) | F-052 | M1 | P0 | L | A | ENG-006, ENG-012 | Ready for Assignment |
 | ENG-008 | financial-engine | M07 | [Expose plan scoring and binding-constraint reporting](issues/financial-engine/008-expose-plan-scoring-and-binding-constraint-reporting.md) | F-052, F-053 | M1 | P0 | S | A | ENG-007 | Ready for Assignment |
 | ENG-009 | financial-engine | M07 | [Implement invoice fingerprint normalization and hashing](issues/financial-engine/009-implement-invoice-fingerprint-normalization-and-hashing.md) | F-037 | M1 | P0 | S | A | ENG-001 | Ready for Assignment |
-| ENG-010 | financial-engine | M07 | [Build EIP-712 typed data for approvals, exceptions and attestations](issues/financial-engine/010-build-eip-712-typed-data-for-approvals-exceptions-and-attest.md) | F-038, F-025, F-056 | M1 | P0 | M | A | SC-017, ENG-001 | Ready for Assignment |
+| ENG-010 | financial-engine | M07 | [Build EIP-712 typed data for payment approvals and attestations](issues/financial-engine/010-build-eip-712-typed-data-for-payment-approvals-and-attestati.md) | F-038, F-025, F-056 | M1 | P0 | M | A | SC-017, ENG-001 | Ready for Assignment |
 | ENG-011 | financial-engine | M07 | [Implement the 7-day liquidity forecast](issues/financial-engine/011-implement-the-7-day-liquidity-forecast.md) | F-058 | M1 | P2 | S | After submission | ENG-003 | Ready for Assignment |
 | ENG-L01 | financial-engine | M07 | [Plan refills from other operational wallets](issues/financial-engine/l01-plan-refills-from-other-operational-wallets.md) | F-059 | Later | - | M | After submission | ENG-007, SC-L06 | Accepted |
 | ENG-L02 | financial-engine | M07 | [Add FX conversion and depeg checks for fiat invoices](issues/financial-engine/l02-add-fx-conversion-and-depeg-checks-for-fiat-invoices.md) | F-041 | Later | - | M | After submission | ENG-005 | Accepted |
@@ -264,3 +264,4 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | DOM-016 | domain-evidence | M20 | [Update the FigJam board from the repo diagrams](issues/domain-evidence/016-update-the-figjam-board-from-the-repo-diagrams.md) | — | M1 | P2 | S | After submission | — | Ready for Assignment |
 | DOM-017 | domain-evidence | M20 | [Choose the repository license](issues/domain-evidence/017-choose-the-repository-license.md) | — | M1 | P1 | S | After submission | — | Ready for Assignment |
 | SC-021 | contracts | M04 | [Implement the module factory with EIP-1167 clones](issues/contracts/021-implement-the-module-factory-with-eip-1167-clones.md) | F-012, F-021 | M1 | P0 | M | A | SC-002 | Ready for Assignment |
+| ENG-012 | financial-engine | M07 | [Implement the exhaustive oracle scheduler for tests](issues/financial-engine/012-implement-the-exhaustive-oracle-scheduler-for-tests.md) | F-052, F-092 | M1 | P0 | S | A | ENG-006 | Ready for Assignment |

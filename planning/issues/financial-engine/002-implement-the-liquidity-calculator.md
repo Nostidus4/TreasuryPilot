@@ -29,8 +29,9 @@ Deterministic shortage and refill numbers exactly as the domain spec defines.
 
 ## Scope
 
-- Functions for Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity, Cap
-- golden tests from source Domain §3.4 and UC-02 example
+- Functions available, funding_deficit, shortage, preferred_refill, source_capacity, refill_bound (amount + target − balance), cap per docs/modules/financial-engine §6
+- gas term fixed at 0 in M1
+- golden tests from §8.1
 
 ## Out of scope
 
@@ -46,8 +47,8 @@ Formulas are in docs/BUSINESS_RULES.md BR-032.
 
 ## Acceptance criteria
 
-- [ ] Domain §3.4 example: Shortage 250 and PreferredRefill 350
-- [ ] UC-02 example: both equal 90
+- [ ] Domain §3.4 example: Shortage 250, PreferredRefill 350, Bound 250
+- [ ] UC-02 example: Shortage, PreferredRefill and Bound all equal 90
 - [ ] All arithmetic is integer
 
 ## Testing requirements

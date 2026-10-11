@@ -1,4 +1,4 @@
-# [ENGINE] Build EIP-712 typed data for approvals, exceptions and attestations
+# [ENGINE] Build EIP-712 typed data for payment approvals and attestations
 
 | Field | Value |
 |---|---|
@@ -33,9 +33,9 @@ Python produces and verifies the same digests as the contract.
 
 ## Scope
 
-- Builders for the three typed structs
+- Builders for PaymentApproval (11 fields, docs/modules/contracts §6.1) and the plan attestation struct
 - verify_signature helpers including ERC-1271 call hook
-- tests against the golden vectors
+- tests against the golden vectors from SC-017
 
 ## Out of scope
 
@@ -43,7 +43,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Use eth-account. Never sign JSON directly.
+M04-D3: exceptions and duplicate overrides are Safe governance transactions, not EIP-712 structs. Use eth-account. Never sign JSON directly.
 
 ## Dependencies
 

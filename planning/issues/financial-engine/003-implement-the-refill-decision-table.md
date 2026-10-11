@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-031, BR-033, FR-404 |
+| **Traces to** | BR-031, BR-033, BR-036, FR-404 |
 | **Blocks** | ENG-004, ENG-006, ENG-011 |
 | **Submission cut** | A |
 
@@ -29,9 +29,10 @@ Turn calculator outputs into one of: no refill, refill preferred, refill shortag
 
 ## Scope
 
-- decide_refill returning a typed decision with reason code
-- no refill when Shortage is 0
-- stop when Cap < Shortage
+- decide_refill per docs/modules/financial-engine §8.1 returning none / preferred / shortage / stop with a reason code
+- refill amount = min(PreferredRefill, Bound) (M07-D4)
+- stop REFILL_BOUND when Shortage > Bound
+- stop SOURCE_INSUFFICIENT or OVER_REFILL_DAILY when Cap < Shortage
 
 ## Out of scope
 
@@ -39,7 +40,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Reason codes must come from the POL-001 catalogue.
+M07-D4: the other held requests in the same wallet refill for themselves when they are processed. Reason codes come from POL-001.
 
 ## Dependencies
 
@@ -47,8 +48,9 @@ Reason codes must come from the POL-001 catalogue.
 
 ## Acceptance criteria
 
-- [ ] The three Domain §3.4 scenarios (350 / 250 / stop) return the documented decisions
+- [ ] The five rows of the §8.1 table return exactly the documented decision and amount
 - [ ] No refill is proposed only to reach target
+- [ ] The refill amount never exceeds the contract bound (BR-036)
 
 ## Testing requirements
 

@@ -46,7 +46,7 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - INV-009: Implement submit-for-approval and flag acknowledgment
-- ENG-010: Build EIP-712 typed data for approvals, exceptions and attestations
+- ENG-010: Build EIP-712 typed data for payment approvals and attestations
 - IDN-008: Implement the maker-checker service and solo mode
 
 ## Acceptance criteria

@@ -46,7 +46,7 @@ M04-D3: no EIP-712 exception signature.
 ## Dependencies
 
 - MDT-003: Implement mandate activation and read-back
-- ENG-010: Build EIP-712 typed data for approvals, exceptions and attestations
+- ENG-010: Build EIP-712 typed data for payment approvals and attestations
 - INV-010: Implement approval typed data and signature verification
 
 ## Acceptance criteria

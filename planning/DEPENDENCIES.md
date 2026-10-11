@@ -204,8 +204,8 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | CHR-001 | Build the RPC client with failover | P0 | M | TRS-002 |
-| ENG-007 | Implement the terms-aware scheduler | P0 | L | ENG-006 |
-| ENG-010 | Build EIP-712 typed data for approvals, exceptions and attestations | P0 | M | SC-017, ENG-001 |
+| ENG-010 | Build EIP-712 typed data for payment approvals and attestations | P0 | M | SC-017, ENG-001 |
+| ENG-012 | Implement the exhaustive oracle scheduler for tests | P0 | S | ENG-006 |
 | IDN-006 | Implement RBAC dependencies and tenant isolation | P0 | M | IDN-005 |
 | INV-001 | Create invoice and request schema | P0 | S | MDT-001 |
 | MDT-002 | Validate mandate drafts and generate summary and diff | P0 | M | MDT-001, ENG-001 |
@@ -218,7 +218,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
-| ENG-008 | Expose plan scoring and binding-constraint reporting | P0 | S | ENG-007 |
+| ENG-007 | Implement the terms-aware scheduler with OR-Tools CP-SAT | P0 | L | ENG-006, ENG-012 |
 | EXE-001 | Create operations (outbox), transactions and gas ledger schema | P0 | S | INV-001 |
 | IDN-008 | Implement the maker-checker service and solo mode | P0 | S | IDN-006 |
 | INV-002 | Implement the request state machine | P0 | M | INV-001 |
@@ -231,11 +231,12 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | IDN-007 | Implement invites and membership management | P1 | M | IDN-006 |
 | POL-005 | Define canonical plan encoding and planHash | P1 | S | ENG-010 |
 
-### Wave 8 (13 tickets)
+### Wave 8 (14 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | CHR-003 | Implement the transaction tracker | P0 | M | CHR-001, EXE-001 |
+| ENG-008 | Expose plan scoring and binding-constraint reporting | P0 | S | ENG-007 |
 | INV-003 | Implement manual request creation and editing | P0 | M | INV-002, MDT-004 |
 | POL-003 | Validate limits, buffers, deadlines, coverage and unknown operations | P0 | M | POL-002 |
 | RCV-004 | Implement the review queue and routing | P0 | M | INV-002 |

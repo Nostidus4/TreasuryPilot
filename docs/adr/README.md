@@ -19,3 +19,4 @@ Accepted at gate G2 unless marked otherwise.
 | 012 | M1 chain and stablecoin | **Open (owner: Phúc)** |
 | 013 | Frontend: React + Vite + wagmi | Accepted (G2, 2026-10-11) |
 | 014 | Money as integer base units end-to-end | Accepted (G2, 2026-10-11) |
+| 015 | OR-Tools CP-SAT for the scheduler | Accepted (M07, 2026-10-11) |

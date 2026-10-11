@@ -44,7 +44,7 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- ENG-007: Implement the terms-aware scheduler
+- ENG-007: Implement the terms-aware scheduler with OR-Tools CP-SAT
 - SC-L06: Allow refill paths between operational wallets
 
 ## Acceptance criteria

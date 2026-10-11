@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-052 |
-| **Blocks** | ENG-007, AGT-014, OBS-005 |
+| **Blocks** | ENG-007, AGT-014, OBS-005, ENG-012 |
 | **Submission cut** | A |
 
 ## Context
@@ -31,9 +31,10 @@ The rule-based reference schedule every AI plan is compared against.
 
 ## Scope
 
-- schedule_edf(requests, state, policy, today) producing an ordered feasible schedule
-- ties by approval order
-- infeasible items with reasons
+- schedule_edf(requests, snapshot, policy) over the rolling horizon (≤ 30 UTC days, M07-D3)
+- order by (net_due_day, approved_seq)
+- per-day pay and refill caps, source drawdown, payee cooling, NEEDS_EXCEPTION for over-cap requests
+- infeasible items with the first blocking reason
 
 ## Out of scope
 
@@ -50,8 +51,9 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] Requests are ordered by deadline then approval time
-- [ ] Items blocked by cooling payee, daily cap or source capacity are reported with a reason
+- [ ] Requests are ordered by due day then approval order
+- [ ] Items blocked by cooling payee, daily cap, source capacity, refill bound or per-request cap are reported with the matching reason
+- [ ] Output is a Schedule with solver = EDF
 
 ## Testing requirements
 

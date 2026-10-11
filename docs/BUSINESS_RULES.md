@@ -55,7 +55,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 |---|---|---|---|
 | BR-030 | No agent-path transaction may leave any wallet below its minimum buffer (`F`), including the source wallet `T` (`F_T`). | C | R4 |
 | BR-031 | The target balance (`H ≥ F`) is a soft goal. The agent never refills only to reach the target when there is no shortage. | B | Domain §3.2 |
-| BR-032 | `Shortage = max(0, ProtectedOther + D + F − B)`; `PreferredRefill = max(0, ProtectedOther + D + H − B)`; `Cap = min(SourceCapacity, RemainingRefillBudget, PerRefillLimit)`. If `Cap ≥ Preferred` → refill Preferred. If `Shortage ≤ Cap < Preferred` → refill Shortage and report that the target was not reached. | B | Domain §3 |
+| BR-032 | `Shortage = max(0, ProtectedOther + D + F − B)`; `PreferredRefill = max(0, ProtectedOther + D + H − B)`; `Bound = max(0, D + H − B)` (BR-036); `Cap = min(SourceCapacity, RemainingRefillBudget, PerRefillLimit)`. If `Shortage > Bound` → STOP (`REFILL_BOUND`). If `Cap ≥ min(Preferred, Bound)` → refill `min(Preferred, Bound)`. If `Shortage ≤ Cap` otherwise → refill Shortage and report that the target was not reached. *(revised M07-D4)* | B | Domain §3, M07-D4 |
 | BR-033 | If `Cap < Shortage` → STOP and report. No partial refill or partial payment. | B | Domain §3.3 |
 | BR-034 | Every amount used for execution is computed by the deterministic calculator. An LLM never computes or asserts amounts, balances or permissions. | B | Autonomy §2–3 |
 | BR-036 | A REFILL must be bound to an approved request: it may only go to that request's paying wallet, at most once per request per wallet, and the destination balance after the refill must not exceed `approval.amount + target(wallet)`. | C | M04-D4 |
@@ -76,7 +76,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 |---|---|---|---|
 | BR-050 | Execution is sequential: at most one request's step chain executes at a time per treasury. | B | Use-Case §3 |
 | BR-051 | State (balances, mandate, counters, payee status) is re-read before every step. No step relies on a snapshot taken before an earlier step changed the state. | B | Use-Case §3 |
-| BR-052 | The scheduling objective, in strict priority: (1) no hard-rule violation; (2) meet every feasible deadline; (3) maximize confirmed discounts captured minus late fees incurred; (4) minimize transaction count and fees. Ties are broken by approval order. The baseline (B1) is earliest-deadline-first. | B | N2, O8 *(default)*, Problem Statement §2 |
+| BR-052 | The scheduling objective, in strict priority: (1) no hard-rule violation; (2) meet every feasible deadline; (3) maximize confirmed discounts captured minus late fees incurred (no cost-of-capital term); (4) minimize transaction count. Ties are broken by approval order. Planning uses a rolling horizon of up to 30 UTC days and executes only today's items. The baseline (B1) is earliest-deadline-first; the optimizer (B2) is CP-SAT (ADR-015). *(revised M07)* | B | N2, O8, M07-D2/D3/D6 |
 | BR-053 | A request is `Paid` only after the PAY transaction reaches the configured confirmation depth. `Paid` ≠ `Matched`. | B | UC-03 |
 | BR-054 | Multi-step plans are not atomic. Completed steps are recorded as completed; they are never silently rolled back or redone. | B | Domain §3.3 |
 | BR-055 | The rule-based fallback is used only when the AI is unavailable **and** data is complete **and** a tested template matches **and** no transaction is Unknown **and** there is no safety alert. It is recorded as `RULE_BASED`. | B | D6 |

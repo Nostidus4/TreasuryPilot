@@ -43,7 +43,7 @@ Do not hash JSON.
 
 ## Dependencies
 
-- ENG-010: Build EIP-712 typed data for approvals, exceptions and attestations
+- ENG-010: Build EIP-712 typed data for payment approvals and attestations
 
 ## Acceptance criteria
 

@@ -1,16 +1,16 @@
-# [ENGINE] Implement the terms-aware scheduler
+# [ENGINE] Implement the exhaustive oracle scheduler for tests
 
 | Field | Value |
 |---|---|
-| **ID** | ENG-007 |
+| **ID** | ENG-012 |
 | **Epic** | M07 · Financial Engine (py-core) |
 | **Module** | `financial-engine` ([spec](../../../docs/modules/financial-engine/README.md)) |
 | **Phase / Priority** | M1 / P0 |
-| **Size** | L (1.5–2 days; split if it grows) |
+| **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-052, FR-405 |
-| **Blocks** | ENG-008, ENG-L01, ENG-L03, AGT-010 |
+| **Traces to** | BR-052, ADR-015, M07-D8 |
+| **Blocks** | ENG-007 |
 | **Submission cut** | A |
 
 ## Context
@@ -18,29 +18,30 @@
 This ticket belongs to the epic **Financial Engine (py-core)**. It supports:
 
 - F-052: Terms-aware deterministic scheduler
+- F-092: AI evaluation harness (B1 vs B2)
 
 Problem behind this work (from `docs/FEATURES.md`):
 
 - **F-052** solves: P4: rules like "earliest due first" leave money on the table.
+- **F-092** solves: Answers "why AI?" with data, honestly.
 
 ## Objective
 
-Find the feasible schedule that maximizes value under the BR-052 priority order.
+A brute-force solver that proves the CP-SAT scheduler returns the true optimum on small cases.
 
 ## Scope
 
-- Exact search for N ≤ 12
-- greedy plus pairwise-exchange improvement for larger N
-- multi-day horizon honouring the daily cap per day
-- output per-item planned date and expected value
+- schedule_oracle(requests, snapshot, policy) enumerating every day assignment for N ≤ 8 and horizon ≤ 5
+- same constraint checks and score() as the other solvers
+- hypothesis generator of small instances shared with ENG-007
 
 ## Out of scope
 
-AI proposals (AGT-008).
+Use in production paths (tests and the benchmark only).
 
 ## Technical notes
 
-Lexicographic objective: violations (must be 0), missed feasible deadlines, value, tx count. Split into two PRs if it exceeds 2 days.
+Raises if N > 8 or horizon > 5. Shares the feasibility checker with EDF so all three solvers agree on what is feasible.
 
 ## Dependencies
 
@@ -48,14 +49,14 @@ Lexicographic objective: violations (must be 0), missed feasible deadlines, valu
 
 ## Acceptance criteria
 
-- [ ] On hand-computed cases the result equals the known optimum
-- [ ] It never schedules an item that the validator would block
-- [ ] It is never worse than B1 on the objective
+- [ ] On hand-computed cases it returns the known optimum
+- [ ] It refuses inputs above its limits
+- [ ] It runs 1,000 generated cases in under 60 s
 
 ## Testing requirements
 
 - Unit: optimum cases
-- property: never worse than EDF
+- generator smoke test
 
 ## Definition of Done
 

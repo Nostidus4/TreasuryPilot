@@ -31,9 +31,10 @@ Score any candidate plan (AI or deterministic) with the same objective and expla
 
 ## Scope
 
-- score(plan) → objective tuple
-- binding_constraints(plan) → list (daily cap, buffer, source capacity, cooling, deadline)
-- comparison helper
+- score(plan, requests, snapshot, policy) → (violations, missed feasible deadlines, −value, tx count)
+- binding_constraints(plan) → list (daily pay cap, daily refill cap, buffer, source capacity, refill bound, cooling, deadline) with the binding numbers
+- value lost by NEEDS_EXCEPTION items if granted (M07-D9)
+- comparison helper used for AI proposals
 
 ## Out of scope
 
@@ -45,7 +46,7 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- ENG-007: Implement the terms-aware scheduler
+- ENG-007: Implement the terms-aware scheduler with OR-Tools CP-SAT
 
 ## Acceptance criteria
 

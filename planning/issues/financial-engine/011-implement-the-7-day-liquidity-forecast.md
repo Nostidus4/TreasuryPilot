@@ -29,7 +29,8 @@ Project per-wallet balances against approved obligations and suggest early refil
 
 ## Scope
 
-- forecast(state, requests, policy, days=7) → daily projected balances, buffer-hit dates, suggested refills within limits
+- forecast(snapshot, requests, policy, days=7) → daily projected balances per wallet, buffer-hit days, suggested refills within limits and the refill bound
+- approved obligations only, drafts optional behind a flag
 
 ## Out of scope
 

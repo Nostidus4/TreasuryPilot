@@ -32,7 +32,8 @@ A typed, float-free foundation for all money logic.
 ## Scope
 
 - BaseUnits type (non-negative int) with parse/format using decimals
-- Pydantic models: Asset, WalletState, MandatePolicy, ApprovedRequest, PaymentTerms, Snapshot
+- frozen Pydantic models per docs/modules/financial-engine §4: Asset, LateFee, PaymentTerms, WalletState, Limits, PolicyView, Snapshot, ApprovedRequest, RefillDecision, ScheduledItem, Infeasible, Schedule
+- UTC day helpers (day number, 30-minute midnight cut-over, M07-D3)
 - JSON serialization of amounts as decimal strings
 
 ## Out of scope
