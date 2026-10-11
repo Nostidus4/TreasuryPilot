@@ -50,7 +50,7 @@ The AI makes TreasuryPilot **faster and smarter, never more powerful**. It reads
 | `ai_calls` | id, org_id, purpose, model, prompt_version, input_refs jsonb, tool_calls jsonb, output jsonb, validation_result enum(OK, SCHEMA_ERROR, POSTCHECK_FAILED, REJECTED), latency_ms, input_tokens, output_tokens, cost_usd_micros, error | append-only; write failure ⇒ result discarded (fail closed) |
 | `extractions` | id, document_id, ai_call_id, fields jsonb (value, page, span, confidence_note), terms jsonb, suspicious_instructions jsonb, confirmed_by/at | |
 | `copilot_threads` / `copilot_messages` | id, org_id, user_id / thread_id, role, content, citations jsonb, ai_call_id | |
-| `ai_budgets` | org_id, month, tokens_used, cost_usd_micros, limit_usd_micros | per-org monthly cap *(mặc định)* |
+| `ai_budgets` | org_id, month, tokens_used, cost_usd_micros, limit_usd_micros | per-org monthly cap |
 
 ## 5. State
 

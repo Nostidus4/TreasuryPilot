@@ -30,7 +30,7 @@ F-031 phần AI (FR-303–305) · F-035 điều khoản (FR-310) · F-036 câu c
 
 ## 4. Mô hình dữ liệu
 
-`ai_calls` (purpose, model, prompt_version, input_refs, tool_calls, output, validation_result: OK / SCHEMA_ERROR / POSTCHECK_FAILED / REJECTED, latency, tokens, chi phí, lỗi; append-only; ghi lỗi thì bỏ kết quả) · `extractions` (trường kèm trang và đoạn văn bản, điều khoản, câu chữ đáng ngờ, người xác nhận) · `copilot_threads` / `copilot_messages` (kèm trích dẫn) · `ai_budgets` (ngân sách theo tổ chức theo tháng *(mặc định)*).
+`ai_calls` (purpose, model, prompt_version, input_refs, tool_calls, output, validation_result: OK / SCHEMA_ERROR / POSTCHECK_FAILED / REJECTED, latency, tokens, chi phí, lỗi; append-only; ghi lỗi thì bỏ kết quả) · `extractions` (trường kèm trang và đoạn văn bản, điều khoản, câu chữ đáng ngờ, người xác nhận) · `copilot_threads` / `copilot_messages` (kèm trích dẫn) · `ai_budgets` (ngân sách theo tổ chức theo tháng).
 
 ## 5. Trạng thái
 
