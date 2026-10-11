@@ -83,7 +83,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-056 | An AI plan that is invalid or out of mandate is discarded and routed to NeedsReview. It is never repaired by loosening policy, and never hidden behind the fallback. | B | Autonomy §5 |
 | BR-057 | Allow and block reasons shown to users come from the validator. AI text is shown separately, labelled as explanation. | B, U | Autonomy §5 |
 | BR-058 | AI confidence scores are never used as a permission condition. | B | Autonomy §6 |
-| BR-059 | Execution requires a plan attestation over the exact plan (planHash, policy version, nonce, expiry). Steps that differ from the attested plan are rejected. | B (C where verified on-chain) | GA p.21–22 |
+| BR-059 | Execution requires a plan attestation over one request's exact execution plan (planHash, request and step ids, policy version, executor, validUntil ≤ 15 min, nonce, evidence digest), signed with the policy key (EIP-712). The signer rejects any step that differs from the attested plan, an expired attestation, or a nonce reused for another plan. *(revised M08)* | B (C where verified on-chain, Later) | GA p.21–22, M08-D1–D3 |
 
 ## 7. Recovery & emergency
 
@@ -95,6 +95,8 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-063 | When a pause is requested, the backend stops planning and submitting immediately, even before the on-chain pause is confirmed. | B | R9 |
 | BR-064 | Only the Owner can resume. The Guardian can only pause. | C | GA p.23 |
 | BR-065 | Circuit-breaker defaults: at least 3 contract rejections in 10 minutes, any AI plan out of mandate, a coverage drop, or a post-condition discrepancy → backend auto-pause and notify the Owner. | B | S7 *(default)* |
+| BR-066 | A request with a HIGH-severity flag can execute only if the approval records an explicit acknowledgment of that flag. A HIGH flag raised after the approval requires a new approval. *(new M08)* | B | FR-313, M08-D4 |
+| BR-067 | Every step is simulated with `eth_call` from the executor address on fresh state immediately before signing. A revert or an unavailable simulation blocks the step; the revert is decoded into a reason code. *(new M08)* | B | FR-505, M08-D5 |
 
 ## 8. Invoices & data
 

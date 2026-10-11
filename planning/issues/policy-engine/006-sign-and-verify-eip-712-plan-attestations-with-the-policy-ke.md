@@ -1,4 +1,4 @@
-# [POLICY] Sign and verify plan attestations
+# [POLICY] Sign and verify EIP-712 plan attestations with the policy key
 
 | Field | Value |
 |---|---|
@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-059, FR-412–413, ADR-006 |
+| **Traces to** | BR-059, FR-412–413, ADR-006, ADR-016 |
 | **Blocks** | EXE-004, EXE-005 |
 | **Submission cut** | A |
 
@@ -29,9 +29,12 @@ Only validator-approved plans can reach the signer.
 
 ## Scope
 
-- attest(plan, decision) using the policy key (loaded only in the core worker)
-- verify_attestation helper for the signer service
-- nonce and validUntil handling
+- PlanAttestation typed data per docs/modules/policy-engine §6.3 (domain 'TreasuryPilot Policy')
+- attest(plan, decision) only for ALLOW at stage PLAN, validUntil = now + 15 min, random 128-bit nonce, evidence digest
+- policy key from an encrypted keystore loaded only in the core worker
+- attestations table row persisted before use
+- verify_attestation(typed, sig, trusted_signers, now) for the signer
+- key rotation with two trusted addresses
 
 ## Out of scope
 
@@ -39,7 +42,7 @@ On-chain verification (SC-L04).
 
 ## Technical notes
 
-The policy key is distinct from the executor key.
+M08-D3. The policy key is distinct from the executor key and from any approver key.
 
 ## Dependencies
 
@@ -49,7 +52,9 @@ The policy key is distinct from the executor key.
 
 - [ ] An attestation over a modified plan fails verification
 - [ ] Expired attestations fail
-- [ ] Nonce reuse is rejected
+- [ ] A nonce reused for a different planHash is rejected
+- [ ] An approval signature never verifies as an attestation (different domain)
+- [ ] worker-ai has no access to the policy key
 
 ## Testing requirements
 

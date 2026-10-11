@@ -30,9 +30,9 @@ The only component that can sign executor transactions, and only for attested st
 ## Scope
 
 - FastAPI service with POST /sign-and-send and GET /health
-- verify attestation, expiry, nonce
-- check payload (function, args) matches the attested step
-- chain id allowlist
+- verify attestation per docs/modules/policy-engine §6.3 (trusted signer, validUntil, chain/module, recomputed planHash, payload equals step seq, nonce/step use)
+- own `signer` schema with attestation_uses (only the signer DB role can write)
+- same payload may be re-signed for gas replacement
 - simulate (eth_call) then sign and broadcast
 - shared-secret auth on the internal network
 
@@ -42,17 +42,20 @@ KMS (EXE-L01).
 
 ## Technical notes
 
-No database writes. No other endpoints.
+M08-D9: writes only to its own schema. No other endpoints.
 
 ## Dependencies
 
-- POL-006: Sign and verify plan attestations
+- POL-006: Sign and verify EIP-712 plan attestations with the policy key
+- POL-007: Simulate each step with eth_call before signing
 - SC-016: Write deployment scripts and the deployments manifest
 
 ## Acceptance criteria
 
 - [ ] A payload that differs from the attested step is refused with PAYLOAD_MISMATCH
+- [ ] A nonce reused with another planHash is refused NONCE_REUSED
 - [ ] A reverted simulation is not broadcast
+- [ ] Re-signing the same step payload for a replacement is allowed
 - [ ] A non-allowlisted chain id is refused
 
 ## Testing requirements

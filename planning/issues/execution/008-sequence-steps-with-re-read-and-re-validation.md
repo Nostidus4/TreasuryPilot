@@ -30,8 +30,9 @@ Each step runs only after the previous one is confirmed and the world still allo
 ## Scope
 
 - After confirmation take a new snapshot
-- re-run the validator for the next step
-- stop and mark partial on BLOCK
+- run validate_step (PRE_STEP) then simulate (SIMULATION) for the next step
+- request a new plan validation + attestation if the attestation expired
+- stop and mark PartiallyCompleted on any non-ALLOW, open a review item with the primary code
 - mark request Paying then Paid after PAY confirmation
 
 ## Out of scope
@@ -47,6 +48,7 @@ Follow the module spec and the relevant ADRs.
 - EXE-007: Implement the executor with outbox semantics
 - CHR-003: Implement the transaction tracker
 - POL-003: Validate limits, buffers, deadlines, coverage and unknown operations
+- POL-007: Simulate each step with eth_call before signing
 
 ## Acceptance criteria
 

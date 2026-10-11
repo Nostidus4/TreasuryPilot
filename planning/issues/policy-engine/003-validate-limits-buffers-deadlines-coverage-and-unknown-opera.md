@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-022, BR-030, BR-040, BR-051, BR-060, FR-411 |
-| **Blocks** | POL-004, EXE-008, AGT-007, AGT-010, CMP-002 |
+| **Traces to** | BR-022, BR-030, BR-036, BR-040–042, BR-051, BR-060, FR-411 |
+| **Blocks** | POL-004, EXE-008, AGT-007, AGT-010, CMP-002, POL-007 |
 | **Submission cut** | A |
 
 ## Context
@@ -29,12 +29,12 @@ Complete the validator so it mirrors every contract check plus the off-chain saf
 
 ## Scope
 
-- Per-request and daily limit checks using snapshot counters
-- buffer after each step
-- deadline feasibility
-- snapshot freshness and coverage
-- block if any operation is Unknown
-- over-cap only → NEEDS_APPROVAL unless a granted exception exists
+- REFILL checks mirroring M04 refill 1–9 and PAY checks mirroring pay 1–9
+- PLAN stage projects state after earlier steps
+- exception matching read from chain state (M08-D12)
+- aggregation per §8.2 (BLOCK > NEEDS_APPROVAL > ALLOW, primary by precedence)
+- warnings DEADLINE_MISSED / DISCOUNT_MISSED
+- validate_plan and validate_step entry points
 
 ## Out of scope
 
@@ -50,13 +50,15 @@ An exception never masks another failure.
 
 ## Acceptance criteria
 
+- [ ] Rows 1–6, 9 and 10 of docs/modules/policy-engine §8.5 give the documented decision and primary code
 - [ ] Missing or stale data never yields ALLOW
-- [ ] Over per-request cap alone yields NEEDS_APPROVAL
-- [ ] Over cap plus over daily yields BLOCK
+- [ ] An exception removes only OVER_PER_REQUEST_LIMIT
+- [ ] A late payment that passes all checks is ALLOW with DEADLINE_MISSED
 
 ## Testing requirements
 
-- Unit: decision matrix from Autonomy §4
+- Unit: decision matrix §8.5
+- property: dropping or staling any input never yields ALLOW, exception never masks a hard failure
 
 ## Definition of Done
 

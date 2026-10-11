@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-059, FR-412 |
+| **Traces to** | BR-059, BR-061, FR-412, M08-D10 |
 | **Blocks** | POL-006 |
 | **Submission cut** | A |
 
@@ -29,9 +29,10 @@ A plan has exactly one hash regardless of language or field order.
 
 ## Scope
 
-- Canonical ABI-style encoding of ordered steps (action, wallets, payee, amount, request id, step id)
-- planHash function
-- step id derivation (deterministic from request id, action, sequence)
+- EIP-712 Step struct hash
+- planHash = keccak(PLAN_TYPEHASH, requestId, treasury, chainId, keccak(stepHashes)) per docs/modules/policy-engine §8.3
+- stepId = keccak('TP_STEP_V1', requestId, action, wallet) per §8.4
+- golden vectors shared with TypeScript
 
 ## Out of scope
 
@@ -49,6 +50,8 @@ Do not hash JSON.
 
 - [ ] The same plan built twice has the same hash
 - [ ] Changing any money-relevant field changes the hash
+- [ ] A re-plan of the remaining steps keeps the same stepIds
+- [ ] Python and TypeScript agree on all vectors
 
 ## Testing requirements
 

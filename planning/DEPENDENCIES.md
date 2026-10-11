@@ -35,6 +35,7 @@ flowchart LR
   CHR -->|1| AUD
   CHR -->|2| EXE
   CHR -->|2| MDT
+  CHR -->|1| POL
   CHR -->|1| RCV
   CHR -->|1| TRS
   CHR -->|1| WEB
@@ -86,7 +87,7 @@ flowchart LR
   OBS -->|1| WEB
   POL -->|2| AGT
   POL -->|1| CMP
-  POL -->|3| EXE
+  POL -->|5| EXE
   RCV -->|1| WEB
   REC -->|1| RCV
   REC -->|1| WEB
@@ -95,7 +96,7 @@ flowchart LR
   SC -->|1| DOM
   SC -->|1| ENG
   SC -->|2| EXE
-  SC -->|1| POL
+  SC -->|2| POL
   SC -->|1| REC
   SC -->|2| TRS
   TRS -->|2| CHR
@@ -247,16 +248,15 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | CHR-005 | Index module and Safe events | P1 | M | CHR-001, SC-016 |
 | DEV-010 | Add testnet profile and VM deployment | P1 | M | DEV-002, DOM-001, SC-016 |
 | NTF-001 | Create the domain event bus and notification routing | P1 | M | INV-002 |
-| POL-006 | Sign and verify plan attestations | P1 | S | POL-005 |
+| POL-006 | Sign and verify EIP-712 plan attestations with the policy key | P1 | S | POL-005 |
 | WEB-017 | Build members and roles administration | P1 | M | WEB-002, IDN-007 |
 
-### Wave 9 (18 tickets)
+### Wave 9 (17 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-010 | Implement rule-based fallback templates | P0 | S | ENG-007, POL-003 |
 | CHR-002 | Implement block-consistent snapshots | P0 | M | CHR-001, TRS-004 |
-| EXE-005 | Build the signer service | P0 | L | POL-006, SC-016 |
 | INV-004 | Implement document upload to private storage | P0 | S | INV-003 |
 | INV-006 | Compute fingerprints at intake and block duplicates | P0 | S | INV-003, ENG-009 |
 | INV-008 | Implement payment-terms confirmation | P0 | S | INV-003, ENG-005 |
@@ -273,16 +273,15 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | NTF-003 | Add Telegram linking and delivery | P2 | M | NTF-001 |
 | TRS-008 | Build a Safe deployment transaction from the UI | P2 | S | TRS-004 |
 
-### Wave 10 (12 tickets)
+### Wave 10 (11 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-004 | Implement invoice extraction | P0 | M | AGT-003, AGT-002, INV-004 |
 | AGT-007 | Implement the read-only tool layer | P0 | M | CHR-002, ENG-008, POL-003 |
-| EXE-006 | Load the executor key from an encrypted keystore | P0 | S | EXE-005 |
-| EXE-007 | Implement the executor with outbox semantics | P0 | M | EXE-005, EXE-001 |
 | INV-007 | Implement deterministic anomaly checks | P0 | M | INV-006 |
 | MDT-003 | Implement mandate activation and read-back | P0 | M | MDT-002, TRS-006, CHR-003 |
+| POL-007 | Simulate each step with eth_call before signing | P0 | S | POL-003, POL-001, CHR-002, SC-016 |
 | SC-013 | Write the contract acceptance test suite (AT cases) | P0 | M | SC-009, SC-010, SC-012 |
 | TRS-007 | Compute coverage and handle acknowledgment | P0 | M | TRS-005, TRS-006 |
 | AUD-004 | Propagate coverage labels through the API | P1 | S | CHR-002 |
@@ -290,107 +289,120 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | WEB-020 | Build the CSV import UI | P1 | S | WEB-007, INV-005 |
 | SC-018 | Add the test router and swapForGas | P2 | M | SC-009 |
 
-### Wave 11 (17 tickets)
+### Wave 11 (14 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-005 | Extract and validate payment terms | P0 | S | AGT-004, ENG-005 |
 | AGT-006 | Detect instruction-like text in documents | P0 | S | AGT-004 |
 | AGT-008 | Implement the plan proposer | P0 | M | AGT-007 |
-| EXE-008 | Sequence steps with re-read and re-validation | P0 | M | EXE-007, CHR-003, POL-003 |
+| EXE-005 | Build the signer service | P0 | L | POL-006, POL-007, SC-016 |
 | INV-009 | Implement submit-for-approval and flag acknowledgment | P0 | S | INV-007, INV-008 |
 | MDT-007 | Implement pause and resume (backend and transactions) | P0 | M | MDT-003 |
 | POL-004 | Add differential tests between validator and contract | P0 | M | POL-003, SC-013 |
-| RCV-001 | Scan in-flight operations at startup | P0 | S | EXE-007 |
-| RCV-005 | Implement retry policy and error classification | P0 | S | EXE-007 |
 | SC-014 | Write the invariant and fuzz suite | P0 | M | SC-013 |
 | SC-015 | Run static analysis and write the findings report | P0 | S | SC-013 |
 | SC-020 | Write direct-call bypass tests | P0 | S | SC-013 |
 | WEB-004 | Build the treasury setup wizard | P0 | M | WEB-003, TRS-007 |
 | AGT-012 | Build the Copilot backend | P1 | L | AGT-007 |
 | DEV-006 | Write seed script for the local environment | P1 | M | SC-016, TRS-004, MDT-003, INV-003 |
-| EXE-010 | Track gas fees and alert on low executor gas | P1 | S | EXE-007 |
 | MDT-008 | Sync mandate expiry and status | P1 | S | MDT-003 |
 
-### Wave 12 (16 tickets)
+### Wave 12 (12 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-009 | Score AI proposals and select the plan | P0 | S | AGT-008, ENG-008 |
 | AGT-013 | Build the extraction accuracy eval | P0 | S | AGT-005, DOM-004 |
 | AGT-015 | Build the red-team suite runner | P0 | S | AGT-006, DOM-006 |
-| AUD-003 | Define the evidence bundle schema and exporter | P0 | M | AUD-001, EXE-008 |
 | DOM-011 | Write the security self-assessment report | P0 | M | DOM-009, SC-015 |
+| EXE-006 | Load the executor key from an encrypted keystore | P0 | S | EXE-005 |
+| EXE-007 | Implement the executor with outbox semantics | P0 | M | EXE-005, EXE-001 |
 | INV-010 | Implement approval typed data and signature verification | P0 | M | INV-009, ENG-010, IDN-008 |
-| RCV-002 | Resolve unknown operations from chain evidence | P0 | M | RCV-001, CHR-003 |
-| RCV-003 | Handle partial completion and resume | P0 | S | EXE-008 |
-| REC-001 | Verify post-conditions after each confirmed step | P0 | M | EXE-008 |
 | WEB-005 | Build the mandate editor with summary, diff and activation | P0 | L | WEB-004, MDT-003 |
 | WEB-006 | Build the payee registry UI | P0 | M | WEB-004, MDT-005 |
 | WEB-008 | Build upload and extraction review | P0 | L | WEB-007, AGT-005 |
 | WEB-010 | Build the treasury dashboard | P0 | M | WEB-004, CHR-002 |
 | AGT-016 | Build the Copilot numeric-fidelity suite | P1 | S | AGT-012, DOM-007 |
-| OBS-004 | Compute operational metrics | P1 | M | AUD-001, EXE-008 |
-| EXE-011 | Execute the swap-for-gas step on the test router | P2 | S | EXE-008, SC-018 |
 
-### Wave 13 (14 tickets)
+### Wave 13 (13 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-014 | Build the planner benchmark (B1 vs B2) | P0 | M | AGT-009, ENG-006, DOM-005 |
 | DOM-012 | Assemble the technical documentation for submission | P0 | M | DOM-011 |
 | EXE-003 | Implement the deadline trigger | P0 | M | EXE-002, INV-010, MDT-007, TRS-007 |
+| EXE-008 | Sequence steps with re-read and re-validation | P0 | M | EXE-007, CHR-003, POL-003, POL-007 |
 | INV-011 | Implement reject, cancel, invalidation and expiry | P0 | S | INV-010 |
-| RCV-007 | Automate the crash-recovery test | P0 | S | RCV-002 |
-| REC-002 | Build reconciliation records with classification | P0 | M | REC-001 |
+| RCV-001 | Scan in-flight operations at startup | P0 | S | EXE-007 |
+| RCV-005 | Implement retry policy and error classification | P0 | S | EXE-007 |
 | WEB-009 | Build the approval inbox and EIP-712 signing | P0 | L | WEB-008, INV-010 |
 | WEB-019 | Add pause and resume controls and status banners | P0 | S | WEB-010, MDT-007 |
-| DEV-007 | Build scenario runner CLI | P1 | M | DEV-006, AUD-003 |
+| EXE-010 | Track gas fees and alert on low executor gas | P1 | S | EXE-007 |
 | MDT-006 | Implement one-time exception requests and owner grant transactions | P1 | M | MDT-003, ENG-010, INV-010 |
-| OBS-005 | Compute the savings report | P1 | M | OBS-004, ENG-006 |
 | WEB-016 | Build the Copilot chat UI | P1 | M | WEB-010, AGT-012 |
-| RCV-006 | Implement circuit-breaker rules and auto-pause | P2 | M | REC-001, MDT-007 |
 | WEB-021 | Build the runway forecast chart | P2 | S | WEB-010, ENG-011 |
 
-### Wave 14 (7 tickets)
+### Wave 14 (9 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
+| AUD-003 | Define the evidence bundle schema and exporter | P0 | M | AUD-001, EXE-008 |
 | EXE-004 | Implement the planning pipeline task | P0 | L | EXE-003, CHR-002, ENG-008, POL-006, AGT-009 |
-| REC-003 | Implement match, discrepancy and auto-match | P0 | S | REC-002 |
+| RCV-002 | Resolve unknown operations from chain evidence | P0 | M | RCV-001, CHR-003 |
+| RCV-003 | Handle partial completion and resume | P0 | S | EXE-008 |
+| REC-001 | Verify post-conditions after each confirmed step | P0 | M | EXE-008 |
 | AGT-011 | Draft exception requests with a numeric post-check | P1 | S | AGT-001, MDT-006 |
+| EXE-009 | Add the operator run-now endpoint | P1 | S | EXE-003 |
+| OBS-004 | Compute operational metrics | P1 | M | AUD-001, EXE-008 |
+| EXE-011 | Execute the swap-for-gas step on the test router | P2 | S | EXE-008, SC-018 |
+
+### Wave 15 (6 tickets)
+
+| ID | Title | Prio | Size | Blocked by |
+|---|---|---|---|---|
+| RCV-007 | Automate the crash-recovery test | P0 | S | RCV-002 |
+| REC-002 | Build reconciliation records with classification | P0 | M | REC-001 |
+| WEB-011 | Build plan cards and the Why panel | P0 | M | WEB-010, EXE-004 |
+| DEV-007 | Build scenario runner CLI | P1 | M | DEV-006, AUD-003 |
+| OBS-005 | Compute the savings report | P1 | M | OBS-004, ENG-006 |
+| RCV-006 | Implement circuit-breaker rules and auto-pause | P2 | M | REC-001, MDT-007 |
+
+### Wave 16 (6 tickets)
+
+| ID | Title | Prio | Size | Blocked by |
+|---|---|---|---|---|
+| REC-003 | Implement match, discrepancy and auto-match | P0 | S | REC-002 |
+| WEB-012 | Build the live execution timeline | P0 | M | WEB-011, NTF-002 |
+| WEB-013 | Build the exception and review console | P0 | L | WEB-011, RCV-004, MDT-006 |
 | DEV-008 | Write the demo runbook | P1 | S | DEV-007 |
 | DEV-009 | Build the reliability run harness | P1 | S | DEV-007 |
-| EXE-009 | Add the operator run-now endpoint | P1 | S | EXE-003 |
 | WEB-018 | Build metrics and savings pages | P1 | M | WEB-010, OBS-005 |
 
-### Wave 15 (4 tickets)
+### Wave 17 (4 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | DOM-014 | Script and record the 5-minute demo video | P0 | M | DEV-008 |
-| WEB-011 | Build plan cards and the Why panel | P0 | M | WEB-010, EXE-004 |
 | REC-004 | Export reconciliation CSV and journal lines | P1 | M | REC-003 |
+| WEB-023 | Write the Playwright end-to-end happy path | P1 | M | WEB-012 |
 | REC-005 | Publish on-chain payment attestations | P2 | S | REC-003, SC-019 |
 
-### Wave 16 (3 tickets)
+### Wave 18 (1 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
-| WEB-012 | Build the live execution timeline | P0 | M | WEB-011, NTF-002 |
-| WEB-013 | Build the exception and review console | P0 | L | WEB-011, RCV-004, MDT-006 |
 | WEB-014 | Build the reconciliation view and export | P0 | M | WEB-010, REC-004 |
 
-### Wave 17 (2 tickets)
+### Wave 19 (1 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | WEB-022 | Run the accessibility and responsive pass | P1 | S | WEB-014 |
-| WEB-023 | Write the Playwright end-to-end happy path | P1 | M | WEB-012 |
 
 ## 4. Longest blocking chain
 
 The longest chain of blocking dependencies. Anything on it that slips delays the end of M1.
 
-DEV-001 → SC-001 → SC-002 → SC-005 → SC-017 → ENG-010 → POL-005 → POL-006 → EXE-005 → EXE-007 → EXE-008 → REC-001 → REC-002 → REC-003 → REC-004 → WEB-014 → WEB-022
+DEV-001 → DEV-002 → IDN-001 → TRS-001 → TRS-002 → CHR-001 → TRS-003 → TRS-004 → CHR-002 → POL-007 → EXE-005 → EXE-007 → EXE-008 → REC-001 → REC-002 → REC-003 → REC-004 → WEB-014 → WEB-022
 

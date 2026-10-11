@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-001, BR-010, BR-013, BR-015, FR-410 |
+| **Traces to** | BR-001–005, BR-010, BR-013, BR-015, BR-066, FR-313, FR-410 |
 | **Blocks** | POL-003 |
 | **Submission cut** | A |
 
@@ -29,14 +29,18 @@ Deterministic checks that a step is authorized before it is attested.
 
 ## Scope
 
-- Checks: approval valid for the current revision and approver set, not expired
-- mandate active, not paused, not expired, version matches
+- ValidationContext model (§4.1)
+- gates: pause requested, circuit open, unknown operations, coverage, snapshot freshness (≤ 30 s and ≤ 5 blocks), data missing, chain/asset match
+- request and approval checks: present, typed fields equal current request (APPROVAL_STALE), signature/ERC-1271, current approver set, expiry, maker-checker with solo mode
+- HIGH flags acknowledged in the approval and none raised after it (FLAG_UNACKNOWLEDGED)
+- screening
+- mandate lifecycle, executor
 - payee active and cooling over
-- action and path allowed
+- plan shape checks (PLAN_MALFORMED)
 
 ## Out of scope
 
-Limits and liquidity (POL-003).
+Limits, liquidity and aggregation (POL-003).
 
 ## Technical notes
 
@@ -50,7 +54,9 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] Each failed condition returns its specific reason code
-- [ ] Multiple failures return all codes with the most restrictive decision
+- [ ] A failed gate skips step checks and marks them skipped
+- [ ] An unacknowledged HIGH flag, or one raised after approval, yields FLAG_UNACKNOWLEDGED
+- [ ] Rows 7, 8 and 11 of docs/modules/policy-engine §8.5 give the documented result
 
 ## Testing requirements
 

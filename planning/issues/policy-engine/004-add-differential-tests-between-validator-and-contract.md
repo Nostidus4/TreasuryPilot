@@ -31,8 +31,9 @@ Catch any drift between off-chain validation and on-chain enforcement.
 
 ## Scope
 
-- Test harness that runs the same cases through the Python validator and the contract on Anvil
-- cases: all AT-05 variants, limits boundaries, cooling, pause, expiry
+- Harness running the same cases through validate_step and the module on Anvil
+- cases: all AT-05 variants, limit boundaries (exactly at cap, cap + 1), cooling edges, pause, expiry, refill bound, exceptions, duplicate allowance
+- compare ALLOW vs success and decoded revert vs primary code
 
 ## Out of scope
 
@@ -50,6 +51,7 @@ Runs in CI integration stage.
 ## Acceptance criteria
 
 - [ ] For every case the validator's ALLOW/not-ALLOW equals contract success/revert
+- [ ] For every revert the decoded code equals the validator's primary code
 - [ ] A report lists the cases
 
 ## Testing requirements

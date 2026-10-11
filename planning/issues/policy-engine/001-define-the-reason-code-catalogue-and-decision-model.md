@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-057, API_SPEC §9 |
-| **Blocks** | POL-002 |
+| **Blocks** | POL-002, POL-007 |
 | **Submission cut** | A |
 
 ## Context
@@ -29,8 +29,10 @@ One list of reason codes shared by the validator, API errors, UI and contract er
 
 ## Scope
 
-- Enum of reason codes with severity and default decision (ALLOW / NEEDS_APPROVAL / BLOCK)
-- Decision model {decision, reasonCodes, checks}
+- ReasonCode enum per docs/modules/policy-engine §6.4 (group, precedence, default decision, contract error, BR)
+- warning codes DEADLINE_MISSED, DISCOUNT_MISSED, TARGET_NOT_REACHED
+- Decision and Check models per §4.1 (decision, primary, codes, warnings, checks, stage, step_seq, policy_version, snapshot_block)
+- decode_revert(selector) → code
 - docs table generated from the enum
 
 ## Out of scope
@@ -48,7 +50,9 @@ Names must match contract custom errors where one exists.
 ## Acceptance criteria
 
 - [ ] Every code in API_SPEC §9 exists in the enum
-- [ ] A test fails if a contract error has no matching code
+- [ ] A test fails if a module custom error (M04 §6.4) has no matching code
+- [ ] decode_revert maps every module error selector
+- [ ] Precedence order matches §6.4 group order
 
 ## Testing requirements
 

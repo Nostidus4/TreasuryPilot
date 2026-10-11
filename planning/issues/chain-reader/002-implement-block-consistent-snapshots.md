@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-051, FR-401–402 |
-| **Blocks** | EXE-004, AGT-007, AUD-004, WEB-010 |
+| **Blocks** | EXE-004, AGT-007, AUD-004, WEB-010, POL-007 |
 | **Submission cut** | A |
 
 ## Context

@@ -113,9 +113,9 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-407 | The system shall score the AI proposal with the deterministic objective and choose the better feasible plan, logging the comparison. | F-053 | BR-052 |
 | FR-408 | The system shall discard invalid or out-of-mandate AI plans and route them to NeedsReview. | F-053 | BR-056 |
 | FR-409 | The system shall use a tested rule-based template when the AI is unavailable, only under the BR-055 conditions, and record `RULE_BASED`. | F-054 | BR-055 |
-| FR-410 | The system shall validate every plan and step, returning ALLOW / NEEDS_APPROVAL / BLOCK with reason codes. | F-055 | BR-010 |
+| FR-410 | The system shall validate every execution plan (stage PLAN) and every step on a fresh snapshot (stage PRE_STEP) and by simulation (stage SIMULATION), returning ALLOW / NEEDS_APPROVAL / BLOCK with all failing reason codes, a primary code, and warnings. | F-055 | BR-010, BR-051, BR-067 |
 | FR-411 | The system shall never return ALLOW when required data is missing or any operation is Unknown. | F-055 | BR-060 |
-| FR-412 | The system shall attest each ALLOWed plan by signing EIP-712 data that binds planHash, request and step ids, policy version, executor, validUntil, nonce and evidence digest. | F-056 | BR-059 |
+| FR-412 | The system shall attest each ALLOWed execution plan (one request) by signing EIP-712 `PlanAttestation` data that binds planHash, request and step ids, policy version, executor, validUntil, nonce and evidence digest. | F-056 | BR-059 |
 | FR-413 | The system shall reject execution of a step that differs from its attested plan, or whose attestation has expired. | F-056 | BR-059 |
 | FR-414 | The system shall draft an exception request for the Owner on NEEDS_APPROVAL, with the numbers taken from the engine. | F-057 | BR-043 |
 | FR-415 | The system should project 7-day runway per wallet from approved obligations, and suggest pre-emptive refills within the limits. | F-058 | |

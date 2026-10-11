@@ -57,7 +57,7 @@ Split into two PRs if needed: deterministic path first, then AI integration.
 - EXE-003: Implement the deadline trigger
 - CHR-002: Implement block-consistent snapshots
 - ENG-008: Expose plan scoring and binding-constraint reporting
-- POL-006: Sign and verify plan attestations
+- POL-006: Sign and verify EIP-712 plan attestations with the policy key
 - AGT-009: Score AI proposals and select the plan
 
 ## Acceptance criteria

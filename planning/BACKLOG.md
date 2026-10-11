@@ -9,9 +9,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 129 | 46 | 10 | 185 |
+| M1 | 130 | 46 | 10 | 186 |
 | Later | – | – | – | 38 |
-| **All** | | | | **223** |
+| **All** | | | | **224** |
 
 ## Epics
 
@@ -20,7 +20,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M19 · Developer Experience & Quality | `devex` | 11 | 0 | [`issues/devex/`](issues/devex/) |
 | M04 · Smart Contracts | `contracts` | 21 | 6 | [`issues/contracts/`](issues/contracts/) |
 | M07 · Financial Engine (py-core) | `financial-engine` | 12 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
-| M08 · Policy Engine & Attestation | `policy-engine` | 6 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
+| M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 8 | 1 | [`issues/mandate/`](issues/mandate/) |
@@ -98,7 +98,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | POL-003 | policy-engine | M08 | [Validate limits, buffers, deadlines, coverage and unknown operations](issues/policy-engine/003-validate-limits-buffers-deadlines-coverage-and-unknown-opera.md) | F-055 | M1 | P0 | M | A | POL-002 | Ready for Assignment |
 | POL-004 | policy-engine | M08 | [Add differential tests between validator and contract](issues/policy-engine/004-add-differential-tests-between-validator-and-contract.md) | F-055, F-163 | M1 | P0 | M | After submission | POL-003, SC-013 | Ready for Assignment |
 | POL-005 | policy-engine | M08 | [Define canonical plan encoding and planHash](issues/policy-engine/005-define-canonical-plan-encoding-and-planhash.md) | F-056 | M1 | P1 | S | A | ENG-010 | Ready for Assignment |
-| POL-006 | policy-engine | M08 | [Sign and verify plan attestations](issues/policy-engine/006-sign-and-verify-plan-attestations.md) | F-056 | M1 | P1 | S | A | POL-005 | Ready for Assignment |
+| POL-006 | policy-engine | M08 | [Sign and verify EIP-712 plan attestations with the policy key](issues/policy-engine/006-sign-and-verify-eip-712-plan-attestations-with-the-policy-ke.md) | F-056 | M1 | P1 | S | A | POL-005 | Ready for Assignment |
 | IDN-001 | identity | M01 | [Create identity database schema and migrations](issues/identity/001-create-identity-database-schema-and-migrations.md) | F-001–F-005 | M1 | P0 | S | A | DEV-002 | Ready for Assignment |
 | IDN-002 | identity | M01 | [Implement magic-link login, sessions and CSRF](issues/identity/002-implement-magic-link-login-sessions-and-csrf.md) | F-001 | M1 | P0 | M | A | IDN-001 | Ready for Assignment |
 | IDN-003 | identity | M01 | [Rate-limit authentication endpoints](issues/identity/003-rate-limit-authentication-endpoints.md) | F-001 | M1 | P0 | S | B | IDN-002 | Ready for Assignment |
@@ -153,10 +153,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | EXE-002 | execution | M10 | [Set up Celery with core and ai queues](issues/execution/002-set-up-celery-with-core-and-ai-queues.md) | F-060, F-061 | M1 | P0 | M | A | DEV-002 | Ready for Assignment |
 | EXE-003 | execution | M10 | [Implement the deadline trigger](issues/execution/003-implement-the-deadline-trigger.md) | F-060 | M1 | P0 | M | A | EXE-002, INV-010, MDT-007, TRS-007 | Ready for Assignment |
 | EXE-004 | execution | M10 | [Implement the planning pipeline task](issues/execution/004-implement-the-planning-pipeline-task.md) | F-052–F-056 | M1 | P0 | L | A | EXE-003, CHR-002, ENG-008, POL-006, AGT-009 | Ready for Assignment |
-| EXE-005 | execution | M10 | [Build the signer service](issues/execution/005-build-the-signer-service.md) | F-061 | M1 | P0 | L | A | POL-006, SC-016 | Ready for Assignment |
+| EXE-005 | execution | M10 | [Build the signer service](issues/execution/005-build-the-signer-service.md) | F-061 | M1 | P0 | L | A | POL-006, POL-007, SC-016 | Ready for Assignment |
 | EXE-006 | execution | M10 | [Load the executor key from an encrypted keystore](issues/execution/006-load-the-executor-key-from-an-encrypted-keystore.md) | F-061 | M1 | P0 | S | A | EXE-005 | Ready for Assignment |
 | EXE-007 | execution | M10 | [Implement the executor with outbox semantics](issues/execution/007-implement-the-executor-with-outbox-semantics.md) | F-061–F-063 | M1 | P0 | M | A | EXE-005, EXE-001 | Ready for Assignment |
-| EXE-008 | execution | M10 | [Sequence steps with re-read and re-validation](issues/execution/008-sequence-steps-with-re-read-and-re-validation.md) | F-061 | M1 | P0 | M | A | EXE-007, CHR-003, POL-003 | Ready for Assignment |
+| EXE-008 | execution | M10 | [Sequence steps with re-read and re-validation](issues/execution/008-sequence-steps-with-re-read-and-re-validation.md) | F-061 | M1 | P0 | M | A | EXE-007, CHR-003, POL-003, POL-007 | Ready for Assignment |
 | EXE-009 | execution | M10 | [Add the operator run-now endpoint](issues/execution/009-add-the-operator-run-now-endpoint.md) | F-060 | M1 | P1 | S | After submission | EXE-003 | Ready for Assignment |
 | EXE-010 | execution | M10 | [Track gas fees and alert on low executor gas](issues/execution/010-track-gas-fees-and-alert-on-low-executor-gas.md) | F-066 | M1 | P1 | S | After submission | EXE-007 | Ready for Assignment |
 | EXE-011 | execution | M10 | [Execute the swap-for-gas step on the test router](issues/execution/011-execute-the-swap-for-gas-step-on-the-test-router.md) | F-064 | M1 | P2 | S | After submission | EXE-008, SC-018 | Ready for Assignment |
@@ -265,3 +265,4 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | DOM-017 | domain-evidence | M20 | [Choose the repository license](issues/domain-evidence/017-choose-the-repository-license.md) | — | M1 | P1 | S | After submission | — | Ready for Assignment |
 | SC-021 | contracts | M04 | [Implement the module factory with EIP-1167 clones](issues/contracts/021-implement-the-module-factory-with-eip-1167-clones.md) | F-012, F-021 | M1 | P0 | M | A | SC-002 | Ready for Assignment |
 | ENG-012 | financial-engine | M07 | [Implement the exhaustive oracle scheduler for tests](issues/financial-engine/012-implement-the-exhaustive-oracle-scheduler-for-tests.md) | F-052, F-092 | M1 | P0 | S | A | ENG-006 | Ready for Assignment |
+| POL-007 | policy-engine | M08 | [Simulate each step with eth_call before signing](issues/policy-engine/007-simulate-each-step-with-eth-call-before-signing.md) | F-055, F-061 | M1 | P0 | S | A | POL-003, POL-001, CHR-002, SC-016 | Ready for Assignment |

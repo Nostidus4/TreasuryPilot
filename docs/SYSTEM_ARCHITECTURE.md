@@ -143,8 +143,8 @@ Full specs are in `docs/modules/`. Mapping:
 |---|---|---|
 | `configureMandate(...)`, `setApprovers`, `addPayee`, `deactivatePayee`, `resume`, `revoke` | The Safe T itself (Owner governance via Safe tx) | owner path only; version++ (BR-015/016) |
 | `pause()` | Safe T or Guardian address | idempotent (BR-064) |
-| `refill(PaymentApproval approval, bytes approverSig, stepId, toWallet, amount, attestation)` | executor | active, not paused, path allowed, refill limits, `F_T` buffer, step unused, **valid approval signature for the request being funded** and `toWallet` = the approval's paying wallet (BR-010/012/023/030) |
-| `pay(PaymentApproval approval, bytes approverSig, Exception? ex, bytes? ownerSig, stepId, attestation)` | executor | EIP-712 approval valid & approver in the current set; payee active (cooling over); fingerprint and request unused; per-request limit or valid exception; daily limit; buffer after; not paused, not expired (BR-001/003/004/013/022/024/030/040–042/071) |
+| `refill(PaymentApproval approval, bytes approverSig, stepId, toWallet, amount)` | executor | active, not paused, path allowed, refill limits, `F_T` buffer, step unused, **valid approval signature for the request being funded** and `toWallet` = the approval's paying wallet (BR-010/012/023/030) |
+| `pay(PaymentApproval approval, bytes approverSig, stepId)` — exceptions are granted beforehand by Safe T governance (M04-D3); the plan attestation is checked by the signer, not on-chain (M08) | executor | EIP-712 approval valid & approver in the current set; payee active (cooling over); fingerprint and request unused; per-request limit or valid exception; daily limit; buffer after; not paused, not expired (BR-001/003/004/013/022/024/030/040–042/071) |
 | `swapForGas(...)` (P2) | executor | router/pair allowlist; swap budget; minOut; exact allowance → 0 (BR-081/082) |
 
 No generic `execute`. No `delegatecall`. No owner or module changes from the module.
