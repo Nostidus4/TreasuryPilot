@@ -84,7 +84,7 @@ Các id (request, step, operation, idempotency key) giữ nguyên qua mọi lầ
 | INFRA | Operator | RETRY |
 | UNEXPECTED_OUTFLOW | Owner, Finance | ACKNOWLEDGE |
 
-SLA: NEEDS_AUTHORITY 24 giờ, FEE_APPROVAL tới giờ thực thi an toàn cuối, UNCERTAIN_TX 1 giờ, còn lại 48 giờ; quá hạn thì báo Owner *(mặc định)*.
+SLA: NEEDS_AUTHORITY 24 giờ, FEE_APPROVAL tới giờ thực thi an toàn cuối, UNCERTAIN_TX 1 giờ, còn lại 48 giờ; quá hạn thì báo Owner.
 
 **8.4 Luật circuit (mặc định BR-065)**
 
@@ -94,13 +94,13 @@ SLA: NEEDS_AUTHORITY 24 giờ, FEE_APPROVAL tới giờ thực thi an toàn cu�
 | Plan AI ngoài mandate (AI_PLAN_REJECTED) | ≥ 1 | PAUSE |
 | Coverage giảm (COMPLETE → khác) | bất kỳ | PAUSE |
 | Hậu điều kiện DISCREPANCY | bất kỳ | PAUSE |
-| Tiền ra bất thường (BR-069) | bất kỳ | ALERT (PAUSE nếu > 20 % số dư ví) *(mặc định)* |
+| Tiền ra bất thường (BR-069) | bất kỳ | ALERT (PAUSE nếu > 20 % số dư ví) |
 
 PAUSE = pause backend + sentinel pause on-chain (ADR-017) + báo Owner. Nghỉ 30 phút trước khi cùng luật cảnh báo lại. Chỉ Owner resume.
 
 ## 9. Cấu hình
 
-Quét mỗi 60 giây; leo thang sau 30 phút; thử lại tối đa 6 lần; SLA như §8.3; luật circuit như §8.4 (Owner được siết chặt, không được tắt luật PAUSE ở M1 *(mặc định)*).
+Quét mỗi 60 giây; leo thang sau 30 phút; thử lại tối đa 6 lần; SLA như §8.3; luật circuit như §8.4 (Owner được siết chặt, không được tắt luật PAUSE ở M1).
 
 ## 10. Bảo mật
 

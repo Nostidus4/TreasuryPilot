@@ -115,7 +115,7 @@ Ids (request, step, operation, idempotency key) never change across attempts (BR
 | INFRA | Operator | RETRY |
 | UNEXPECTED_OUTFLOW | Owner, Finance | ACKNOWLEDGE |
 
-SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCERTAIN_TX 1 h, others 48 h; overdue items escalate to Owner. *(mặc định)*
+SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCERTAIN_TX 1 h, others 48 h; overdue items escalate to Owner.
 
 ### 8.4 Circuit rules (BR-065 defaults)
 
@@ -125,13 +125,13 @@ SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCE
 | AI plan out of mandate (AI_PLAN_REJECTED) | ≥ 1 | PAUSE |
 | Coverage drop (COMPLETE → other) | any | PAUSE |
 | Post-condition DISCREPANCY | any | PAUSE |
-| Unexpected outflow (BR-069) | any | ALERT (PAUSE if > 20 % of wallet balance) *(mặc định)* |
+| Unexpected outflow (BR-069) | any | ALERT (PAUSE if > 20 % of wallet balance) |
 
 PAUSE = backend pause + sentinel on-chain pause (ADR-017) + notify Owner. Cool-down 30 min before the same rule alerts again. Only the Owner resumes.
 
 ## 9. Configuration and defaults
 
-Scan interval 60 s; escalation after 30 min; retry max 6; SLAs per §8.3; circuit rules per §8.4 (Owner can tighten, not disable PAUSE rules in M1 *(mặc định)*).
+Scan interval 60 s; escalation after 30 min; retry max 6; SLAs per §8.3; circuit rules per §8.4 (Owner can tighten, not disable PAUSE rules in M1).
 
 ## 10. Security
 
