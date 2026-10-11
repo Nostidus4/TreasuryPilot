@@ -1,6 +1,6 @@
 # M12 · Recovery & Exceptions (`worker` + `api`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/recovery/` · **Code:** `services/worker/.../recovery`, `services/api/.../review` · **Epic:** `[EPIC] M12 · Recovery & Exceptions`
+**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/recovery/` · **Code:** `services/worker/.../recovery`, `services/api/.../review` · **Epic:** `[EPIC] M12 · Recovery & Exceptions`
 **Decisions:** M12-D1 … M12-D11 (§14)
 
 ---
@@ -160,13 +160,13 @@ RCV-001 scan → RCV-002 resolution → RCV-005 retry → RCV-003 partial/resume
 | ID | Decision |
 |---|---|
 | M12-D1 | Resolution order: receipt → nonce → module flags; never AI; never resend while Unknown. |
-| M12-D2 | Escalate Unknown after 30 min to UNCERTAIN_TX; treasury stays blocked. *(mặc định)* |
+| M12-D2 | Escalate Unknown after 30 min to UNCERTAIN_TX; treasury stays blocked. (reviewed) |
 | M12-D3 | Partial completion: REPLAN remaining steps with the same step ids, or CANCEL leaving funds in place. |
 | M12-D4 | One open review item per (request, type); optimistic version. |
-| M12-D5 | Routing and SLAs per §8.3. *(mặc định)* |
+| M12-D5 | Routing and SLAs per §8.3. (reviewed) |
 | M12-D6 | Retry only before broadcast; after broadcast use the tracker path. |
 | M12-D7 | Circuit rules per §8.4; PAUSE uses the sentinel. |
-| M12-D8 | Unexpected outflow: ALERT, PAUSE above 20 % of wallet balance. *(mặc định)* |
-| M12-D9 | PAUSE rules can be tightened but not disabled in M1. *(mặc định)* |
-| M12-D10 | Cool-down 30 min per rule. *(mặc định)* |
+| M12-D8 | Unexpected outflow: ALERT, PAUSE above 20 % of wallet balance. (reviewed) |
+| M12-D9 | PAUSE rules can be tightened but not disabled in M1. (reviewed) |
+| M12-D10 | Cool-down 30 min per rule. (reviewed) |
 | M12-D11 | New review types FEE_APPROVAL and UNEXPECTED_OUTFLOW (from M03, M06). |

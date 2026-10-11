@@ -1,6 +1,6 @@
 # M12 · Phục hồi & ngoại lệ vận hành
 
-**Nguồn chuẩn:** `docs/modules/recovery/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review)
+**Nguồn chuẩn:** `docs/modules/recovery/README.md` · **Trạng thái:** Chi tiết, đã review với trưởng nhóm (11/10/2026)
 
 ## 1. Mục đích và ranh giới
 
@@ -123,13 +123,13 @@ RCV-001 quét → RCV-002 xử lý Unknown → RCV-005 thử lại → RCV-003 d
 | ID | Quyết định |
 |---|---|
 | M12-D1 | Thứ tự xử lý: receipt → nonce → cờ module; không bao giờ dùng AI; không gửi lại khi còn Unknown. |
-| M12-D2 | Unknown quá 30 phút → UNCERTAIN_TX; treasury vẫn khóa. *(mặc định)* |
+| M12-D2 | Unknown quá 30 phút → UNCERTAIN_TX; treasury vẫn khóa. (đã review) |
 | M12-D3 | Dở dang: REPLAN các bước còn lại với cùng step id, hoặc CANCEL để tiền nằm yên. |
 | M12-D4 | Mỗi (request, loại) một mục mở; version lạc quan. |
-| M12-D5 | Định tuyến và SLA như §8.3. *(mặc định)* |
+| M12-D5 | Định tuyến và SLA như §8.3. (đã review) |
 | M12-D6 | Chỉ thử lại trước khi gửi; sau khi gửi đi đường tracker. |
 | M12-D7 | Luật circuit như §8.4; PAUSE dùng sentinel. |
-| M12-D8 | Tiền ra bất thường: ALERT, PAUSE khi > 20 % số dư ví. *(mặc định)* |
-| M12-D9 | Luật PAUSE chỉ được siết, không được tắt ở M1. *(mặc định)* |
-| M12-D10 | Nghỉ 30 phút mỗi luật. *(mặc định)* |
+| M12-D8 | Tiền ra bất thường: ALERT, PAUSE khi > 20 % số dư ví. (đã review) |
+| M12-D9 | Luật PAUSE chỉ được siết, không được tắt ở M1. (đã review) |
+| M12-D10 | Nghỉ 30 phút mỗi luật. (đã review) |
 | M12-D11 | Thêm loại review FEE_APPROVAL và UNEXPECTED_OUTFLOW (từ M03, M06). |
