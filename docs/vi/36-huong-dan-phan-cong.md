@@ -62,11 +62,12 @@ Sau đó đi theo thứ tự ở mục 13 của từng module và các đợt tr
 | Mảng | Người làm | Module / ticket | Người review mặc định |
 |---|---|---|---|
 | Frontend | **Nostidus4** (Tân) | WEB | therealtunguyen |
-| Backend | **Nostidus4** (Tân) | IDN, TRS, MDT, INV, CHR, ENG, POL, EXE, REC, RCV, NTF, CMP, AUD | therealtunguyen |
+| Backend (phục vụ web và nghiệp vụ) | **Nostidus4** (Tân) | IDN, TRS, MDT, INV, ENG, REC, RCV, NTF, CMP, AUD (75 ticket, 57 ngày công, 72 %) | therealtunguyen |
+| Backend (lõi thực thi) | **therealtunguyen** (Tú) | EXE, POL, CHR (27 ticket, 22,5 ngày công, 28 %) | Nostidus4 |
 | Hạ tầng | **therealtunguyen** | DEV, OBS | Nostidus4 (mặc định, đổi được) |
 | AI | **therealtunguyen** | AGT | Nostidus4 (mặc định, đổi được) |
 | Blockchain | **longhuynh55** (anh Phúc) | SC | Nostidus4 (mặc định, đổi được) |
 | Non-code | chia sau | DOM | – |
 
-Đã gán trên GitHub: assignee của issue, trường **Owner** và Status **Assigned** trên Project (182 ticket code M1 còn mở). Người review mặc định nằm trong `.github/CODEOWNERS`, GitHub tự mời review khi mở PR. Chạy lại `python3 planning/tools/assign.py` sau khi thêm ticket mới.
+Cập nhật 12/10/2026: chuyển khoảng 30 % backend (lõi thực thi: EXE, POL, CHR) cho Tú; Tân giữ phần backend phục vụ web. Đã gán trên GitHub: assignee của issue, trường **Owner** và Status **Assigned** trên Project (182 ticket code M1 còn mở). Người review mặc định nằm trong `.github/CODEOWNERS`, GitHub tự mời review khi mở PR. Chạy lại `python3 planning/tools/assign.py` sau khi thêm ticket mới.
 

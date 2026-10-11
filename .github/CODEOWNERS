@@ -1,5 +1,5 @@
 # Default reviewers (auto-requested on pull requests). Last matching pattern wins.
-# Work split (2026-10-11): frontend + backend -> @Nostidus4 · infrastructure + AI -> @therealtunguyen · contracts -> @longhuynh55.
+# Work split: frontend + backend -> @Nostidus4 · infrastructure + AI + execution core (EXE, POL, CHR) -> @therealtunguyen · contracts -> @longhuynh55.
 # Rule: the area owner writes the code, so the reviewer is someone else.
 
 # Frontend and backend are written by @Nostidus4 -> reviewed by @therealtunguyen
@@ -14,6 +14,14 @@
 /infra/                 @Nostidus4
 /.github/workflows/     @Nostidus4
 /evals/                 @Nostidus4
+
+# Execution core (EXE, POL, CHR) is written by @therealtunguyen since 2026-10-12 -> reviewed by @Nostidus4
+/services/signer/                                   @Nostidus4
+/services/worker/src/treasurypilot_worker/executor/ @Nostidus4
+/services/worker/src/treasurypilot_worker/planner/  @Nostidus4
+/services/worker/src/treasurypilot_worker/trigger/  @Nostidus4
+/services/worker/src/treasurypilot_worker/tracker/  @Nostidus4
+/packages/py-core/src/treasurypilot_core/policy/    @Nostidus4
 
 # Contracts are written by @longhuynh55 -> reviewed by @Nostidus4
 /contracts/             @Nostidus4

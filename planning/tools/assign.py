@@ -1,5 +1,6 @@
 """Assign open M1 tickets by area (project lead's split, 2026-10-11) and set Project Owner + Status = Assigned.
 frontend, backend -> Nostidus4 · infrastructure, ai -> therealtunguyen · contracts -> longhuynh55 · non-code -> unassigned.
+Backend split (2026-10-12): the execution core (EXE, POL, CHR ≈ 28 % of backend effort) -> therealtunguyen.
 Usage: python3 planning/tools/assign.py [--dry]"""
 import json, subprocess, sys, pathlib, time
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -8,6 +9,7 @@ from data import TICKETS
 
 OWNER, NUM, REPO = "Nostidus4", 1, "Nostidus4/TreasuryPilot"
 BY_AREA = {"frontend": "Nostidus4", "backend": "Nostidus4", "infrastructure": "therealtunguyen", "ai": "therealtunguyen", "contracts": "longhuynh55"}
+BY_PREFIX = {"EXE": "therealtunguyen", "POL": "therealtunguyen", "CHR": "therealtunguyen"}  # overrides BY_AREA
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 gm = json.loads((ROOT / "planning/tools/github_map.json").read_text())["issues"]
 
@@ -35,7 +37,7 @@ def main():
     n = 0
     for t in TICKETS:
         if t["phase"] != "M1": continue
-        who = BY_AREA.get(G.area(t))
+        who = BY_PREFIX.get(G.prefix(t)) or BY_AREA.get(G.area(t))
         num = gm.get(t["id"], {}).get("number")
         it = items.get(num)
         if not who or not it: continue
