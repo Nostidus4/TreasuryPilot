@@ -10,7 +10,7 @@
 | M06 | Chain Reader & Tx Tracking | `chain-reader/` | worker | Detailed — grilled with the team |
 | M07 | Financial Engine | `financial-engine/` | py-core | Detailed — grilled with the team |
 | M08 | Policy Engine & Attestation | `policy-engine/` | py-core/worker | Detailed — grilled with the team |
-| M09 | AI Agent | `agent/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
+| M09 | AI Agent | `agent/` | worker/api | Detailed — reviewed with the project lead |
 | M10 | Orchestration & Execution | `execution/` | worker/signer | Detailed — reviewed with the project lead |
 | M11 | Verification & Reconciliation | `reconciliation/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
 | M12 | Recovery & Exceptions | `recovery/` | worker | Detailed — reviewed with the project lead |

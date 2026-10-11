@@ -72,7 +72,7 @@ function fetchItems_() {
       const c = n.content || {};
       const assignees = ((c.assignees || {}).nodes || []).map(a => a.login).join(', ');
       rows.push({id: f['Ticket ID'] || '', gh: c.number, title: c.title || '', url: c.url || '', state: c.state || '',
-                 closedAt: c.closedAt || '', module: f['Module'] || '', status: f['Status'] || '', priority: f['Priority'] || '',
+                 closedAt: c.closedAt || '', module: f['Module'] || '', status: c.state === 'CLOSED' ? 'Done' : (f['Status'] || ''), priority: f['Priority'] || '',
                  phase: f['Phase'] || '', size: f['Size'] || '', cut: f['Cut'] || '', area: f['Area'] || '',
                  owner: f['Owner'] || assignees || '(chưa giao)', assignees});
     });

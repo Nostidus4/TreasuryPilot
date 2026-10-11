@@ -43,7 +43,7 @@ Mẫu 14 mục: (1) mục đích và ranh giới · (2) feature, yêu cầu, lu�
 | M06 | Đọc chain & theo dõi giao dịch (`chain-reader`) | Tab 21 | đã grilling với team |
 | M07 | Financial engine (`financial-engine`) | Tab 22 | đã grilling với team |
 | M08 | Policy engine & attestation (`policy-engine`) | Tab 23 | đã grilling với team |
-| M09 | AI agent (`agent`) | Tab 24 | mặc định, chờ review |
+| M09 | AI agent (`agent`) | Tab 24 | đã review với trưởng nhóm |
 | M10 | Điều phối & thực thi (`execution`) | Tab 25 | đã review với trưởng nhóm |
 | M11 | Xác minh & đối soát (`reconciliation`) | Tab 26 | mặc định, chờ review |
 | M12 | Phục hồi & ngoại lệ (`recovery`) | Tab 27 | đã review với trưởng nhóm |

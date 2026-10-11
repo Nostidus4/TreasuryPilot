@@ -41,7 +41,7 @@ def fetch():
                          "state": c.get("state", ""), "assignees": ", ".join(a["login"] for a in (c.get("assignees") or {}).get("nodes", [])),
                          "epic": (c.get("parent") or {}).get("title", ""), "module": f.get("Module", ""), "priority": f.get("Priority", ""),
                          "phase": f.get("Phase", ""), "size": f.get("Size", ""), "cut": f.get("Cut", ""), "area": f.get("Area", ""),
-                         "status": f.get("Status", ""), "blocked_by": f.get("Blocked by", "") or ""})
+                         "status": "Done" if c.get("state") == "CLOSED" else f.get("Status", ""), "blocked_by": f.get("Blocked by", "") or ""})
         if not items["pageInfo"]["hasNextPage"]: break
         after = items["pageInfo"]["endCursor"]
     return rows

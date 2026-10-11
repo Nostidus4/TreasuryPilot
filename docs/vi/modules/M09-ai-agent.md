@@ -1,6 +1,6 @@
 # M09 · AI agent
 
-**Nguồn chuẩn:** `docs/modules/agent/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-005 · **Xem thêm:** tab 13 Kiến trúc AI
+**Nguồn chuẩn:** `docs/modules/agent/README.md` · **Trạng thái:** Chi tiết, đã review với trưởng nhóm (11/10/2026) · **ADR:** ADR-005 · **Xem thêm:** tab 13 Kiến trúc AI
 
 ## 1. Mục đích và ranh giới
 
@@ -47,7 +47,7 @@ Mỗi lời gọi không có trạng thái; trạng thái trích xuất nằm tr
 ## 7. Luồng
 
 - **Trích xuất:** upload → hàng đợi ai → model đọc PDF/ảnh → kiểm schema → kiểm quy tắc (ngày, tiền tệ, so địa chỉ) → lưu + điền nháp + cờ AI → Operator xác nhận (M05). Quá 60 giây → nhập tay, không đoán.
-- **Lập kế hoạch:** M10 chỉ hỏi AI khi có ý nghĩa (≥ 2 request đủ điều kiện, hoặc có điều khoản/hoãn) *(mặc định)* → vòng tool → `PlanProposal` → kiểm id tồn tại và thuộc tổ chức → engine dựng plan → chấm điểm so với plan tất định → chọn bên tốt hơn (hòa → tất định) → M08 kiểm. Đề xuất ngoài mandate → review AI_PLAN_REJECTED + circuit breaker.
+- **Lập kế hoạch:** M10 chỉ hỏi AI đề xuất plan khi có ý nghĩa (≥ 2 request đủ điều kiện, hoặc có điều khoản/hoãn). Request đơn lẻ dùng plan tính sẵn, AI chỉ viết **lời giải thích** ngắn (task EXPLAIN, model rẻ) hiện ở panel "Vì sao" (M09-D6). Đường đề xuất đầy đủ → vòng tool → `PlanProposal` → kiểm id tồn tại và thuộc tổ chức → engine dựng plan → chấm điểm so với plan tất định → chọn bên tốt hơn (hòa → tất định) → M08 kiểm. Đề xuất ngoài mandate → review AI_PLAN_REJECTED + circuit breaker.
 - **Soạn ngoại lệ:** đưa số của engine vào → soạn → kiểm số → đính kèm; lỗi → văn bản mẫu.
 - **Copilot:** câu hỏi → vòng tool → trả lời + trích dẫn → kiểm số → stream; yêu cầu thực thi bị từ chối và chỉ sang luồng duyệt.
 
@@ -63,14 +63,15 @@ Mỗi lời gọi không có trạng thái; trạng thái trích xuất nằm tr
 
 ## 9. Cấu hình (`config/ai.yaml`)
 
-| Task | Model *(mặc định)* | Timeout | Token ra tối đa |
+| Task | Model | Timeout | Token ra tối đa |
 |---|---|---|---|
 | EXTRACT, TERMS, ANOMALY | `claude-sonnet-5-5` | 60 giây | 2.000 |
 | PLAN | `claude-opus-5-5` | 20 giây | 1.500 |
 | EXCEPTION_DRAFT | `claude-sonnet-5-5` | 20 giây | 800 |
+| EXPLAIN (request đơn lẻ, plan đã cố định) | `claude-haiku-4-5-20251001` | 10 giây | 300 |
 | COPILOT | `claude-sonnet-5-5` | 30 giây | 1.200 |
 
-Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1 (vượt → các task chuyển sang dự phòng, có thông báo) *(mặc định)*. Nhà cung cấp phụ dùng chung adapter (AGT-017), chọn sau. Bật chế độ không lưu dữ liệu nếu có.
+Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1, chỉnh được (vượt → các task chuyển sang dự phòng, có thông báo). Nhà cung cấp phụ dùng chung adapter (AGT-017), chọn sau. Bật chế độ không lưu dữ liệu nếu có.
 
 ## 10. Bảo mật
 
@@ -100,15 +101,15 @@ AGT-001 adapter → AGT-002 nhật ký → AGT-003 bọc dữ liệu → AGT-004
 | ID | Quyết định |
 |---|---|
 | M09-D1 | Không dùng framework agent; SDK Anthropic với structured output và tool use (ADR-005). |
-| M09-D2 | Model theo từng task trong config (§9). *(mặc định)* |
+| M09-D2 | Model theo task (§9): PLAN dùng Opus; trích xuất/điều khoản/Copilot/soạn thảo dùng Sonnet; EXPLAIN dùng Haiku. (đã review) |
 | M09-D3 | Mọi AI chạy trong `worker-ai`, chỉ có khóa LLM. |
 | M09-D4 | Đề xuất chỉ chứa id và thứ tự; số tiền luôn từ engine. |
-| M09-D5 | Chỉ chọn plan AI khi tốt hơn hẳn; hòa → tất định. *(mặc định)* |
-| M09-D6 | Chỉ hỏi AI khi ≥ 2 request đủ điều kiện hoặc có điều khoản/hoãn. *(mặc định)* |
+| M09-D5 | Chỉ chọn plan AI khi tốt hơn hẳn; hòa → tất định. (đã review) |
+| M09-D6 | Chỉ hỏi AI đề xuất khi ≥ 2 request đủ điều kiện hoặc có điều khoản/hoãn; còn lại AI giải thích plan tính sẵn (task EXPLAIN). (đã review) |
 | M09-D7 | Kiểm số sau cho mọi văn bản. |
 | M09-D8 | Trích xuất quá 60 giây → nhập tay; không đoán. |
-| M09-D9 | Lỗi schema: thử lại một lần kèm lỗi, rồi dự phòng. *(mặc định)* |
-| M09-D10 | Ngân sách AI 20 USD/tổ chức/tháng ở M1. *(mặc định)* |
+| M09-D9 | Lỗi schema: thử lại một lần kèm lỗi, rồi dự phòng. (đã review) |
+| M09-D10 | Ngân sách AI 20 USD/tổ chức/tháng ở M1, chỉnh được. (đã review) |
 | M09-D11 | Giới hạn gọi tool: PLAN 8, COPILOT 6. |
 | M09-D12 | Đề xuất ngoài mandate → AI_PLAN_REJECTED + circuit breaker PAUSE. |
 | M09-D13 | Tài liệu nhiều hóa đơn báo qua `invoice_count_in_document` → M05 từ chối. |

@@ -1,6 +1,6 @@
 # M09 · AI Agent (`worker-ai` + read-only tools)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/agent/` · **Code:** `services/worker/.../ai/` (runs only in the `worker-ai` container), `packages/py-core/.../ai_schemas` · **Epic:** `[EPIC] M09 · AI Agent`
+**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/agent/` · **Code:** `services/worker/.../ai/` (runs only in the `worker-ai` container), `packages/py-core/.../ai_schemas` · **Epic:** `[EPIC] M09 · AI Agent`
 **ADRs:** ADR-005 (Claude, advisory only) · **See also:** `docs/AI_AGENT_ARCHITECTURE.md` · **Decisions:** M09-D1 … M09-D14 (§14)
 
 ---
@@ -91,7 +91,7 @@ Budget per task: PLAN ≤ 8 tool calls, COPILOT ≤ 6; payload ≤ 50 KB per too
 ## 7. Flows
 
 - **Extraction:** upload → ai queue → model reads PDF/image → schema validate → deterministic checks (dates, currency, address compare) → `extractions` + draft prefill + AI flags → Operator confirms (M05). Timeout 60 s → ManualEntry, nothing guessed.
-- **Planning:** M10 asks for a proposal only when it can matter (≥ 2 eligible requests, or terms/deferrals in play) *(mặc định)* → tool loop → `PlanProposal` → reference integrity → engine builds concrete plan → `score` vs deterministic → choose better (tie → deterministic) → M08 validates. Out-of-mandate proposal → AI_PLAN_REJECTED review + circuit breaker (BR-056/065).
+- **Planning:** M10 asks for a full proposal only when it can matter (≥ 2 eligible requests, or terms/deferrals in play). For a single plain request the deterministic plan is used and the AI writes only a short **explanation** (task EXPLAIN, cheap model) shown in the Why panel (M09-D6). Full proposal path → tool loop → `PlanProposal` → reference integrity → engine builds concrete plan → `score` vs deterministic → choose better (tie → deterministic) → M08 validates. Out-of-mandate proposal → AI_PLAN_REJECTED review + circuit breaker (BR-056/065).
 - **Exception draft:** engine numbers injected → draft → numeric post-check → attach; failure → template text.
 - **Copilot:** question → tool loop → answer + citations → numeric post-check → stream; requests to execute are refused with a pointer to the approval flow.
 
@@ -119,14 +119,15 @@ Template plan used only when: AI unavailable/timeout **and** snapshot complete *
 
 ## 9. Configuration and defaults (`config/ai.yaml`)
 
-| Task | Model *(mặc định)* | Timeout | Max tokens out |
+| Task | Model | Timeout | Max tokens out |
 |---|---|---|---|
 | EXTRACT, TERMS, ANOMALY | `claude-sonnet-5-5` | 60 s | 2,000 |
 | PLAN | `claude-opus-5-5` | 20 s | 1,500 |
 | EXCEPTION_DRAFT | `claude-sonnet-5-5` | 20 s | 800 |
+| EXPLAIN (single request, plan already fixed) | `claude-haiku-4-5-20251001` | 10 s | 300 |
 | COPILOT | `claude-sonnet-5-5` | 30 s | 1,200 |
 
-Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown) *(mặc định)*. Secondary provider behind the same adapter (AGT-017), choice to be agreed. Zero-retention API setting where available.
+Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown). Secondary provider behind the same adapter (AGT-017), choice to be agreed. Zero-retention API setting where available.
 
 ## 10. Security
 
@@ -156,15 +157,15 @@ AGT-001 adapter → AGT-002 log → AGT-003 untrusted wrapping → AGT-004 extra
 | ID | Decision |
 |---|---|
 | M09-D1 | No agent framework; Anthropic SDK with structured outputs and tool use (ADR-005). |
-| M09-D2 | Model per task in config (§9). *(mặc định)* |
+| M09-D2 | Model per task in config (§9): PLAN on Opus, extraction/terms/Copilot/drafts on Sonnet, EXPLAIN on Haiku. (reviewed) |
 | M09-D3 | All AI runs in `worker-ai` with only the LLM key. |
 | M09-D4 | Proposals contain ids and orderings only; amounts always from the engine. |
-| M09-D5 | AI plan chosen only if strictly better; ties → deterministic. *(mặc định)* |
-| M09-D6 | Ask the AI to propose only when ≥ 2 eligible requests or terms/deferrals matter. *(mặc định)* |
+| M09-D5 | AI plan chosen only if strictly better; ties → deterministic. (reviewed) |
+| M09-D6 | Full AI proposal only when ≥ 2 eligible requests or terms/deferrals matter; otherwise an AI explanation of the deterministic plan (EXPLAIN task). (reviewed) |
 | M09-D7 | Numeric post-check on every prose output. |
 | M09-D8 | Extraction timeout 60 s → ManualEntry; never guess. |
-| M09-D9 | Schema error: one retry with the validation error, then fallback. *(mặc định)* |
-| M09-D10 | Per-org monthly AI budget 20 USD in M1. *(mặc định)* |
+| M09-D9 | Schema error: one retry with the validation error, then fallback. (reviewed) |
+| M09-D10 | Per-org monthly AI budget 20 USD in M1, configurable. (reviewed) |
 | M09-D11 | Tool-call budgets: PLAN 8, COPILOT 6. |
 | M09-D12 | Out-of-mandate proposal → AI_PLAN_REJECTED + circuit breaker PAUSE. |
 | M09-D13 | Multi-invoice documents reported via `invoice_count_in_document` → M05 rejects. |
