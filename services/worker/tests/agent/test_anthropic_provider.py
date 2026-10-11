@@ -18,6 +18,7 @@ from treasurypilot_worker.agent import (
     AiUnavailable,
     InMemoryBudgetLedger,
     Message,
+    PromptTemplate,
     ProviderRequest,
     StopReason,
     TextBlock,
@@ -108,7 +109,7 @@ def _request(**overrides: object) -> ProviderRequest:
     fields: dict[str, object] = {
         "model": "claude-sonnet-5-5",
         "system": "You answer treasury questions.",
-        "messages": (Message.user("Why?"),),
+        "messages": (Message("user", (TextBlock("Why?"),)),),
         "tools": (),
         "output_schema": Answer.model_json_schema(),
         "max_output_tokens": 300,
@@ -132,7 +133,7 @@ def test_request_uses_structured_output_strict_tools_and_cached_system(
         },
     )
     history = (
-        Message.user("Why?"),
+        Message("user", (TextBlock("Why?"),)),
         Message("assistant", (ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"}),)),
         Message("user", (ToolResult("t1", '{"balance": "6000"}'),)),
     )
@@ -195,7 +196,9 @@ def test_assistant_provider_content_is_echoed_verbatim(stub: tuple[Stub, str]) -
     first = _provider(url).complete(_request(), timeout_s=5)
     assistant = Message("assistant", (TextBlock("x"),), provider_content=first.provider_content)
 
-    _provider(url).complete(_request(messages=(Message.user("Why?"), assistant)), timeout_s=5)
+    _provider(url).complete(
+        _request(messages=(Message("user", (TextBlock("Why?"),)), assistant)), timeout_s=5
+    )
 
     assert state.bodies[1]["messages"][1]["content"] == [  # type: ignore[index]
         {"type": "text", "text": '{"answer": "ok"}'}
@@ -228,8 +231,7 @@ def test_adapter_deadline_holds_against_a_real_slow_provider(
         adapter.run(
             AiTask.EXPLAIN,
             org_id="org-1",
-            system="s",
-            messages=[Message.user("q")],
+            prompt=PromptTemplate(version="t.v1", system="s.", instructions="q").render(),
             output=Answer,
         )
 

@@ -37,10 +37,6 @@ class Message:
     # Raw provider blocks of an assistant turn (e.g. thinking blocks) echoed back verbatim.
     provider_content: object | None = field(default=None, compare=False)
 
-    @classmethod
-    def user(cls, text: str) -> "Message":
-        return cls("user", (TextBlock(text),))
-
 
 class StopReason(StrEnum):
     END_TURN = "end_turn"
@@ -122,6 +118,7 @@ class AiResult[T: BaseModel]:
     output: T
     task: str
     model: str
+    prompt_version: str
     usage: Usage
     cost_usd_micros: int
     latency_ms: int

@@ -27,3 +27,19 @@ class AiBudgetExceeded(AiError):
 
 class AiToolLimitExceeded(AiError):
     """The model asked for more tool calls than the task allows."""
+
+
+class AiInputRejected(AiError):
+    """An input looked like a secret (FR-804). Only the pattern name and source are kept."""
+
+    def __init__(self, *, pattern: str, source: str) -> None:
+        super().__init__(f"input from {source} rejected: matches secret pattern {pattern}")
+        self.pattern = pattern
+        self.source = source
+
+
+class PromptTemplateError(ValueError):
+    """A prompt template was defined or rendered wrongly. A bug, so not an `AiError`.
+
+    Callers map `AiError` to fallbacks; this one must surface instead.
+    """
