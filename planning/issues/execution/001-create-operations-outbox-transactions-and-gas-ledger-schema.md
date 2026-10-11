@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | ADR-004, DATA_MODEL §2.6 |
-| **Blocks** | CHR-003, EXE-007 |
+| **Blocks** | CHR-003, EXE-007, CHR-006 |
 | **Submission cut** | A |
 
 ## Context

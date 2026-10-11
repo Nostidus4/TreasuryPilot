@@ -47,6 +47,7 @@ Pause action uses the guardian sentinel (ADR-017) so the module is paused on-cha
 - REC-001: Verify post-conditions after each confirmed step
 - MDT-007: Implement pause and resume (backend and transactions)
 - EXE-013: Add the pause-only sentinel to the signer
+- CHR-006: Index treasury token movements and alert on unexpected outflows
 
 ## Acceptance criteria
 

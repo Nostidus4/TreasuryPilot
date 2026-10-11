@@ -70,14 +70,6 @@
   "INV-L03<-INV-003",
   "INV-L04<-INV-003",
   "INV-L04<-ENG-L02",
-  "CHR-001<-TRS-002",
-  "CHR-002<-CHR-001",
-  "CHR-002<-TRS-004",
-  "CHR-003<-CHR-001",
-  "CHR-003<-EXE-001",
-  "CHR-004<-CHR-003",
-  "CHR-005<-CHR-001",
-  "CHR-005<-SC-016",
   "EXE-001<-INV-001",
   "EXE-002<-DEV-002",
   "EXE-003<-EXE-002",
@@ -314,9 +306,6 @@
   "INV-011<-INV-010",
   "INV-011<-SC-022",
   "INV-011<-MDT-009",
-  "RCV-006<-REC-001",
-  "RCV-006<-MDT-007",
-  "RCV-006<-EXE-013",
   "EXE-004<-EXE-003",
   "EXE-004<-CHR-002",
   "EXE-004<-ENG-008",
@@ -343,7 +332,21 @@
   "WEB-024<-WEB-010",
   "WEB-024<-EXE-012",
   "WEB-025<-WEB-003",
-  "WEB-025<-MDT-009"
+  "WEB-025<-MDT-009",
+  "CHR-001<-TRS-002",
+  "CHR-002<-CHR-001",
+  "CHR-002<-TRS-004",
+  "CHR-003<-CHR-001",
+  "CHR-003<-EXE-001",
+  "CHR-004<-CHR-003",
+  "CHR-005<-CHR-001",
+  "CHR-005<-SC-016",
+  "CHR-006<-CHR-005",
+  "CHR-006<-EXE-001",
+  "RCV-006<-REC-001",
+  "RCV-006<-MDT-007",
+  "RCV-006<-EXE-013",
+  "RCV-006<-CHR-006"
  ],
  "epics": {
   "ADM": {
@@ -597,6 +600,11 @@
    "id": 5797275035,
    "node_id": "I_kwDOVDSK488AAAABWYtlmw",
    "number": 117
+  },
+  "CHR-006": {
+   "id": 5798338802,
+   "node_id": "I_kwDOVDSK488AAAABWZug8g",
+   "number": 253
   },
   "CMP-001": {
    "id": 5797260230,
@@ -1647,6 +1655,7 @@
    "CHR-003": "PVTI_lAHOCn2YF84BmhXWzg_76Ww",
    "CHR-004": "PVTI_lAHOCn2YF84BmhXWzg_76W0",
    "CHR-005": "PVTI_lAHOCn2YF84BmhXWzg_76W4",
+   "CHR-006": "PVTI_lAHOCn2YF84BmhXWzg_8zR8",
    "CMP-001": "PVTI_lAHOCn2YF84BmhXWzg_76Mk",
    "CMP-002": "PVTI_lAHOCn2YF84BmhXWzg_76M0",
    "CMP-003": "PVTI_lAHOCn2YF84BmhXWzg_76NI",
@@ -2105,6 +2114,7 @@
   "EXE-013",
   "EXE-012",
   "WEB-024",
-  "WEB-025"
+  "WEB-025",
+  "CHR-006"
  ]
 }

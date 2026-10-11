@@ -36,7 +36,7 @@ flowchart LR
   CHR -->|3| EXE
   CHR -->|2| MDT
   CHR -->|1| POL
-  CHR -->|1| RCV
+  CHR -->|2| RCV
   CHR -->|1| TRS
   CHR -->|1| WEB
   CMP -->|1| MDT
@@ -60,7 +60,7 @@ flowchart LR
   ENG -->|1| WEB
   EXE -->|1| AGT
   EXE -->|1| AUD
-  EXE -->|1| CHR
+  EXE -->|2| CHR
   EXE -->|2| MDT
   EXE -->|1| OBS
   EXE -->|4| RCV
@@ -255,12 +255,13 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | POL-006 | Sign and verify EIP-712 plan attestations with the policy key | P1 | S | POL-005 |
 | WEB-017 | Build members and roles administration | P1 | M | WEB-002, IDN-007 |
 
-### Wave 9 (15 tickets)
+### Wave 9 (16 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-010 | Implement rule-based fallback templates | P0 | S | ENG-007, POL-003 |
 | CHR-002 | Implement block-consistent snapshots | P0 | M | CHR-001, TRS-004 |
+| CHR-006 | Index treasury token movements and alert on unexpected outflows | P0 | S | CHR-005, EXE-001 |
 | INV-004 | Implement document upload to private storage | P0 | S | INV-003 |
 | INV-006 | Compute fingerprints at intake and block duplicates | P0 | S | INV-003, ENG-009 |
 | INV-008 | Implement payment-terms confirmation | P0 | S | INV-003, ENG-005 |
@@ -373,7 +374,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | OBS-005 | Compute the savings report | P1 | M | OBS-004, ENG-006 |
 | WEB-016 | Build the Copilot chat UI | P1 | M | WEB-010, AGT-012 |
 | WEB-024 | Build the fee policy and fee acceptance UI | P1 | S | WEB-010, EXE-012 |
-| RCV-006 | Implement circuit-breaker rules and auto-pause | P2 | M | REC-001, MDT-007, EXE-013 |
+| RCV-006 | Implement circuit-breaker rules and auto-pause | P2 | M | REC-001, MDT-007, EXE-013, CHR-006 |
 | WEB-021 | Build the runway forecast chart | P2 | S | WEB-010, ENG-011 |
 
 ### Wave 16 (7 tickets)

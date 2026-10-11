@@ -123,6 +123,7 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-414 | The system shall draft an exception request for the Owner on NEEDS_APPROVAL, with the numbers taken from the engine. | F-057 | BR-043 |
 | FR-415 | The system should project 7-day runway per wallet from approved obligations, and suggest pre-emptive refills within the limits. | F-058 | |
 | FR-416 | *(Later)* The system shall support mandated refills between operational wallets without underfunding the source wallet's obligations. | F-059 | BR-012 |
+| FR-419 | The system shall index asset transfers from and to the treasury wallets, classify them (agent, internal refill, inflow, unexpected outflow), and alert and re-validate on an unexpected outflow. | F-050 | BR-069 |
 
 ## FR-5xx · Execution
 

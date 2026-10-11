@@ -128,6 +128,7 @@ erDiagram
 | `operations` (**outbox**) | id, treasury_id, plan_step_id, request_id, step_id, kind, payload jsonb, idempotency_key, status enum(NotSubmitted,Submitted,Pending,Confirmed,Reverted,Unknown,Abandoned), attempts, last_error, created_at | unique(step_id); idx(treasury_id,status) |
 | `transactions` | id, operation_id, chain_id, tx_hash, nonce, from_address, replaced_by_tx_id, status, block_number, block_hash, gas_used, effective_gas_price, fee_wei, submitted_at, confirmed_at | unique(chain_id,tx_hash) |
 | `observed_events` | id, treasury_id, chain_id, block_number, block_hash, tx_hash, log_index, event_name, payload jsonb, observed_at, removed (reorg) | unique(chain_id,tx_hash,log_index) |
+| `index_cursors`, `token_movements`, `rpc_health` | Indexer cursors, classified asset transfers (BR-069), provider health (M06) | see docs/modules/chain-reader §4 |
 | `verifications` | id, operation_id, expected jsonb, observed jsonb, result enum(PASSED,DISCREPANCY,UNKNOWN), at | |
 | `gas_ledger` | id, treasury_id, transaction_id, fee_wei, payer_address, reverted | for F-066 |
 

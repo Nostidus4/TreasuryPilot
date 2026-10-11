@@ -100,6 +100,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-066 | A request with a HIGH-severity flag can execute only if the approval records an explicit acknowledgment of that flag. A HIGH flag raised after the approval requires a new approval. *(new M08)* | B | FR-313, M08-D4 |
 | BR-067 | Every step is simulated with `eth_call` from the executor address on fresh state immediately before signing. A revert or an unavailable simulation blocks the step; the revert is decoded into a reason code. *(new M08)* | B | FR-505, M08-D5 |
 | BR-068 | A pause-only sentinel key may pause the module through the Guardian Safe. It can never resume, change governance or move funds. Pause requested in the app triggers it immediately. *(new M03)* | C, B | M03-D2 |
+| BR-069 | Any transfer of the treasury asset out of T, O1 or O2 that does not match an agent operation is an unexpected outflow: the Owner and Finance are alerted and any plan in progress is re-validated immediately. *(new M06)* | B | M06-D2 |
 
 ## 8. Invoices & data
 

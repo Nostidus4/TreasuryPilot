@@ -29,10 +29,10 @@ A reorg cannot leave a payment falsely marked Paid.
 
 ## Scope
 
-- Store block hash per confirmation
-- re-check on later blocks
-- demote to Pending when the block hash changes
-- mark observed events removed
+- Store block hash per confirmation and per event
+- re-scan the last 64 blocks every cycle
+- demote Confirmed/Reverted to Pending when the block hash changes
+- mark observed events removed and call handlers' removed callback
 
 ## Out of scope
 

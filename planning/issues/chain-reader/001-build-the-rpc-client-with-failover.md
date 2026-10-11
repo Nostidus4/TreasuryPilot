@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | NFR-REL-04 |
+| **Traces to** | NFR-REL-04, PH-8, M06-D1 |
 | **Blocks** | TRS-003, CHR-002, CHR-003, CHR-005, EXE-012 |
 | **Submission cut** | A |
 
@@ -29,9 +29,12 @@ Chain access that survives one provider failing.
 
 ## Scope
 
-- web3.py wrapper with ordered providers, timeouts, retry and failover
-- provider health tracking
+- web3.py wrapper with ordered providers (Alchemy primary, public Sepolia secondary), 4 s timeout, 2 retries each, failover
+- crosscheck_receipt on the secondary
+- provider health tracking in rpc_health
 - typed errors (RpcUnavailable)
+- fee_history helper for EXE-012
+- safe_config reader
 
 ## Out of scope
 
@@ -49,6 +52,7 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] With the first provider down, calls succeed through the second
 - [ ] With all down, RpcUnavailable is raised and nothing returns a default value
+- [ ] crosscheck_receipt returns Mismatch when the fake secondary returns a different block hash
 
 ## Testing requirements
 

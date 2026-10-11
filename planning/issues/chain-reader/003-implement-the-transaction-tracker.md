@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-053, FR-601 |
+| **Traces to** | BR-053, BR-060, FR-601, PH-5, M06-D1, M06-D5 |
 | **Blocks** | MDT-003, CHR-004, EXE-008, RCV-002 |
 | **Submission cut** | A |
 
@@ -29,10 +29,13 @@ Know the true status of every submitted transaction.
 
 ## Scope
 
-- Celery task polling receipts
-- status Submitted → Pending → Confirmed after N confirmations or Reverted
-- timeout → Unknown
-- replacement transactions (same nonce) linked
+- Celery task every 6 s
+- status per docs/modules/chain-reader §5 (Submitted, Pending, Confirmed, Reverted, Dropped, Unknown)
+- Confirmed at 3 confirmations and secondary cross-check Match
+- Unknown after 10 min without receipt and not in mempool
+- replacement linking by (from, nonce)
+- revert selector decoded via POL-001
+- day attribution by mined block timestamp
 
 ## Out of scope
 
@@ -49,9 +52,10 @@ Never set a Failed status on timeout.
 
 ## Acceptance criteria
 
-- [ ] A transaction is Confirmed only after the configured depth
-- [ ] A timeout sets Unknown
-- [ ] A replacement with the same nonce is linked to the same operation
+- [ ] A transaction is Confirmed only after 3 confirmations and a matching cross-check
+- [ ] A cross-check mismatch never yields Confirmed
+- [ ] A timeout sets Unknown, never Failed
+- [ ] A replacement with the same nonce marks the original Dropped and links it
 
 ## Testing requirements
 

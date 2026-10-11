@@ -9,9 +9,9 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-510 |
-| **Blocks** | MDT-005 |
-| **Submission cut** | B |
+| **Traces to** | FR-510, PH-6, M06-D6, M06-D9 |
+| **Blocks** | MDT-005, CHR-006 |
+| **Submission cut** | A |
 
 ## Context
 
@@ -31,9 +31,11 @@ Off-chain state follows on-chain events for mandate, payees, payments and pause.
 
 ## Scope
 
-- Cursor-based log reader for module events and Safe module-enable events
-- observed_events table
-- handlers updating payee status, mandate status and pause state
+- Cursor-based eth_getLogs reader per stream (MODULE, SAFE_CONFIG, SAFE_EXEC) per docs/modules/chain-reader §8.3 with 64-block re-scan and ≤ 2,000-block chunks
+- exact address filters
+- observed_events and index_cursors
+- subscriber registry used by M03/M05/M11 handlers
+- Safe config events trigger coverage recompute
 
 ## Out of scope
 
@@ -51,7 +53,9 @@ Idempotent by (chain, tx hash, log index).
 ## Acceptance criteria
 
 - [ ] Re-reading the same range creates no duplicates
-- [ ] PayeeAdded and Paused events update application state
+- [ ] PayeeAdded, Paused, ExceptionGranted, RequestCancelled and ExecutionSuccess events update application state
+- [ ] Logs from an unrelated contract emitting the same topics are ignored
+- [ ] A ChangedGuard event recomputes coverage
 
 ## Testing requirements
 

@@ -9,9 +9,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 136 | 50 | 8 | 194 |
+| M1 | 137 | 50 | 8 | 195 |
 | Later | – | – | – | 38 |
-| **All** | | | | **232** |
+| **All** | | | | **233** |
 
 ## Epics
 
@@ -25,7 +25,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 10 | 1 | [`issues/mandate/`](issues/mandate/) |
 | M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
-| M06 · Chain Reader & Tx Tracking | `chain-reader` | 5 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
+| M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 13 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
@@ -148,7 +148,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | CHR-002 | chain-reader | M06 | [Implement block-consistent snapshots](issues/chain-reader/002-implement-block-consistent-snapshots.md) | F-050 | M1 | P0 | M | A | CHR-001, TRS-004 | Ready for Assignment |
 | CHR-003 | chain-reader | M06 | [Implement the transaction tracker](issues/chain-reader/003-implement-the-transaction-tracker.md) | F-070 | M1 | P0 | M | A | CHR-001, EXE-001 | Ready for Assignment |
 | CHR-004 | chain-reader | M06 | [Detect reorgs and re-evaluate status](issues/chain-reader/004-detect-reorgs-and-re-evaluate-status.md) | F-070 | M1 | P1 | S | After submission | CHR-003 | Ready for Assignment |
-| CHR-005 | chain-reader | M06 | [Index module and Safe events](issues/chain-reader/005-index-module-and-safe-events.md) | F-050, F-120 | M1 | P1 | M | B | CHR-001, SC-016 | Ready for Assignment |
+| CHR-005 | chain-reader | M06 | [Index module and Safe events](issues/chain-reader/005-index-module-and-safe-events.md) | F-050, F-120 | M1 | P1 | M | A | CHR-001, SC-016 | Ready for Assignment |
 | EXE-001 | execution | M10 | [Create operations (outbox), transactions and gas ledger schema](issues/execution/001-create-operations-outbox-transactions-and-gas-ledger-schema.md) | F-061 | M1 | P0 | S | A | INV-001 | Ready for Assignment |
 | EXE-002 | execution | M10 | [Set up Celery with core and ai queues](issues/execution/002-set-up-celery-with-core-and-ai-queues.md) | F-060, F-061 | M1 | P0 | M | A | DEV-002 | Ready for Assignment |
 | EXE-003 | execution | M10 | [Implement the deadline trigger](issues/execution/003-implement-the-deadline-trigger.md) | F-060 | M1 | P0 | M | A | EXE-002, INV-010, MDT-007, TRS-007 | Ready for Assignment |
@@ -177,7 +177,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | RCV-003 | recovery | M12 | [Handle partial completion and resume](issues/recovery/003-handle-partial-completion-and-resume.md) | F-081 | M1 | P0 | S | After submission | EXE-008 | Ready for Assignment |
 | RCV-004 | recovery | M12 | [Implement the review queue and routing](issues/recovery/004-implement-the-review-queue-and-routing.md) | F-082 | M1 | P0 | M | B | INV-002 | Ready for Assignment |
 | RCV-005 | recovery | M12 | [Implement retry policy and error classification](issues/recovery/005-implement-retry-policy-and-error-classification.md) | F-083 | M1 | P0 | S | B | EXE-007 | Ready for Assignment |
-| RCV-006 | recovery | M12 | [Implement circuit-breaker rules and auto-pause](issues/recovery/006-implement-circuit-breaker-rules-and-auto-pause.md) | F-027 | M1 | P2 | M | After submission | REC-001, MDT-007, EXE-013 | Ready for Assignment |
+| RCV-006 | recovery | M12 | [Implement circuit-breaker rules and auto-pause](issues/recovery/006-implement-circuit-breaker-rules-and-auto-pause.md) | F-027 | M1 | P2 | M | After submission | REC-001, MDT-007, EXE-013, CHR-006 | Ready for Assignment |
 | RCV-007 | recovery | M12 | [Automate the crash-recovery test](issues/recovery/007-automate-the-crash-recovery-test.md) | F-080 | M1 | P0 | S | A | RCV-002 | Ready for Assignment |
 | AGT-001 | agent | M09 | [Build the LLM adapter with routing and timeouts](issues/agent/001-build-the-llm-adapter-with-routing-and-timeouts.md) | F-094 | M1 | P0 | M | A | EXE-002 | Ready for Assignment |
 | AGT-002 | agent | M09 | [Log every AI call and fail closed](issues/agent/002-log-every-ai-call-and-fail-closed.md) | F-093 | M1 | P0 | S | A | AGT-001 | Ready for Assignment |
@@ -274,3 +274,4 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | EXE-012 | execution | M10 | [Implement the fee policy, fee holds and fee acceptance](issues/execution/012-implement-the-fee-policy-fee-holds-and-fee-acceptance.md) | F-066 | M1 | P0 | M | A | MDT-001, CHR-001, ENG-001 | Ready for Assignment |
 | WEB-024 | web | M16 | [Build the fee policy and fee acceptance UI](issues/web/024-build-the-fee-policy-and-fee-acceptance-ui.md) | F-066 | M1 | P1 | S | B | WEB-010, EXE-012 | Ready for Assignment |
 | WEB-025 | web | M16 | [Build the governance signing inbox](issues/web/025-build-the-governance-signing-inbox.md) | F-020–F-026 | M1 | P0 | M | A | WEB-003, MDT-009 | Ready for Assignment |
+| CHR-006 | chain-reader | M06 | [Index treasury token movements and alert on unexpected outflows](issues/chain-reader/006-index-treasury-token-movements-and-alert-on-unexpected-outfl.md) | F-050 | M1 | P0 | S | A | CHR-005, EXE-001 | Ready for Assignment |

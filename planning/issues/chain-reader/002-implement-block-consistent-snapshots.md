@@ -29,9 +29,10 @@ One consistent view of balances, counters, payees and mandate at a block.
 
 ## Scope
 
-- Batched reads at a single block (multicall or block-pinned calls)
-- snapshot record with block number, hash, observed time, coverage and missing fields
-- freshness check helper
+- Multicall3 aggregate3 pinned to one block with the read set of docs/modules/chain-reader §8.1
+- snapshot record with purpose, block number, hash, timestamp, provider, coverage and missing fields
+- freshness helper (≤ 30 s and ≤ 2 blocks)
+- dashboard snapshot every 60 s with 7-day pruning
 
 ## Out of scope
 
@@ -49,7 +50,8 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] All values in a snapshot come from the same block
-- [ ] A partial read yields coverage PARTIAL with the missing fields listed
+- [ ] A failed sub-call is listed in missing and the snapshot is stored
+- [ ] is_fresh rejects a snapshot 3 blocks behind head
 
 ## Testing requirements
 
