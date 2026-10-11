@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | ADR-001 |
 | **Blocks** | DEV-002, DEV-003, DEV-011, SC-001, ENG-001, CMP-003, WEB-001 |
 | **Submission cut** | A |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-092, ADR-006, FR-507 |
 | **Blocks** | EXE-006, EXE-007, EXE-L01 |
 | **Submission cut** | A |

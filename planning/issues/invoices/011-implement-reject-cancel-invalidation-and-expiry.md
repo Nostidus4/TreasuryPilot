@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-003, FR-317, FR-320 |
 | **Blocks** | — |
 | **Submission cut** | B |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | infrastructure |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-928, NFR-SEC-02, NFR-SEC-07 |
 | **Blocks** | — |
 | **Submission cut** | B |

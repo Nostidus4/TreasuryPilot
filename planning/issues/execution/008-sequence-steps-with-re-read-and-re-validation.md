@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-050–051, BR-054 |
 | **Blocks** | EXE-011, REC-001, RCV-003, AUD-003, OBS-004 |
 | **Submission cut** | A |

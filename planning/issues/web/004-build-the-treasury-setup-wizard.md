@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | frontend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-101, FR-106 |
 | **Blocks** | WEB-005, WEB-006, WEB-010 |
 | **Submission cut** | A |

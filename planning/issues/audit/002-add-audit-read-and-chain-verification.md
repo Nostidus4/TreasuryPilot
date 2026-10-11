@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-912 |
 | **Blocks** | AUD-L01 |
 | **Submission cut** | After submission |

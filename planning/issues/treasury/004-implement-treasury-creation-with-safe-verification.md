@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-101–103 |
 | **Blocks** | DEV-006, TRS-005, TRS-006, TRS-008, TRS-L01, CHR-002 |
 | **Submission cut** | A |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-922 |
 | **Blocks** | WEB-018 |
 | **Submission cut** | After submission |

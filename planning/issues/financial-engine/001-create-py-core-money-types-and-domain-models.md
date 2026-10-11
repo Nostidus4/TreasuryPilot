@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | ADR-014, BR-083, FR-109 |
 | **Blocks** | ENG-002, ENG-005, ENG-009, ENG-010, POL-001, MDT-002 |
 | **Submission cut** | A |

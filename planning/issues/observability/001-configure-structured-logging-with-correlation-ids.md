@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | infrastructure |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | NFR-AUD-04, FR-923 |
 | **Blocks** | OBS-002, OBS-003 |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | M (~1 day) |
 | **Area** | frontend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | — |
 | **Blocks** | — |
 | **Submission cut** | After submission |

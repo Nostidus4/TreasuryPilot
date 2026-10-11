@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | FR-903 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | ai |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-407, BR-056 |
 | **Blocks** | EXE-004, AGT-014 |
 | **Submission cut** | A |

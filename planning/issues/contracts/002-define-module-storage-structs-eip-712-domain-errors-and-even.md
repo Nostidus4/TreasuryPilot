@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | ADR-003, BR-003 |
 | **Blocks** | SC-003, SC-005 |
 | **Submission cut** | A |

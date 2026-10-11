@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P2 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-511–512 |
 | **Blocks** | EXE-L02 |
 | **Submission cut** | After submission |

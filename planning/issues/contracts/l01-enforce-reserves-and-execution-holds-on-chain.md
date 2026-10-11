@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | contracts |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | BR-035, FR-223 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-925, ADR-012 |
 | **Blocks** | DEV-006, DEV-010, TRS-006, CHR-005, EXE-005 |
 | **Submission cut** | A |

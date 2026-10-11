@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | BR-059 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

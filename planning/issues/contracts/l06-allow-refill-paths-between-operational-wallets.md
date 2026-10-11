@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | BR-012, FR-416 |
 | **Blocks** | ENG-L01 |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-085, FR-906, NFR-CMP-04 |
 | **Blocks** | MDT-004, CMP-002, CMP-L01 |
 | **Submission cut** | A |

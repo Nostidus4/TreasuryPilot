@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | FR-907 |
 | **Blocks** | CMP-L02 |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | FR-322 |
 | **Blocks** | INV-L04 |
 | **Submission cut** | After submission |

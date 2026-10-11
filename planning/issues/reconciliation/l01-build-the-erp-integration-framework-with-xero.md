@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | FR-609 |
 | **Blocks** | REC-L02, REC-L03 |
 | **Submission cut** | After submission |

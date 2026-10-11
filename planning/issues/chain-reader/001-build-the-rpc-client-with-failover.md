@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | NFR-REL-04 |
 | **Blocks** | TRS-003, CHR-002, CHR-003, CHR-005 |
 | **Submission cut** | A |

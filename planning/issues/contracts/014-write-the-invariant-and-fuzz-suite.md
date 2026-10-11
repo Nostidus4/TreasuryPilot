@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | NFR-SEC-02, BR-001/013/022/024/030/041/062 |
 | **Blocks** | SC-L01 |
 | **Submission cut** | A |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | contracts |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | ADR-002, NFR-SEC-08 |
 | **Blocks** | DEV-004, SC-002 |
 | **Submission cut** | A |

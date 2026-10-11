@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | non-code |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | Submission item 05 |
 | **Blocks** | DOM-012 |
 | **Submission cut** | A |

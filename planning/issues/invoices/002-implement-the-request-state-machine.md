@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-319–320 |
 | **Blocks** | INV-003, RCV-004, NTF-001 |
 | **Submission cut** | A |

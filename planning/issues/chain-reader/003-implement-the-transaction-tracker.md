@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-053, FR-601 |
 | **Blocks** | MDT-003, CHR-004, EXE-008, RCV-002 |
 | **Submission cut** | A |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | ADR-008, FR-927 |
 | **Blocks** | DEV-010, IDN-001, EXE-002 |
 | **Submission cut** | A |

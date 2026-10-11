@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | ai |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | NFR-SEC-06, FR-930 |
 | **Blocks** | — |
 | **Submission cut** | A |

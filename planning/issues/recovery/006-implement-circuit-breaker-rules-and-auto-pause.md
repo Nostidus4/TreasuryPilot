@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P2 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-065, FR-222 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

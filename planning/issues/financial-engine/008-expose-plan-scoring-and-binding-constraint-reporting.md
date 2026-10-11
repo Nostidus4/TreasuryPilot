@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-405, FR-407 |
 | **Blocks** | EXE-004, AGT-007, AGT-009 |
 | **Submission cut** | A |

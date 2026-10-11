@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | AGT-016 |
 | **Blocks** | AGT-016 |
 | **Submission cut** | After submission |

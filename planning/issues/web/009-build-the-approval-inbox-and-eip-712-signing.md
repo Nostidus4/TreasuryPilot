@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | frontend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-313, FR-316, FR-916 |
 | **Blocks** | — |
 | **Submission cut** | A |

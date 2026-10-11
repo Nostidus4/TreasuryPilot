@@ -39,7 +39,7 @@ def expand_feats(s):
 
 def prefix(t): return t["id"].split("-")[0]
 def slug(s): return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60]
-def status(t): return "Ready for Review" if t["phase"] == "M1" else "Needs Discussion"
+def status(t): return "Ready for Assignment" if t["phase"] == "M1" else "Accepted"  # G3 accepted 2026-10-11
 def area(t):
     p = prefix(t)
     return {"SC": "contracts", "WEB": "frontend", "AGT": "ai", "DEV": "infrastructure", "DOM": "non-code",
@@ -141,7 +141,7 @@ def write_backlog():
     L = ["# Master Backlog", "",
          "Generated from `planning/tools/data` by `planning/tools/gen_issues.py`. Do not edit by hand.", "",
          "**Status legend:** Draft → Needs Discussion → Ready for Review → Accepted → Ready for Assignment → Assigned → In Progress → Review → Done.",
-         "Until gate G3, no ticket is above **Ready for Review**. Later-phase tickets are **Needs Discussion**.", ""]
+         "Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for Assignment**, Later tickets are **Accepted** (not scheduled). Nobody is assigned yet.", ""]
     c = Counter((t["phase"], t["prio"]) for t in TICKETS)
     L += ["## Totals", "", "| Phase | P0 | P1 | P2 | Total |", "|---|---:|---:|---:|---:|",
           f"| M1 | {c[('M1','P0')]} | {c[('M1','P1')]} | {c[('M1','P2')]} | {sum(v for k,v in c.items() if k[0]=='M1')} |",

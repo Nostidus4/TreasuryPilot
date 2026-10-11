@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-097, FR-911, NFR-AUD-01–02 |
 | **Blocks** | AUD-002, AUD-003, OBS-004 |
 | **Submission cut** | A |

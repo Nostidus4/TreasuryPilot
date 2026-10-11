@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BUSINESS_RULES.md, OQ-05 |
 | **Blocks** | DOM-013 |
 | **Submission cut** | A |

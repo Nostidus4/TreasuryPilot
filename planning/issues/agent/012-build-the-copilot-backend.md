@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | ai |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-801–802 |
 | **Blocks** | AGT-016, WEB-016 |
 | **Submission cut** | After submission |

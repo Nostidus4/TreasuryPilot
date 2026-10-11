@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P2 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | frontend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-415 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

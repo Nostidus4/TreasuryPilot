@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-022, BR-030, BR-040, BR-051, BR-060, FR-411 |
 | **Blocks** | POL-004, EXE-008, AGT-007, AGT-010, CMP-002 |
 | **Submission cut** | A |

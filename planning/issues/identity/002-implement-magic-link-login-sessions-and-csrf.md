@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-001, FR-003, ADR-009 |
 | **Blocks** | IDN-003, IDN-004, IDN-005, IDN-L01 |
 | **Submission cut** | A |

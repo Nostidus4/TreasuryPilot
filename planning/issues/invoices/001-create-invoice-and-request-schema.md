@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | DATA_MODEL §2.4 |
 | **Blocks** | INV-002, EXE-001 |
 | **Submission cut** | A |

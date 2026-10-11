@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | frontend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-303, FR-310 |
 | **Blocks** | WEB-009 |
 | **Submission cut** | A |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P2 |
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | PROJECT_OVERVIEW §8 |
 | **Blocks** | — |
 | **Submission cut** | After submission |

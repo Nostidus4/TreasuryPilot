@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-074, FR-909, NFR-PRIV-01–04 |
 | **Blocks** | CMP-L03, OBS-001 |
 | **Submission cut** | B |

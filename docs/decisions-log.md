@@ -40,3 +40,4 @@ Decisions agreed between the project lead and the planning assistant during the 
 | Q34 | Monorepo: `apps/web`, `services/{api,worker,signer}`, `packages/py-core`, `contracts/`, `infra/`, `docs/`, `planning/`. | ADR-001, REPOSITORY_STRUCTURE.md. |
 | Q35 | Observability: structlog + OpenTelemetry + Sentry + Prometheus `/metrics`. | ADR-011. |
 | Q36 | A dedicated **"Domain & Evidence"** epic with `non-code` tickets for the 3 advisors. | Phase 10. |
+| G3 | Ticket drafts accepted by the project lead (2026-10-11), who asked not to constrain the plan by time. The issues are now on GitHub: 20 epics and 221 tickets (sub-issues of their epics), 304 blocked-by links, labels, milestones, and the Project "TreasuryPilot · Delivery" (users/Nostidus4/projects/1). M1 tickets are **Ready for Assignment**; Later tickets are **Accepted**. Nobody is assigned. | `planning/tools/sync_github.py`, `planning/tracker/` |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | Later / - |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | contracts |
-| **Status** | Needs Discussion |
+| **Status** | Accepted |
 | **Traces to** | FR-224 |
 | **Blocks** | MDT-L01 |
 | **Submission cut** | After submission |

@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-052, FR-405 |
 | **Blocks** | ENG-008, ENG-L01, ENG-L03, AGT-010 |
 | **Submission cut** | A |

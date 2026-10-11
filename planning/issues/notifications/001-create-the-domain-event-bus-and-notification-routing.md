@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P1 |
 | **Size** | M (~1 day) |
 | **Area** | backend |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | FR-901 |
 | **Blocks** | NTF-002, NTF-003, NTF-L01, NTF-L02, NTF-L03 |
 | **Submission cut** | A |

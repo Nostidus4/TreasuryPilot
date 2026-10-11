@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | ai |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | AI_AGENT_ARCHITECTURE §3 |
 | **Blocks** | AGT-008, AGT-012 |
 | **Submission cut** | A |

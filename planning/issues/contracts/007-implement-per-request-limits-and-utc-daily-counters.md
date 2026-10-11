@@ -8,7 +8,7 @@
 | **Phase / Priority** | M1 / P0 |
 | **Size** | M (~1 day) |
 | **Area** | contracts |
-| **Status** | Ready for Review |
+| **Status** | Ready for Assignment |
 | **Traces to** | BR-020–BR-026, FR-212–214 |
 | **Blocks** | SC-009, SC-011, SC-L05 |
 | **Submission cut** | A |
