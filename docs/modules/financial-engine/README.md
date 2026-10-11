@@ -205,7 +205,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 
 ### 8.5 Fingerprint
 
-`normalize(s) = s.strip().casefold()` then remove spaces, `-`, `_`, `/`, `.`, `#`. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`. Vectors are shared with the contracts (SC-017) and the web.
+`normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
 
 ## 9. Configuration and defaults
 
