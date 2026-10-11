@@ -1,0 +1,91 @@
+import pytest
+
+from treasurypilot_core.attestations import PaymentReceipt, verify_payment_receipt
+
+
+def fixture_receipt() -> dict[str, object]:
+    return {
+        "requestId": "0x" + "01" * 32,
+        "invoiceHash": "0x" + "02" * 32,
+        "approvalHash": "0x" + "03" * 32,
+        "planHash": "0x" + "04" * 32,
+        "payTxHash": "0x" + "05" * 32,
+        "payee": "0x" + "06" * 20,
+        "amount": "9007199254740993000000",
+        "policyVersion": "0x" + "07" * 32,
+    }
+
+
+def test_exact_schema_order_and_integer_abi_encoding() -> None:
+    receipt = PaymentReceipt.from_mapping(fixture_receipt())
+    encoded = receipt.encode()
+    assert len(encoded) == 256
+    assert encoded[:32] == bytes.fromhex("01" * 32)
+    assert encoded[160:192] == bytes(12) + bytes.fromhex("06" * 20)
+    assert int.from_bytes(encoded[192:224], "big") == 9007199254740993000000
+    assert encoded[224:] == bytes.fromhex("07" * 32)
+
+
+@pytest.mark.parametrize("field", ["vendorName", "invoiceText", "signature", "revocable"])
+def test_extra_fields_are_rejected(field: str) -> None:
+    values = fixture_receipt()
+    values[field] = "not permitted"
+    with pytest.raises(ValueError, match="exactly match"):
+        PaymentReceipt.from_mapping(values)
+
+
+@pytest.mark.parametrize("amount", [True, False, 0, -1, 1.5, "1.5", "+1", 2**256])
+def test_money_must_be_positive_integer_base_units(amount: object) -> None:
+    values = fixture_receipt()
+    values["amount"] = amount
+    with pytest.raises(ValueError, match="uint256"):
+        PaymentReceipt.from_mapping(values)
+
+
+def test_missing_fields_and_wrong_hash_lengths_are_rejected() -> None:
+    values = fixture_receipt()
+    del values["invoiceHash"]
+    with pytest.raises(ValueError, match="missing"):
+        PaymentReceipt.from_mapping(values)
+    values = fixture_receipt()
+    values["payTxHash"] = "0x1234"
+    with pytest.raises(ValueError, match="32-byte"):
+        PaymentReceipt.from_mapping(values)
+
+
+def test_attest_payload_is_non_revocable_has_no_expiry_and_no_eth() -> None:
+    receipt = PaymentReceipt.from_mapping(fixture_receipt())
+    payload = receipt.attest_tuple("0x" + "08" * 32)
+    assert ",0,false,0x" in payload
+    assert payload.endswith(",0))")
+
+
+def test_receipt_requires_matching_successful_module_event() -> None:
+    values = fixture_receipt()
+    event_topic = "0x" + "ab" * 32
+    module = "0x" + "11" * 20
+    payee = str(values["payee"])
+    amount = int(str(values["amount"]))
+    data = "0x" + "00" * 32 + "00" * 12 + payee[2:] + amount.to_bytes(32, "big").hex() + "00" * 96
+    transaction: dict[str, object] = {
+        "status": "0x1",
+        "blockNumber": "0x20",
+        "logs": [{"address": module, "topics": [event_topic, values["requestId"]], "data": data}],
+    }
+    assert (
+        verify_payment_receipt(
+            transaction, module, str(values["requestId"]), payee, amount, event_topic
+        )
+        == 32
+    )
+    transaction["status"] = "0x0"
+    with pytest.raises(ValueError, match="did not succeed"):
+        verify_payment_receipt(
+            transaction, module, str(values["requestId"]), payee, amount, event_topic
+        )
+    transaction["status"] = "0x1"
+    transaction["logs"] = []
+    with pytest.raises(ValueError, match="matching treasury event"):
+        verify_payment_receipt(
+            transaction, module, str(values["requestId"]), payee, amount, event_topic
+        )

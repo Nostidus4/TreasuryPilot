@@ -6,12 +6,24 @@ only claim their on-chain boundaries. Foundry v1.8.5, solc 0.8.28, optimizer 200
 
 ## Local campaign (2026-10-12)
 
-`FOUNDRY_PROFILE=ci forge test -v` passed 62 tests, including all 14 invariants:
+`FOUNDRY_PROFILE=ci forge test -v` passed 66 tests, including all 14 invariants:
 10,000 runs, depth 32, 320,000 handler calls, zero unexpected reverts.
 Fuzz tests also ran 10,000 cases. The handler checks authority, current approval,
 payee cooling, budgets, floors, replay, exception scope, status, persistent counters,
 refill bound, cancellation, fixed-pool deltas, zero allowance and exact discount.
 It first executes successful PAY and REFILL, so those checks are not vacuous.
+`FOUNDRY_PROFILE=fork forge test` passed four tests against the Sepolia Aave V3
+reserve at pinned block 11,890,000. Supply, accrual, withdrawal, refill, payment,
+borrow and repayment use the deployed pool/token/aToken contracts; only fixture
+Safe balances are inserted with Foundry storage cheatcodes. Two repeated fork
+runs produced the same passing cases and gas usage. LINK was selected because its
+reserve has no supply cap at the pinned block.
+
+The local deployment script was exercised on fresh Anvil chains. Repeating the
+deployment produced identical CREATE2 addresses, code hashes, module clones and
+Safe addresses. The Sepolia script was simulated twice without `--broadcast`; it
+produced the same predicted deployment addresses. No live Sepolia transaction
+was sent.
 
 Mutation experiment: replacing the inclusive early-payment predicate with
 `bool early = false` caused I14 to fail after 39 runs / 1,219 calls. Foundry shrank

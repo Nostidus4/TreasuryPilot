@@ -18,6 +18,10 @@ contract MockAToken is ERC20 {
         return 6;
     }
 
+    function scaledBalanceOf(address user) external view returns (uint256) {
+        return balanceOf(user);
+    }
+
     function mint(address to, uint256 amount) external {
         require(msg.sender == POOL, "pool only");
         _mint(to, amount);
@@ -60,6 +64,11 @@ contract MockAavePool is IAavePool {
         data.liquidityIndex = 1e27;
         data.variableBorrowIndex = 1e27;
         data.currentVariableBorrowRate = variableBorrowRate;
+    }
+
+    function getReserveNormalizedIncome(address asset_) external view returns (uint256) {
+        require(asset_ == asset, "unknown asset");
+        return 1e27;
     }
 
     function supply(address asset_, uint256 amount, address onBehalfOf, uint16) external {

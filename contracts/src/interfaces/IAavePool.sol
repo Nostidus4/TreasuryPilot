@@ -22,6 +22,7 @@ interface IAavePool {
         uint128 isolationModeTotalDebt;
     }
     function getReserveData(address asset) external view returns (ReserveData memory);
+    function getReserveNormalizedIncome(address asset) external view returns (uint256);
     function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
     function withdraw(address asset, uint256 amount, address to) external returns (uint256);
     function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)
@@ -45,4 +46,5 @@ interface IAavePool {
 interface IAaveToken {
     function UNDERLYING_ASSET_ADDRESS() external view returns (address);
     function POOL() external view returns (address);
+    function scaledBalanceOf(address user) external view returns (uint256);
 }

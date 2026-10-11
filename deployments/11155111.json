@@ -1,0 +1,27 @@
+{
+  "chainId": 11155111,
+  "networkName": "Ethereum Sepolia",
+  "deploymentStatus": "configured_only",
+  "deploymentSource": {
+    "aaveAddressBookRepository": "https://github.com/aave-dao/aave-address-book",
+    "aaveAddressBookCommit": "b5da40f58dd245146798302dc4d7cfb89ee30e96",
+    "easContractsRepository": "https://github.com/ethereum-attestation-service/eas-contracts",
+    "easContractsCommit": "e6e970286ff18bbdfc5d8eff2742c5ece46040e4"
+  },
+  "asset": "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8",
+  "assetDecimals": 6,
+  "aavePool": "0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951",
+  "eas": "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
+  "easRegistry": "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0",
+  "easSchema": "bytes32 requestId,bytes32 invoiceHash,bytes32 approvalHash,bytes32 planHash,bytes32 payTxHash,address payee,uint256 amount,bytes32 policyVersion",
+  "easSchemaUid": "0x51ff02da8a076efd7ed8d58548219fba0f0a06fd5f313309c856339772ae1011",
+  "easSchemaRegistered": false,
+  "testToken": null,
+  "implementation": null,
+  "factory": null,
+  "module": null,
+  "safeT": null,
+  "safeO1": null,
+  "safeO2": null,
+  "codeHashes": {}
+}

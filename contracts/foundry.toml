@@ -18,6 +18,7 @@ bytecode_hash = "none"
 fuzz = { runs = 1000 }
 invariant = { runs = 1000, depth = 32, fail_on_revert = true }
 fs_permissions = [{ access = "read", path = "test/vectors" }]
+no_match_path = "test/fork/**"
 
 remappings = [
   "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
@@ -27,3 +28,10 @@ remappings = [
 [profile.ci]
 fuzz = { runs = 10000 }
 invariant = { runs = 10000, depth = 32, fail_on_revert = true }
+
+[profile.fork]
+no_match_path = "test/invariant/**"
+match_path = "test/fork/**"
+
+[profile.deploy]
+fs_permissions = [{ access = "read", path = "test/vectors" }, { access = "read-write", path = "../deployments" }]

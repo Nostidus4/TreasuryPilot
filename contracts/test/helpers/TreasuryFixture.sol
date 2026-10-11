@@ -26,10 +26,10 @@ abstract contract TreasuryFixture is SafeTestHelper {
     I.MandateInit internal config;
 
     function setUp() public virtual {
-        vm.warp(10 days);
-        approver = vm.addr(APPROVER_KEY);
+        vm.warp(_startTime());
+        approver = vm.addr(_approverKey());
         token = _createToken();
-        pool = new MockAavePool(address(token));
+        pool = _createPool();
         treasury = deployOneOfOneSafe(address(this), 1);
         op1 = deployOneOfOneSafe(address(this), 2);
         op2 = deployOneOfOneSafe(address(this), 3);
@@ -41,10 +41,10 @@ abstract contract TreasuryFixture is SafeTestHelper {
             300,
             executor,
             guardian,
-            I.Limits(2000e6, 10000e6),
-            I.Limits(2500e6, 12000e6),
+            I.Limits(uint128(2000 * _assetUnit()), uint128(10000 * _assetUnit())),
+            I.Limits(uint128(2500 * _assetUnit()), uint128(12000 * _assetUnit())),
             14 days,
-            I.Limits(5000e6, 20000e6)
+            I.Limits(uint128(5000 * _assetUnit()), uint128(20000 * _assetUnit()))
         );
         address[] memory operational = new address[](2);
         operational[0] = address(op1);
@@ -52,9 +52,9 @@ abstract contract TreasuryFixture is SafeTestHelper {
         address[] memory approvers = new address[](1);
         approvers[0] = approver;
         I.BufferInit[] memory buffers = new I.BufferInit[](3);
-        buffers[0] = I.BufferInit(address(treasury), 1000e6, 0);
-        buffers[1] = I.BufferInit(address(op1), 10e6, 150e6);
-        buffers[2] = I.BufferInit(address(op2), 10e6, 150e6);
+        buffers[0] = I.BufferInit(address(treasury), 1000 * _assetUnit(), 0);
+        buffers[1] = I.BufferInit(address(op1), 10 * _assetUnit(), 150 * _assetUnit());
+        buffers[2] = I.BufferInit(address(op2), 10 * _assetUnit(), 150 * _assetUnit());
         // Factory constructor performs no CREATE, so its first clone uses nonce 1.
         module = TreasuryPilotModule(
             address(uint160(uint256(keccak256(abi.encodePacked(hex"d694", address(factory), hex"01")))))
@@ -67,10 +67,10 @@ abstract contract TreasuryFixture is SafeTestHelper {
         _safeTx(treasury, address(treasury), abi.encodeCall(ISafeWallet.enableModule, (address(module))));
         _safeTx(op1, address(op1), abi.encodeCall(ISafeWallet.enableModule, (address(module))));
         _safeTx(op2, address(op2), abi.encodeCall(ISafeWallet.enableModule, (address(module))));
-        token.mint(address(treasury), 30000e6);
-        token.mint(address(op1), 10000e6);
-        token.mint(address(op2), 10000e6);
-        token.mint(address(pool), 30000e6);
+        _fundWallet(address(treasury), 30000 * _assetUnit());
+        _fundWallet(address(op1), 10000 * _assetUnit());
+        _fundWallet(address(op2), 10000 * _assetUnit());
+        _fundWallet(address(pool), 30000 * _assetUnit());
         _owner(abi.encodeCall(module.addPayee, (vendor)));
         vm.warp(block.timestamp + 300);
     }
@@ -97,6 +97,26 @@ abstract contract TreasuryFixture is SafeTestHelper {
         return new TestUSDC();
     }
 
+    function _createPool() internal virtual returns (MockAavePool) {
+        return new MockAavePool(address(token));
+    }
+
+    function _startTime() internal view virtual returns (uint256) {
+        return 10 days;
+    }
+
+    function _assetUnit() internal pure virtual returns (uint256) {
+        return 1e6;
+    }
+
+    function _approverKey() internal pure virtual returns (uint256) {
+        return APPROVER_KEY;
+    }
+
+    function _fundWallet(address wallet, uint256 amount) internal virtual {
+        token.mint(wallet, amount);
+    }
+
     function _owner(bytes memory data) internal {
         _safeTx(treasury, address(module), data);
     }
@@ -120,7 +140,7 @@ abstract contract TreasuryFixture is SafeTestHelper {
     }
 
     function _sign(I.PaymentApproval memory ap) internal view returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(APPROVER_KEY, module.hashApproval(ap));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_approverKey(), module.hashApproval(ap));
         return abi.encode(approver, abi.encodePacked(r, s, v));
     }
 

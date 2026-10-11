@@ -20,6 +20,7 @@ apps/web/dist/
 contracts/cache/
 contracts/out/
 contracts/broadcast/
+deployments/31337.json
 
 # Local environment and secrets
 .env
