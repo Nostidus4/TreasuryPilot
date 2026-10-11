@@ -6,7 +6,7 @@
 
 Built for **FinTechathon 2026 – International Track, Topic F (Agent Wallet)**. Designed as a real multi-tenant product; Milestone 1 (M1) is the competition build.
 
-> ⚠️ **Status: planning complete, implementation not started.** M1 runs on test networks with test assets only. The contracts are unaudited. Do not use with real funds.
+> ⚠️ **Status: planning complete; the runnable development foundation is in place.** Business features are not implemented yet. M1 runs on test networks with test assets only. The contracts are unaudited. Do not use with real funds.
 
 ## What it does
 
@@ -33,7 +33,7 @@ Built for **FinTechathon 2026 – International Track, Topic F (Agent Wallet)**.
 
 ## Repository layout
 
-See [`docs/REPOSITORY_STRUCTURE.md`](docs/REPOSITORY_STRUCTURE.md). The code folders (`apps/`, `services/`, `packages/`, `contracts/`) are created by the first tickets of each module.
+See [`docs/REPOSITORY_STRUCTURE.md`](docs/REPOSITORY_STRUCTURE.md). The Vite web app, Python services, shared package, Solidity workspace, Docker stack and CI quality gates are initialized; feature code lands through the matching module tickets.
 
 ## Getting started
 

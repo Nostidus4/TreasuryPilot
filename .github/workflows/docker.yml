@@ -1,0 +1,62 @@
+name: Docker CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'contracts/package.json'
+      - 'infra/**'
+      - 'packages/**'
+      - 'services/**'
+      - '.dockerignore'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/docker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'contracts/package.json'
+      - 'infra/**'
+      - 'packages/**'
+      - 'services/**'
+      - '.dockerignore'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/docker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate Compose
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local config --quiet
+      - name: Build images
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local build
+      - name: Start stack
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local up --detach --wait
+      - name: Smoke test
+        run: |
+          docker compose --env-file infra/env/.env.example -f infra/compose.yaml exec -T postgres pg_isready -U treasurypilot -d treasurypilot
+          docker compose --env-file infra/env/.env.example -f infra/compose.yaml exec -T redis redis-cli ping
+          curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live
+          test "$(curl --silent --show-error --header 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://127.0.0.1:8545 | jq --raw-output .result)" = '0x7a69'
+          curl --fail --silent --show-error http://127.0.0.1:8000/v1/health
+          curl --fail --silent --show-error http://127.0.0.1:5173/healthz
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local logs --no-color
+      - name: Stop stack
+        if: always()
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local down --volumes --remove-orphans
