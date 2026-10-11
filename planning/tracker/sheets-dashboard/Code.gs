@@ -100,7 +100,7 @@ function refresh() {
   if (vals.length) data.getRange(2, 1, vals.length, head.length).setValues(vals);
   data.setFrozenRows(1);
 
-  // Calc: aggregate tables that the charts read
+  // Calc: aggregate tables, side by side so their sizes never interfere
   const calc = sheet_('Calc');
   calc.clear();
   const m1 = rows.filter(r => r.phase === 'M1');
@@ -116,17 +116,14 @@ function refresh() {
   });
   calc.getRange(1, 1, 1, 10).setValues([['Module'].concat(BUCKETS).concat(['Tổng', '% xong (ticket)', '% xong (công)', 'Người làm'])]);
   if (modRows.length) calc.getRange(2, 1, modRows.length, 10).setValues(modRows);
-  calc.getRange(2, 8, Math.max(modRows.length, 1), 2).setNumberFormat('0%');
 
   const owners = Array.from(new Set(m1.map(r => r.owner))).sort();
   const ownerRows = owners.map(o => [o].concat(BUCKETS.map(b => m1.filter(r => r.owner === o && bucketOf_(r.status) === b).length)));
-  const oStart = modRows.length + 4;
-  calc.getRange(oStart, 1, 1, 6).setValues([['Người làm'].concat(BUCKETS)]);
-  if (ownerRows.length) calc.getRange(oStart + 1, 1, ownerRows.length, 6).setValues(ownerRows);
+  calc.getRange(1, 12, 1, 6).setValues([['Người làm'].concat(BUCKETS)]);
+  if (ownerRows.length) calc.getRange(2, 12, ownerRows.length, 6).setValues(ownerRows);
 
-  const sStart = oStart + ownerRows.length + 3;
-  calc.getRange(sStart, 1, 1, 2).setValues([['Trạng thái', 'Số ticket (M1)']]);
-  calc.getRange(sStart + 1, 1, BUCKETS.length, 2).setValues(BUCKETS.map(b => [b, m1.filter(r => bucketOf_(r.status) === b).length]));
+  calc.getRange(1, 19, 1, 2).setValues([['Trạng thái', 'Số ticket']]);
+  calc.getRange(2, 19, BUCKETS.length, 2).setValues(BUCKETS.map(b => [b, m1.filter(r => bucketOf_(r.status) === b).length]));
 
   // History (one row per day) for the burn-up chart
   const hist = sheet_('History');
@@ -141,71 +138,183 @@ function refresh() {
   else hist.appendRow(line);
 
   // Dashboard KPIs
-  const dash = sheet_('Dashboard');
   const done = m1.filter(r => r.status === 'Done').length;
   const inprog = m1.filter(r => r.status === 'In Progress' || r.status === 'Review').length;
   const kpis = [
-    ['Số module', modules.length], ['Ticket M1', m1.length], ['Đã xong', done], ['Đang làm / review', inprog],
-    ['% M1 xong', m1.length ? done / m1.length : 0],
-    ['% Cut A xong', cutA.length ? cutA.filter(r => r.status === 'Done').length / cutA.length : 0],
-    ['Chưa giao người', m1.filter(r => r.owner === '(chưa giao)').length],
-    ['Còn lại tới hạn nộp (ngày)', Math.max(0, Math.ceil((DEADLINE - new Date()) / 86400000))],
-    ['Cập nhật lúc', Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd HH:mm')]];
-  dash.getRange('A1').setValue('TreasuryPilot · Tiến độ').setFontSize(16).setFontWeight('bold');
-  dash.getRange(3, 1, 1, kpis.length).setValues([kpis.map(k => k[0])]).setFontWeight('bold').setBackground('#1F3864').setFontColor('white').setWrap(true);
-  dash.getRange(4, 1, 1, kpis.length).setValues([kpis.map(k => k[1])]).setFontSize(14).setHorizontalAlignment('center');
-  dash.getRange(4, 5, 1, 2).setNumberFormat('0%');
-  buildCharts_(); // rebuilt every refresh so ranges follow new people/modules
+    ['MODULE', modules.length, '#1F3864'], ['TICKET M1', m1.length, '#1F3864'], ['ĐÃ XONG', done, '#2E7D32'],
+    ['ĐANG LÀM / REVIEW', inprog, '#EF6C00'], ['% M1 XONG', m1.length ? done / m1.length : 0, '#2E7D32'],
+    ['% NHÓM A XONG', cutA.length ? cutA.filter(r => r.status === 'Done').length / cutA.length : 0, '#2E7D32'],
+    ['CHƯA GIAO NGƯỜI', m1.filter(r => r.owner === '(chưa giao)').length, '#C62828'],
+    ['NGÀY CÒN LẠI', Math.max(0, Math.ceil((DEADLINE - new Date()) / 86400000)), '#6A1B9A']];
+  buildDashboard_(kpis, modRows.length, ownerRows.length);
+  styleSheets_();
   return rows.length;
 }
 
-// ───────────────────────── charts ─────────────────────────
-function buildCharts_() {
+// ───────────────────────── dashboard ─────────────────────────
+const NAVY = '#1F3864', INK = '#263238', MUTED = '#78909C', BG = '#F5F7FA';
+const COLORS = ['#CFD8DC', '#90CAF9', '#FFB74D', '#BA68C8', '#66BB6A'];
+const FONT = 'Arial';
+
+function chartStyle_(b, title) {
+  return b.setHiddenDimensionStrategy(Charts.ChartHiddenDimensionStrategy.SHOW_BOTH) // data lives in the hidden Calc sheet
+    .setOption('title', title)
+    .setOption('titleTextStyle', {color: INK, fontSize: 14, bold: true, fontName: FONT})
+    .setOption('fontName', FONT).setOption('backgroundColor', {fill: '#FFFFFF', stroke: '#E0E6ED', strokeWidth: 1})
+    .setOption('legend', {position: 'top', textStyle: {color: INK, fontSize: 11}})
+    .setOption('hAxis', {textStyle: {color: MUTED, fontSize: 10}, gridlines: {color: '#EEF1F5'}})
+    .setOption('vAxis', {textStyle: {color: INK, fontSize: 11}, gridlines: {color: '#EEF1F5'}});
+}
+
+function buildDashboard_(kpis, nMod, nOwn) {
   const ss = SpreadsheetApp.getActive();
   const dash = sheet_('Dashboard'), calc = sheet_('Calc'), hist = sheet_('History');
   dash.getCharts().forEach(c => dash.removeChart(c));
-  const nMod = calc.getRange('A2:A').getValues().filter(r => r[0] !== '').length;
-  const oStart = nMod + 4;
-  let nOwn = 0; while (calc.getRange(oStart + 1 + nOwn, 1).getValue() !== '') nOwn++;
-  const sStart = oStart + nOwn + 3;
-  const colors = ['#BDBDBD', '#90CAF9', '#FFB74D', '#BA68C8', '#66BB6A'];
+  dash.getRange(1, 1, dash.getMaxRows(), dash.getMaxColumns()).breakApart();
+  dash.clear(); dash.clearConditionalFormatRules();
+  dash.setHiddenGridlines(true);
+  const ncol = 17;
+  dash.getRange(1, 1, 120, ncol).setBackground(BG).setFontFamily(FONT);
+  for (let c = 1; c <= ncol; c++) dash.setColumnWidth(c, 92);
+  dash.setColumnWidth(1, 16);
 
-  // 1. Progress per module (stacked bars)
-  dash.insertChart(dash.newChart().asBarChart().setStacked()
-    .addRange(calc.getRange(1, 1, nMod + 1, 6))
-    .setOption('title', 'Tiến độ từng module (số ticket M1)').setOption('colors', colors)
-    .setOption('legend', {position: 'top'}).setOption('height', 520).setOption('width', 760)
-    .setPosition(6, 1, 0, 0).build());
-  // 2. % done per module
-  dash.insertChart(dash.newChart().asColumnChart()
-    .addRange(calc.getRange(1, 1, nMod + 1, 1)).addRange(calc.getRange(1, 8, nMod + 1, 1))
-    .setOption('title', '% hoàn thành theo module').setOption('vAxis', {format: 'percent', viewWindow: {min: 0, max: 1}})
-    .setOption('legend', {position: 'none'}).setOption('colors', ['#66BB6A']).setOption('height', 520).setOption('width', 620)
-    .setPosition(6, 9, 0, 0).build());
-  // 3. Workload per person
-  if (nOwn > 0) dash.insertChart(dash.newChart().asColumnChart().setStacked()
-    .addRange(calc.getRange(oStart, 1, nOwn + 1, 6))
-    .setOption('title', 'Ai đang làm gì (số ticket theo người)').setOption('colors', colors)
-    .setOption('legend', {position: 'top'}).setOption('height', 420).setOption('width', 760)
-    .setPosition(33, 1, 0, 0).build());
-  // 4. Overall status
-  dash.insertChart(dash.newChart().asPieChart()
-    .addRange(calc.getRange(sStart, 1, BUCKETS.length + 1, 2))
-    .setOption('title', 'Tổng quan trạng thái M1').setOption('pieHole', 0.4).setOption('colors', colors)
-    .setOption('height', 420).setOption('width', 620).setPosition(33, 9, 0, 0).build());
-  // 5. Cut A burn-up
-  dash.insertChart(dash.newChart().asLineChart()
-    .addRange(hist.getRange('A1:C'))
-    .setOption('title', 'Burn-up nhóm A (bắt buộc cho bản nộp)').setOption('legend', {position: 'top'})
-    .setOption('colors', ['#9E9E9E', '#2E7D32']).setOption('height', 380).setOption('width', 1380)
-    .setPosition(55, 1, 0, 0).build());
+  // Banner
+  dash.setRowHeight(1, 12);
+  dash.getRange(2, 2, 1, ncol - 1).merge().setValue('TreasuryPilot · Bảng theo dõi tiến độ')
+    .setBackground(NAVY).setFontColor('#FFFFFF').setFontSize(20).setFontWeight('bold').setVerticalAlignment('middle');
+  dash.setRowHeight(2, 46);
+  const updated = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'HH:mm dd/MM/yyyy');
+  dash.getRange(3, 2, 1, ncol - 1).merge()
+    .setValue('FinTechathon 2026 · Hạn nộp 20/10/2026 23:59 (giờ Bắc Kinh) · Tự cập nhật mỗi giờ từ GitHub Project · Lần cuối: ' + updated)
+    .setBackground(NAVY).setFontColor('#CFD8DC').setFontSize(10);
+  dash.setRowHeight(3, 24); dash.setRowHeight(4, 14);
 
-  // Module table with people, under the charts
-  const tStart = 76;
-  dash.getRange(tStart, 1, 60, 10).clearContent().clearFormat();
-  dash.getRange(tStart, 1).setValue('Bảng module · người làm').setFontWeight('bold').setFontSize(12);
-  dash.getRange(tStart + 1, 1, nMod + 1, 10).setValues(calc.getRange(1, 1, nMod + 1, 10).getValues());
-  dash.getRange(tStart + 1, 1, 1, 10).setFontWeight('bold').setBackground('#1F3864').setFontColor('white');
-  dash.getRange(tStart + 2, 8, nMod, 2).setNumberFormat('0%');
+  // KPI cards: 8 cards, 2 columns wide each, starting at column B
+  kpis.forEach((k, i) => {
+    const col = 2 + i * 2;
+    const label = dash.getRange(5, col, 1, 2).merge(), value = dash.getRange(6, col, 1, 2).merge();
+    label.setValue(k[0]).setFontSize(9).setFontColor(MUTED).setFontWeight('bold').setHorizontalAlignment('center')
+      .setBackground('#FFFFFF').setBorder(true, true, false, true, false, false, '#E0E6ED', SpreadsheetApp.BorderStyle.SOLID);
+    value.setValue(k[1]).setFontSize(26).setFontWeight('bold').setFontColor(k[2]).setHorizontalAlignment('center')
+      .setVerticalAlignment('middle').setBackground('#FFFFFF')
+      .setBorder(false, true, true, true, false, false, '#E0E6ED', SpreadsheetApp.BorderStyle.SOLID);
+    if (typeof k[1] === 'number' && k[1] <= 1 && k[0].indexOf('%') === 0) value.setNumberFormat('0%');
+  });
+  dash.setRowHeight(5, 26); dash.setRowHeight(6, 54); dash.setRowHeight(7, 16);
+
+  // Section helper
+  const section = (row, text) => dash.getRange(row, 2, 1, ncol - 1).merge().setValue(text)
+    .setFontSize(12).setFontWeight('bold').setFontColor(NAVY)
+    .setBorder(false, false, true, false, false, false, NAVY, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+
+  section(8, 'Tiến độ theo module');
+  const modRange = calc.getRange(1, 1, nMod + 1, 6);
+  dash.insertChart(chartStyle_(dash.newChart().asBarChart().setStacked().addRange(modRange).setNumHeaders(1), 'Số ticket M1 theo trạng thái')
+    .setOption('colors', COLORS).setOption('height', 560).setOption('width', 760)
+    .setPosition(9, 2, 4, 6).build());
+  dash.insertChart(chartStyle_(dash.newChart().asBarChart()
+      .addRange(calc.getRange(1, 1, nMod + 1, 1)).addRange(calc.getRange(1, 8, nMod + 1, 1)).setNumHeaders(1), '% hoàn thành (theo số ticket)')
+    .setOption('colors', ['#43A047']).setOption('legend', {position: 'none'})
+    .setOption('hAxis', {format: 'percent', viewWindow: {min: 0, max: 1}, textStyle: {color: MUTED}, gridlines: {color: '#EEF1F5'}})
+    .setOption('height', 560).setOption('width', 600)
+    .setPosition(9, 10, 20, 6).build());
+
+  section(40, 'Con người & trạng thái');
+  if (nOwn > 0) dash.insertChart(chartStyle_(dash.newChart().asColumnChart().setStacked()
+      .addRange(calc.getRange(1, 12, nOwn + 1, 6)).setNumHeaders(1), 'Ai đang làm gì (số ticket M1)')
+    .setOption('colors', COLORS).setOption('height', 400).setOption('width', 760)
+    .setPosition(41, 2, 4, 6).build());
+  dash.insertChart(chartStyle_(dash.newChart().asPieChart()
+      .addRange(calc.getRange(1, 19, BUCKETS.length + 1, 2)).setNumHeaders(1), 'Tổng quan trạng thái M1')
+    .setOption('pieHole', 0.55).setOption('colors', COLORS).setOption('pieSliceTextStyle', {color: INK})
+    .setOption('legend', {position: 'right', textStyle: {color: INK, fontSize: 11}})
+    .setOption('height', 400).setOption('width', 600).setPosition(41, 10, 20, 6).build());
+
+  section(62, 'Burn-up nhóm A (bắt buộc cho bản nộp)');
+  dash.insertChart(chartStyle_(dash.newChart().asAreaChart()
+      .addRange(hist.getRange(1, 1, Math.max(hist.getLastRow(), 2), 3)).setNumHeaders(1), 'Tổng ticket nhóm A và số đã xong theo ngày')
+    .setOption('colors', ['#B0BEC5', '#2E7D32']).setOption('areaOpacity', 0.15).setOption('lineWidth', 3).setOption('pointSize', 5)
+    .setOption('height', 340).setOption('width', 1380).setPosition(63, 2, 4, 6).build());
+
+  // Module table
+  const tRow = 82;
+  section(tRow, 'Bảng module · ai đang làm');
+  const head = ['Module', 'Chưa bắt đầu', 'Đã giao', 'Đang làm', 'Review', 'Xong', 'Tổng', '% xong', '% công', 'Người làm'];
+  const vals = calc.getRange(2, 1, nMod, 10).getValues();
+  dash.getRange(tRow + 1, 2, 1, 10).setValues([head]).setBackground(NAVY).setFontColor('#FFFFFF').setFontWeight('bold')
+    .setHorizontalAlignment('center');
+  if (nMod) {
+    const body = dash.getRange(tRow + 2, 2, nMod, 10);
+    body.setValues(vals).setBackground('#FFFFFF').setFontColor(INK).setFontSize(10)
+      .setBorder(true, true, true, true, true, true, '#E0E6ED', SpreadsheetApp.BorderStyle.SOLID);
+    dash.getRange(tRow + 2, 3, nMod, 7).setHorizontalAlignment('center');
+    dash.getRange(tRow + 2, 3, nMod, 6).setNumberFormat('0');
+    dash.getRange(tRow + 2, 9, nMod, 2).setNumberFormat('0%');
+    for (let i = 0; i < nMod; i += 2) dash.getRange(tRow + 2 + i, 2, 1, 10).setBackground('#F8FAFC');
+    const pct = dash.getRange(tRow + 2, 9, nMod, 1);
+    dash.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule().setGradientMinpointWithValue('#FFFFFF', SpreadsheetApp.InterpolationType.NUMBER, '0')
+      .setGradientMaxpointWithValue('#81C784', SpreadsheetApp.InterpolationType.NUMBER, '1').setRanges([pct]).build()]);
+  }
+  // "Người làm" spans K:Q so the KPI cards keep equal widths
+  for (let r = tRow + 1; r <= tRow + 1 + nMod; r++) dash.getRange(r, 11, 1, 7).merge().setWrap(true);
+  dash.getRange(tRow + 1, 11, 1, 7).setBackground(NAVY);
+  dash.setFrozenRows(0);
   ss.setActiveSheet(dash); ss.moveActiveSheet(1);
+}
+
+// ───────────────────────── other sheets ─────────────────────────
+function header_(sh, n) {
+  sh.getRange(1, 1, 1, n).setBackground(NAVY).setFontColor('#FFFFFF').setFontWeight('bold').setFontFamily(FONT)
+    .setVerticalAlignment('middle').setWrap(true);
+  sh.setRowHeight(1, 32); sh.setFrozenRows(1);
+}
+function band_(sh, rows, cols) {
+  sh.getBandings().forEach(b => b.remove());
+  if (rows > 1) sh.getRange(1, 1, rows, cols).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
+    .setHeaderRowColor(NAVY);
+}
+
+function styleSheets_() {
+  const ss = SpreadsheetApp.getActive();
+  // Data
+  const data = sheet_('Data');
+  const n = data.getLastRow(), c = data.getLastColumn();
+  data.getRange(1, 1, n, c).setFontFamily(FONT).setFontSize(10).setVerticalAlignment('middle');
+  band_(data, n, c); header_(data, c);
+  [90, 55, 380, 120, 140, 110, 130, 70, 60, 50, 70, 120, 100, 60].forEach((w, i) => data.setColumnWidth(i + 1, w));
+  if (n > 1) {
+    const links = data.getRange(2, 14, n - 1, 1).getValues().map(r => [r[0]
+      ? SpreadsheetApp.newRichTextValue().setText('Mở ↗').setLinkUrl(String(r[0])).build()
+      : SpreadsheetApp.newRichTextValue().setText('').build()]);
+    data.getRange(2, 14, n - 1, 1).setRichTextValues(links);
+    const st = data.getRange(2, 6, n - 1, 1);
+    const rule = (txt, bg, fg) => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(txt).setBackground(bg).setFontColor(fg).setRanges([st]).build();
+    data.setConditionalFormatRules([rule('Xong', '#C8E6C9', '#1B5E20'), rule('Review', '#E1BEE7', '#4A148C'),
+      rule('Đang làm', '#FFE0B2', '#E65100'), rule('Đã giao', '#BBDEFB', '#0D47A1'), rule('Chưa bắt đầu', '#ECEFF1', '#455A64')]);
+  }
+  data.setTabColor('#1E88E5');
+  // History
+  const hist = sheet_('History');
+  header_(hist, 5); hist.getRange(2, 1, Math.max(hist.getLastRow() - 1, 1), 1).setNumberFormat('dd/MM/yyyy');
+  hist.getRange(1, 1, hist.getLastRow(), 5).setFontFamily(FONT).setHorizontalAlignment('center');
+  [110, 100, 100, 100, 100].forEach((w, i) => hist.setColumnWidth(i + 1, w));
+  hist.setTabColor('#8E24AA');
+  // Links (static sheet created by hand)
+  const links = ss.getSheetByName('Links');
+  if (links && links.getLastRow() > 1) {
+    const ln = links.getLastRow(), lc = links.getLastColumn();
+    links.getRange(1, 1, ln, lc).setFontFamily(FONT).setFontSize(10).setVerticalAlignment('middle').setWrap(true);
+    band_(links, ln, lc); header_(links, lc);
+    [190, 260, 380, 320, 170].forEach((w, i) => links.setColumnWidth(i + 1, w));
+    links.getRange(2, 4, ln - 1, 1).setWrap(false);
+    links.setTabColor('#43A047');
+  }
+  // Calc is internal
+  const calc = sheet_('Calc'); calc.hideSheet(); calc.setTabColor('#9E9E9E');
+  sheet_('Dashboard').setTabColor(NAVY);
+  // Order: Dashboard, Links, Data, History
+  ['Dashboard', 'Links', 'Data', 'History'].forEach((name, i) => {
+    const sh = ss.getSheetByName(name); if (sh) { ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1); }
+  });
+  ss.setActiveSheet(sheet_('Dashboard'));
 }
