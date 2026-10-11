@@ -1,6 +1,6 @@
 # M09 · AI Agent (`worker-ai` + read-only tools)
 
-**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/agent/` · **Code:** `services/worker/.../ai/` (runs only in the `worker-ai` container), `packages/py-core/.../ai_schemas` · **Epic:** `[EPIC] M09 · AI Agent`
+**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/agent/` · **Code:** `services/worker/src/treasurypilot_worker/agent/` (runs only in the `worker-ai` container), `packages/py-core/.../ai_schemas` · **Epic:** `[EPIC] M09 · AI Agent`
 **ADRs:** ADR-005 (Claude, advisory only) · **See also:** `docs/AI_AGENT_ARCHITECTURE.md` · **Decisions:** M09-D1 … M09-D14 (§14)
 
 ---
@@ -124,10 +124,15 @@ Template plan used only when: AI unavailable/timeout **and** snapshot complete *
 | EXTRACT, TERMS, ANOMALY | `claude-sonnet-5-5` | 60 s | 2,000 |
 | PLAN | `claude-opus-5-5` | 20 s | 1,500 |
 | EXCEPTION_DRAFT | `claude-sonnet-5-5` | 20 s | 800 |
-| EXPLAIN (single request, plan already fixed) | `claude-haiku-4-5-20251001` | 10 s | 300 |
+| EXPLAIN (single request, plan already fixed) | `claude-haiku-5-5` | 10 s | 300 |
 | COPILOT | `claude-sonnet-5-5` | 30 s | 1,200 |
+| EVAL | `claude-sonnet-5-5` | 60 s | 2,000 |
 
-Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown). Secondary provider behind the same adapter (AGT-017), choice to be agreed. Zero-retention API setting where available.
+Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown). Secondary provider behind the same adapter (AGT-017), choice to be agreed. Zero-retention API setting where available; it is configured at the organization level in the Anthropic Console, not in code.
+
+The file also holds tool-call limits (PLAN 8, COPILOT 6), the tool-result cap (50 KB) and per-model prices in USD micros per million tokens, with a long-prompt tier for Haiku. Its path is `config/ai.yaml` relative to the working directory (`/app` in the worker image), overridable with `TP_AI_CONFIG_PATH`; a task or a model price missing from the file fails startup.
+
+**Adapter (AGT-001).** `AiAdapter.run(task, org_id, system, messages, output, tools)` is the only way to call a model. It picks the model from config, enforces the timeout as a wall-clock deadline for the whole call (tool turns, provider retries and the schema retry included), retries retryable provider errors up to twice inside that deadline, runs the read-only tool loop, and validates the output against the Pydantic schema, retrying once with the validation error (M09-D9). It raises `AiTimeout`, `AiUnavailable`, `AiSchemaError`, `AiBudgetExceeded` or `AiToolLimitExceeded`; callers map them to fallbacks. Budget is checked before the call (blocked once spend ≥ limit, so one call may overshoot) and every provider response is recorded through a `BudgetLedger`. The ledger is in memory until the `ai_budgets` table exists.
 
 ## 10. Security
 

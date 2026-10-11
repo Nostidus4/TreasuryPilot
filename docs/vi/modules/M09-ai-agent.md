@@ -68,10 +68,15 @@ Mỗi lời gọi không có trạng thái; trạng thái trích xuất nằm tr
 | EXTRACT, TERMS, ANOMALY | `claude-sonnet-5-5` | 60 giây | 2.000 |
 | PLAN | `claude-opus-5-5` | 20 giây | 1.500 |
 | EXCEPTION_DRAFT | `claude-sonnet-5-5` | 20 giây | 800 |
-| EXPLAIN (request đơn lẻ, plan đã cố định) | `claude-haiku-4-5-20251001` | 10 giây | 300 |
+| EXPLAIN (request đơn lẻ, plan đã cố định) | `claude-haiku-5-5` | 10 giây | 300 |
 | COPILOT | `claude-sonnet-5-5` | 30 giây | 1.200 |
+| EVAL | `claude-sonnet-5-5` | 60 giây | 2.000 |
 
-Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1, chỉnh được (vượt → các task chuyển sang dự phòng, có thông báo). Nhà cung cấp phụ dùng chung adapter (AGT-017), chọn sau. Bật chế độ không lưu dữ liệu nếu có.
+Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1, chỉnh được (vượt → các task chuyển sang dự phòng, có thông báo). Nhà cung cấp phụ dùng chung adapter (AGT-017), chọn sau. Bật chế độ không lưu dữ liệu nếu có; việc này cấu hình ở cấp tổ chức trên Anthropic Console, không nằm trong code.
+
+File còn chứa giới hạn số tool call (PLAN 8, COPILOT 6), giới hạn kết quả tool (50 KB) và bảng giá theo model (USD micros cho mỗi triệu token, Haiku có bậc giá cho prompt dài). Đường dẫn là `config/ai.yaml` tính từ thư mục làm việc (`/app` trong image worker), đổi được bằng `TP_AI_CONFIG_PATH`; thiếu task hoặc thiếu giá của một model thì worker không khởi động.
+
+**Adapter (AGT-001).** Mọi lần gọi model đều qua `AiAdapter.run(task, org_id, system, messages, output, tools)`, code ở `services/worker/src/treasurypilot_worker/agent/`. Adapter chọn model theo config, coi timeout là deadline wall-clock cho cả lần gọi (gồm các lượt tool, retry provider và retry schema), retry lỗi provider có thể retry tối đa hai lần trong deadline đó, chạy vòng lặp tool chỉ đọc, và validate output theo schema Pydantic, retry một lần kèm lỗi validation (M09-D9). Lỗi trả ra là `AiTimeout`, `AiUnavailable`, `AiSchemaError`, `AiBudgetExceeded` hoặc `AiToolLimitExceeded`; bên gọi chuyển chúng sang dự phòng. Budget được kiểm trước khi gọi (chặn khi đã chi ≥ hạn mức, nên một lần gọi có thể vượt chút ít) và mọi phản hồi của provider đều được ghi qua `BudgetLedger`. Ledger nằm trong bộ nhớ cho đến khi có bảng `ai_budgets`.
 
 ## 10. Bảo mật
 
