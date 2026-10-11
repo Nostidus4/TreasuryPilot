@@ -56,3 +56,17 @@ Then follow each module's §13 order and `planning/DEPENDENCIES.md` waves. Prior
 5. Daily: Google Sheet dashboard (auto-refresh hourly) shows progress per module and per person.
 
 **v0.3 update (ADR-019):** new Tier A tickets SC-023 (two-option approvals), SC-024 (Aave supply/withdraw), SC-025 (Sepolia fork tests), ENG-013 (reserve formulas), EXE-014 (liquidity cycle), DEV-012 (config gate), WEB-026 (position card); Tier B ENG-014 and WEB-027 (borrow proposal); P2 SC-026 and MDT-011 (borrow/repay execution).
+
+## 4. Actual assignment (project lead, 2026-10-11)
+
+| Area | Owner | Modules / tickets | Default reviewer |
+|---|---|---|---|
+| Frontend | **@Nostidus4** | WEB | @therealtunguyen |
+| Backend | **@Nostidus4** | IDN, TRS, MDT, INV, CHR, ENG, POL, EXE, REC, RCV, NTF, CMP, AUD | @therealtunguyen |
+| Infrastructure | **@therealtunguyen** | DEV, OBS | @Nostidus4 (default, can change) |
+| AI | **@therealtunguyen** | AGT | @Nostidus4 (default, can change) |
+| Blockchain | **@longhuynh55** (anh Phúc) | SC | @Nostidus4 (default, can change) |
+| Non-code | to be split later | DOM | – |
+
+Applied on GitHub: issue assignees, Project **Owner** field and Status **Assigned** (182 open M1 code tickets). Default reviewers live in `.github/CODEOWNERS`. Re-run `python3 planning/tools/assign.py` after adding tickets. The suggested tracks in §1 are superseded by this table.
+

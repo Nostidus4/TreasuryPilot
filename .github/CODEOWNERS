@@ -1,0 +1,20 @@
+# Default reviewers (auto-requested on pull requests). Last matching pattern wins.
+# Work split (2026-10-11): frontend + backend -> @Nostidus4 · infrastructure + AI -> @therealtunguyen · contracts -> @longhuynh55.
+# Rule: the area owner writes the code, so the reviewer is someone else.
+
+# Frontend and backend are written by @Nostidus4 -> reviewed by @therealtunguyen
+/apps/web/              @therealtunguyen
+/services/api/          @therealtunguyen
+/services/worker/       @therealtunguyen
+/services/signer/       @therealtunguyen
+/packages/py-core/      @therealtunguyen
+
+# AI and infrastructure are written by @therealtunguyen -> reviewed by @Nostidus4
+/services/worker/src/treasurypilot_worker/agent/   @Nostidus4
+/infra/                 @Nostidus4
+/.github/workflows/     @Nostidus4
+/evals/                 @Nostidus4
+
+# Contracts are written by @longhuynh55 -> reviewed by @Nostidus4
+/contracts/             @Nostidus4
+/deployments/           @Nostidus4
