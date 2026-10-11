@@ -23,7 +23,7 @@ The contracts are the **final authority over money** (AP-1). Every rule marked *
 | Actor | On-chain identity | Can call |
 |---|---|---|
 | Owner | **Safe T** itself (Owner signs Safe transactions; Safe threshold applies) | all governance functions |
-| Guardian | one EOA/contract address in the mandate | `pause()` only |
+| Guardian | the **Guardian Safe** (1-of-N: human guardian(s) + sentinel, ADR-017) set in the mandate | `pause()` only |
 | Executor | one EOA (key in `signer` service) | `refill`, `pay`, (`swapForGas`) |
 | Approver | addresses in the approver set (EOA or ERC-1271 wallet) | nothing directly — their **signatures** are verified inside `refill`/`pay` |
 | Anyone | — | views |
@@ -54,7 +54,7 @@ The contracts are the **final authority over money** (AP-1). Every rule marked *
 | **Wallet roles** | `safeT` (source), `operational[]` = {O1, O2}. PAY only from operational wallets (M04-D6). |
 | **Mandate** | Struct of rules, versioned; `version` increases on every `configureMandate`. |
 | **Request** | An approved invoice payment, identified by `requestId` (bytes32, generated off-chain, unique). |
-| **Step** | One executed action (REFILL or PAY), identified by `stepId` (bytes32, deterministic off-chain: `keccak256(requestId, action, seq)`). |
+| **Step** | One executed action (REFILL or PAY), identified by `stepId` (bytes32, deterministic off-chain: `keccak256("TP_STEP_V1", requestId, action, wallet)`, M08-D10). |
 | **Fingerprint** | `keccak256(normalize(vendorId), normalize(invoiceNo), amount, asset)` computed off-chain (ENG-009), carried inside the signed approval. |
 | **Day** | `block.timestamp / 86400` (UTC calendar day). |
 
@@ -313,7 +313,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 
 | Case | Inputs | Result |
 |---|---|---|
-| UC-02 | O1 = 20, invoice 100 | refill ≤ `100 + 150 − 20 = 230` (BR-036 bound); planner refills 90 (Shortage) or 230 (Preferred); pay 100; O1 ends ≥ 10 |
+| UC-02 | O1 = 20, invoice 100 | refill ≤ `100 + 150 − 20 = 230` (BR-036 bound); the engine refills `min(Preferred, Bound)` (M07 §8.1); pay 100; O1 ends ≥ 10 |
 | Refill bound abuse | approval for 10, executor tries refill 2,000 to O1 (O1 = 0) | `0 + 2000 > 10 + 150` → `RefillExceedsNeed` |
 | Daily cap | used today 8,000, pay 2,500 with exception | `8,000 + 2,500 > 10,000` → `OverDailyLimit` (exception does not lift daily) |
 | Buffer | O1 = 105, buffer 10, pay 100 | `105 − 100 = 5 < 10` → `BufferBreach` |
@@ -325,7 +325,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 |---|---|---|---|
 | `payeeCoolingSeconds` | 300 | 86,400 | mandate |
 | approval `expiry` | deadline + 14 days | same | off-chain when building the approval (M04-D11) |
-| `approvalMaxAge` | 30 days | 30 days | mandate |
+| `approvalMaxAge` | 14 days | 14 days | mandate (M03 §9) |
 | `pay` / `refill` limits | 2,000/10,000 · 2,500/12,000 | per customer | mandate |
 | buffers / targets | T 1,000; O1/O2 10 / 150 | per customer | `setBuffer` |
 | Safe version | v1.4.1 (pinned) | same | deployment manifest |
@@ -393,13 +393,14 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 | 15 | SC-013 → SC-014 → SC-020 → SC-015 | test suites |
 | 16 | SC-016 Deployment scripts + manifest | factory + implementation |
 | 17 | **SC-022 `cancelRequest`** | **new** (M05-D4) |
-| P2 | SC-018 TestRouter + swapForGas, SC-019 EAS schema | optional |
+| P2 | SC-018 TestRouter + swapForGas | optional |
+| P1 | SC-019 EAS receipt schema | promoted (ADR-018, PH-11) |
 
 ## 14. Decisions (grilling M04) and open questions
 
 | ID | Decision |
 |---|---|
-| M04-D1 | Safe **v1.4.1**, pinned commit; verify official deployment on the chosen chain (ADR-012). |
+| M04-D1 | Safe **v1.4.1**, pinned commit; official deployment on Ethereum Sepolia verified in DOM-001 (ADR-012). |
 | M04-D2 | **Factory + EIP-1167 clones**; implementation `initialize` disabled; coverage check = clone points to the known implementation. |
 | M04-D3 | Owner grants exceptions and duplicate overrides through **governance transactions** (`grantException`, `allowDuplicate`), not EIP-712 signatures. |
 | M04-D4 | Refill bound: post-refill `balance(to) ≤ approval.amount + target(to)`; one refill per request per wallet (BR-036). |
@@ -414,5 +415,5 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 
 | Open | Question | Owner |
 |---|---|---|
-| ADR-012 | Chain and stablecoin (affects decimals, Safe deployment addresses) | anh Phúc |
-| M04-Q1 | Single guardian address in M1; multiple guardians later? (default: single) | Project lead |
+| ~~ADR-012~~ | Resolved 2026-10-11: Ethereum Sepolia, tUSDC + one Circle USDC run (PH-1, PH-2) | anh Phúc |
+| ~~M04-Q1~~ | Resolved by M03-D2: guardian is a 1-of-N Guardian Safe, so several guardians are possible without contract changes | Project lead |
