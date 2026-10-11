@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-071, FR-314 |
 | **Blocks** | INV-007 |
+| **Submission cut** | A |
 
 ## Context
 

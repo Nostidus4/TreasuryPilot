@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-921 |
 | **Blocks** | OBS-005, ADM-L02 |
+| **Submission cut** | After submission |
 
 ## Context
 

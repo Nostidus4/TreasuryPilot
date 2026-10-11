@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-801–802 |
 | **Blocks** | AGT-016, WEB-016 |
+| **Submission cut** | After submission |
 
 ## Context
 

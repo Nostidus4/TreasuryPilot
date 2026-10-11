@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-SEC-07 |
 | **Blocks** | DOM-011 |
+| **Submission cut** | A |
 
 ## Context
 

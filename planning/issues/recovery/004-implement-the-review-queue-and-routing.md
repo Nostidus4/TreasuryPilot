@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-704–705 |
 | **Blocks** | WEB-013 |
+| **Submission cut** | B |
 
 ## Context
 

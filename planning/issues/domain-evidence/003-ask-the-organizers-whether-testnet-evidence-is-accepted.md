@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | OQ-01 |
 | **Blocks** | — |
+| **Submission cut** | A |
 
 ## Context
 

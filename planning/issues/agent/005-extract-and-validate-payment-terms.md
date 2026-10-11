@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-310 |
 | **Blocks** | AGT-013, WEB-008 |
+| **Submission cut** | A |
 
 ## Context
 

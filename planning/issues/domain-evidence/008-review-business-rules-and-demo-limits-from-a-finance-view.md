@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BUSINESS_RULES.md, OQ-05 |
 | **Blocks** | DOM-013 |
+| **Submission cut** | A |
 
 ## Context
 

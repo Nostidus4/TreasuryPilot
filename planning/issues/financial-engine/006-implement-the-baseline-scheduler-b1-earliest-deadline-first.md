@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-052 |
 | **Blocks** | ENG-007, AGT-014, OBS-005 |
+| **Submission cut** | A |
 
 ## Context
 

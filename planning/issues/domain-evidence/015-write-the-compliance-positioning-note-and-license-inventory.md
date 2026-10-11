@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-CMP-02–03 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

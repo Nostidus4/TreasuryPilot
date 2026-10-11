@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-AUD-04, FR-923 |
 | **Blocks** | OBS-002, OBS-003 |
+| **Submission cut** | After submission |
 
 ## Context
 

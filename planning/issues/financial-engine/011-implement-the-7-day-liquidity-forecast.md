@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-415 |
 | **Blocks** | WEB-021 |
+| **Submission cut** | After submission |
 
 ## Context
 

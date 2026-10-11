@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | OQ-18, H1–H7 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

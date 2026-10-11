@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-207 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-901, ADR-010 |
 | **Blocks** | NTF-L04, WEB-012, WEB-015 |
+| **Submission cut** | A |
 
 ## Context
 

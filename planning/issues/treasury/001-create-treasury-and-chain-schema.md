@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | DATA_MODEL §2.2 |
 | **Blocks** | TRS-002, MDT-001 |
+| **Submission cut** | A |
 
 ## Context
 

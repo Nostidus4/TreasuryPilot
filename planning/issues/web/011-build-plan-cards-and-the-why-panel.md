@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-917, BR-057 |
 | **Blocks** | WEB-012, WEB-013 |
+| **Submission cut** | A |
 
 ## Context
 

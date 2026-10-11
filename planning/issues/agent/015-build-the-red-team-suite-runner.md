@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-SEC-06, FR-930 |
 | **Blocks** | — |
+| **Submission cut** | A |
 
 ## Context
 

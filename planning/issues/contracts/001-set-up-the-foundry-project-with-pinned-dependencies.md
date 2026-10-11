@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-002, NFR-SEC-08 |
 | **Blocks** | DEV-004, SC-002 |
+| **Submission cut** | A |
 
 ## Context
 

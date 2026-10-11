@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-022, BR-030, BR-040, BR-051, BR-060, FR-411 |
 | **Blocks** | POL-004, EXE-008, AGT-007, AGT-010, CMP-002 |
+| **Submission cut** | A |
 
 ## Context
 

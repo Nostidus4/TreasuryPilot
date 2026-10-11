@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-059, FR-412 |
 | **Blocks** | POL-006 |
+| **Submission cut** | A |
 
 ## Context
 

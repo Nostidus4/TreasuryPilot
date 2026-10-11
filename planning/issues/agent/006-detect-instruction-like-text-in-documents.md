@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-312 |
 | **Blocks** | AGT-015 |
+| **Submission cut** | A |
 
 ## Context
 

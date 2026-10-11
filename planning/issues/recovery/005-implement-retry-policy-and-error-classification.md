@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-061, FR-706 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

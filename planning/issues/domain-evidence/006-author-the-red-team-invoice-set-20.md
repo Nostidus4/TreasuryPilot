@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | AGT-015 |
 | **Blocks** | AGT-015 |
+| **Submission cut** | A |
 
 ## Context
 

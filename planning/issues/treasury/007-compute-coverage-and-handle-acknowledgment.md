@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-018, FR-106–107 |
 | **Blocks** | EXE-003, WEB-004 |
+| **Submission cut** | A |
 
 ## Context
 

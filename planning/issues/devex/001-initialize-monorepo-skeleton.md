@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-001 |
 | **Blocks** | DEV-002, DEV-003, DEV-011, SC-001, ENG-001, CMP-003, WEB-001 |
+| **Submission cut** | A |
 
 ## Context
 

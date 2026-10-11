@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-913, BR-095 |
 | **Blocks** | DEV-007 |
+| **Submission cut** | A |
 
 ## Context
 

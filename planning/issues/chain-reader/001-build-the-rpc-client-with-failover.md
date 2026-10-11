@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-REL-04 |
 | **Blocks** | TRS-003, CHR-002, CHR-003, CHR-005 |
+| **Submission cut** | A |
 
 ## Context
 

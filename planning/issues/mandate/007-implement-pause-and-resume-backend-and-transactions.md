@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-062–BR-064, FR-218, FR-221 |
 | **Blocks** | EXE-003, RCV-006, WEB-019 |
+| **Submission cut** | A |
 
 ## Context
 

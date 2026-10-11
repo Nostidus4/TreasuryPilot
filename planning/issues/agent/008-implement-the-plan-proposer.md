@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-406, FR-408 |
 | **Blocks** | AGT-009 |
+| **Submission cut** | A |
 
 ## Context
 

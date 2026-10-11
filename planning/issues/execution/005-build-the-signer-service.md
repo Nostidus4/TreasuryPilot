@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-092, ADR-006, FR-507 |
 | **Blocks** | EXE-006, EXE-007, EXE-L01 |
+| **Submission cut** | A |
 
 ## Context
 

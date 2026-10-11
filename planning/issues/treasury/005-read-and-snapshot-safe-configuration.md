@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-103, FR-105 |
 | **Blocks** | TRS-007 |
+| **Submission cut** | A |
 
 ## Context
 

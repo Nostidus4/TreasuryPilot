@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-001, FR-009 |
 | **Blocks** | WEB-003, WEB-007, WEB-017 |
+| **Submission cut** | A |
 
 ## Context
 

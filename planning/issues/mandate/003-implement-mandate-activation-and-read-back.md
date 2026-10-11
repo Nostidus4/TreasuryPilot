@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-015, FR-204–205 |
 | **Blocks** | DEV-006, MDT-006, MDT-007, MDT-008, WEB-005 |
+| **Submission cut** | A |
 
 ## Context
 

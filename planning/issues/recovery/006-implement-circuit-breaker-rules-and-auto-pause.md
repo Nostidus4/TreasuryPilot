@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-065, FR-222 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

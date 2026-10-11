@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-003, BR-003 |
 | **Blocks** | SC-003, SC-005 |
+| **Submission cut** | A |
 
 ## Context
 

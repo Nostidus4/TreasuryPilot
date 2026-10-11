@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-501–503 |
 | **Blocks** | EXE-004, EXE-009 |
+| **Submission cut** | A |
 
 ## Context
 

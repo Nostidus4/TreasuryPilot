@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-607 |
 | **Blocks** | REC-L01, WEB-014 |
+| **Submission cut** | B |
 
 ## Context
 

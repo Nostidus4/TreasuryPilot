@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-074, FR-909, NFR-PRIV-01–04 |
 | **Blocks** | CMP-L03, OBS-001 |
+| **Submission cut** | B |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | Submission item 05 |
 | **Blocks** | DOM-012 |
+| **Submission cut** | A |
 
 ## Context
 

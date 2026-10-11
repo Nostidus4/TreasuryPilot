@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-912 |
 | **Blocks** | AUD-L01 |
+| **Submission cut** | After submission |
 
 ## Context
 

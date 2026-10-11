@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-085, FR-906, NFR-CMP-04 |
 | **Blocks** | MDT-004, CMP-002, CMP-L01 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-917, NFR-PERF-04 |
 | **Blocks** | WEB-023 |
+| **Submission cut** | A |
 
 ## Context
 

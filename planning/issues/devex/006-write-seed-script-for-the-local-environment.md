@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-927 |
 | **Blocks** | DEV-007 |
+| **Submission cut** | A |
 
 ## Context
 

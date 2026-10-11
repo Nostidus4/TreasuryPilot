@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-301 |
 | **Blocks** | WEB-008, WEB-020 |
+| **Submission cut** | A |
 
 ## Context
 

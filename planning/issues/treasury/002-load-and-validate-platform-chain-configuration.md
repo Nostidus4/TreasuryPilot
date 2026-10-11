@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-925 |
 | **Blocks** | TRS-003, CHR-001 |
+| **Submission cut** | A |
 
 ## Context
 

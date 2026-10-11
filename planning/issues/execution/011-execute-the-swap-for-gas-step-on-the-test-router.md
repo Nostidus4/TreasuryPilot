@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-511–512 |
 | **Blocks** | EXE-L02 |
+| **Submission cut** | After submission |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-014, FR-201–203 |
 | **Blocks** | MDT-003, MDT-L01 |
+| **Submission cut** | A |
 
 ## Context
 

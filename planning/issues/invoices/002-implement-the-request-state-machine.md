@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-319–320 |
 | **Blocks** | INV-003, RCV-004, NTF-001 |
+| **Submission cut** | A |
 
 ## Context
 

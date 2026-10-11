@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-003 |
 | **Blocks** | POL-002, POL-005, MDT-006, INV-010 |
+| **Submission cut** | A |
 
 ## Context
 

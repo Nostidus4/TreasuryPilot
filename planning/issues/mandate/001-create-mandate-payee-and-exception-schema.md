@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | DATA_MODEL §2.3 |
 | **Blocks** | MDT-002, MDT-004, INV-001, CMP-001 |
+| **Submission cut** | A |
 
 ## Context
 

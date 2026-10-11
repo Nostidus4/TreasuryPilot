@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-925, ADR-012 |
 | **Blocks** | DEV-006, DEV-010, TRS-006, CHR-005, EXE-005 |
+| **Submission cut** | A |
 
 ## Context
 

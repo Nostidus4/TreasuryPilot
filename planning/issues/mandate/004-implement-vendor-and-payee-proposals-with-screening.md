@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-211, BR-085 |
 | **Blocks** | MDT-005, INV-003 |
+| **Submission cut** | A |
 
 ## Context
 

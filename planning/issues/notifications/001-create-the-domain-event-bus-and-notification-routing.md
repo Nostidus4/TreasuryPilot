@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-901 |
 | **Blocks** | NTF-002, NTF-003, NTF-L01, NTF-L02, NTF-L03 |
+| **Submission cut** | A |
 
 ## Context
 

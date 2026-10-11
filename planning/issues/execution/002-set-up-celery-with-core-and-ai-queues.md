@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-007 |
 | **Blocks** | EXE-003, EXE-L04, AGT-001 |
+| **Submission cut** | A |
 
 ## Context
 

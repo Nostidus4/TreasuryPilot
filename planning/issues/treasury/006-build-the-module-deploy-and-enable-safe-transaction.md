@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-204 |
 | **Blocks** | TRS-007, MDT-003 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | AGT-016 |
 | **Blocks** | AGT-016 |
+| **Submission cut** | After submission |
 
 ## Context
 

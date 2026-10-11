@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | OQ-02, ADR-012 |
 | **Blocks** | DEV-010, SC-019, DOM-002 |
+| **Submission cut** | A |
 
 ## Context
 

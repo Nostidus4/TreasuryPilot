@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | — |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-MAINT-03, BR-030 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

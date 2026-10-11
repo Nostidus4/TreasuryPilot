@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-096, FR-605 |
 | **Blocks** | REC-003 |
+| **Submission cut** | A |
 
 ## Context
 

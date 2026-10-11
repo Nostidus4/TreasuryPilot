@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-001, BR-010, BR-024, FR-509, FR-510 |
 | **Blocks** | SC-007, SC-008, SC-012 |
+| **Submission cut** | A |
 
 ## Context
 

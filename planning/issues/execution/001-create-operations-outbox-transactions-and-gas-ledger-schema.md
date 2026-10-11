@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-004, DATA_MODEL §2.6 |
 | **Blocks** | CHR-003, EXE-007 |
+| **Submission cut** | A |
 
 ## Context
 

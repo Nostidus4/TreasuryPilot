@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-003 |
 | **Blocks** | SC-L04, ENG-010 |
+| **Submission cut** | A |
 
 ## Context
 

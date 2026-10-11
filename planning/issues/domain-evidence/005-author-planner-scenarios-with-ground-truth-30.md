@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | AGT-014, BR-052 |
 | **Blocks** | AGT-014, DOM-007 |
+| **Submission cut** | A |
 
 ## Context
 

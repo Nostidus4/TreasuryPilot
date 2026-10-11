@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-313 |
 | **Blocks** | INV-010 |
+| **Submission cut** | A |
 
 ## Context
 

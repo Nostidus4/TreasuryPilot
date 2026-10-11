@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-920 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

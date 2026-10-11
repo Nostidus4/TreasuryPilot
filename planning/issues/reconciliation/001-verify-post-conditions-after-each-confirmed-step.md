@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-603–604 |
 | **Blocks** | REC-002, RCV-006 |
+| **Submission cut** | A |
 
 ## Context
 

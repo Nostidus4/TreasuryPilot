@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-914 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

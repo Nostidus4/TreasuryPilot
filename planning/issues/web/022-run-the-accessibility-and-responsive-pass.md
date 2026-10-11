@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-UX-01–04 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

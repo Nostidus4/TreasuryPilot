@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-053, FR-601 |
 | **Blocks** | MDT-003, CHR-004, EXE-008, RCV-002 |
+| **Submission cut** | A |
 
 ## Context
 

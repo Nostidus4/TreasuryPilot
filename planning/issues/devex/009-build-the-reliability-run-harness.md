@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-931, NFR-REL-01 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

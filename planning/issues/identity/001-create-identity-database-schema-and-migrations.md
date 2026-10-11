@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | DATA_MODEL §2.1 |
 | **Blocks** | IDN-002, TRS-001, AUD-001 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-806–807, BR-097 |
 | **Blocks** | AGT-004 |
+| **Submission cut** | A |
 
 ## Context
 

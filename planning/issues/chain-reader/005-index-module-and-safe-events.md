@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-510 |
 | **Blocks** | MDT-005 |
+| **Submission cut** | B |
 
 ## Context
 

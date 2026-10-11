@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-414, BR-043 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

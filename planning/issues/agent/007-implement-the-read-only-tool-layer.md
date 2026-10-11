@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | AI_AGENT_ARCHITECTURE §3 |
 | **Blocks** | AGT-008, AGT-012 |
+| **Submission cut** | A |
 
 ## Context
 

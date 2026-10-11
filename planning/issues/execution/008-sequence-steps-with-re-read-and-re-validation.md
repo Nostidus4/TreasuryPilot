@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-050–051, BR-054 |
 | **Blocks** | EXE-011, REC-001, RCV-003, AUD-003, OBS-004 |
+| **Submission cut** | A |
 
 ## Context
 

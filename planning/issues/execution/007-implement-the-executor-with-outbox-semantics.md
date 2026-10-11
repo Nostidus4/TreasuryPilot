@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-060–061, FR-505–506 |
 | **Blocks** | EXE-008, EXE-010, RCV-001, RCV-005 |
+| **Submission cut** | A |
 
 ## Context
 

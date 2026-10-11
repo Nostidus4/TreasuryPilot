@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-008, FR-927 |
 | **Blocks** | DEV-010, IDN-001, EXE-002 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-922 |
 | **Blocks** | WEB-018 |
+| **Submission cut** | After submission |
 
 ## Context
 

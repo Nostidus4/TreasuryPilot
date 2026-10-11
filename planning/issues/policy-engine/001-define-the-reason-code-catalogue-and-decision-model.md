@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-057, API_SPEC §9 |
 | **Blocks** | POL-002 |
+| **Submission cut** | A |
 
 ## Context
 

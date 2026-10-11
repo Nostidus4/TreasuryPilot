@@ -11,6 +11,7 @@
 | **Status** | Needs Discussion |
 | **Traces to** | FR-110 |
 | **Blocks** | TRS-L02, EXE-L03 |
+| **Submission cut** | After submission |
 
 > **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
 

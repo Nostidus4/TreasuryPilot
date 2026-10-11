@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-060–061 |
 | **Blocks** | RCV-007 |
+| **Submission cut** | A |
 
 ## Context
 

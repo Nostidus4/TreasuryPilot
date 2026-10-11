@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-MAINT-01, ADR-001 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

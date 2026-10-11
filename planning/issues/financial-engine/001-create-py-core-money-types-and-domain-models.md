@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-014, BR-083, FR-109 |
 | **Blocks** | ENG-002, ENG-005, ENG-009, ENG-010, POL-001, MDT-002 |
+| **Submission cut** | A |
 
 ## Context
 

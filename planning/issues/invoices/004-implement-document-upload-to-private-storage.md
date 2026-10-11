@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-303, BR-074, NFR-PRIV-02 |
 | **Blocks** | INV-L01, AGT-004 |
+| **Submission cut** | A |
 
 ## Context
 

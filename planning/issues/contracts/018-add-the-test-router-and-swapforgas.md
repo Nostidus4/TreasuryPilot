@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-081, BR-082, FR-511–512 |
 | **Blocks** | SC-L03, EXE-011 |
+| **Submission cut** | After submission |
 
 ## Context
 

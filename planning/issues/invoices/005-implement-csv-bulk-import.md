@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-306–307 |
 | **Blocks** | WEB-020 |
+| **Submission cut** | After submission |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-608 |
 | **Blocks** | REC-005 |
+| **Submission cut** | After submission |
 
 ## Context
 

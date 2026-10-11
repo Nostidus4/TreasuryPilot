@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-040–BR-043, FR-216 |
 | **Blocks** | AGT-011, WEB-013 |
+| **Submission cut** | B |
 
 ## Context
 

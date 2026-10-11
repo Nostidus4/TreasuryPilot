@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-301–302, BR-073 |
 | **Blocks** | DEV-006, INV-004, INV-005, INV-006, INV-008, INV-L02, INV-L03, INV-L04, WEB-007 |
+| **Submission cut** | A |
 
 ## Context
 

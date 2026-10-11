@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-101–103 |
 | **Blocks** | DEV-006, TRS-005, TRS-006, TRS-008, TRS-L01, CHR-002 |
+| **Submission cut** | A |
 
 ## Context
 

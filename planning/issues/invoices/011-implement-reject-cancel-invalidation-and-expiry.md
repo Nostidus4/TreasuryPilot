@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-003, FR-317, FR-320 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

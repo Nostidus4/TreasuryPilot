@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-013 |
 | **Blocks** | DEV-005, WEB-002, WEB-015 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | DATA_MODEL §2.4 |
 | **Blocks** | INV-002, EXE-001 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-928, NFR-SEC-02, NFR-SEC-07 |
 | **Blocks** | — |
+| **Submission cut** | B |
 
 ## Context
 

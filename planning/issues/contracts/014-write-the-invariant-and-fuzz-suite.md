@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | NFR-SEC-02, BR-001/013/022/024/030/041/062 |
 | **Blocks** | SC-L01 |
+| **Submission cut** | A |
 
 ## Context
 

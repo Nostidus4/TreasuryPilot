@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-007, FR-009 |
 | **Blocks** | IDN-006, WEB-002 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Needs Discussion |
 | **Traces to** | BR-059 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 > **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
 

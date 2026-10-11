@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-303–305 |
 | **Blocks** | INV-L01, AGT-005, AGT-006 |
+| **Submission cut** | A |
 
 ## Context
 

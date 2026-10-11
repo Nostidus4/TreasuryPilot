@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | SYSTEM_ARCHITECTURE §3, NFR-SEC |
 | **Blocks** | DOM-011 |
+| **Submission cut** | A |
 
 ## Context
 

@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-405–413 |
 | **Blocks** | WEB-011 |
+| **Submission cut** | A |
 
 ## Context
 

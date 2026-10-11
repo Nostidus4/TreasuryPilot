@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-005, FR-808 |
 | **Blocks** | AGT-002, AGT-003, AGT-011, AGT-017 |
+| **Submission cut** | A |
 
 ## Context
 

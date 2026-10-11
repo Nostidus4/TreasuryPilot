@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-405, FR-407 |
 | **Blocks** | EXE-004, AGT-007, AGT-009 |
+| **Submission cut** | A |
 
 ## Context
 

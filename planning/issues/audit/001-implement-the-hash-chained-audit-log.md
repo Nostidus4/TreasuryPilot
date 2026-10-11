@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-097, FR-911, NFR-AUD-01–02 |
 | **Blocks** | AUD-002, AUD-003, OBS-004 |
+| **Submission cut** | A |
 
 ## Context
 

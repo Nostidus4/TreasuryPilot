@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | ADR-008, NFR-CMP-01 |
 | **Blocks** | — |
+| **Submission cut** | A |
 
 ## Context
 

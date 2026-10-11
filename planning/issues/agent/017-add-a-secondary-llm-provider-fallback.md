@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-808, NFR-REL-05 |
 | **Blocks** | — |
+| **Submission cut** | After submission |
 
 ## Context
 

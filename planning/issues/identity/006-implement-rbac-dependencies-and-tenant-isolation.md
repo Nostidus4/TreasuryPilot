@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | FR-008, FR-011, BR-093, NFR-PRIV-05 |
 | **Blocks** | IDN-007, IDN-008, IDN-L02, TRS-004, ADM-L01 |
+| **Submission cut** | A |
 
 ## Context
 

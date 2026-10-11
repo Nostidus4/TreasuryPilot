@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | AT-01–AT-13 (source doc) |
 | **Blocks** | SC-014, SC-015, SC-020, POL-004 |
+| **Submission cut** | A |
 
 ## Context
 

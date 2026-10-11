@@ -11,6 +11,7 @@
 | **Status** | Ready for Review |
 | **Traces to** | BR-003–BR-005, FR-316–317 |
 | **Blocks** | MDT-006, INV-011, EXE-003, WEB-009 |
+| **Submission cut** | A |
 
 ## Context
 
