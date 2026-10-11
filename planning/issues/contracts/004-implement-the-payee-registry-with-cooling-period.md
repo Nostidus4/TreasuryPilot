@@ -29,10 +29,11 @@ Payees become payable only after their cooling period.
 
 ## Scope
 
-- addPayee(payee, coolingSeconds) sets activeFrom
+- addPayee(payee) with activeFrom = now + mandate.payeeCoolingSeconds
 - deactivatePayee
 - payeeStatus view
-- internal `_requireActivePayee`
+- reject treasury wallets as payees
+- internal _requireActivePayee
 
 ## Out of scope
 
@@ -40,7 +41,7 @@ Screening (off-chain).
 
 ## Technical notes
 
-Re-adding a deactivated payee creates a fresh cooling period.
+M04-D5: cooling comes from the mandate, never from a per-call argument.
 
 ## Dependencies
 
@@ -48,8 +49,9 @@ Re-adding a deactivated payee creates a fresh cooling period.
 
 ## Acceptance criteria
 
-- [ ] A payee is not active before activeFrom and is active after
-- [ ] Deactivated payees are rejected
+- [ ] A payee is not payable before activeFrom and is payable after
+- [ ] Re-adding a deactivated payee restarts cooling
+- [ ] Treasury wallets cannot be added as payees
 - [ ] Only Safe T can add or deactivate
 
 ## Testing requirements

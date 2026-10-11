@@ -44,7 +44,7 @@ Name tests `test_AT05_*` so reports map to the source cases.
 
 - SC-009: Implement refill() bound to an approved request
 - SC-010: Implement pause, resume, revoke and guardian
-- SC-012: Add the duplicate-invoice fingerprint registry
+- SC-012: Add the duplicate-invoice fingerprint registry and owner override
 
 ## Acceptance criteria
 

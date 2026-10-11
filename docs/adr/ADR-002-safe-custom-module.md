@@ -11,6 +11,10 @@ Enforcement must be on-chain (AP-1). The rules include EIP-712 approval verifica
 - The module is not upgradeable in M1. Changing it means a disable/enable by the Owner.
 - Coverage verification (F-012) checks that no other module is enabled.
 
+## Revision (M04 grilling)
+- Modules are **EIP-1167 clones** created by `TreasuryPilotModuleFactory`; `create` is called by Safe T itself, which initializes the clone in the same transaction (M04-D2, M04-D9).
+- Safe **v1.4.1** pinned (M04-D1). No native-token transfers in M1 (M04-D10).
+
 ## Alternatives
 - **Zodiac Roles Modifier:** cannot express the rules above.
 - **Safe Guard:** guards do not cover module execution paths (GA p.4).

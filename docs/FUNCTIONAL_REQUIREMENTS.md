@@ -63,7 +63,7 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-213 | The contract shall increment counters only on successful execution, in the same transaction. | F-023 | BR-025 |
 | FR-214 | The contract shall evaluate a pending step against the budget of the day it executes. | F-023 | BR-026 |
 | FR-215 | The contract shall reject any PAY or REFILL that would leave the affected wallet below its minimum buffer. | F-024 | BR-030 |
-| FR-216 | The system shall allow the Owner to grant a one-time exception via EIP-712 bound to the fields in BR-041. | F-025 | BR-041, BR-043 |
+| FR-216 | The system shall let the Owner grant a one-time exception through a Safe T governance transaction (`grantException`) bound to the fields in BR-041. | F-025 | BR-041, BR-043 |
 | FR-217 | The contract shall accept an exception only to lift the per-request cap, consume it atomically with the PAY, and count the full amount toward the daily cap. | F-025 | BR-040, BR-042 |
 | FR-218 | The system shall allow the Owner or Guardian to request a pause. The backend shall stop planning and submitting immediately. | F-026 | BR-063 |
 | FR-219 | The contract shall reject execution while the mandate is paused or revoked. | F-026 | BR-062 |
@@ -91,7 +91,7 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-312 | The system shall flag: payee address differing from the registry or history, amount outliers versus vendor history, duplicate fingerprints, instruction-like text, currency or chain mismatch, and due-date anomalies. Each flag shall carry a severity, evidence and a reason code. | F-036 | BR-072 |
 | FR-313 | The system shall require explicit Approver acknowledgment of high-severity flags before signing. | F-036, F-131 | |
 | FR-314 | The system shall compute a normalized invoice fingerprint and warn on duplicates at intake. | F-037 | BR-071 |
-| FR-315 | The contract shall reject a PAY whose fingerprint has already been paid, unless the approval carries an Owner-signed override flag. | F-037 | BR-071 |
+| FR-315 | The contract shall reject a PAY whose fingerprint has already been paid, unless the Owner has called `allowDuplicate(fingerprint, requestId)` for that request. | F-037 | BR-071 |
 | FR-316 | The system shall let an Approver sign EIP-712 typed data binding the BR-003 fields, and shall record the approval only after verifying the signature. | F-038 | BR-003, BR-004 |
 | FR-317 | The system shall invalidate an approval when any bound field changes. | F-038 | BR-003 |
 | FR-318 | The contract shall verify the approval signature against the current approver set at PAY time. | F-038 | BR-004 |
@@ -132,7 +132,7 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-505 | The executor shall simulate the exact call before signing, and shall not broadcast if the simulation reverts. | F-061 | |
 | FR-506 | The executor shall persist the operation (nonce, txHash) before broadcast (outbox), and track replacements as the same operation. | F-061 | BR-061 |
 | FR-507 | The signer service shall sign only payloads that carry a valid attestation from the validator. | F-061 | BR-092 |
-| FR-508 | The contract shall execute REFILL only along mandated paths, within refill limits and source buffer, and mark the step id used. | F-062 | BR-012, BR-030 |
+| FR-508 | The contract shall execute REFILL only to the approval's paying wallet, once per request per wallet, within refill limits and the source buffer, with the post-refill balance ≤ approval amount + target, and mark the step id used. | F-062 | BR-012, BR-030, BR-036 |
 | FR-509 | The contract shall execute PAY only after verifying approval, payee status, fingerprint, request unused, limits or exception, buffer, and that the mandate is not paused. It shall then mark the request used and update counters atomically. | F-063 | BR-001, BR-010 |
 | FR-510 | The contract shall emit events for every REFILL, PAY, SWAP, exception consumption, pause, resume and mandate change, including request and step ids. | F-062, F-063, F-120 | |
 | FR-511 | The contract shall execute SWAP only via an allowlisted adapter, router and pair, within the swap budget, with engine-computed minOut, exact allowance, and allowance reset to 0. | F-064 | BR-081, BR-082 |

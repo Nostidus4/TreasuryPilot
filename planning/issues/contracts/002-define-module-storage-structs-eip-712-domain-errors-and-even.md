@@ -10,7 +10,7 @@
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
 | **Traces to** | ADR-003, BR-003 |
-| **Blocks** | SC-003, SC-005 |
+| **Blocks** | SC-005, SC-021 |
 | **Submission cut** | A |
 
 ## Context
@@ -31,11 +31,11 @@ Fix the on-chain data model and interfaces before any logic is written.
 
 ## Scope
 
-- ITreasuryPilotModule interface per docs/modules/contracts
-- structs Mandate, PaymentApproval, OneTimeException
-- EIP-712 domain and type hashes
-- custom errors named like API error codes
-- events for every state change
+- ITreasuryPilotModule interface per docs/modules/contracts §6
+- storage layout per §4 (mandate, buffers/targets, approvers, payees, counters, replay maps, exceptions, duplicate allowances)
+- EIP-712 domain and the single PaymentApproval type hash
+- custom errors exactly as listed in §6.2–6.4
+- events per §6.6
 
 ## Out of scope
 
@@ -43,7 +43,7 @@ Function bodies.
 
 ## Technical notes
 
-Error names must match docs/API_SPEC.md §9 (e.g. PayeeCooling, OverDailyLimit).
+M04-D3: only PaymentApproval is an EIP-712 struct; exceptions and duplicate overrides are governance calls.
 
 ## Dependencies
 
@@ -51,9 +51,10 @@ Error names must match docs/API_SPEC.md §9 (e.g. PayeeCooling, OverDailyLimit).
 
 ## Acceptance criteria
 
-- [ ] Interface compiles and matches the module spec
-- [ ] Type hashes are unit-tested against hand-computed values
-- [ ] Each planned state change has an event
+- [ ] Interface compiles and matches docs/modules/contracts §6
+- [ ] PaymentApproval type hash is unit-tested against a hand-computed value
+- [ ] Every error name in §6.4 exists and matches a reason code in POL-001
+- [ ] Each state change listed in §6.6 has an event
 
 ## Testing requirements
 

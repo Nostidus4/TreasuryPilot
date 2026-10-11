@@ -29,10 +29,12 @@ Only Safe T can configure the mandate; every change bumps the version.
 
 ## Scope
 
-- configureMandate, setApprovers, constructor/initializer binding the three Safes and the executor
+- configureMandate with validation (expiry > validFrom, executor ≠ 0, cooling ≥ 1, perRequest ≤ daily)
+- setApprovers (keep ≥ 1)
+- setBuffer (wallet known, buffer ≤ target)
 - version increment
-- expiry check modifier
-- views for mandate and version
+- validity-window modifier
+- views
 
 ## Out of scope
 
@@ -44,18 +46,19 @@ Governance check is `msg.sender == safeT`. Not upgradeable.
 
 ## Dependencies
 
-- SC-002: Define module storage, structs, EIP-712 domain, errors and events
+- SC-021: Implement the module factory with EIP-1167 clones
 
 ## Acceptance criteria
 
-- [ ] A call from any address other than Safe T reverts
-- [ ] Version increases by one per configureMandate
-- [ ] Executor calls revert after expiresAt
+- [ ] Calls from any address other than Safe T revert NotOwner
+- [ ] Each invalid mandate field reverts InvalidMandate with the field
+- [ ] Version increases by one per configureMandate and counters are untouched
+- [ ] Executor calls revert MandateExpired after expiresAt
 
 ## Testing requirements
 
-- Unit: governance access tests
-- expiry tests
+- Unit: governance access and validation matrix
+- counters unchanged across versions
 
 ## Definition of Done
 

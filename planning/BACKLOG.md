@@ -9,16 +9,16 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 127 | 46 | 10 | 183 |
+| M1 | 128 | 46 | 10 | 184 |
 | Later | – | – | – | 38 |
-| **All** | | | | **221** |
+| **All** | | | | **222** |
 
 ## Epics
 
 | Epic | Module | Tickets (M1) | Tickets (Later) | Folder |
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 11 | 0 | [`issues/devex/`](issues/devex/) |
-| M04 · Smart Contracts | `contracts` | 20 | 6 | [`issues/contracts/`](issues/contracts/) |
+| M04 · Smart Contracts | `contracts` | 21 | 6 | [`issues/contracts/`](issues/contracts/) |
 | M07 · Financial Engine (py-core) | `financial-engine` | 11 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 6 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
@@ -55,7 +55,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | DEV-011 | devex | M19 | [Enforce module boundaries with import-linter](issues/devex/011-enforce-module-boundaries-with-import-linter.md) | F-161 | M1 | P1 | S | After submission | DEV-001 | Ready for Assignment |
 | SC-001 | contracts | M04 | [Set up the Foundry project with pinned dependencies](issues/contracts/001-set-up-the-foundry-project-with-pinned-dependencies.md) | F-163 | M1 | P0 | S | A | DEV-001 | Ready for Assignment |
 | SC-002 | contracts | M04 | [Define module storage, structs, EIP-712 domain, errors and events](issues/contracts/002-define-module-storage-structs-eip-712-domain-errors-and-even.md) | F-021, F-038 | M1 | P0 | M | A | SC-001 | Ready for Assignment |
-| SC-003 | contracts | M04 | [Implement mandate governance and versioning](issues/contracts/003-implement-mandate-governance-and-versioning.md) | F-021 | M1 | P0 | M | A | SC-002 | Ready for Assignment |
+| SC-003 | contracts | M04 | [Implement mandate governance and versioning](issues/contracts/003-implement-mandate-governance-and-versioning.md) | F-021 | M1 | P0 | M | A | SC-021 | Ready for Assignment |
 | SC-004 | contracts | M04 | [Implement the payee registry with cooling period](issues/contracts/004-implement-the-payee-registry-with-cooling-period.md) | F-022 | M1 | P0 | S | A | SC-003 | Ready for Assignment |
 | SC-005 | contracts | M04 | [Implement approval signature verification](issues/contracts/005-implement-approval-signature-verification.md) | F-038 | M1 | P0 | M | A | SC-002 | Ready for Assignment |
 | SC-006 | contracts | M04 | [Implement pay() core flow](issues/contracts/006-implement-pay-core-flow.md) | F-063 | M1 | P0 | M | A | SC-004, SC-005 | Ready for Assignment |
@@ -63,12 +63,12 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | SC-008 | contracts | M04 | [Enforce minimum buffers on pay and refill](issues/contracts/008-enforce-minimum-buffers-on-pay-and-refill.md) | F-024 | M1 | P0 | S | A | SC-006 | Ready for Assignment |
 | SC-009 | contracts | M04 | [Implement refill() bound to an approved request](issues/contracts/009-implement-refill-bound-to-an-approved-request.md) | F-062 | M1 | P0 | M | A | SC-005, SC-007, SC-008 | Ready for Assignment |
 | SC-010 | contracts | M04 | [Implement pause, resume, revoke and guardian](issues/contracts/010-implement-pause-resume-revoke-and-guardian.md) | F-026 | M1 | P0 | S | A | SC-003 | Ready for Assignment |
-| SC-011 | contracts | M04 | [Implement one-time exception verification and consumption](issues/contracts/011-implement-one-time-exception-verification-and-consumption.md) | F-025 | M1 | P1 | M | B | SC-007 | Ready for Assignment |
-| SC-012 | contracts | M04 | [Add the duplicate-invoice fingerprint registry](issues/contracts/012-add-the-duplicate-invoice-fingerprint-registry.md) | F-037 | M1 | P0 | S | A | SC-006 | Ready for Assignment |
+| SC-011 | contracts | M04 | [Implement one-time exceptions via owner governance](issues/contracts/011-implement-one-time-exceptions-via-owner-governance.md) | F-025 | M1 | P1 | M | B | SC-007 | Ready for Assignment |
+| SC-012 | contracts | M04 | [Add the duplicate-invoice fingerprint registry and owner override](issues/contracts/012-add-the-duplicate-invoice-fingerprint-registry-and-owner-ove.md) | F-037 | M1 | P0 | S | A | SC-006 | Ready for Assignment |
 | SC-013 | contracts | M04 | [Write the contract acceptance test suite (AT cases)](issues/contracts/013-write-the-contract-acceptance-test-suite-at-cases.md) | F-163 | M1 | P0 | M | A | SC-009, SC-010, SC-012 | Ready for Assignment |
 | SC-014 | contracts | M04 | [Write the invariant and fuzz suite](issues/contracts/014-write-the-invariant-and-fuzz-suite.md) | F-163 | M1 | P0 | M | A | SC-013 | Ready for Assignment |
 | SC-015 | contracts | M04 | [Run static analysis and write the findings report](issues/contracts/015-run-static-analysis-and-write-the-findings-report.md) | F-163 | M1 | P0 | S | A | SC-013 | Ready for Assignment |
-| SC-016 | contracts | M04 | [Write deployment scripts and the deployments manifest](issues/contracts/016-write-deployment-scripts-and-the-deployments-manifest.md) | F-151 | M1 | P0 | M | A | SC-010 | Ready for Assignment |
+| SC-016 | contracts | M04 | [Write deployment scripts and the deployments manifest](issues/contracts/016-write-deployment-scripts-and-the-deployments-manifest.md) | F-151 | M1 | P0 | M | A | SC-010, SC-021 | Ready for Assignment |
 | SC-017 | contracts | M04 | [Publish EIP-712 golden vectors](issues/contracts/017-publish-eip-712-golden-vectors.md) | F-038, F-056 | M1 | P0 | S | A | SC-005 | Ready for Assignment |
 | SC-018 | contracts | M04 | [Add the test router and swapForGas](issues/contracts/018-add-the-test-router-and-swapforgas.md) | F-064 | M1 | P2 | M | After submission | SC-009 | Ready for Assignment |
 | SC-019 | contracts | M04 | [Register the attestation schema and add an attest helper](issues/contracts/019-register-the-attestation-schema-and-add-an-attest-helper.md) | F-074 | M1 | P2 | S | After submission | DOM-001 | Ready for Assignment |
@@ -115,7 +115,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | TRS-003 | treasury | M02 | [Implement the asset registry with on-chain decimals check](issues/treasury/003-implement-the-asset-registry-with-on-chain-decimals-check.md) | F-013 | M1 | P0 | S | A | TRS-002, CHR-001 | Ready for Assignment |
 | TRS-004 | treasury | M02 | [Implement treasury creation with Safe verification](issues/treasury/004-implement-treasury-creation-with-safe-verification.md) | F-010, F-011 | M1 | P0 | M | A | TRS-003, IDN-006 | Ready for Assignment |
 | TRS-005 | treasury | M02 | [Read and snapshot Safe configuration](issues/treasury/005-read-and-snapshot-safe-configuration.md) | F-011 | M1 | P0 | S | A | TRS-004 | Ready for Assignment |
-| TRS-006 | treasury | M02 | [Build the module deploy-and-enable Safe transaction](issues/treasury/006-build-the-module-deploy-and-enable-safe-transaction.md) | F-012 | M1 | P0 | M | A | TRS-004, SC-016 | Ready for Assignment |
+| TRS-006 | treasury | M02 | [Build the module deploy-and-enable Safe transaction](issues/treasury/006-build-the-module-deploy-and-enable-safe-transaction.md) | F-012 | M1 | P0 | M | A | TRS-004, SC-016, SC-021 | Ready for Assignment |
 | TRS-007 | treasury | M02 | [Compute coverage and handle acknowledgment](issues/treasury/007-compute-coverage-and-handle-acknowledgment.md) | F-012 | M1 | P0 | M | A | TRS-005, TRS-006 | Ready for Assignment |
 | TRS-008 | treasury | M02 | [Build a Safe deployment transaction from the UI](issues/treasury/008-build-a-safe-deployment-transaction-from-the-ui.md) | F-011 | M1 | P2 | S | After submission | TRS-004 | Ready for Assignment |
 | TRS-L01 | treasury | M02 | [Support multiple treasuries with a consolidated view](issues/treasury/l01-support-multiple-treasuries-with-a-consolidated-view.md) | F-014 | Later | - | M | After submission | TRS-004 | Accepted |
@@ -125,7 +125,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | MDT-003 | mandate | M03 | [Implement mandate activation and read-back](issues/mandate/003-implement-mandate-activation-and-read-back.md) | F-021 | M1 | P0 | M | A | MDT-002, TRS-006, CHR-003 | Ready for Assignment |
 | MDT-004 | mandate | M03 | [Implement vendor and payee proposals with screening](issues/mandate/004-implement-vendor-and-payee-proposals-with-screening.md) | F-022 | M1 | P0 | M | A | MDT-001, CMP-001 | Ready for Assignment |
 | MDT-005 | mandate | M03 | [Build payee registration and deactivation transactions and sync status](issues/mandate/005-build-payee-registration-and-deactivation-transactions-and-s.md) | F-022 | M1 | P0 | M | B | MDT-004, CHR-005 | Ready for Assignment |
-| MDT-006 | mandate | M03 | [Implement one-time exception records and signatures](issues/mandate/006-implement-one-time-exception-records-and-signatures.md) | F-025 | M1 | P1 | M | B | MDT-003, ENG-010, INV-010 | Ready for Assignment |
+| MDT-006 | mandate | M03 | [Implement one-time exception requests and owner grant transactions](issues/mandate/006-implement-one-time-exception-requests-and-owner-grant-transa.md) | F-025 | M1 | P1 | M | B | MDT-003, ENG-010, INV-010 | Ready for Assignment |
 | MDT-007 | mandate | M03 | [Implement pause and resume (backend and transactions)](issues/mandate/007-implement-pause-and-resume-backend-and-transactions.md) | F-026 | M1 | P0 | M | A | MDT-003 | Ready for Assignment |
 | MDT-008 | mandate | M03 | [Sync mandate expiry and status](issues/mandate/008-sync-mandate-expiry-and-status.md) | F-021 | M1 | P1 | S | After submission | MDT-003 | Ready for Assignment |
 | MDT-L01 | mandate | M03 | [Configure threshold-based approval policies](issues/mandate/l01-configure-threshold-based-approval-policies.md) | F-029 | Later | - | M | After submission | MDT-002, SC-L02 | Accepted |
@@ -263,3 +263,4 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | DOM-015 | domain-evidence | M20 | [Write the compliance positioning note and license inventory](issues/domain-evidence/015-write-the-compliance-positioning-note-and-license-inventory.md) | — | M1 | P1 | S | B | — | Ready for Assignment |
 | DOM-016 | domain-evidence | M20 | [Update the FigJam board from the repo diagrams](issues/domain-evidence/016-update-the-figjam-board-from-the-repo-diagrams.md) | — | M1 | P2 | S | After submission | — | Ready for Assignment |
 | DOM-017 | domain-evidence | M20 | [Choose the repository license](issues/domain-evidence/017-choose-the-repository-license.md) | — | M1 | P1 | S | After submission | — | Ready for Assignment |
+| SC-021 | contracts | M04 | [Implement the module factory with EIP-1167 clones](issues/contracts/021-implement-the-module-factory-with-eip-1167-clones.md) | F-012, F-021 | M1 | P0 | M | A | SC-002 | Ready for Assignment |

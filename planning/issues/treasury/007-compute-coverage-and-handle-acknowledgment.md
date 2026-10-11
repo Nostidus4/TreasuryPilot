@@ -29,7 +29,7 @@ Autonomous execution is allowed only when the Safes have exactly the expected mo
 
 ## Scope
 
-- Coverage = COMPLETE if enabled modules equal {TreasuryPilotModule with the expected code hash} and no unexpected guard
+- Coverage = COMPLETE if each Safe's enabled modules equal {one EIP-1167 clone whose target is the known implementation} and no unexpected guard
 - PARTIAL otherwise
 - UNKNOWN on read failure
 - acknowledge endpoint (Owner)

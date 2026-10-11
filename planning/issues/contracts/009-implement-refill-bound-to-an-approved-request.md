@@ -29,11 +29,13 @@ Move stablecoin from Safe T to an operational Safe only for an approved request,
 
 ## Scope
 
-- refill(approval, sig, stepId, toWallet, amount)
-- path allowlist check
-- toWallet must equal approval.payingWallet
-- step id unused then marked used
+- refill(approval, sig, stepId, toWallet, amount) per §6.4 checks 1–13
+- toWallet must equal the approval's paying wallet
+- one refill per request per wallet
+- post-refill balance ≤ approval.amount + target(toWallet)
 - refill limits and counter
+- source buffer
+- balance-delta check
 - RefillExecuted event
 
 ## Out of scope
@@ -52,14 +54,16 @@ Refill does not consume the PAY budget (BR-023).
 
 ## Acceptance criteria
 
-- [ ] Refill along an allowed path succeeds with a valid approval
-- [ ] A step id cannot be executed twice
-- [ ] A path not in the mandate reverts
-- [ ] toWallet different from the approval's paying wallet reverts
+- [ ] A refill within all bounds succeeds
+- [ ] A second refill for the same request and wallet reverts AlreadyRefilledForRequest
+- [ ] A refill that would push the wallet above amount + target reverts RefillExceedsNeed
+- [ ] A refill to a wallet other than the approval's paying wallet reverts WrongRefillTarget
+- [ ] Safe T below its buffer after refill reverts SourceBufferBreach
 
 ## Testing requirements
 
-- Unit: path, replay, limit tests
+- Unit: bound, replay and path tests
+- invariant I10 added in SC-014
 
 ## Definition of Done
 

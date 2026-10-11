@@ -40,7 +40,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+M04-D10: M1 never moves native tokens from the treasury; the executor is topped up manually and alerts fire below the threshold.
 
 ## Dependencies
 

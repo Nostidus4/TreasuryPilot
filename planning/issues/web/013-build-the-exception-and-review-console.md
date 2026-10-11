@@ -47,7 +47,7 @@ Follow the module spec and the relevant ADRs.
 
 - WEB-011: Build plan cards and the Why panel
 - RCV-004: Implement the review queue and routing
-- MDT-006: Implement one-time exception records and signatures
+- MDT-006: Implement one-time exception requests and owner grant transactions
 
 ## Acceptance criteria
 

@@ -29,11 +29,11 @@ Pay the approved amount to the approved payee from the paying Safe, exactly once
 
 ## Scope
 
-- pay() with executor-only access
-- approval verification
-- payee active check
-- request id unused check and mark used
-- token transfer via execTransactionFromModuleReturnData with return-data check
+- pay(approval, sig, stepId) per docs/modules/contracts §6.4 checks 1–13
+- paying wallet must be operational (BR-019)
+- request/step replay maps
+- token transfer via the paying Safe's execTransactionFromModuleReturnData with return-data check
+- exact payee balance-delta check (M04-D8)
 - PaymentExecuted event
 - reentrancy guard
 
@@ -52,10 +52,11 @@ Checks-effects-interactions. Treat a token returning false as failure.
 
 ## Acceptance criteria
 
-- [ ] A valid approved payment transfers the exact amount to the payee
-- [ ] A second call with the same request id reverts
-- [ ] A non-executor caller reverts
-- [ ] A token that returns false causes a revert with no state change
+- [ ] A valid approved payment transfers exactly the amount to the payee
+- [ ] Paying from Safe T reverts NotOperationalWallet
+- [ ] A second call with the same request or step id reverts
+- [ ] A fee-on-transfer stub token reverts BalanceDeltaMismatch with no state change
+- [ ] A non-executor caller reverts NotExecutor
 
 ## Testing requirements
 

@@ -29,8 +29,8 @@ Prove the nine invariants in the module spec hold under random call sequences.
 
 ## Scope
 
-- Handler contract driving pay/refill/pause/configure with bounded random inputs
-- invariant tests for the 9 invariants in docs/modules/contracts/README.md
+- Handler contract driving pay/refill/pause/configure/grantException with bounded random inputs
+- invariants I1–I10 from docs/modules/contracts §10 (I10 = refill bound)
 - 10k-run configuration
 
 ## Out of scope
@@ -47,9 +47,9 @@ Use ghost variables to track expected totals.
 
 ## Acceptance criteria
 
-- [ ] All invariants pass at 10k runs
+- [ ] Invariants I1–I10 pass at 10k runs
 - [ ] Each invariant is mapped to its BR in a comment
-- [ ] A deliberately broken check makes the matching invariant fail (mutation sanity check)
+- [ ] A deliberately broken check makes the matching invariant fail
 
 ## Testing requirements
 

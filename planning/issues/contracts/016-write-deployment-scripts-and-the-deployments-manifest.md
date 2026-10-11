@@ -29,8 +29,9 @@ Repeatable deployment to Anvil and the chosen testnet, with addresses recorded.
 
 ## Scope
 
-- forge script to deploy TestUSDC (local), the module, and enable it on three Safes
-- write deployments/<chainId>.json with addresses and code hashes
+- forge script deploying TestUSDC (local), the module implementation and the factory
+- demo setup script that has Safe T call factory.create and enables the module on T, O1, O2 (MultiSend)
+- write deployments/<chainId>.json with implementation, factory, token addresses and code hashes
 - verify on the explorer for testnet
 
 ## Out of scope
@@ -44,6 +45,7 @@ Local deployment must not depend on DOM-001; testnet deployment does.
 ## Dependencies
 
 - SC-010: Implement pause, resume, revoke and guardian
+- SC-021: Implement the module factory with EIP-1167 clones
 
 ## Acceptance criteria
 

@@ -1,4 +1,4 @@
-# [MANDATE] Implement one-time exception records and signatures
+# [MANDATE] Implement one-time exception requests and owner grant transactions
 
 | Field | Value |
 |---|---|
@@ -29,10 +29,10 @@ Owners can grant an exception for one over-cap request, with full context.
 
 ## Scope
 
-- GET exception (numbers from the engine, AI draft if present, typed data)
-- POST signature verification against Safe T owners
+- GET exception request (numbers from the engine, AI draft if present)
+- endpoint building the Safe T transaction grantException(requestId, amount, payee, expiry)
+- track ExceptionGranted event → status Granted
 - reject endpoint
-- status lifecycle
 - pre-check that the daily limit would still hold
 
 ## Out of scope
@@ -41,7 +41,7 @@ AI draft text (AGT-011); on-chain consumption (SC-011).
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+M04-D3: no EIP-712 exception signature.
 
 ## Dependencies
 
@@ -51,9 +51,10 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] A valid Owner signature sets Granted
+- [ ] The built Safe transaction grants exactly the request's amount and payee
+- [ ] After the Owner executes it, status becomes Granted from the on-chain event
 - [ ] A request that is not over-cap returns NOT_OVER_CAP
-- [ ] If the daily limit would be exceeded the grant is refused
+- [ ] If the daily limit would be exceeded the grant is refused before building the transaction
 
 ## Testing requirements
 

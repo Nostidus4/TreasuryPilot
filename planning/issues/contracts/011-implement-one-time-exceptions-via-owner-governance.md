@@ -1,4 +1,4 @@
-# [CONTRACTS] Implement one-time exception verification and consumption
+# [CONTRACTS] Implement one-time exceptions via owner governance
 
 | Field | Value |
 |---|---|
@@ -29,11 +29,11 @@ Let the Owner authorize one over-cap payment without loosening anything else.
 
 ## Scope
 
-- Hash and verify OneTimeException signed by the Safe T owner (ERC-1271 against Safe T)
-- bind request id, mandate version, wallet, payee, asset, amount, expiry, nonce
-- consume nonce in pay
-- skip only the per-request check
-- ExceptionConsumed event
+- grantException(requestId, amount, payee, expiry) and revokeException callable only by Safe T
+- store the current mandate version
+- pay() accepts over-cap only with an unused, unexpired exception matching amount, payee and version
+- mark used atomically
+- ExceptionGranted/Revoked events
 
 ## Out of scope
 
@@ -41,7 +41,7 @@ Any lifting of the daily cap, buffer or payee rules.
 
 ## Technical notes
 
-The exception signer check uses Safe T's signature validation so a multi-owner Safe works.
+M04-D3: no EIP-712 signature; the Owner signs a Safe transaction, so Safe thresholds apply automatically.
 
 ## Dependencies
 
@@ -49,10 +49,9 @@ The exception signer check uses Safe T's signature validation so a multi-owner S
 
 ## Acceptance criteria
 
-- [ ] Over-cap pay with a valid exception succeeds once
-- [ ] Replay on another request reverts
-- [ ] A different mandate version invalidates it
-- [ ] Daily cap still blocks
+- [ ] An over-cap pay with a matching exception succeeds once
+- [ ] A second use, a different request, a different payee or amount, an expired exception, or one from an older mandate version all revert
+- [ ] The daily cap still blocks an exception payment that would exceed it
 
 ## Testing requirements
 

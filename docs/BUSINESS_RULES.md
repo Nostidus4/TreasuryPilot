@@ -33,7 +33,8 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-014 | A mandate missing any required field cannot be activated (gas cap, buffer/target per wallet, router and quote parameters if SWAP is enabled, expiry). | B, C | Domain §4.2 |
 | BR-015 | Mandate creation, changes, pause and revoke take effect only after on-chain confirmation. Until then, the previous state governs. | C, B | UC-01, UC-05 |
 | BR-016 | A new mandate version invalidates outstanding one-time exceptions and does not reset counters. | C | Domain §6.2 |
-| BR-017 | Payee cooling period default: 24 hours (production) and 5 minutes (demo). An address change creates a new payee entry and restarts cooling. | C | S2 *(default)* |
+| BR-017 | Payee cooling period is one mandate parameter `payeeCoolingSeconds` (≥ 1), applied by the contract to every payee. Default: 24 hours (production) and 5 minutes (demo). An address change creates a new payee entry and restarts cooling. | C | S2, M04-D5 |
+| BR-019 | PAY is allowed only from operational wallets. The treasury wallet T can only fund refills. | C | M04-D6 |
 | BR-018 | Protected mode requires complete module coverage. If another module able to move funds is enabled, autonomous execution is suspended until the Owner explicitly acknowledges the partial coverage. | B | GA p.20 |
 
 ## 3. Limits & counters
@@ -57,6 +58,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-032 | `Shortage = max(0, ProtectedOther + D + F − B)`; `PreferredRefill = max(0, ProtectedOther + D + H − B)`; `Cap = min(SourceCapacity, RemainingRefillBudget, PerRefillLimit)`. If `Cap ≥ Preferred` → refill Preferred. If `Shortage ≤ Cap < Preferred` → refill Shortage and report that the target was not reached. | B | Domain §3 |
 | BR-033 | If `Cap < Shortage` → STOP and report. No partial refill or partial payment. | B | Domain §3.3 |
 | BR-034 | Every amount used for execution is computed by the deterministic calculator. An LLM never computes or asserts amounts, balances or permissions. | B | Autonomy §2–3 |
+| BR-036 | A REFILL must be bound to an approved request: it may only go to that request's paying wallet, at most once per request per wallet, and the destination balance after the refill must not exceed `approval.amount + target(wallet)`. | C | M04-D4 |
 | BR-035 | Funds reserved for other registered obligations (`R_other`) and execution holds (`L_other`) are protected in planning (M1: backend; Later: on-chain, F-028). | B (Later: C) | Domain §3.1, §5.2 |
 
 ## 5. Exceptions
@@ -64,7 +66,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | ID | Rule | Enforced | Source |
 |---|---|---|---|
 | BR-040 | A one-time exception lifts **only** the per-request cap. It never lifts the daily cap, buffer, payee allowlist or cooling, asset, chain or expiry. | C | O2 *(default)* |
-| BR-041 | An exception binds request_id, mandate id and version, treasury, chain, contract, paying wallet, payee, asset, exact amount, expiry and nonce. It is consumed atomically with the payment, and only once. | C | Domain §6.1 |
+| BR-041 | The Owner grants an exception through a governance transaction on Safe T (`grantException`), binding request_id, exact amount, payee, expiry and the current mandate version. It is consumed atomically with the payment, only once, and becomes invalid when the mandate version changes. | C | Domain §6.1, M04-D3 |
 | BR-042 | The full amount of an exception payment counts toward the daily PAY budget. | C | Domain §6.1 |
 | BR-043 | Only the Owner can grant an exception. The AI may draft the request but never grants it. | C, B | D3 |
 
@@ -99,7 +101,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | ID | Rule | Enforced | Source |
 |---|---|---|---|
 | BR-070 | Invoice and vendor content is untrusted **data**, never an instruction to the agent. | B | Use-Case §2 |
-| BR-071 | Duplicate fingerprint (`vendor, invoiceNo, amount, asset`) → the backend blocks submission, and the contract blocks a second PAY. Override requires an Owner-signed flag inside the approval. | C, B | S3 |
+| BR-071 | Duplicate fingerprint (`vendor, invoiceNo, amount, asset`) → the backend blocks submission, and the contract blocks a second PAY. Override requires an Owner governance transaction `allowDuplicate(fingerprint, requestId)`, valid for that one request. | C, B | S3, M04-D3 |
 | BR-072 | An invoice address that differs from the registered payee or vendor history raises a high-severity flag. Changing a payee's address requires the Owner's payee update plus a new cooling period. An invoice can never change a payee. | B, C | N1, S2 |
 | BR-073 | M1 invoices must be denominated in the treasury's payment stablecoin. | B | Q20 |
 | BR-074 | Only hashes and commitments are stored on-chain. Invoice documents and personal data stay off-chain in private storage. | B | Use-Case §2 |
@@ -109,7 +111,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 
 | ID | Rule | Enforced | Source |
 |---|---|---|---|
-| BR-080 | The executor's gas is prefunded. Gas funding from treasury wallets is capped separately. Native gas is never a PAY asset to vendors. The gas funding cap does not cap actual network fees. | C, B | Domain §5.4, O6 *(default)* |
+| BR-080 | M1: the contracts never transfer native tokens; the executor's gas is topped up manually with low-gas alerts (M04-D10). Later: the executor's gas is prefunded. Gas funding from treasury wallets is capped separately. Native gas is never a PAY asset to vendors. The gas funding cap does not cap actual network fees. | C, B | Domain §5.4, O6 *(default)* |
 | BR-081 | Swaps go only through allowlisted adapter, router and pairs, within the swap budget, with a fresh quote from the configured source. `minOut = ceil(quoteOut × (10000 − maxSlippageBps) / 10000)` is computed by the engine and cannot be lowered by the agent. | C, B | R5 |
 | BR-082 | The swap allowance equals exactly the input and is reset to 0 in the same transaction. | C | GA p.22 |
 | BR-083 | Assets are identified by `(chainId, address)`. Decimals are verified on-chain. All arithmetic uses integer base units. | B, C | Domain §2 |

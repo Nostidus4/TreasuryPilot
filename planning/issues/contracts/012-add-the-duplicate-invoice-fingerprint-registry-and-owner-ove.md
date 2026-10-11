@@ -1,4 +1,4 @@
-# [CONTRACTS] Add the duplicate-invoice fingerprint registry
+# [CONTRACTS] Add the duplicate-invoice fingerprint registry and owner override
 
 | Field | Value |
 |---|---|
@@ -29,8 +29,10 @@ The same invoice cannot be paid twice under different request ids.
 
 ## Scope
 
-- used-fingerprint mapping checked and set in pay
-- overrideDuplicate flag honoured only if the approval is signed with it and an Owner-level approver rule is met
+- fingerprintPaid map set in pay()
+- allowDuplicate(fingerprint, requestId) callable only by Safe T
+- override consumed by exactly that request
+- DuplicateAllowed event
 
 ## Out of scope
 
@@ -38,7 +40,7 @@ Fingerprint computation (off-chain, ENG-009).
 
 ## Technical notes
 
-Document precisely who may sign an override (decision: approval must also be co-signed by Safe T).
+M04-D3: override is a governance call, not a flag inside the approval.
 
 ## Dependencies
 
@@ -46,8 +48,8 @@ Document precisely who may sign an override (decision: approval must also be co-
 
 ## Acceptance criteria
 
-- [ ] Second pay with the same fingerprint and a new request id reverts
-- [ ] Override path works only with the Owner co-signature
+- [ ] A second pay with the same fingerprint and a new request id reverts DuplicateFingerprint
+- [ ] After allowDuplicate for request R, R can pay once and any other request still reverts
 
 ## Testing requirements
 

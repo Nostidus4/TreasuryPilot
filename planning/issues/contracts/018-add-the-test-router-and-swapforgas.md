@@ -39,7 +39,7 @@ Real DEX integration.
 
 ## Technical notes
 
-Name and NatSpec must say TEST ROUTER.
+P2 only. M04-D10: no native-token transfers in M1, so swapForGas stays optional and the executor gas is topped up manually.
 
 ## Dependencies
 

@@ -29,8 +29,9 @@ The Owner can deploy the treasury's module and enable it on all three Safes from
 
 ## Scope
 
-- Endpoint returning Safe transaction payload(s) for module deployment and enableModule on T, O1, O2
-- record the module address after confirmation
+- Endpoint returning a Safe T transaction that calls factory.create with the treasury config
+- then enableModule on T, O1, O2 (MultiSend batch)
+- record the module address from TreasuryModuleCreated after confirmation
 
 ## Out of scope
 
@@ -44,6 +45,7 @@ For a 1-of-1 Safe the UI signs and executes directly.
 
 - TRS-004: Implement treasury creation with Safe verification
 - SC-016: Write deployment scripts and the deployments manifest
+- SC-021: Implement the module factory with EIP-1167 clones
 
 ## Acceptance criteria
 

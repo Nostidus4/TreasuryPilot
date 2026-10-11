@@ -241,9 +241,48 @@ def step_project(m):
         print("project items", len(pj["items"]), flush=True)
     print("project ok", pj.get("url"))
 
+# ── update existing issues after a grilling round ───────────────────
+def step_update(m, ids):
+    """Update title, body, labels and blocked-by links of existing issues, and their project fields."""
+    pj = m["project"]
+    fields = gql("query($p:ID!){node(id:$p){...on ProjectV2{fields(first:50){nodes{...on ProjectV2FieldCommon{id name}"
+                 " ...on ProjectV2SingleSelectField{options{id name}}}}}}}", p=pj["id"])["node"]["fields"]["nodes"]
+    F = {f["name"]: f for f in fields}
+    opt = lambda field, val: next(o["id"] for o in F[field]["options"] if o["name"] == val)
+    for i in ids:
+        t = BY_ID[i]; num = m["issues"][i]["number"]
+        api("PATCH", f"repos/{FULL}/issues/{num}", {"title": G.title(t), "body": body_for(t, m), "labels": labels_for(t)})
+        current = api("GET", f"repos/{FULL}/issues/{num}/dependencies/blocked_by", ok_fail=True) or []
+        have = {x["number"] for x in current}
+        want = {m["issues"][d]["number"] for d in t["deps"]}
+        for d in t["deps"]:
+            if m["issues"][d]["number"] not in have:
+                api("POST", f"repos/{FULL}/issues/{num}/dependencies/blocked_by", {"issue_id": m["issues"][d]["id"]}, ok_fail=True)
+        for x in current:
+            if x["number"] not in want:
+                api("DELETE", f"repos/{FULL}/issues/{num}/dependencies/blocked_by/{x['id']}", ok_fail=True)
+        m.setdefault("deps_done", [])
+        m["deps_done"] = [k for k in m["deps_done"] if not k.startswith(i + "<-")] + [f"{i}<-{d}" for d in t["deps"]]
+        item = pj.get("items", {}).get(i)
+        if item:
+            tr = tier(i) if t["phase"] == "M1" else "Later"
+            sets = [(F["Cut"]["id"], {"singleSelectOptionId": opt("Cut", tr)}),
+                    (F["Size"]["id"], {"singleSelectOptionId": opt("Size", t["size"])}),
+                    (F["Blocked by"]["id"], {"text": ", ".join(t["deps"])})]
+            if t["prio"] in ("P0", "P1", "P2"): sets.append((F["Priority"]["id"], {"singleSelectOptionId": opt("Priority", t["prio"])}))
+            parts = []
+            for k, (fid, val) in enumerate(sets):
+                v = json.dumps(val).replace('"singleSelectOptionId"', 'singleSelectOptionId').replace('"text"', 'text')
+                parts.append(f'u{k}:updateProjectV2ItemFieldValue(input:{{projectId:"{pj["id"]}",itemId:"{item}",fieldId:"{fid}",value:{v}}}){{clientMutationId}}')
+            gql("mutation{" + " ".join(parts) + "}")
+        save_map(m); time.sleep(1)
+        print("updated", i, "#", num, flush=True)
+
 STEPS = {"labels": step_labels, "milestones": step_milestones, "epics": step_epics, "issues": step_issues,
          "subissues": step_subissues, "deps": step_deps, "project": step_project}
 if __name__ == "__main__":
     m = load_map()
+    if sys.argv[1:2] == ["update"]:
+        step_update(m, sys.argv[2:]); sys.exit()
     for s in (sys.argv[1:] or list(STEPS)):
         STEPS[s](m)

@@ -45,7 +45,7 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - AGT-001: Build the LLM adapter with routing and timeouts
-- MDT-006: Implement one-time exception records and signatures
+- MDT-006: Implement one-time exception requests and owner grant transactions
 
 ## Acceptance criteria
 
