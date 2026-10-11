@@ -1,6 +1,35 @@
 # M14 · Tuân thủ
 
-**Nguồn chuẩn:** `docs/modules/compliance/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · `screening_lists` (địa chỉ mẫu: nguồn, tên danh sách, ngày thêm; gắn TEST DATA) · `encryption_keys_meta` (key id, ngày tạo, ngày xoay; khóa thật nằm ngoài DB).
+**Nguồn chuẩn:** `docs/modules/compliance/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026)
+
+## 1. Mục đích và ranh giới
+
+M14 giữ cho TreasuryPilot **không trả nhầm đối tượng** (sàng lọc danh sách trừng phạt/chặn) và **không làm lộ dữ liệu** (phân loại, mã hóa, che log). Ở M1 nhà cung cấp sàng lọc là dữ liệu mẫu có nhãn; adapter cho phép thay bằng nhà cung cấp thương mại sau này.
+
+| Trong phạm vi (M1) | Ngoài phạm vi |
+|---|---|
+| Adapter sàng lọc + nhà cung cấp mẫu (TEST DATA) | KYB, Travel Rule, lưu giữ/xóa dữ liệu, khu vực lưu trữ (Later) |
+| Sàng lọc khi đăng ký payee và trước mỗi PAY (có hạn) | Ý kiến pháp lý (ticket DOM) |
+| Phân loại dữ liệu, mã hóa trường, che log | |
+
+## 2. Feature, yêu cầu, luật
+
+F-110 (FR-906, BR-085, NFR-CMP-04), F-113 (FR-909, BR-074, NFR-PRIV-01–04); Later F-111, F-112, F-114.
+
+## 3. Khái niệm — các mức dữ liệu
+
+| Mức | Ví dụ | Cách xử lý |
+|---|---|---|
+| **Public** | tx hash, địa chỉ contract | không |
+| **Internal** | request id, số tiền, trạng thái | cô lập theo tổ chức |
+| **Confidential** | liên hệ vendor, email, chat id Telegram, tài liệu hóa đơn, ghi chú xác minh ngoài kênh | mã hóa khi lưu (AES-GCM theo trường, khóa từ Docker secret), che trong log, không bao giờ lên chain |
+| **Secret** | khóa, token, bí mật của signer | không bao giờ vào DB/log; chỉ nằm trong kho bí mật |
+
+Kết quả sàng lọc: `CLEAR | HIT | ERROR`, hạn 24 giờ.
+
+## 4. Mô hình dữ liệu
+
+`screenings` (M03 §4) · `screening_lists` (địa chỉ mẫu: nguồn, tên danh sách, ngày thêm; gắn TEST DATA) · `encryption_keys_meta` (key id, ngày tạo, ngày xoay; khóa thật nằm ngoài DB).
 
 ## 5. Trạng thái
 

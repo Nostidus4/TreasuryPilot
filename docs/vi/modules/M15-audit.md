@@ -1,6 +1,33 @@
 # M15 · Audit & bằng chứng
 
-**Nguồn chuẩn:** `docs/modules/audit/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · `audit_heads` (đầu chuỗi mỗi tổ chức) · `evidence_bundles` (org, request hoặc scenario, storage_key, sha256, schema_version, created_at).
+**Nguồn chuẩn:** `docs/modules/audit/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026)
+
+## 1. Mục đích và ranh giới
+
+M15 cho TreasuryPilot một **trí nhớ chống sửa** và cách **chứng minh** điều đã xảy ra: nhật ký audit nối hash, ghi cùng transaction với mọi hành động liên quan tiền/quyền, và gói bằng chứng nối một request hay kịch bản demo với bản duyệt, plan, kết quả kiểm, lời gọi AI, attestation và giao dịch on-chain.
+
+| Trong phạm vi (M1) | Ngoài phạm vi |
+|---|---|
+| Nhật ký audit nối hash, chỉ ghi thêm, theo tổ chức | Neo hash gốc lên chain hằng ngày (Later AUD-L01) |
+| Đọc audit + kiểm chuỗi (API + script offline) | |
+| Schema gói bằng chứng v1 + bộ xuất (theo request và kịch bản) | |
+| Nhãn coverage xuyên suốt API | |
+
+## 2. Feature, yêu cầu, luật
+
+F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (FR-914).
+
+## 3. Khái niệm
+
+| Thuật ngữ | Định nghĩa |
+|---|---|
+| **Bản ghi audit** | `{seq, org_id, at, actor_type (USER, SYSTEM, AI, CONTRACT), actor_id, action, entity_type, entity_id, data, prev_hash, hash}`; `hash = sha256(prev_hash ‖ JSON chuẩn của bản ghi trừ hash)`. |
+| **Hành động phải audit** | Mọi thứ ảnh hưởng tiền hoặc quyền: duyệt, giao dịch quản trị và chữ ký, kích hoạt mandate, thay đổi payee, ngoại lệ, attestation plan, operation, pause/resume, đổi vai trò, liên kết ví, solo mode, chấp nhận phí, hành động review, xuất file. |
+| **Gói bằng chứng** | JSON `evidence-bundle.v1` + đính kèm tùy chọn (hash tài liệu, báo cáo), niêm phong bằng sha256. |
+
+## 4. Mô hình dữ liệu
+
+`audit_log` (seq bigserial, chuỗi theo tổ chức, trigger chặn UPDATE/DELETE) · `audit_heads` (đầu chuỗi mỗi tổ chức) · `evidence_bundles` (org, request hoặc scenario, storage_key, sha256, schema_version, created_at).
 
 ## 5. Trạng thái
 
