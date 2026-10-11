@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-929, BR-095, M19-D5 |
+| **Traces to** | FR-929, BR-095, M19-D5, ADR-019 |
 | **Blocks** | DEV-008, DEV-009 |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ Named scenarios can be reset and replayed, each producing an evidence bundle.
 - chain-id allowlist check
 - export evidence bundle per run
 - extra scenarios unexpected-outflow and fee-spike (M19-D5)
+- scenario files D1–D10 per ADR-019 with must-show assertions
 
 ## Out of scope
 
@@ -54,6 +55,7 @@ Scenario definitions as YAML in scenarios/. Refuse chain ids not in the allowlis
 - [ ] A mainnet chain id is refused with a clear error
 - [ ] Each run writes an evidence bundle that validates against its schema
 - [ ] unexpected-outflow and fee-spike scenarios run on Anvil
+- [ ] All ten scenarios run on Anvil (Aave via mock or fork)
 
 ## Testing requirements
 

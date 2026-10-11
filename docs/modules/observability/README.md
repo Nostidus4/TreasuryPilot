@@ -89,3 +89,7 @@ OBS-001 → OBS-002 → OBS-003 → OBS-004 → OBS-005.
 | M17-D7 | Materialized views refreshed every 15 min if queries are slow. |
 | M17-D8 | Grafana optional; not required for M1. |
 | M17-D9 | `/metrics` internal only. |
+
+## 15. v0.3 changes (ADR-019)
+
+Savings report adds supply interest earned and lost interest from early payments; metrics add reserve breaches (target 0) and liquidity actions per day; benchmark B0 is the idle-cash baseline.

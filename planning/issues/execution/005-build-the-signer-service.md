@@ -9,7 +9,7 @@
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-092, ADR-006, FR-507 |
+| **Traces to** | BR-092, ADR-006, FR-507, ADR-019 |
 | **Blocks** | EXE-006, EXE-007, EXE-L01, EXE-013 |
 | **Submission cut** | A |
 
@@ -35,6 +35,7 @@ The only component that can sign executor transactions, and only for attested st
 - same payload may be re-signed for gas replacement
 - simulate (eth_call) then sign and broadcast
 - shared-secret auth on the internal network
+- signer payload allowlist adds module.supply and module.withdraw
 
 ## Out of scope
 

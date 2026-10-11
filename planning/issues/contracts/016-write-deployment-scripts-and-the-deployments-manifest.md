@@ -10,7 +10,7 @@
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-925, ADR-012 |
-| **Blocks** | DEV-006, DEV-010, TRS-006, CHR-005, EXE-005, POL-007 |
+| **Blocks** | DEV-006, DEV-010, TRS-006, CHR-005, EXE-005, POL-007, SC-025, DEV-012 |
 | **Submission cut** | A |
 
 ## Context

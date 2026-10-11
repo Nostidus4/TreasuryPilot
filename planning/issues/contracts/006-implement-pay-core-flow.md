@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-001, BR-010, BR-024, FR-509, FR-510 |
-| **Blocks** | SC-007, SC-008, SC-012, SC-022 |
+| **Traces to** | BR-001, BR-010, BR-024, FR-509, FR-510, ADR-019, BR-024 |
+| **Blocks** | SC-007, SC-008, SC-012, SC-022, SC-023 |
 | **Submission cut** | A |
 
 ## Context
@@ -36,6 +36,7 @@ Pay the approved amount to the approved payee from the paying Safe, exactly once
 - exact payee balance-delta check (M04-D8)
 - PaymentExecuted event
 - reentrancy guard
+- pay exactly earlyAmount before earlyPayBy, otherwise exactly amount; reject earlyAmount > amount (WrongPaymentOption)
 
 ## Out of scope
 
@@ -57,6 +58,7 @@ Checks-effects-interactions. Treat a token returning false as failure.
 - [ ] A second call with the same request or step id reverts
 - [ ] A fee-on-transfer stub token reverts BalanceDeltaMismatch with no state change
 - [ ] A non-executor caller reverts NotExecutor
+- [ ] Paying at earlyPayBy transfers earlyAmount; one second later transfers amount
 
 ## Testing requirements
 

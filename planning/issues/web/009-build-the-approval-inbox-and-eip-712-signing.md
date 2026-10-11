@@ -9,7 +9,7 @@
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | frontend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-313, FR-316, FR-916 |
+| **Traces to** | FR-313, FR-316, FR-916, ADR-019 |
 | **Blocks** | — |
 | **Submission cut** | A |
 
@@ -38,6 +38,7 @@ Approvers review, acknowledge flags and sign.
 - reject or request changes with reason
 - maker-checker message
 - Cancel on-chain button sending cancelRequest from the approver wallet
+- show early vs standard options and sign the 13-field typed data
 
 ## Out of scope
 

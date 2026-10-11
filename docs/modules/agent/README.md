@@ -170,3 +170,7 @@ AGT-001 adapter → AGT-002 log → AGT-003 untrusted wrapping → AGT-004 extra
 | M09-D12 | Out-of-mandate proposal → AI_PLAN_REJECTED + circuit breaker PAUSE. |
 | M09-D13 | Multi-invoice documents reported via `invoice_count_in_document` → M05 rejects. |
 | M09-D14 | Ground truth of eval scenarios never enters prompts. |
+
+## 15. v0.3 changes (ADR-019)
+
+EXPLAIN covers liquidity actions ("Supplied 3,000 because Safe holds 6,000 and the reserve needs 3,000"). A new explanation for borrow proposals (numbers only from M07). AI never proposes SUPPLY/BORROW amounts. Benchmark (AGT-014) adds **B0** (manual/EDF, cash idle) before B1 and B2, measuring on-time rate, reserve breaches, mandate violations, net benefit (incl. supply interest), processing time and interventions.

@@ -10,8 +10,8 @@
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-928 |
-| **Blocks** | — |
-| **Submission cut** | B |
+| **Blocks** | DEV-012 |
+| **Submission cut** | A |
 
 ## Context
 

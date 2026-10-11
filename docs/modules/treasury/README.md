@@ -97,3 +97,7 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 | M02-D8 | Config and deployments are files validated at startup; no runtime edit in M1. |
 | M02-D9 | Decimals verified on-chain when an asset is added. |
 | M02-D10 | Safe deployment from the UI is P2 (TRS-008). |
+
+## 15. v0.3 changes (ADR-019)
+
+The deployments manifest adds `AAVE_POOL`, `AAVE_POOL_ADDRESSES_PROVIDER`, `ATOKEN` and the Aave test USDC; the demo treasury is T + one operational Safe (O1). Coverage rules are unchanged (the module calls Aave through Safe T; Aave is not a Safe module).

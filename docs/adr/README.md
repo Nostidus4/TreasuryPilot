@@ -23,3 +23,4 @@ Accepted at gate G2 unless marked otherwise.
 | 016 | Per-request plan attestation and pre-submit simulation | Accepted (M08, 2026-10-11) |
 | 017 | In-app Safe signature collection and guardian sentinel | Accepted (M03, 2026-10-11) |
 | 018 | EAS payment receipts | Accepted (2026-10-11) |
+| 019 | Adopt spec v0.3: Aave idle-cash management, two-option payment approvals | Accepted (2026-10-11) |

@@ -8,9 +8,9 @@ Tiêu đề ticket giữ tiếng Anh vì GitHub issue viết bằng tiếng Anh 
 
 | Phase | P0 | P1 | P2 | Tổng |
 |---|---:|---:|---:|---:|
-| M1 (bản thi) | 137 | 50 | 8 | 195 |
+| M1 (bản thi) | 144 | 52 | 10 | 206 |
 | Later | – | – | – | 38 |
-| **Tất cả** | | | | **233** |
+| **Tất cả** | | | | **244** |
 
 Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A = bắt buộc cho bản demo nộp bài (khép kín phụ thuộc), B = nên có, còn lại làm sau khi nộp.
 
@@ -18,23 +18,23 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 
 | Epic | Module | Ticket M1 | Tier A | Ticket Later | Ước tính công M1 (ngày) |
 |---|---|---:|---:|---:|---:|
-| M19 · Developer Experience & Quality | `devex` | 11 | 6 | 0 | 8 |
-| M04 · Smart Contracts | `contracts` | 22 | 20 | 6 | 17 |
-| M07 · Financial Engine (py-core) | `financial-engine` | 12 | 10 | 3 | 9 |
+| M19 · Developer Experience & Quality | `devex` | 12 | 8 | 0 | 8.5 |
+| M04 · Smart Contracts | `contracts` | 26 | 23 | 6 | 20 |
+| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 11 | 3 | 10 |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 6 | 0 | 5 |
 | M01 · Identity & Access | `identity` | 8 | 6 | 3 | 6 |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 7 | 2 | 5.5 |
-| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 10 | 7 | 1 | 9.5 |
+| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 7 | 1 | 10 |
 | M05 · Invoices & Payment Requests | `invoices` | 12 | 10 | 4 | 8.5 |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 5 | 0 | 5 |
 | M09 · AI Agent | `agent` | 17 | 12 | 0 | 13 |
-| M10 · Orchestration & Execution | `execution` | 13 | 10 | 4 | 12 |
+| M10 · Orchestration & Execution | `execution` | 14 | 11 | 4 | 12.5 |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | 3 | 4 |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 3 | 0 | 5 |
 | M13 · Notifications | `notifications` | 3 | 2 | 4 | 3 |
 | M14 · Compliance | `compliance` | 3 | 1 | 4 | 2 |
 | M15 · Audit & Evidence | `audit` | 4 | 2 | 1 | 3 |
-| M16 · Web Application | `web` | 25 | 11 | 0 | 25.5 |
+| M16 · Web Application | `web` | 27 | 12 | 0 | 26.5 |
 | M17 · Observability & Analytics | `observability` | 5 | 0 | 0 | 4 |
 | M18 · Platform Admin & Billing | `admin` | 0 | 0 | 3 | 0 |
 | M20 · Domain & Evidence (non-code) | `domain-evidence` | 17 | 11 | 0 | 14 |
@@ -45,7 +45,7 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 |---|---|---|---|---|---|---|---|---|---|
 | DEV-001 | devex | Initialize monorepo skeleton | F-160 | M1 | P0 | M | A | — | Sẵn sàng phân công |
 | DEV-002 | devex | Create Docker Compose stack (local profile) | F-160 | M1 | P0 | M | A | DEV-001 | Sẵn sàng phân công |
-| DEV-003 | devex | Add CI workflow for Python | F-161 | M1 | P1 | S | B | DEV-001 | Sẵn sàng phân công |
+| DEV-003 | devex | Add CI workflow for Python | F-161 | M1 | P1 | S | A | DEV-001 | Sẵn sàng phân công |
 | DEV-004 | devex | Add CI workflow for contracts | F-161, F-163 | M1 | P1 | S | B | SC-001 | Sẵn sàng phân công |
 | DEV-005 | devex | Add CI workflow for web and OpenAPI client drift | F-161 | M1 | P1 | S | After submission | WEB-001 | Sẵn sàng phân công |
 | DEV-006 | devex | Write seed script for the local environment | F-160 | M1 | P1 | M | A | SC-016, TRS-004, MDT-003, INV-003 | Sẵn sàng phân công |
@@ -276,6 +276,17 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 | WEB-024 | web | Build the fee policy and fee acceptance UI | F-066 | M1 | P1 | S | B | WEB-010, EXE-012 | Sẵn sàng phân công |
 | WEB-025 | web | Build the governance signing inbox | F-020–F-026 | M1 | P0 | M | A | WEB-003, MDT-009 | Sẵn sàng phân công |
 | CHR-006 | chain-reader | Index treasury token movements and alert on unexpected outflows | F-050 | M1 | P0 | S | A | CHR-005, EXE-001 | Sẵn sàng phân công |
+| SC-023 | contracts | Add two-option payment approvals (early / standard) | F-038 | M1 | P0 | S | A | SC-006, SC-005 | Sẵn sàng phân công |
+| SC-024 | contracts | Implement Aave V3 supply and withdraw through Safe T | F-068 | M1 | P0 | M | A | SC-021, SC-007, SC-008 | Sẵn sàng phân công |
+| SC-025 | contracts | Add Aave integration tests on a pinned Sepolia fork | F-068, F-163 | M1 | P0 | S | A | SC-024, SC-016 | Sẵn sàng phân công |
+| SC-026 | contracts | Implement owner-authorized borrow and repay | F-079 | M1 | P2 | M | After submission | SC-024 | Sẵn sàng phân công |
+| ENG-013 | financial-engine | Implement reserve formulas and the liquidity decision | F-068 | M1 | P0 | S | A | ENG-002, ENG-005 | Sẵn sàng phân công |
+| ENG-014 | financial-engine | Build the borrow proposal | F-069 | M1 | P1 | S | B | ENG-013 | Sẵn sàng phân công |
+| EXE-014 | execution | Run the liquidity cycle (supply / withdraw) | F-068 | M1 | P0 | S | A | EXE-008, ENG-013, SC-024 | Sẵn sàng phân công |
+| WEB-026 | web | Build the treasury position card | F-068, F-130 | M1 | P0 | S | A | WEB-010 | Sẵn sàng phân công |
+| WEB-027 | web | Build the borrow proposal view | F-069 | M1 | P1 | S | B | WEB-026, ENG-014 | Sẵn sàng phân công |
+| DEV-012 | devex | Add the deployment config gate to CI | F-151 | M1 | P0 | S | A | SC-016, DEV-003 | Sẵn sàng phân công |
+| MDT-011 | mandate | Add owner borrow/repay authorizations (governance) | F-079 | M1 | P2 | S | After submission | MDT-009, SC-026 | Sẵn sàng phân công |
 
 ## 4. Các đợt thực hiện (M1)
 
@@ -286,19 +297,19 @@ Ticket trong cùng một đợt không chặn nhau nên **làm song song đượ
 | 1 | 12 |
 | 2 | 11 |
 | 3 | 10 |
-| 4 | 9 |
-| 5 | 14 |
+| 4 | 10 |
+| 5 | 15 |
 | 6 | 10 |
 | 7 | 13 |
-| 8 | 14 |
-| 9 | 16 |
-| 10 | 12 |
-| 11 | 13 |
+| 8 | 16 |
+| 9 | 17 |
+| 10 | 14 |
+| 11 | 14 |
 | 12 | 11 |
 | 13 | 13 |
-| 14 | 12 |
-| 15 | 10 |
-| 16 | 7 |
+| 14 | 13 |
+| 15 | 11 |
+| 16 | 8 |
 | 17 | 3 |
 | 18 | 3 |
 | 19 | 2 |

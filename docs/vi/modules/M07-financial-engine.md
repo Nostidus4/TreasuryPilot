@@ -172,3 +172,22 @@ ENG-001 kiểu tiền & mô hình → ENG-002 tính thanh khoản → ENG-003 qu
 | M07-D10 | Gas là chi phí khi xét trả sớm (FEE-2); không ưu tiên trả sớm nếu chiết khấu không lớn hơn phí. |
 
 Câu hỏi mở: M07-Q1 — có đưa khoản phải thu (tiền vào dự kiến) vào dự báo không? (Later, cần nguồn dữ liệu công nợ phải thu.)
+
+## 15. Thay đổi theo v0.3 (ADR-019), thay thế các mục trên nếu khác
+
+**Vị thế thanh khoản:** snapshot thêm USDC trong Safe, aUSDC, thanh khoản còn trong pool, lãi suất gửi/vay, health factor, nợ.
+
+```
+PaymentReserve       = Σ số tiền sẽ trả của các request đã duyệt, chưa trả, đến hạn trong 30 ngày
+RequiredSafeReserve  = PaymentReserve + sàn Safe + dự trữ trả nợ + khoản đang giữ
+AvailableForSupply   = max(0, USDC trong Safe − RequiredSafeReserve)
+AccessibleLiquidity  = USDC trong Safe + min(aUSDC, thanh khoản pool)
+```
+
+**decide_liquidity → không làm gì | SUPPLY x | WITHDRAW y** (mỗi chu kỳ tối đa một lệnh): thiếu dự trữ `d` → rút `min(aUSDC, thanh khoản pool, d × 1,05)`; vẫn thiếu → `INSUFFICIENT_LIQUIDITY` + đề xuất vay; dư ≥ `min_supply` → supply phần dư (trong hạn mức). Trong plan của request, bước WITHDRAW đặt trước REFILL khi refill sẽ phá dự trữ.
+
+Ví dụ: Safe 6.000, aUSDC 0, sàn 1.000, đã duyệt chưa trả 2.000 → cần 3.000, dư 3.000 ≥ 500 → SUPPLY 3.000 (D2). Duyệt thêm hóa đơn 2.500 → cần 5.500, Safe còn 3.000 → thiếu 2.500 → WITHDRAW 2.625 (D3).
+
+**Giá trị khi trả ngày p (thay §8.2):** tiết kiệm = mức chuẩn − số tiền thực trả (lấy từ bản duyệt) − phí trễ; chỉ ưu tiên trả sớm nếu tiết kiệm − phí gas − lãi gửi bị mất > 0. Mục tiêu CP-SAT giữ thứ tự cũ, phần giá trị nay gồm cả lãi gửi.
+
+**Đề xuất vay (F-069):** số tiền, chi phí vay tới khi trả, chi phí rút, health factor trước/sau, lý do. Không bao giờ vào plan thực thi khi chưa có quyền (BR-044). **Ticket:** ENG-013, ENG-014; sửa ENG-001/005/007/010.

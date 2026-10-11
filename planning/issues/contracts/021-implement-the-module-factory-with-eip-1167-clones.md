@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-002, M04-D2, M04-D9 |
-| **Blocks** | SC-003, SC-016, TRS-006 |
+| **Traces to** | ADR-002, M04-D2, M04-D9, ADR-019 |
+| **Blocks** | SC-003, SC-016, TRS-006, SC-024 |
 | **Submission cut** | A |
 
 ## Context
@@ -36,6 +36,7 @@ Every treasury gets its own module clone, created and initialized safely by its 
 - initialize() once, disabled on the implementation
 - TreasuryModuleCreated event
 - implementation() view for coverage checks
+- create() takes aavePool; initialize() stores aavePool and verifies aToken via getReserveData(asset)
 
 ## Out of scope
 

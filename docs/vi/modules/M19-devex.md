@@ -94,3 +94,7 @@ DEV-001 → DEV-002 → DEV-011 → DEV-003 → DEV-004 → DEV-005 → DEV-006 
 | M19-D10 | Image trên GHCR tag bằng git SHA. |
 | M19-D11 | Chỉ web và api truy cập được từ internet. |
 | M19-D12 | Độ ổn định: 30 lượt local + N lượt Sepolia, lỗi được phân loại. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Kịch bản **D1–D10** dạng YAML có điều kiện "phải chứng minh"; runbook đi theo D1–D10. **Cổng cấu hình** trong CI (`make config-check`): chain id, số lẻ token, ánh xạ Pool/aToken phải khớp manifest. Job fork Sepolia ở block cố định cho test Aave. **Ticket:** DEV-012 mới.

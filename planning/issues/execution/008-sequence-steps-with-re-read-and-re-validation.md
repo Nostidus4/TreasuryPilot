@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-050–051, BR-054 |
-| **Blocks** | EXE-011, REC-001, RCV-003, AUD-003, OBS-004 |
+| **Traces to** | BR-050–051, BR-054, ADR-019 |
+| **Blocks** | EXE-011, REC-001, RCV-003, AUD-003, OBS-004, EXE-014 |
 | **Submission cut** | A |
 
 ## Context
@@ -34,6 +34,7 @@ Each step runs only after the previous one is confirmed and the world still allo
 - request a new plan validation + attestation if the attestation expired
 - stop and mark PartiallyCompleted on any non-ALLOW, open a review item with the primary code
 - mark request Paying then Paid after PAY confirmation
+- step types WITHDRAW and SUPPLY; a leading WITHDRAW in request plans
 
 ## Out of scope
 

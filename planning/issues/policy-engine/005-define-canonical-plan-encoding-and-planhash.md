@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-059, BR-061, FR-412, M08-D10 |
+| **Traces to** | BR-059, BR-061, FR-412, M08-D10, ADR-019 |
 | **Blocks** | POL-006 |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ A plan has exactly one hash regardless of language or field order.
 - planHash = keccak(PLAN_TYPEHASH, requestId, treasury, chainId, keccak(stepHashes)) per docs/modules/policy-engine §8.3
 - stepId = keccak('TP_STEP_V1', requestId, action, wallet) per §8.4
 - golden vectors shared with TypeScript
+- liquidity plans (requestId = 0x0, one SUPPLY or WITHDRAW step) hashed and attested like request plans
 
 ## Out of scope
 

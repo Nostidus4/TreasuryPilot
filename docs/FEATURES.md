@@ -75,6 +75,9 @@ Roles used below (Q13): **Owner**, **Approver**, **Operator**, **Finance**, **Gu
 | F-065 | Real DEX/aggregator swap with verified quotes | Execution | Later | – | Domain §5.3, Q2 |
 | F-066 | Gas management | Execution | M1 | P1 | R7, Domain §5.4, O6 |
 | F-067 | Cross-chain bridge | Execution | Later | – | D5, Q2 |
+| F-068 | Idle-cash management on Aave V3 (SUPPLY / WITHDRAW) | Liquidity | M1 | P0 | v0.3, ADR-019 |
+| F-069 | Borrow proposal (cost vs withdraw, health factor) | Liquidity | M1 | P1 | v0.3, ADR-019 |
+| F-079 | Owner-authorized BORROW / REPAY execution | Liquidity | M1 | P2 | v0.3, ADR-019 |
 | F-070 | Transaction tracking & confirmation | Verification | M1 | P0 | UC-03 |
 | F-071 | Post-condition verification | Verification | M1 | P0 | UC-02 step 4, GA p.14 |
 | F-072 | Reconciliation (Paid vs Matched) | Verification | M1 | P0 | UC-03 |
@@ -677,7 +680,7 @@ Roles used below (Q13): **Owner**, **Approver**, **Operator**, **Finance**, **Gu
 
 #### F-038 · Invoice approval via EIP-712 signature
 `M1 · P0 · Source: R1, UC-01 · Module: invoices / contracts`
-- **Description:** The Approver signs typed data that binds request_id, invoice hash, fingerprint, chain, contract, treasury, paying wallet, asset, payee, amount, deadline, confirmed terms hash and expiry. The contract verifies the signature at PAY.
+- **Description:** The Approver signs typed data that binds request_id, invoice hash, fingerprint, chain, contract, treasury, paying wallet, asset, payee, standard amount, optional early amount and early-pay-by date (ADR-019), deadline, confirmed terms hash and expiry. The contract verifies the signature at PAY and pays exactly the early amount before early-pay-by, otherwise exactly the standard amount.
 - **Problem solved:** Approval is cryptographic and bound to exact fields, not a backend flag.
 - **Users:** Approver.
 - **Trigger:** Request in AwaitingApproval.
@@ -1035,6 +1038,23 @@ Roles used below (Q13): **Owner**, **Approver**, **Operator**, **Finance**, **Gu
 - **AI responsibility:** Observe.
 - **Human responsibility:** Top up when alerted.
 - **Acceptance criteria:** Fees are recorded for 100% of transactions. AT-03 passes.
+
+#### F-068 · Idle-cash management on Aave V3 (SUPPLY / WITHDRAW)
+`M1 · P0 · Source: v0.3 §4, §6, ADR-019 · Module: contracts / financial / execution`
+- **Description:** USDC in Safe T above `RequiredSafeReserve` is supplied to the allowlisted Aave V3 Pool; when approved obligations grow, the agent withdraws to restore the reserve. aTokens stay in Safe T.
+- **Problem solved:** idle cash earns nothing, while over-supplying risks missing a due payment.
+- **Business logic:** `AvailableForSupply = max(0, SafeUSDC − RequiredSafeReserve)`; supply only if ≥ `minSupply`; withdraw deficit + 5 %; on-chain checks: fixed Pool/aToken, Safe floor, supply caps, pause, expiry.
+- **AI responsibility:** explain; never decides amounts.
+- **Acceptance criteria:** D2 (supply exactly the surplus, reserve intact) and D3 (new approved invoice triggers a withdraw) pass on Sepolia; supply never leaves Safe T below the floor (invariant).
+
+#### F-069 · Borrow proposal
+`M1 · P1 · Source: v0.3 §7 · Module: financial / agent / web`
+- **Description:** when withdraw is limited (pool liquidity) or the owner wants to keep a position, the optimizer produces a borrow proposal: amount, deadline, borrow cost to repayment, withdraw cost, health factor before/after, policy thresholds, reason. No transaction (demo D6).
+- **Acceptance criteria:** the proposal is shown with numbers from the engine and never enters an executable plan without an owner authorization.
+
+#### F-079 · Owner-authorized BORROW / REPAY execution
+`M1 · P2 · Source: v0.3 §5 · Module: contracts / execution`
+- **Description:** the Owner signs a one-time authorization bound to planId, snapshot hash, amount, pool, expiry, max cost, minimum health factor and repayment plan; the module borrows/repays exactly that, checking health factor just before the call (demo D7).
 
 #### F-067 · Cross-chain bridge
 `Later · Source: D5, Q2 · Module: execution / integration`

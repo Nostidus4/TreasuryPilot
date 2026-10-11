@@ -338,3 +338,11 @@ MDT-001 schema → **MDT-009 governance tx builder + signature collection (new)*
 | **FEE-3** | Owner sets threshold and budget; Finance, Operator or Owner may accept the fee of an individual held plan. |
 
 M08 snapshot freshness becomes **≤ 30 s and ≤ 2 blocks** on Sepolia (12 s blocks).
+
+## 15. v0.3 changes (ADR-019)
+
+- Mandate gains **supply limits** (per tx, per day). The **Safe floor** is `bufferOf[safeT]` (OperatingBuffer). Treasury setting **min_supply** (off-chain; demo 500) and **reserve horizon** (30 days).
+- Aave Pool and aToken are fixed when the module is created (registry); the factory `create` takes `aavePool`.
+- P2: governance functions `authorizeBorrow` / `authorizeRepay` for owner-authorized borrowing (MDT-011, P2).
+- Demo config: pay 2,000/10,000; refill 2,500/12,000; supply 5,000/20,000; Safe floor 1,000; min_supply 500; one operational wallet O1 (buffer 10, target 150).
+- **Tickets:** MDT-002, MDT-003 revised; MDT-011 (P2) new.

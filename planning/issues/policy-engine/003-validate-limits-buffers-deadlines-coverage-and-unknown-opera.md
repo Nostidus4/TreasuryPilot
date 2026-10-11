@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-022, BR-030, BR-036, BR-040–042, BR-051, BR-060, FR-411 |
+| **Traces to** | BR-022, BR-030, BR-036, BR-040–042, BR-051, BR-060, FR-411, ADR-019 |
 | **Blocks** | POL-004, EXE-008, AGT-007, AGT-010, CMP-002, POL-007 |
 | **Submission cut** | A |
 
@@ -35,6 +35,8 @@ Complete the validator so it mirrors every contract check plus the off-chain saf
 - aggregation per §8.2 (BLOCK > NEEDS_APPROVAL > ALLOW, primary by precedence)
 - warnings DEADLINE_MISSED / DISCOUNT_MISSED
 - validate_plan and validate_step entry points
+- SUPPLY/WITHDRAW step checks and PaymentReserve intact after SUPPLY (docs/modules/policy-engine §15)
+- PAY amount must equal the early or standard option for the expected execution time
 
 ## Out of scope
 
@@ -54,6 +56,7 @@ An exception never masks another failure.
 - [ ] Missing or stale data never yields ALLOW
 - [ ] An exception removes only OVER_PER_REQUEST_LIMIT
 - [ ] A late payment that passes all checks is ALLOW with DEADLINE_MISSED
+- [ ] A SUPPLY that would cut into PaymentReserve is BLOCKed with RESERVE_BREACH
 
 ## Testing requirements
 

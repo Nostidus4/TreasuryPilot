@@ -181,7 +181,7 @@ Org Admin (members, roles, maker-checker) · Platform Admin (tenants, chain/RPC/
 On-chain mandate enforcement · EIP-712 approvals and plan attestation · circuit breaker · sanctions/blocklist screening (KYB, KYT and Travel Rule later) · hash-chained audit log · evidence bundle · coverage and uncertainty labels · data minimization (only invoice hashes on-chain).
 
 ### Non-goals (never in scope)
-Speculative trading · yield optimization · lending · portfolio management · custody of customer funds · paying unapproved invoices · the agent autonomously purchasing services · reversing confirmed transactions.
+Speculative trading · leverage or yield farming · assets other than the treasury stablecoin · autonomous borrowing (borrow/repay only with a one-time owner authorization; supplying idle stablecoin to one allowlisted Aave pool is in scope, ADR-019) · portfolio management · custody of customer funds · paying unapproved invoices · the agent autonomously purchasing services · reversing confirmed transactions.
 
 ---
 

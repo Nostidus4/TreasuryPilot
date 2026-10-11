@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-096, FR-605 |
+| **Traces to** | BR-096, FR-605, ADR-019 |
 | **Blocks** | REC-003, REC-005 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ Every paid request has a complete, classified transaction set.
 - Schema migration
 - on Paid create a reconciliation with lines: refill = INTERNAL_TRANSFER, swap = CONVERSION, pay = EXTERNAL_EXPENSE, gas = FEE
 - status Pending
+- LENDING_TRANSFER lines for SUPPLY/WITHDRAW
 
 ## Out of scope
 

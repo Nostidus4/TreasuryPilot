@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-003, BR-003 |
+| **Traces to** | ADR-003, BR-003, ADR-019 |
 | **Blocks** | SC-005, SC-021 |
 | **Submission cut** | A |
 
@@ -36,6 +36,9 @@ Fix the on-chain data model and interfaces before any logic is written.
 - EIP-712 domain and the single PaymentApproval type hash
 - custom errors exactly as listed in §6.2–6.4
 - events per §6.6
+- PaymentApproval with 13 fields (earlyAmount, earlyPayBy) per docs/modules/contracts §15
+- Aave storage (aavePool, aToken) and supply Limits in the mandate
+- new errors and events: Supplied, Withdrawn, SupplyFloorBreach, OverSupplyPerTx, OverSupplyDaily, InsufficientAToken, AllowanceNotCleared, WrongPaymentOption
 
 ## Out of scope
 

@@ -94,3 +94,7 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 | M02-D8 | Cấu hình và manifest là file, kiểm khi khởi động; không sửa lúc chạy ở M1. |
 | M02-D9 | Decimals kiểm on-chain khi thêm tài sản. |
 | M02-D10 | Tạo Safe từ giao diện là P2 (TRS-008). |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Manifest thêm `AAVE_POOL`, `AAVE_POOL_ADDRESSES_PROVIDER`, `ATOKEN` và USDC test của Aave; treasury demo gồm T + một Safe vận hành O1. Luật coverage không đổi (module gọi Aave qua Safe T; Aave không phải module của Safe).

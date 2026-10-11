@@ -153,3 +153,7 @@ REC-001 verification → REC-002 reconciliation records → REC-003 match/auto-m
 | M11-D8 | EAS receipt published as soon as the request is Paid and the PAY block is finalized; it does not wait for Finance matching. (reviewed, changed) |
 | M11-D9 | Resolving a Discrepancy needs a Finance note and Owner acknowledgment. (reviewed) |
 | M11-D10 | Verification UNKNOWN after 3 read failures. |
+
+## 15. v0.3 changes (ADR-019)
+
+SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ lending position), not expenses; post-conditions: SUPPLY → Safe USDC −x, aToken +≥ x−1, allowance 0; WITHDRAW → Safe USDC +x, aToken −≈x. Exports show supply interest earned for the period (aToken growth minus net supplied). **Tickets:** REC-001, REC-002, REC-004 revised.

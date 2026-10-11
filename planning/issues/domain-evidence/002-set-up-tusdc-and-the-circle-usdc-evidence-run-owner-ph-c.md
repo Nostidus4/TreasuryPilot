@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | non-code |
 | **Status** | Ready for Assignment |
-| **Traces to** | OQ-03, OQ-05, ADR-012, PH-2 |
+| **Traces to** | OQ-03, OQ-05, ADR-012, PH-2, ADR-019 |
 | **Blocks** | — |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ Have the tokens and funds ready for the demo and the real-token evidence run.
 - Circle USDC Sepolia address verified
 - collect Circle faucet funds (developer console) for one run with limits ÷ 100
 - document the scaled mandate values
+- collect Aave Sepolia test USDC from the Aave faucet for the treasury; Circle run stays PAY-only
 
 ## Out of scope
 

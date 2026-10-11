@@ -9,7 +9,7 @@
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-052, FR-405, ADR-015, M07-D5, M07-D6, M07-D7 |
+| **Traces to** | BR-052, FR-405, ADR-015, M07-D5, M07-D6, M07-D7, ADR-019 |
 | **Blocks** | ENG-008, ENG-L01, ENG-L03, AGT-010 |
 | **Submission cut** | A |
 
@@ -38,6 +38,8 @@ Find the feasible schedule that maximizes value under the BR-052 priority order.
 - bounds guard (< 2^63) before model build
 - add ortools to py-core (pinned)
 - fee term: an early payment is preferred only if discount > fee in asset units;days held by the fee policy are infeasible for today
+- objective adds supply interest kept and lost interest from early payment (integer bps terms)
+- WITHDRAW steps placed before REFILL when the reserve would break
 
 ## Out of scope
 

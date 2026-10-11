@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-003–BR-007, FR-316–318, M05-D1 |
+| **Traces to** | BR-003–BR-007, FR-316–318, M05-D1, ADR-019 |
 | **Blocks** | MDT-006, INV-011, EXE-003, WEB-009 |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ Approvers sign exactly the fields the contract will check.
 - POST approve with {signature, revision} running docs/modules/invoices §8.6 steps 1–8 (revision, linked wallet, maker-checker/solo mode, HIGH flags acked, rebuild, ECDSA or ERC-1271, on-chain approver set, store with acknowledged_flag_ids)
 - transition to Approved
 - Idempotency-Key
+- typed data with earlyAmount/earlyPayBy (13 fields)
 
 ## Out of scope
 
@@ -55,6 +56,7 @@ Follow the module spec and the relevant ADRs.
 - [ ] Creator approving returns MAKER_CHECKER unless solo mode, which is recorded
 - [ ] A signer not in the on-chain approver set returns NOT_IN_APPROVER_SET
 - [ ] An ERC-1271 mock wallet can approve
+- [ ] An approval with both options verifies and stores both
 
 ## Testing requirements
 

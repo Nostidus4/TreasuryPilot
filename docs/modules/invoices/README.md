@@ -316,3 +316,9 @@ INV-001 schema → INV-002 state machine → INV-003 manual entry → INV-004 up
 | M05-D12 | Approval expiry = min(deadline + 14 d, now + approvalMaxAge); expired requests need renew + re-approval. |
 | M05-D13 | Outlier: median ± 3·max(1.4826·MAD, 2 % median), n ≥ 5. |
 | M05-D14 | M1 UI signs with EOAs and instantly-signing smart wallets; Safe-as-approver message flow: Later (contract and backend already accept ERC-1271). |
+
+## 15. v0.3 changes (ADR-019)
+
+- When confirmed terms contain an early-payment discount, the approval typed data includes `earlyAmount = amount − floor(amount × discount_bps / 10000)` and `earlyPayBy = discount deadline (23:59:59 UTC)`; otherwise `earlyAmount = 0`. The Approver sees both options and signs once (13-field `PaymentApproval`).
+- The approval inbox shows "Early: 930.00 by 05/11 · Standard: 950.00 by 15/11".
+- **Tickets:** INV-008, INV-010, WEB-009 revised.

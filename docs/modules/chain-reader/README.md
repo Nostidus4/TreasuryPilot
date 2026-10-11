@@ -207,3 +207,7 @@ CHR-001 RPC client (+ secondary cross-check) → CHR-002 snapshots (Multicall3) 
 | M06-D9 | Logs are filtered by exact addresses (module clone, Safes, asset). |
 | M06-D10 | Status changes stream to the UI via SSE (M13). |
 | PH-5/6/8 | 3 confirmations; getLogs polling with 64-block re-scan; Alchemy + public RPC. |
+
+## 15. v0.3 changes (ADR-019)
+
+Snapshot read set adds (same Multicall3 block): `aToken.balanceOf(safeT)`, `asset.balanceOf(aToken)` (pool available liquidity), `pool.getReserveData(asset)` (currentLiquidityRate, currentVariableBorrowRate, aToken address check), `pool.getUserAccountData(safeT)` (health factor, debt). Indexer adds module events `Supplied`, `Withdrawn` (and `BorrowExecuted`, `Repaid`). Token movements classify Safe T ↔ aToken transfers as `LENDING` (not unexpected outflow). **Tickets:** CHR-002, CHR-005, CHR-006 revised.

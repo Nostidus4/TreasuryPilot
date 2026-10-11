@@ -178,7 +178,9 @@ struct PaymentApproval {
     address payingWallet;    // must be operational
     address asset;           // must equal `asset`
     address payee;
-    uint256 amount;
+    uint256 amount;          // standard amount
+    uint256 earlyAmount;     // early-payment option, 0 = none (ADR-019)
+    uint64  earlyPayBy;      // early option valid until (unix seconds)
     uint64  deadline;        // invoice due date — informational on-chain (M04-D11)
     bytes32 termsHash;
     uint64  expiry;          // approval usable until (default deadline + 14 days, ≤ signedAt + approvalMaxAge)
@@ -240,8 +242,8 @@ All state-changing functions use a reentrancy guard and checks-effects-interacti
 ```
 domain: { name: "TreasuryPilot", version: "1", chainId, verifyingContract: module }
 PaymentApproval(bytes32 requestId,bytes32 invoiceHash,bytes32 fingerprint,address treasury,
-                address payingWallet,address asset,address payee,uint256 amount,uint64 deadline,
-                bytes32 termsHash,uint64 expiry)
+                address payingWallet,address asset,address payee,uint256 amount,uint256 earlyAmount,
+                uint64 earlyPayBy,uint64 deadline,bytes32 termsHash,uint64 expiry)
 ```
 Only **one** typed struct remains on-chain in M1 (exceptions and duplicate overrides moved to governance transactions, M04-D3). Golden vectors: `contracts/test/vectors/payment-approval.json` (SC-017), consumed by Python (ENG-010) and TypeScript (WEB-009).
 
@@ -417,3 +419,25 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 |---|---|---|
 | ~~ADR-012~~ | Resolved 2026-10-11: Ethereum Sepolia, tUSDC + one Circle USDC run (PH-1, PH-2) | anh Phúc |
 | ~~M04-Q1~~ | Resolved by M03-D2: guardian is a 1-of-N Guardian Safe, so several guardians are possible without contract changes | Project lead |
+
+## 15. v0.3 changes (ADR-019) — these supersede earlier sections where they differ
+
+**Payment options.** `PaymentApproval` has 13 fields (struct above). In `pay`, the amount transferred is `payAmount = (ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy) ? ap.earlyAmount : ap.amount`; checks 7–9 and the counters use `payAmount`; the call reverts `WrongPaymentOption` if `earlyAmount > amount`. The refill bound keeps using `ap.amount` (≥ payAmount). `PaymentExecuted` gains `bool early`.
+
+**Aave V3 storage (set once in `initialize`, verified against `pool.getReserveData(asset).aTokenAddress`):** `address public aavePool; address public aToken;`. Mandate gains `Limits supply` (perRequest = per tx, daily). The **Safe floor is `bufferOf[safeT]`** (already in storage).
+
+**New executor functions (status Active, within validity window, reentrancy-guarded):**
+
+| Function | Checks (in order) | Errors |
+|---|---|---|
+| `supply(bytes32 stepId, uint256 amount)` | caller/status/window · `!stepUsed` · `amount > 0`, `≤ supply.perRequest`, `usedOn[SUPPLY,day] + amount ≤ supply.daily` · `balanceOf(safeT) − amount ≥ bufferOf[safeT]` · effects (`stepUsed`, counter) · Safe T executes `asset.approve(aavePool, amount)` then `aavePool.supply(asset, amount, safeT, 0)` · post: USDC −amount exactly, aToken +≥ amount−1 (rounding), allowance back to 0 · emit `Supplied(stepId, amount, day)` | `OverSupplyPerTx`, `OverSupplyDaily`, `SupplyFloorBreach`, `AllowanceNotCleared`, `BalanceDeltaMismatch` |
+| `withdraw(bytes32 stepId, uint256 amount)` | caller/status/window · `!stepUsed` · `0 < amount ≤ aToken.balanceOf(safeT)` · effects · Safe T executes `aavePool.withdraw(asset, amount, safeT)` · post: USDC +amount exactly · emit `Withdrawn(stepId, amount, day)` | `InsufficientAToken`, `BalanceDeltaMismatch` |
+| `borrow(bytes32 planId)` / `repay(bytes32 planId)` *(P2)* | only with an authorization stored by Safe T governance `authorizeBorrow(planId, amount, expiry, minHealthFactor, maxRateRay)` / `authorizeRepay(planId, amount, expiry)`; one use; health factor from `getUserAccountData(safeT)` ≥ minimum just before and after the call | `BorrowNotAuthorized`, `HealthFactorTooLow`, `AuthorizationExpired` |
+
+Withdraw has no cap because funds only move back into Safe T. Fixed targets only: the module never calls any address other than `asset`, `aavePool` and the Safe; no generic call, no delegatecall.
+
+**New invariants:** I12 SUPPLY never leaves Safe T below `bufferOf[safeT]` · I13 SUPPLY/WITHDRAW only touch `asset`/`aavePool`/`aToken`, allowance is 0 after every call · I14 PAY transfers exactly the early or the standard amount of the approval · I15 (P2) BORROW never happens without an unused, unexpired owner authorization.
+
+**Tests:** MockAavePool for unit tests; Sepolia fork at a pinned block for integration (supply, withdraw, account data); Sepolia for the demo (D2, D3).
+
+**Tickets:** SC-023 payment options, SC-024 supply/withdraw, SC-025 Aave fork tests, SC-026 borrow/repay (P2); SC-002/005/006/014/017/021 revised.

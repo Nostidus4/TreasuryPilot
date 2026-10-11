@@ -186,3 +186,7 @@ INV-001 schema → INV-002 máy trạng thái → INV-003 nhập tay → INV-004
 | M05-D12 | Hạn bản duyệt = min(deadline + 14 ngày, now + approvalMaxAge); hết hạn thì renew và duyệt lại. |
 | M05-D13 | Bất thường: trung vị ± 3·max(1,4826·MAD, 2 % trung vị), cần ≥ 5 điểm. |
 | M05-D14 | Giao diện M1 ký bằng EOA và smart wallet ký ngay; luồng ký message qua Safe để Later (contract và backend đã nhận ERC-1271). |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Khi điều khoản đã xác nhận có chiết khấu trả sớm, typed data có `earlyAmount = amount − floor(amount × bps / 10000)` và `earlyPayBy = hạn chiết khấu (23:59:59 UTC)`; không có thì `earlyAmount = 0`. Approver thấy cả hai mức (ví dụ "Trả sớm: 930,00 trước 05/11 · Chuẩn: 950,00 trước 15/11") và ký một lần. **Ticket:** sửa INV-008, INV-010, WEB-009.

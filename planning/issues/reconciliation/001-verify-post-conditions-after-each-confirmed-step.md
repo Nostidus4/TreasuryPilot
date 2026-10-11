@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-603–604 |
+| **Traces to** | FR-603–604, ADR-019 |
 | **Blocks** | REC-002, RCV-006 |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ Confirm the chain state matches what the plan expected.
 - verification PASSED / DISCREPANCY / UNKNOWN (after 3 read failures)
 - DISCREPANCY → review item + circuit-breaker signal
 - called by EXE-008 before the next step
+- post-conditions for SUPPLY and WITHDRAW
 
 ## Out of scope
 

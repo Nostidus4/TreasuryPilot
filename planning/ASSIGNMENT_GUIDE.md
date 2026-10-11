@@ -8,8 +8,8 @@ Already done (PR #254): DEV-001, DEV-002, DEV-003, DEV-005, DEV-011, SC-001, WEB
 
 | Track | Modules (ticket prefixes) | Open M1 tickets / dev-days | of which Tier A |
 |---|---|---|---|
-| **A · Chain & execution core** (developer 1) | M04 contracts (SC), M06 chain reader (CHR), M07 engine (ENG), M08 policy (POL), M10 execution (EXE), M11 verification (REC), M12 recovery (RCV) | 71 / 56.5 | 56 / 46 |
-| **B · Product, API, UI & AI** (developer 2) | M01 identity (IDN), M02 treasury (TRS), M03 mandate (MDT), M05 invoices (INV), M09 AI (AGT), M13 notifications (NTF), M14 compliance (CMP), M15 audit (AUD), M16 web (WEB), M17 observability (OBS), M19 devex (DEV) | 100 / 83.5 | 61 / 51.5 |
+| **A · Chain & execution core** (developer 1) | M04 contracts incl. Aave supply/withdraw (SC), M06 chain reader (CHR), M07 engine (ENG), M08 policy (POL), M10 execution (EXE), M11 verification (REC), M12 recovery (RCV) | 78 / 61 | 61 / 49 |
+| **B · Product, API, UI & AI** (developer 2) | M01 identity (IDN), M02 treasury (TRS), M03 mandate (MDT), M05 invoices (INV), M09 AI (AGT), M13 notifications (NTF), M14 compliance (CMP), M15 audit (AUD), M16 web (WEB), M17 observability (OBS), M19 devex (DEV) | 104 / 85.5 | 63 / 52.5 |
 | **C · Domain & evidence** (3 advisors + anh Phúc) | M20 (DOM) — split per docs/modules/domain-evidence §2 | 17 / 14 | 11 / 10 |
 
 Why this split: track A is the money path that must be correct first (contract → validator → signer → executor) and is mostly Python/Solidity with few UI concerns; track B owns everything a user touches. They meet at clear contracts already written in the specs: the ABI and EIP-712 vectors (SC-017), the snapshot and decision models (CHR-002, POL-001), and the OpenAPI client (DEV-005). Track B is larger; if track A finishes early, it takes AGT (AI) tickets first.
@@ -54,3 +54,5 @@ Then follow each module's §13 order and `planning/DEPENDENCIES.md` waves. Prior
 3. Merging the PR closes the issue; the dashboard counts closed issues as Done automatically (run `python3 planning/tools/sync_closed_status.py` to fix the Project Status field, or enable the Project workflow "Item closed → Done").
 4. Specs are the source of truth: if implementation needs a different decision, update the module README §14 and `docs/decisions-log.md` in the same PR.
 5. Daily: Google Sheet dashboard (auto-refresh hourly) shows progress per module and per person.
+
+**v0.3 update (ADR-019):** new Tier A tickets SC-023 (two-option approvals), SC-024 (Aave supply/withdraw), SC-025 (Sepolia fork tests), ENG-013 (reserve formulas), EXE-014 (liquidity cycle), DEV-012 (config gate), WEB-026 (position card); Tier B ENG-014 and WEB-027 (borrow proposal); P2 SC-026 and MDT-011 (borrow/repay execution).

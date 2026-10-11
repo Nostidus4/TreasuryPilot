@@ -130,3 +130,7 @@ CHR-001 RPC client (+ đối chiếu) → CHR-002 snapshot (Multicall3) → CHR-
 | M06-D9 | Lọc log theo đúng địa chỉ (module clone, Safe, asset). |
 | M06-D10 | Thay đổi trạng thái đẩy ra giao diện qua SSE (M13). |
 | PH-5/6/8 | 3 xác nhận; gọi getLogs định kỳ có quét lại 64 block; Alchemy + RPC công khai. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Snapshot đọc thêm (cùng block): số aToken của Safe T, thanh khoản còn trong pool, `getReserveData` (lãi suất gửi/vay), `getUserAccountData` (health factor, nợ). Indexer đọc thêm event `Supplied`, `Withdrawn` (`BorrowExecuted`, `Repaid`). Chuyển tiền giữa Safe T và aToken được phân loại `LENDING`, không phải tiền ra bất thường.

@@ -9,7 +9,7 @@
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-405–413 |
+| **Traces to** | FR-405–413, ADR-019 |
 | **Blocks** | WEB-011 |
 | **Submission cut** | A |
 
@@ -43,6 +43,7 @@ Turn eligible requests into a validated, attested plan.
 - on ALLOW attest and persist plan and steps
 - on NEEDS_APPROVAL or BLOCK create review items
 - write audit records
+- liquidity action from decide_liquidity when no request plan is executing (EXE-014)
 
 ## Out of scope
 

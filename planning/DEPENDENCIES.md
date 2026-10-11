@@ -52,12 +52,12 @@ flowchart LR
   DOM -->|1| DEV
   DOM -->|2| SC
   ENG -->|5| AGT
-  ENG -->|2| EXE
+  ENG -->|3| EXE
   ENG -->|3| INV
   ENG -->|1| MDT
   ENG -->|1| OBS
   ENG -->|3| POL
-  ENG -->|1| WEB
+  ENG -->|2| WEB
   EXE -->|1| AGT
   EXE -->|1| AUD
   EXE -->|2| CHR
@@ -94,11 +94,12 @@ flowchart LR
   REC -->|1| RCV
   REC -->|1| WEB
   SC -->|1| CHR
-  SC -->|3| DEV
+  SC -->|4| DEV
   SC -->|1| DOM
   SC -->|1| ENG
-  SC -->|2| EXE
+  SC -->|3| EXE
   SC -->|1| INV
+  SC -->|1| MDT
   SC -->|2| POL
   SC -->|1| REC
   SC -->|2| TRS
@@ -170,13 +171,14 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | DEV-005 | Add CI workflow for web and OpenAPI client drift | P1 | S | WEB-001 |
 | OBS-001 | Configure structured logging with correlation ids | P1 | S | CMP-003 |
 
-### Wave 4 (9 tickets)
+### Wave 4 (10 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-001 | Build the LLM adapter with routing and timeouts | P0 | M | EXE-002 |
 | AUD-001 | Implement the hash-chained audit log | P0 | M | IDN-001 |
 | ENG-003 | Implement the refill decision table | P0 | S | ENG-002 |
+| ENG-013 | Implement reserve formulas and the liquidity decision | P0 | S | ENG-002, ENG-005 |
 | IDN-002 | Implement magic-link login, sessions and CSRF | P0 | M | IDN-001 |
 | SC-005 | Implement approval signature verification | P0 | M | SC-002 |
 | SC-021 | Implement the module factory with EIP-1167 clones | P0 | M | SC-002 |
@@ -184,7 +186,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | OBS-002 | Add OpenTelemetry tracing | P1 | M | OBS-001 |
 | OBS-003 | Add Sentry and Prometheus metrics | P1 | S | OBS-001 |
 
-### Wave 5 (14 tickets)
+### Wave 5 (15 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -201,6 +203,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | SC-017 | Publish EIP-712 golden vectors | P0 | S | SC-005 |
 | TRS-002 | Load and validate platform chain configuration | P0 | S | TRS-001 |
 | AGT-017 | Add a secondary LLM provider fallback | P1 | M | AGT-001 |
+| ENG-014 | Build the borrow proposal | P1 | S | ENG-013 |
 | ENG-011 | Implement the 7-day liquidity forecast | P2 | S | ENG-003 |
 
 ### Wave 6 (10 tickets)
@@ -236,11 +239,12 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | IDN-007 | Implement invites and membership management | P1 | M | IDN-006 |
 | POL-005 | Define canonical plan encoding and planHash | P1 | S | ENG-010 |
 
-### Wave 8 (14 tickets)
+### Wave 8 (16 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | CHR-003 | Implement the transaction tracker | P0 | M | CHR-001, EXE-001 |
+| DEV-012 | Add the deployment config gate to CI | P0 | S | SC-016, DEV-003 |
 | ENG-008 | Expose plan scoring and binding-constraint reporting | P0 | S | ENG-007 |
 | INV-003 | Implement manual request creation and editing | P0 | M | INV-002, MDT-004 |
 | POL-003 | Validate limits, buffers, deadlines, coverage and unknown operations | P0 | M | POL-002 |
@@ -248,6 +252,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | SC-007 | Implement per-request limits and UTC daily counters | P0 | M | SC-006 |
 | SC-008 | Enforce minimum buffers on pay and refill | P0 | S | SC-006 |
 | SC-012 | Add the duplicate-invoice fingerprint registry and owner override | P0 | S | SC-006 |
+| SC-023 | Add two-option payment approvals (early / standard) | P0 | S | SC-006, SC-005 |
 | TRS-004 | Implement treasury creation with Safe verification | P0 | M | TRS-003, IDN-006 |
 | CHR-005 | Index module and Safe events | P1 | M | CHR-001, SC-016 |
 | DEV-010 | Add testnet profile and VM deployment | P1 | M | DEV-002, DOM-001, SC-016 |
@@ -255,7 +260,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | POL-006 | Sign and verify EIP-712 plan attestations with the policy key | P1 | S | POL-005 |
 | WEB-017 | Build members and roles administration | P1 | M | WEB-002, IDN-007 |
 
-### Wave 9 (16 tickets)
+### Wave 9 (17 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -266,6 +271,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | INV-006 | Compute fingerprints at intake and block duplicates | P0 | S | INV-003, ENG-009 |
 | INV-008 | Implement payment-terms confirmation | P0 | S | INV-003, ENG-005 |
 | SC-009 | Implement refill() bound to an approved request | P0 | M | SC-005, SC-007, SC-008 |
+| SC-024 | Implement Aave V3 supply and withdraw through Safe T | P0 | M | SC-021, SC-007, SC-008 |
 | TRS-005 | Read and snapshot Safe configuration | P0 | S | TRS-004 |
 | WEB-007 | Build the request list and manual entry form | P0 | M | WEB-002, INV-003 |
 | CHR-004 | Detect reorgs and re-evaluate status | P1 | S | CHR-003 |
@@ -276,7 +282,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | NTF-003 | Add Telegram linking and delivery | P2 | M | NTF-001 |
 | TRS-008 | Build a Safe deployment transaction from the UI | P2 | S | TRS-004 |
 
-### Wave 10 (12 tickets)
+### Wave 10 (14 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -288,12 +294,14 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | POL-007 | Simulate each step with eth_call before signing | P0 | S | POL-003, POL-001, CHR-002, SC-016 |
 | SC-013 | Write the contract acceptance test suite (AT cases) | P0 | M | SC-009, SC-010, SC-012 |
 | SC-022 | Add on-chain request cancellation | P0 | S | SC-006, SC-009 |
+| SC-025 | Add Aave integration tests on a pinned Sepolia fork | P0 | S | SC-024, SC-016 |
 | AUD-004 | Propagate coverage labels through the API | P1 | S | CHR-002 |
 | WEB-015 | Build the notifications center | P1 | S | WEB-001, NTF-002 |
 | WEB-020 | Build the CSV import UI | P1 | S | WEB-007, INV-005 |
 | SC-018 | Add the test router and swapForGas | P2 | M | SC-009 |
+| SC-026 | Implement owner-authorized borrow and repay | P2 | M | SC-024 |
 
-### Wave 11 (13 tickets)
+### Wave 11 (14 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -310,6 +318,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | TRS-006 | Build the module deploy-and-enable Safe transaction | P0 | M | TRS-004, SC-016, SC-021, MDT-009 |
 | WEB-025 | Build the governance signing inbox | P0 | M | WEB-003, MDT-009 |
 | AGT-012 | Build the Copilot backend | P1 | L | AGT-007 |
+| MDT-011 | Add owner borrow/repay authorizations (governance) | P2 | S | MDT-009, SC-026 |
 
 ### Wave 12 (11 tickets)
 
@@ -345,11 +354,12 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | MDT-006 | Implement one-time exception requests and owner grant transactions | P1 | M | MDT-003, MDT-009, INV-010 |
 | MDT-008 | Sync mandate expiry and status | P1 | S | MDT-003 |
 
-### Wave 14 (12 tickets)
+### Wave 14 (13 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AUD-003 | Define the evidence bundle schema and exporter | P0 | M | AUD-001, EXE-008 |
+| EXE-014 | Run the liquidity cycle (supply / withdraw) | P0 | S | EXE-008, ENG-013, SC-024 |
 | MDT-007 | Implement pause and resume (backend and transactions) | P0 | M | MDT-003, MDT-009, EXE-013 |
 | MDT-010 | Set up the Guardian Safe with the sentinel | P0 | S | MDT-009, EXE-013, TRS-006 |
 | RCV-002 | Resolve unknown operations from chain evidence | P0 | M | RCV-001, CHR-003 |
@@ -362,7 +372,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | OBS-004 | Compute operational metrics | P1 | M | AUD-001, EXE-008 |
 | EXE-011 | Execute the swap-for-gas step on the test router | P2 | S | EXE-008, SC-018 |
 
-### Wave 15 (10 tickets)
+### Wave 15 (11 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -370,6 +380,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | RCV-007 | Automate the crash-recovery test | P0 | S | RCV-002 |
 | REC-002 | Build reconciliation records with classification | P0 | M | REC-001 |
 | WEB-019 | Add pause and resume controls and status banners | P0 | S | WEB-010, MDT-007 |
+| WEB-026 | Build the treasury position card | P0 | S | WEB-010 |
 | DEV-007 | Build scenario runner CLI | P1 | M | DEV-006, AUD-003 |
 | OBS-005 | Compute the savings report | P1 | M | OBS-004, ENG-006 |
 | WEB-016 | Build the Copilot chat UI | P1 | M | WEB-010, AGT-012 |
@@ -377,7 +388,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | RCV-006 | Implement circuit-breaker rules and auto-pause | P2 | M | REC-001, MDT-007, EXE-013, CHR-006 |
 | WEB-021 | Build the runway forecast chart | P2 | S | WEB-010, ENG-011 |
 
-### Wave 16 (7 tickets)
+### Wave 16 (8 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
@@ -388,6 +399,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | EXE-009 | Add the operator run-now endpoint | P1 | S | EXE-003 |
 | REC-005 | Publish on-chain payment attestations | P1 | S | REC-002, SC-019 |
 | WEB-018 | Build metrics and savings pages | P1 | M | WEB-010, OBS-005 |
+| WEB-027 | Build the borrow proposal view | P1 | S | WEB-026, ENG-014 |
 
 ### Wave 17 (3 tickets)
 

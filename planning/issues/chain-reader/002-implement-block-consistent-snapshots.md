@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-051, FR-401–402 |
+| **Traces to** | BR-051, FR-401–402, ADR-019 |
 | **Blocks** | EXE-004, AGT-007, AUD-004, WEB-010, POL-007 |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ One consistent view of balances, counters, payees and mandate at a block.
 - snapshot record with purpose, block number, hash, timestamp, provider, coverage and missing fields
 - freshness helper (≤ 30 s and ≤ 2 blocks)
 - dashboard snapshot every 60 s with 7-day pruning
+- Aave reads at the snapshot block: aToken balance, pool available liquidity, getReserveData rates, getUserAccountData
 
 ## Out of scope
 

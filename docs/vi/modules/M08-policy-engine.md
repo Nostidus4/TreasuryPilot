@@ -179,3 +179,10 @@ POL-001 danh mục → POL-005 planHash/stepId → POL-002 kiểm request & bả
 | M08-D12 | Ngoại lệ đọc từ trạng thái chain (`exceptions(requestId)`), không bao giờ chỉ từ DB backend. |
 
 Câu hỏi mở: M08-Q1 — kiểm attestation on-chain (SC-L04), Later.
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+- **Loại plan:** ngoài plan của request (WITHDRAW? → REFILL? → PAY) có **plan thanh khoản** gồm một bước SUPPLY hoặc WITHDRAW (`requestId = 0x0`), ký attestation như nhau.
+- **Kiểm mới:** SUPPLY — sàn Safe, hạn mức supply, `AvailableForSupply ≥ amount`, `amount ≥ min_supply`, sau khi supply PaymentReserve vẫn đủ; WITHDRAW — không vượt aUSDC và thanh khoản pool; PAY — số tiền phải đúng mức sớm hoặc mức chuẩn theo thời điểm thực thi dự kiến.
+- **Mã lý do mới:** `SUPPLY_FLOOR_BREACH`, `OVER_SUPPLY_PER_TX`, `OVER_SUPPLY_DAILY`, `RESERVE_BREACH`, `BELOW_MIN_SUPPLY` (cảnh báo), `INSUFFICIENT_POOL_LIQUIDITY`, `INSUFFICIENT_A_TOKEN`, `ALLOWANCE_NOT_CLEARED`, `WRONG_PAYMENT_OPTION`, `BORROW_NOT_AUTHORIZED`, `HEALTH_FACTOR_TOO_LOW` (P2).
+- **Dự phòng khi AI lỗi:** chỉ chạy `WITHDRAW → REFILL → PAY`; không bao giờ SUPPLY, BORROW, REPAY.

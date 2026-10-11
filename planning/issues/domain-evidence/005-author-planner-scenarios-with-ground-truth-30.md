@@ -9,7 +9,7 @@
 | **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | non-code |
 | **Status** | Ready for Assignment |
-| **Traces to** | AGT-014, BR-052 |
+| **Traces to** | AGT-014, BR-052, ADR-019 |
 | **Blocks** | AGT-014, DOM-007 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ Scenarios that show when smart scheduling matters.
 - YAML scenarios in evals/scenarios: requests, terms, balances, limits, dates
 - expected optimum value computed by hand or script
 - dev and held-out split by scenario family
+- families idle-cash-supply and new-obligation-withdraw; B0 expectations
 
 ## Out of scope
 

@@ -47,7 +47,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-021 | The daily window is the **UTC calendar day**: `day = floor(block.timestamp / 86400)`. It is not a rolling 24h window. | C | O3 *(default)* |
 | BR-022 | Counters are keyed `(treasury, action, asset, day)` and are shared across all wallets and mandate versions. Changing the wallet or version never resets them. | C | R3 |
 | BR-023 | PAY, REFILL and SWAP-input budgets are separate. A refill does not consume the vendor-payment budget, but consumes its own refill budget. | C | R3, Domain §5.1 |
-| BR-024 | The full approved amount is paid in one PAY. Splitting a request to evade caps, or paying an invoice partially, is forbidden. | C, B | Domain §4.1, §3.3 |
+| BR-024 | Each request is paid in one PAY of exactly one approved option: the early amount before early-pay-by, otherwise the standard amount. Splitting a request or paying partially is forbidden. *(revised v0.3)* | C, B | Domain §4.1, ADR-019 |
 | BR-025 | A reverted transaction does not increment usage counters. Its gas cost is still recorded and reported. | C, B | Domain §5.1, §5.4 |
 | BR-026 | A step pending across UTC midnight is checked against the budget of the day it actually executes. Budget authority does not carry over from the previous day. | C | Domain §5.1 |
 
@@ -61,6 +61,8 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-033 | If `Cap < Shortage` → STOP and report. No partial refill or partial payment. | B | Domain §3.3 |
 | BR-034 | Every amount used for execution is computed by the deterministic calculator. An LLM never computes or asserts amounts, balances or permissions. | B | Autonomy §2–3 |
 | BR-036 | A REFILL must be bound to an approved request: it may only go to that request's paying wallet, at most once per request per wallet, and the destination balance after the refill must not exceed `approval.amount + target(wallet)`. | C | M04-D4 |
+| BR-037 | `RequiredSafeReserve = PaymentReserve + Safe floor + DebtServiceReserve + ExecutionHolds`. Only `AvailableForSupply = max(0, SafeUSDC − RequiredSafeReserve)` may be supplied, and only when ≥ minSupply. The module enforces the static Safe floor and supply caps; the validator enforces PaymentReserve. *(new v0.3)* | C (floor, caps), B (reserve) | ADR-019 |
+| BR-038 | When approved obligations raise RequiredSafeReserve above Safe USDC, the agent withdraws the deficit + 5 % from the lending pool before any refill. Withdrawals always return funds to Safe T. *(new v0.3)* | C, B | ADR-019 |
 | BR-035 | Funds reserved for other registered obligations (`R_other`) and execution holds (`L_other`) are protected in planning (M1: backend; Later: on-chain, F-028). | B (Later: C) | Domain §3.1, §5.2 |
 
 ## 5. Exceptions
@@ -71,6 +73,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-041 | The Owner grants an exception through a governance transaction on Safe T (`grantException`), binding request_id, exact amount, payee, expiry and the current mandate version. It is consumed atomically with the payment, only once, and becomes invalid when the mandate version changes. | C | Domain §6.1, M04-D3 |
 | BR-042 | The full amount of an exception payment counts toward the daily PAY budget. | C | Domain §6.1 |
 | BR-043 | Only the Owner can grant an exception. The AI may draft the request but never grants it. | C, B | D3 |
+| BR-044 | BORROW and REPAY require a one-time owner authorization bound to plan, snapshot hash, amount, pool, expiry, max cost, minimum health factor and repayment plan; any change requires a new signature. Without it, borrowing is only a proposal. *(new v0.3)* | C, B | ADR-019 |
 
 ## 6. Planning & execution
 
@@ -130,7 +133,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | ID | Rule | Enforced | Source |
 |---|---|---|---|
 | BR-085 | A payee that matches the sanctions or blocklist cannot be registered or paid. If the screening provider is unavailable, registration fails closed. PAY may rely on a cached clean result within its TTL; otherwise it blocks. | B | S6 |
-| BR-090 | Non-goals: no speculative trading, yield, lending, staking or portfolio management. The contract exposes no such actions. | C | D5 |
+| BR-090 | Non-goals: no speculative trading, leverage, yield farming, portfolio management or assets other than the treasury stablecoin. **Allowed (ADR-019):** supplying idle treasury stablecoin to one allowlisted lending pool (Aave V3) and withdrawing it, autonomously within the mandate; borrowing/repaying only with a one-time owner authorization. *(revised v0.3)* | C | D5, ADR-019 |
 | BR-091 | TreasuryPilot never takes custody of customer funds. Funds stay in customer-owned Safes. | C (architecture) | D5 |
 | BR-092 | No owner key ever reaches TreasuryPilot. The executor key lives in a separate signer service. LLM processes receive no secrets. | Architecture | Domain §6.2 |
 | BR-093 | Data of one organization is never accessible to another (tenant isolation). | B | Q3 |

@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | — |
+| **Traces to** | , ADR-019 |
 | **Blocks** | DOM-014 |
 | **Submission cut** | A |
 
@@ -30,6 +30,7 @@ A step-by-step runbook so anyone on the team can run the 5-minute demo reliably.
 ## Scope
 
 - docs/demo-runbook.md: setup and reset steps, each scene mapped to a scenario, expected screen, fallback if a step fails, evidence to capture
+- runbook scenes follow D1–D10
 
 ## Out of scope
 

@@ -10,7 +10,7 @@
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-030, FR-215 |
-| **Blocks** | SC-009 |
+| **Blocks** | SC-009, SC-024 |
 | **Submission cut** | A |
 
 ## Context

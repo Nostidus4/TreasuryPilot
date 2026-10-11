@@ -300,3 +300,9 @@ M20 does not add database tables. Its datasets live as files (§5) and are loade
 | ~~M20-Q1~~ | Decided: the project lead records the demo video (screen + English voice-over), following the runbook | Project lead |
 | ~~M20-Q2~~ | Decided: Google Slides (shared editing, PDF export), one simple template | Communication advisor |
 | ~~M20-Q3~~ | Decided: advisors use the GitHub web editor ("Add file", PR from the browser); git locally is optional | Project lead |
+
+## 15. v0.3 changes (ADR-019)
+
+- DOM-002: collect Aave Sepolia test USDC from the Aave faucet for the treasury; the Circle run stays PAY-only.
+- DOM-005: add families `idle-cash-supply` and `new-obligation-withdraw`, and B0 expectations.
+- Judge demo D1–D10 drive the video (DOM-014); the evidence package includes the disclosure: testnet, synthetic data, no legal approval, no production audit, no guaranteed yield.

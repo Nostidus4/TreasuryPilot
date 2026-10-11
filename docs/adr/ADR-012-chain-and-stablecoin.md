@@ -6,6 +6,9 @@
 - **Asset:** a team-deployed **`tUSDC`** (6 decimals, labelled TEST) for the main demo and all automated runs, keeping the demo limits (2,000 / 10,000 pay; 2,500 / 12,000 refill). Plus **one evidence run with Circle's testnet USDC on Sepolia** with every limit divided by 100, because the Circle faucets give 10 USDC per day (public) or 10 × 20 USDC per day per team (developer console).
 - **Evidence:** public testnet transactions are acceptable (anh Phúc). DOM-003 still asks the organizers for a written confirmation.
 
+## Revision (ADR-019, 2026-10-11)
+Aave V3 on Sepolia lists only its own test USDC (`0x94a9…E4C8`, Aave faucet). The **treasury asset on Sepolia becomes Aave's test USDC** (label TEST); `tUSDC` remains for local/CI with a mock Pool; the Circle USDC run stays PAY-only. The demo uses one operational wallet (T + O1).
+
 ## Consequences
 - Confirmations: Paid after 3 blocks (~36 s), configurable (PH-5). Snapshot freshness ≤ 2 blocks (M08).
 - RPC: Alchemy primary + public Sepolia RPC fallback (PH-8).

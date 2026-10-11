@@ -114,3 +114,7 @@ AGT-001 adapter → AGT-002 nhật ký → AGT-003 bọc dữ liệu → AGT-004
 | M09-D12 | Đề xuất ngoài mandate → AI_PLAN_REJECTED + circuit breaker PAUSE. |
 | M09-D13 | Tài liệu nhiều hóa đơn báo qua `invoice_count_in_document` → M05 từ chối. |
 | M09-D14 | Đáp án của bộ kịch bản đánh giá không bao giờ đưa vào prompt. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+EXPLAIN giải thích cả lệnh thanh khoản ("Đã supply 3.000 vì Safe có 6.000 mà dự trữ cần 3.000") và đề xuất vay (số liệu chỉ từ M07). AI không bao giờ đề xuất số tiền SUPPLY/BORROW. Benchmark thêm **B0** (làm tay/EDF, tiền để không) trước B1, B2; đo thêm số lần thủng dự trữ và lợi ích ròng gồm lãi gửi.

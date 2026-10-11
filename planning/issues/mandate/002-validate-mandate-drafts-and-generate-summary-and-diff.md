@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-014, FR-201–203 |
+| **Traces to** | BR-014, FR-201–203, ADR-019 |
 | **Blocks** | MDT-003, MDT-L01 |
 | **Submission cut** | A |
 
@@ -35,6 +35,7 @@ Owners see exactly what they are about to authorize.
 - diff against the active version with looser/stricter markers (§8.2)
 - bundle preview (§8.3)
 - clone and discard
+- mandate supply limits; Safe floor = buffer of Safe T; treasury settings min_supply and reserve horizon
 
 ## Out of scope
 

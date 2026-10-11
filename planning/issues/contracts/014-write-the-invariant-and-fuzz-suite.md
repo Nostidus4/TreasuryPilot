@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | NFR-SEC-02, BR-001/013/022/024/030/041/062 |
+| **Traces to** | NFR-SEC-02, BR-001/013/022/024/030/041/062, ADR-019 |
 | **Blocks** | SC-L01 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ Prove the nine invariants in the module spec hold under random call sequences.
 - Handler contract driving pay/refill/pause/configure/grantException/cancelRequest with bounded random inputs
 - invariants I1–I11 from docs/modules/contracts §10 (I10 = refill bound, I11 = cancelled never pays)
 - 10k-run configuration
+- invariants I12–I14 (supply floor, fixed Aave targets with zero allowance after, exact payment option)
 
 ## Out of scope
 
@@ -51,6 +52,7 @@ Use ghost variables to track expected totals.
 - [ ] Invariants I1–I11 pass at 10k runs
 - [ ] Each invariant is mapped to its BR in a comment
 - [ ] A deliberately broken check makes the matching invariant fail
+- [ ] I12–I14 pass at 10k runs
 
 ## Testing requirements
 

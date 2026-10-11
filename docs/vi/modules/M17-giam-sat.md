@@ -78,3 +78,7 @@ OBS-001 → OBS-002 → OBS-003 → OBS-004 → OBS-005.
 | M17-D7 | Dùng materialized view làm mới 15 phút nếu truy vấn chậm. |
 | M17-D8 | Grafana tùy chọn, không bắt buộc ở M1. |
 | M17-D9 | `/metrics` chỉ nội bộ. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Báo cáo tiết kiệm thêm lãi gửi kiếm được và lãi bị mất khi trả sớm; chỉ số thêm số lần thủng dự trữ (mục tiêu 0) và số lệnh thanh khoản mỗi ngày; B0 là baseline tiền để không.

@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-607 |
+| **Traces to** | FR-607, ADR-019 |
 | **Blocks** | REC-L01, WEB-014 |
 | **Submission cut** | B |
 
@@ -33,6 +33,7 @@ Hand accounting a file they can use.
 - journal format with a generic account mapping and per-org mapping table
 - formula neutralization
 - totals check
+- export supply interest earned for the period
 
 ## Out of scope
 

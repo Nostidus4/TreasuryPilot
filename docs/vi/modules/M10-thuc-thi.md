@@ -131,3 +131,7 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/chu kỳ → EXE-012 chín
 | M10-D12 | Hoàn thành một phần → plan PartiallyCompleted, request NeedsReview; tiếp tục bằng plan mới cho bước còn lại (M12). |
 | M10-D13 | Ngưỡng hết gas riêng cho từng khóa (executor/sentinel/biên nhận). (đã review) |
 | M10-D14 | Run-now dùng cùng cổng và đưa đúng một chu kỳ thực thi vào hàng. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Loại bước: WITHDRAW, REFILL, PAY, SUPPLY (BORROW/REPAY là P2). Mỗi chu kỳ: chạy plan của request đến hạn hôm nay (có WITHDRAW đứng đầu nếu cần), rồi nếu không còn plan nào đang chạy thì tối đa một lệnh thanh khoản. Signer cho phép thêm `module.supply`, `module.withdraw`. Demo dùng 1 ví vận hành (T + O1). **Ticket:** EXE-014 mới; sửa EXE-004/005/008.

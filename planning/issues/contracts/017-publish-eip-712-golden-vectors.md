@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-003 |
+| **Traces to** | ADR-003, ADR-019 |
 | **Blocks** | SC-L04, ENG-010 |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ Python and TypeScript sign and hash exactly what the contract verifies.
 
 - contracts/test/vectors/*.json: sample PaymentApproval, OneTimeException and PlanAttestation with domain, struct hash, digest and signature
 - Foundry test that checks them
+- golden vectors for the 13-field PaymentApproval
 
 ## Out of scope
 

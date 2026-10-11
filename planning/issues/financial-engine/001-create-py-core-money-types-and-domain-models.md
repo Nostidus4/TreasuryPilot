@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-014, BR-083, FR-109 |
+| **Traces to** | ADR-014, BR-083, FR-109, ADR-019 |
 | **Blocks** | ENG-002, ENG-005, ENG-009, ENG-010, POL-001, MDT-002, EXE-012 |
 | **Submission cut** | A |
 
@@ -35,6 +35,7 @@ A typed, float-free foundation for all money logic.
 - frozen Pydantic models per docs/modules/financial-engine §4: Asset, LateFee, PaymentTerms, WalletState, Limits, PolicyView, Snapshot, ApprovedRequest, RefillDecision, ScheduledItem, Infeasible, Schedule
 - UTC day helpers (day number, 30-minute midnight cut-over, M07-D3)
 - JSON serialization of amounts as decimal strings
+- Snapshot fields safe_usdc, a_usdc, pool_available, supply_rate_bps, borrow_rate_bps, health_factor, debt
 
 ## Out of scope
 

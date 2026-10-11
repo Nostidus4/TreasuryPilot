@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-032, BR-034, FR-403 |
-| **Blocks** | ENG-003 |
+| **Blocks** | ENG-003, ENG-013 |
 | **Submission cut** | A |
 
 ## Context

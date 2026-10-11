@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-015, FR-204–205 |
+| **Traces to** | BR-015, FR-204–205, ADR-019 |
 | **Blocks** | DEV-006, MDT-006, MDT-007, MDT-008, WEB-005 |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ A mandate becomes Active only when the chain says so.
 - read-back of mandate(), approvers and buffers and hash compare (§8.4)
 - status events
 - Discrepancy review item
+- read back supply limits and the Aave pool/aToken
 
 ## Out of scope
 

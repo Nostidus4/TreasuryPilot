@@ -8,8 +8,8 @@
 
 | Luồng | Module | Ticket M1 còn mở / ngày công | Trong đó Tier A |
 |---|---|---|---|
-| **A · Chain & thực thi** (dev 1) | M04 contract, M06 đọc chain, M07 engine, M08 policy, M10 thực thi, M11 xác minh, M12 phục hồi | 71 / 56.5 | 56 / 46 |
-| **B · Sản phẩm, API, giao diện & AI** (dev 2) | M01 định danh, M02 treasury, M03 mandate, M05 hóa đơn, M09 AI, M13 thông báo, M14 tuân thủ, M15 audit, M16 web, M17 giám sát, M19 devex | 100 / 83.5 | 61 / 51.5 |
+| **A · Chain & thực thi** (dev 1) | M04 contract (kể cả Aave supply/withdraw), M06 đọc chain, M07 engine (kể cả công thức dự trữ), M08 policy, M10 thực thi, M11 xác minh, M12 phục hồi | 78 / 61 | 61 / 49 |
+| **B · Sản phẩm, API, giao diện & AI** (dev 2) | M01 định danh, M02 treasury, M03 mandate, M05 hóa đơn, M09 AI, M13 thông báo, M14 tuân thủ, M15 audit, M16 web, M17 giám sát, M19 devex | 104 / 85.5 | 63 / 52.5 |
 | **C · Nghiệp vụ & bằng chứng** (3 cố vấn + anh Phúc) | M20, chia theo tab 35 §2 | 17 / 14 | 11 / 10 |
 
 Lý do: luồng A là đường đi của tiền, phải đúng trước (contract → validator → signer → executor), chủ yếu Python/Solidity. Luồng B là mọi thứ người dùng chạm vào. Hai luồng gặp nhau ở các "hợp đồng" đã viết sẵn trong spec: ABI và vector EIP-712 (SC-017), mô hình snapshot và quyết định (CHR-002, POL-001), client OpenAPI (DEV-005). Luồng B nhiều việc hơn; nếu luồng A xong sớm thì nhận các ticket AGT (AI) trước.
@@ -54,3 +54,5 @@ Sau đó đi theo thứ tự ở mục 13 của từng module và các đợt tr
 3. Merge PR là issue tự đóng; dashboard tự tính issue đã đóng là Xong (muốn đồng bộ trường Status thì chạy `python3 planning/tools/sync_closed_status.py` hoặc bật workflow "Item closed → Done" của Project).
 4. Spec là nguồn chuẩn: nếu khi code cần quyết định khác, sửa mục 14 của module và `docs/decisions-log.md` ngay trong PR đó.
 5. Hằng ngày xem dashboard Google Sheet (tự cập nhật mỗi giờ): tiến độ theo module và theo người.
+
+**Cập nhật v0.3 (ADR-019):** ticket mới SC-023 (bản duyệt hai mức tiền), SC-024 (Aave supply/withdraw), SC-025 (test trên fork Sepolia), ENG-013 (công thức dự trữ), EXE-014 (chu kỳ thanh khoản), DEV-012 (cổng cấu hình) đều thuộc Tier A; ENG-014 và WEB-027 (đề xuất vay) Tier B; SC-026 và MDT-011 (thực thi vay/trả) là P2. WEB-026 (thẻ vị thế quỹ) Tier A.

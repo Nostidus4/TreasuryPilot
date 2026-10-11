@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-057, API_SPEC §9 |
+| **Traces to** | BR-057, API_SPEC §9, ADR-019 |
 | **Blocks** | POL-002, POL-007 |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ One list of reason codes shared by the validator, API errors, UI and contract er
 - Decision and Check models per §4.1 (decision, primary, codes, warnings, checks, stage, step_seq, policy_version, snapshot_block)
 - decode_revert(selector) → code
 - docs table generated from the enum
+- reason codes SUPPLY_FLOOR_BREACH, OVER_SUPPLY_PER_TX, OVER_SUPPLY_DAILY, RESERVE_BREACH, BELOW_MIN_SUPPLY (warning), INSUFFICIENT_POOL_LIQUIDITY, INSUFFICIENT_A_TOKEN, ALLOWANCE_NOT_CLEARED, WRONG_PAYMENT_OPTION, BORROW_NOT_AUTHORIZED, HEALTH_FACTOR_TOO_LOW
 
 ## Out of scope
 

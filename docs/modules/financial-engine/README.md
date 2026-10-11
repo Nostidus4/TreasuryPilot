@@ -273,3 +273,28 @@ ENG-001 money & models → ENG-002 calculator → ENG-003 refill decision (with 
 | Open | Question | Owner |
 |---|---|---|
 | M07-Q1 | Should incoming receivables (future inflows) enter the forecast? (Later: needs an AR data source) | Product, Later |
+
+## 15. v0.3 changes (ADR-019) — these supersede earlier sections where they differ
+
+**Liquidity position.** `Snapshot` gains `safe_usdc`, `a_usdc`, `pool_available`, `supply_rate_bps`, `borrow_rate_bps`, `health_factor` (when debt exists), `debt`.
+
+```
+PaymentReserve       = Σ pay_amount(r) for approved, unpaid requests with due day ≤ today + 30
+RequiredSafeReserve  = PaymentReserve + safe_floor + DebtServiceReserve + ExecutionHolds
+AvailableForSupply   = max(0, safe_usdc − RequiredSafeReserve)
+AccessibleLiquidity  = safe_usdc + min(a_usdc, pool_available)
+```
+`pay_amount(r)` = early amount if the schedule pays by `earlyPayBy`, else the standard amount.
+
+**decide_liquidity(snapshot, schedule) → NONE | SUPPLY x | WITHDRAW y** (one per cycle):
+- deficit `d = RequiredSafeReserve − safe_usdc > 0` → `WITHDRAW min(a_usdc, pool_available, ceil(d × 1.05))`; if still short → `INSUFFICIENT_LIQUIDITY` and a borrow proposal (F-069).
+- else if `AvailableForSupply ≥ min_supply` → `SUPPLY min(AvailableForSupply, supply caps remaining)`.
+- else NONE. Inside a request plan a WITHDRAW step is placed before REFILL when Safe T cannot fund the refill without breaking the reserve.
+
+Example: Safe 6,000, aUSDC 0, floor 1,000, approved unpaid 2,000 → Required 3,000, Available 3,000 ≥ 500 → SUPPLY 3,000 (D2). A new invoice of 2,500 is approved → Required 5,500, Safe 3,000 → deficit 2,500 → WITHDRAW 2,625 (D3).
+
+**Value of paying on day p (replaces §8.2's discount term):** `saving(p) = amount − pay_amount(p)` (exact, from the approval) minus late fees; early payment is preferred only if `saving − fee_in_asset − lost_supply_interest > 0`, where `lost_supply_interest = floor(pay_amount × supply_rate_bps × days_earlier / (10000 × 365))`. The CP-SAT objective keeps its order (deadlines → value → transactions → approval order) with value now = savings − late fees − gas − lost interest + expected supply interest of the cash kept supplied.
+
+**Borrow proposal (F-069):** `propose_borrow(snapshot, deficit, until_day)` → amount, borrow cost to repayment `= amount × borrow_rate_bps × days / (10000 × 365)`, withdraw cost (lost interest), health factor before/after (from Aave account data), reason. Never part of an executable plan without authorization (BR-044).
+
+**Tickets:** ENG-013 reserve and liquidity decision, ENG-014 borrow proposal; ENG-001/005/007/011 revised.

@@ -247,3 +247,21 @@ SC-001 (Foundry, Safe v1.4.1, OZ, TestUSDC) → SC-002 (storage, struct, EIP-712
 | M05-D4 *(bổ sung)* | `cancelRequest(requestId)` do Safe T hoặc approver gọi chặn vĩnh viễn refill và pay của request đó (BR-077). Lộ khóa approver chỉ gây hủy (DoS), không chi được tiền. |
 
 Đã giải: ADR-012 (Ethereum Sepolia, tUSDC + một lượt Circle USDC); M04-Q1 (guardian là Guardian Safe 1-trên-N nên có nhiều guardian mà không sửa contract).
+
+## 15. Thay đổi theo v0.3 (ADR-019), thay thế các mục trên nếu khác
+
+**Bản duyệt hai mức tiền.** `PaymentApproval` có 13 trường: thêm `earlyAmount` (mức trả sớm, 0 = không có) và `earlyPayBy` (hạn trả sớm). Trong `pay`, số tiền chuyển = `earlyAmount` nếu có và chưa quá `earlyPayBy`, ngược lại = `amount` (mức chuẩn). Kiểm 7–9 và bộ đếm dùng số tiền này; `earlyAmount > amount` thì lỗi `WrongPaymentOption`. Event `PaymentExecuted` thêm cờ `early`.
+
+**Aave V3.** Storage thêm `aavePool`, `aToken` (đặt một lần lúc initialize, kiểm bằng `getReserveData(asset)`); mandate thêm hạn mức `supply` (mỗi lần, mỗi ngày). **Sàn của Safe = `bufferOf[safeT]`.**
+
+| Hàm | Kiểm | Lỗi |
+|---|---|---|
+| `supply(stepId, amount)` | executor/trạng thái/thời hạn · step chưa dùng · trong hạn mức supply · sau khi supply Safe T vẫn ≥ sàn · Safe T `approve` đúng số rồi `pool.supply` · sau đó USDC giảm đúng, aToken tăng, allowance về 0 | `OverSupplyPerTx`, `OverSupplyDaily`, `SupplyFloorBreach`, `AllowanceNotCleared`, `BalanceDeltaMismatch` |
+| `withdraw(stepId, amount)` | executor/trạng thái/thời hạn · step chưa dùng · `amount ≤` số aToken · `pool.withdraw` về Safe T · USDC tăng đúng | `InsufficientAToken`, `BalanceDeltaMismatch` |
+| `borrow` / `repay` (P2) | chỉ khi Safe T đã cấp quyền một lần (`authorizeBorrow` / `authorizeRepay`); kiểm health factor trước và sau | `BorrowNotAuthorized`, `HealthFactorTooLow` |
+
+Withdraw không cần hạn mức vì tiền chỉ quay về Safe T. Module chỉ gọi đúng `asset`, `aavePool` và Safe; không gọi tùy ý, không delegatecall.
+
+**Bất biến mới:** I12 supply không làm Safe T xuống dưới sàn · I13 chỉ chạm asset/pool/aToken, allowance luôn về 0 · I14 PAY chuyển đúng mức sớm hoặc mức chuẩn · I15 (P2) không vay nếu chưa có quyền của Owner.
+
+**Test:** MockAavePool cho unit; fork Sepolia ở block cố định cho integration; demo trên Sepolia (D2, D3). **Ticket:** SC-023, SC-024, SC-025, SC-026 (P2); sửa SC-002/005/006/014/017/021.

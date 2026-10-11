@@ -229,3 +229,11 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 | M10-D12 | Partial completion → plan PartiallyCompleted, request NeedsReview; resumption creates a new plan for the remaining steps (M12). |
 | M10-D13 | Low-gas thresholds per key (executor/sentinel/receipt). (reviewed) |
 | M10-D14 | Run-now uses the same gates and enqueues exactly one execution cycle. |
+
+## 15. v0.3 changes (ADR-019)
+
+- Step types: `WITHDRAW`, `REFILL`, `PAY`, `SUPPLY` (`BORROW`/`REPAY` P2, only from an owner-authorized plan).
+- Execution cycle order per treasury: (1) request plans due today (with a leading WITHDRAW when needed); (2) when no request plan is executing, at most one liquidity action from `decide_liquidity` (M07 §15).
+- Signer payload allowlist adds `module.supply`, `module.withdraw` (and `borrow`/`repay` P2).
+- Demo uses one operational wallet (T + O1).
+- **Tickets:** EXE-004, EXE-005, EXE-007, EXE-008 revised; EXE-014 liquidity cycle (new).

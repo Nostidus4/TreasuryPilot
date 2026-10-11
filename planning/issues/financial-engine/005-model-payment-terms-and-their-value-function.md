@@ -9,8 +9,8 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-052, BR-075, M07-D1, M07-D2 |
-| **Blocks** | ENG-006, ENG-L02, INV-008, AGT-005 |
+| **Traces to** | BR-052, BR-075, M07-D1, M07-D2, ADR-019 |
+| **Blocks** | ENG-006, ENG-L02, INV-008, AGT-005, ENG-013 |
 | **Submission cut** | A |
 
 ## Context
@@ -36,6 +36,7 @@ Compute what paying on a given date is worth in stablecoin.
 - request_value(req, pay_day) = floor discount − late fee (M07-D2, no cost of capital)
 - validation of ranges and day order
 - early-payment value net of the estimated fee in asset units (FEE-2, M07-D10)
+- value uses the exact saving amount − pay_amount from the approval options instead of a bps estimate; lost supply interest for early payment
 
 ## Out of scope
 

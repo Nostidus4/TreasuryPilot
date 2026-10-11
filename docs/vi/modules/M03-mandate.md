@@ -221,3 +221,7 @@ MDT-001 schema → **MDT-009 gom chữ ký giao dịch quản trị (mới)** �
 | **FEE-3** | Owner đặt ngưỡng và ngân sách; Finance, Operator hoặc Owner chấp nhận phí cho từng plan bị giữ. |
 
 Snapshot của M08 đổi thành **≤ 30 giây và chậm ≤ 2 block** trên Sepolia (block 12 giây).
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Mandate thêm hạn mức supply (mỗi lần, mỗi ngày); sàn Safe = buffer của Safe T; cài đặt treasury `min_supply` (demo 500) và tầm dự trữ 30 ngày. Pool Aave và aToken cố định khi tạo module. P2: `authorizeBorrow` / `authorizeRepay` (MDT-011). Cấu hình demo: trả 2.000/10.000; refill 2.500/12.000; supply 5.000/20.000; sàn 1.000; min_supply 500; một ví vận hành O1.

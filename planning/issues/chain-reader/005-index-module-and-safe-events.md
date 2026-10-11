@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-510, PH-6, M06-D6, M06-D9 |
+| **Traces to** | FR-510, PH-6, M06-D6, M06-D9, ADR-019 |
 | **Blocks** | MDT-005, CHR-006 |
 | **Submission cut** | A |
 
@@ -36,6 +36,7 @@ Off-chain state follows on-chain events for mandate, payees, payments and pause.
 - observed_events and index_cursors
 - subscriber registry used by M03/M05/M11 handlers
 - Safe config events trigger coverage recompute
+- index Supplied, Withdrawn (and BorrowExecuted, Repaid) events
 
 ## Out of scope
 

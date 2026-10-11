@@ -89,3 +89,7 @@ REC-001 xác minh → REC-002 bản ghi đối soát → REC-003 khớp/tự kh�
 | M11-D8 | Biên nhận EAS phát ngay khi Paid và block PAY đã finalized, không chờ Finance khớp. (đã review, đã đổi) |
 | M11-D9 | Giải quyết Discrepancy cần ghi chú của Finance và xác nhận của Owner. (đã review) |
 | M11-D10 | Xác minh UNKNOWN sau 3 lần đọc lỗi. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+SUPPLY/WITHDRAW là dòng `LENDING_TRANSFER` (giữa quỹ và vị thế cho vay), không phải chi phí. Hậu điều kiện: SUPPLY → USDC giảm đúng, aToken tăng, allowance 0; WITHDRAW → USDC tăng đúng. File xuất có lãi gửi kiếm được trong kỳ.

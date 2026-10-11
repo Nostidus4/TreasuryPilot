@@ -123,3 +123,7 @@ Chỉ dùng địa chỉ **test** và công ty hư cấu; mô phỏng vendor th�
 | ~~M20-Q1~~ | Đã chốt: trưởng nhóm quay video demo (màn hình + lồng tiếng Anh) theo runbook | trưởng nhóm |
 | ~~M20-Q2~~ | Đã chốt: Google Slides (cùng sửa, xuất PDF), một template đơn giản | cố vấn truyền thông |
 | ~~M20-Q3~~ | Đã chốt: cố vấn dùng trình soạn trên web GitHub ("Add file", tạo PR trên trình duyệt); git local là tùy chọn | trưởng nhóm |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+DOM-002: lấy USDC test của Aave Sepolia từ faucet Aave cho treasury; lượt Circle chỉ PAY. DOM-005: thêm nhóm kịch bản `idle-cash-supply`, `new-obligation-withdraw` và kỳ vọng B0. Video theo D1–D10; gói bằng chứng có câu miễn trừ: testnet, dữ liệu giả lập, không có phê duyệt pháp lý, không audit production, không hứa lợi suất.

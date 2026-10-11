@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | ai |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-805, BR-052 |
+| **Traces to** | FR-805, BR-052, ADR-019 |
 | **Blocks** | — |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ Show with data what the AI adds over the rule baseline.
 - metrics: value saved, on-time %, exceptions, tx count, violations, latency, cost
 - N repetitions for B2
 - markdown and CSV report
+- baseline B0 (manual/EDF, cash idle) before B1 and B2; metrics add reserve breaches and net benefit incl. supply interest
 
 ## Out of scope
 
@@ -54,6 +55,7 @@ Ground truth never enters prompts.
 - [ ] `make bench` runs both arms on all scenarios
 - [ ] Violations are 0 in both arms or the run fails
 - [ ] The report includes scenarios where B2 is worse
+- [ ] The report has three arms B0, B1, B2
 
 ## Testing requirements
 

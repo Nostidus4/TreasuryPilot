@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | frontend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-915 |
-| **Blocks** | WEB-011, WEB-014, WEB-016, WEB-018, WEB-019, WEB-021, WEB-024 |
+| **Traces to** | FR-915, ADR-019 |
+| **Blocks** | WEB-011, WEB-014, WEB-016, WEB-018, WEB-019, WEB-021, WEB-024, WEB-026 |
 | **Submission cut** | A |
 
 ## Context
@@ -36,6 +36,7 @@ Treasury health at a glance.
 - recent activity
 - staleness banner
 - TEST asset labels
+- link to the position card (WEB-026)
 
 ## Out of scope
 

@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-008, NFR-CMP-01 |
+| **Traces to** | ADR-008, NFR-CMP-01, ADR-019 |
 | **Blocks** | — |
 | **Submission cut** | A |
 
@@ -35,6 +35,7 @@ The stack runs on one cloud VM against the chosen testnet with a public HTTPS UR
 - Caddy reverse proxy with TLS
 - GitHub Actions job that builds and pushes images to GHCR
 - deploy notes in DEVELOPMENT.md
+- Sepolia profile uses Aave test USDC and the Aave Pool from the manifest
 
 ## Out of scope
 

@@ -390,3 +390,11 @@ POL-001 catalogue → POL-005 planHash/stepId → POL-002 approval & request che
 | Open | Question | Owner |
 |---|---|---|
 | M08-Q1 | Verify attestations on-chain (SC-L04) — Later. | Tech lead, Later |
+
+## 15. v0.3 changes (ADR-019)
+
+- **Plan kinds:** besides a request plan (WITHDRAW? → REFILL? → PAY), a **liquidity plan** with one SUPPLY or one WITHDRAW step and `requestId = 0x0`, attested the same way (M08-D1 extended).
+- **New checks:** SUPPLY — Safe floor, supply caps, `AvailableForSupply ≥ amount`, `amount ≥ min_supply` (policy), PaymentReserve intact after the step; WITHDRAW — `amount ≤ min(aUSDC, pool_available)`; PAY — amount equals the approval's early or standard option for the expected execution time.
+- **New reason codes:** `SUPPLY_FLOOR_BREACH` (SupplyFloorBreach), `OVER_SUPPLY_PER_TX`, `OVER_SUPPLY_DAILY`, `RESERVE_BREACH` (off-chain PaymentReserve), `BELOW_MIN_SUPPLY` (warning, step dropped), `INSUFFICIENT_POOL_LIQUIDITY`, `INSUFFICIENT_A_TOKEN` (InsufficientAToken), `ALLOWANCE_NOT_CLEARED`, `WRONG_PAYMENT_OPTION`, `BORROW_NOT_AUTHORIZED`, `HEALTH_FACTOR_TOO_LOW` (P2).
+- **AI fallback (BR-055):** templates may run `WITHDRAW → REFILL → PAY` only; never SUPPLY, BORROW or REPAY.
+- **Tickets:** POL-001/002/003/005 revised.

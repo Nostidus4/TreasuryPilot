@@ -9,31 +9,31 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 137 | 50 | 8 | 195 |
+| M1 | 144 | 52 | 10 | 206 |
 | Later | – | – | – | 38 |
-| **All** | | | | **233** |
+| **All** | | | | **244** |
 
 ## Epics
 
 | Epic | Module | Tickets (M1) | Tickets (Later) | Folder |
 |---|---|---:|---:|---|
-| M19 · Developer Experience & Quality | `devex` | 11 | 0 | [`issues/devex/`](issues/devex/) |
-| M04 · Smart Contracts | `contracts` | 22 | 6 | [`issues/contracts/`](issues/contracts/) |
-| M07 · Financial Engine (py-core) | `financial-engine` | 12 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
+| M19 · Developer Experience & Quality | `devex` | 12 | 0 | [`issues/devex/`](issues/devex/) |
+| M04 · Smart Contracts | `contracts` | 26 | 6 | [`issues/contracts/`](issues/contracts/) |
+| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
-| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 10 | 1 | [`issues/mandate/`](issues/mandate/) |
+| M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 1 | [`issues/mandate/`](issues/mandate/) |
 | M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
-| M10 · Orchestration & Execution | `execution` | 13 | 4 | [`issues/execution/`](issues/execution/) |
+| M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 0 | [`issues/recovery/`](issues/recovery/) |
 | M13 · Notifications | `notifications` | 3 | 4 | [`issues/notifications/`](issues/notifications/) |
 | M14 · Compliance | `compliance` | 3 | 4 | [`issues/compliance/`](issues/compliance/) |
 | M15 · Audit & Evidence | `audit` | 4 | 1 | [`issues/audit/`](issues/audit/) |
-| M16 · Web Application | `web` | 25 | 0 | [`issues/web/`](issues/web/) |
+| M16 · Web Application | `web` | 27 | 0 | [`issues/web/`](issues/web/) |
 | M17 · Observability & Analytics | `observability` | 5 | 0 | [`issues/observability/`](issues/observability/) |
 | M18 · Platform Admin & Billing | `admin` | 0 | 3 | [`issues/admin/`](issues/admin/) |
 | M20 · Domain & Evidence (non-code) | `domain-evidence` | 17 | 0 | [`issues/domain-evidence/`](issues/domain-evidence/) |
@@ -44,7 +44,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 |---|---|---|---|---|---|---|---|---|---|---|
 | DEV-001 | devex | M19 | [Initialize monorepo skeleton](issues/devex/001-initialize-monorepo-skeleton.md) | F-160 | M1 | P0 | M | A | — | Ready for Assignment |
 | DEV-002 | devex | M19 | [Create Docker Compose stack (local profile)](issues/devex/002-create-docker-compose-stack-local-profile.md) | F-160 | M1 | P0 | M | A | DEV-001 | Ready for Assignment |
-| DEV-003 | devex | M19 | [Add CI workflow for Python](issues/devex/003-add-ci-workflow-for-python.md) | F-161 | M1 | P1 | S | B | DEV-001 | Ready for Assignment |
+| DEV-003 | devex | M19 | [Add CI workflow for Python](issues/devex/003-add-ci-workflow-for-python.md) | F-161 | M1 | P1 | S | A | DEV-001 | Ready for Assignment |
 | DEV-004 | devex | M19 | [Add CI workflow for contracts](issues/devex/004-add-ci-workflow-for-contracts.md) | F-161, F-163 | M1 | P1 | S | B | SC-001 | Ready for Assignment |
 | DEV-005 | devex | M19 | [Add CI workflow for web and OpenAPI client drift](issues/devex/005-add-ci-workflow-for-web-and-openapi-client-drift.md) | F-161 | M1 | P1 | S | After submission | WEB-001 | Ready for Assignment |
 | DEV-006 | devex | M19 | [Write seed script for the local environment](issues/devex/006-write-seed-script-for-the-local-environment.md) | F-160 | M1 | P1 | M | A | SC-016, TRS-004, MDT-003, INV-003 | Ready for Assignment |
@@ -275,3 +275,14 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | WEB-024 | web | M16 | [Build the fee policy and fee acceptance UI](issues/web/024-build-the-fee-policy-and-fee-acceptance-ui.md) | F-066 | M1 | P1 | S | B | WEB-010, EXE-012 | Ready for Assignment |
 | WEB-025 | web | M16 | [Build the governance signing inbox](issues/web/025-build-the-governance-signing-inbox.md) | F-020–F-026 | M1 | P0 | M | A | WEB-003, MDT-009 | Ready for Assignment |
 | CHR-006 | chain-reader | M06 | [Index treasury token movements and alert on unexpected outflows](issues/chain-reader/006-index-treasury-token-movements-and-alert-on-unexpected-outfl.md) | F-050 | M1 | P0 | S | A | CHR-005, EXE-001 | Ready for Assignment |
+| SC-023 | contracts | M04 | [Add two-option payment approvals (early / standard)](issues/contracts/023-add-two-option-payment-approvals-early-standard.md) | F-038 | M1 | P0 | S | A | SC-006, SC-005 | Ready for Assignment |
+| SC-024 | contracts | M04 | [Implement Aave V3 supply and withdraw through Safe T](issues/contracts/024-implement-aave-v3-supply-and-withdraw-through-safe-t.md) | F-068 | M1 | P0 | M | A | SC-021, SC-007, SC-008 | Ready for Assignment |
+| SC-025 | contracts | M04 | [Add Aave integration tests on a pinned Sepolia fork](issues/contracts/025-add-aave-integration-tests-on-a-pinned-sepolia-fork.md) | F-068, F-163 | M1 | P0 | S | A | SC-024, SC-016 | Ready for Assignment |
+| SC-026 | contracts | M04 | [Implement owner-authorized borrow and repay](issues/contracts/026-implement-owner-authorized-borrow-and-repay.md) | F-079 | M1 | P2 | M | After submission | SC-024 | Ready for Assignment |
+| ENG-013 | financial-engine | M07 | [Implement reserve formulas and the liquidity decision](issues/financial-engine/013-implement-reserve-formulas-and-the-liquidity-decision.md) | F-068 | M1 | P0 | S | A | ENG-002, ENG-005 | Ready for Assignment |
+| ENG-014 | financial-engine | M07 | [Build the borrow proposal](issues/financial-engine/014-build-the-borrow-proposal.md) | F-069 | M1 | P1 | S | B | ENG-013 | Ready for Assignment |
+| EXE-014 | execution | M10 | [Run the liquidity cycle (supply / withdraw)](issues/execution/014-run-the-liquidity-cycle-supply-withdraw.md) | F-068 | M1 | P0 | S | A | EXE-008, ENG-013, SC-024 | Ready for Assignment |
+| WEB-026 | web | M16 | [Build the treasury position card](issues/web/026-build-the-treasury-position-card.md) | F-068, F-130 | M1 | P0 | S | A | WEB-010 | Ready for Assignment |
+| WEB-027 | web | M16 | [Build the borrow proposal view](issues/web/027-build-the-borrow-proposal-view.md) | F-069 | M1 | P1 | S | B | WEB-026, ENG-014 | Ready for Assignment |
+| DEV-012 | devex | M19 | [Add the deployment config gate to CI](issues/devex/012-add-the-deployment-config-gate-to-ci.md) | F-151 | M1 | P0 | S | A | SC-016, DEV-003 | Ready for Assignment |
+| MDT-011 | mandate | M03 | [Add owner borrow/repay authorizations (governance)](issues/mandate/011-add-owner-borrow-repay-authorizations-governance.md) | F-079 | M1 | P2 | S | After submission | MDT-009, SC-026 | Ready for Assignment |

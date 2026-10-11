@@ -99,3 +99,10 @@ DEV-001 → DEV-002 → DEV-011 → DEV-003 → DEV-004 → DEV-005 → DEV-006 
 | M19-D10 | Images tagged with git SHA in GHCR. |
 | M19-D11 | Only web and api reachable from the internet. |
 | M19-D12 | Reliability: 30 local runs + N Sepolia runs, failures categorized. |
+
+## 15. v0.3 changes (ADR-019)
+
+- Scenarios **D1–D10** as YAML (`scenarios/d01-refill-pay.yaml` … `d10-guardian-pause.yaml`), each with "must show" assertions; the runbook maps scenes to them.
+- **Config gate** in CI (`make config-check`): chain id, token decimals and Aave Pool/aToken mapping must equal `deployments/<chainId>.json`; addresses only from official deployment data.
+- Sepolia fork job (pinned block) for Aave integration tests.
+- **Tickets:** DEV-007, DEV-008, DEV-010 revised; DEV-012 config gate (new).

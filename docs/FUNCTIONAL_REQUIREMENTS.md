@@ -140,6 +140,12 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-509 | The contract shall execute PAY only after verifying approval, payee status, fingerprint, request unused, limits or exception, buffer, and that the mandate is not paused. It shall then mark the request used and update counters atomically. | F-063 | BR-001, BR-010 |
 | FR-517 | The system shall propose a per-plan fee threshold, a daily fee budget and a speed preset from recent fee history, for the Owner to accept. | F-066 | BR-084 |
 | FR-518 | The system shall hold plans above the fee threshold or budget, defer them while the deadline allows, and request fee acceptance from Finance, Operator or Owner on the last safe day. | F-066 | BR-084 |
+| FR-519 | The system shall supply Safe T's AvailableForSupply (≥ minSupply) to the allowlisted Aave V3 Pool and withdraw the reserve deficit + 5 % when obligations grow, at most one such action per cycle. | F-068 | BR-037, BR-038 |
+| FR-520 | The contract shall execute SUPPLY/WITHDRAW only to the configured Pool for the treasury asset, keep Safe T ≥ Safe floor after SUPPLY, and enforce supply caps, pause and expiry. | F-068 | BR-037 |
+| FR-521 | The system shall read Safe T's aToken balance, Pool available liquidity, supply/borrow rates and account data at the snapshot block. | F-068, F-069 | |
+| FR-522 | The system shall produce borrow proposals (cost vs withdraw, health factor before/after, reason) without executing them. | F-069 | BR-044 |
+| FR-523 | *(P2)* The contract shall execute BORROW/REPAY only with a valid one-time owner authorization and a health factor ≥ the authorized minimum just before the call. | F-079 | BR-044 |
+| FR-524 | The contract shall pay exactly the approval's early amount before early-pay-by, otherwise exactly the standard amount. | F-038 | BR-024 |
 | FR-510 | The contract shall emit events for every REFILL, PAY, SWAP, exception consumption, pause, resume and mandate change, including request and step ids. | F-062, F-063, F-120 | |
 | FR-511 | The contract shall execute SWAP only via an allowlisted adapter, router and pair, within the swap budget, with engine-computed minOut, exact allowance, and allowance reset to 0. | F-064 | BR-081, BR-082 |
 | FR-512 | The system shall label the M1 test router as a test router everywhere. | F-064 | BR-095 |

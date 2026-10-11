@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | ADR-003 |
+| **Traces to** | ADR-003, ADR-019 |
 | **Blocks** | POL-002, POL-005, INV-010 |
 | **Submission cut** | A |
 
@@ -36,6 +36,7 @@ Python produces and verifies the same digests as the contract.
 - Builders for PaymentApproval (11 fields, docs/modules/contracts §6.1) and the plan attestation struct
 - verify_signature helpers including ERC-1271 call hook
 - tests against the golden vectors from SC-017
+- builder for the 13-field PaymentApproval
 
 ## Out of scope
 

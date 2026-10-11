@@ -120,3 +120,10 @@ WEB-001 → WEB-002 → WEB-003 → WEB-004 → WEB-025 → WEB-005 → WEB-006 
 | M16-D12 | Cancel on-chain banner persists until confirmed. |
 | M16-D13 | Guardian pause falls back to a wallet transaction when no sentinel is configured. |
 | M16-D14 | Recharts for metrics; no extra chart library. |
+
+## 15. v0.3 changes (ADR-019)
+
+- Dashboard **position card**: Safe USDC, aUSDC (Aave), pool liquidity, RequiredSafeReserve breakdown (PaymentReserve, floor, holds), AvailableForSupply, supply APY (labelled testnet).
+- Approval inbox shows **early vs standard** options.
+- **Borrow proposal view** (D6): withdraw vs borrow cost, health factor before/after, reason; "no transaction without owner authorization".
+- **Tickets:** WEB-010, WEB-009 revised; WEB-026 position card, WEB-027 borrow proposal view (new).

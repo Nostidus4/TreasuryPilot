@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-225, BR-008, ADR-017, M03-D1, M03-D5 |
-| **Blocks** | TRS-006, MDT-003, MDT-005, MDT-006, MDT-007, INV-011, MDT-010, WEB-025 |
+| **Blocks** | TRS-006, MDT-003, MDT-005, MDT-006, MDT-007, INV-011, MDT-010, WEB-025, MDT-011 |
 | **Submission cut** | A |
 
 ## Context

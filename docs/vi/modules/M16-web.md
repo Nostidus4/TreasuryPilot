@@ -117,3 +117,7 @@ WEB-001 → 002 → 003 → 004 → 025 → 005 → 006 → 007 → 008 → 009 
 | M16-D12 | Banner hủy on-chain giữ tới khi xác nhận. |
 | M16-D13 | Guardian pause dùng giao dịch từ ví khi không có sentinel. |
 | M16-D14 | Dùng Recharts cho biểu đồ; không thêm thư viện khác. |
+
+## 15. Thay đổi theo v0.3 (ADR-019)
+
+Dashboard có **thẻ vị thế**: USDC trong Safe, aUSDC, thanh khoản pool, cơ cấu dự trữ, phần có thể supply, APY (nhãn testnet). Hộp duyệt hiện **mức sớm và mức chuẩn**. **Màn hình đề xuất vay** (D6): so rút với vay, health factor trước/sau, lý do, ghi rõ không có giao dịch nếu Owner chưa cấp quyền. **Ticket:** WEB-026, WEB-027 mới.

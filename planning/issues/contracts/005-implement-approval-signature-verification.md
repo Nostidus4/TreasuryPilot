@@ -9,8 +9,8 @@
 | **Size** | M (~1 day) |
 | **Area** | contracts |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-001, BR-003, BR-004, FR-318 |
-| **Blocks** | SC-006, SC-009, SC-017, SC-L02 |
+| **Traces to** | BR-001, BR-003, BR-004, FR-318, ADR-019 |
+| **Blocks** | SC-006, SC-009, SC-017, SC-L02, SC-023 |
 | **Submission cut** | A |
 
 ## Context
@@ -33,6 +33,7 @@ The contract accepts a payment approval only if a current approver signed exactl
 - ERC-1271 support via SignatureChecker
 - check signer is in the current approver set
 - check approval expiry and that treasury equals this module
+- hash and verify the 13-field PaymentApproval
 
 ## Out of scope
 

@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-069, FR-419, M06-D2 |
+| **Traces to** | BR-069, FR-419, M06-D2, ADR-019 |
 | **Blocks** | RCV-006 |
 | **Submission cut** | A |
 
@@ -35,6 +35,7 @@ Know at once when money leaves a treasury wallet outside the agent.
 - request immediate PRE_STEP re-validation for an in-progress plan
 - signal to the circuit breaker
 - acknowledge endpoint
+- classify Safe T ↔ aToken transfers as LENDING, not unexpected outflow
 
 ## Out of scope
 

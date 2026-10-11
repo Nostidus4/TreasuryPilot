@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-310–311, BR-075 |
+| **Traces to** | FR-310–311, BR-075, ADR-019 |
 | **Blocks** | INV-009 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ Only human-confirmed terms reach the scheduler.
 - POST /requests/{id}/terms/confirm validating with the ENG-005 model
 - store terms and terms_hash
 - mark confirmed_by
+- derive earlyAmount and earlyPayBy from confirmed discount terms
 
 ## Out of scope
 
