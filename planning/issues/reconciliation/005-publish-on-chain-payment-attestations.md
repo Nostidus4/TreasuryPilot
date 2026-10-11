@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-608, ADR-018, BR-074 |
+| **Traces to** | FR-608, ADR-018, BR-074, M11-D8 |
 | **Blocks** | — |
 | **Submission cut** | A |
 
@@ -29,7 +29,7 @@ A third party can verify a payment without access to the app.
 
 ## Scope
 
-- Task that attests after the request is Paid and reconciled
+- Task that attests as soon as the request is Paid and the PAY block is finalized (M11-D8, does not wait for matching)
 - dedicated receipt key in the core worker with low-gas alert
 - store attestation UID
 - retry with backoff without affecting payment status

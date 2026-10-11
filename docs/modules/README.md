@@ -12,7 +12,7 @@
 | M08 | Policy Engine & Attestation | `policy-engine/` | py-core/worker | Detailed — grilled with the team |
 | M09 | AI Agent | `agent/` | worker/api | Detailed — reviewed with the project lead |
 | M10 | Orchestration & Execution | `execution/` | worker/signer | Detailed — reviewed with the project lead |
-| M11 | Verification & Reconciliation | `reconciliation/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
+| M11 | Verification & Reconciliation | `reconciliation/` | worker/api | Detailed — reviewed with the project lead |
 | M12 | Recovery & Exceptions | `recovery/` | worker | Detailed — reviewed with the project lead |
 | M13 | Notifications | `notifications/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
 | M14 | Compliance | `compliance/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |

@@ -1,6 +1,6 @@
 # M11 · Xác minh & đối soát
 
-**Nguồn chuẩn:** `docs/modules/reconciliation/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-018 (biên nhận EAS)
+**Nguồn chuẩn:** `docs/modules/reconciliation/README.md` · **Trạng thái:** Chi tiết, đã review với trưởng nhóm (11/10/2026) · **ADR:** ADR-018 (biên nhận EAS)
 
 ## 1. Mục đích và ranh giới
 
@@ -43,7 +43,7 @@ GET `/reconciliations` (FIN, OWN, ADM; lọc trạng thái, thời gian) · GET 
 
 ## 7. Luồng
 
-Bước Confirmed (M06) → `verify(op)` → PASSED: M10 đi tiếp · DISCREPANCY: dừng plan, review (M12), tín hiệu circuit breaker · UNKNOWN (đọc lỗi): thử 3 lần rồi review. PAY Verified → request Paid → dựng đối soát (Pending). Tới finalized → tự khớp nếu bật và đủ bằng chứng → Matched → đưa biên nhận EAS vào hàng.
+Bước Confirmed (M06) → `verify(op)` → PASSED: M10 đi tiếp · DISCREPANCY: dừng plan, review (M12), tín hiệu circuit breaker · UNKNOWN (đọc lỗi): thử 3 lần rồi review. PAY Verified → request Paid → dựng đối soát (Pending). Tới finalized → đưa biên nhận EAS vào hàng (M11-D8) → tự khớp nếu bật và đủ bằng chứng → Matched.
 
 ## 8. Thuật toán
 
@@ -57,7 +57,7 @@ Bước Confirmed (M06) → `verify(op)` → PASSED: M10 đi tiếp · DISCREPAN
 
 ## 9. Cấu hình
 
-Tự khớp tắt (cài đặt tổ chức) · Matched cần finalized *(mặc định)* · thử đọc khi xác minh 3 lần rồi UNKNOWN · biên nhận EAS sau Matched, hoặc sau Paid + finalized nếu tắt tự khớp *(mặc định)* · định dạng CSV và CSV bút toán.
+Tự khớp tắt (cài đặt tổ chức) · Matched cần finalized · thử đọc khi xác minh 3 lần rồi UNKNOWN · biên nhận EAS phát ngay khi Paid và block PAY đã finalized (không chờ khớp) · định dạng CSV và CSV bút toán.
 
 ## 10. Bảo mật
 
@@ -79,13 +79,13 @@ REC-001 xác minh → REC-002 bản ghi đối soát → REC-003 khớp/tự kh�
 
 | ID | Quyết định |
 |---|---|
-| M11-D1 | Hậu điều kiện so block B với B−1, trừ các dòng tiền đồng thời. *(mặc định)* |
-| M11-D2 | Matched cần block PAY đã finalized. *(mặc định)* |
+| M11-D1 | Hậu điều kiện so block B với B−1, trừ các dòng tiền đồng thời. (đã review) |
+| M11-D2 | Matched cần block PAY đã finalized. (đã review) |
 | M11-D3 | Tự khớp là cài đặt tổ chức, mặc định tắt (OQ-09). |
 | M11-D4 | DISCREPANCY dừng plan và báo circuit breaker. |
 | M11-D5 | Phân loại theo BR-096; phí là dòng riêng tính bằng ETH. |
 | M11-D6 | Ánh xạ tài khoản chung + bảng theo tổ chức (OQ-12). |
 | M11-D7 | Hủy xuất khi tổng theo phân loại khác tổng on-chain. |
-| M11-D8 | Biên nhận EAS sau Matched (hoặc Paid + finalized nếu tắt tự khớp). *(mặc định)* |
-| M11-D9 | Giải quyết Discrepancy cần ghi chú của Finance và xác nhận của Owner. *(mặc định)* |
+| M11-D8 | Biên nhận EAS phát ngay khi Paid và block PAY đã finalized, không chờ Finance khớp. (đã review, đã đổi) |
+| M11-D9 | Giải quyết Discrepancy cần ghi chú của Finance và xác nhận của Owner. (đã review) |
 | M11-D10 | Xác minh UNKNOWN sau 3 lần đọc lỗi. |

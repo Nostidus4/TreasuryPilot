@@ -45,7 +45,7 @@ Mẫu 14 mục: (1) mục đích và ranh giới · (2) feature, yêu cầu, lu�
 | M08 | Policy engine & attestation (`policy-engine`) | Tab 23 | đã grilling với team |
 | M09 | AI agent (`agent`) | Tab 24 | đã review với trưởng nhóm |
 | M10 | Điều phối & thực thi (`execution`) | Tab 25 | đã review với trưởng nhóm |
-| M11 | Xác minh & đối soát (`reconciliation`) | Tab 26 | mặc định, chờ review |
+| M11 | Xác minh & đối soát (`reconciliation`) | Tab 26 | đã review với trưởng nhóm |
 | M12 | Phục hồi & ngoại lệ (`recovery`) | Tab 27 | đã review với trưởng nhóm |
 | M13 | Thông báo (`notifications`) | Tab 28 | mặc định, chờ review |
 | M14 | Tuân thủ (`compliance`) | Tab 29 | mặc định, chờ review |

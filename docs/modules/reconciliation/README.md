@@ -1,6 +1,6 @@
 # M11 · Verification & Reconciliation (`worker` + `api`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/reconciliation/` · **Code:** `services/worker/.../verify`, `services/api/.../reconciliation` · **Epic:** `[EPIC] M11 · Verification & Reconciliation`
+**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/reconciliation/` · **Code:** `services/worker/.../verify`, `services/api/.../reconciliation` · **Epic:** `[EPIC] M11 · Verification & Reconciliation`
 **ADRs:** ADR-018 (EAS receipts) · **Decisions:** M11-D1 … M11-D10 (§14)
 
 ---
@@ -75,7 +75,7 @@ step Confirmed (M06) → verify(op) → PASSED → M10 continues
                                    → DISCREPANCY → stop plan, review item (M12), circuit-breaker signal
                                    → UNKNOWN (read failed) → retry 3× then review item
 PAY Verified → request Paid → build_reconciliation (Pending)
-finalized reached → auto-match if enabled and evidence complete → Matched → EAS receipt queued
+finalized reached → EAS receipt queued (M11-D8) → auto-match if enabled and evidence complete → Matched
 ```
 
 ## 8. Algorithms
@@ -107,9 +107,9 @@ Period by UTC day of execution. CSV columns: date, request id, vendor, invoice n
 | Parameter | Default |
 |---|---|
 | Auto-match | off (org setting) |
-| Matched requires | finalized block *(mặc định)* |
+| Matched requires | finalized block |
 | Verification retries on read failure | 3, then UNKNOWN → review |
-| EAS receipt | after Matched, or after Paid + finalized if auto-match is off *(mặc định)* |
+| EAS receipt | as soon as the request is Paid and the PAY block is finalized (independent of matching) |
 | Export formats | CSV, journal CSV |
 
 ## 10. Security
@@ -143,13 +143,13 @@ REC-001 verification → REC-002 reconciliation records → REC-003 match/auto-m
 
 | ID | Decision |
 |---|---|
-| M11-D1 | Post-conditions compare block B vs B−1 with concurrent movements subtracted. *(mặc định)* |
-| M11-D2 | Matched requires the PAY block to be finalized. *(mặc định)* |
+| M11-D1 | Post-conditions compare block B vs B−1 with concurrent movements subtracted. (reviewed) |
+| M11-D2 | Matched requires the PAY block to be finalized. (reviewed) |
 | M11-D3 | Auto-match is an org setting, default off (OQ-09). |
 | M11-D4 | DISCREPANCY stops the plan and signals the circuit breaker. |
 | M11-D5 | Classes per BR-096; fees separate lines in ETH. |
 | M11-D6 | Generic account mapping + per-org table (OQ-12). |
 | M11-D7 | Export aborts when class totals differ from on-chain totals. |
-| M11-D8 | EAS receipt after Matched (or Paid + finalized when auto-match is off). *(mặc định)* |
-| M11-D9 | Resolving a Discrepancy needs a Finance note and Owner acknowledgment. *(mặc định)* |
+| M11-D8 | EAS receipt published as soon as the request is Paid and the PAY block is finalized; it does not wait for Finance matching. (reviewed, changed) |
+| M11-D9 | Resolving a Discrepancy needs a Finance note and Owner acknowledgment. (reviewed) |
 | M11-D10 | Verification UNKNOWN after 3 read failures. |
