@@ -35,8 +35,8 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 
 | ID | Kết quả |
 |---|---|
-| OQ-02 | **Còn mở, anh Phúc phụ trách.** Chọn chain cho M1. Khuyến nghị: Base Sepolia; dự phòng: Ethereum Sepolia. Cần kiểm chứng: Safe đã triển khai chưa, faucet USDC testnet của Circle, EAS, nhà cung cấp RPC, explorer. **Đang chặn:** manifest triển khai, F-010, F-013, F-074, F-151. Ticket: DOM-001. |
-| OQ-03 | **Còn mở, anh Phúc phụ trách.** Chọn stablecoin cho M1. Khuyến nghị: USDC testnet của Circle cho demo, cộng `tUSDC` tự triển khai (ghi nhãn TEST) cho test tự động và benchmark. Cần kiểm chứng: giới hạn faucet so với khoảng 40 lần chạy. **Đang chặn:** F-013, script seed, runbook demo. Ticket: DOM-002. |
+| OQ-02 | **Đã chốt (anh Phúc, 11/10/2026):** Ethereum Sepolia (ADR-012). |
+| OQ-03 | **Đã chốt (anh Phúc, 11/10/2026):** `tUSDC` cho demo chính và test tự động; một lượt bằng chứng bằng USDC thật của Circle trên Sepolia với hạn mức chia 100 (faucet Circle: 10 USDC/ngày công khai, 10 × 20 USDC/ngày cho tài khoản developer). |
 | OQ-11 | **Đã chốt:** Anthropic Claude qua SDK, có adapter (quyết định Q27). |
 | OQ-14 | **Đã chốt:** tự xây magic link + SIWE (quyết định Q33). |
-| OQ-01 | **Còn mở.** Cần email ban tổ chức về việc chấp nhận testnet. Ticket: DOM-003. |
+| OQ-01 | **Anh Phúc xác nhận (11/10/2026):** bằng chứng trên public testnet được chấp nhận. DOM-003 vẫn xin ban tổ chức xác nhận bằng văn bản. |

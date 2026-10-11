@@ -54,7 +54,7 @@
 |---|---|---|
 | 001 | Monorepo: Python cho off-chain, TypeScript cho web, Solidity cho contract. Ranh giới module ép bằng import-linter | Đã duyệt (G2) |
 | 002 | Safe + `TreasuryPilotModule` tự viết, mỗi treasury một module. Safe T quản trị. Không nâng cấp được ở M1 | Đã duyệt |
-| 003 | EIP-712 cho ba loại: `PaymentApproval` (Approver ký), `OneTimeException` (Owner ký), `PlanAttestation` (policy engine ký). Hỗ trợ ERC-1271. Chống replay bằng nonce và cờ đã dùng | Đã duyệt |
+| 003 | EIP-712: on-chain chỉ còn `PaymentApproval` (Approver ký). Ngoại lệ và cho phép trùng chuyển thành giao dịch quản trị của Safe T (M04-D3). `PlanAttestation` do policy engine ký, signer kiểm. Hỗ trợ ERC-1271 | Đã duyệt (sửa ở M04) |
 | 004 | PostgreSQL là nguồn chuẩn. Mọi bước chuyển tiền được ghi vào outbox **trong cùng transaction** trước khi ký | Đã duyệt |
 | 005 | Claude qua SDK; AI chỉ tư vấn. Tool chỉ đọc; mọi đầu ra qua kiểm tra xác định; có fallback rule-based | Đã duyệt |
 | 006 | Signer service: kiểm tra attestation → so khớp payload → kiểm tra chain → mô phỏng → ký → gửi. M1 dùng keystore mã hóa; production dùng KMS | Đã duyệt |
@@ -63,6 +63,10 @@
 | 009 | Đăng nhập bằng magic link + SIWE, phiên lưu phía server, cookie httpOnly, CSRF, RBAC trong DB | Đã duyệt |
 | 010 | REST `/v1` bằng FastAPI; client TypeScript sinh từ OpenAPI; SSE cho realtime; lỗi dạng problem+json | Đã duyệt |
 | 011 | Giám sát: structlog + OpenTelemetry + Sentry + Prometheus | Đã duyệt |
-| 012 | **Chain và stablecoin cho M1: còn mở, anh Phúc phụ trách.** Khuyến nghị: Base Sepolia; USDC testnet của Circle cho demo và `tUSDC` tự triển khai cho test tự động | **Còn mở** |
+| 012 | Chain và stablecoin cho M1: **Ethereum Sepolia**; `tUSDC` cho demo chính + một lượt USDC thật của Circle (hạn mức ÷ 100) | **Đã chốt** (anh Phúc, 11/10/2026) |
 | 013 | Frontend: React + Vite + wagmi | Đã duyệt |
 | 014 | Tiền là số nguyên ở đơn vị nhỏ nhất xuyên suốt; cấm số thực | Đã duyệt |
+| 015 | Bộ lập lịch dùng Google OR-Tools CP-SAT sau interface `Solver`; giải theo tầng; tất định; oracle vét cạn để test; dự phòng EDF | Đã duyệt (M07) |
+| 016 | Attestation theo từng request (EIP-712, khóa policy riêng, hạn 15 phút) + chạy thử `eth_call` trước khi ký | Đã duyệt (M08) |
+| 017 | Gom chữ ký giao dịch Safe ngay trong app; Guardian là Safe 1-trên-N có sentinel key chỉ pause được | Đã duyệt (M03) |
+| 018 | Biên nhận thanh toán EAS trên Sepolia (chỉ hash và địa chỉ), khóa biên nhận riêng | Đã duyệt (vòng chain) |

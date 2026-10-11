@@ -27,8 +27,8 @@
 | Q21 | Mô hình dữ liệu: một tổ chức có nhiều treasury; M1 cấu hình một treasury gồm T + O1 + O2. |
 | Q22 | Billing để `Later`, ở mức tối thiểu. |
 | Q23 | Team khoảng 5 người: **2 dev chính**, 3 thành viên cố vấn về tài chính và blockchain. Dev thạo **Python**. Trợ lý lập bảng chia việc; trưởng nhóm phân người. |
-| Q24 | Chain cho M1: **còn mở, anh Phúc phụ trách** (OQ-02). Giả định làm việc: Base Sepolia. |
-| Q25 | Stablecoin cho M1: **còn mở, anh Phúc phụ trách** (OQ-03). Giả định làm việc: USDC testnet của Circle cho demo, `tUSDC` cho test tự động. |
+| Q24 | Chain cho M1: **Ethereum Sepolia** (anh Phúc chốt 11/10/2026, PH-1). |
+| Q25 | Stablecoin cho M1: **`tUSDC`** cho demo chính + một lượt **Circle USDC** với hạn mức ÷ 100 (anh Phúc chốt 11/10/2026, PH-2). |
 | Q26 | Smart account: **Safe + `TreasuryPilotModule` tự viết**, mỗi treasury một module dùng chung cho T, O1, O2. |
 | Q27 | LLM: **Anthropic Claude**, gọi trực tiếp SDK, orchestrator tự viết mỏng, không dùng framework agent. |
 | Q28 | Khóa executor: keystore mã hóa trong container signer riêng ở M1; production dùng KMS. |
@@ -41,3 +41,12 @@
 | Q35 | Giám sát: structlog + OpenTelemetry + Sentry + Prometheus. |
 | Q36 | Có epic riêng **"Domain & Evidence"** với ticket `non-code` cho 3 thành viên cố vấn. |
 | G2 | Đã duyệt bộ tài liệu kiến trúc Phase 3–8 ngày 11/10/2026. Điểm chỉnh sau duyệt: tách `worker-ai` để tiến trình gọi LLM không giữ khóa ký nào. |
+| G3 | Trưởng nhóm duyệt bộ ticket (11/10/2026) và yêu cầu không giới hạn kế hoạch theo thời gian. Đã tạo trên GitHub: 20 epic, ticket là sub-issue, liên kết blocked-by, nhãn, milestone và Project "TreasuryPilot · Delivery". Ticket M1 ở trạng thái Sẵn sàng phân công; chưa phân người. |
+| M04 | Grilling contract: Safe v1.4.1; factory + clone; ngoại lệ và cho phép trùng qua giao dịch quản trị; giới hạn refill; payee theo treasury, cooling trong mandate; chỉ trả từ ví vận hành; approver ERC-1271; kiểm số dư thay đổi; factory do Safe T gọi; không chuyển token gốc; contract chỉ áp hạn bản duyệt. Luật mới BR-019, BR-036. Chi tiết: tab 19. |
+| M07 | Grilling financial engine: phí trễ cố định / % mỗi kỳ / trần; không tính chi phí vốn; rolling horizon 30 ngày UTC; refill bị giới hạn bởi bound của contract; OR-Tools CP-SAT (ADR-015) + oracle vét cạn để test + EDF làm baseline/dự phòng; giải tất định. Ticket mới ENG-012. Chi tiết: tab 22. |
+| M08 | Grilling policy engine: plan theo từng request; một attestation 15 phút + kiểm lại trước mỗi bước; khóa policy EIP-712; cờ HIGH phải được xác nhận; chạy thử `eth_call` trước khi gửi; trả trễ = ALLOW + cảnh báo. ADR-016, BR-066, BR-067, ticket POL-007. Chi tiết: tab 23. |
+| M05 | Grilling hóa đơn: một Approver; bảng vendor có nhiều địa chỉ payee; cờ gần trùng; hủy on-chain bằng `cancelRequest` (Approver hoặc Safe T); trường ràng buộc và trường tự do. BR-007, BR-076, BR-077; ticket INV-012, SC-022. Chi tiết: tab 20. |
+| PH | Vòng chain với anh Phúc: Ethereum Sepolia; tUSDC + một lượt Circle USDC; public testnet được chấp nhận; Guardian Safe 1-trên-N có sentinel; "Đã trả" sau 3 xác nhận; đọc event bằng getLogs + quét lại 64 block; gas EIP-1559 do hệ thống đề xuất; Alchemy + RPC công khai; T/O1/O2 cùng owner 2-trên-3; deploy CREATE2 + verify Etherscan; biên nhận EAS lên P1/Tier A (ADR-018). |
+| M03 | Grilling mandate: ký giao dịch Safe ngay trong app (ADR-017); sentinel chỉ pause được; gói thay đổi chỉ tăng version khi cần; đọc lại on-chain mới Active; payee phải xác minh ngoài kênh; ngoại lệ 72 giờ; chính sách phí FEE-1…3 (hệ thống đề xuất ngưỡng/ngân sách, Owner chấp nhận; hoãn khi còn kịp hạn; hỏi người ở ngày cuối). BR-008, BR-068, BR-084; ticket MDT-009/010, EXE-012/013, WEB-024/025. Chi tiết: tab 18. |
+| M06 | Grilling đọc chain: đối chiếu RPC thứ hai trước khi báo Đã trả; theo dõi dòng tiền token và cảnh báo tiền ra không qua agent; snapshot Multicall3 ghim block; ngày theo block. BR-069, FR-419, ticket CHR-006. Chi tiết: tab 21. |
+| SPEC | Bổ sung spec chi tiết (theo yêu cầu trưởng nhóm) cho M01, M02, M09–M19 theo mẫu 14 mục; mục *(mặc định)* là đề xuất đã áp dụng, chờ review. Căn chỉnh ticket WEB/RCV/NTF/REC/AGT. Epic trên GitHub có mô tả đầy đủ. Bản tiếng Việt chi tiết của 20 module ở tab 16–35. |

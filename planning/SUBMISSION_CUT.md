@@ -19,10 +19,10 @@ Estimates use the ticket sizes (S = 0.5, M = 1, L = 2 dev-days) at a conventiona
 ## Options for the team (decide at G3)
 
 1. **Re-estimate Tier A with the developers today** (30 minutes, planning poker on the A list). Use their numbers, not these.
-2. **Adopt a documented submission profile (ADR-015)** that keeps the on-chain enforcement and the AI story, and simplifies the off-chain platform. Candidates are listed below.
+2. **Adopt a documented submission profile (ADR-019, not yet written)** that keeps the on-chain enforcement and the AI story, and simplifies the off-chain platform. Candidates are listed below.
 3. **Shrink the demo story**: drop the AI planner from Tier A (keep extraction + deterministic scheduler), saving about 4 dev-days (AGT-007, AGT-008, AGT-009, AGT-010, AGT-014). EXE-004 then uses the deterministic plan only.
 
-### Submission-profile candidates (ADR-015, not yet decided)
+### Submission-profile candidates (ADR-019, not yet decided)
 
 | Simplification | Replaces | Approx. saving | Cost to the score |
 |---|---|---:|---|

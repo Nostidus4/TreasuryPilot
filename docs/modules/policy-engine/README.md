@@ -379,7 +379,7 @@ POL-001 catalogue → POL-005 planHash/stepId → POL-002 approval & request che
 | M08-D3 | PlanAttestation is EIP-712 signed by a dedicated secp256k1 policy key held only by the core worker (ADR-016). |
 | M08-D4 | HIGH flags must be acknowledged in the approval; unacknowledged or post-approval HIGH flags → BLOCK `FLAG_UNACKNOWLEDGED` (BR-066). |
 | M08-D5 | Pre-submit `eth_call` simulation from the executor address is a validation stage; revert → decoded code, BLOCK (BR-067). The signer also simulates before broadcasting. |
-| M08-D6 | Snapshot freshness: read at `latest`, ≤ 30 s old and ≤ 5 blocks behind head. Payment finality is still M10's confirmation depth. |
+| M08-D6 | Snapshot freshness: read at `latest`, ≤ 30 s old and ≤ 2 blocks behind head (Sepolia, PH-1). Payment finality is still M10's confirmation depth. |
 | M08-D7 | Late payment is ALLOW with warning `DEADLINE_MISSED` (and `DISCOUNT_MISSED`); the fee is recorded and Finance notified. |
 | M08-D8 | All checks run after the gates; decision = most restrictive; `primary` by fixed group precedence. |
 | M08-D9 | The signer owns a separate `signer` schema for attestation uses; no other service can write it. |
