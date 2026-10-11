@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 /// @notice Minimal pinned cheatcode surface; no unpinned forge-std dependency.
 interface Vm {
+    function etch(address target, bytes calldata code) external;
     function getCode(string calldata artifact) external view returns (bytes memory);
     function addr(uint256 privateKey) external pure returns (address);
     function sign(uint256 privateKey, bytes32 digest) external pure returns (uint8 v, bytes32 r, bytes32 s);

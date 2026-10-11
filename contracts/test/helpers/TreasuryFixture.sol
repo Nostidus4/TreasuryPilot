@@ -28,7 +28,7 @@ abstract contract TreasuryFixture is SafeTestHelper {
     function setUp() public virtual {
         vm.warp(10 days);
         approver = vm.addr(APPROVER_KEY);
-        token = new TestUSDC();
+        token = _createToken();
         pool = new MockAavePool(address(token));
         treasury = deployOneOfOneSafe(address(this), 1);
         op1 = deployOneOfOneSafe(address(this), 2);
@@ -91,6 +91,10 @@ abstract contract TreasuryFixture is SafeTestHelper {
             ),
             "owner tx failed"
         );
+    }
+
+    function _createToken() internal virtual returns (TestUSDC) {
+        return new TestUSDC();
     }
 
     function _owner(bytes memory data) internal {

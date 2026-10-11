@@ -33,7 +33,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         }
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
         uint256 amount = early ? ap.earlyAmount : ap.amount;
-        bool usedException;
+        bool usedException = false;
         if (amount > _mandate.pay.perRequest) {
             Exception storage ex = exceptions[ap.requestId];
             if (ex.amount == 0) revert E.OverPerRequestLimit();
@@ -255,7 +255,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
 
     /// @inheritdoc ITreasuryPilotModule
     function remainingToday(uint8 action) external view returns (uint256) {
-        uint256 cap;
+        uint256 cap = 0;
         if (action == PAY) cap = _mandate.pay.daily;
         else if (action == REFILL) cap = _mandate.refill.daily;
         else if (action == SUPPLY) cap = _mandate.supply.daily;

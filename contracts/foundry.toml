@@ -16,6 +16,8 @@ compilation_restrictions = [
 ]
 bytecode_hash = "none"
 fuzz = { runs = 1000 }
+invariant = { runs = 1000, depth = 32, fail_on_revert = true }
+fs_permissions = [{ access = "read", path = "test/vectors" }]
 
 remappings = [
   "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
@@ -24,3 +26,4 @@ remappings = [
 
 [profile.ci]
 fuzz = { runs = 10000 }
+invariant = { runs = 10000, depth = 32, fail_on_revert = true }
