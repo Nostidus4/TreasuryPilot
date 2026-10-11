@@ -101,7 +101,9 @@
 | GET | `/orgs/{o}/requests/{rId}/approval-typed-data` | EIP-712 `PaymentApproval` to sign | APR | → `{domain, types, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED` |
 | POST | `/orgs/{o}/requests/{rId}/approve` 🔁 | Submit the approval signature | APR | `{signature}` → `{request: Approved}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, 409 `MAKER_CHECKER`, `REVISION_CHANGED` |
 | POST | `/orgs/{o}/requests/{rId}/reject` | Reject | APR | `{reason}` → `{request: Rejected}` | |
-| POST | `/orgs/{o}/requests/{rId}/cancel` | Cancel | OPR, OWN | `{reason}` → `{request: Cancelled}` | 409 `PAYMENT_IN_FLIGHT` |
+| POST | `/orgs/{o}/requests/{rId}/cancel` | Cancel | OPR, OWN | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
+| GET | `/orgs/{o}/requests/{rId}/cancel-tx` | On-chain `cancelRequest` tx (approver wallet or Safe tx) | APR, OWN | → `{to, data}` / `{safeTx}` | 409 `CANCEL_NOT_NEEDED` |
+| | Vendors, withdraw, request-changes, extraction/confirm, renew | see docs/modules/invoices §6 | | | |
 
 **`PaymentApproval` typed data (response of `approval-typed-data`)**
 ```json
@@ -112,7 +114,7 @@
     "requestId": "0x…32", "invoiceHash": "0x…32", "fingerprint": "0x…32",
     "treasury": "0xModule…", "payingWallet": "0xO1…", "asset": "0xUSDC…",
     "payee": "0xVendorA…", "amount": "100000000", "deadline": 1760659200,
-    "termsHash": "0x…32", "overrideDuplicate": false, "expiry": 1761264000
+    "termsHash": "0x…32", "expiry": 1761264000
   }
 }
 ```

@@ -31,8 +31,9 @@ A draft becomes approvable only when it is clean or its flags are acknowledged.
 
 ## Scope
 
-- POST /submit (Draft → AwaitingApproval) with checks: no duplicate, terms confirmed or none, payee exists
-- POST /flags/{id}/ack by an Approver
+- POST /submit (Draft → AwaitingApproval) with the §5 guards
+- POST /withdraw and /request-changes
+- POST /flags/{id}/ack by an Approver with a note ≥ 10 characters, only for Open flags of the current revision, maker-checker applies
 
 ## Out of scope
 
@@ -49,8 +50,10 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] Submit is refused with unconfirmed extracted terms
+- [ ] Submit is refused with unconfirmed extracted terms or fields
+- [ ] Acknowledging a Superseded flag returns FLAG_SUPERSEDED
 - [ ] High flags must be acknowledged before the typed-data endpoint will serve
+- [ ] The creator cannot acknowledge flags
 
 ## Testing requirements
 

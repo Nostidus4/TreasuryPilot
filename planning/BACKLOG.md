@@ -9,22 +9,22 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
-| M1 | 130 | 46 | 10 | 186 |
+| M1 | 132 | 46 | 10 | 188 |
 | Later | – | – | – | 38 |
-| **All** | | | | **224** |
+| **All** | | | | **226** |
 
 ## Epics
 
 | Epic | Module | Tickets (M1) | Tickets (Later) | Folder |
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 11 | 0 | [`issues/devex/`](issues/devex/) |
-| M04 · Smart Contracts | `contracts` | 21 | 6 | [`issues/contracts/`](issues/contracts/) |
+| M04 · Smart Contracts | `contracts` | 22 | 6 | [`issues/contracts/`](issues/contracts/) |
 | M07 · Financial Engine (py-core) | `financial-engine` | 12 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 8 | 1 | [`issues/mandate/`](issues/mandate/) |
-| M05 · Invoices & Payment Requests | `invoices` | 11 | 4 | [`issues/invoices/`](issues/invoices/) |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 5 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 11 | 4 | [`issues/execution/`](issues/execution/) |
@@ -66,7 +66,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | SC-011 | contracts | M04 | [Implement one-time exceptions via owner governance](issues/contracts/011-implement-one-time-exceptions-via-owner-governance.md) | F-025 | M1 | P1 | M | B | SC-007 | Ready for Assignment |
 | SC-012 | contracts | M04 | [Add the duplicate-invoice fingerprint registry and owner override](issues/contracts/012-add-the-duplicate-invoice-fingerprint-registry-and-owner-ove.md) | F-037 | M1 | P0 | S | A | SC-006 | Ready for Assignment |
 | SC-013 | contracts | M04 | [Write the contract acceptance test suite (AT cases)](issues/contracts/013-write-the-contract-acceptance-test-suite-at-cases.md) | F-163 | M1 | P0 | M | A | SC-009, SC-010, SC-012 | Ready for Assignment |
-| SC-014 | contracts | M04 | [Write the invariant and fuzz suite](issues/contracts/014-write-the-invariant-and-fuzz-suite.md) | F-163 | M1 | P0 | M | A | SC-013 | Ready for Assignment |
+| SC-014 | contracts | M04 | [Write the invariant and fuzz suite](issues/contracts/014-write-the-invariant-and-fuzz-suite.md) | F-163 | M1 | P0 | M | A | SC-013, SC-022 | Ready for Assignment |
 | SC-015 | contracts | M04 | [Run static analysis and write the findings report](issues/contracts/015-run-static-analysis-and-write-the-findings-report.md) | F-163 | M1 | P0 | S | A | SC-013 | Ready for Assignment |
 | SC-016 | contracts | M04 | [Write deployment scripts and the deployments manifest](issues/contracts/016-write-deployment-scripts-and-the-deployments-manifest.md) | F-151 | M1 | P0 | M | A | SC-010, SC-021 | Ready for Assignment |
 | SC-017 | contracts | M04 | [Publish EIP-712 golden vectors](issues/contracts/017-publish-eip-712-golden-vectors.md) | F-038, F-056 | M1 | P0 | S | A | SC-005 | Ready for Assignment |
@@ -139,7 +139,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-008 | invoices | M05 | [Implement payment-terms confirmation](issues/invoices/008-implement-payment-terms-confirmation.md) | F-035 | M1 | P0 | S | A | INV-003, ENG-005 | Ready for Assignment |
 | INV-009 | invoices | M05 | [Implement submit-for-approval and flag acknowledgment](issues/invoices/009-implement-submit-for-approval-and-flag-acknowledgment.md) | F-036, F-038 | M1 | P0 | S | A | INV-007, INV-008 | Ready for Assignment |
 | INV-010 | invoices | M05 | [Implement approval typed data and signature verification](issues/invoices/010-implement-approval-typed-data-and-signature-verification.md) | F-038 | M1 | P0 | M | A | INV-009, ENG-010, IDN-008 | Ready for Assignment |
-| INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010 | Ready for Assignment |
+| INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022 | Ready for Assignment |
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
 | INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | M | After submission | INV-003 | Accepted |
 | INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
@@ -266,3 +266,5 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | SC-021 | contracts | M04 | [Implement the module factory with EIP-1167 clones](issues/contracts/021-implement-the-module-factory-with-eip-1167-clones.md) | F-012, F-021 | M1 | P0 | M | A | SC-002 | Ready for Assignment |
 | ENG-012 | financial-engine | M07 | [Implement the exhaustive oracle scheduler for tests](issues/financial-engine/012-implement-the-exhaustive-oracle-scheduler-for-tests.md) | F-052, F-092 | M1 | P0 | S | A | ENG-006 | Ready for Assignment |
 | POL-007 | policy-engine | M08 | [Simulate each step with eth_call before signing](issues/policy-engine/007-simulate-each-step-with-eth-call-before-signing.md) | F-055, F-061 | M1 | P0 | S | A | POL-003, POL-001, CHR-002, SC-016 | Ready for Assignment |
+| INV-012 | invoices | M05 | [Detect near-duplicate requests](issues/invoices/012-detect-near-duplicate-requests.md) | F-036, F-037 | M1 | P0 | S | A | INV-006 | Ready for Assignment |
+| SC-022 | contracts | M04 | [Add on-chain request cancellation](issues/contracts/022-add-on-chain-request-cancellation.md) | F-039 | M1 | P0 | S | A | SC-006, SC-009 | Ready for Assignment |

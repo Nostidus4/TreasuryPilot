@@ -29,10 +29,10 @@ Requests move only along legal transitions, and every move is recorded.
 
 ## Scope
 
-- Transition table as data
-- transition(request, to, actor) service with role checks
-- request_status_events writes
-- refuse Cancelled while a PAY is pending or unknown
+- Transition table as data per docs/modules/invoices §5 (incl. withdraw, request-changes, renew, Expired, SYSTEM-only transitions)
+- transition(request, to, actor) with role and guard checks
+- request_status_events and audit writes
+- refuse Cancelled while a PAY operation is NotSubmitted/Submitted/Pending/Unknown
 
 ## Out of scope
 
@@ -48,8 +48,10 @@ No generic Failed state.
 
 ## Acceptance criteria
 
-- [ ] Every legal transition in FEATURES F-039 is allowed and every other is rejected
+- [ ] Every legal transition in §5 is allowed and every other pair is rejected
+- [ ] SYSTEM transitions are refused for user actors
 - [ ] Each transition writes a status event and an audit record
+- [ ] Paid, Rejected and Cancelled are terminal
 
 ## Testing requirements
 

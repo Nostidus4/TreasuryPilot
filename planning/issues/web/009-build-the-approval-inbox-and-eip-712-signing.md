@@ -32,11 +32,12 @@ Approvers review, acknowledge flags and sign.
 ## Scope
 
 - Inbox list
-- detail with document, fields, history diff, flags with evidence, confirmed terms
-- acknowledge high flags
-- display the typed data and sign with the wallet
-- reject with reason
+- detail with document, fields, history diff vs vendor, flags with evidence (incl. POSSIBLE_DUPLICATE side-by-side), confirmed terms
+- acknowledge high flags with a note
+- display the server typed data and sign with the wallet
+- reject or request changes with reason
 - maker-checker message
+- Cancel on-chain button sending cancelRequest from the approver wallet
 
 ## Out of scope
 

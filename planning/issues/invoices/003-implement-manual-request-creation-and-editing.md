@@ -30,8 +30,11 @@ Operators can enter and edit invoices with strict validation.
 ## Scope
 
 - POST /requests and PATCH with If-Match
-- validation: payee exists, asset equals the treasury stablecoin, amount precision
-- revisions on edit
+- validation: vendor exists, payee belongs to the vendor and is not Deactivated, asset equals the treasury stablecoin, amount positive with ≤ asset decimals, dates valid
+- bound vs free fields (M05-D6): bound edit → new revision, approvals Invalidated, flags recomputed, status Draft
+- free-field edits without revision
+- onchain_request_id = keccak('TP_REQ_V1', orgId, uuid)
+- invoice_hash per §3
 - creator and last editor recorded
 - Idempotency-Key
 
@@ -51,7 +54,9 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] Wrong asset returns ASSET_NOT_PAYMENT_STABLECOIN
-- [ ] Editing creates a new revision
+- [ ] A payee of another vendor returns PAYEE_NOT_OF_VENDOR
+- [ ] Editing the amount of an Approved request invalidates the approval and returns it to Draft
+- [ ] Editing the note does not
 - [ ] A stale If-Match returns 412
 
 ## Testing requirements

@@ -37,6 +37,7 @@ Deterministic checks that a step is authorized before it is attested.
 - mandate lifecycle, executor
 - payee active and cooling over
 - plan shape checks (PLAN_MALFORMED)
+- REQUEST_CANCELLED when the request is Cancelled off-chain or requestCancelled on-chain
 
 ## Out of scope
 

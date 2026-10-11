@@ -100,6 +100,7 @@ mapping(bytes32 => uint256) public usedOn;
 
 // ── replay protection ──
 mapping(bytes32 => bool) public requestPaid;        // requestId
+mapping(bytes32 => bool) public requestCancelled;   // requestId (M05-D4, BR-077)
 mapping(bytes32 => bool) public stepUsed;           // stepId
 mapping(bytes32 => bool) public fingerprintPaid;    // fingerprint
 mapping(bytes32 => mapping(address => bool)) public refilledFor; // requestId => toWallet (BR-036: one refill per request per wallet)
@@ -164,6 +165,7 @@ The implementation's `initialize` is disabled in its constructor; clones are ini
 | Function | Caller | Effect |
 |---|---|---|
 | `pause()` | safeT or `mandate.guardian` | Active → Paused; idempotent if already Paused. Reverts `NotGuardianOrOwner`, `Revoked`. |
+| `cancelRequest(bytes32 requestId)` *(added by M05)* | safeT **or any current approver** (`isApprover[msg.sender]`) | Sets `requestCancelled[requestId] = true`, emits `RequestCancelled(requestId, by)`. Idempotent. Works in any status, including Paused. Reverts `NotOwnerOrApprover`, `AlreadyPaid` if `requestPaid`. Cancellation is permanent. |
 
 ### 6.4 Module — executor (only `msg.sender == mandate.executor`, status Active, within validity window)
 
@@ -193,7 +195,7 @@ function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 st
 |---|---|---|---|
 | 1 | caller is executor, status Active, `validFrom ≤ now ≤ expiresAt` | `NotExecutor` / `NotActive` / `MandateExpired` | BR-062 |
 | 2 | approval valid: domain, `treasury == this`, `asset == asset`, `now ≤ ap.expiry`, signer is a **current** approver (ECDSA or ERC-1271) | `ApprovalInvalid` / `ApprovalExpired` / `NotApprover` | BR-001/003/004 |
-| 3 | `!requestPaid[ap.requestId]` | `RequestAlreadyPaid` | BR-061 |
+| 3 | `!requestPaid[ap.requestId]`; `!requestCancelled[ap.requestId]` | `RequestAlreadyPaid` / `RequestCancelled` | BR-061, BR-077 |
 | 4 | `!stepUsed[stepId]` | `StepAlreadyExecuted` | BR-061 |
 | 5 | `toWallet == ap.payingWallet` and `isOperational[toWallet]` | `WrongRefillTarget` | BR-012 |
 | 6 | `!refilledFor[requestId][toWallet]` | `AlreadyRefilledForRequest` | BR-036 |
@@ -213,7 +215,7 @@ function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 st
 | 2 | approval valid (as in refill) | as above | BR-001/003/004 |
 | 3 | `isOperational[ap.payingWallet]` | `NotOperationalWallet` | BR-019 (M04-D6) |
 | 4 | payee: `payees[p].active && now ≥ activeFrom` | `PayeeUnknown` / `PayeeCooling` | BR-013/017 |
-| 5 | `!requestPaid`, `!stepUsed` | `RequestAlreadyPaid` / `StepAlreadyExecuted` | BR-061 |
+| 5 | `!requestPaid`, `!requestCancelled`, `!stepUsed` | `RequestAlreadyPaid` / `RequestCancelled` / `StepAlreadyExecuted` | BR-061, BR-077 |
 | 6 | fingerprint: `!fingerprintPaid[fp]` **or** `duplicateAllowedFor[fp] == requestId` (then consume it) | `DuplicateFingerprint` | BR-071 |
 | 7 | per-request: `amount ≤ pay.perRequest`, **or** a valid exception: `ex.amount == amount && ex.payee == payee && !ex.used && now ≤ ex.expiry && ex.mandateVersion == mandate.version` (then mark used) | `OverPerRequestLimit` / `ExceptionInvalid` | BR-040/041/042 |
 | 8 | daily: `usedOn[PAY,day] + amount ≤ pay.daily` (exceptions included) | `OverDailyLimit` | BR-022/042 |
@@ -227,11 +229,11 @@ All state-changing functions use a reentrancy guard and checks-effects-interacti
 
 ### 6.5 Views
 
-`mandate()`, `status()`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
+`mandate()`, `status()`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `requestCancelled(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
 
 ### 6.6 Events
 
-`MandateConfigured(version, expiresAt)` · `ApproversChanged(added[], removed[])` · `BufferSet(wallet, buffer, target)` · `PayeeAdded(payee, activeFrom)` · `PayeeDeactivated(payee)` · `ExceptionGranted(requestId, amount, payee, expiry, version)` · `ExceptionRevoked(requestId)` · `DuplicateAllowed(fingerprint, requestId)` · `Paused(by)` · `Resumed()` · `Revoked()` · `RefillExecuted(...)` · `PaymentExecuted(...)`. Every event used by the backend indexer (CHR-005) carries ids, not free text.
+`MandateConfigured(version, expiresAt)` · `ApproversChanged(added[], removed[])` · `BufferSet(wallet, buffer, target)` · `PayeeAdded(payee, activeFrom)` · `PayeeDeactivated(payee)` · `ExceptionGranted(requestId, amount, payee, expiry, version)` · `ExceptionRevoked(requestId)` · `DuplicateAllowed(fingerprint, requestId)` · `Paused(by)` · `RequestCancelled(requestId, by)` · `Resumed()` · `Revoked()` · `RefillExecuted(...)` · `PaymentExecuted(...)`. Every event used by the backend indexer (CHR-005) carries ids, not free text.
 
 ### 6.7 EIP-712
 
@@ -346,7 +348,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 | Signature malleability | OpenZeppelin `ECDSA`/`SignatureChecker` (low-s enforced) | unit test |
 | Owner mistakes (cooling 0, perRequest > daily) | `configureMandate` validation | unit tests |
 
-**Invariants (SC-014, 10k runs):** I1 no PAY without a current approver signature over exact fields · I2 PAY only to active, non-cooling payee · I3 Σ PAY per day ≤ pay.daily · I4 no agent action leaves a wallet below its buffer · I5 each requestId/stepId/fingerprint executes at most once (except one explicit duplicate allowance) · I6 exception lifts only per-request and is used once · I7 Paused/Revoked ⇒ executor calls revert · I8 version changes never reset counters · I9 only safeT changes governance; guardian only pauses · **I10 refill never makes `balance(toWallet) > approval.amount + target`** (new).
+**Invariants (SC-014, 10k runs):** I1 no PAY without a current approver signature over exact fields · I2 PAY only to active, non-cooling payee · I3 Σ PAY per day ≤ pay.daily · I4 no agent action leaves a wallet below its buffer · I5 each requestId/stepId/fingerprint executes at most once (except one explicit duplicate allowance) · I6 exception lifts only per-request and is used once · I7 Paused/Revoked ⇒ executor calls revert · I8 version changes never reset counters · I9 only safeT changes governance; guardian only pauses · **I10 refill never makes `balance(toWallet) > approval.amount + target`** (new) · **I11 a cancelled requestId never refills or pays** (added by M05).
 
 ## 11. Failure scenarios and recovery
 
@@ -390,6 +392,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 | 14 | SC-017 Golden vectors | |
 | 15 | SC-013 → SC-014 → SC-020 → SC-015 | test suites |
 | 16 | SC-016 Deployment scripts + manifest | factory + implementation |
+| 17 | **SC-022 `cancelRequest`** | **new** (M05-D4) |
 | P2 | SC-018 TestRouter + swapForGas, SC-019 EAS schema | optional |
 
 ## 14. Decisions (grilling M04) and open questions
@@ -407,6 +410,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 | M04-D9 | Factory `create` is called **by Safe T itself**; module creation and initialization happen in one transaction. |
 | M04-D10 | **No native-token transfers** in M1; executor gas is topped up manually with low-gas alerts. |
 | M04-D11 | The contract enforces the approval's **`expiry`** only; the invoice `deadline` is informational (late payment stays possible). |
+| M05-D4 *(addendum)* | `cancelRequest(requestId)` callable by Safe T or any current approver permanently blocks refill and pay for that request (BR-077). A compromised approver key can only cancel (denial of service), never pay. |
 
 | Open | Question | Owner |
 |---|---|---|

@@ -40,9 +40,16 @@ Tables for requests, revisions, documents, extractions, flags, approvals and sta
 
 ## Scope
 
-- Alembic migration and models
-- partial unique index (treasury_id, fingerprint)
+- Alembic migration and models per docs/modules/invoices §4 (payment_requests with issue_date, invoice_hash, onchain_request_id, source, cancel_onchain
+- request_revisions
+- documents
+- flags with revision and status
+- approvals with acknowledged_flag_ids and solo_mode
+- csv_imports
+- request_status_events)
+- partial unique index (treasury_id, fingerprint) excluding Rejected/Cancelled/Expired
 - optimistic-lock version column
+- append-only triggers on approvals (except status) and status events
 
 ## Out of scope
 
@@ -59,7 +66,8 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] Migration applies and downgrades
-- [ ] The duplicate-fingerprint index rejects a second active request
+- [ ] The duplicate-fingerprint index rejects a second active request but allows one after the first is Cancelled
+- [ ] UPDATE of approval fields other than status is refused by the DB
 
 ## Testing requirements
 

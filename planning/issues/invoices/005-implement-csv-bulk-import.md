@@ -29,11 +29,15 @@ Import many invoices at once with per-row feedback.
 
 ## Scope
 
-- CSV template and header validation
-- row-by-row validation
-- drafts for valid rows
-- downloadable error report
-- neutralize cells starting with = + - @
+- CSV template per docs/modules/invoices §7.2
+- UTF-8 (BOM allowed) and exact header validation
+- row-by-row validation (vendor by normalized_ref, payee must belong to vendor, amount precision, ISO dates)
+- fingerprint check against DB and earlier rows
+- flags per row
+- dryRun mode
+- csv_imports record
+- downloadable error report with formula neutralization
+- max 1,000 rows
 
 ## Out of scope
 
@@ -50,8 +54,10 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] 500 valid rows import in under 10 seconds
-- [ ] Invalid rows are reported with row number and reason
-- [ ] Formula-like cells are neutralized
+- [ ] Invalid rows are reported with row number, field and code
+- [ ] Two rows with the same fingerprint: the second is rejected
+- [ ] Cells starting with = + - @ are neutralized in the error report
+- [ ] dryRun writes nothing
 
 ## Testing requirements
 

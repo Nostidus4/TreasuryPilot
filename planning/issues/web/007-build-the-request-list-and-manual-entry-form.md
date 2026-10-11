@@ -30,9 +30,11 @@ Operators create and find invoices.
 ## Scope
 
 - Filterable list by status and due date
-- create and edit form with field errors
+- vendor picker with payees of that vendor
+- create and edit form with field errors (bound vs free fields, warning that a bound edit invalidates the approval)
 - revision history
 - duplicate warning with link
+- cancel with reason and Cancel on-chain banner
 
 ## Out of scope
 

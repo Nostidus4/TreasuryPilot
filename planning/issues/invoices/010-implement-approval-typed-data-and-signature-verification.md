@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-003–BR-005, FR-316–317 |
+| **Traces to** | BR-003–BR-007, FR-316–318, M05-D1 |
 | **Blocks** | MDT-006, INV-011, EXE-003, WEB-009 |
 | **Submission cut** | A |
 
@@ -29,9 +29,8 @@ Approvers sign exactly the fields the contract will check.
 
 ## Scope
 
-- GET approval-typed-data
-- POST approve verifying the signature, the approver's linked wallet, membership in the on-chain approver set and maker-checker
-- store approval
+- GET approval-typed-data built server-side from the current revision (11 fields, expiry = min(deadline + 14 d, now + approvalMaxAge))
+- POST approve with {signature, revision} running docs/modules/invoices §8.6 steps 1–8 (revision, linked wallet, maker-checker/solo mode, HIGH flags acked, rebuild, ECDSA or ERC-1271, on-chain approver set, store with acknowledged_flag_ids)
 - transition to Approved
 - Idempotency-Key
 
@@ -51,9 +50,11 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] A signature over different fields is rejected
-- [ ] Creator approving returns MAKER_CHECKER
+- [ ] A signature over a client-modified message is rejected
+- [ ] A stale revision returns REVISION_CHANGED
+- [ ] Creator approving returns MAKER_CHECKER unless solo mode, which is recorded
 - [ ] A signer not in the on-chain approver set returns NOT_IN_APPROVER_SET
+- [ ] An ERC-1271 mock wallet can approve
 
 ## Testing requirements
 

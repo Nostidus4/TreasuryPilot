@@ -89,7 +89,7 @@ erDiagram
 |---|---|---|
 | `mandate_versions` | id, treasury_id, version, status enum(Draft,PendingActivation,Active,Paused,Expired,Revoked,Superseded), config jsonb (full mandate), config_hash, activation_tx_hash, valid_from, expires_at, created_by | **Immutable rows**; status transitions recorded in `mandate_status_events`. unique(treasury_id,version) |
 | `mandate_status_events` | id, mandate_version_id, from, to, tx_hash, at, by | append-only |
-| `vendors` | id, org_id, name, reference, contact (encrypted), notes | PII is Confidential (F-113) |
+| `vendors` | id, org_id, name, normalized_ref, tax_id null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
 | `payees` | id, treasury_id, vendor_id, label, address, status enum(Screening,Cooling,Active,Deactivated), active_from, registration_tx_hash, deactivated_at | unique(treasury_id,address) where status≠Deactivated |
 | `screenings` | id, payee_id or address, provider, result enum(CLEAR,HIT,ERROR), source_ref, checked_at, ttl_until | idx(address, checked_at desc) |
 | `exceptions` | id, request_id, mandate_version, amount, expiry, nonce, owner_signature, status enum(Requested,Granted,Consumed,Expired,Invalidated,Rejected), draft_ai_call_id | unique(request_id) where status in (Granted) |
@@ -98,12 +98,13 @@ erDiagram
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `payment_requests` | id, org_id, treasury_id, vendor_id, payee_id, invoice_ref, amount, asset_id, paying_wallet_id, due_at, terms jsonb (confirmed), terms_hash, fingerprint, status enum (F-039), current_revision, created_by, last_edited_by, version | unique(treasury_id, fingerprint) where status not in (Cancelled,Rejected); idx(org_id,status,due_at) |
+| `payment_requests` | id, org_id, treasury_id, vendor_id, payee_id, invoice_no, issue_date, due_at, amount, asset_id, paying_wallet_id, terms jsonb (confirmed), terms_hash, terms_confirmed_by/at, fingerprint, invoice_hash, onchain_request_id, source enum(MANUAL,UPLOAD,CSV), extraction_confirmed_by/at, status enum (F-039), current_revision, created_by, last_edited_by, note, tags[], cost_center, cancel_onchain enum(NotNeeded,Pending,Confirmed), cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired); details in docs/modules/invoices §4 |
 | `request_revisions` | id, request_id, revision, snapshot jsonb, edited_by, at | Edits invalidate approvals (BR-003) |
 | `documents` | id, request_id, storage_key, sha256, mime, size, pages, uploaded_by | file in S3 (private) |
 | `extractions` | id, document_id, ai_call_id, fields jsonb (with provenance), terms jsonb, confirmed_by, confirmed_at | |
-| `flags` | id, request_id, code, severity, evidence jsonb, source enum(DETERMINISTIC,AI), acknowledged_by/at | |
-| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, expires_at, status enum(Valid,Invalidated,Expired) | immutable except status |
+| `flags` | id, request_id, revision, code, severity enum(LOW,HIGH), evidence jsonb, source enum(DETERMINISTIC,AI), status enum(Open,Acknowledged,Superseded), acknowledged_by/at, ack_note | recomputed per revision |
+| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, acknowledged_flag_ids uuid[], solo_mode, expires_at, status enum(Valid,Invalidated,Expired,Cancelled) | immutable except status |
+| `csv_imports` | id, org_id, treasury_id, file_sha256, rows_total, rows_created, errors jsonb, created_by, at | F-032 |
 | `request_status_events` | id, request_id, from, to, by, reason, at | append-only |
 
 ### 2.5 Planning & AI (M07–M09)

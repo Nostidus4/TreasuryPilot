@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-211, BR-085 |
+| **Traces to** | FR-211, BR-085, M05-D2 |
 | **Blocks** | MDT-005, INV-003 |
 | **Submission cut** | A |
 
@@ -29,8 +29,8 @@ Operators can propose payees; nothing becomes payable without screening and the 
 
 ## Scope
 
-- Vendor CRUD (minimal)
-- POST /payees creating a payee in Screening and running the screening adapter
+- Vendor CRUD with normalized_ref (unique per org) and optional tax_id
+- POST /payees under a vendor creating a payee in Screening and running the screening adapter
 - result stored
 - hit → blocked
 
@@ -52,6 +52,7 @@ Follow the module spec and the relevant ADRs.
 - [ ] A screening hit returns SCREENING_HIT and the payee cannot proceed
 - [ ] Provider error blocks registration
 - [ ] Duplicate address is rejected
+- [ ] A second vendor with the same normalized_ref returns VENDOR_REF_EXISTS
 
 ## Testing requirements
 

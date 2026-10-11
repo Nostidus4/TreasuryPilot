@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-312, BR-072 |
+| **Traces to** | FR-312, BR-072, BR-066, OQ-10 |
 | **Blocks** | INV-009 |
 | **Submission cut** | A |
 
@@ -29,9 +29,9 @@ Flag fraud signals without relying on the LLM.
 
 ## Scope
 
-- Flags: address differs from registry or vendor history (checksum compare), amount outlier (median ± 3·MAD, needs ≥ 5 history points), currency or chain mismatch, due-date anomaly, duplicate
-- severity, evidence and reason code per flag
-- 'no baseline' state for new vendors
+- Flag rules per docs/modules/invoices §8.4–8.5: ADDRESS_CHANGED, ADDRESS_NOT_REGISTERED, FIRST_PAYMENT_TO_PAYEE, NO_BASELINE, AMOUNT_OUTLIER (median ± 3·max(1.4826·MAD, 2 % median), n ≥ 5, integer median), CURRENCY_MISMATCH, CHAIN_MISMATCH, DUE_DATE_PAST, DUE_DATE_FAR, DUE_BEFORE_ISSUE, AI_UNAVAILABLE
+- flags stored per revision, old ones Superseded
+- severity, evidence and code per flag
 
 ## Out of scope
 
@@ -47,13 +47,16 @@ Flags never change fields or state.
 
 ## Acceptance criteria
 
-- [ ] A changed address raises a high-severity flag
+- [ ] A changed address raises ADDRESS_CHANGED HIGH
 - [ ] A new vendor shows NO_BASELINE rather than clean
-- [ ] Outlier detection matches a hand-computed example
+- [ ] The §8.4 example flags 1,100 and not 1,050
+- [ ] Identical recurring amounts with one cent difference do not flag
+- [ ] Flags never change fields or state
 
 ## Testing requirements
 
-- Unit
+- Unit: one test per rule
+- property: flags are a pure function of the revision and history
 
 ## Definition of Done
 

@@ -96,6 +96,7 @@ flowchart LR
   SC -->|1| DOM
   SC -->|1| ENG
   SC -->|2| EXE
+  SC -->|1| INV
   SC -->|2| POL
   SC -->|1| REC
   SC -->|2| TRS
@@ -273,16 +274,18 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | NTF-003 | Add Telegram linking and delivery | P2 | M | NTF-001 |
 | TRS-008 | Build a Safe deployment transaction from the UI | P2 | S | TRS-004 |
 
-### Wave 10 (11 tickets)
+### Wave 10 (13 tickets)
 
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | AGT-004 | Implement invoice extraction | P0 | M | AGT-003, AGT-002, INV-004 |
 | AGT-007 | Implement the read-only tool layer | P0 | M | CHR-002, ENG-008, POL-003 |
 | INV-007 | Implement deterministic anomaly checks | P0 | M | INV-006 |
+| INV-012 | Detect near-duplicate requests | P0 | S | INV-006 |
 | MDT-003 | Implement mandate activation and read-back | P0 | M | MDT-002, TRS-006, CHR-003 |
 | POL-007 | Simulate each step with eth_call before signing | P0 | S | POL-003, POL-001, CHR-002, SC-016 |
 | SC-013 | Write the contract acceptance test suite (AT cases) | P0 | M | SC-009, SC-010, SC-012 |
+| SC-022 | Add on-chain request cancellation | P0 | S | SC-006, SC-009 |
 | TRS-007 | Compute coverage and handle acknowledgment | P0 | M | TRS-005, TRS-006 |
 | AUD-004 | Propagate coverage labels through the API | P1 | S | CHR-002 |
 | WEB-015 | Build the notifications center | P1 | S | WEB-001, NTF-002 |
@@ -300,7 +303,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | INV-009 | Implement submit-for-approval and flag acknowledgment | P0 | S | INV-007, INV-008 |
 | MDT-007 | Implement pause and resume (backend and transactions) | P0 | M | MDT-003 |
 | POL-004 | Add differential tests between validator and contract | P0 | M | POL-003, SC-013 |
-| SC-014 | Write the invariant and fuzz suite | P0 | M | SC-013 |
+| SC-014 | Write the invariant and fuzz suite | P0 | M | SC-013, SC-022 |
 | SC-015 | Run static analysis and write the findings report | P0 | S | SC-013 |
 | SC-020 | Write direct-call bypass tests | P0 | S | SC-013 |
 | WEB-004 | Build the treasury setup wizard | P0 | M | WEB-003, TRS-007 |
@@ -333,7 +336,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | DOM-012 | Assemble the technical documentation for submission | P0 | M | DOM-011 |
 | EXE-003 | Implement the deadline trigger | P0 | M | EXE-002, INV-010, MDT-007, TRS-007 |
 | EXE-008 | Sequence steps with re-read and re-validation | P0 | M | EXE-007, CHR-003, POL-003, POL-007 |
-| INV-011 | Implement reject, cancel, invalidation and expiry | P0 | S | INV-010 |
+| INV-011 | Implement reject, cancel, invalidation and expiry | P0 | S | INV-010, SC-022 |
 | RCV-001 | Scan in-flight operations at startup | P0 | S | EXE-007 |
 | RCV-005 | Implement retry policy and error classification | P0 | S | EXE-007 |
 | WEB-009 | Build the approval inbox and EIP-712 signing | P0 | L | WEB-008, INV-010 |

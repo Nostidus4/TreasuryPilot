@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-003, FR-317, FR-320 |
+| **Traces to** | BR-003, BR-077, FR-317, FR-320, FR-324 |
 | **Blocks** | — |
 | **Submission cut** | B |
 
@@ -31,9 +31,12 @@ Approvals stop being valid when they should.
 
 ## Scope
 
-- Reject and cancel endpoints
-- editing an approved request invalidates the approval and returns it to Draft
-- periodic task expiring approvals and requests past deadline
+- Reject (terminal) endpoint
+- cancel endpoint with PAYMENT_IN_FLIGHT guard and cancel_onchain = Pending when an approval was ever Valid
+- GET cancel-tx building cancelRequest(requestId) for an approver wallet or a Safe tx for the Owner
+- RequestCancelled event sync → Confirmed
+- periodic task (5 min) expiring approvals and requests
+- renew endpoint (Expired → Draft, new revision)
 
 ## Out of scope
 
@@ -46,12 +49,14 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - INV-010: Implement approval typed data and signature verification
+- SC-022: Add on-chain request cancellation
 
 ## Acceptance criteria
 
 - [ ] An edited approved request is no longer payable
 - [ ] Cancel is refused while a payment is in flight
-- [ ] Expired approvals are marked and require re-approval
+- [ ] A cancelled, previously approved request shows Cancel on-chain until RequestCancelled is observed
+- [ ] Expired approvals are marked and require renew plus re-approval
 
 ## Testing requirements
 

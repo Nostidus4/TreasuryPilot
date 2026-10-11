@@ -21,6 +21,7 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-004 | The contract verifies approvals cryptographically (EIP-712, domain-bound to chain and contract). A backend "approved" flag is never sufficient. | C | R1 |
 | BR-005 | Maker-checker: the creator or last editor of a request cannot approve it. Solo mode, if enabled, is visibly flagged and audited. | B (C: approver set) | Q13 |
 | BR-006 | Signer roles (Owner, Approver, Guardian) act only through linked wallets. App login alone grants no on-chain authority. | C, B | GA p.11 |
+| BR-007 | In M1 one valid signature from a current Approver authorizes a request. Additional control comes from the Owner multisig (mandate, payees, exceptions) and the per-request cap. Multi-approver tiers are Later. *(new M05)* | C, B | M05-D1 |
 
 ## 2. Mandate & permission structure
 
@@ -108,6 +109,8 @@ Default values marked *(default, O#)* come from the source docs' proposed option
 | BR-073 | M1 invoices must be denominated in the treasury's payment stablecoin. | B | Q20 |
 | BR-074 | Only hashes and commitments are stored on-chain. Invoice documents and personal data stay off-chain in private storage. | B | Use-Case §2 |
 | BR-075 | AI-extracted fields and terms are drafts until a human confirms them. Only confirmed terms influence scheduling. | B | N1 |
+| BR-076 | A request with the same vendor and amount as another request within 45 days raises `POSSIBLE_DUPLICATE`: HIGH when the normalized invoice numbers differ by at most 2 edits, otherwise LOW. *(new M05)* | B | M05-D5 |
+| BR-077 | Cancelling a request blocks it off-chain immediately. If it was ever approved, any Approver or the Owner can cancel it on-chain with `cancelRequest(requestId)`, after which the contract refuses any refill or payment for it. Cancellation is permanent. *(new M05)* | C, B | M05-D4 |
 
 ## 9. Gas, swap & assets
 

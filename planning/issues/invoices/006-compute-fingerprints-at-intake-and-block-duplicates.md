@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-071, FR-314 |
-| **Blocks** | INV-007 |
+| **Blocks** | INV-007, INV-012 |
 | **Submission cut** | A |
 
 ## Context
@@ -29,10 +29,11 @@ Duplicates are caught before approval.
 
 ## Scope
 
-- Fingerprint on create and edit
-- duplicate check within the treasury
-- DUPLICATE_FINGERPRINT blocks submit
-- link to the existing request in the error
+- Normalization per §8.1 (NFKC, casefold, strip separators) shared with ENG-009
+- fingerprint on create, edit and submit
+- duplicate check among active requests of the treasury
+- DUPLICATE_FINGERPRINT blocks submit with existingRequestId
+- submit allowed for the one request named in an on-chain allowDuplicate
 
 ## Out of scope
 

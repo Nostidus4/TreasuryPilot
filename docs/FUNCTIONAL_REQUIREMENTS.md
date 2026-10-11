@@ -99,6 +99,8 @@ Wording: **shall** = mandatory · **should** = recommended.
 | FR-320 | The system shall prevent cancelling a request while a PAY transaction is pending or unknown. | F-039 | BR-060 |
 | FR-321 | *(Later)* The system shall generate recurring drafts that each require approval. | F-040 | BR-002 |
 | FR-322 | *(Later)* The system shall support fiat-denominated invoices with an approved maximum stablecoin amount, FX tolerance and depeg check. | F-041 | |
+| FR-323 | The system shall flag near-duplicate requests per BR-076 and require acknowledgment of the HIGH variant. | F-036, F-037 | BR-076 |
+| FR-324 | The system shall offer and track an on-chain cancellation for any cancelled request that was ever approved, and the contract shall reject refill and pay for a cancelled request id. | F-039 | BR-077 |
 
 ## FR-4xx · Planning
 

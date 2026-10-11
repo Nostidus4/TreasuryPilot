@@ -29,11 +29,13 @@ Invoice files are stored privately and linked to a draft.
 
 ## Scope
 
-- POST /requests/upload (PDF, PNG, JPG up to 10 MB)
+- POST /requests/upload (PDF, PNG, JPG ≤ 10 MB, ≤ 20 pages, type checked by magic bytes)
 - store in the private bucket with sha256
 - documents record
 - signed URL for viewing
 - enqueue extraction on the ai queue
+- POST extraction/confirm storing final fields and extraction_confirmed_by
+- MULTI_INVOICE_DOCUMENT when M09 reports more than one invoice
 
 ## Out of scope
 
@@ -50,8 +52,9 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] Unsupported type returns 415 and oversize returns 413
+- [ ] A renamed executable with a .pdf name is refused
 - [ ] Files are not publicly readable
-- [ ] The response contains a request id and an extraction job id
+- [ ] Submit is refused with EXTRACTION_UNCONFIRMED until the form is confirmed
 
 ## Testing requirements
 

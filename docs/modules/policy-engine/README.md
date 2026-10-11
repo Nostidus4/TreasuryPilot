@@ -201,6 +201,7 @@ Decision: **B** = BLOCK, **NA** = NEEDS_APPROVAL, **W** = warning. "Contract err
 | 4 | | `WRONG_REFILL_TARGET` | B | `WrongRefillTarget` | BR-012 |
 | 5 | Replay | `REQUEST_ALREADY_PAID` | B | `RequestAlreadyPaid` | BR-061 |
 | 5 | | `STEP_ALREADY_EXECUTED` | B | `StepAlreadyExecuted` | BR-061 |
+| 5 | | `REQUEST_CANCELLED` (off-chain status Cancelled or on-chain `requestCancelled`) | B | `RequestCancelled` | BR-077 |
 | 5 | | `ALREADY_REFILLED_FOR_REQUEST` | B | `AlreadyRefilledForRequest` | BR-036 |
 | 5 | | `DUPLICATE_FINGERPRINT` | B | `DuplicateFingerprint` | BR-071 |
 | 6 | Payee | `PAYEE_UNKNOWN` | B | `PayeeUnknown` | BR-013 |
