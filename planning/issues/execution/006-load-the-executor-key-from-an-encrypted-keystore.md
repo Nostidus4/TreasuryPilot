@@ -29,9 +29,9 @@ The executor key is never in plain text in the repo, image or environment listin
 
 ## Scope
 
-- Encrypted JSON keystore mounted read-only
+- Encrypted JSON keystores mounted read-only, mapped by treasury_id in signer config (M1: one shared executor)
 - password from a Docker secret
-- health endpoint returns the executor address and gas balance only
+- health endpoint returns executor addresses and gas balances only
 
 ## Out of scope
 
@@ -48,6 +48,7 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] The service refuses to start without the keystore or with a wrong password
+- [ ] A treasury without a configured key is refused with NOT_CONFIGURED
 - [ ] The private key never appears in logs or the health response
 
 ## Testing requirements

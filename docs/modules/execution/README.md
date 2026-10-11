@@ -1,6 +1,6 @@
 # M10 · Orchestration & Execution (`worker` + `signer`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — decisions marked *(mặc định)* are proposals accepted by default, open for review) · **Path:** `docs/modules/execution/` · **Code:** `services/worker/.../{trigger,planning,executor}`, `services/signer/` · **Epic:** `[EPIC] M10 · Orchestration & Execution`
+**Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/execution/` · **Code:** `services/worker/.../{trigger,planning,executor}`, `services/signer/` · **Epic:** `[EPIC] M10 · Orchestration & Execution`
 **ADRs:** ADR-004 (outbox), ADR-006 (signer), ADR-007 (Celery/Redis), ADR-016 (attestation + simulation), ADR-017 (sentinel) · **Decisions:** M10-D1 … M10-D14 (§14)
 
 ---
@@ -92,7 +92,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 every 15 min and on events (approval, exception granted, resume, inflow, payee Active):
   scheduling_cycle(treasury)  → schedules row (M07 EDF + CP-SAT)
 
-every 60 s (and right after a scheduling cycle):
+immediately after any of those events or a fee acceptance (M10-D1), and every 60 s as a safety net:
   for treasury in active treasuries:
     with advisory_lock(treasury) (non-blocking; skip if held):
       gates: backend pause, mandate Active, coverage COMPLETE/ack, no Unknown op, no Executing plan
@@ -151,7 +151,7 @@ Request is in today's schedule **and** `now ≥ windowStart`, where `windowStart
 
 ### 8.3 Nonce lane (signer)
 
-`nonce = max(eth_getTransactionCount(executor, "pending"), signer.nonces.next_nonce)`; increment in the signer schema in the same transaction that records the attestation use. Replacements reuse the original nonce. One executor address serves all treasuries in M1, so signing is serialized in the signer (one in-flight `sign-and-send` at a time).
+`nonce = max(eth_getTransactionCount(executor, "pending"), signer.nonces.next_nonce)`; increment in the signer schema in the same transaction that records the attestation use. Replacements reuse the original nonce. The signer resolves the executor key by `treasury_id` (M10-D7). M1 maps every treasury to one shared executor, so signing for that address is serialized (one in-flight `sign-and-send` per executor address).
 
 ### 8.4 Worked example (UC-02)
 
@@ -215,17 +215,17 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 
 | ID | Decision |
 |---|---|
-| M10-D1 | Two cycles: scheduling (15 min + events) and execution (60 s); only today's schedule items execute. *(mặc định)* |
+| M10-D1 | Two cycles: scheduling (15 min + events) and execution (60 s safety net); **events (approval, exception granted, resume, inflow, payee Active, fee accepted) enqueue an execution cycle immediately**; only today's items execute. (reviewed 2026-10-11) |
 | M10-D2 | Per-treasury Postgres advisory lock, non-blocking; plus "no Executing plan" gate. |
-| M10-D3 | AI proposal timeout 20 s; deterministic plan always computed first. *(mặc định)* |
+| M10-D3 | AI proposal timeout 20 s; deterministic plan always computed first. (reviewed) |
 | M10-D4 | Fee policy applied after ALLOW and before attestation (EXE-012). |
 | M10-D5 | Outbox: operation row before signing; tx hash persisted before any other step. |
-| M10-D6 | The next step requires the previous step's post-condition **PASSED** (M11). *(mặc định)* |
-| M10-D7 | One executor address for all treasuries in M1; the signer is the only nonce allocator and serializes signing. *(mặc định)* |
+| M10-D6 | The next step requires the previous step's post-condition **PASSED** (M11). (reviewed) |
+| M10-D7 | Keys in the signer are stored and looked up **per `treasury_id`** (keystore map, nonce lane per executor address); M1 configures one shared executor for all treasuries, so a per-treasury executor later is a config change only. (reviewed) |
 | M10-D8 | Replacements reuse nonce and payload, bump +12.5 %, never above the accepted fee cap. |
-| M10-D9 | Lead time 24 h before due/discount date, demo 2 min (OQ-06). |
+| M10-D9 | Lead time 24 h before due/discount date, demo 2 min (OQ-06). (reviewed) |
 | M10-D10 | Signer API limited to sign-and-send, replace, sentinel pause, sentinel address, health. |
 | M10-D11 | Signer enforces the fee cap carried with the attested plan. |
 | M10-D12 | Partial completion → plan PartiallyCompleted, request NeedsReview; resumption creates a new plan for the remaining steps (M12). |
-| M10-D13 | Low-gas thresholds per key (executor/sentinel/receipt). *(mặc định)* |
+| M10-D13 | Low-gas thresholds per key (executor/sentinel/receipt). (reviewed) |
 | M10-D14 | Run-now uses the same gates and enqueues exactly one execution cycle. |

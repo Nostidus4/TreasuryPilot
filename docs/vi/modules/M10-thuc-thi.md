@@ -1,6 +1,6 @@
 # M10 · Điều phối & thực thi
 
-**Nguồn chuẩn:** `docs/modules/execution/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-004, ADR-006, ADR-007, ADR-016, ADR-017
+**Nguồn chuẩn:** `docs/modules/execution/README.md` · **Trạng thái:** Chi tiết, đã review với trưởng nhóm (11/10/2026) · **ADR:** ADR-004, ADR-006, ADR-007, ADR-016, ADR-017
 
 ## 1. Mục đích và ranh giới
 
@@ -59,7 +59,7 @@ F-060 trigger (FR-501–504; BR-050, 060, 063) · F-061 executor & signer (FR-50
 
 ## 7. Luồng
 
-**Chu kỳ:** mỗi 15 phút và khi có event (duyệt, cấp ngoại lệ, resume, tiền vào, payee Active) → chu kỳ lập lịch. Mỗi 60 giây (và ngay sau lập lịch) → với mỗi treasury đang hoạt động: lấy khóa advisory (không chờ; bận thì bỏ qua) → kiểm cổng (cờ pause backend, mandate Active, coverage, không Unknown, không có plan đang Executing) → lấy request đầu tiên của lịch hôm nay đã tới cửa sổ → chạy pipeline.
+**Chu kỳ:** mỗi 15 phút và khi có event (duyệt, cấp ngoại lệ, resume, tiền vào, payee Active) → chu kỳ lập lịch. Ngay khi có sự kiện (duyệt, cấp ngoại lệ, resume, tiền vào, payee Active, chấp nhận phí) và mỗi 60 giây làm lưới an toàn → với mỗi treasury đang hoạt động: lấy khóa advisory (không chờ; bận thì bỏ qua) → kiểm cổng (cờ pause backend, mandate Active, coverage, không Unknown, không có plan đang Executing) → lấy request đầu tiên của lịch hôm nay đã tới cửa sổ → chạy pipeline.
 
 **Pipeline (EXE-004):** snapshot PLAN → engine dựng plan tất định (quyết định refill + pay) → hỏi AI (timeout 20 giây, chỉ khi có ý nghĩa) → chấm điểm và chọn (ghi `chosen_reason`) → `validate_plan` → BLOCK/NEEDS_APPROVAL: plan Blocked/AwaitingAuthority, tạo review/đề nghị ngoại lệ → ALLOW: ước tính phí + chính sách phí (chạy / hoãn / AwaitingFeeAcceptance) → ký attestation → plan Attested, request Preparing → đưa vào hàng thực thi.
 
@@ -81,7 +81,7 @@ Dừng ở bước k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, b
 
 **8.2 Khóa và idempotency:** `pg_try_advisory_xact_lock(hash('treasury', id))` quanh mỗi chu kỳ. Task Celery `acks_late` và idempotent theo `(plan_id, step_seq)`; task bị giao lại tìm operation có sẵn theo `step_id` và đi tiếp theo trạng thái, không bao giờ gọi signer cho operation đã `Submitted` (BR-061).
 
-**8.3 Hàng nonce (signer):** `nonce = max(eth_getTransactionCount(executor, "pending"), signer.nonces.next_nonce)`; tăng trong cùng transaction ghi việc dùng attestation. Thay thế dùng lại nonce gốc. M1 một địa chỉ executor cho mọi treasury, nên signer ký tuần tự từng lệnh.
+**8.3 Hàng nonce (signer):** `nonce = max(eth_getTransactionCount(executor, "pending"), signer.nonces.next_nonce)`; tăng trong cùng transaction ghi việc dùng attestation. Thay thế dùng lại nonce gốc. Signer tra khóa executor theo `treasury_id` (M10-D7); M1 mọi treasury dùng chung một executor nên ký tuần tự theo địa chỉ đó.
 
 **8.4 Ví dụ (UC-02):** O1 = 20, buffer 10, target 10, hóa đơn 100. Engine: Shortage 90, Preferred 90, Bound 90 → REFILL 90 rồi PAY 100. t0 plan Attested (hạn t0 + 15 phút) → t0+5 giây REFILL: PRE_STEP ALLOW, chạy thử ổn, op#1 → Submitted (nonce 41) → t0+41 giây (3 block) Confirmed, RPC phụ khớp; hậu điều kiện O1 = 110, T −90 → PASSED → PAY: PRE_STEP ALLOW (110 − 100 = 10 ≥ 10), op#2 → Submitted (nonce 42) → Confirmed → PASSED → request Paid; đưa biên nhận EAS vào hàng.
 
@@ -117,17 +117,17 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/chu kỳ → EXE-012 chín
 
 | ID | Quyết định |
 |---|---|
-| M10-D1 | Hai chu kỳ: lập lịch (15 phút + event) và thực thi (60 giây); chỉ chạy việc của hôm nay. *(mặc định)* |
+| M10-D1 | Hai chu kỳ: lập lịch (15 phút + event) và thực thi (60 giây làm lưới an toàn); **có sự kiện (duyệt, cấp ngoại lệ, resume, tiền vào, payee Active, chấp nhận phí) là đưa ngay một chu kỳ thực thi vào hàng**; chỉ chạy việc của hôm nay. (đã review) |
 | M10-D2 | Khóa advisory Postgres theo treasury, không chờ; thêm cổng "không có plan Executing". |
-| M10-D3 | AI đề xuất có timeout 20 giây; plan tất định luôn tính trước. *(mặc định)* |
+| M10-D3 | AI đề xuất có timeout 20 giây; plan tất định luôn tính trước. (đã review) |
 | M10-D4 | Chính sách phí áp sau ALLOW, trước khi ký attestation (EXE-012). |
 | M10-D5 | Outbox: ghi operation trước khi ký; lưu tx hash trước mọi bước khác. |
-| M10-D6 | Bước sau chỉ chạy khi hậu điều kiện bước trước **PASSED** (M11). *(mặc định)* |
-| M10-D7 | M1 một địa chỉ executor cho mọi treasury; signer là nơi duy nhất cấp nonce và ký tuần tự. *(mặc định)* |
+| M10-D6 | Bước sau chỉ chạy khi hậu điều kiện bước trước **PASSED** (M11). (đã review) |
+| M10-D7 | Signer lưu và tra khóa **theo `treasury_id`** (bảng khóa, mỗi địa chỉ executor một hàng nonce); M1 cấu hình một executor dùng chung, nên sau này tách executor riêng cho từng treasury chỉ là đổi cấu hình. (đã review) |
 | M10-D8 | Thay thế giao dịch dùng lại nonce và payload, tăng 12,5 %, không vượt trần phí. |
-| M10-D9 | Lead time 24 giờ trước hạn/ngày chiết khấu, demo 2 phút (OQ-06). |
+| M10-D9 | Lead time 24 giờ trước hạn/ngày chiết khấu, demo 2 phút (OQ-06). (đã review) |
 | M10-D10 | API của signer chỉ gồm sign-and-send, replace, sentinel pause, sentinel address, health. |
 | M10-D11 | Signer áp trần phí đi kèm plan đã ký. |
 | M10-D12 | Hoàn thành một phần → plan PartiallyCompleted, request NeedsReview; tiếp tục bằng plan mới cho bước còn lại (M12). |
-| M10-D13 | Ngưỡng hết gas riêng cho từng khóa (executor/sentinel/biên nhận). *(mặc định)* |
+| M10-D13 | Ngưỡng hết gas riêng cho từng khóa (executor/sentinel/biên nhận). (đã review) |
 | M10-D14 | Run-now dùng cùng cổng và đưa đúng một chu kỳ thực thi vào hàng. |

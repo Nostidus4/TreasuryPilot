@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-501–503 |
+| **Traces to** | FR-501–503, M10-D1 |
 | **Blocks** | EXE-004, EXE-009 |
 | **Submission cut** | A |
 
@@ -29,10 +29,12 @@ The agent starts work by itself when approved requests enter their window.
 
 ## Scope
 
-- Beat schedule per treasury
-- eligibility query (Approved, within lead time or discount window)
-- gates: backend pause flag, mandate active, coverage COMPLETE (or acknowledged), no Unknown operation
-- enqueue planning
+- Scheduling cycle every 15 min and on events
+- execution cycle every 60 s as a safety net
+- event hooks (approval, exception granted, resume, inflow, payee Active, fee accepted) enqueue an execution cycle immediately
+- eligibility per docs/modules/execution §8.1 (today's schedule + window open)
+- gates: backend pause flag, mandate active, coverage COMPLETE (or acknowledged), no Unknown operation, no Executing plan
+- non-blocking per-treasury advisory lock
 
 ## Out of scope
 
@@ -51,7 +53,8 @@ Lead time is configurable (24h default, minutes in demo).
 
 ## Acceptance criteria
 
-- [ ] An eligible request triggers planning with no user action
+- [ ] An eligible request starts executing within 5 s of its approval with no user action
+- [ ] Two events at once run one cycle (lock)
 - [ ] A paused treasury or one with an Unknown operation is skipped with a logged reason
 
 ## Testing requirements

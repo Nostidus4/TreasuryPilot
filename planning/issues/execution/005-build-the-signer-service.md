@@ -42,7 +42,7 @@ KMS (EXE-L01).
 
 ## Technical notes
 
-M08-D9: writes only to its own schema. No other endpoints.
+M08-D9: writes only to its own schema. M10-D7: executor keys are resolved by treasury_id (M1 maps every treasury to one shared executor). No other endpoints.
 
 ## Dependencies
 
