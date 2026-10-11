@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-913, BR-095 |
+| **Traces to** | FR-913, BR-095, M15-D5, M15-D6, M15-D9 |
 | **Blocks** | DEV-007 |
 | **Submission cut** | A |
 
@@ -33,6 +33,7 @@ One file that proves what happened for a request or scenario.
 - exporter joining approvals, plan, validations, ai_calls, attestation, operations, transactions, verifications
 - fixture labels
 - GET /requests/{id}/evidence
+- bundle fields per docs/modules/audit §8; signatures stored as hashes only; Confidential data excluded except vendor display name; bundles with an unresolvable tx hash are marked INVALID and not delivered (M15-D5, D6, D9)
 
 ## Out of scope
 
@@ -52,6 +53,7 @@ Never include secrets or raw signatures that could be reused beyond what is alre
 - [ ] A paid request exports a bundle that validates against the schema
 - [ ] Every tx hash in it resolves on the chain
 - [ ] A blocked request exports with validator logs and no fabricated hash
+- [ ] A bundle never contains a raw signature or a contact field
 
 ## Testing requirements
 

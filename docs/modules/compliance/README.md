@@ -1,6 +1,6 @@
 # M14 · Compliance (`api` + `worker` + `py-core`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/compliance/` · **Code:** `services/api/.../compliance`, `packages/py-core/.../privacy` · **Epic:** `[EPIC] M14 · Compliance`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/compliance/` · **Code:** `services/api/.../compliance`, `packages/py-core/.../privacy` · **Epic:** `[EPIC] M14 · Compliance`
 **Decisions:** M14-D1 … M14-D9 (§14)
 
 ---
@@ -48,7 +48,7 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 
 ## 8. Algorithms
 
-- Fixture list: a sample of public sanctions-list addresses (labelled source and date) + team test entries; exact checksum-insensitive match. *(mặc định)*
+- Fixture list: a sample of public sanctions-list addresses (labelled source and date) + team test entries; exact checksum-insensitive match.
 - Redaction processor patterns: emails, 0x-signatures (130+ hex), bearer tokens, JWTs, private-key-like hex (64 hex), document text fields by key name. Addresses and tx hashes are not redacted.
 
 ## 9. Configuration
@@ -80,7 +80,7 @@ CMP-001 → CMP-003 → CMP-002. Later CMP-L01…L04.
 | M14-D3 | Fail closed on ERROR. |
 | M14-D4 | Four data classes; Confidential encrypted at field level. |
 | M14-D5 | Redaction processors on in all environments. |
-| M14-D6 | Fixture contains a labelled sample of public sanctions addresses. *(mặc định)* |
-| M14-D7 | Synchronous refresh before PAY with 5 s timeout. *(mặc định)* |
+| M14-D6 | Fixture contains a labelled sample of public sanctions addresses. |
+| M14-D7 | Synchronous refresh before PAY with 5 s timeout. |
 | M14-D8 | Addresses and tx hashes are not redacted (needed for audit). |
-| M14-D9 | Encryption key from Docker secret; rotation is Later. *(mặc định)* |
+| M14-D9 | Encryption key from Docker secret; rotation is Later. |

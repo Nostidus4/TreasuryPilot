@@ -120,6 +120,6 @@ Chỉ dùng địa chỉ **test** và công ty hư cấu; mô phỏng vendor th�
 | ID | Câu hỏi | Ai |
 |---|---|---|
 | OQ-18 | Phỏng vấn được bao nhiêu người trước hạn nộp | cố vấn nghiên cứu |
-| M20-Q1 | Ai quay video demo (màn hình + giọng)? | trưởng nhóm |
-| M20-Q2 | Công cụ làm deck (Google Slides, Canva, PowerPoint) và template | cố vấn truyền thông |
-| M20-Q3 | Cố vấn dùng git local hay chỉ dùng trình soạn GitHub? | trưởng nhóm |
+| ~~M20-Q1~~ | Đã chốt: trưởng nhóm quay video demo (màn hình + lồng tiếng Anh) theo runbook | trưởng nhóm |
+| ~~M20-Q2~~ | Đã chốt: Google Slides (cùng sửa, xuất PDF), một template đơn giản | cố vấn truyền thông |
+| ~~M20-Q3~~ | Đã chốt: cố vấn dùng trình soạn trên web GitHub ("Add file", tạo PR trên trình duyệt); git local là tùy chọn | trưởng nhóm |

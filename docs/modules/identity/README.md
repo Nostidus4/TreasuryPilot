@@ -1,6 +1,6 @@
 # M01 · Identity & Access (`api`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/identity/` · **Code:** `services/api/.../identity/` · **Epic:** `[EPIC] M01 · Identity & Access`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/identity/` · **Code:** `services/api/.../identity/` · **Epic:** `[EPIC] M01 · Identity & Access`
 **ADRs:** ADR-009 (authentication) · **Decisions:** M01-D1 … M01-D12 (§14)
 
 ---
@@ -35,15 +35,15 @@ F-001 (FR-001–003), F-002 (FR-004–006, BR-006), F-003 (FR-007, FR-009), F-00
 | **Auditor** | read-only everything incl. audit log and evidence bundles | any write |
 | **PlatformAdmin** | platform operations (M18); no customer data by default | sign or move funds (BR-094) |
 
-A user can hold several roles. Signer roles (Owner, Approver, Guardian) are **inactive** until a wallet is linked (FR-012). Owner in the app = a user whose linked wallet is an owner of Safe T (checked on-chain at link time and periodically) *(mặc định)*.
+A user can hold several roles. Signer roles (Owner, Approver, Guardian) are **inactive** until a wallet is linked (FR-012). Owner in the app = a user whose linked wallet is an owner of Safe T (checked on-chain at link time and periodically).
 
 ## 4. Data model (DATA_MODEL §2.1)
 
-`users`, `sessions` (idle 30 min, absolute 12 h *(mặc định)*), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes).
+`users`, `sessions` (idle 30 min, absolute 12 h), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes).
 
 ## 5. State
 
-Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired | Revoked`. Wallet link: `Linked → Unlinked` (unlink refused while the user is the only linked signer for a role that has pending items *(mặc định)*).
+Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired | Revoked`. Wallet link: `Linked → Unlinked` (unlink refused while the user is the only linked signer for a role that has pending items).
 
 ## 6. Interfaces (API_SPEC §1)
 
@@ -67,7 +67,7 @@ Sign-in: email → link (Resend; console locally) → verify → session cookie 
 
 - **RBAC:** FastAPI dependencies `require_member(org)` (non-member → **404**) and `require_role(*roles)` (member without role → 403); repositories always filter by `org_id`. An automated test enumerates every org-scoped route and calls it as a non-member.
 - **Maker-checker:** `approver ∉ {created_by, last_edited_by}` unless `solo_mode` (Owner-only toggle), then the approval and audit entry carry `solo_mode = true`.
-- **Owner check:** at link time and every hour, compare the user's linked addresses with Safe T owners; mismatch removes the effective Owner capability (role stays but shows "not an on-chain owner") *(mặc định)*.
+- **Owner check:** at link time and every hour, compare the user's linked addresses with Safe T owners; mismatch removes the effective Owner capability (role stays but shows "not an on-chain owner").
 
 ## 9. Configuration
 
@@ -75,7 +75,7 @@ Session idle 30 min / absolute 12 h; magic link 15 min; invite 7 days; SIWE nonc
 
 ## 10. Security
 
-Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored in M1 (magic link only) *(mặc định)*; email enumeration avoided (same response for unknown emails).
+Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored in M1 (magic link only); email enumeration avoided (same response for unknown emails).
 
 ## 11. Failure scenarios
 
@@ -93,15 +93,15 @@ IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 
 
 | ID | Decision |
 |---|---|
-| M01-D1 | Magic-link only in M1 (no passwords). *(mặc định)* |
-| M01-D2 | Server-side sessions; idle 30 min, absolute 12 h. *(mặc định)* |
+| M01-D1 | Magic-link only in M1 (no passwords). |
+| M01-D2 | Server-side sessions; idle 30 min, absolute 12 h. |
 | M01-D3 | Non-members get 404 on org routes. |
 | M01-D4 | Eight roles; multiple per user; signer roles need a linked wallet. |
-| M01-D5 | App Owner capability requires the linked wallet to be a Safe T owner on-chain. *(mặc định)* |
+| M01-D5 | App Owner capability requires the linked wallet to be a Safe T owner on-chain. |
 | M01-D6 | SIWE chainId = treasury chain; nonce 10 min; skew ± 2 min. |
 | M01-D7 | Solo mode Owner-only, flagged and audited (OQ-07). |
-| M01-D8 | Rate limits per §6; fail closed if Redis is down. *(mặc định)* |
-| M01-D9 | Invites expire after 7 days. *(mặc định)* |
+| M01-D8 | Rate limits per §6; fail closed if Redis is down. |
+| M01-D9 | Invites expire after 7 days. |
 | M01-D10 | Same response for known/unknown emails (no enumeration). |
-| M01-D11 | Unlinking the last signer wallet with pending signer items is refused. *(mặc định)* |
+| M01-D11 | Unlinking the last signer wallet with pending signer items is refused. |
 | M01-D12 | Email provider Resend; console in local. |

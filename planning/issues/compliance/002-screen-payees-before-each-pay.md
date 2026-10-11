@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-085 |
+| **Traces to** | BR-085, M14-D7 |
 | **Blocks** | — |
 | **Submission cut** | After submission |
 
@@ -32,6 +32,7 @@ A payee that became listed after registration is not paid.
 - Validator check using the latest screening within TTL
 - refresh when stale
 - block on HIT or no valid result
+- synchronous refresh before PAY with a 5 s timeout when the last result is older than 24 h (M14-D7)
 
 ## Out of scope
 

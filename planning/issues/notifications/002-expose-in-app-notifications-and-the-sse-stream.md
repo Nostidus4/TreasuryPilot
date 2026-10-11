@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-901, ADR-010 |
+| **Traces to** | FR-901, ADR-010, M13-D3, M13-D4, M13-D8 |
 | **Blocks** | NTF-L04, WEB-012, WEB-015 |
 | **Submission cut** | A |
 
@@ -34,6 +34,8 @@ Users see events live.
 - GET /notifications, POST read
 - SSE endpoint /orgs/{o}/events with plan, operation, request and notification events
 - auth and org scoping on the stream
+- SSE resume with Last-Event-ID, heartbeat every 15 s, clients fall back to 10 s polling when pub/sub is down (M13-D3, M13-D8)
+- payloads carry ids only (M13-D4)
 
 ## Out of scope
 
@@ -51,6 +53,7 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] An operation status change reaches a connected client within 2 seconds
 - [ ] A member of another org receives nothing
+- [ ] A reconnecting client with Last-Event-ID receives the missed events
 
 ## Testing requirements
 

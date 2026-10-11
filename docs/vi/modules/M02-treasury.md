@@ -1,6 +1,6 @@
 # M02 · Treasury & cấu hình chain
 
-**Nguồn chuẩn:** `docs/modules/treasury/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-002, ADR-012, ADR-014
+**Nguồn chuẩn:** `docs/modules/treasury/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-002, ADR-012, ADR-014
 
 ## 1. Mục đích và ranh giới
 
@@ -56,13 +56,13 @@ Wizard: chọn chain (Sepolia) và tài sản (tUSDC hoặc Circle USDC) → nh�
 ## 8. Thuật toán
 
 - **Kiểm Safe:** `getCode` khác rỗng; `masterCopy` (slot 0) thuộc danh sách singleton Safe v1.4.1; `VERSION() == "1.4.1"`; đúng chain. EOA → `NOT_A_SAFE`.
-- **Bộ owner:** T, O1, O2 nên cùng owner và threshold (PH-9); khác nhau thì cảnh báo, không chặn *(mặc định)*.
+- **Bộ owner:** T, O1, O2 nên cùng owner và threshold (PH-9); khác nhau thì cảnh báo, không chặn.
 - **Coverage:** với mỗi Safe: `getModulesPaginated` phải đúng `[clone]`, clone trỏ đúng implementation; slot guard = 0; fallback handler thuộc danh sách cho phép. Kết quả tổng = mức xấu nhất của ba Safe.
 - **Decimals:** `decimals()` on-chain phải bằng cấu hình, lệch thì từ chối tài sản.
 
 ## 9. Cấu hình
 
-Danh sách chain và manifest đọc từ file, kiểm tra khi khởi động (thiếu RPC, thiếu code hash, ít hơn 2 RPC → không chạy). Coverage làm mới 10 phút + theo event. Chỉ hỗ trợ Safe 1.4.1 ở M1 *(mặc định)*.
+Danh sách chain và manifest đọc từ file, kiểm tra khi khởi động (thiếu RPC, thiếu code hash, ít hơn 2 RPC → không chạy). Coverage làm mới 10 phút + theo event. Chỉ hỗ trợ Safe 1.4.1 ở M1.
 
 ## 10. Bảo mật
 
@@ -85,12 +85,12 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 | ID | Quyết định |
 |---|---|
 | M02-D1 | Ethereum Sepolia; tài sản tUSDC (test) và Circle USDC (ADR-012). |
-| M02-D2 | Chỉ Safe v1.4.1. *(mặc định)* |
+| M02-D2 | Chỉ Safe v1.4.1. |
 | M02-D3 | Coverage = đúng clone của ta + không guard + fallback handler chuẩn trên cả ba Safe. |
 | M02-D4 | PARTIAL chỉ chạy khi Owner xác nhận; UNKNOWN không bao giờ cho chạy. |
 | M02-D5 | Thiết lập module qua giao dịch quản trị (MDT-009); O1/O2 tự bật bằng giao dịch Safe riêng. |
-| M02-D6 | Bộ owner khác nhau chỉ cảnh báo. *(mặc định)* |
-| M02-D7 | Làm mới coverage 10 phút + theo event. *(mặc định)* |
+| M02-D6 | Bộ owner khác nhau chỉ cảnh báo. |
+| M02-D7 | Làm mới coverage 10 phút + theo event. |
 | M02-D8 | Cấu hình và manifest là file, kiểm khi khởi động; không sửa lúc chạy ở M1. |
 | M02-D9 | Decimals kiểm on-chain khi thêm tài sản. |
 | M02-D10 | Tạo Safe từ giao diện là P2 (TRS-008). |

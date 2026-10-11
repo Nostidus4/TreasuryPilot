@@ -1,6 +1,6 @@
 # M16 · Ứng dụng web
 
-**Nguồn chuẩn:** `docs/modules/web/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-010, ADR-013
+**Nguồn chuẩn:** `docs/modules/web/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-010, ADR-013
 
 ## 1. Mục đích và ranh giới
 
@@ -112,8 +112,8 @@ WEB-001 → 002 → 003 → 004 → 025 → 005 → 006 → 007 → 008 → 009 
 | M16-D7 | SSE làm mới cache TanStack Query; dự phòng hỏi định kỳ 10 giây. |
 | M16-D8 | M1 chỉ tiếng Anh, chuỗi đã tách. |
 | M16-D9 | Chain Sepolia (local Anvil); sai mạng thì chặn và nhắc. |
-| M16-D10 | CSP chặt, không script inline. *(mặc định)* |
+| M16-D10 | CSP chặt, không script inline. |
 | M16-D11 | Màn hình phí hiển thị đề xuất của hệ thống; Owner chấp nhận hoặc chọn mức khác. |
 | M16-D12 | Banner hủy on-chain giữ tới khi xác nhận. |
 | M16-D13 | Guardian pause dùng giao dịch từ ví khi không có sentinel. |
-| M16-D14 | Dùng Recharts cho biểu đồ; không thêm thư viện khác. *(mặc định)* |
+| M16-D14 | Dùng Recharts cho biểu đồ; không thêm thư viện khác. |

@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-902 |
+| **Traces to** | FR-902, M13-D7 |
 | **Blocks** | — |
 | **Submission cut** | After submission |
 
@@ -33,6 +33,7 @@ Reach users on Telegram with a link back to the app.
 - bot webhook with secret header
 - sender with minimal content and deep links
 - opt-in for amounts and addresses
+- at most one Telegram message per user per 10 s, bursts merged (M13-D7)
 
 ## Out of scope
 

@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-018, FR-106–107 |
+| **Traces to** | BR-018, FR-106–107, M02-D3, M02-D7 |
 | **Blocks** | EXE-003, WEB-004 |
 | **Submission cut** | A |
 
@@ -34,6 +34,7 @@ Autonomous execution is allowed only when the Safes have exactly the expected mo
 - UNKNOWN on read failure
 - acknowledge endpoint (Owner)
 - coverage exposed to the execution gate
+- coverage also requires the canonical fallback handler; recompute every 10 min and on Safe config events (M02-D3, M02-D7)
 
 ## Out of scope
 

@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-004–006, BR-006 |
+| **Traces to** | FR-004–006, BR-006, M01-D5, M01-D6, M01-D11 |
 | **Blocks** | WEB-003 |
 | **Submission cut** | A |
 
@@ -34,6 +34,9 @@ Signer roles can prove control of their address.
 - ERC-1271 path for contract wallets
 - DELETE /me/wallets/{address}
 - audit entries
+- SIWE chainId = treasury chain (11155111), nonce 10 min, clock skew ± 2 min (M01-D6)
+- Owner capability check: linked address must be an owner of Safe T, at link time and hourly; mismatch shows 'not an on-chain owner' and blocks governance actions (M01-D5)
+- refuse unlinking the last signer wallet while signer items are pending (M01-D11)
 
 ## Out of scope
 
@@ -53,6 +56,7 @@ Use the `siwe` library. Nonces are single use.
 - [ ] Replayed nonce is rejected
 - [ ] An address linked to another user returns ADDRESS_LINKED_ELSEWHERE
 - [ ] Contract-wallet signatures verify through ERC-1271
+- [ ] A user with the Owner role whose wallet is not a Safe T owner cannot create governance transactions
 
 ## Testing requirements
 

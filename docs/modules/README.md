@@ -2,8 +2,8 @@
 
 | ID | Module | Path | Kind | Spec level |
 |---|---|---|---|---|
-| M01 | Identity & Access | `identity/` | api | Detailed — defaults marked *(mặc định)*, to review |
-| M02 | Treasury & Chain Config | `treasury/` | api/worker | Detailed — defaults marked *(mặc định)*, to review |
+| M01 | Identity & Access | `identity/` | api | Detailed — decisions finalized by the tech lead |
+| M02 | Treasury & Chain Config | `treasury/` | api/worker | Detailed — decisions finalized by the tech lead |
 | M03 | Mandate, Payees, Exceptions & Pause | `mandate/` | api/worker | Detailed — grilled with the team |
 | M04 | Smart Contracts | `contracts/` | on-chain | Detailed — grilled with the team |
 | M05 | Invoices & Payment Requests | `invoices/` | api | Detailed — grilled with the team |
@@ -14,13 +14,13 @@
 | M10 | Orchestration & Execution | `execution/` | worker/signer | Detailed — reviewed with the project lead |
 | M11 | Verification & Reconciliation | `reconciliation/` | worker/api | Detailed — reviewed with the project lead |
 | M12 | Recovery & Exceptions | `recovery/` | worker | Detailed — reviewed with the project lead |
-| M13 | Notifications | `notifications/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
-| M14 | Compliance | `compliance/` | worker/api | Detailed — defaults marked *(mặc định)*, to review |
-| M15 | Audit & Evidence | `audit/` | all | Detailed — defaults marked *(mặc định)*, to review |
-| M16 | Web | `web/` | browser | Detailed — defaults marked *(mặc định)*, to review |
-| M17 | Observability & Analytics | `observability/` | all | Detailed — defaults marked *(mặc định)*, to review |
-| M18 | Platform Admin & Billing | `admin/` | api | Detailed — defaults marked *(mặc định)*, to review |
-| M19 | DevEx & Quality | `devex/` | repo/CI | Detailed — defaults marked *(mặc định)*, to review |
+| M13 | Notifications | `notifications/` | worker/api | Detailed — decisions finalized by the tech lead |
+| M14 | Compliance | `compliance/` | worker/api | Detailed — decisions finalized by the tech lead |
+| M15 | Audit & Evidence | `audit/` | all | Detailed — decisions finalized by the tech lead |
+| M16 | Web | `web/` | browser | Detailed — decisions finalized by the tech lead |
+| M17 | Observability & Analytics | `observability/` | all | Detailed — decisions finalized by the tech lead |
+| M18 | Platform Admin & Billing | `admin/` | api | Detailed — decisions finalized by the tech lead |
+| M19 | DevEx & Quality | `devex/` | repo/CI | Detailed — decisions finalized by the tech lead |
 | M20 | Domain & Evidence (non-code) | `domain-evidence/` | people | Detailed — grilled with the team |
 
 Every one of the 99 features in `FEATURES.md` maps to at least one module (see each module's "Features" section).

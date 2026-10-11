@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-097, FR-911, NFR-AUD-01–02 |
+| **Traces to** | BR-097, FR-911, NFR-AUD-01–02, M15-D1 |
 | **Blocks** | AUD-002, AUD-003, OBS-004 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ A tamper-evident record of everything that matters.
 - audit_log migration with no-update/no-delete trigger
 - write(actor, action, entity, data) computing hash from the previous record per org
 - helper to write in the caller's transaction
+- per-org audit_heads row locked FOR UPDATE to append; canonical JSON (sorted keys, amounts as strings, ISO-8601 UTC) (M15-D1)
 
 ## Out of scope
 

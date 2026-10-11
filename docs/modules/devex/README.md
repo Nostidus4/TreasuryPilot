@@ -1,6 +1,6 @@
 # M19 · Developer Experience & Quality
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/devex/` · **Epic:** `[EPIC] M19 · Developer Experience & Quality`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/devex/` · **Epic:** `[EPIC] M19 · Developer Experience & Quality`
 **ADRs:** ADR-001 (monorepo), ADR-008 (Compose + Caddy), ADR-010 (OpenAPI client) · **See also:** `DEVELOPMENT.md`, `docs/REPOSITORY_STRUCTURE.md` · **Decisions:** M19-D1 … M19-D12 (§14)
 
 ---
@@ -91,11 +91,11 @@ DEV-001 → DEV-002 → DEV-011 → DEV-003 → DEV-004 → DEV-005 → DEV-006 
 | M19-D2 | Compose profiles local/testnet; Caddy TLS on one VM. |
 | M19-D3 | Seed is idempotent and uses the public API where possible. |
 | M19-D4 | Scenarios as YAML; chain-id allowlist. |
-| M19-D5 | Added scenarios: unexpected-outflow, fee-spike. *(mặc định)* |
+| M19-D5 | Added scenarios: unexpected-outflow, fee-spike. |
 | M19-D6 | py-core coverage ≥ 85 % gate. |
 | M19-D7 | Import-linter allows ortools and eth-account in py-core. |
 | M19-D8 | Fuzz 1k on PR, 10k on main. |
-| M19-D9 | E2E and crash test nightly + on main. *(mặc định)* |
+| M19-D9 | E2E and crash test nightly + on main. |
 | M19-D10 | Images tagged with git SHA in GHCR. |
 | M19-D11 | Only web and api reachable from the internet. |
 | M19-D12 | Reliability: 30 local runs + N Sepolia runs, failures categorized. |

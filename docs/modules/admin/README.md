@@ -1,6 +1,6 @@
 # M18 · Platform Admin & Billing (Later)
 
-**Status:** Detailed at Later level (spec completion pass, 2026-10-11) · **Path:** `docs/modules/admin/` · **Epic:** `[EPIC] M18 · Platform Admin & Billing`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/admin/` · **Epic:** `[EPIC] M18 · Platform Admin & Billing`
 **Decisions:** M18-D1 … M18-D6 (§14)
 
 ---

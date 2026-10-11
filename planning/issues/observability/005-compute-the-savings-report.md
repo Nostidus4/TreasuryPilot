@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-922 |
+| **Traces to** | FR-922, M17-D4, FEE-2 |
 | **Blocks** | WEB-018 |
 | **Submission cut** | After submission |
 
@@ -33,6 +33,7 @@ Show the value created versus the baseline.
 - discounts captured and late fees avoided
 - methodology text
 - GET /metrics/savings
+- early-payment gas counted against savings (FEE-2, M17-D4); negative savings reported
 
 ## Out of scope
 

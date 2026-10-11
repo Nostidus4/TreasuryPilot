@@ -1,6 +1,6 @@
 # M16 · Web Application (`apps/web`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/web/` · **Code:** `apps/web` · **Epic:** `[EPIC] M16 · Web Application`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/web/` · **Code:** `apps/web` · **Epic:** `[EPIC] M16 · Web Application`
 **ADRs:** ADR-010 (REST + OpenAPI client + SSE), ADR-013 (React + Vite + wagmi) · **Decisions:** M16-D1 … M16-D14 (§14)
 
 ---
@@ -115,8 +115,8 @@ WEB-001 → WEB-002 → WEB-003 → WEB-004 → WEB-025 → WEB-005 → WEB-006 
 | M16-D7 | SSE invalidates TanStack Query caches; polling fallback 10 s. |
 | M16-D8 | English only in M1, strings externalized. |
 | M16-D9 | Chain Sepolia (Anvil locally); wrong-network blocking prompt. |
-| M16-D10 | CSP strict, no inline scripts. *(mặc định)* |
+| M16-D10 | CSP strict, no inline scripts. |
 | M16-D11 | Fee policy screen shows the system proposal; Owner accepts or picks a preset. |
 | M16-D12 | Cancel on-chain banner persists until confirmed. |
 | M16-D13 | Guardian pause falls back to a wallet transaction when no sentinel is configured. |
-| M16-D14 | Recharts for metrics; no extra chart library. *(mặc định)* |
+| M16-D14 | Recharts for metrics; no extra chart library. |

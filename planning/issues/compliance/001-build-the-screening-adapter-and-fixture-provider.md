@@ -9,7 +9,7 @@
 | **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | BR-085, FR-906, NFR-CMP-04 |
+| **Traces to** | BR-085, FR-906, NFR-CMP-04, M14-D2, M14-D3 |
 | **Blocks** | MDT-004, CMP-002, CMP-L01 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ Screen addresses through a replaceable provider.
 - Adapter interface screen(address)
 - fixture provider reading a labelled TEST list (sample from a public sanctions list plus custom entries)
 - screenings records with TTL
+- screening TTL 24 h; ERROR always fails closed (M14-D2, M14-D3)
 
 ## Out of scope
 

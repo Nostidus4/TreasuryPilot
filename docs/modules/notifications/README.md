@@ -1,6 +1,6 @@
 # M13 · Notifications (`api` + `worker`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/notifications/` · **Code:** `services/api/.../events`, `services/worker/.../notify` · **Epic:** `[EPIC] M13 · Notifications`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/notifications/` · **Code:** `services/api/.../events`, `services/worker/.../notify` · **Epic:** `[EPIC] M13 · Notifications`
 **ADRs:** ADR-010 (REST + SSE) · **Decisions:** M13-D1 … M13-D9 (§14)
 
 ---
@@ -77,7 +77,7 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 ## 8. Algorithms
 
 - **Telegram content (OQ-17):** default `"[TreasuryPilot] Approval needed for request R-1042 · open: <link>"` — no amounts, addresses, vendor names; with `show_amounts` opt-in: adds amount and vendor display name. Deep links require app login.
-- **Dedup:** unique(user_id, event_id). **Rate:** at most 1 Telegram message per user per 10 s, bursts merged into a digest line *(mặc định)*.
+- **Dedup:** unique(user_id, event_id). **Rate:** at most 1 Telegram message per user per 10 s, bursts merged into a digest line.
 
 ## 9. Configuration
 
@@ -89,7 +89,7 @@ Org-scoped streams; payloads carry ids only (UI fetches details with permissions
 
 ## 11. Failure scenarios
 
-Telegram down → in-app still delivered, retries; Redis pub/sub down → SSE clients fall back to polling every 10 s *(mặc định)*; publisher crash → outbox rows re-published (dedup prevents duplicates).
+Telegram down → in-app still delivered, retries; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates).
 
 ## 12. Test plan
 
@@ -109,6 +109,6 @@ NTF-001 → NTF-002 → NTF-003 (P2). Later NTF-L01…L04.
 | M13-D4 | Payloads carry ids only. |
 | M13-D5 | Telegram minimal by default, amounts only on opt-in (OQ-17). |
 | M13-D6 | No action can be completed from a notification channel. |
-| M13-D7 | Telegram rate 1 msg / 10 s per user with merging. *(mặc định)* |
-| M13-D8 | SSE fallback to 10 s polling when pub/sub is down. *(mặc định)* |
+| M13-D7 | Telegram rate 1 msg / 10 s per user with merging. |
+| M13-D8 | SSE fallback to 10 s polling when pub/sub is down. |
 | M13-D9 | New events added by grilling: GovernanceSignatureNeeded, FeeAcceptanceNeeded, UnexpectedOutflow, CircuitBreakerTripped. |

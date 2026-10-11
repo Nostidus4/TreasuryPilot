@@ -1,6 +1,6 @@
 # M15 · Audit & Evidence (`api` + `worker`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/audit/` · **Code:** `services/api/.../audit`, `services/worker/.../evidence` · **Epic:** `[EPIC] M15 · Audit & Evidence`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/audit/` · **Code:** `services/api/.../audit`, `services/worker/.../evidence` · **Epic:** `[EPIC] M15 · Audit & Evidence`
 **Decisions:** M15-D1 … M15-D9 (§14)
 
 ---
@@ -62,7 +62,7 @@ Audit retention: forever in M1; evidence stored in the private bucket; verificat
 
 ## 10. Security
 
-DB trigger blocks UPDATE/DELETE; chain detects edits in a dump; signatures stored as hashes in bundles; bundles exclude Confidential data except vendor display name *(mặc định)*.
+DB trigger blocks UPDATE/DELETE; chain detects edits in a dump; signatures stored as hashes in bundles; bundles exclude Confidential data except vendor display name.
 
 ## 11. Failure scenarios
 
@@ -85,7 +85,7 @@ AUD-001 → AUD-002 → AUD-004 → AUD-003. Later AUD-L01.
 | M15-D3 | Audited action list per §3. |
 | M15-D4 | Offline verification CLI. |
 | M15-D5 | Evidence bundle v1 fields per §8; no fabricated hashes. |
-| M15-D6 | Bundles store signature hashes, not raw signatures. *(mặc định)* |
+| M15-D6 | Bundles store signature hashes, not raw signatures. |
 | M15-D7 | Coverage object on every status DTO. |
-| M15-D8 | Audit retention forever in M1. *(mặc định)* |
-| M15-D9 | Bundle exclude Confidential data except vendor display name. *(mặc định)* |
+| M15-D8 | Audit retention forever in M1. |
+| M15-D9 | Bundle exclude Confidential data except vendor display name. |

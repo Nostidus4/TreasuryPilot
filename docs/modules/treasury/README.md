@@ -1,6 +1,6 @@
 # M02 · Treasury & Chain Configuration (`api` + `worker`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/treasury/` · **Code:** `services/api/.../treasury/` · **Epic:** `[EPIC] M02 · Treasury & Chain Configuration`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/treasury/` · **Code:** `services/api/.../treasury/` · **Epic:** `[EPIC] M02 · Treasury & Chain Configuration`
 **ADRs:** ADR-002 (Safe + module), ADR-012 (Ethereum Sepolia), ADR-014 (money) · **Decisions:** M02-D1 … M02-D10 (§14)
 
 ---
@@ -59,13 +59,13 @@ Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter 
 ## 8. Algorithms
 
 - **Safe verification:** `getCode` non-empty; proxy `masterCopy` (storage slot 0) ∈ allowlisted Safe v1.4.1 singletons (L1/L2); `VERSION() == "1.4.1"`; chain id matches. EOAs → `NOT_A_SAFE`.
-- **Owner sets:** T, O1, O2 should share owners and threshold (PH-9); differences produce a warning, not an error *(mặc định)*.
+- **Owner sets:** T, O1, O2 should share owners and threshold (PH-9); differences produce a warning, not an error.
 - **Coverage:** for each Safe: `modules = getModulesPaginated(SENTINEL, 10)`; expect exactly `[clone]` with `clone`'s EIP-1167 target = implementation; `getStorageAt(GUARD_SLOT) == 0`; fallback handler ∈ allowlist. Result per wallet + overall (worst of three).
 - **Decimals:** `decimals()` on-chain must equal config; mismatch refuses the asset.
 
 ## 9. Configuration
 
-Chain list and deployments from config + manifest (fail fast at startup: missing RPC, missing code hash, < 2 RPC URLs). Coverage refresh 10 min + events. Supported Safe version 1.4.1 only in M1 *(mặc định)*.
+Chain list and deployments from config + manifest (fail fast at startup: missing RPC, missing code hash, < 2 RPC URLs). Coverage refresh 10 min + events. Supported Safe version 1.4.1 only in M1.
 
 ## 10. Security
 
@@ -88,12 +88,12 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 | ID | Decision |
 |---|---|
 | M02-D1 | Ethereum Sepolia; assets tUSDC (test) and Circle USDC (ADR-012). |
-| M02-D2 | Safe v1.4.1 only. *(mặc định)* |
+| M02-D2 | Safe v1.4.1 only. |
 | M02-D3 | Coverage = exactly our clone + no guard + canonical fallback handler on all three Safes. |
 | M02-D4 | PARTIAL allowed only with Owner acknowledgment; UNKNOWN never allows execution. |
 | M02-D5 | Module setup via governance txs (MDT-009); O1/O2 enable their module with their own Safe txs. |
-| M02-D6 | Differing owner sets warn, do not block. *(mặc định)* |
-| M02-D7 | Coverage refresh every 10 min + on Safe config events. *(mặc định)* |
+| M02-D6 | Differing owner sets warn, do not block. |
+| M02-D7 | Coverage refresh every 10 min + on Safe config events. |
 | M02-D8 | Config and deployments are files validated at startup; no runtime edit in M1. |
 | M02-D9 | Decimals verified on-chain when an asset is added. |
 | M02-D10 | Safe deployment from the UI is P2 (TRS-008). |

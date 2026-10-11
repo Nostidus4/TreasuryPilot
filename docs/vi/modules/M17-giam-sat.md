@@ -1,6 +1,6 @@
 # M17 · Giám sát & phân tích
 
-**Nguồn chuẩn:** `docs/modules/observability/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-011
+**Nguồn chuẩn:** `docs/modules/observability/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-011
 
 ## 1. Mục đích và ranh giới
 
@@ -8,7 +8,7 @@ M17 giúp team **thấy hệ thống đang làm gì** (log, trace, lỗi, metric
 
 | Trong phạm vi (M1) | Ngoài phạm vi |
 |---|---|
-| Log JSON có correlation id xuyên api/worker/signer | Dashboard host sẵn (Grafana) ngoài một service compose cơ bản *(mặc định: tùy chọn)* |
+| Log JSON có correlation id xuyên api/worker/signer | Dashboard host sẵn (Grafana) ngoài một service compose cơ bản (tùy chọn) |
 | Tracing OpenTelemetry (FastAPI, Celery, httpx, SQLAlchemy, lời gọi signer) | Metric tính tiền (M18, Later) |
 | Sentry (Python + web) và Prometheus `/metrics` | |
 | API chỉ số vận hành và báo cáo tiết kiệm | |
@@ -31,7 +31,7 @@ F-140 (FR-921), F-141 (FR-922), F-142 (FR-923, NFR-AUD-04).
 
 ## 4. Mô hình dữ liệu
 
-Không có bảng nghiệp vụ mới: chỉ số tính từ `request_status_events`, `plans`, `operations`, `transactions`, `gas_ledger`, `validations`, `review_items`, `schedules`; có thể dùng materialized view làm mới mỗi 15 phút *(mặc định)*.
+Không có bảng nghiệp vụ mới: chỉ số tính từ `request_status_events`, `plans`, `operations`, `transactions`, `gas_ledger`, `validations`, `review_items`, `schedules`; có thể dùng materialized view làm mới mỗi 15 phút.
 
 ## 6. Giao diện
 
@@ -47,7 +47,7 @@ Tiết kiệm giả định: với mỗi ngày lô đã chạy, chạy lại `sc
 
 ## 9. Cấu hình
 
-Log mức INFO (local DEBUG); lấy mẫu 100 % trace ở M1 (lưu lượng thấp) *(mặc định)*; Sentry DSN mỗi service từ secret; lỗi nghiêm trọng của Sentry báo qua Telegram (dùng M13).
+Log mức INFO (local DEBUG); lấy mẫu 100 % trace ở M1 (lưu lượng thấp); Sentry DSN mỗi service từ secret; lỗi nghiêm trọng của Sentry báo qua Telegram (dùng M13).
 
 ## 10. Bảo mật
 
@@ -74,7 +74,7 @@ OBS-001 → OBS-002 → OBS-003 → OBS-004 → OBS-005.
 | M17-D3 | Tiết kiệm so B1 tính từ snapshot đã lưu; số âm vẫn báo. |
 | M17-D4 | Gas khi trả sớm tính trừ vào tiết kiệm (FEE-2). |
 | M17-D5 | Danh sách series §6; không PII trong nhãn. |
-| M17-D6 | Lấy mẫu 100 % trace ở M1. *(mặc định)* |
-| M17-D7 | Dùng materialized view làm mới 15 phút nếu truy vấn chậm. *(mặc định)* |
-| M17-D8 | Grafana tùy chọn, không bắt buộc ở M1. *(mặc định)* |
+| M17-D6 | Lấy mẫu 100 % trace ở M1. |
+| M17-D7 | Dùng materialized view làm mới 15 phút nếu truy vấn chậm. |
+| M17-D8 | Grafana tùy chọn, không bắt buộc ở M1. |
 | M17-D9 | `/metrics` chỉ nội bộ. |

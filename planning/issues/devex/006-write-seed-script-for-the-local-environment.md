@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-927 |
+| **Traces to** | FR-927, PH-2, ADR-017 |
 | **Blocks** | DEV-007 |
 | **Submission cut** | A |
 
@@ -32,6 +32,7 @@ After `make seed`, a developer or judge has a working demo dataset.
 - Deploy contracts and 3 Safes to Anvil
 - create org, users with roles, treasury, active mandate, 3 payees (one still cooling), 5 invoices in different states
 - print login links and addresses
+- seed uses tUSDC (label TEST), a Guardian Safe with the sentinel, and an accepted fee policy so the demo runs end to end
 
 ## Out of scope
 

@@ -1,6 +1,6 @@
 # M17 · Observability & Analytics (`api` + `worker` + `signer` + `web`)
 
-**Status:** Detailed (spec completion pass, 2026-10-11 — *(mặc định)* = proposal accepted by default, open for review) · **Path:** `docs/modules/observability/` · **Epic:** `[EPIC] M17 · Observability & Analytics`
+**Status:** Detailed — decisions finalized by the tech lead under the project lead's delegation (2026-10-11) · **Path:** `docs/modules/observability/` · **Epic:** `[EPIC] M17 · Observability & Analytics`
 **ADRs:** ADR-011 (structlog + OpenTelemetry + Sentry + Prometheus) · **Decisions:** M17-D1 … M17-D9 (§14)
 
 ---
@@ -11,7 +11,7 @@ M17 lets the team **see what the system is doing** (logs, traces, errors, metric
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Structured JSON logs with correlation ids across api/worker/signer | Hosted dashboards (Grafana) beyond a basic compose service *(mặc định: optional)* |
+| Structured JSON logs with correlation ids across api/worker/signer | Hosted dashboards (Grafana) beyond a basic compose service (optional) |
 | OpenTelemetry tracing (FastAPI, Celery, httpx, SQLAlchemy, signer call) | Billing metrics (M18, Later) |
 | Sentry (Python + web) and Prometheus `/metrics` | |
 | Operational metrics API and savings report | |
@@ -34,7 +34,7 @@ F-140 (FR-921), F-141 (FR-922), F-142 (FR-923, NFR-AUD-04).
 
 ## 4. Data model
 
-No new business tables: metrics are computed from `request_status_events`, `plans`, `operations`, `transactions`, `gas_ledger`, `validations`, `review_items`, `schedules`; optional materialized views refreshed every 15 min *(mặc định)*.
+No new business tables: metrics are computed from `request_status_events`, `plans`, `operations`, `transactions`, `gas_ledger`, `validations`, `review_items`, `schedules`; optional materialized views refreshed every 15 min.
 
 ## 5. State — n/a.
 
@@ -58,7 +58,7 @@ Savings counterfactual: for each executed batch day, re-run `schedule_edf` on th
 
 ## 9. Configuration
 
-Log level INFO (DEBUG locally); sampling: 100 % traces in M1 (low volume) *(mặc định)*; Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
+Log level INFO (DEBUG locally); sampling: 100 % traces in M1 (low volume); Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
 
 ## 10. Security
 
@@ -85,7 +85,7 @@ OBS-001 → OBS-002 → OBS-003 → OBS-004 → OBS-005.
 | M17-D3 | Savings vs B1 computed from stored snapshots; negatives shown. |
 | M17-D4 | Early-payment gas counts against savings (FEE-2). |
 | M17-D5 | Prometheus series list §6; no PII labels. |
-| M17-D6 | 100 % trace sampling in M1. *(mặc định)* |
-| M17-D7 | Materialized views refreshed every 15 min if queries are slow. *(mặc định)* |
-| M17-D8 | Grafana optional; not required for M1. *(mặc định)* |
+| M17-D6 | 100 % trace sampling in M1. |
+| M17-D7 | Materialized views refreshed every 15 min if queries are slow. |
+| M17-D8 | Grafana optional; not required for M1. |
 | M17-D9 | `/metrics` internal only. |

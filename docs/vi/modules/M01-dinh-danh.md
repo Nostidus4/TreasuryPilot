@@ -1,6 +1,6 @@
 # M01 · Định danh & phân quyền
 
-**Nguồn chuẩn:** `docs/modules/identity/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; mục *(mặc định)* là đề xuất đã áp dụng, chờ review) · **ADR:** ADR-009
+**Nguồn chuẩn:** `docs/modules/identity/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-009
 
 ## 1. Mục đích và ranh giới
 
@@ -32,15 +32,15 @@ F-001 (FR-001–003), F-002 (FR-004–006, BR-006), F-003 (FR-007, FR-009), F-00
 | **Auditor** | chỉ đọc mọi thứ kể cả audit log và gói bằng chứng | ghi bất cứ gì |
 | **PlatformAdmin** | vận hành nền tảng (M18); mặc định không xem dữ liệu khách | ký hoặc chuyển tiền (BR-094) |
 
-Một người có thể giữ nhiều vai trò. Vai trò ký (Owner, Approver, Guardian) **chưa có hiệu lực** cho đến khi liên kết ví (FR-012). Owner trong app = người có ví liên kết là owner của Safe T (kiểm tra on-chain khi liên kết và định kỳ) *(mặc định)*.
+Một người có thể giữ nhiều vai trò. Vai trò ký (Owner, Approver, Guardian) **chưa có hiệu lực** cho đến khi liên kết ví (FR-012). Owner trong app = người có ví liên kết là owner của Safe T (kiểm tra on-chain khi liên kết và định kỳ).
 
 ## 4. Mô hình dữ liệu
 
-`users`, `sessions` (rảnh 30 phút, tối đa 12 giờ *(mặc định)*), `magic_links` (băm, dùng 1 lần, 15 phút), `wallet_links` (một địa chỉ chỉ thuộc một người), `siwe_nonces` (dùng 1 lần, 10 phút), `organizations` (+ `settings`: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (token băm, 7 ngày), `role_events` (append-only).
+`users`, `sessions` (rảnh 30 phút, tối đa 12 giờ), `magic_links` (băm, dùng 1 lần, 15 phút), `wallet_links` (một địa chỉ chỉ thuộc một người), `siwe_nonces` (dùng 1 lần, 10 phút), `organizations` (+ `settings`: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (token băm, 7 ngày), `role_events` (append-only).
 
 ## 5. Trạng thái
 
-Lời mời: `Pending → Accepted | Expired | Revoked`. Phiên: `Active → Expired | Revoked`. Liên kết ví: `Linked → Unlinked` (từ chối gỡ nếu đó là ví ký duy nhất mà vai trò còn việc đang chờ *(mặc định)*).
+Lời mời: `Pending → Accepted | Expired | Revoked`. Phiên: `Active → Expired | Revoked`. Liên kết ví: `Linked → Unlinked` (từ chối gỡ nếu đó là ví ký duy nhất mà vai trò còn việc đang chờ).
 
 ## 6. Giao diện API (API_SPEC §1)
 
@@ -64,7 +64,7 @@ Thông điệp SIWE: domain = host của app, `chainId` = chain của treasury (
 
 - **RBAC:** dependency `require_member(org)` (không phải thành viên → **404**) và `require_role(...)` (thiếu vai trò → 403); repository luôn lọc theo `org_id`. Test tự động liệt kê mọi route thuộc tổ chức và gọi thử bằng người ngoài.
 - **Maker-checker:** người duyệt ∉ {người tạo, người sửa cuối}, trừ khi bật solo mode (chỉ Owner bật), khi đó bản duyệt và audit ghi `solo_mode = true`.
-- **Kiểm tra Owner:** khi liên kết và mỗi giờ, so địa chỉ ví với danh sách owner của Safe T; lệch thì mất quyền Owner thực tế (vai trò vẫn còn nhưng hiện "không phải owner on-chain") *(mặc định)*.
+- **Kiểm tra Owner:** khi liên kết và mỗi giờ, so địa chỉ ví với danh sách owner của Safe T; lệch thì mất quyền Owner thực tế (vai trò vẫn còn nhưng hiện "không phải owner on-chain").
 
 ## 9. Cấu hình
 
@@ -72,7 +72,7 @@ Phiên rảnh 30 phút / tối đa 12 giờ; magic link 15 phút; lời mời 7 
 
 ## 10. Bảo mật
 
-Token được băm; nonce dùng một lần; CSRF cho mọi thao tác ghi; trả 404 cho người ngoài; audit thay đổi vai trò và ví; M1 không lưu mật khẩu (chỉ magic link) *(mặc định)*; phản hồi giống nhau cho email có/không tồn tại (chống dò email).
+Token được băm; nonce dùng một lần; CSRF cho mọi thao tác ghi; trả 404 cho người ngoài; audit thay đổi vai trò và ví; M1 không lưu mật khẩu (chỉ magic link); phản hồi giống nhau cho email có/không tồn tại (chống dò email).
 
 ## 11. Tình huống lỗi
 
@@ -90,15 +90,15 @@ IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 
 
 | ID | Quyết định |
 |---|---|
-| M01-D1 | M1 chỉ dùng magic link, không mật khẩu. *(mặc định)* |
-| M01-D2 | Phiên phía server; rảnh 30 phút, tối đa 12 giờ. *(mặc định)* |
+| M01-D1 | M1 chỉ dùng magic link, không mật khẩu. |
+| M01-D2 | Phiên phía server; rảnh 30 phút, tối đa 12 giờ. |
 | M01-D3 | Người ngoài tổ chức nhận 404. |
 | M01-D4 | 8 vai trò; một người nhiều vai trò; vai trò ký cần ví liên kết. |
-| M01-D5 | Quyền Owner trong app yêu cầu ví liên kết là owner Safe T on-chain. *(mặc định)* |
+| M01-D5 | Quyền Owner trong app yêu cầu ví liên kết là owner Safe T on-chain. |
 | M01-D6 | SIWE dùng chainId của treasury; nonce 10 phút; lệch giờ ± 2 phút. |
 | M01-D7 | Solo mode do Owner bật, gắn cờ và audit (OQ-07). |
-| M01-D8 | Giới hạn tần suất như §6; Redis lỗi thì đóng. *(mặc định)* |
-| M01-D9 | Lời mời hết hạn sau 7 ngày. *(mặc định)* |
+| M01-D8 | Giới hạn tần suất như §6; Redis lỗi thì đóng. |
+| M01-D9 | Lời mời hết hạn sau 7 ngày. |
 | M01-D10 | Không để lộ email nào đã có tài khoản. |
-| M01-D11 | Không cho gỡ ví ký cuối cùng khi vai trò còn việc đang chờ. *(mặc định)* |
+| M01-D11 | Không cho gỡ ví ký cuối cùng khi vai trò còn việc đang chờ. |
 | M01-D12 | Gửi email bằng Resend; local in ra console. |

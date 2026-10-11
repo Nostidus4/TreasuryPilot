@@ -297,6 +297,6 @@ M20 does not add database tables. Its datasets live as files (§5) and are loade
 | ID | Question | Owner |
 |---|---|---|
 | OQ-18 | How many interviews are realistic before submission | Research advisor |
-| M20-Q1 | Who records the demo video (screen + voice)? | Project lead |
-| M20-Q2 | Deck tool (Google Slides, Canva, PowerPoint) and template | Communication advisor |
-| M20-Q3 | Do advisors use git locally or only the GitHub web editor? | Project lead (affects onboarding) |
+| ~~M20-Q1~~ | Decided: the project lead records the demo video (screen + English voice-over), following the runbook | Project lead |
+| ~~M20-Q2~~ | Decided: Google Slides (shared editing, PDF export), one simple template | Communication advisor |
+| ~~M20-Q3~~ | Decided: advisors use the GitHub web editor ("Add file", PR from the browser); git locally is optional | Project lead |

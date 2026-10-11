@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | infrastructure |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-921 |
+| **Traces to** | FR-921, M17-D2 |
 | **Blocks** | OBS-005, ADM-L02 |
 | **Submission cut** | After submission |
 
@@ -32,6 +32,7 @@ Numbers for completion, interventions, fees and latency.
 - Metric definitions document
 - queries over events for completion rate, on-time %, interventions per request, fees, tx count, latency split by phase, rejections by reason
 - GET /metrics/operations
+- metric definitions exactly as docs/modules/observability §3 (M17-D2)
 
 ## Out of scope
 

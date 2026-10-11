@@ -1,6 +1,6 @@
 # M19 · Trải nghiệm dev & chất lượng
 
-**Nguồn chuẩn:** `docs/modules/devex/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-001, ADR-008, ADR-010
+**Nguồn chuẩn:** `docs/modules/devex/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-001, ADR-008, ADR-010
 
 ## 1. Mục đích và ranh giới
 
@@ -86,11 +86,11 @@ DEV-001 → DEV-002 → DEV-011 → DEV-003 → DEV-004 → DEV-005 → DEV-006 
 | M19-D2 | Profile Compose local/testnet; Caddy TLS trên một VM. |
 | M19-D3 | Seed chạy lại không trùng, dùng API công khai khi có thể. |
 | M19-D4 | Kịch bản bằng YAML; danh sách chain id cho phép. |
-| M19-D5 | Thêm kịch bản unexpected-outflow, fee-spike. *(mặc định)* |
+| M19-D5 | Thêm kịch bản unexpected-outflow, fee-spike. |
 | M19-D6 | Cổng coverage py-core ≥ 85 %. |
 | M19-D7 | Import-linter cho phép ortools và eth-account trong py-core. |
 | M19-D8 | Fuzz 1k trên PR, 10k trên main. |
-| M19-D9 | E2E và test crash chạy hằng đêm + trên main. *(mặc định)* |
+| M19-D9 | E2E và test crash chạy hằng đêm + trên main. |
 | M19-D10 | Image trên GHCR tag bằng git SHA. |
 | M19-D11 | Chỉ web và api truy cập được từ internet. |
 | M19-D12 | Độ ổn định: 30 lượt local + N lượt Sepolia, lỗi được phân loại. |

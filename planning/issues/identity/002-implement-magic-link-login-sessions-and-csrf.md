@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-001, FR-003, ADR-009 |
+| **Traces to** | FR-001, FR-003, ADR-009, M01-D2, M01-D10 |
 | **Blocks** | IDN-003, IDN-004, IDN-005, IDN-L01 |
 | **Submission cut** | A |
 
@@ -34,6 +34,8 @@ Users can sign in by email and hold a secure session.
 - httpOnly Secure SameSite=Lax cookie with server-side session
 - CSRF double-submit on mutations
 - email via Resend, console in local
+- session idle timeout 30 min and absolute 12 h (M01-D2)
+- same response for known and unknown emails (M01-D10)
 
 ## Out of scope
 
@@ -53,6 +55,8 @@ Follow the module spec and the relevant ADRs.
 - [ ] Expired tokens return TOKEN_EXPIRED
 - [ ] Mutations without the CSRF token are rejected
 - [ ] Sessions expire on idle and absolute timeouts
+- [ ] A session idle for 31 minutes is rejected
+- [ ] Requesting a link for an unknown email returns the same response as for a known one
 
 ## Testing requirements
 

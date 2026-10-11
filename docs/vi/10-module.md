@@ -35,8 +35,8 @@ Mẫu 14 mục: (1) mục đích và ranh giới · (2) feature, yêu cầu, lu�
 
 | ID | Module | Tab trong tài liệu này | Mức |
 |---|---|---|---|
-| M01 | Định danh & phân quyền (`identity`) | Tab 16 | mặc định, chờ review |
-| M02 | Treasury & cấu hình chain (`treasury`) | Tab 17 | mặc định, chờ review |
+| M01 | Định danh & phân quyền (`identity`) | Tab 16 | đã chốt (tech lead) |
+| M02 | Treasury & cấu hình chain (`treasury`) | Tab 17 | đã chốt (tech lead) |
 | M03 | Mandate, payee, ngoại lệ, tạm dừng (`mandate`) | Tab 18 | đã grilling với team |
 | M04 | Smart contract (`contracts`) | Tab 19 | đã grilling với team |
 | M05 | Hóa đơn & yêu cầu chi (`invoices`) | Tab 20 | đã grilling với team |
@@ -47,13 +47,13 @@ Mẫu 14 mục: (1) mục đích và ranh giới · (2) feature, yêu cầu, lu�
 | M10 | Điều phối & thực thi (`execution`) | Tab 25 | đã review với trưởng nhóm |
 | M11 | Xác minh & đối soát (`reconciliation`) | Tab 26 | đã review với trưởng nhóm |
 | M12 | Phục hồi & ngoại lệ (`recovery`) | Tab 27 | đã review với trưởng nhóm |
-| M13 | Thông báo (`notifications`) | Tab 28 | mặc định, chờ review |
-| M14 | Tuân thủ (`compliance`) | Tab 29 | mặc định, chờ review |
-| M15 | Audit & bằng chứng (`audit`) | Tab 30 | mặc định, chờ review |
-| M16 | Web (`web`) | Tab 31 | mặc định, chờ review |
-| M17 | Giám sát & phân tích (`observability`) | Tab 32 | mặc định, chờ review |
-| M18 | Quản trị nền tảng & billing (`admin`) | Tab 33 | mặc định, chờ review |
-| M19 | DevEx & chất lượng (`devex`) | Tab 34 | mặc định, chờ review |
+| M13 | Thông báo (`notifications`) | Tab 28 | đã chốt (tech lead) |
+| M14 | Tuân thủ (`compliance`) | Tab 29 | đã chốt (tech lead) |
+| M15 | Audit & bằng chứng (`audit`) | Tab 30 | đã chốt (tech lead) |
+| M16 | Web (`web`) | Tab 31 | đã chốt (tech lead) |
+| M17 | Giám sát & phân tích (`observability`) | Tab 32 | đã chốt (tech lead) |
+| M18 | Quản trị nền tảng & billing (`admin`) | Tab 33 | đã chốt (tech lead) |
+| M19 | DevEx & chất lượng (`devex`) | Tab 34 | đã chốt (tech lead) |
 | M20 | Domain & bằng chứng (`domain-evidence`) | Tab 35 | đã grilling với team |
 
 ## Các bất biến của contract (module M04)

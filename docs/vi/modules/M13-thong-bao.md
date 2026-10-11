@@ -1,6 +1,6 @@
 # M13 · Thông báo
 
-**Nguồn chuẩn:** `docs/modules/notifications/README.md` · **Trạng thái:** Chi tiết (bổ sung spec 11/10/2026; *(mặc định)* = đề xuất chờ review) · **ADR:** ADR-010
+**Nguồn chuẩn:** `docs/modules/notifications/README.md` · **Trạng thái:** Chi tiết — quyết định đã chốt (trưởng nhóm ủy quyền cho tech lead, 11/10/2026) · **ADR:** ADR-010
 
 ## 1. Mục đích và ranh giới
 
@@ -60,7 +60,7 @@ Thay đổi + dòng `domain_events` trong một transaction → publisher (mỗi
 ## 8. Thuật toán
 
 - **Nội dung Telegram (OQ-17):** mặc định `"[TreasuryPilot] Cần duyệt request R-1042 · mở: <link>"`, không số tiền, địa chỉ, tên vendor; nếu bật `show_amounts` thì thêm số tiền và tên vendor. Link sâu yêu cầu đăng nhập app.
-- **Chống trùng:** duy nhất (user, event). **Tần suất:** tối đa 1 tin Telegram mỗi 10 giây cho một người, tin dồn được gộp thành một dòng tóm tắt *(mặc định)*.
+- **Chống trùng:** duy nhất (user, event). **Tần suất:** tối đa 1 tin Telegram mỗi 10 giây cho một người, tin dồn được gộp thành một dòng tóm tắt.
 
 ## 9. Cấu hình
 
@@ -72,7 +72,7 @@ Luồng theo tổ chức; payload chỉ có id (giao diện tự lấy chi tiế
 
 ## 11. Tình huống lỗi
 
-Telegram lỗi → vẫn có thông báo trong app, thử lại · Redis pub/sub lỗi → client SSE chuyển sang hỏi định kỳ mỗi 10 giây *(mặc định)* · publisher chết → dòng outbox được phát lại (chống trùng ngăn lặp).
+Telegram lỗi → vẫn có thông báo trong app, thử lại · Redis pub/sub lỗi → client SSE chuyển sang hỏi định kỳ mỗi 10 giây · publisher chết → dòng outbox được phát lại (chống trùng ngăn lặp).
 
 ## 12. Kế hoạch test
 
@@ -92,6 +92,6 @@ NTF-001 → NTF-002 → NTF-003 (P2). Later NTF-L01…L04.
 | M13-D4 | Payload chỉ chứa id. |
 | M13-D5 | Telegram mặc định tối thiểu; số tiền chỉ khi người dùng bật (OQ-17). |
 | M13-D6 | Không hoàn tất được hành động nào từ kênh thông báo. |
-| M13-D7 | Telegram 1 tin / 10 giây mỗi người, có gộp. *(mặc định)* |
-| M13-D8 | SSE chuyển sang hỏi định kỳ 10 giây khi pub/sub lỗi. *(mặc định)* |
+| M13-D7 | Telegram 1 tin / 10 giây mỗi người, có gộp. |
+| M13-D8 | SSE chuyển sang hỏi định kỳ 10 giây khi pub/sub lỗi. |
 | M13-D9 | Sự kiện mới từ grilling: cần chữ ký quản trị, cần chấp nhận phí, tiền ra bất thường, circuit breaker kích hoạt. |

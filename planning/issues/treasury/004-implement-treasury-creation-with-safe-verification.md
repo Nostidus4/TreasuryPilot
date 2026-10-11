@@ -9,7 +9,7 @@
 | **Size** | M (~1 day) |
 | **Area** | backend |
 | **Status** | Ready for Assignment |
-| **Traces to** | FR-101–103 |
+| **Traces to** | FR-101–103, M02-D2, M02-D6 |
 | **Blocks** | DEV-006, TRS-005, TRS-006, TRS-008, TRS-L01, CHR-002 |
 | **Submission cut** | A |
 
@@ -35,6 +35,8 @@ An Owner can register a treasury made of real Safes.
 - verify each address is a Safe proxy on that chain (code hash / singleton)
 - reject duplicates, wrong chain and EOAs
 - GET treasury with wallets
+- Safe version check: masterCopy in the allowlisted v1.4.1 singletons and VERSION() == 1.4.1 (M02-D2)
+- warning (not error) when T/O1/O2 owner sets or thresholds differ (M02-D6)
 
 ## Out of scope
 
@@ -54,6 +56,7 @@ Use safe-eth-py for Safe detection.
 - [ ] An EOA is rejected with NOT_A_SAFE
 - [ ] Duplicate wallet addresses are rejected
 - [ ] A valid set of three Safes creates the treasury
+- [ ] A Safe of another version is rejected with SAFE_VERSION_UNSUPPORTED
 
 ## Testing requirements
 
