@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 import {ITreasuryPilotModule} from "./interfaces/ITreasuryPilotModule.sol";
+import {PaymentApprovalHash} from "./libraries/PaymentApprovalHash.sol";
 
 /// @notice Storage belongs to each clone. No field is mutable through a generic call.
 abstract contract TreasuryPilotStorage is ITreasuryPilotModule {
-    bytes32 public constant PAYMENT_APPROVAL_TYPEHASH = keccak256(
-        "PaymentApproval(bytes32 requestId,bytes32 invoiceHash,bytes32 fingerprint,address treasury,address payingWallet,address asset,address payee,uint256 amount,uint256 earlyAmount,uint64 earlyPayBy,uint64 deadline,bytes32 termsHash,uint64 expiry)"
-    );
+    bytes32 public constant PAYMENT_APPROVAL_TYPEHASH = PaymentApprovalHash.TYPEHASH;
     uint8 public constant PAY = 1;
     uint8 public constant REFILL = 2;
     uint8 public constant SWAP_IN = 3;
