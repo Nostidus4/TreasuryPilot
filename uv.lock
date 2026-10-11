@@ -763,6 +763,12 @@ requires-dist = [
 name = "treasurypilot-core"
 version = "0.1.0"
 source = { editable = "packages/py-core" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "treasurypilot-signer"
