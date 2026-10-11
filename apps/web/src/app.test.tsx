@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { expect, test } from 'vitest';
 
@@ -34,5 +34,29 @@ test('redirects an unauthenticated user to login', async () => {
 
   expect(
     await screen.findByRole('button', { name: /preview application shell/i }),
+  ).toBeInTheDocument();
+});
+
+test('opens the interactive dashboard from the preview entry', async () => {
+  renderApp('/login');
+
+  fireEvent.click(
+    screen.getByRole('button', { name: /preview application shell/i }),
+  );
+
+  expect(
+    await screen.findByRole('heading', { name: /good morning, avery/i }),
+  ).toBeInTheDocument();
+});
+
+test('restores a protected deep link after starting the preview session', async () => {
+  renderApp('/mock/plans');
+
+  fireEvent.click(
+    await screen.findByRole('button', { name: /preview application shell/i }),
+  );
+
+  expect(
+    await screen.findByRole('heading', { name: /ai payment plan/i }),
   ).toBeInTheDocument();
 });
