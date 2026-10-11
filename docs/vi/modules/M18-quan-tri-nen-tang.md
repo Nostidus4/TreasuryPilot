@@ -1,6 +1,6 @@
 # M18 · Quản trị nền tảng & tính phí (Later)
 
-**Nguồn chuẩn:** `docs/modules/admin/README.md` · **Trạng thái:** Chi tiết ở mức Later (bổ sung spec 11/10/2026)
+**Nguồn chuẩn:** `docs/modules/admin/README.md` · **Trạng thái:** Chi tiết ở mức Later — quyết định đã chốt (11/10/2026)
 
 ## 1. Mục đích và ranh giới
 
