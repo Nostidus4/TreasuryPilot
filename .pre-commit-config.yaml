@@ -1,0 +1,32 @@
+minimum_pre_commit_version: "4.2.0"
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        files: ^(packages|services|infra/(scripts|minio-init))/.*\.py$
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        files: ^(packages|services|infra/(scripts|minio-init))/.*\.py$
+      - id: prettier
+        name: prettier
+        entry: corepack pnpm@9.15.9 exec prettier --write
+        language: system
+        files: >-
+          ^(apps/web/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)|contracts/package\.json|infra/compose\.yaml|\.github/workflows/.*\.ya?ml|package\.json|pnpm-workspace\.yaml)$
+      - id: forge-fmt
+        name: forge fmt
+        entry: bash -c 'docker run --rm --entrypoint forge -v "$PWD:/workspace" -w /workspace/contracts ghcr.io/foundry-rs/foundry:v1.8.5 fmt --check'
+        language: system
+        files: ^contracts/.*\.sol$
+        pass_filenames: false
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+apps/web/dist/
+*.tsbuildinfo
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+infra/env/.env
+
+# Editor and operating system
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,60 @@
+name: Web CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'services/api/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/web.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'services/api/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/web.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - name: Install workspaces
+        run: |
+          uv sync --frozen
+          pnpm install --frozen-lockfile
+      - name: Regenerate OpenAPI client
+        run: |
+          make openapi
+          git diff --exit-code -- apps/web/openapi.json apps/web/src/lib/api/schema.d.ts
+      - name: Lint, typecheck and test
+        run: |
+          pnpm --dir apps/web lint
+          pnpm --dir apps/web typecheck
+          pnpm --dir apps/web test
+      - name: Build
+        run: pnpm --dir apps/web build

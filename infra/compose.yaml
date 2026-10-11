@@ -1,0 +1,258 @@
+name: treasurypilot
+
+x-python-build: &python-build
+  context: ..
+
+x-app-environment: &app-environment
+  TP_ENVIRONMENT: local
+  TP_REDIS_URL: redis://redis:6379/0
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+  S3_ENDPOINT_URL: http://minio:9000
+  S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'no', '--save', '']
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+  minio:
+    build:
+      context: ..
+      dockerfile: infra/minio/Dockerfile
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+  minio-init:
+    build:
+      context: ..
+      dockerfile: infra/minio-init/Dockerfile
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+    restart: 'no'
+    networks: [internal]
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.8.5
+    profiles: [local, ci]
+    entrypoint: ['anvil']
+    command:
+      - --host
+      - 0.0.0.0
+      - --chain-id
+      - '31337'
+      - --mnemonic
+      - test test test test test test test test test test test junk
+      - --block-time
+      - '1'
+    ports:
+      - '127.0.0.1:8545:8545'
+    healthcheck:
+      test: ['CMD', 'cast', 'chain-id', '--rpc-url', 'http://127.0.0.1:8545']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+  api:
+    build:
+      <<: *python-build
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *app-environment
+      TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:8000:8000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+  worker:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'worker',
+        '--loglevel=INFO',
+        '--queues=core',
+        '--hostname=core@%h',
+      ]
+    environment:
+      <<: *app-environment
+      CHAIN_RPC_URL: http://anvil:8545
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [internal]
+
+  worker-ai:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'worker',
+        '--loglevel=INFO',
+        '--queues=ai',
+        '--hostname=ai@%h',
+      ]
+    environment:
+      TP_ENVIRONMENT: local
+      TP_REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${AI_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public, internal]
+
+  beat:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'beat',
+        '--loglevel=INFO',
+        '--schedule=/tmp/celerybeat-schedule',
+      ]
+    environment:
+      <<: *app-environment
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [internal]
+
+  signer:
+    build:
+      <<: *python-build
+      dockerfile: services/signer/Dockerfile
+    environment:
+      TP_ENVIRONMENT: local
+      CHAIN_RPC_URL: http://anvil:8545
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_CHAIN_ID: '31337'
+        VITE_RPC_URL: http://localhost:8545
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:5173:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [public, internal]
+
+networks:
+  public:
+  internal:
+    internal: true
+
+volumes:
+  postgres-data:
+  minio-data:

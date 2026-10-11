@@ -1,0 +1,7 @@
+.venv
+node_modules
+apps/web/dist
+contracts/cache
+contracts/out
+contracts/broadcast
+planning/tracker
