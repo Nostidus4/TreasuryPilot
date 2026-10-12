@@ -389,8 +389,9 @@ class ExceptionRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    # payment_requests is introduced by M05; its FK is added in that migration.
-    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
+    )
     mandate_onchain_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
     payee: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
