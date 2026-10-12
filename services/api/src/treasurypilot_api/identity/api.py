@@ -168,11 +168,10 @@ async def request_magic_link(
     payload: MagicLinkRequest, request: Request, background_tasks: BackgroundTasks
 ) -> Response:
     service = _service(request)
-    delivery = await service.request_magic_link(payload.email, client_ip=_client_ip(request))
-    if delivery is not None:
-        # Send after responding so known and unknown emails take the same time
-        # and a provider outage cannot reveal which emails have accounts.
-        background_tasks.add_task(service.deliver_magic_link, delivery)
+    await service.enforce_magic_link_limits(payload.email, client_ip=_client_ip(request))
+    # Account lookup, DB writes, and email delivery all happen after the same 202
+    # response, so known and unknown addresses follow the same request path.
+    background_tasks.add_task(service.issue_and_deliver_magic_link, payload.email)
     return Response(status_code=202)
 
 

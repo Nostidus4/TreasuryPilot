@@ -285,16 +285,21 @@ class AuthService:
             )
 
     async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:
-        """Issue a link for an active user; delivery happens via ``deliver_magic_link``.
+        """Apply limits and issue a link for direct service callers."""
 
-        Limits apply to every email, known or not, and sending is left to the
-        caller's background task, so both paths return the same response in
-        about the same time.
-        """
+        normalized = normalize_email(email)
+        await self.enforce_magic_link_limits(normalized, client_ip=client_ip)
+        return await self.issue_magic_link(normalized)
 
+    async def enforce_magic_link_limits(self, email: str, *, client_ip: str) -> None:
+        """Apply shared request limits before an enumeration-safe 202 response."""
         normalized = normalize_email(email)
         await self._enforce_limit("magic-link:ip", client_ip, MAGIC_LINK_IP_LIMIT)
         await self._enforce_limit("magic-link:email", normalized, MAGIC_LINK_EMAIL_LIMIT)
+
+    async def issue_magic_link(self, email: str) -> MagicLinkDelivery | None:
+        """Look up the account and issue its link outside the HTTP response path."""
+        normalized = normalize_email(email)
         user = await self._repository.find_active_user_by_email(normalized)
         if user is None:
             # Perform the same token work as the known-account path. No record or usable
@@ -314,6 +319,16 @@ class AuthService:
         separator = "&" if "?" in self._magic_link_base_url else "?"
         url = f"{self._magic_link_base_url}{separator}{urlencode({'token': raw_token})}"
         return MagicLinkDelivery(email=normalized, url=url, token_hash=token_digest)
+
+    async def issue_and_deliver_magic_link(self, email: str) -> None:
+        """Issue and send a link in a background task to hide account lookup timing."""
+        try:
+            delivery = await self.issue_magic_link(email)
+            if delivery is not None:
+                await self.deliver_magic_link(delivery)
+        except Exception as exc:
+            # Database/provider failures happen after the indistinguishable 202 response.
+            logger.warning("magic link request failed: %s", type(exc).__name__)
 
     async def deliver_magic_link(self, delivery: MagicLinkDelivery) -> None:
         """Send an issued link; on failure the link is invalidated and logged."""
