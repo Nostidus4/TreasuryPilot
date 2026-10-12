@@ -50,7 +50,7 @@ F-160 (FR-927), F-161 (FR-928, NFR-MAINT-01/03), F-162 (FR-929, BR-095), F-163 (
 | Workflow | Gates |
 |---|---|
 | `ci.yml` (Python) | ruff, ruff format, mypy (strict py-core), pytest + coverage (py-core ≥ 85 %), import-linter, gitleaks |
-| `contracts.yml` | forge fmt, build, test (fuzz 1k on PR, 10k on main), invariants, Slither (artifact) |
+| `contracts.yml` | forge fmt, build, test (fuzz 1k on PR, 10k on main; invariant runs 192 on PR, 750 on main, depth 50), Slither report-only with `slither-report` artifact (JSON, SARIF, markdown; SC-015 raises it to fail on high) |
 | `web.yml` | eslint, tsc, vite build, OpenAPI client drift |
 | `e2e.yml` (main + nightly) | Playwright happy path on Anvil (WEB-023), RCV-007 crash test *(mặc định: nightly)* |
 | `images.yml` | build + push to GHCR tagged with git SHA |

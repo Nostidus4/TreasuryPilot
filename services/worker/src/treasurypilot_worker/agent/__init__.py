@@ -1,1 +1,107 @@
-"""LLM-isolated advisory tasks."""
+"""LLM-isolated advisory tasks. Every model call goes through `AiAdapter.run`."""
+
+from treasurypilot_worker.agent.adapter import AiAdapter
+from treasurypilot_worker.agent.budget import BudgetLedger, InMemoryBudgetLedger, cost_usd_micros
+from treasurypilot_worker.agent.config import (
+    AiConfig,
+    AiTask,
+    ModelPrice,
+    TaskConfig,
+    load_ai_config,
+)
+from treasurypilot_worker.agent.errors import (
+    AiBudgetExceeded,
+    AiError,
+    AiInputRejected,
+    AiSchemaError,
+    AiTimeout,
+    AiToolLimitExceeded,
+    AiUnavailable,
+    PromptTemplateError,
+)
+from treasurypilot_worker.agent.fake import FakeClock, FakeProvider, fake_text, fake_tool_use
+from treasurypilot_worker.agent.prompts import (
+    POLICY_VERSION,
+    UNTRUSTED_DATA_POLICY,
+    PromptTemplate,
+    RenderedPrompt,
+    Slot,
+    SlotKind,
+)
+from treasurypilot_worker.agent.secret_scan import SecretScanner, default_scanner
+from treasurypilot_worker.agent.types import (
+    AiResult,
+    ContentBlock,
+    Message,
+    Provider,
+    ProviderRequest,
+    ProviderResponse,
+    StopReason,
+    TextBlock,
+    Tool,
+    ToolCall,
+    ToolCallRecord,
+    ToolResult,
+    ToolSpec,
+    Usage,
+)
+from treasurypilot_worker.agent.untrusted import (
+    MAX_UNTRUSTED_CHARS,
+    SourceKind,
+    UntrustedBlock,
+    UntrustedSource,
+    sanitize,
+    wrap_untrusted,
+)
+
+__all__ = [
+    "MAX_UNTRUSTED_CHARS",
+    "POLICY_VERSION",
+    "UNTRUSTED_DATA_POLICY",
+    "AiAdapter",
+    "AiBudgetExceeded",
+    "AiConfig",
+    "AiError",
+    "AiInputRejected",
+    "AiResult",
+    "AiSchemaError",
+    "AiTask",
+    "AiTimeout",
+    "AiToolLimitExceeded",
+    "AiUnavailable",
+    "BudgetLedger",
+    "ContentBlock",
+    "FakeClock",
+    "FakeProvider",
+    "InMemoryBudgetLedger",
+    "Message",
+    "ModelPrice",
+    "PromptTemplate",
+    "PromptTemplateError",
+    "Provider",
+    "ProviderRequest",
+    "ProviderResponse",
+    "RenderedPrompt",
+    "SecretScanner",
+    "Slot",
+    "SlotKind",
+    "SourceKind",
+    "StopReason",
+    "TaskConfig",
+    "TextBlock",
+    "Tool",
+    "ToolCall",
+    "ToolCallRecord",
+    "ToolResult",
+    "ToolSpec",
+    "UntrustedBlock",
+    "UntrustedSource",
+    "Usage",
+    "cost_usd_micros",
+    "default_scanner",
+    "fake_text",
+    "fake_tool_use",
+    "load_ai_config",
+    "sanitize",
+    "wrap_untrusted",
+]
