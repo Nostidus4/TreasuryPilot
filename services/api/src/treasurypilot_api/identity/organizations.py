@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, cast
 
 from fastapi import APIRouter, Request, Response
 from pydantic import Field, field_validator
@@ -312,7 +312,7 @@ def _repository(request: Request) -> OrganizationRepository:
             title="Organization service unavailable",
             detail="Organization storage is not configured.",
         )
-    return repository
+    return cast(OrganizationRepository, repository)
 
 
 def _current_user(access: SessionAccess) -> uuid.UUID:
