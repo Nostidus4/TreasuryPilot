@@ -5,6 +5,7 @@ description = "Pure domain types and deterministic treasury logic for TreasuryPi
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "cryptography>=46,<47",
+    "pycryptodome>=3.20,<4",
     "pydantic>=2.10,<3",
     "structlog>=25,<26",
 ]
