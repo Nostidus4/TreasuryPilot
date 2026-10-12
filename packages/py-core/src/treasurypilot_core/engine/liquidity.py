@@ -16,6 +16,8 @@ TARGET_NOT_REACHED = "TARGET_NOT_REACHED"
 REFILL_BOUND = "REFILL_BOUND"
 SOURCE_INSUFFICIENT = "SOURCE_INSUFFICIENT"
 OVER_REFILL_DAILY = "OVER_REFILL_DAILY"
+OVER_REFILL_PER_REQUEST = "OVER_REFILL_PER_REQUEST"
+WRONG_REFILL_TARGET = "WRONG_REFILL_TARGET"
 
 
 def _require_base_units(value: BaseUnits, name: str) -> BaseUnits:
@@ -122,16 +124,24 @@ def decide_refill(
     policy: PolicyView,
     used_today: BaseUnits,
     protected_other: BaseUnits,
+    *,
+    source_protected: BaseUnits,
 ) -> RefillDecision:
     """Apply the BR-032 refill decision table for one approved request.
 
-    ``protected_other`` belongs to the paying wallet. Source capacity protects
-    the source wallet's configured buffer; source reservations and holds must
-    already be reflected in its input balance.
+    ``protected_other`` belongs to the paying wallet and ``source_protected``
+    to the source wallet (its reservations and holds, ``R_T + L_T``). Source
+    capacity also protects the source wallet's configured buffer.
     """
 
     refill_used_today = _require_base_units(used_today, "used_today")
     protected = _require_base_units(protected_other, "protected_other")
+    source_held = _require_base_units(source_protected, "source_protected")
+
+    # BR-012/BR-036: a refill only moves funds from the source to the
+    # request's paying wallet.
+    if wallet.address != request.paying_wallet or source.address == wallet.address:
+        return RefillDecision(kind="stop", amount=_ZERO, reason=WRONG_REFILL_TARGET)
 
     minimum = shortage(wallet, request.amount, protected)
     if minimum == 0:
@@ -144,7 +154,7 @@ def decide_refill(
     preferred = preferred_refill(wallet, request.amount, protected)
     bounded_preferred = BaseUnits(min(preferred, bound))
     remaining_daily = _non_negative_difference(policy.refill.daily, refill_used_today)
-    capacity = source_capacity(source, _ZERO)
+    capacity = source_capacity(source, source_held)
     refill_cap = cap(capacity, remaining_daily, policy.refill.per_request)
 
     if refill_cap >= bounded_preferred:
@@ -160,7 +170,12 @@ def decide_refill(
             reason=TARGET_NOT_REACHED,
         )
 
-    # Limit checks precede liquidity checks in policy-engine section 6.4, so
-    # the daily reason wins deterministically if both constraints are short.
-    reason = OVER_REFILL_DAILY if remaining_daily < minimum else SOURCE_INSUFFICIENT
+    # Limit checks precede liquidity checks in policy-engine section 6.4:
+    # daily, then per-request, then source capacity.
+    if remaining_daily < minimum:
+        reason = OVER_REFILL_DAILY
+    elif policy.refill.per_request < minimum:
+        reason = OVER_REFILL_PER_REQUEST
+    else:
+        reason = SOURCE_INSUFFICIENT
     return RefillDecision(kind="stop", amount=_ZERO, reason=reason)
