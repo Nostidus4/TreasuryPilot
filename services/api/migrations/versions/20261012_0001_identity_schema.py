@@ -86,9 +86,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("octet_length(ip_hash) = 32", name="ck_sessions_ip_hash_length"),
         sa.CheckConstraint("octet_length(ua_hash) = 32", name="ck_sessions_ua_hash_length"),
-        sa.CheckConstraint(
-            "octet_length(token_hash) = 32", name="ck_sessions_token_hash_length"
-        ),
+        sa.CheckConstraint("octet_length(token_hash) = 32", name="ck_sessions_token_hash_length"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("token_hash", name="uq_sessions_token_hash"),

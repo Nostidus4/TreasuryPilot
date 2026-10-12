@@ -101,9 +101,7 @@ class Session(Base):
         ),
         CheckConstraint("octet_length(ip_hash) = 32", name="ck_sessions_ip_hash_length"),
         CheckConstraint("octet_length(ua_hash) = 32", name="ck_sessions_ua_hash_length"),
-        CheckConstraint(
-            "octet_length(token_hash) = 32", name="ck_sessions_token_hash_length"
-        ),
+        CheckConstraint("octet_length(token_hash) = 32", name="ck_sessions_token_hash_length"),
         Index("ix_sessions_user_id", "user_id"),
     )
 
