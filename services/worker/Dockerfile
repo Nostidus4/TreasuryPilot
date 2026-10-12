@@ -14,6 +14,7 @@ COPY services/api services/api
 COPY services/worker services/worker
 COPY services/signer services/signer
 RUN uv sync --frozen --no-dev --package treasurypilot-worker
+COPY config config
 
 USER 65532:65532
 CMD ["celery", "-A", "treasurypilot_worker.celery_app:app", "worker", "--loglevel=INFO", "--queues=core", "--hostname=core@%h"]
