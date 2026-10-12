@@ -9,7 +9,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
@@ -43,6 +43,11 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.treasury.api import router as treasury_router
+from treasurypilot_api.mandate.routes import (
+    MandateRepository,
+    SqlAlchemyMandateRepository,
+)
+from treasurypilot_api.mandate.routes import router as mandate_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
@@ -160,6 +165,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    mandate_repository: MandateRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -185,6 +191,10 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if mandate_repository is None and engine is not None:
+        mandate_repository = SqlAlchemyMandateRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -228,6 +238,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.mandate_repository = mandate_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -254,6 +265,7 @@ def create_app(
     app.include_router(organizations_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(mandate_router)
 
     return app
 
