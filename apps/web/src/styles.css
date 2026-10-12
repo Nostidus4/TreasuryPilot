@@ -4,31 +4,120 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --primary: 158 64% 52%;
-    --primary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --border: 214 32% 91%;
-    --radius: 0.75rem;
-    font-family:
-      Inter,
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
+    --background: 240 9% 98%;
+    --surface: 0 0% 100%;
+    --surface-muted: 240 6% 96%;
+    --border: 240 6% 90%;
+    --border-strong: 240 5% 82%;
+    --foreground: 240 8% 10%;
+    --muted-foreground: 240 4% 36%;
+    --subtle-foreground: 240 4% 44%;
+
+    --primary: 163 82% 20%;
+    --primary-hover: 163 84% 16%;
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 158 45% 94%;
+    --ring: 163 70% 30%;
+
+    --success: 152 62% 32%;
+    --success-foreground: 155 70% 20%;
+    --success-muted: 148 55% 95%;
+    --success-border: 150 42% 82%;
+
+    --warning: 35 92% 42%;
+    --warning-foreground: 30 85% 26%;
+    --warning-muted: 46 95% 93%;
+    --warning-border: 42 80% 76%;
+
+    --danger: 0 72% 45%;
+    --danger-foreground: 0 68% 34%;
+    --danger-muted: 0 86% 97%;
+    --danger-border: 0 74% 88%;
+
+    --info: 215 80% 45%;
+    --info-foreground: 216 72% 32%;
+    --info-muted: 214 90% 96%;
+    --info-border: 214 72% 86%;
+
+    --ai: 262 52% 48%;
+    --ai-foreground: 262 48% 36%;
+    --ai-muted: 262 80% 97%;
+    --ai-border: 262 52% 88%;
+
+    --overlay: 240 10% 4%;
+    --radius: 0.5rem;
+
+    /* Chart series: fixed order, validated for CVD separation and contrast. */
+    --chart-1: #2a78d6;
+    --chart-2: #eb6834;
+    --chart-3: #1baf7a;
+
     color-scheme: light;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  .dark {
+    --background: 240 7% 7%;
+    --surface: 240 6% 10%;
+    --surface-muted: 240 5% 14%;
+    --border: 240 5% 18%;
+    --border-strong: 240 5% 28%;
+    --foreground: 240 6% 94%;
+    --muted-foreground: 240 5% 68%;
+    --subtle-foreground: 240 4% 58%;
+
+    --primary: 158 58% 46%;
+    --primary-hover: 158 58% 52%;
+    --primary-foreground: 160 60% 6%;
+    --primary-muted: 160 40% 14%;
+    --ring: 158 58% 46%;
+
+    --success: 152 55% 48%;
+    --success-foreground: 150 60% 72%;
+    --success-muted: 152 40% 13%;
+    --success-border: 152 35% 24%;
+
+    --warning: 38 90% 55%;
+    --warning-foreground: 42 90% 72%;
+    --warning-muted: 36 50% 13%;
+    --warning-border: 36 45% 26%;
+
+    --danger: 0 75% 60%;
+    --danger-foreground: 0 85% 78%;
+    --danger-muted: 0 45% 14%;
+    --danger-border: 0 42% 28%;
+
+    --info: 214 85% 62%;
+    --info-foreground: 214 90% 78%;
+    --info-muted: 216 45% 15%;
+    --info-border: 216 42% 28%;
+
+    --ai: 262 75% 72%;
+    --ai-foreground: 262 85% 82%;
+    --ai-muted: 262 35% 16%;
+    --ai-border: 262 32% 30%;
+
+    --overlay: 240 10% 2%;
+
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    color-scheme: dark;
   }
 
   * {
     @apply border-border;
+    scrollbar-color: hsl(var(--border-strong)) transparent;
+    scrollbar-width: thin;
+  }
+
+  html {
+    @apply font-sans;
   }
 
   body {
-    @apply m-0 min-w-80 bg-background text-foreground antialiased;
+    @apply m-0 min-w-80 bg-background text-base text-foreground antialiased;
   }
 
   button,
@@ -36,5 +125,31 @@
   textarea,
   select {
     font: inherit;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 18%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Amounts, addresses and hashes: fixed-width digits so columns line up. */
+  .num {
+    @apply font-mono tabular-nums tracking-tight;
   }
 }

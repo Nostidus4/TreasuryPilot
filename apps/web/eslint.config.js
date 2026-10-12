@@ -5,7 +5,9 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'src/lib/api/schema.d.ts'] },
+  {
+    ignores: ['dist', 'src/lib/api/schema.d.ts', 'public/mockServiceWorker.js'],
+  },
   {
     extends: [
       js.configs.recommended,
@@ -26,6 +28,10 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
