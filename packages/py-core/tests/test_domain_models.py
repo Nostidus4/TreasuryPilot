@@ -148,6 +148,22 @@ def test_model_json_round_trip_preserves_base_units_types() -> None:
     assert isinstance(restored.operational["0xoperational"].balance, BaseUnits)
 
 
+def test_model_dict_round_trip_through_python_mode_validation() -> None:
+    """Downstream consumers (FastAPI body parsing, Celery JSON args) validate a
+    dict produced by ``mode="json"`` dumping, not raw JSON bytes. That path must
+    accept the same canonical strings the wire format uses."""
+
+    original = snapshot()
+
+    via_json_loads = Snapshot.model_validate(json.loads(original.model_dump_json()))
+    via_mode_json_dump = Snapshot.model_validate(original.model_dump(mode="json"))
+
+    assert via_json_loads == original
+    assert via_mode_json_dump == original
+    assert isinstance(via_json_loads.safe_usdc, BaseUnits)
+    assert isinstance(via_mode_json_dump.safe_usdc, BaseUnits)
+
+
 def test_request_policy_refill_and_schedule_models_compose() -> None:
     terms = PaymentTerms(
         net_due_day=20_010,
