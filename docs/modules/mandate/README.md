@@ -50,7 +50,7 @@ M03 is the **Owner's control room**. It turns what the Owner wants (limits, buff
 
 | Table | Columns | Notes |
 |---|---|---|
-| `mandate_versions` | id, treasury_id, version (off-chain seq), onchain_version null, status enum(Draft, PendingActivation, Active, Superseded, Expired, Revoked, Discrepancy), config jsonb, config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | immutable rows except status/onchain_version/activated_at; unique(treasury_id, version) |
+| `mandate_versions` | id, treasury_id, version (off-chain seq), onchain_version null, status enum(Draft, Discarded, PendingActivation, Active, Superseded, Expired, Revoked, Discrepancy), config jsonb, config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | immutable rows except status/onchain_version/activated_at; unique(treasury_id, version) |
 | `mandate_status_events` | id, mandate_version_id, from, to, tx_hash, at, by | append-only |
 | `governance_txs` *(new)* | id, treasury_id, safe_address, purpose enum(MODULE_SETUP, MANDATE, PAYEE_ADD, PAYEE_DEACTIVATE, EXCEPTION_GRANT, EXCEPTION_REVOKE, ALLOW_DUPLICATE, CANCEL_REQUEST, PAUSE, RESUME, REVOKE, GUARDIAN_SETUP), entity_type, entity_id, calls jsonb (decoded list), to, value, data, operation, safe_nonce, safe_tx_hash, threshold, owners_snapshot address[], status enum(Collecting, Ready, Submitted, Executed, Failed, Superseded, Cancelled), exec_tx_hash, created_by, created_at | unique(safe_address, safe_nonce) where status ∈ (Collecting, Ready, Submitted) |
 | `governance_signatures` *(new)* | id, governance_tx_id, owner_address, signature, signed_by_user, at | unique(governance_tx_id, owner_address) |

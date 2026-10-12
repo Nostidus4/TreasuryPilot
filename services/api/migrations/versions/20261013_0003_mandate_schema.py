@@ -17,7 +17,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _MANDATE_STATUSES = (
-    "'Draft', 'PendingActivation', 'Active', 'Superseded', 'Expired', 'Revoked', 'Discrepancy'"
+    "'Draft', 'Discarded', 'PendingActivation', 'Active', 'Superseded', 'Expired', 'Revoked', 'Discrepancy'"
 )
 _GOVERNANCE_STATUSES = (
     "'Collecting', 'Ready', 'Submitted', 'Executed', 'Failed', 'Superseded', 'Cancelled'"

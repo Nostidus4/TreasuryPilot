@@ -29,6 +29,7 @@ from treasurypilot_api.identity.models import uuid7
 
 class MandateVersionStatus(StrEnum):
     DRAFT = "Draft"
+    DISCARDED = "Discarded"
     PENDING_ACTIVATION = "PendingActivation"
     ACTIVE = "Active"
     SUPERSEDED = "Superseded"
