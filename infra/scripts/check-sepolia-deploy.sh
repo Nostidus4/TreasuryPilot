@@ -10,7 +10,7 @@ export DEMO_APPROVER=0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
 export DEMO_GUARDIAN=0x90F79bf6EB2c4f870365E785982E1f101E93b906
 export DEMO_PAYEE=0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65
 export DEMO_RECEIPT_ATTESTER=0x976EA74026E726554dB657fA54763abd0C3a0aa9
-dev_key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+dev_key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 # gitleaks:allow -- published Anvil fixture; LOCAL RPC only
 fork_rpc=http://127.0.0.1:8554
 artifact_dir=$(mktemp -d)
 anvil --silent --hardfork cancun --chain-id 11155111 --port 8554 \
