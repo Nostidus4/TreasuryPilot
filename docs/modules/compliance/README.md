@@ -55,6 +55,15 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 
 Screening TTL 24 h; provider `fixture` in M1; encryption key from Docker secret `field_key`; redaction on in all environments.
 
+The `field_key` secret contains a base64-encoded 32-byte key. Services load it from
+`/run/secrets/field_key` by default; managed environments may inject
+`TP_FIELD_ENCRYPTION_KEY` or configure `TP_FIELD_ENCRYPTION_KEY_FILE`. Encrypted
+columns store a `tpenc:v1` AES-256-GCM envelope. Callers bind the table/column (and,
+where available, tenant id) as encryption context so ciphertext cannot be moved to a
+different field. Missing/invalid keys, unknown envelope versions, wrong context and
+authentication failures all fail closed. Key material must never be stored in the DB
+or logged.
+
 ## 10. Security
 
 Fail closed on provider errors; Confidential columns unreadable in raw dumps; log scan test in CI; no PII in EAS receipts or events.
