@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TP_", case_sensitive=False)
 
     redis_url: str = "redis://localhost:6379/0"
+    visibility_timeout_seconds: int = 3600
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
 
