@@ -1,4 +1,7 @@
-"""AnthropicProvider against a local HTTP stub: request shape, response mapping, real timeouts."""
+"""AnthropicProvider against a local HTTP stub: request shape, response mapping, real timeouts.
+
+The contract runs once per failover provider: the first-party API and Claude on Bedrock.
+"""
 
 import json
 import threading
@@ -33,7 +36,8 @@ Responder = Callable[[dict[str, object]], tuple[int, dict[str, object]]]
 
 
 class Stub:
-    def __init__(self) -> None:
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
         self.bodies: list[dict[str, object]] = []
         self.respond: Responder = lambda body: (200, _message([_text('{"answer": "ok"}')]))
         self.delay_s = 0.0
@@ -45,9 +49,9 @@ class Answer(BaseModel):
     answer: str
 
 
-@pytest.fixture
-def stub() -> Iterator[tuple[Stub, str]]:
-    state = Stub()
+@pytest.fixture(params=["anthropic", "bedrock"])
+def stub(request: pytest.FixtureRequest) -> Iterator[tuple[Stub, str]]:
+    state = Stub(request.param)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
@@ -101,7 +105,10 @@ def _message(content: list[dict[str, object]], stop_reason: str = "end_turn") ->
     }
 
 
-def _provider(base_url: str) -> AnthropicProvider:
+def _provider(state: Stub, base_url: str) -> AnthropicProvider:
+    if state.provider == "bedrock":
+        client = anthropic.AnthropicBedrockMantle(api_key="test-key", base_url=base_url)
+        return AnthropicProvider(client, model_prefix="anthropic.")
     return AnthropicProvider(anthropic.Anthropic(api_key="test-key", base_url=base_url))
 
 
@@ -138,10 +145,11 @@ def test_request_uses_structured_output_strict_tools_and_cached_system(
         Message("user", (ToolResult("t1", '{"balance": "6000"}'),)),
     )
 
-    _provider(url).complete(_request(tools=(spec,), messages=history), timeout_s=5)
+    _provider(state, url).complete(_request(tools=(spec,), messages=history), timeout_s=5)
 
     body = state.bodies[0]
-    assert body["model"] == "claude-sonnet-5-5"
+    expected_model = {"anthropic": "claude-sonnet-5-5", "bedrock": "anthropic.claude-sonnet-5-5"}
+    assert body["model"] == expected_model[state.provider]
     assert body["max_tokens"] == 300
     assert body["system"] == [
         {
@@ -183,7 +191,7 @@ def test_response_maps_text_tool_calls_and_cache_usage(stub: tuple[Stub, str]) -
         ),
     )
 
-    response = _provider(url).complete(_request(), timeout_s=5)
+    response = _provider(state, url).complete(_request(), timeout_s=5)
 
     assert response.stop_reason is StopReason.TOOL_USE
     assert response.text == "Checking."
@@ -193,10 +201,10 @@ def test_response_maps_text_tool_calls_and_cache_usage(stub: tuple[Stub, str]) -
 
 def test_assistant_provider_content_is_echoed_verbatim(stub: tuple[Stub, str]) -> None:
     state, url = stub
-    first = _provider(url).complete(_request(), timeout_s=5)
+    first = _provider(state, url).complete(_request(), timeout_s=5)
     assistant = Message("assistant", (TextBlock("x"),), provider_content=first.provider_content)
 
-    _provider(url).complete(
+    _provider(state, url).complete(
         _request(messages=(Message("user", (TextBlock("Why?"),)), assistant)), timeout_s=5
     )
 
@@ -211,7 +219,7 @@ def test_slow_provider_raises_ai_timeout_near_the_given_timeout(stub: tuple[Stub
 
     started = time.monotonic()
     with pytest.raises(AiTimeout):
-        _provider(url).complete(_request(), timeout_s=0.2)
+        _provider(state, url).complete(_request(), timeout_s=0.2)
 
     assert time.monotonic() - started < 1.0
 
@@ -224,7 +232,9 @@ def test_adapter_deadline_holds_against_a_real_slow_provider(
     tasks = dict(repo_config.tasks)
     tasks[AiTask.EXPLAIN] = tasks[AiTask.EXPLAIN].model_copy(update={"timeout_s": 0.3})
     config = repo_config.model_copy(update={"tasks": tasks})
-    adapter = AiAdapter(provider=_provider(url), config=config, ledger=InMemoryBudgetLedger())
+    adapter = AiAdapter(
+        provider=_provider(state, url), config=config, ledger=InMemoryBudgetLedger()
+    )
 
     started = time.monotonic()
     with pytest.raises(AiTimeout):
@@ -251,7 +261,7 @@ def test_status_errors_map_to_ai_unavailable(
     )
 
     with pytest.raises(AiUnavailable) as caught:
-        _provider(url).complete(_request(), timeout_s=5)
+        _provider(state, url).complete(_request(), timeout_s=5)
 
     assert caught.value.retryable is retryable
     assert len(state.bodies) == 1  # the SDK does not retry on its own
@@ -262,4 +272,4 @@ def test_unknown_stop_reason_is_unavailable(stub: tuple[Stub, str]) -> None:
     state.respond = lambda body: (200, _message([], stop_reason="pause_turn"))
 
     with pytest.raises(AiUnavailable, match="pause_turn"):
-        _provider(url).complete(_request(), timeout_s=5)
+        _provider(state, url).complete(_request(), timeout_s=5)

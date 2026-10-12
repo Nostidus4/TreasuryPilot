@@ -19,6 +19,8 @@ def test_ai_worker_environment_is_an_explicit_non_signing_allowlist() -> None:
 
     assert configured_names == {
         "ANTHROPIC_API_KEY",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_REGION",
         "DATABASE_URL",
         "TP_ENVIRONMENT",
         "TP_REDIS_URL",

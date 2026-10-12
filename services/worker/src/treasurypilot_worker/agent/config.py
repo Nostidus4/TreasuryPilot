@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
@@ -50,10 +50,20 @@ class TaskConfig(_Strict):
     tool_result_max_bytes: PositiveInt = 50_000
 
 
+class ProviderConfig(_Strict):
+    name: Literal["anthropic", "bedrock"]
+    # Prepended to a task's model to form the provider's model id (Bedrock: "anthropic.").
+    model_prefix: str = ""
+
+
 class AiConfig(_Strict):
     monthly_budget_usd_micros: int = Field(ge=0)
     prices: dict[str, ModelPrice]
     tasks: dict[AiTask, TaskConfig]
+    # Failover order: the first provider serves every call, the next ones take over on outage.
+    providers: tuple[ProviderConfig, ...] = Field(
+        default=(ProviderConfig(name="anthropic"),), min_length=1
+    )
 
     @model_validator(mode="after")
     def _complete(self) -> Self:

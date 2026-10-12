@@ -88,7 +88,7 @@ Mỗi lời gọi không có trạng thái; trạng thái trích xuất nằm tr
 | COPILOT | `claude-sonnet-5-5` | 30 giây | 1.200 |
 | EVAL | `claude-sonnet-5-5` | 60 giây | 2.000 |
 
-Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1, chỉnh được (vượt → các task chuyển sang dự phòng, có thông báo). Nhà cung cấp phụ dùng chung adapter (AGT-017), chọn sau. Bật chế độ không lưu dữ liệu nếu có; việc này cấu hình ở cấp tổ chức trên Anthropic Console, không nằm trong code.
+Ngân sách AI mỗi tổ chức 20 USD/tháng ở M1, chỉnh được (vượt → các task chuyển sang dự phòng, có thông báo). Nhà cung cấp phụ (AGT-017): Claude trên Amazon Bedrock qua cùng `AnthropicProvider` (client Bedrock Mantle, tiền tố model `anthropic.`), ghép với nhà cung cấp chính trong `FailoverProvider`; thứ tự và tiền tố nằm ở `providers` trong `config/ai.yaml`. Lỗi `AiUnavailable` từ một nhà cung cấp chuyển cùng lượt sang nhà cung cấp kế tiếp trong hạn của task; bỏ qua Bedrock khi chưa đặt `AWS_BEARER_TOKEN_BEDROCK`. Dùng cùng họ model nên structured output, strict tool và prompt caching giữ nguyên, không cần nhánh prompt hay schema thứ hai. Bật chế độ không lưu dữ liệu nếu có; việc này cấu hình ở cấp tổ chức trên Anthropic Console, không nằm trong code.
 
 File còn chứa giới hạn số tool call (PLAN 8, COPILOT 6), giới hạn kết quả tool (50 KB) và bảng giá theo model (USD micros cho mỗi triệu token, Haiku có bậc giá cho prompt dài). Đường dẫn là `config/ai.yaml` tính từ thư mục làm việc (`/app` trong image worker), đổi được bằng `TP_AI_CONFIG_PATH`; thiếu task hoặc thiếu giá của một model thì worker không khởi động.
 

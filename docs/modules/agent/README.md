@@ -144,7 +144,7 @@ Template plan used only when: AI unavailable/timeout **and** snapshot complete *
 | COPILOT | `claude-sonnet-5-5` | 30 s | 1,200 |
 | EVAL | `claude-sonnet-5-5` | 60 s | 2,000 |
 
-Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown). Secondary provider behind the same adapter (AGT-017), choice to be agreed. Zero-retention API setting where available; it is configured at the organization level in the Anthropic Console, not in code.
+Per-org monthly AI budget 20 USD in M1 (over budget → AI tasks degrade to fallbacks, notice shown). Secondary provider (AGT-017): Claude on Amazon Bedrock through the same `AnthropicProvider` (Bedrock Mantle client, `anthropic.` model prefix), wrapped with the primary in a `FailoverProvider`; order and prefixes live in `config/ai.yaml` `providers`. An `AiUnavailable` from one provider moves the same turn to the next within the task deadline; Bedrock is skipped when `AWS_BEARER_TOKEN_BEDROCK` is unset. A same-family secondary keeps structured outputs, strict tools and prompt caching identical, so no second prompt or schema path is needed. Zero-retention API setting where available; it is configured at the organization level in the Anthropic Console, not in code.
 
 The file also holds tool-call limits (PLAN 8, COPILOT 6), the tool-result cap (50 KB) and per-model prices in USD micros per million tokens, with a long-prompt tier for Haiku. Its path is `config/ai.yaml` relative to the working directory (`/app` in the worker image), overridable with `TP_AI_CONFIG_PATH`; a task or a model price missing from the file fails startup.
 

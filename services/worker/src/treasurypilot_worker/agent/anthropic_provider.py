@@ -31,8 +31,18 @@ _RETRYABLE_STATUS = {408, 409, 429}
 class AnthropicProvider:
     """One Messages API request per call. Retries belong to the adapter, which owns the deadline."""
 
-    def __init__(self, client: anthropic.Anthropic | None = None) -> None:
+    def __init__(
+        self,
+        client: anthropic.Anthropic | anthropic.AnthropicBedrockMantle | None = None,
+        *,
+        name: str = "Anthropic",
+        model_prefix: str = "",
+    ) -> None:
         self._client = (client or anthropic.Anthropic()).with_options(max_retries=0)
+        self._name = name
+        # shortcut: plain prefix covers "anthropic." ids; Bedrock cross-region or versioned ids
+        # would need a per-model map in config.
+        self._model_prefix = model_prefix
 
     def complete(self, request: ProviderRequest, *, timeout_s: float) -> ProviderResponse:
         tools: list[ToolParam] = [
@@ -51,7 +61,7 @@ class AnthropicProvider:
         ]
         try:
             message = self._client.with_options(timeout=timeout_s).messages.create(
-                model=request.model,
+                model=self._model_prefix + request.model,
                 max_tokens=request.max_output_tokens,
                 system=system,
                 messages=[_to_param(m) for m in request.messages],
@@ -64,13 +74,15 @@ class AnthropicProvider:
                 },
             )
         except anthropic.APITimeoutError as error:
-            raise AiTimeout(f"Anthropic request timed out after {timeout_s:.1f}s") from error
+            raise AiTimeout(f"{self._name} request timed out after {timeout_s:.1f}s") from error
         except anthropic.APIConnectionError as error:
-            raise AiUnavailable(f"Anthropic connection failed: {error}", retryable=True) from error
+            raise AiUnavailable(
+                f"{self._name} connection failed: {error}", retryable=True
+            ) from error
         except anthropic.APIStatusError as error:
             retryable = error.status_code in _RETRYABLE_STATUS or error.status_code >= 500
             raise AiUnavailable(
-                f"Anthropic returned {error.status_code} (request {error.request_id}): "
+                f"{self._name} returned {error.status_code} (request {error.request_id}): "
                 f"{error.message}",
                 retryable=retryable,
             ) from error
