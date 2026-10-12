@@ -47,6 +47,7 @@ jobs:
         env:
           FOUNDRY_FUZZ_RUNS: ${{ github.ref == 'refs/heads/main' && '10000' || '1000' }}
         run: |
+          set -o pipefail
           {
             echo "Revision: $GITHUB_SHA; profile: default; solc: 0.8.28; optimizer: 200; module: IR"
             forge --version
