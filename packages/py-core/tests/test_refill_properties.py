@@ -6,8 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
-from hypothesis import example, given, seed, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
@@ -19,11 +18,16 @@ from treasurypilot_core.domain import (
     RefillDecision,
     WalletState,
 )
-from treasurypilot_core.engine import decide_refill, preferred_refill, refill_bound
+from treasurypilot_core.engine import (
+    decide_refill,
+    preferred_refill,
+    refill_bound,
+    shortage,
+    source_capacity,
+)
 from treasurypilot_core.money import BaseUnits
 
 PROPERTY_EXAMPLES = 1_000
-_REPLAY_SEED = 20_261_012
 _VERY_LARGE = 2**255
 
 
@@ -35,6 +39,7 @@ class RefillCase:
     policy: PolicyView
     used_today: BaseUnits
     protected_other: BaseUnits
+    source_protected: BaseUnits
 
     def decide(self) -> RefillDecision:
         return decide_refill(
@@ -44,6 +49,7 @@ class RefillCase:
             self.policy,
             self.used_today,
             self.protected_other,
+            source_protected=self.source_protected,
         )
 
 
@@ -122,6 +128,7 @@ def _refill_cases(draw: st.DrawFn) -> RefillCase:
         policy=policy,
         used_today=used_today,
         protected_other=draw(_money_values()),
+        source_protected=draw(st.one_of(st.just(BaseUnits(0)), _money_values())),
     )
 
 
@@ -137,6 +144,7 @@ def _case(
     per_request: int,
     daily: int,
     used_today: int,
+    source_protected: int = 0,
 ) -> RefillCase:
     wallet = WalletState(
         address="0xoperational",
@@ -167,6 +175,7 @@ def _case(
         ),
         used_today=BaseUnits(used_today),
         protected_other=BaseUnits(protected_other),
+        source_protected=BaseUnits(source_protected),
     )
 
 
@@ -242,12 +251,39 @@ _BOUND_REGRESSION_CASE = _case(
     daily=10_000,
     used_today=0,
 )
+_SOURCE_HOLDS_CASE = _case(
+    balance=100,
+    buffer=50,
+    target=150,
+    amount=200,
+    protected_other=0,
+    source_balance=1_000,
+    source_buffer=100,
+    per_request=10_000,
+    daily=10_000,
+    used_today=0,
+    source_protected=800,
+)
+_PER_REQUEST_BINDS_CASE = _case(
+    balance=100,
+    buffer=50,
+    target=150,
+    amount=200,
+    protected_other=0,
+    source_balance=10_000,
+    source_buffer=0,
+    per_request=149,
+    daily=10_000,
+    used_today=0,
+)
 _BOUNDARY_CASES = (
     _ZERO_CASE,
     _EXACT_LIMIT_CASE,
     _EXHAUSTED_DAILY_CASE,
     _OVERUSED_DAILY_SOURCE_AT_BUFFER_CASE,
     _VERY_LARGE_CASE,
+    _SOURCE_HOLDS_CASE,
+    _PER_REQUEST_BINDS_CASE,
 )
 
 
@@ -268,81 +304,53 @@ _property_settings = settings(
 @_property_settings
 @_with_boundary_examples
 @given(case=_refill_cases())
-def test_allowed_refill_and_payment_preserve_operational_buffer(case: RefillCase) -> None:
+def test_refill_decision_safety_properties(case: RefillCase) -> None:
     decision = case.decide()
-
-    if decision.kind != "stop":
-        post_payment = case.wallet.balance + decision.amount - case.request.amount
-        assert post_payment >= case.wallet.buffer
-        assert post_payment >= case.wallet.buffer + case.protected_other
-
-
-@_property_settings
-@_with_boundary_examples
-@given(case=_refill_cases())
-def test_refill_never_exceeds_available_cap(case: RefillCase) -> None:
-    decision = case.decide()
+    minimum = shortage(case.wallet, case.request.amount, case.protected_other)
     remaining_daily = max(0, case.policy.refill.daily - case.used_today)
-    available_source = max(0, case.source.balance - case.source.buffer)
+    per_request = case.policy.refill.per_request
+    capacity = source_capacity(case.source, case.source_protected)
 
-    assert decision.amount <= remaining_daily
-    assert decision.amount <= available_source
-    assert decision.amount <= case.policy.refill.per_request
-
-
-@_property_settings
-@_with_boundary_examples
-@given(case=_refill_cases())
-def test_refill_never_exceeds_contract_bound(case: RefillCase) -> None:
-    decision = case.decide()
-
-    assert decision.amount <= refill_bound(case.wallet, case.request.amount)
-
-
-@_property_settings
-@_with_boundary_examples
-@given(case=_refill_cases())
-def test_decision_amount_is_non_negative_base_units(case: RefillCase) -> None:
-    decision = case.decide()
-
+    # Amounts are integer base units within every limit and the contract bound.
     assert type(decision.amount) is BaseUnits
     assert decision.amount >= 0
+    assert decision.amount <= remaining_daily
+    assert decision.amount <= per_request
+    assert decision.amount <= capacity
+    assert decision.amount <= refill_bound(case.wallet, case.request.amount)
+
+    # An allowed refill plus the payment keeps other holds and the buffer intact.
+    if decision.kind != "stop":
+        post_payment = case.wallet.balance + decision.amount - case.request.amount
+        assert post_payment >= case.wallet.buffer + case.protected_other
+
+    # Kinds and reasons follow the section 8.1 table and section 6.4 precedence.
+    if decision.kind in {"none", "stop"}:
+        assert decision.amount == 0
+    if decision.kind == "none":
+        assert minimum == 0
+    else:
+        assert minimum > 0
+    if decision.reason == "OVER_REFILL_DAILY":
+        assert remaining_daily < minimum
+    elif decision.reason == "OVER_REFILL_PER_REQUEST":
+        assert remaining_daily >= minimum > per_request
+    elif decision.reason == "SOURCE_INSUFFICIENT":
+        assert min(remaining_daily, per_request) >= minimum > capacity
+
+    # Identical inputs give byte-identical outputs (M07-D7).
+    assert case.decide().model_dump_json() == decision.model_dump_json()
 
 
-@_property_settings
-@_with_boundary_examples
-@given(case=_refill_cases())
-def test_refill_decision_is_deterministic(case: RefillCase) -> None:
-    first = case.decide()
-    second = case.decide()
+def test_contract_bound_regression_case() -> None:
+    """The pre-M07-D4 defect refilled to the preferred amount past the bound."""
 
-    assert first == second
-    assert first.model_dump_json() == second.model_dump_json()
-
-
-def _buggy_refill_that_omits_contract_bound(case: RefillCase) -> BaseUnits:
-    """Model the pre-M07-D4 defect so its counterexample remains replayable."""
-
-    return preferred_refill(case.wallet, case.request.amount, case.protected_other)
-
-
-@seed(_REPLAY_SEED)
-@settings(max_examples=1, deadline=None, database=None)
-@example(case=_BOUND_REGRESSION_CASE)
-@given(case=_refill_cases())
-def _buggy_bound_property(case: RefillCase) -> None:
-    assert _buggy_refill_that_omits_contract_bound(case) <= refill_bound(
-        case.wallet, case.request.amount
-    ), "intentionally buggy refill breached bound"
-
-
-def test_seeded_counterexample_replays_the_contract_bound_regression() -> None:
-    with pytest.raises(AssertionError, match="intentionally buggy refill breached bound"):
-        _buggy_bound_property()
-
-    actual = _BOUND_REGRESSION_CASE.decide()
-    assert actual.amount == BaseUnits(250)
-    assert actual.amount <= refill_bound(
+    bound = refill_bound(_BOUND_REGRESSION_CASE.wallet, _BOUND_REGRESSION_CASE.request.amount)
+    unbounded = preferred_refill(
         _BOUND_REGRESSION_CASE.wallet,
         _BOUND_REGRESSION_CASE.request.amount,
+        _BOUND_REGRESSION_CASE.protected_other,
     )
+
+    assert unbounded > bound
+    assert _BOUND_REGRESSION_CASE.decide().amount == BaseUnits(250) == bound
