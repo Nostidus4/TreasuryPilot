@@ -16,9 +16,7 @@ down_revision: str | None = "20261012_0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_MANDATE_STATUSES = (
-    "'Draft', 'Discarded', 'PendingActivation', 'Active', 'Superseded', 'Expired', 'Revoked', 'Discrepancy'"
-)
+_MANDATE_STATUSES = "'Draft', 'Discarded', 'PendingActivation', 'Active', 'Superseded', 'Expired', 'Revoked', 'Discrepancy'"
 _GOVERNANCE_STATUSES = (
     "'Collecting', 'Ready', 'Submitted', 'Executed', 'Failed', 'Superseded', 'Cancelled'"
 )
