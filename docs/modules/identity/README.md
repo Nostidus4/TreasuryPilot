@@ -73,6 +73,12 @@ Sign-in: email → link (Resend; console locally) → verify → session cookie 
 
 Session idle 30 min / absolute 12 h; magic link 15 min; invite 7 days; SIWE nonce 10 min; rate limits per §6.
 
+Deployed API instances require `DATABASE_URL`, a high-entropy `TP_SESSION_SECRET`
+(at least 32 bytes), an HTTPS `TP_MAGIC_LINK_BASE_URL`, and
+`TP_RESEND_API_KEY` / `TP_RESEND_FROM_EMAIL`. The `local` environment uses the
+console delivery adapter and prints the one-time URL intentionally; deployed
+environments never fall back to console delivery or generated session secrets.
+
 ## 10. Security
 
 Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored in M1 (magic link only); email enumeration avoided (same response for unknown emails).
