@@ -23,6 +23,13 @@ from treasurypilot_api.identity.auth import (
     WalletRecord,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender
+from treasurypilot_api.identity.organizations import (
+    OnboardingChecklist,
+    OrganizationNotFound,
+    OrganizationOverview,
+    OrganizationPermissionDenied,
+    OrganizationRecord,
+)
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
 from treasurypilot_api.main import create_app
 
@@ -205,7 +212,12 @@ class UnavailableRateLimiter:
         raise RateLimiterUnavailable
 
 
-def make_harness(*, sender_fails: bool = False, rate_limiter: object | None = None) -> AuthHarness:
+def make_harness(
+    *,
+    sender_fails: bool = False,
+    rate_limiter: object | None = None,
+    organization_repository: object | None = None,
+) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
         id=uuid.UUID("00000000-0000-4000-8000-000000000001"),
@@ -226,7 +238,11 @@ def make_harness(*, sender_fails: bool = False, rate_limiter: object | None = No
         clock=clock,
     )
     settings = Settings(environment="test", session_secret=secret.decode())
-    app = create_app(settings=settings, auth_service=service)
+    app = create_app(
+        settings=settings,
+        auth_service=service,
+        organization_repository=organization_repository,  # type: ignore[arg-type]
+    )
     return AuthHarness(
         clock=clock,
         repository=repository,
@@ -613,3 +629,158 @@ def test_secret_settings_are_redacted_from_representations() -> None:
     assert database_url not in rendered
     assert session_secret not in rendered
     assert resend_key not in rendered
+
+
+class MemoryOrganizationRepository:
+    def __init__(self) -> None:
+        self.organizations: dict[uuid.UUID, OrganizationRecord] = {}
+        self.memberships: dict[tuple[uuid.UUID, uuid.UUID], set[str]] = {}
+        self.wallets: set[uuid.UUID] = set()
+        self.treasuries: set[uuid.UUID] = set()
+        self.enabled_modules: set[uuid.UUID] = set()
+
+    async def create(
+        self,
+        *,
+        user_id: uuid.UUID,
+        name: str,
+        legal_name: str | None,
+        country: str | None,
+        display_tz: str,
+    ) -> OrganizationRecord:
+        organization = OrganizationRecord(
+            id=uuid.uuid4(),
+            name=name,
+            legal_name=legal_name,
+            country=country,
+            display_tz=display_tz,
+            solo_mode=False,
+            auto_match=True,
+            created_at=datetime(2026, 10, 13, tzinfo=UTC),
+        )
+        self.organizations[organization.id] = organization
+        self.memberships[(organization.id, user_id)] = {"OrgAdmin"}
+        return organization
+
+    async def get_for_member(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> OrganizationOverview:
+        organization = self.organizations.get(organization_id)
+        if organization is None or (organization_id, user_id) not in self.memberships:
+            raise OrganizationNotFound
+        member_count = sum(1 for org_id, _ in self.memberships if org_id == organization_id)
+        return OrganizationOverview(
+            organization=organization,
+            checklist=OnboardingChecklist(
+                member_count=member_count,
+                wallet_linked=organization_id in self.wallets,
+                treasury_created=organization_id in self.treasuries,
+                module_enabled=organization_id in self.enabled_modules,
+            ),
+        )
+
+    async def update_settings(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        solo_mode: bool | None,
+        auto_match: bool | None,
+    ) -> OrganizationRecord:
+        organization = self.organizations.get(organization_id)
+        roles = self.memberships.get((organization_id, user_id))
+        if organization is None or roles is None:
+            raise OrganizationNotFound
+        if solo_mode is not None and "Owner" not in roles:
+            raise OrganizationPermissionDenied
+        if auto_match is not None and not roles.intersection({"OrgAdmin", "Owner"}):
+            raise OrganizationPermissionDenied
+        updated = OrganizationRecord(
+            id=organization.id,
+            name=organization.name,
+            legal_name=organization.legal_name,
+            country=organization.country,
+            display_tz=organization.display_tz,
+            solo_mode=organization.solo_mode if solo_mode is None else solo_mode,
+            auto_match=organization.auto_match if auto_match is None else auto_match,
+            created_at=organization.created_at,
+        )
+        self.organizations[organization_id] = updated
+        return updated
+
+
+def test_create_organization_assigns_org_admin_and_checklist_uses_data() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        response = harness.client.post(
+            "/v1/orgs",
+            json={"name": "  Acme  ", "country": "vn"},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        organization_id = uuid.UUID(body["org"]["id"])
+        assert body["org"]["name"] == "Acme"
+        assert body["org"]["country"] == "VN"
+        assert organizations.memberships[(organization_id, harness.repository.profile.user.id)] == {
+            "OrgAdmin"
+        }
+
+        detail = harness.client.get(f"/v1/orgs/{organization_id}")
+        assert detail.status_code == 200
+        assert detail.json()["checklist"] == {
+            "memberCount": 1,
+            "walletLinked": False,
+            "treasuryCreated": False,
+            "moduleEnabled": False,
+        }
+
+        organizations.treasuries.add(organization_id)
+        organizations.enabled_modules.add(organization_id)
+        updated_detail = harness.client.get(f"/v1/orgs/{organization_id}")
+        assert updated_detail.json()["checklist"]["treasuryCreated"] is True
+        assert updated_detail.json()["checklist"]["moduleEnabled"] is True
+
+
+def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs",
+            json={"name": "Acme"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+
+        hidden = harness.client.get(f"/v1/orgs/{uuid.uuid4()}")
+        assert hidden.status_code == 404
+
+        admin_setting = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings",
+            json={"autoMatch": False},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert admin_setting.status_code == 200
+        assert admin_setting.json()["org"]["autoMatch"] is False
+
+        denied = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "FORBIDDEN"
+
+        organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {"Owner"}
+        owner_setting = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert owner_setting.status_code == 200
+        assert owner_setting.json()["org"]["soloMode"] is True

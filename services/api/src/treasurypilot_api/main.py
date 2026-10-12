@@ -23,6 +23,13 @@ from treasurypilot_api.identity.auth import (
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.organizations import (
+    OrganizationRepository,
+    SqlAlchemyOrganizationRepository,
+)
+from treasurypilot_api.identity.organizations import (
+    router as organizations_router,
+)
 from treasurypilot_api.identity.rate_limit import (
     MemoryRateLimiter,
     RateLimiter,
@@ -58,7 +65,12 @@ class _UnavailableAuthRepository:
 
 def _auth_service(
     settings: Settings,
-) -> tuple[AuthService, AsyncEngine | None, RedisRateLimiter | None]:
+) -> tuple[
+    AuthService,
+    AsyncEngine | None,
+    RedisRateLimiter | None,
+    OrganizationRepository | None,
+]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
     local = settings.environment.casefold() == "local"
@@ -85,9 +97,11 @@ def _auth_service(
         raise ValueError("TP_SESSION_SECRET must contain at least 32 bytes")
 
     engine: AsyncEngine | None = None
+    organization_repository: OrganizationRepository | None = None
     if settings.database_url:
         engine, sessions = create_session_factory(settings.database_url.get_secret_value())
         repository: AuthRepository = SqlAlchemyAuthRepository(sessions)
+        organization_repository = SqlAlchemyOrganizationRepository(sessions)
     else:
         repository = cast(AuthRepository, _UnavailableAuthRepository())
 
@@ -121,17 +135,21 @@ def _auth_service(
         ),
         engine,
         redis_limiter,
+        organization_repository,
     )
 
 
 def create_app(
-    *, settings: Settings | None = None, auth_service: AuthService | None = None
+    *,
+    settings: Settings | None = None,
+    auth_service: AuthService | None = None,
+    organization_repository: OrganizationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine, redis_limiter = _auth_service(settings)
+        auth_service, engine, redis_limiter, organization_repository = _auth_service(settings)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -171,6 +189,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
+    app.state.organization_repository = organization_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -189,6 +208,7 @@ def create_app(
         return problem_response(request, exc)
 
     app.include_router(identity_router)
+    app.include_router(organizations_router)
 
     return app
 
