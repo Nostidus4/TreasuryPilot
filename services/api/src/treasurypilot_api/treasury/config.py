@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Self
@@ -11,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    TypeAdapter,
     ValidationError,
     field_validator,
     model_validator,
@@ -19,6 +21,12 @@ from pydantic import (
 REQUIRED_MODULE_DEPLOYMENT = "TREASURY_MODULE_IMPLEMENTATION"
 MAX_POSTGRES_INTEGER = 2_147_483_647
 MAX_POSTGRES_SMALLINT = 32_767
+
+# RPC credentials (provider API keys, basic auth) are referenced as ${ENV_VAR}
+# placeholders so only the template is stored; consumers expand it at use time.
+_RPC_PLACEHOLDER = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+_RPC_URL_ADAPTER: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
+_HEX_PATTERN = re.compile(r"[0-9a-fA-F]*")
 
 
 def _to_camel(value: str) -> str:
@@ -45,7 +53,7 @@ class ChainConfig(_ConfigModel):
     is_testnet: bool
     confirmations: int = Field(ge=0, le=MAX_POSTGRES_SMALLINT)
     explorer_url: HttpUrl
-    rpc_urls: tuple[AnyUrl, ...]
+    rpc_urls: tuple[str, ...]
     enabled: bool = True
 
     @field_validator("name")
@@ -58,12 +66,10 @@ class ChainConfig(_ConfigModel):
 
     @field_validator("rpc_urls")
     @classmethod
-    def _validate_rpc_urls(cls, urls: tuple[AnyUrl, ...]) -> tuple[AnyUrl, ...]:
+    def _validate_rpc_urls(cls, urls: tuple[str, ...]) -> tuple[str, ...]:
         for url in urls:
-            if url.scheme not in {"http", "https", "ws", "wss"}:
-                raise ValueError("RPC URLs must use http, https, ws, or wss")
-        normalized = [str(url) for url in urls]
-        if len(set(normalized)) != len(normalized):
+            _validate_rpc_url_template(url)
+        if len(set(urls)) != len(urls):
             raise ValueError("RPC URLs must be distinct")
         return urls
 
@@ -87,14 +93,51 @@ class ChainConfigFile(_ConfigModel):
         return self
 
 
+def _validate_rpc_url_template(template: str) -> None:
+    """Reject RPC URLs that embed literal credentials.
+
+    Userinfo and query values may only be ``${ENV_VAR}`` placeholders. A key in
+    the path cannot be detected, so it must be a placeholder by convention.
+    """
+
+    probe = _RPC_PLACEHOLDER.sub("placeholder", template)
+    try:
+        url = _RPC_URL_ADAPTER.validate_python(probe)
+    except ValidationError:
+        raise ValueError("RPC URLs must be a valid URL") from None
+    if url.scheme not in {"http", "https", "ws", "wss"}:
+        raise ValueError("RPC URLs must use http, https, ws, or wss")
+    authority = template.split("://", 1)[-1].split("/", 1)[0]
+    userinfo = authority.rpartition("@")[0] if "@" in authority else ""
+    query = template.partition("?")[2].partition("#")[0]
+    literal_parts = [part for part in userinfo.split(":") if part]
+    literal_parts += [pair.partition("=")[2] for pair in query.split("&") if pair]
+    if any(not _RPC_PLACEHOLDER.fullmatch(part) for part in literal_parts):
+        raise ValueError(
+            "RPC URLs must not embed credentials; reference them as ${ENV_VAR} placeholders"
+        )
+
+
+def resolve_rpc_url(template: str, environ: Mapping[str, str]) -> str:
+    """Expand ``${ENV_VAR}`` placeholders in a stored RPC URL template."""
+
+    def substitute(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name not in environ:
+            raise PlatformConfigurationError(f"RPC URL references unset variable {name}")
+        return environ[name]
+
+    return _RPC_PLACEHOLDER.sub(substitute, template)
+
+
 def _parse_hex(value: str, *, byte_length: int, field_name: str) -> bytes:
     candidate = value.removeprefix("0x")
     if len(candidate) != byte_length * 2:
         raise ValueError(f"{field_name} must contain exactly {byte_length} bytes")
-    try:
-        decoded = bytes.fromhex(candidate)
-    except ValueError as error:
-        raise ValueError(f"{field_name} must be hexadecimal") from error
+    # bytes.fromhex ignores whitespace, so check the digits before decoding.
+    if not _HEX_PATTERN.fullmatch(candidate):
+        raise ValueError(f"{field_name} must be hexadecimal")
+    decoded = bytes.fromhex(candidate)
     if not any(decoded):
         raise ValueError(f"{field_name} must not be the zero value")
     return decoded
@@ -128,11 +171,11 @@ class DeploymentConfig(_ConfigModel):
 
     @property
     def address_bytes(self) -> bytes:
-        return _parse_hex(self.address, byte_length=20, field_name="deployment address")
+        return bytes.fromhex(self.address.removeprefix("0x"))
 
     @property
     def code_hash_bytes(self) -> bytes:
-        return _parse_hex(self.code_hash, byte_length=32, field_name="deployment code hash")
+        return bytes.fromhex(self.code_hash.removeprefix("0x"))
 
 
 class DeploymentManifest(_ConfigModel):

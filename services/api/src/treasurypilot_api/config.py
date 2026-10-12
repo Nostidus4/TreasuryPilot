@@ -4,6 +4,9 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# services/api/src/treasurypilot_api/config.py -> repository root
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
 
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
@@ -16,8 +19,8 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("DATABASE_URL", "TP_DATABASE_URL"),
     )
-    platform_chain_config_path: Path = Path("deployments/chains.json")
-    deployments_dir: Path = Path("deployments")
+    platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
+    deployments_dir: Path = REPOSITORY_ROOT / "deployments"
 
     @property
     def cors_origin_list(self) -> list[str]:

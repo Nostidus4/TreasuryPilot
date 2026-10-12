@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,11 @@ def deployment_id(chain_id: int, name: str, version: str) -> uuid.UUID:
 async def sync_platform_configuration(
     session: AsyncSession, configuration: PlatformConfiguration
 ) -> None:
-    """Idempotently synchronize validated platform-owned configuration."""
+    """Idempotently synchronize validated platform-owned configuration.
+
+    Chains that are no longer configured are disabled rather than deleted so
+    treasuries and deployments that reference them keep their history.
+    """
 
     for chain in sorted(configuration.chains, key=lambda item: item.chain_id):
         values = {
@@ -48,6 +52,14 @@ async def sync_platform_configuration(
                 where=changed,
             )
         )
+
+    configured_chain_ids = [chain.chain_id for chain in configuration.chains]
+    await session.execute(
+        update(Chain)
+        .where(Chain.chain_id.not_in(configured_chain_ids), Chain.enabled.is_(True))
+        .values(enabled=False, updated_at=func.now(), version=Chain.version + 1)
+        .execution_options(synchronize_session=False)
+    )
 
     for manifest in sorted(configuration.manifests, key=lambda item: item.chain_id):
         for deployment in sorted(manifest.deployments, key=lambda item: (item.name, item.version)):

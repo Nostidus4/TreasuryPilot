@@ -28,22 +28,22 @@ def create_app() -> FastAPI:
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
-        if not configuration.chains:
-            yield
-            return
         if settings.database_url is None:
-            raise PlatformConfigurationError(
-                "DATABASE_URL is required when platform chains are configured"
-            )
-
-        engine = create_async_engine(settings.database_url)
-        try:
-            session_factory = async_sessionmaker(engine, expire_on_commit=False)
-            async with session_factory() as session:
-                await sync_platform_configuration(session, configuration)
-            yield
-        finally:
-            await engine.dispose()
+            if configuration.chains:
+                raise PlatformConfigurationError(
+                    "DATABASE_URL is required when platform chains are configured"
+                )
+        else:
+            # Sync even an empty chain list so removed chains get disabled. The
+            # engine only serves this one-time sync, so release it before serving.
+            engine = create_async_engine(settings.database_url)
+            try:
+                session_factory = async_sessionmaker(engine, expire_on_commit=False)
+                async with session_factory() as session:
+                    await sync_platform_configuration(session, configuration)
+            finally:
+                await engine.dispose()
+        yield
 
     app = FastAPI(
         title="TreasuryPilot API",
