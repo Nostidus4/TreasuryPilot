@@ -5,13 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel, _authenticated
-from treasurypilot_api.identity.auth import AuthFailure, SessionAccess
+from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import (
     Membership,
     MembershipStatus,
@@ -72,6 +73,10 @@ class OrganizationRepository(Protocol):
     async def get_for_member(
         self, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> OrganizationOverview: ...
+
+    async def get_member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[str, ...] | None: ...
 
     async def update_settings(
         self,
@@ -187,6 +192,19 @@ class SqlAlchemyOrganizationRepository:
                     module_enabled=treasury is not None and treasury.module_address is not None,
                 ),
             )
+
+    async def get_member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[str, ...] | None:
+        async with self._sessions() as session:
+            membership = await session.scalar(
+                select(Membership).where(
+                    Membership.org_id == organization_id,
+                    Membership.user_id == user_id,
+                    Membership.status == MembershipStatus.ACTIVE,
+                )
+            )
+            return tuple(membership.roles) if membership is not None else None
 
     async def update_settings(
         self,
@@ -315,10 +333,6 @@ def _repository(request: Request) -> OrganizationRepository:
     return cast(OrganizationRepository, repository)
 
 
-def _current_user(access: SessionAccess) -> uuid.UUID:
-    return access.user.id
-
-
 def _not_found() -> AuthFailure:
     return AuthFailure(
         status=404,
@@ -346,7 +360,7 @@ async def create_organization(
 ) -> OrganizationResponse:
     access = await _authenticated(request, require_csrf=True)
     organization = await _repository(request).create(
-        user_id=_current_user(access),
+        user_id=access.user.id,
         name=payload.name,
         legal_name=payload.legal_name,
         country=payload.country,
@@ -356,15 +370,20 @@ async def create_organization(
     return OrganizationResponse(org=OrganizationView.from_record(organization))
 
 
-@router.get("/{organization_id}", response_model=OrganizationDetailsResponse)
+@router.get(
+    "/{organization_id}",
+    response_model=OrganizationDetailsResponse,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def get_organization(
-    organization_id: uuid.UUID, request: Request
+    organization_id: uuid.UUID,
+    request: Request,
+    member: MemberContext = Depends(require_member),  # noqa: B008
 ) -> OrganizationDetailsResponse:
-    access = await _authenticated(request)
     try:
         overview = await _repository(request).get_for_member(
             organization_id=organization_id,
-            user_id=_current_user(access),
+            user_id=member.user_id,
         )
     except OrganizationNotFound:
         raise _not_found() from None
@@ -379,11 +398,16 @@ async def get_organization(
     )
 
 
-@router.patch("/{organization_id}/settings", response_model=OrganizationResponse)
+@router.patch(
+    "/{organization_id}/settings",
+    response_model=OrganizationResponse,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def update_organization_settings(
     organization_id: uuid.UUID,
     payload: OrganizationSettingsRequest,
     request: Request,
+    member: MemberContext = Depends(require_role("OrgAdmin", "Owner")),  # noqa: B008
 ) -> OrganizationResponse:
     if payload.solo_mode is None and payload.auto_match is None:
         raise AuthFailure(
@@ -392,11 +416,10 @@ async def update_organization_settings(
             title="No settings provided",
             detail="At least one supported setting must be provided.",
         )
-    access = await _authenticated(request, require_csrf=True)
     try:
         organization = await _repository(request).update_settings(
             organization_id=organization_id,
-            user_id=_current_user(access),
+            user_id=member.user_id,
             solo_mode=payload.solo_mode,
             auto_match=payload.auto_match,
         )

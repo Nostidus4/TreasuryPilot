@@ -8,9 +8,11 @@ from typing import Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
+from treasurypilot_api.identity.access import require_member
 from treasurypilot_api.identity.auth import (
     AuthService,
     ConsumeResult,
@@ -679,6 +681,12 @@ class MemoryOrganizationRepository:
             ),
         )
 
+    async def get_member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[str, ...] | None:
+        roles = self.memberships.get((organization_id, user_id))
+        return tuple(roles) if roles is not None else None
+
     async def update_settings(
         self,
         *,
@@ -768,6 +776,20 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         assert admin_setting.status_code == 200
         assert admin_setting.json()["org"]["autoMatch"] is False
 
+        organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {
+            "Finance"
+        }
+        role_denied = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings",
+            json={"autoMatch": True},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert role_denied.status_code == 403
+        assert role_denied.json()["code"] == "FORBIDDEN"
+
+        organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {
+            "OrgAdmin"
+        }
         denied = harness.client.patch(
             f"/v1/orgs/{organization_id}/settings",
             json={"soloMode": True},
@@ -784,3 +806,57 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         )
         assert owner_setting.status_code == 200
         assert owner_setting.json()["org"]["soloMode"] is True
+
+
+def test_every_organization_route_hides_resources_from_non_members() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs",
+            json={"name": "Acme"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+        organizations.memberships.clear()
+
+        def iter_api_routes(routes):
+            for route in routes:
+                if isinstance(route, APIRoute):
+                    yield route
+                    continue
+                original_router = getattr(route, "original_router", None)
+                if original_router is not None:
+                    yield from iter_api_routes(original_router.routes)
+
+        routes = [
+            route
+            for route in iter_api_routes(harness.client.app.routes)
+            if route.path.startswith("/v1/orgs/{")
+        ]
+        assert routes
+
+        def includes_member_guard(dependant: object) -> bool:
+            if getattr(dependant, "call", None) is require_member:
+                return True
+            return any(
+                includes_member_guard(child) for child in getattr(dependant, "dependencies", ())
+            )
+
+        for route in routes:
+            assert route.openapi_extra
+            assert route.openapi_extra.get("x-organization-scoped") is True
+            assert includes_member_guard(route.dependant)
+            path = route.path
+            for parameter in route.dependant.path_params:
+                path = path.replace("{" + parameter.name + "}", str(organization_id))
+            for method in route.methods or set():
+                if method in {"HEAD", "OPTIONS"}:
+                    continue
+                request_options: dict[str, object] = {}
+                if method in {"PATCH", "POST", "PUT", "DELETE"}:
+                    request_options["json"] = {"autoMatch": False}
+                    request_options["headers"] = {"X-CSRF-Token": csrf}
+                response = harness.client.request(method, path, **request_options)
+                assert response.status_code == 404, (method, path, response.text)
