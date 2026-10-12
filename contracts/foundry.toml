@@ -16,6 +16,3 @@ remappings = [
   "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
   "@safe-global/safe-contracts/=node_modules/@safe-global/safe-contracts/",
 ]
-
-[profile.ci]
-fuzz = { runs = 10000 }

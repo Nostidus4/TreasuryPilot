@@ -1,0 +1,4 @@
+{
+  "filter_paths": "node_modules|test|script",
+  "fail_on": "none"
+}
