@@ -79,3 +79,24 @@ def test_pydantic_json_rejects_noncanonical_amounts(payload: bytes) -> None:
 
     with pytest.raises(ValidationError):
         adapter.validate_json(payload)
+
+
+def test_pydantic_python_mode_accepts_its_own_json_round_trip() -> None:
+    """``model_dump(mode="json")`` and ``json.loads(model_dump_json())`` both
+    produce a dict with the canonical string form, which is then re-validated
+    in python mode (e.g. by FastAPI request parsing or a Celery task's JSON
+    args). That dict must validate without going back through JSON bytes."""
+
+    adapter = TypeAdapter(BaseUnits)
+    amount = BaseUnits(123)
+
+    assert adapter.validate_python(adapter.dump_python(amount, mode="json")) == amount
+    assert adapter.validate_python("123") == amount
+
+
+@pytest.mark.parametrize("value", [1.5, "1e6"])
+def test_pydantic_python_mode_still_rejects_floats(value: object) -> None:
+    adapter = TypeAdapter(BaseUnits)
+
+    with pytest.raises(ValidationError):
+        adapter.validate_python(value)
