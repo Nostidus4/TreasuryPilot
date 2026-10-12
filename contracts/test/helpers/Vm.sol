@@ -3,6 +3,14 @@ pragma solidity 0.8.28;
 
 /// @notice Minimal pinned cheatcode surface; no unpinned forge-std dependency.
 interface Vm {
+    struct Log {
+        bytes32[] topics;
+        bytes data;
+        address emitter;
+    }
+    function recordLogs() external;
+    function getRecordedLogs() external returns (Log[] memory);
+    function parseJsonBytes32Array(string calldata json, string calldata key) external pure returns (bytes32[] memory);
     function etch(address target, bytes calldata code) external;
     function getCode(string calldata artifact) external view returns (bytes memory);
     function addr(uint256 privateKey) external pure returns (address);

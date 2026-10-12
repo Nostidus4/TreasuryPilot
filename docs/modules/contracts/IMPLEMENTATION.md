@@ -8,7 +8,7 @@ The implementation follows M04 section 15 and ADR-019 when they supersede older 
 
 Errors are in `TreasuryPilotErrors` because Solidity cannot declare an event and error with the same identifier in one scope. This preserves the specified `RequestCancelled()` and `Revoked()` error selectors and the `RequestCancelled(bytes32,address)` and `Revoked()` events. Consumers should use the module's compiled ABI and match error selectors rather than source qualification.
 
-`PaymentApprovalHash` has exactly one EIP-712 type. Exceptions and duplicate allowances are Safe governance calls, not typed signatures. The obsolete OneTimeException and PlanAttestation vectors in SC-017 are superseded by M04-D3 and ADR-019.
+`PaymentApprovalHash` has exactly one on-chain EIP-712 type. Exceptions and duplicate allowances are Safe governance calls, so OneTimeException vectors are obsolete (M04-D3). PlanAttestation remains signer-side in M1: SC-017 publishes its vectors under `TreasuryPilot Policy` per M08 section 6.3. A test-only Solidity oracle verifies its array encoding, large nonce, hashes, signature and domain separation; the module does not verify or execute policy attestations.
 
 Approval signatures use `abi.encode(address approver, bytes signature)`. The explicit identity supports arbitrary ERC-1271 signature lengths and distinguishes removed approvers (`NotApprover`) from invalid signatures (`ApprovalInvalid`). EIP-712 cannot distinguish field mutations, wrong chain and wrong signing domain from the signature alone; all invalid cryptographic proofs use `ApprovalInvalid`, as required by M04 section 6.4.
 

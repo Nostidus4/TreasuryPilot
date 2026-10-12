@@ -125,7 +125,7 @@ interface ITreasuryPilotModule {
         bytes32 indexed planId, uint256 amount, uint64 expiry, uint256 minHealthFactor, uint256 maxRateRay
     );
     event RepayAuthorized(bytes32 indexed planId, uint256 amount, uint64 expiry);
-    event Borrowed(bytes32 indexed planId, uint256 amount);
+    event BorrowExecuted(bytes32 indexed planId, uint256 amount);
     event Repaid(bytes32 indexed planId, uint256 amount);
     event SwapConfigured(address indexed router, address indexed tokenOut, uint128 perTx, uint128 daily);
     event SwappedForGas(bytes32 indexed stepId, uint256 amountIn, uint256 amountOut, uint256 day);

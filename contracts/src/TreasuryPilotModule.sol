@@ -185,7 +185,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (IAavePool(aavePool).getReserveData(asset).currentVariableBorrowRate > auth.maxRateRay) {
             revert E.BorrowRateTooHigh();
         }
-        emit Borrowed(planId, auth.amount);
+        emit BorrowExecuted(planId, auth.amount);
     }
 
     /// @inheritdoc ITreasuryPilotModule

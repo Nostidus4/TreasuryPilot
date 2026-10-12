@@ -1,4 +1,4 @@
-# PaymentApproval golden vectors
+# Approval and policy golden vectors
 
 Run `node tools/generate-vectors.cjs` from `contracts/` after `pnpm install --frozen-lockfile`. The independent oracle is pinned ethers 5.4.0. Foundry verifies all three files using the actual module's hash/domain functions, the Solidity struct-hash library, and ECDSA recovery.
 
@@ -7,3 +7,13 @@ The files have `formatVersion: 1`, `domain`, `types`, `message`, `typeHash`, `st
 Python consumers can pass `domain`/`types`/`message` to their typed-data encoder; TypeScript consumers can do the same without coercing amount strings to `Number`. Compare struct hash, domain separator and digest separately before comparing the signer. Domains include chain id and the treasury module clone address, never the factory or implementation address.
 
 Fixture identity `7` is deliberately public, synthetic test data. No fixture key is used for deployment. The single-option, early-option and large-integer samples all use the 13-field ADR-019 schema. Governance exceptions and duplicate grants have no EIP-712 vectors (M04-D3).
+
+`plan-attestation.json` and `plan-attestation-empty.json` cover signer-side
+`PlanAttestation` per M08 section 6.3: the domain name is **TreasuryPilot Policy**,
+with the module clone as verifyingContract. The independent ethers oracle and a
+test-only Solidity encoder verify `keccak256(abi.encodePacked(stepIds))`, the
+empty array, a large decimal-string nonce, hashes and ECDSA recovery. Fixture
+identity `8` is public and distinct from the approval signer. Policy signatures
+are raw EIP-712 signatures; they do not use the approval `(address,bytes)` envelope.
+Empty-array vectors test encoding only; an executable plan still needs policy
+validation. No PlanAttestation verification is added to the module.

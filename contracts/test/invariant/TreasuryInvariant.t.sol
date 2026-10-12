@@ -20,6 +20,13 @@ contract TreasuryHandler {
     address public immutable op2;
     uint256 public violations;
     uint256 public successes;
+    uint256 public replayAttempts;
+    uint256 public replayRejections;
+    uint256 public borrowSuccesses;
+    uint256 public borrowAttempts;
+    bytes32[] internal successfulSteps;
+    mapping(bytes32 => I.BorrowAuthorization) internal expectedBorrowGrants;
+    mapping(bytes32 => bool) internal borrowedPlans;
     mapping(bytes32 => uint256) public expectedCounters;
     mapping(bytes32 => uint256) public paymentCount;
     mapping(bytes32 => uint256) public stepCount;
@@ -130,6 +137,7 @@ contract TreasuryHandler {
             _flag(11, cancelled); // BR-077
             _flag(14, token.balanceOf(vendor) - beforeRecipient != amount); // ADR-019 V3-3
             _observe(module.PAY(), amount);
+            successfulSteps.push(step);
         } catch {}
     }
 
@@ -137,7 +145,9 @@ contract TreasuryHandler {
         I.PaymentApproval memory ap = _approval(seed);
         bytes memory sig = _signature(ap);
         bytes32 step = _step();
-        uint256 amount = seed % 500e6 + 1;
+        uint256 amount = seed % 3000e6 + 1;
+        I.Mandate memory m = module.mandate();
+        uint256 beforeUsed = module.usedToday(module.REFILL());
         bool active = _active();
         bool cancelled = module.requestCancelled(ap.requestId);
         bool previouslyRefilled = module.refilledFor(ap.requestId, ap.payingWallet);
@@ -149,7 +159,11 @@ contract TreasuryHandler {
             _flag(7, !active);
             _flag(10, token.balanceOf(ap.payingWallet) > ap.amount + module.targetOf(ap.payingWallet)); // BR-036
             _flag(11, cancelled);
+            _flag(
+                3, amount > m.refill.perRequest || beforeUsed > m.refill.daily || amount > m.refill.daily - beforeUsed
+            ); // BR-023
             _observe(module.REFILL(), amount);
+            successfulSteps.push(step);
         } catch {}
     }
 
@@ -165,6 +179,8 @@ contract TreasuryHandler {
             _flag(12, token.balanceOf(owner) < module.bufferOf(owner)); // BR-037 / ADR-019 V3-8
             _flag(13, token.allowance(owner, module.aavePool()) != 0 || beforeCash - token.balanceOf(owner) != amount);
             _observe(module.SUPPLY(), amount);
+            _flag(5, ++stepCount[step] > 1);
+            successfulSteps.push(step);
         } catch {}
     }
 
@@ -178,19 +194,21 @@ contract TreasuryHandler {
             ++successes;
             _flag(7, !active);
             _flag(13, token.allowance(owner, module.aavePool()) != 0 || token.balanceOf(owner) - beforeCash != amount);
+            _flag(5, ++stepCount[step] > 1);
+            successfulSteps.push(step);
         } catch {}
     }
 
     function pauseResume(uint256 seed) external {
-        if (seed % 3 == 0) {
-            vm.prank(module.mandate().guardian);
-            try module.pause() {} catch {}
-        } else if (seed % 3 == 1) {
-            vm.prank(owner);
-            try module.resume() {} catch {}
-        } else {
+        if (seed % 97 == 0) {
             vm.prank(owner);
             try module.revoke() {} catch {}
+        } else if (seed % 2 == 0) {
+            vm.prank(module.mandate().guardian);
+            try module.pause() {} catch {}
+        } else {
+            vm.prank(owner);
+            try module.resume() {} catch {}
         }
     }
 
@@ -234,7 +252,84 @@ contract TreasuryHandler {
     }
 
     function advanceTime(uint256 seed) external {
-        vm.warp(block.timestamp + seed % 2 days);
+        vm.warp(block.timestamp + (seed % 31 == 0 ? 366 days : seed % 2 days));
+    }
+
+    /// @notice Replay a successful step with a fresh signed request, so request replay cannot mask a missing step guard.
+    function replayStep(uint256 seed) external {
+        if (!_active() || successfulSteps.length == 0) return;
+        I.PaymentApproval memory ap = _approval(seed);
+        ap.requestId = keccak256(abi.encode("replay request", ++nonce));
+        ap.fingerprint = keccak256(abi.encode("replay fingerprint", nonce));
+        ap.payingWallet = op1;
+        ap.amount = 1;
+        ap.earlyAmount = 0;
+        (uint64 activeFrom, bool active) = module.payees(vendor);
+        if (
+            !active || block.timestamp < activeFrom || token.balanceOf(op1) <= module.bufferOf(op1)
+                || module.remainingToday(module.PAY()) == 0
+        ) return;
+        bytes32 step = successfulSteps[seed % successfulSteps.length];
+        bytes memory signature = _signature(ap);
+        ++replayAttempts;
+        vm.prank(executor);
+        try module.pay(ap, signature, step) {
+            _flag(5, true); // BR-061: the oracle remembers this step independently of stepUsed.
+            _observe(module.PAY(), 1);
+        } catch {
+            ++replayRejections;
+        }
+    }
+
+    function _borrowPlan(uint256 seed) internal pure returns (bytes32) {
+        return keccak256(abi.encode("synthetic handler borrow", seed % 8));
+    }
+
+    function authorizeBorrow(uint256 seed) external {
+        bytes32 plan = _borrowPlan(seed);
+        uint256 amount = seed % 100e6 + 1e6;
+        uint64 expiry = uint64(block.timestamp + (seed % 5 == 0 ? 0 : 1 days));
+        bool ownerCall = seed % 3 != 0;
+        vm.prank(ownerCall ? owner : approver);
+        try module.authorizeBorrow(plan, amount, expiry, 15e17, 4e25) {
+            _flag(9, !ownerCall);
+            _flag(15, !ownerCall || borrowedPlans[plan]); // BR-044: consumed plans cannot be reauthorized.
+            if (ownerCall && !borrowedPlans[plan]) {
+                expectedBorrowGrants[plan] = I.BorrowAuthorization(amount, expiry, 15e17, 4e25, false);
+            }
+        } catch {}
+    }
+
+    function borrow(uint256 seed) external {
+        bytes32 plan = _borrowPlan(seed);
+        I.BorrowAuthorization memory grant = expectedBorrowGrants[plan];
+        bool active = _active();
+        uint256 beforeCash = token.balanceOf(owner);
+        ++borrowAttempts;
+        vm.prank(executor);
+        try module.borrow(plan) {
+            ++borrowSuccesses;
+            _flag(15, grant.amount == 0 || grant.used || borrowedPlans[plan] || block.timestamp > grant.expiry);
+            _flag(15, token.balanceOf(owner) - beforeCash != grant.amount);
+            _flag(7, !active);
+            borrowedPlans[plan] = true;
+            expectedBorrowGrants[plan].used = true;
+        } catch {}
+    }
+
+    function repay(uint256 seed) external {
+        bytes32 plan = keccak256(abi.encode("synthetic handler repay", seed % 8));
+        uint256 amount = seed % 100e6 + 1e6;
+        if (seed % 3 == 0) {
+            vm.prank(owner);
+            try module.authorizeRepay(plan, amount, uint64(block.timestamp + 1 days)) {} catch {}
+        }
+        uint256 beforeCash = token.balanceOf(owner);
+        vm.prank(executor);
+        try module.repay(plan) {
+            _flag(4, token.balanceOf(owner) < module.bufferOf(owner));
+            _flag(13, token.balanceOf(owner) > beforeCash || token.allowance(owner, module.aavePool()) != 0);
+        } catch {}
     }
 
     function unauthorizedGovernance(uint256 seed) external {
@@ -266,6 +361,13 @@ contract TreasuryInvariantTest is TreasuryFixture {
         require(handler.successes() == 1, "handler fixture must execute a payment");
         handler.refill(100000003);
         require(handler.successes() == 2, "handler fixture must execute a refill");
+        handler.replayStep(1);
+        require(handler.replayAttempts() == 1, "handler fixture must attempt step replay");
+        handler.borrow(2); // Missing authorization.
+        handler.authorizeBorrow(1);
+        handler.borrow(1);
+        require(handler.borrowSuccesses() == 1, "handler fixture must execute authorized borrowing");
+        handler.borrow(1); // Consumed authorization; mutation must trip I15 rather than another guard.
     }
 
     function targetContracts() external view returns (address[] memory targets) {
@@ -274,7 +376,7 @@ contract TreasuryInvariantTest is TreasuryFixture {
     }
 
     function targetSelectors() external view returns (FuzzSelector[] memory targets) {
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](14);
         selectors[0] = handler.pay.selector;
         selectors[1] = handler.refill.selector;
         selectors[2] = handler.supply.selector;
@@ -285,6 +387,10 @@ contract TreasuryInvariantTest is TreasuryFixture {
         selectors[7] = handler.cancel.selector;
         selectors[8] = handler.advanceTime.selector;
         selectors[9] = handler.unauthorizedGovernance.selector;
+        selectors[10] = handler.replayStep.selector;
+        selectors[11] = handler.authorizeBorrow.selector;
+        selectors[12] = handler.borrow.selector;
+        selectors[13] = handler.repay.selector;
         targets = new FuzzSelector[](1);
         targets[0] = FuzzSelector(address(handler), selectors);
     }
@@ -353,5 +459,9 @@ contract TreasuryInvariantTest is TreasuryFixture {
 
     function invariant_I14_ExactSignedPaymentOption() external view {
         _check(14); // ADR-019 V3-3
+    }
+
+    function invariant_I15_BorrowRequiresUnusedUnexpiredOwnerGrant() external view {
+        _check(15); // BR-044 / M04 section 15, P2.
     }
 }

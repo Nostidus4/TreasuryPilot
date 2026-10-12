@@ -12,6 +12,10 @@ their own owner transactions. The Forge script writes only
 runtime hashes, module identity, owners, enablement, asset decimals and EAS schema
 at one RPC block before atomically publishing `deployments/31337.json`.
 
+The Anvil deployment uses tUSDC and disables Aave (`aavePool = 0`, supply limits
+zero). Lending unit tests create their own MockAavePool; pinned fork tests use
+the real pool. The Sepolia profile retains Aave's test USDC per ADR-019.
+
 Install the Python workspace with `uv sync --frozen`. On Windows, install Foundry
 and run `./infra/scripts/deploy-local.ps1`. Its fixed
 Anvil keys are public development identities and must never be funded or reused
@@ -55,9 +59,14 @@ Sepolia uses these canonical Safe 1.4.1 deployments, pinned in
 
 The script verifies their published runtime hashes. The publisher checks each
 proxy's `masterCopy` as well as owner, threshold and module enablement. Canonical
-factory salts 1/2/3 and the owner initializer determine T/O1/O2. Repeated Sepolia
+factory salts 1/2 and the owner initializer determine T/O1 on Sepolia. Anvil uses
+salt 3 for O2 as a multi-wallet fixture. Repeated Sepolia
 runs reuse those Safes and the existing module without resetting governance,
 counters or payee cooling. Changing the owner creates another set of Safes.
+The manifest records `operationalWalletCount`: 1 on Sepolia, 2 on Anvil. Sepolia
+records the unused `safeO2` as the zero address after verified publication.
+The publisher compares the complete operational list, reviewed decimals and
+count, and any previously pinned aToken before changing the manifest.
 Locally deployed singleton/factory/MultiSend copies are used only on Anvil. The
 canonical Sepolia bytecode supports recognition by Safe tooling; opening the
 deployed Safes in SafeWallet remains a public deployment acceptance check.

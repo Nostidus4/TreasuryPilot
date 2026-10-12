@@ -43,5 +43,34 @@ async function generate() {
     };
     fs.writeFileSync(path.join(__dirname, '../test/vectors', file), JSON.stringify(result, null, 2) + '\n');
   }
+  const policyDomain = { ...domain, name: 'TreasuryPilot Policy' };
+  const policyFields = [
+    ['planHash', 'bytes32'], ['requestId', 'bytes32'], ['stepIds', 'bytes32[]'],
+    ['policyVersion', 'bytes32'], ['executor', 'address'], ['validUntil', 'uint64'],
+    ['nonce', 'uint256'], ['evidenceDigest', 'bytes32'],
+  ].map(([name, type]) => ({ name, type }));
+  const policyTypes = { PlanAttestation: policyFields };
+  const policyTypeText = `PlanAttestation(${policyFields.map(f => `${f.type} ${f.name}`).join(',')})`;
+  const policyWallet = new Wallet(utils.hexZeroPad(utils.hexlify(8), 32)); // public fixture
+  for (const [file, stepIds] of [
+    ['plan-attestation.json', [utils.id('synthetic-refill-step'), utils.id('synthetic-pay-step')]],
+    ['plan-attestation-empty.json', []],
+  ]) {
+    const message = {
+      planHash: utils.id('synthetic-canonical-plan'), requestId: base.requestId, stepIds,
+      policyVersion: utils.id('synthetic-policy-v1'), executor: base.payingWallet,
+      validUntil: 1800000900, nonce: '340282366920938463463374607431768211455',
+      evidenceDigest: utils.id('synthetic-evidence'),
+    };
+    const result = {
+      formatVersion: 1, generator: 'ethers@5.4.0', fixtureIdentity: 8,
+      domain: policyDomain, types: policyTypes, message, typeHash: utils.id(policyTypeText),
+      structHash: utils._TypedDataEncoder.hashStruct('PlanAttestation', policyTypes, message),
+      domainSeparator: utils._TypedDataEncoder.hashDomain(policyDomain),
+      digest: utils._TypedDataEncoder.hash(policyDomain, policyTypes, message),
+      signer: policyWallet.address, signature: await policyWallet._signTypedData(policyDomain, policyTypes, message),
+    };
+    fs.writeFileSync(path.join(__dirname, '../test/vectors', file), JSON.stringify(result, null, 2) + '\n');
+  }
 }
 generate().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

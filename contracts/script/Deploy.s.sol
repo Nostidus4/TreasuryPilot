@@ -108,7 +108,7 @@ contract Deploy is SafeTestHelper {
         ISafeProxyFactory proxyFactory = ISafeProxyFactory(safeProxyFactory);
         treasury = _newSafe(safeSingleton, proxyFactory, owner, 1);
         op1 = _newSafe(safeSingleton, proxyFactory, owner, 2);
-        op2 = _newSafe(safeSingleton, proxyFactory, owner, 3);
+        if (block.chainid == 31337) op2 = _newSafe(safeSingleton, proxyFactory, owner, 3);
 
         _setup(executor, approver, guardian, vendor);
         if (block.chainid == 31337) {
@@ -169,15 +169,16 @@ contract Deploy is SafeTestHelper {
     }
 
     function _setup(address executor, address approver, address guardian, address vendor) internal {
-        address[] memory operational = new address[](2);
+        uint256 operationalCount = block.chainid == 31337 ? 2 : 1;
+        address[] memory operational = new address[](operationalCount);
         operational[0] = address(op1);
-        operational[1] = address(op2);
+        if (operationalCount == 2) operational[1] = address(op2);
         address[] memory approvers = new address[](1);
         approvers[0] = approver;
-        I.BufferInit[] memory buffers = new I.BufferInit[](3);
+        I.BufferInit[] memory buffers = new I.BufferInit[](operationalCount + 1);
         buffers[0] = I.BufferInit(address(treasury), 1000e6, 0);
         buffers[1] = I.BufferInit(address(op1), 10e6, 150e6);
-        buffers[2] = I.BufferInit(address(op2), 10e6, 150e6);
+        if (operationalCount == 2) buffers[2] = I.BufferInit(address(op2), 10e6, 150e6);
         I.MandateInit memory m = I.MandateInit(
             uint64(block.timestamp),
             uint64(block.timestamp + 30 days),
@@ -208,14 +209,16 @@ contract Deploy is SafeTestHelper {
         );
         _batch(treasury, batch);
         _batch(op1, _call(address(op1), abi.encodeCall(ISafeWallet.enableModule, (address(module)))));
-        _batch(op2, _call(address(op2), abi.encodeCall(ISafeWallet.enableModule, (address(module)))));
+        if (address(op2) != address(0)) {
+            _batch(op2, _call(address(op2), abi.encodeCall(ISafeWallet.enableModule, (address(module)))));
+        }
         _verifyEnablement();
     }
 
     function _verifyEnablement() internal view {
         require(
             treasury.isModuleEnabled(address(module)) && op1.isModuleEnabled(address(module))
-                && op2.isModuleEnabled(address(module)),
+                && (address(op2) == address(0) || op2.isModuleEnabled(address(module))),
             "demo enable failed"
         );
         require(
@@ -264,6 +267,7 @@ contract Deploy is SafeTestHelper {
         vm.serializeAddress(key, "aToken", aToken);
         vm.serializeBytes32(key, "aTokenCodeHash", aToken.codehash);
         vm.serializeUint(key, "assetDecimals", 6);
+        vm.serializeUint(key, "operationalWalletCount", block.chainid == 31337 ? 2 : 1);
         vm.serializeAddress(key, "demoOwner", owner);
         vm.serializeAddress(key, "easAttester", attester);
         vm.serializeUint(key, "mandateExpiresAt", module.mandate().expiresAt);
