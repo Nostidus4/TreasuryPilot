@@ -41,3 +41,10 @@ def test_day_helpers_reject_naive_datetimes_and_negative_timestamps() -> None:
         utc_day_number(datetime(2026, 10, 11))
     with pytest.raises(ValueError, match="negative"):
         utc_day_number(-1)
+
+
+def test_fractional_pre_epoch_datetime_is_rejected_not_truncated_to_day_zero() -> None:
+    half_second_before_epoch = datetime(1970, 1, 1, tzinfo=UTC) - timedelta(milliseconds=500)
+
+    with pytest.raises(ValueError, match="negative"):
+        utc_day_number(half_second_before_epoch)

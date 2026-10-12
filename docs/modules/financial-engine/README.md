@@ -93,7 +93,7 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `shortage(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + F − B)` | |
 | `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
 | `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
-| `decide_refill(req, wallet, source, policy, used_today, protected_other) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4) |
+| `decide_refill(req, wallet, source, policy, used_today, protected_other, *, source_protected) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4); `source_protected` = `R_T + L_T` |
 | `request_value(req, pay_day) → int` | discount − late fee | §8.2 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
@@ -139,7 +139,7 @@ if Shortage == 0:                 → none
 elif Shortage > Bound:            → stop (REFILL_BOUND)        # buffer/other holds exceed target
 elif Cap ≥ min(Pref, Bound):      → preferred, amount = min(Pref, Bound)
 elif Cap ≥ Shortage:              → shortage,  amount = Shortage   (report TARGET_NOT_REACHED)
-else:                             → stop (SOURCE_INSUFFICIENT or OVER_REFILL_DAILY)
+else:                             → stop (OVER_REFILL_DAILY, else OVER_REFILL_PER_REQUEST, else SOURCE_INSUFFICIENT)
 ```
 
 | Example | B | P_o | D | F | H | Shortage | Pref | Bound | Cap | Decision |

@@ -25,13 +25,17 @@ from treasurypilot_core.engine import (
 from treasurypilot_core.money import BaseUnits
 
 
-def wallet(*, balance: int, buffer: int, target: int) -> WalletState:
+def wallet(*, balance: int, buffer: int, target: int, address: str = "0xwallet") -> WalletState:
     return WalletState(
-        address="0xwallet",
+        address=address,
         balance=BaseUnits(balance),
         buffer=BaseUnits(buffer),
         target=BaseUnits(target),
     )
+
+
+def source_wallet(*, balance: int, buffer: int = 0) -> WalletState:
+    return wallet(balance=balance, buffer=buffer, target=buffer, address="0xsource")
 
 
 def request(*, amount: int) -> ApprovedRequest:
@@ -65,14 +69,16 @@ def decide(
     per_request: int = 10_000,
     daily: int = 10_000,
     used_today: int = 0,
+    source_protected: int = 0,
 ) -> RefillDecision:
     return decide_refill(
         request(amount=amount),
         wallet(balance=balance, buffer=buffer, target=target),
-        wallet(balance=source_balance, buffer=source_buffer, target=source_buffer),
+        source_wallet(balance=source_balance, buffer=source_buffer),
         policy(per_request=per_request, daily=daily),
         BaseUnits(used_today),
         BaseUnits(protected_other),
+        source_protected=BaseUnits(source_protected),
     )
 
 
@@ -306,7 +312,72 @@ def test_per_request_refill_limit_is_part_of_the_cap() -> None:
     )
 
     assert decision.kind == "stop"
+    assert decision.reason == "OVER_REFILL_PER_REQUEST"
+
+
+def test_per_request_limit_reason_precedes_source_reason() -> None:
+    decision = decide(
+        balance=100,
+        buffer=50,
+        target=150,
+        protected_other=0,
+        amount=200,
+        source_balance=5,
+        per_request=10,
+        daily=1_000,
+    )
+
+    assert decision.reason == "OVER_REFILL_PER_REQUEST"
+
+
+def test_source_holds_reduce_source_capacity() -> None:
+    decision = decide(
+        balance=100,
+        buffer=50,
+        target=150,
+        protected_other=0,
+        amount=200,
+        source_balance=1_000,
+        source_buffer=100,
+        source_protected=800,
+    )
+
+    assert decision.kind == "stop"
     assert decision.reason == "SOURCE_INSUFFICIENT"
+
+
+def test_refill_target_must_be_the_request_paying_wallet() -> None:
+    other_wallet = wallet(balance=100, buffer=50, target=150, address="0xother")
+
+    decision = decide_refill(
+        request(amount=200),
+        other_wallet,
+        source_wallet(balance=10_000),
+        policy(per_request=10_000, daily=10_000),
+        BaseUnits(0),
+        BaseUnits(0),
+        source_protected=BaseUnits(0),
+    )
+
+    assert decision == RefillDecision(
+        kind="stop", amount=BaseUnits(0), reason="WRONG_REFILL_TARGET"
+    )
+
+
+def test_source_cannot_be_the_paying_wallet() -> None:
+    paying = wallet(balance=100, buffer=50, target=150)
+
+    decision = decide_refill(
+        request(amount=200),
+        paying,
+        paying,
+        policy(per_request=10_000, daily=10_000),
+        BaseUnits(0),
+        BaseUnits(0),
+        source_protected=BaseUnits(0),
+    )
+
+    assert decision.reason == "WRONG_REFILL_TARGET"
 
 
 def test_refill_decision_table_reports_exhausted_daily_refill_budget() -> None:
@@ -371,20 +442,33 @@ def test_decide_refill_rejects_values_outside_the_money_type() -> None:
         decide_refill(
             request(amount=1),
             wallet(balance=0, buffer=0, target=0),
-            wallet(balance=1, buffer=0, target=0),
+            source_wallet(balance=1),
             policy(per_request=1, daily=1),
             0,  # type: ignore[arg-type]
             BaseUnits(0),
+            source_protected=BaseUnits(0),
         )
 
     with pytest.raises(TypeError, match="protected_other"):
         decide_refill(
             request(amount=1),
             wallet(balance=0, buffer=0, target=0),
-            wallet(balance=1, buffer=0, target=0),
+            source_wallet(balance=1),
             policy(per_request=1, daily=1),
             BaseUnits(0),
             0,  # type: ignore[arg-type]
+            source_protected=BaseUnits(0),
+        )
+
+    with pytest.raises(TypeError, match="source_protected"):
+        decide_refill(
+            request(amount=1),
+            wallet(balance=0, buffer=0, target=0),
+            source_wallet(balance=1),
+            policy(per_request=1, daily=1),
+            BaseUnits(0),
+            BaseUnits(0),
+            source_protected=0,  # type: ignore[arg-type]
         )
 
 

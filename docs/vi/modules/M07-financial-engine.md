@@ -77,7 +77,7 @@ Shortage == 0                → không refill
 Shortage > Bound             → dừng (REFILL_BOUND)
 Cap ≥ min(Pref, Bound)       → refill min(Pref, Bound)
 Cap ≥ Shortage               → refill Shortage (báo TARGET_NOT_REACHED)
-còn lại                      → dừng (SOURCE_INSUFFICIENT hoặc OVER_REFILL_DAILY)
+còn lại                      → dừng (OVER_REFILL_DAILY, rồi OVER_REFILL_PER_REQUEST, rồi SOURCE_INSUFFICIENT)
 ```
 
 | Ví dụ | B | P_o | D | F | H | Shortage | Pref | Bound | Cap | Kết quả |
