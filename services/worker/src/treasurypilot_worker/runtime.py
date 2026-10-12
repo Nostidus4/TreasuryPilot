@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from celery import Task
 
-CORRELATION_ID_HEADER = "correlation_id"
+CORRELATION_ID_HEADER = "x_correlation_id"
 MAX_TASK_RETRIES = 5
 
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)

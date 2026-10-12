@@ -35,7 +35,6 @@ def create_celery_app() -> Celery:
         result_backend_transport_options={
             "visibility_timeout": settings.visibility_timeout_seconds
         },
-        visibility_timeout=settings.visibility_timeout_seconds,
         worker_prefetch_multiplier=1,
         timezone="UTC",
         enable_utc=True,

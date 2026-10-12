@@ -2,6 +2,7 @@ from uuid import UUID
 
 import pytest
 from celery import Task
+from celery.contrib.testing.worker import start_worker
 
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.runtime import (
@@ -26,7 +27,6 @@ def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.task_default_queue == "core"
     assert app.conf.worker_prefetch_multiplier == 1
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
-    assert app.conf.visibility_timeout == 3600
 
 
 def test_registered_tasks_inherit_safe_base() -> None:
@@ -133,3 +133,49 @@ def test_child_publication_propagates_delivery_correlation_id(
         publisher.pop_request()
 
     assert captured_headers[CORRELATION_ID_HEADER] == "correlation-parent"
+
+
+def test_real_delivery_preserves_parent_correlation_id_header() -> None:
+    """End-to-end regression test for the ``correlation_id`` header collision.
+
+    ``push_request``/``apply_async`` monkeypatches in the tests above never
+    exercise Celery's real message pipeline, so they could not catch a header
+    name that collides with one of Celery's own reserved message properties
+    (Celery sets ``correlation_id`` on every delivery to the task id). This
+    test publishes a task through a real ``memory://`` broker and a real
+    worker (``celery.contrib.testing.worker.start_worker``) and asserts that
+    the worker-side task actually receives and binds the correlation id that
+    was set at publish time. Before the header was renamed to
+    ``x_correlation_id`` this failed: the custom value was silently dropped
+    on delivery and the task observed a freshly minted uuid instead.
+    """
+
+    original_broker_url = app.conf.broker_url
+    original_result_backend = app.conf.result_backend
+    app.conf.update(
+        broker_url="memory://",
+        result_backend="cache+memory://",
+        task_always_eager=False,
+    )
+
+    @app.task(
+        base=SafeTask,
+        name="test.e2e-capture-correlation",
+        bind=True,
+        ignore_result=False,
+    )
+    def capture_correlation(self: SafeTask) -> str | None:
+        return current_correlation_id()
+
+    try:
+        with start_worker(app, perform_ping_check=False):
+            result = capture_correlation.apply_async(
+                headers={CORRELATION_ID_HEADER: "parent-123"}
+            )
+            assert result.get(timeout=10) == "parent-123"
+    finally:
+        app.tasks.pop(capture_correlation.name, None)
+        app.conf.update(
+            broker_url=original_broker_url,
+            result_backend=original_result_backend,
+        )
