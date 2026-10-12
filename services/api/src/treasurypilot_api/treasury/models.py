@@ -27,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from treasurypilot_api.database import Base
+from treasurypilot_api.database import Base, RowVersionedMixin, VersionedMixin
 from treasurypilot_api.identity.models import uuid7
 
 
@@ -67,7 +67,7 @@ wallet_role_enum = Enum(
 )
 
 
-class Chain(Base):
+class Chain(VersionedMixin, Base):
     __tablename__ = "chains"
     __table_args__ = (
         CheckConstraint("chain_id > 0", name="ck_chains_chain_id_positive"),
@@ -88,22 +88,9 @@ class Chain(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
-class Asset(Base):
+class Asset(VersionedMixin, Base):
     __tablename__ = "assets"
     __table_args__ = (
         UniqueConstraint("chain_id", "address", name="uq_assets_chain_address"),
@@ -117,6 +104,12 @@ class Asset(Base):
         CheckConstraint("length(btrim(issuer_label)) > 0", name="ck_assets_issuer_label"),
         CheckConstraint("version > 0", name="ck_assets_version"),
         Index("ix_assets_chain_id", "chain_id"),
+        Index(
+            "uq_assets_chain_native",
+            "chain_id",
+            unique=True,
+            postgresql_where=text("is_native"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -133,22 +126,9 @@ class Asset(Base):
     is_native: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
-class Deployment(Base):
+class Deployment(RowVersionedMixin, Base):
     __tablename__ = "deployments"
     __table_args__ = (
         UniqueConstraint("chain_id", "name", "version", name="uq_deployments_chain_name_version"),
@@ -168,27 +148,13 @@ class Deployment(Base):
     address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     code_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    row_version: Mapped[int] = mapped_column(
-        "row_version", Integer, nullable=False, default=1, server_default="1"
-    )
 
 
-class Treasury(Base):
+class Treasury(VersionedMixin, Base):
     __tablename__ = "treasuries"
     __table_args__ = (
         UniqueConstraint("id", "org_id", name="uq_treasuries_id_org"),
+        UniqueConstraint("id", "chain_id", name="uq_treasuries_id_chain"),
         ForeignKeyConstraint(
             ["asset_id", "chain_id"],
             ["assets.id", "assets.chain_id"],
@@ -199,7 +165,7 @@ class Treasury(Base):
             ["org_id", "coverage_ack_by"],
             ["memberships.org_id", "memberships.user_id"],
             name="fk_treasuries_coverage_ack_membership",
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
         ),
         CheckConstraint(
             "module_address IS NULL OR octet_length(module_address) = 20",
@@ -239,36 +205,28 @@ class Treasury(Base):
         server_default=Coverage.UNKNOWN,
     )
     coverage_ack_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION")
     )
     coverage_ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     coverage_ack_reason: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
-class TreasuryWallet(Base):
+class TreasuryWallet(VersionedMixin, Base):
     __tablename__ = "treasury_wallets"
     __table_args__ = (
         UniqueConstraint("id", "org_id", name="uq_treasury_wallets_id_org"),
-        UniqueConstraint(
-            "treasury_id", "safe_address", name="uq_treasury_wallets_treasury_address"
-        ),
+        # One on-chain Safe belongs to exactly one treasury across all tenants.
+        UniqueConstraint("chain_id", "safe_address", name="uq_treasury_wallets_chain_address"),
         ForeignKeyConstraint(
             ["treasury_id", "org_id"],
             ["treasuries.id", "treasuries.org_id"],
             name="fk_treasury_wallets_treasury_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["treasury_id", "chain_id"],
+            ["treasuries.id", "treasuries.chain_id"],
+            name="fk_treasury_wallets_treasury_chain",
             ondelete="CASCADE",
         ),
         CheckConstraint("length(btrim(label)) > 0", name="ck_treasury_wallets_label"),
@@ -296,24 +254,12 @@ class TreasuryWallet(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[WalletRole] = mapped_column(wallet_role_enum, nullable=False)
     label: Mapped[str] = mapped_column(String(120), nullable=False)
     safe_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     owners: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     threshold: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
 class SafeConfigSnapshot(Base):

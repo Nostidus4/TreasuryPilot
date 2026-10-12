@@ -77,10 +77,10 @@ erDiagram
 | Table | Key columns | FKs | Indexes |
 |---|---|---|---|
 | `chains` | chain_id (pk), name, is_testnet, confirmations, explorer_url, rpc_urls jsonb, enabled | — | |
-| `assets` | id, chain_id, address, symbol, decimals, issuer_label, is_test, is_native | chains | unique(chain_id,address) |
+| `assets` | id, chain_id, address, symbol, decimals, issuer_label, is_test, is_native | chains | unique(chain_id,address); one native asset per chain |
 | `deployments` | id, chain_id, name, address, code_hash, version | chains | unique(chain_id,name,version) |
 | `treasuries` | id, org_id, chain_id, asset_id (payment stablecoin), module_address, status, coverage enum, coverage_ack_by/at | orgs, chains, assets | idx(org_id) |
-| `treasury_wallets` | id, treasury_id, role enum(SOURCE,OPERATIONAL), label, safe_address, owners jsonb, threshold | treasuries | unique(treasury_id,safe_address) |
+| `treasury_wallets` | id, treasury_id, chain_id, role enum(SOURCE,OPERATIONAL), label, safe_address, owners jsonb, threshold | treasuries | unique(chain_id,safe_address) |
 | `safe_config_snapshots` | id, wallet_id, block_number, block_hash, owners, threshold, modules[], guard, observed_at | wallets | idx(wallet_id, block_number desc) |
 
 ### 2.3 Mandate, payees, exceptions (M03)

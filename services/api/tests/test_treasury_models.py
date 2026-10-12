@@ -2,7 +2,16 @@ from sqlalchemy import ARRAY, Enum, ForeignKeyConstraint, Index, UniqueConstrain
 from sqlalchemy.dialects.postgresql import JSONB
 
 from treasurypilot_api.database import Base
-from treasurypilot_api.treasury.models import Coverage, TreasuryStatus, WalletRole
+from treasurypilot_api.treasury.models import (
+    Asset,
+    Chain,
+    Coverage,
+    Deployment,
+    Treasury,
+    TreasuryStatus,
+    TreasuryWallet,
+    WalletRole,
+)
 
 TREASURY_TABLES = {
     "chains",
@@ -40,7 +49,33 @@ def test_postgres_enum_values_match_module_states() -> None:
 def test_data_model_uniqueness_constraints_are_present() -> None:
     assert ("chain_id", "address") in _unique_columns("assets")
     assert ("chain_id", "name", "version") in _unique_columns("deployments")
-    assert ("treasury_id", "safe_address") in _unique_columns("treasury_wallets")
+    assert ("chain_id", "safe_address") in _unique_columns("treasury_wallets")
+
+
+def test_only_one_native_asset_is_allowed_per_chain() -> None:
+    assets = Base.metadata.tables["assets"]
+    index = next(index for index in assets.indexes if index.name == "uq_assets_chain_native")
+
+    assert index.unique
+    assert tuple(column.name for column in index.columns) == ("chain_id",)
+    assert str(index.dialect_options["postgresql"]["where"]) == "is_native"
+
+
+def test_coverage_ack_foreign_keys_do_not_block_org_cascades() -> None:
+    treasuries = Base.metadata.tables["treasuries"]
+
+    for constraint in treasuries.constraints:
+        if isinstance(constraint, ForeignKeyConstraint) and "coverage_ack_by" in {
+            element.parent.name for element in constraint.elements
+        }:
+            assert constraint.ondelete == "NO ACTION"
+
+
+def test_mutable_treasury_tables_use_optimistic_locking() -> None:
+    for model in (Chain, Asset, Treasury, TreasuryWallet):
+        assert model.__mapper__.version_id_col is model.__table__.c.version
+        assert model.__table__.c.updated_at.onupdate is not None
+    assert Deployment.__mapper__.version_id_col is Deployment.__table__.c.row_version
 
 
 def test_tenant_owned_tables_have_org_first_indexes() -> None:
@@ -76,6 +111,7 @@ def test_composite_foreign_keys_prevent_cross_chain_and_cross_tenant_links() -> 
     assert ("asset_id", "chain_id") in treasury_foreign_keys
     assert ("org_id", "coverage_ack_by") in treasury_foreign_keys
     assert ("treasury_id", "org_id") in wallet_foreign_keys
+    assert ("treasury_id", "chain_id") in wallet_foreign_keys
     assert ("wallet_id", "org_id") in snapshot_foreign_keys
 
 
