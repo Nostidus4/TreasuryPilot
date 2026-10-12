@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -445,6 +446,7 @@ def test_console_sender_outputs_usable_local_link_without_recipient() -> None:
 def test_email_failure_invalidates_issued_token_without_revealing_the_account(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.WARNING, logger="treasurypilot_api.identity.auth")
     with make_harness(sender_fails=True) as harness:
         known = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
         unknown = harness.client.post("/v1/auth/magic-link", json={"email": "nobody@example.com"})

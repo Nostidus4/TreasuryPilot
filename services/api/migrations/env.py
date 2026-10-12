@@ -17,7 +17,7 @@ from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # A URL set by the caller (for example the migration tests) must win over the
 # ambient DATABASE_URL so a test run can never migrate the dev database.

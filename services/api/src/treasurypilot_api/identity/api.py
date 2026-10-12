@@ -116,17 +116,19 @@ class MeResponse(ApiModel):
 
 
 def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
+    content: dict[str, object] = {
+        "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
+        "title": exc.title,
+        "status": exc.status,
+        "code": exc.code,
+        "detail": exc.detail,
+        "instance": request.url.path,
+    }
+    content.update(exc.extensions)
     return JSONResponse(
         status_code=exc.status,
         media_type="application/problem+json",
-        content={
-            "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
-            "title": exc.title,
-            "status": exc.status,
-            "code": exc.code,
-            "detail": exc.detail,
-            "instance": request.url.path,
-        },
+        content=content,
     )
 
 

@@ -207,11 +207,11 @@ M08 NEEDS_APPROVAL → exception `Requested` with numbers → AI draft (M09) →
 
 ### 8.1 Mandate validation (BR-014)
 
-Required: actions ⊆ {REFILL, PAY} (SWAP only if P2 enabled with router, pairs, slippage, quote age); executor ≠ 0; guardian set; ≥ 1 approver; `validFrom < expiresAt`; `expiresAt − validFrom ≤ 365 d`; cooling within 1 h–7 d (demo profile: 60 s–1 h); for each action `0 ≤ perRequest ≤ daily`; for each operational wallet `0 ≤ buffer ≤ target`; Safe T buffer set; `approvalMaxAge` 1–60 days; all amounts integers in base units, inputs with more decimals than the asset are rejected. Limits of 0 are allowed with a warning "action disabled".
+Required: actions ⊆ {REFILL, PAY, SUPPLY} (SWAP only if P2 enabled with router, pairs, slippage, quote age); executor ≠ 0; guardian set; ≥ 1 approver; `validFrom < expiresAt`; `expiresAt − validFrom ≤ 365 d`; cooling within 1 h–7 d (demo profile: 60 s–1 h); for each PAY/REFILL/SUPPLY action `0 ≤ perRequest ≤ daily`; SUPPLY uses the separate `supplyLimits` field; for each operational wallet `0 ≤ buffer ≤ target`; Safe T buffer set; `approvalMaxAge` 1–60 days; all amounts are integer base-unit strings. `minSupply` is required in production and defaults to 500 whole asset units in demo; when SUPPLY is enabled it must be positive and fit both SUPPLY limits. `reserveHorizonDays` defaults to 30. Limits of 0 are allowed with a warning "action disabled".
 
 ### 8.2 Summary and diff
 
-Human summary template (one line per rule, display units and base units), e.g. *"The agent may pay vendors up to **2,000.00 tUSDC** per invoice and **10,000.00 tUSDC** per UTC day (2000000000 / 10000000000 base units)."* Diff = field-by-field old → new with risk markers: ▲ looser (higher limit, lower buffer, shorter cooling, longer expiry, added approver) / ▼ stricter. Looser changes show a red marker and require a confirm checkbox.
+Human summary template (one line per rule, display units and base units), e.g. *"The agent may pay vendors up to **2,000.00 tUSDC** per invoice and **10,000.00 tUSDC** per UTC day (2000000000 / 10000000000 base units)."* Diff = field-by-field old → new with risk markers: ▲ looser (higher limit, lower buffer, shorter cooling, earlier start, longer expiry, added action/approver) / ▼ stricter. Looser changes show a red marker and require a confirm checkbox.
 
 ### 8.3 Bundle building
 
