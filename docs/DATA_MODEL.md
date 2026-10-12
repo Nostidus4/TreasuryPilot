@@ -64,7 +64,7 @@ erDiagram
 | Table | Key columns | FKs | Indexes / constraints |
 |---|---|---|---|
 | `users` | id, email (citext), display_name, status | — | unique(email) |
-| `sessions` | id, user_id, created_at, expires_at, last_seen_at, ip_hash, ua_hash, revoked_at | users | idx(user_id) |
+| `sessions` | id, user_id, token_hash, created_at, expires_at, last_seen_at, ip_hash, ua_hash, revoked_at | users | idx(user_id), unique(token_hash) |
 | `magic_links` | id, email, token_hash, expires_at, used_at | — | unique(token_hash) |
 | `wallet_links` | id, user_id, address, chain_family='evm', is_contract, linked_at, unlinked_at | users | **unique(address) where unlinked_at is null** |
 | `siwe_nonces` | nonce, user_id, expires_at, used_at | users | pk(nonce) |

@@ -51,6 +51,7 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
         sa.CheckConstraint("length(email::text) BETWEEN 3 AND 320", name="ck_users_email_length"),
         sa.CheckConstraint("status IN ('active', 'disabled')", name="ck_users_status"),
+        sa.CheckConstraint("version > 0", name="ck_users_version"),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["updated_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
@@ -61,6 +62,7 @@ def upgrade() -> None:
         "sessions",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("token_hash", sa.LargeBinary(length=32), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -84,8 +86,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("octet_length(ip_hash) = 32", name="ck_sessions_ip_hash_length"),
         sa.CheckConstraint("octet_length(ua_hash) = 32", name="ck_sessions_ua_hash_length"),
+        sa.CheckConstraint("octet_length(token_hash) = 32", name="ck_sessions_token_hash_length"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("token_hash", name="uq_sessions_token_hash"),
     )
     op.create_index("ix_sessions_user_id", "sessions", ["user_id"])
 
@@ -279,9 +283,17 @@ def upgrade() -> None:
         sa.UniqueConstraint("token_hash", name="uq_invites_token_hash"),
     )
     op.create_index("ix_invites_org_id_email", "invites", ["org_id", "email"])
+    op.create_index(
+        "uq_invites_pending_org_id_email",
+        "invites",
+        ["org_id", "email"],
+        unique=True,
+        postgresql_where=sa.text("accepted_at IS NULL AND revoked_at IS NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_invites_pending_org_id_email", table_name="invites")
     op.drop_index("ix_invites_org_id_email", table_name="invites")
     op.drop_table("invites")
     op.drop_index("ix_memberships_user_id", table_name="memberships")

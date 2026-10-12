@@ -48,6 +48,7 @@ class StoredMagicLink:
 @dataclass
 class StoredSession:
     user_id: uuid.UUID
+    token_hash: bytes
     created_at: datetime
     expires_at: datetime
     last_seen_at: datetime
@@ -114,6 +115,7 @@ class MemoryAuthRepository:
         *,
         session_id: uuid.UUID,
         user_id: uuid.UUID,
+        token_hash: bytes,
         created_at: datetime,
         expires_at: datetime,
         ip_hash: bytes,
@@ -121,6 +123,7 @@ class MemoryAuthRepository:
     ) -> None:
         self.sessions[session_id] = StoredSession(
             user_id=user_id,
+            token_hash=token_hash,
             created_at=created_at,
             expires_at=expires_at,
             last_seen_at=created_at,
@@ -132,11 +135,12 @@ class MemoryAuthRepository:
         self,
         *,
         session_id: uuid.UUID,
+        token_hash: bytes,
         now: datetime,
         idle_lifetime: timedelta,
     ) -> SessionAccess | None:
         session = self.sessions.get(session_id)
-        if session is None or session.revoked_at is not None:
+        if session is None or session.revoked_at is not None or session.token_hash != token_hash:
             return None
         if now >= session.expires_at or now - session.last_seen_at >= idle_lifetime:
             session.revoked_at = now

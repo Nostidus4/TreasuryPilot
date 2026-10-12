@@ -97,7 +97,10 @@ async def _exercise_postgres_auth_flow(database_url: str) -> None:
         assert rejected[0].code == "TOKEN_INVALID"
 
         async with sessions() as session:
+            stored_session = (await session.scalars(select(Session))).one()
             assert await session.scalar(select(func.count()).select_from(Session)) == 1
+            assert len(stored_session.token_hash) == 32
+            assert verified[0].session_token not in repr(stored_session.token_hash)
 
         access = await service.authenticate(session_token=verified[0].session_token)
         assert access.user.id == user_id

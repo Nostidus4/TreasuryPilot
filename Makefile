@@ -6,6 +6,8 @@ ENV_FILE ?= infra/env/.env
 COMPOSE := docker compose --env-file $(ENV_FILE) -f infra/compose.yaml
 FOUNDRY_IMAGE := ghcr.io/foundry-rs/foundry:v1.8.5
 FOUNDRY := docker run --rm --entrypoint forge -v "$(CURDIR):/workspace" -w /workspace/contracts $(FOUNDRY_IMAGE)
+SLITHER_VERSION := $(shell cat contracts/.slither-version)
+SLITHER_IMAGE := treasurypilot-slither:$(SLITHER_VERSION)
 
 export UV_CACHE_DIR
 export COREPACK_HOME
@@ -13,7 +15,7 @@ export COREPACK_HOME
 .DEFAULT_GOAL := help
 
 .PHONY: help bootstrap check-env dev infra down logs ps smoke openapi web-dev \
-	test test-python test-web test-contracts lint lint-python lint-web lint-contracts format
+	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format
 
 help:
 	@echo "TreasuryPilot developer commands"
@@ -26,6 +28,7 @@ help:
 	@echo "  make web-dev         Start the Vite development server"
 	@echo "  make test            Run Python, web and contract tests"
 	@echo "  make lint            Run all configured quality gates"
+	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
 
 bootstrap:
 	uv sync
@@ -88,6 +91,17 @@ lint-web:
 lint-contracts:
 	$(FOUNDRY) fmt --check
 	$(FOUNDRY) build
+
+slither:
+	docker build -q --build-arg FOUNDRY_IMAGE=$(FOUNDRY_IMAGE) --build-arg SLITHER_VERSION=$(SLITHER_VERSION) \
+		-t $(SLITHER_IMAGE) -f contracts/docker/slither.Dockerfile contracts/docker >/dev/null
+	rm -rf contracts/slither-report && mkdir -p contracts/slither-report
+	docker run --rm -v "$(CURDIR):/workspace" -w /workspace/contracts $(SLITHER_IMAGE) . \
+		--config-file slither.config.json \
+		--json slither-report/slither.json \
+		--sarif slither-report/slither.sarif \
+		--checklist > contracts/slither-report/slither.md
+	@echo "Slither report: contracts/slither-report/"
 
 format:
 	uv run ruff check --fix packages services infra/scripts infra/minio-init

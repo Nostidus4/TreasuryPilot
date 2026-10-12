@@ -107,6 +107,7 @@ class SqlAlchemyAuthRepository:
         *,
         session_id: uuid.UUID,
         user_id: uuid.UUID,
+        token_hash: bytes,
         created_at: datetime,
         expires_at: datetime,
         ip_hash: bytes,
@@ -117,6 +118,7 @@ class SqlAlchemyAuthRepository:
                 Session(
                     id=session_id,
                     user_id=user_id,
+                    token_hash=token_hash,
                     created_at=created_at,
                     expires_at=expires_at,
                     last_seen_at=created_at,
@@ -129,6 +131,7 @@ class SqlAlchemyAuthRepository:
         self,
         *,
         session_id: uuid.UUID,
+        token_hash: bytes,
         now: datetime,
         idle_lifetime: timedelta,
     ) -> SessionAccess | None:
@@ -137,6 +140,8 @@ class SqlAlchemyAuthRepository:
                 select(Session).where(Session.id == session_id).with_for_update()
             )
             if auth_session is None or auth_session.revoked_at is not None:
+                return None
+            if not hmac.compare_digest(auth_session.token_hash, token_hash):
                 return None
             if now >= auth_session.expires_at or now - auth_session.last_seen_at >= idle_lifetime:
                 auth_session.revoked_at = now

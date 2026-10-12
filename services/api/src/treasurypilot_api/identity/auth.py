@@ -126,6 +126,7 @@ class AuthRepository(Protocol):
         *,
         session_id: uuid.UUID,
         user_id: uuid.UUID,
+        token_hash: bytes,
         created_at: datetime,
         expires_at: datetime,
         ip_hash: bytes,
@@ -136,6 +137,7 @@ class AuthRepository(Protocol):
         self,
         *,
         session_id: uuid.UUID,
+        token_hash: bytes,
         now: datetime,
         idle_lifetime: timedelta,
     ) -> SessionAccess | None: ...
@@ -287,9 +289,11 @@ class AuthService:
             )
 
         session_id = uuid.uuid4()
+        session_token = self._token_codec.session_token(session_id)
         await self._repository.create_session(
             session_id=session_id,
             user_id=result.user.id,
+            token_hash=hash_token(session_token),
             created_at=now,
             expires_at=now + SESSION_ABSOLUTE_LIFETIME,
             ip_hash=hash_client_value(client_ip, self._client_hash_secret),
@@ -298,7 +302,7 @@ class AuthService:
         return VerifiedSession(
             user=result.user,
             session_id=session_id,
-            session_token=self._token_codec.session_token(session_id),
+            session_token=session_token,
             csrf_token=self._token_codec.csrf_token(session_id),
         )
 
@@ -326,6 +330,7 @@ class AuthService:
 
         access = await self._repository.access_session(
             session_id=session_id,
+            token_hash=hash_token(session_token),
             now=self._now(),
             idle_lifetime=SESSION_IDLE_LIFETIME,
         )
