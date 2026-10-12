@@ -31,6 +31,7 @@ interface ISafeWallet is ISafeModuleWallet {
 }
 
 interface ISafeProxyFactory {
+    function proxyCreationCode() external view returns (bytes memory);
     function createProxyWithNonce(address singleton, bytes calldata initializer, uint256 saltNonce)
         external
         returns (address proxy);

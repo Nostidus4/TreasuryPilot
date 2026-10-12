@@ -29,7 +29,12 @@ interface Vm {
     function load(address target, bytes32 slot) external view returns (bytes32);
     function store(address target, bytes32 slot, bytes32 value) external;
     function startBroadcast(uint256 privateKey) external;
+    function startBroadcast() external;
+    function envAddress(string calldata name) external view returns (address);
+    function envOr(string calldata name, address defaultValue) external view returns (address);
+    function getNonce(address account) external view returns (uint64);
     function stopBroadcast() external;
+    function readCallers() external view returns (uint8 callerMode, address msgSender, address txOrigin);
     function writeJson(string calldata json, string calldata path) external;
     function serializeAddress(string calldata objectKey, string calldata valueKey, address value)
         external
@@ -43,5 +48,9 @@ interface Vm {
     function serializeBool(string calldata objectKey, string calldata valueKey, bool value)
         external
         returns (string memory);
+    function serializeString(string calldata objectKey, string calldata valueKey, string calldata value)
+        external
+        returns (string memory);
+    function writeJson(string calldata json, string calldata path, string calldata valueKey) external;
     function toString(uint256 value) external pure returns (string memory);
 }

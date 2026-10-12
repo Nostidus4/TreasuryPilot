@@ -1,0 +1,42 @@
+{
+  "chainId": 11155111,
+  "networkName": "Ethereum Sepolia",
+  "deploymentStatus": "configured_only",
+  "deploymentSource": {
+    "aaveAddressBookRepository": "https://github.com/aave-dao/aave-address-book",
+    "aaveAddressBookCommit": "b5da40f58dd245146798302dc4d7cfb89ee30e96",
+    "easContractsRepository": "https://github.com/ethereum-attestation-service/eas-contracts",
+    "easContractsCommit": "e6e970286ff18bbdfc5d8eff2742c5ece46040e4",
+    "safeDeploymentsRepository": "https://github.com/safe-global/safe-deployments",
+    "safeDeploymentsCommit": "7b1fb6d615ab2d2999550ec9166554b180e813e5"
+  },
+  "asset": "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8",
+  "assetDecimals": 6,
+  "aavePool": "0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951",
+  "eas": "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
+  "easRegistry": "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0",
+  "easAttester": null,
+  "safeSingleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a",
+  "safeProxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+  "multiSend": "0x38869bf66a61cF6bDB996A6aE40D5853Fd43B526",
+  "supplyAvailability": "USDC supply is expected to revert while reserve capacity is full; check live headroom before D2",
+  "aaveEvidence": {
+    "blockedSupplyBlock": 11890000,
+    "usdcSupplyCapTokens": "2000000000",
+    "usdcATokenTotalSupplyTokens": "4536900878.408670",
+    "positiveUSDCForkBlock": 8000000,
+    "aTokenRevision": 1,
+    "scope": "Historical observations; not a claim about current reserve capacity"
+  },
+  "easSchema": "bytes32 requestId,bytes32 invoiceHash,bytes32 approvalHash,bytes32 planHash,bytes32 payTxHash,address payee,uint256 amount,bytes32 policyVersion",
+  "easSchemaUid": "0x51ff02da8a076efd7ed8d58548219fba0f0a06fd5f313309c856339772ae1011",
+  "easSchemaRegistered": false,
+  "testToken": null,
+  "implementation": null,
+  "factory": null,
+  "module": null,
+  "safeT": null,
+  "safeO1": null,
+  "safeO2": null,
+  "codeHashes": {}
+}

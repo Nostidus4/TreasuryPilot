@@ -20,6 +20,9 @@ apps/web/dist/
 contracts/cache/
 contracts/out/
 contracts/broadcast/
+deployments/31337.json
+deployments/predictions/*
+!deployments/predictions/.gitkeep
 
 # Local environment and secrets
 .env

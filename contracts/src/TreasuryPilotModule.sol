@@ -4,7 +4,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Enum} from "@safe-global/safe-contracts/contracts/common/Enum.sol";
 import {ITreasuryPilotModule} from "./interfaces/ITreasuryPilotModule.sol";
 import {ISafeModuleWallet} from "./interfaces/ISafeModuleWallet.sol";
-import {IAavePool} from "./interfaces/IAavePool.sol";
+import {IAavePool, IAaveToken} from "./interfaces/IAavePool.sol";
 import {TreasuryPilotGovernance} from "./TreasuryPilotGovernance.sol";
 import {TreasuryPilotErrors as E} from "./libraries/TreasuryPilotErrors.sol";
 
@@ -103,17 +103,23 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (_exceedsDaily(usedOn[key], amount, _mandate.supply.daily)) revert E.OverSupplyDaily();
         uint256 beforeCash = _balance(safeT);
         if (beforeCash < amount || beforeCash - amount < bufferOf[safeT]) revert E.SupplyFloorBreach();
-        uint256 beforeAToken = IERC20(aToken).balanceOf(safeT);
+        uint256 scaledBefore = IAaveToken(aToken).scaledBalanceOf(safeT);
+        uint256 normalizedIncome = IAavePool(aavePool).getReserveNormalizedIncome(asset);
+        if (normalizedIncome == 0) revert E.BalanceDeltaMismatch();
+        // Support Aave's half-up and floor mint rounding. Reject any deficit below
+        // the exact floor, any surplus above half-up, and zero minted shares.
+        uint256 floorScaled = amount * 1e27 / normalizedIncome;
+        uint256 expectedScaled = (amount * 1e27 + normalizedIncome / 2) / normalizedIncome;
         stepUsed[stepId] = true;
         usedOn[key] += amount;
         _approve(aavePool, amount);
         _safeCall(safeT, aavePool, abi.encodeCall(IAavePool.supply, (asset, amount, safeT, 0)));
         _clearAllowance(aavePool);
         uint256 afterCash = _balance(safeT);
-        uint256 afterAToken = IERC20(aToken).balanceOf(safeT);
+        uint256 scaledAfter = IAaveToken(aToken).scaledBalanceOf(safeT);
         if (
-            afterCash > beforeCash || beforeCash - afterCash != amount || afterAToken < beforeAToken
-                || afterAToken - beforeAToken < amount - 1
+            afterCash > beforeCash || beforeCash - afterCash != amount || scaledAfter <= scaledBefore
+                || scaledAfter - scaledBefore < floorScaled || scaledAfter - scaledBefore > expectedScaled
         ) revert E.BalanceDeltaMismatch();
         if (afterCash < bufferOf[safeT]) revert E.SupplyFloorBreach();
         emit Supplied(stepId, amount, day);

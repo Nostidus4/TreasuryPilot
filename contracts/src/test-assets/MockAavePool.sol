@@ -18,6 +18,10 @@ contract MockAToken is ERC20 {
         return 6;
     }
 
+    function scaledBalanceOf(address user) external view returns (uint256) {
+        return balanceOf(user);
+    }
+
     function mint(address to, uint256 amount) external {
         require(msg.sender == POOL, "pool only");
         _mint(to, amount);
@@ -35,6 +39,10 @@ contract MockAavePool is IAavePool {
     uint256 public healthFactor = type(uint256).max;
     uint256 public healthFactorAfterBorrow = 2e18;
     uint128 public variableBorrowRate = 3e25;
+    uint128 public normalizedIncome = 1e27;
+    bool public roundMintDown;
+    uint256 public shortMint;
+    uint256 public extraMint;
     mapping(address => uint256) public debt;
 
     constructor(address asset_) {
@@ -54,18 +62,34 @@ contract MockAavePool is IAavePool {
         variableBorrowRate = value;
     }
 
+    function setMintAccounting(uint128 index, bool roundDown, uint256 shortfall, uint256 extra) external {
+        require(index > 0, "zero index");
+        normalizedIncome = index;
+        roundMintDown = roundDown;
+        shortMint = shortfall;
+        extraMint = extra;
+    }
+
     function getReserveData(address asset_) external view returns (ReserveData memory data) {
         require(asset_ == asset, "unknown asset");
         data.aTokenAddress = address(aToken);
-        data.liquidityIndex = 1e27;
+        data.liquidityIndex = normalizedIncome;
         data.variableBorrowIndex = 1e27;
         data.currentVariableBorrowRate = variableBorrowRate;
+    }
+
+    function getReserveNormalizedIncome(address asset_) external view returns (uint256) {
+        require(asset_ == asset, "unknown asset");
+        return normalizedIncome;
     }
 
     function supply(address asset_, uint256 amount, address onBehalfOf, uint16) external {
         require(asset_ == asset, "unknown asset");
         require(IERC20(asset).transferFrom(msg.sender, address(this), amount), "transfer failed");
-        aToken.mint(onBehalfOf, amount);
+        uint256 scaled = roundMintDown
+            ? amount * 1e27 / normalizedIncome
+            : (amount * 1e27 + normalizedIncome / 2) / normalizedIncome;
+        aToken.mint(onBehalfOf, scaled - shortMint + extraMint);
     }
 
     function withdraw(address asset_, uint256 amount, address to) external returns (uint256) {
