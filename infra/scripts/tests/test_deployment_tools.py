@@ -31,6 +31,7 @@ def prediction_values() -> dict[str, object]:
         "aToken": "0x" + "00" * 20,
         "assetDecimals": 6,
         "demoOwner": "0x" + "ff" * 20,
+        "easAttester": "0x" + "ee" * 20,
         "easSchemaUid": PAYMENT_RECEIPT_SCHEMA_UID,
         "easSchemaRegistered": False,
     }
@@ -63,6 +64,7 @@ def mock_deployment_rpc(
             "aavePool()(address)": values["aavePool"],
             "aToken()(address)": values["aToken"],
             "implementation()(address)": values["implementation"],
+            "masterCopy()(address)": values["safeSingleton"],
             "decimals()(uint8)": "6",
             "getThreshold()(uint256)": "1",
             "getOwners()(address[])": [values["demoOwner"]],
@@ -209,7 +211,21 @@ def test_schema_verification_requires_exact_record(
 
 
 @pytest.mark.parametrize(
-    "mode", ["unfinalized", "reorg", "no_finality", "finalized", "wrapped_finalized", "local"]
+    "mode",
+    [
+        "unfinalized",
+        "reorg",
+        "no_finality",
+        "finalized",
+        "wrapped_finalized",
+        "local",
+        "wrong_signer",
+        "timeout",
+        "duplicate",
+        "recover",
+        "locked",
+        "changed_payload",
+    ],
 )
 def test_attester_requires_finality_and_canonical_block_before_send(
     mode: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -236,6 +252,7 @@ def test_attester_requires_finality_and_canonical_block_before_send(
         "eas": "0x" + "44" * 20,
         "easRegistry": "0x" + "55" * 20,
         "easSchemaUid": PAYMENT_RECEIPT_SCHEMA_UID,
+        "easAttester": "0x" + "66" * 20,
     }
     receipt = tmp_path / "receipt.json"
     receipt.write_text(json.dumps(values))
@@ -264,6 +281,8 @@ def test_attester_requires_finality_and_canonical_block_before_send(
         calls.append(arguments)
         if arguments[0] == "chain-id":
             return str(manifest["chainId"])
+        if arguments[0] == "wallet":
+            return "0x" + ("77" if mode == "wrong_signer" else "66") * 20
         if arguments[0] == "call":
             return "true"
         if arguments[0] == "receipt":
@@ -289,11 +308,31 @@ def test_attester_requires_finality_and_canonical_block_before_send(
                 {"number": 100, "hash": "0x" + "ef" * 32 if mode == "reorg" else block_hash}
             )
         if arguments[0] == "send":
-            return json.dumps({"transactionHash": "0x" + "99" * 32})
+            if mode == "timeout":
+                raise RuntimeError("Ambiguous RPC timeout")
+            return json.dumps(
+                {
+                    "transactionHash": "0x" + "99" * 32,
+                    "status": "0x1",
+                    "logs": [
+                        {
+                            "address": manifest["eas"],
+                            "topics": [
+                                topic,
+                                "0x" + payee[2:].zfill(64),
+                                "0x" + ("66" * 20).zfill(64),
+                                PAYMENT_RECEIPT_SCHEMA_UID,
+                            ],
+                            "data": "0x" + "88" * 32,
+                        }
+                    ],
+                }
+            )
         raise AssertionError(f"Unexpected command: {arguments[0]}")
 
     monkeypatch.setattr(helper, "run_cast", run_cast)
     monkeypatch.setattr(helper, "verify_schema", lambda *args: None)
+    monkeypatch.setattr(helper, "verify_existing_receipt", lambda *args: None)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -312,14 +351,57 @@ def test_attester_requires_finality_and_canonical_block_before_send(
             "synthetic-password",
             "--confirmations",
             "0",
+            "--journal",
+            str(tmp_path / "receipt-journal.json"),
         ],
     )
-    if mode in {"finalized", "wrapped_finalized", "local"}:
+    if mode in {
+        "finalized",
+        "wrapped_finalized",
+        "local",
+        "duplicate",
+        "recover",
+        "changed_payload",
+    }:
         helper.main()
         assert any(call[0] == "send" for call in calls)
         assert any(call[:2] == ["block", "finalized"] for call in calls) == (mode != "local")
+        if mode == "duplicate":
+            helper.main()
+            assert len([call for call in calls if call[0] == "send"]) == 1
+        if mode == "recover":
+            journal = tmp_path / "receipt-journal.json"
+            stored = json.loads(journal.read_text())
+            stored.pop("attestationUid")
+            stored["state"] = "submitting"
+            journal.write_text(json.dumps(stored))
+            with patch.object(sys, "argv", [*sys.argv, "--existing-uid", "0x" + "88" * 32]):
+                helper.main()
+            assert json.loads(journal.read_text())["state"] == "confirmed"
+            helper.main()
+            assert len([call for call in calls if call[0] == "send"]) == 1
+        if mode == "changed_payload":
+            values["planHash"] = "0x" + "ff" * 32
+            receipt.write_text(json.dumps(values))
+            with pytest.raises(ValueError, match="does not match"):
+                helper.main()
+            assert len([call for call in calls if call[0] == "send"]) == 1
+    elif mode == "locked":
+        (tmp_path / "receipt-journal.json.lock").write_text("another worker")
+        with pytest.raises(ValueError, match="already locked"):
+            helper.main()
+        assert not any(call[0] == "send" for call in calls)
+    elif mode == "timeout":
+        with pytest.raises(RuntimeError, match="timeout"):
+            helper.main()
+        with pytest.raises(ValueError, match="uncertain"):
+            helper.main()
+        assert len([call for call in calls if call[0] == "send"]) == 1
+        assert json.loads((tmp_path / "receipt-journal.json").read_text())["state"] == "submitting"
     else:
-        with pytest.raises((ValueError, RuntimeError), match="finalized|canonical|Finality"):
+        with pytest.raises(
+            (ValueError, RuntimeError), match="finalized|canonical|Finality|keystore"
+        ):
             helper.main()
         assert not any(call[0] == "send" for call in calls)
 
@@ -339,6 +421,93 @@ def test_cast_passes_large_bytecode_on_stdin(monkeypatch: pytest.MonkeyPatch) ->
     assert observed["input"] == code
 
 
+def test_cast_moves_keyed_rpc_url_to_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    helpers = load_script("cast_helpers")
+    observed: dict[str, object] = {}
+    rpc = "https://provider.invalid/public-test-api-key"
+
+    def subprocess_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        observed.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0, stdout="11155111")
+
+    monkeypatch.setattr(helpers.subprocess, "run", subprocess_run)
+    assert helpers.run_cast(["chain-id", "--rpc-url", rpc]) == "11155111"
+    assert observed["command"] == ["cast", "chain-id"]
+    environment = observed["env"]
+    assert isinstance(environment, dict) and environment["ETH_RPC_URL"] == rpc
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["asset", "aavePool", "eas", "easRegistry", "safeSingleton", "safeProxyFactory", "multiSend"],
+)
+def test_sepolia_publisher_rejects_infrastructure_drift(
+    field: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = load_script("publish_manifest")
+    values = prediction_values()
+    values.update(chainId=11155111, aavePool="0x" + "aa" * 20)
+    manifest = tmp_path / "manifest.json"
+    original = json.dumps(values)
+    manifest.write_text(original)
+    values[field] = "0x" + "bb" * 20
+    prediction = tmp_path / "prediction.json"
+    prediction.write_text(json.dumps(values))
+    monkeypatch.setattr(
+        publisher, "run_cast", lambda args: "11155111" if args[0] == "chain-id" else "42"
+    )
+    with pytest.raises(ValueError, match="reviewed Sepolia"):
+        publisher.publish(prediction, manifest, "http://mock.invalid")
+    assert manifest.read_text() == original
+
+
+@pytest.mark.parametrize("index", [0, 1, 3, 4, 5, 6, 7, 8, 9])
+def test_existing_receipt_requires_trusted_identity_and_exact_payload(
+    index: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from treasurypilot_core.attestations import PaymentReceipt
+
+    helper = load_script("attest_receipt")
+    receipt = PaymentReceipt(
+        "0x" + "01" * 32,
+        "0x" + "02" * 32,
+        "0x" + "03" * 32,
+        "0x" + "04" * 32,
+        "0x" + "05" * 32,
+        "0x" + "22" * 20,
+        100,
+        "0x" + "06" * 32,
+    )
+    uid = "0x" + "88" * 32
+    attester = "0x" + "66" * 20
+    record: list[object] = [
+        uid,
+        PAYMENT_RECEIPT_SCHEMA_UID,
+        "100",
+        "0",
+        "0",
+        "0x" + "00" * 32,
+        receipt.payee,
+        attester,
+        False,
+        "0x" + receipt.encode().hex(),
+    ]
+    monkeypatch.setattr(helper, "read_scalar", lambda *args: record)
+    helper.verify_existing_receipt(
+        "0x" + "44" * 20, uid, PAYMENT_RECEIPT_SCHEMA_UID, attester, receipt, "http://mock.invalid"
+    )
+    record[index] = True if index == 8 else "0x" + "ff" * 32
+    with pytest.raises(ValueError, match="trusted attester"):
+        helper.verify_existing_receipt(
+            "0x" + "44" * 20,
+            uid,
+            PAYMENT_RECEIPT_SCHEMA_UID,
+            attester,
+            receipt,
+            "http://mock.invalid",
+        )
+
+
 @pytest.mark.parametrize(
     "response",
     [
@@ -351,3 +520,10 @@ def test_cast_rejects_missing_or_failed_block_objects(response: object) -> None:
     helpers = load_script("cast_helpers")
     with pytest.raises(ValueError, match="Cast returned"):
         helpers.json_object(json.dumps(response))
+
+
+@pytest.mark.parametrize("status", [True, False, "0x0", 0, None])
+def test_receipt_uid_rejects_failed_or_invalid_status(status: object) -> None:
+    helper = load_script("attest_receipt")
+    with pytest.raises(ValueError, match="did not succeed"):
+        helper.receipt_uid({"status": status}, "", "", "", "")

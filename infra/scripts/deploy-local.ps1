@@ -18,6 +18,7 @@ try {
     $env:DEMO_APPROVER = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
     $env:DEMO_GUARDIAN = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
     $env:DEMO_PAYEE = '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65'
+    $env:DEMO_RECEIPT_ATTESTER = '0x976EA74026E726554dB657fA54763abd0C3a0aa9'
     Push-Location (Join-Path $repoRoot 'contracts')
     forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
     if ($LASTEXITCODE -ne 0) { throw "forge script failed with exit code $LASTEXITCODE" }

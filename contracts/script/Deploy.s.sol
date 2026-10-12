@@ -19,6 +19,9 @@ contract Deploy is SafeTestHelper {
     bytes32 internal constant FACTORY_SALT = keccak256("TreasuryPilot.factory.v1");
     bytes32 internal constant TOKEN_SALT = keccak256("TreasuryPilot.tUSDC.v1");
     bytes32 internal constant MODULE_SALT = keccak256("TreasuryPilot.demo.module.v1");
+    address internal constant SAFE_SINGLETON = 0x41675C099F32341bf84BFc5382aF534df5C7461a;
+    address internal constant SAFE_FACTORY = 0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67;
+    address internal constant SAFE_MULTISEND = 0x38869bf66a61cF6bDB996A6aE40D5853Fd43B526;
 
     address internal implementation;
     ITreasuryPilotModuleFactory internal factory;
@@ -35,6 +38,7 @@ contract Deploy is SafeTestHelper {
     address internal owner;
     address internal eas;
     address internal registry;
+    address internal attester;
     bytes32 internal schemaUid;
 
     function run() external {
@@ -45,8 +49,16 @@ contract Deploy is SafeTestHelper {
         address approver = vm.envAddress("DEMO_APPROVER");
         address guardian = vm.envAddress("DEMO_GUARDIAN");
         address vendor = vm.envAddress("DEMO_PAYEE");
+        attester = vm.envAddress("DEMO_RECEIPT_ATTESTER");
+        require(
+            attester != address(0) && attester != owner && attester != executor && attester != approver
+                && attester != guardian,
+            "dedicated receipt attester required"
+        );
 
         vm.startBroadcast();
+        (, address broadcaster,) = vm.readCallers();
+        require(broadcaster == owner, "broadcast signer must be DEMO_OWNER");
         implementation = _create2(IMPLEMENTATION_SALT, vm.getCode("TreasuryPilotModule.sol:TreasuryPilotModule"));
         factory = ITreasuryPilotModuleFactory(
             _create2(
@@ -72,16 +84,31 @@ contract Deploy is SafeTestHelper {
         }
         schemaUid = ReceiptSchema.register(registry);
 
-        Safe singleton = new Safe();
-        SafeProxyFactory safeFactory = new SafeProxyFactory();
-        safeSingleton = address(singleton);
-        safeProxyFactory = address(safeFactory);
-        ISafeProxyFactory proxyFactory = ISafeProxyFactory(address(safeFactory));
-        treasury = _newSafe(singleton, proxyFactory, owner, 1);
-        op1 = _newSafe(singleton, proxyFactory, owner, 2);
-        op2 = _newSafe(singleton, proxyFactory, owner, 3);
-        MultiSend multi = new MultiSend();
-        multisend = address(multi);
+        if (block.chainid == 31337) {
+            safeSingleton = address(new Safe());
+            safeProxyFactory = address(new SafeProxyFactory());
+            multisend = address(new MultiSend());
+        } else {
+            safeSingleton = SAFE_SINGLETON;
+            safeProxyFactory = SAFE_FACTORY;
+            multisend = SAFE_MULTISEND;
+            require(
+                safeSingleton.codehash == 0x1fe2df852ba3299d6534ef416eefa406e56ced995bca886ab7a553e6d0c5e1c4,
+                "canonical Safe code mismatch"
+            );
+            require(
+                safeProxyFactory.codehash == 0x50c3cdc4074750a7a974204a716c999edd37482f907608d960b2b025ee0b3317,
+                "canonical factory code mismatch"
+            );
+            require(
+                multisend.codehash == 0x0e4f7fc66550a322d1e7688e181b75e217e662a4f3f4d6a29b22bc61217c4b77,
+                "canonical MultiSend code mismatch"
+            );
+        }
+        ISafeProxyFactory proxyFactory = ISafeProxyFactory(safeProxyFactory);
+        treasury = _newSafe(safeSingleton, proxyFactory, owner, 1);
+        op1 = _newSafe(safeSingleton, proxyFactory, owner, 2);
+        op2 = _newSafe(safeSingleton, proxyFactory, owner, 3);
 
         _setup(executor, approver, guardian, vendor);
         if (block.chainid == 31337) {
@@ -110,7 +137,7 @@ contract Deploy is SafeTestHelper {
         require(success && deployed.code.length != 0, "CREATE2 deployment failed");
     }
 
-    function _newSafe(Safe singleton, ISafeProxyFactory proxyFactory, address safeOwner, uint256 saltNonce)
+    function _newSafe(address singleton, ISafeProxyFactory proxyFactory, address safeOwner, uint256 saltNonce)
         internal
         returns (ISafeWallet)
     {
@@ -119,7 +146,26 @@ contract Deploy is SafeTestHelper {
         bytes memory initializer = abi.encodeCall(
             ISafeWallet.setup, (owners, 1, address(0), bytes(""), address(0), address(0), 0, payable(address(0)))
         );
-        return ISafeWallet(proxyFactory.createProxyWithNonce(address(singleton), initializer, saltNonce));
+        bytes32 salt = keccak256(abi.encodePacked(keccak256(initializer), saltNonce));
+        bytes memory creationCode = abi.encodePacked(proxyFactory.proxyCreationCode(), uint256(uint160(singleton)));
+        address predicted = address(
+            uint160(
+                uint256(keccak256(abi.encodePacked(bytes1(0xff), address(proxyFactory), salt, keccak256(creationCode))))
+            )
+        );
+        ISafeWallet safe = ISafeWallet(predicted);
+        if (predicted.code.length == 0) {
+            require(
+                proxyFactory.createProxyWithNonce(singleton, initializer, saltNonce) == predicted,
+                "Safe prediction mismatch"
+            );
+        }
+        address[] memory currentOwners = safe.getOwners();
+        require(
+            safe.getThreshold() == 1 && currentOwners.length == 1 && currentOwners[0] == safeOwner,
+            "existing Safe owner mismatch"
+        );
+        return safe;
     }
 
     function _setup(address executor, address approver, address guardian, address vendor) internal {
@@ -146,6 +192,10 @@ contract Deploy is SafeTestHelper {
 
         // Each Safe has its own salt namespace; factory CREATE activity cannot change this address.
         module = I(factory.predictDeterministicAddress(address(treasury), MODULE_SALT));
+        if (address(module).code.length != 0) {
+            _verifyEnablement();
+            return; // A repeat dry run cannot overwrite governance, counters or payee cooling.
+        }
         bytes memory batch = bytes.concat(
             _call(
                 address(factory),
@@ -159,6 +209,10 @@ contract Deploy is SafeTestHelper {
         _batch(treasury, batch);
         _batch(op1, _call(address(op1), abi.encodeCall(ISafeWallet.enableModule, (address(module)))));
         _batch(op2, _call(address(op2), abi.encodeCall(ISafeWallet.enableModule, (address(module)))));
+        _verifyEnablement();
+    }
+
+    function _verifyEnablement() internal view {
         require(
             treasury.isModuleEnabled(address(module)) && op1.isModuleEnabled(address(module))
                 && op2.isModuleEnabled(address(module)),
@@ -211,6 +265,13 @@ contract Deploy is SafeTestHelper {
         vm.serializeBytes32(key, "aTokenCodeHash", aToken.codehash);
         vm.serializeUint(key, "assetDecimals", 6);
         vm.serializeAddress(key, "demoOwner", owner);
+        vm.serializeAddress(key, "easAttester", attester);
+        vm.serializeUint(key, "mandateExpiresAt", module.mandate().expiresAt);
+        if (block.chainid == 11155111) {
+            vm.serializeString(
+                key, "supplyAvailability", "USDC cap full at evidence block 11890000; recheck live headroom before D2"
+            );
+        }
         vm.serializeAddress(key, "module", address(module));
         vm.serializeBytes32(key, "moduleCodeHash", address(module).codehash);
         vm.serializeAddress(key, "safeT", address(treasury));

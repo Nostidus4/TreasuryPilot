@@ -20,6 +20,7 @@ contract MockReceiptSchemaRegistry is IReceiptSchemaRegistry {
 contract MockReceiptEAS is IReceiptEAS {
     IReceiptSchemaRegistry public immutable registry;
     mapping(bytes32 => bytes) public receipts;
+    mapping(bytes32 => Attestation) private attestations;
     event Attested(address indexed recipient, address indexed attester, bytes32 uid, bytes32 indexed schemaUID);
 
     constructor(address registry_) {
@@ -32,6 +33,22 @@ contract MockReceiptEAS is IReceiptEAS {
         require(msg.value == 0 && request.data.value == 0 && request.data.data.length == 256, "receipt data");
         uid = keccak256(abi.encode(request, msg.sender, block.timestamp));
         receipts[uid] = request.data.data;
+        attestations[uid] = Attestation(
+            uid,
+            request.schema,
+            uint64(block.timestamp),
+            0,
+            0,
+            bytes32(0),
+            request.data.recipient,
+            msg.sender,
+            false,
+            request.data.data
+        );
         emit Attested(request.data.recipient, msg.sender, uid, request.schema);
+    }
+
+    function getAttestation(bytes32 uid) external view returns (Attestation memory) {
+        return attestations[uid];
     }
 }

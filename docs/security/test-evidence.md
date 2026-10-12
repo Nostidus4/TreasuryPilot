@@ -6,18 +6,22 @@ only claim their on-chain boundaries. Foundry v1.8.5, solc 0.8.28, optimizer 200
 
 ## Local campaign (2026-10-12)
 
-`FOUNDRY_PROFILE=ci forge test -v` passed 71 tests, including all 14 invariants:
+`FOUNDRY_PROFILE=ci forge test -vv` passed 73 tests, including all 14 invariants:
 10,000 runs, depth 32, 320,000 handler calls, zero unexpected reverts.
 Fuzz tests also ran 10,000 cases. The handler checks authority, current approval,
 payee cooling, budgets, floors, replay, exception scope, status, persistent counters,
 refill bound, cancellation, fixed-pool deltas, zero allowance and exact discount.
 It first executes successful PAY and REFILL, so those checks are not vacuous.
-`FOUNDRY_PROFILE=fork forge test` passed four tests against the Sepolia Aave V3
-reserve at pinned block 11,890,000. Supply, accrual, withdrawal, refill, payment,
+`FOUNDRY_PROFILE=fork forge test` passed seven tests against Sepolia Aave V3.
+Four LINK cases use block 11,890,000; two USDC cases use block 8,000,000 and
+one USDC cap/rollback case uses 11,890,000. Supply, accrual, withdrawal, refill, payment,
 borrow and repayment use the deployed pool/token/aToken contracts; only fixture
 Safe balances are inserted with Foundry storage cheatcodes. Two repeated fork
 runs produced the same passing cases and gas usage. LINK was selected because its
-reserve has no supply cap at the pinned block.
+reserve has no supply cap at the pinned block. USDC has six decimals and real
+headroom at 8,000,000. At 11,890,000 its nominal aToken supply exceeds the cap;
+the test expects failure with cash, budget, replay state and allowance rolled
+back. The deployment remains configured to USDC and records this blocker.
 
 The local deployment script was exercised on fresh Anvil chains. Repeating the
 deployment produced identical CREATE2 addresses, code hashes, module clones and
@@ -26,17 +30,26 @@ passed with the same factory and independent Safe/module identities. Script
 predictions are isolated from published manifests; publication rejects unmined
 code and verifies actual runtime hashes, identity and enablement before writing.
 Schema registration tests preserve the published manifest and write a scalar UID.
-The Sepolia script was simulated twice without `--broadcast`; it
-produced the same predicted deployment addresses. No live Sepolia transaction
-was sent.
+The Sepolia path was broadcast twice to an owned LOCAL Anvil fork at 11,890,000
+with the Cancun EVM profile. It verified canonical Safe 1.4.1 runtime hashes,
+reused T/O1/O2/module and preserved mandate expiry. The owner mismatch check
+failed before broadcasting; its nonce did not change. CI repeats this local fork
+deployment and also compares payee cooling across runs. No live Sepolia transaction
+was sent; this does not prove behavior under a later EVM gas schedule.
 
-The updated Python campaign passed 52 tests (core coverage 93%), including
+The updated Python campaign passed 80 tests (core coverage 93%), including
 attestation refusal before finality, canonical-block mismatch, unavailable
 finality, schema ABI mismatches and failed manifest publication. It handles the
 versioned JSON block envelope returned by Foundry v1.8.5. A separate local PAY
 and EAS submission through a development keystore succeeded against the deployed
 module/Safes and local EAS double; the stored 256 bytes matched all eight receipt
-fields and the actual payment transaction. This is local ABI/CLI evidence; it is
+fields and the actual payment transaction. The configured dedicated attester
+was checked against the keystore and the actual EAS record. A journal retry
+returned the existing UID with no additional signer nonce, and explicit UID
+recovery was read-only. Regression cases include wrong signer, timeout,
+duplicate retry, changed payload, concurrent lock and exact-record mismatches.
+Publisher tests reject drift in all seven reviewed Sepolia infrastructure fields.
+This is local ABI/CLI evidence; it is
 not a public EASScan receipt.
 
 Mutation experiment: replacing the inclusive early-payment predicate with

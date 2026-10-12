@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from typing import cast
 
@@ -11,13 +12,21 @@ from treasurypilot_core.attestations import PAYMENT_RECEIPT_SCHEMA, PAYMENT_RECE
 
 def run_cast(arguments: list[str]) -> str:
     # Large runtime bytecode exceeds Windows' command-line limit; cast accepts keccak input on stdin.
-    command = ["cast", *arguments]
+    process_arguments = list(arguments)
+    environment = os.environ.copy()
+    if "--rpc-url" in process_arguments:
+        index = process_arguments.index("--rpc-url")
+        environment["ETH_RPC_URL"] = process_arguments[index + 1]
+        del process_arguments[index : index + 2]
+    command = ["cast", *process_arguments]
     stdin = None
     if len(arguments) == 2 and arguments[0] == "keccak":
         command = ["cast", "keccak"]
         stdin = arguments[1]
     try:
-        result = subprocess.run(command, input=stdin, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command, input=stdin, env=environment, capture_output=True, text=True, check=False
+        )
     except OSError:
         raise RuntimeError("Cannot run cast; check the local Foundry installation") from None
     if result.returncode:

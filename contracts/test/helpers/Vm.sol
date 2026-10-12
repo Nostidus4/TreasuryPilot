@@ -34,6 +34,7 @@ interface Vm {
     function envOr(string calldata name, address defaultValue) external view returns (address);
     function getNonce(address account) external view returns (uint64);
     function stopBroadcast() external;
+    function readCallers() external view returns (uint8 callerMode, address msgSender, address txOrigin);
     function writeJson(string calldata json, string calldata path) external;
     function serializeAddress(string calldata objectKey, string calldata valueKey, address value)
         external

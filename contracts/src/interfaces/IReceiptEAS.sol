@@ -13,6 +13,19 @@ interface IReceiptSchemaRegistry {
 }
 
 interface IReceiptEAS {
+    struct Attestation {
+        bytes32 uid;
+        bytes32 schema;
+        uint64 time;
+        uint64 expirationTime;
+        uint64 revocationTime;
+        bytes32 refUID;
+        address recipient;
+        address attester;
+        bool revocable;
+        bytes data;
+    }
+
     struct AttestationRequestData {
         address recipient;
         uint64 expirationTime;
@@ -27,4 +40,5 @@ interface IReceiptEAS {
         AttestationRequestData data;
     }
     function attest(AttestationRequest calldata request) external payable returns (bytes32);
+    function getAttestation(bytes32 uid) external view returns (Attestation memory);
 }

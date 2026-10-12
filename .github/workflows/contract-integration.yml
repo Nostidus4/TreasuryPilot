@@ -50,6 +50,7 @@ jobs:
           DEMO_APPROVER: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
           DEMO_GUARDIAN: '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
           DEMO_PAYEE: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65'
+          DEMO_RECEIPT_ATTESTER: '0x976EA74026E726554dB657fA54763abd0C3a0aa9'
         run: |
           anvil --silent --chain-id 31337 --port 8545 > /tmp/treasurypilot-anvil.log 2>&1 &
           echo $! > /tmp/treasurypilot-anvil.pid
@@ -111,6 +112,10 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.5
+      - uses: actions/cache@v4
+        with:
+          path: ~/.foundry/cache/rpc
+          key: foundry-rpc-${{ runner.os }}-v1.8.5-sepolia-11155111-11890000-8000000-v3
       - run: pnpm install --frozen-lockfile
       - name: Run D2, D3 and owner-authorized debt tests at the pinned Sepolia block
         working-directory: contracts
@@ -127,3 +132,11 @@ jobs:
       - name: Require identical test results on the same Sepolia block
         working-directory: contracts
         run: python tools/compare_fork_runs.py fork-run-1.json fork-run-2.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+      - run: uv sync --frozen
+      - name: Canonical Safe deployment repeats on a LOCAL Sepolia fork
+        env:
+          SEPOLIA_RPC_URL: https://sepolia.drpc.org
+        run: bash infra/scripts/check-sepolia-deploy.sh

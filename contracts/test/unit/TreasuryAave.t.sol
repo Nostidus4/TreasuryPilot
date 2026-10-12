@@ -7,6 +7,36 @@ import {TestRouter} from "../../src/test-assets/TestRouter.sol";
 import {TestUSDC} from "../../src/test-assets/TestUSDC.sol";
 
 contract TreasuryAaveTest is TreasuryFixture {
+    function testSupplyAcceptsHalfUpAndFloorWithNontrivialIndex() external {
+        uint256 beforeCash = token.balanceOf(address(treasury));
+        pool.setMintAccounting(15e26, false, 0, 0);
+        vm.prank(executor);
+        module.supply(bytes32(uint256(1)), 4);
+        require(pool.aToken().scaledBalanceOf(address(treasury)) == 3, "half-up mint");
+        pool.setMintAccounting(15e26, true, 0, 0);
+        vm.prank(executor);
+        module.supply(bytes32(uint256(2)), 4);
+        require(pool.aToken().scaledBalanceOf(address(treasury)) == 5, "floor mint");
+        require(token.balanceOf(address(treasury)) == beforeCash - 8, "exact cash");
+        require(token.allowance(address(treasury), address(pool)) == 0, "zero allowance");
+    }
+
+    function testSupplyRejectsSharesOutsideTheTwoRoundingModesAndRollsBack() external {
+        uint256 beforeCash = token.balanceOf(address(treasury));
+        pool.setMintAccounting(15e26, true, 1, 0); // 1 share, below floor=2.
+        vm.expectRevert(E.BalanceDeltaMismatch.selector);
+        vm.prank(executor);
+        module.supply(bytes32(uint256(1)), 4);
+        pool.setMintAccounting(15e26, false, 0, 1); // 4 shares, above half-up=3.
+        vm.expectRevert(E.BalanceDeltaMismatch.selector);
+        vm.prank(executor);
+        module.supply(bytes32(uint256(1)), 4);
+        require(token.balanceOf(address(treasury)) == beforeCash, "cash rollback");
+        require(module.usedToday(module.SUPPLY()) == 0 && !module.stepUsed(bytes32(uint256(1))), "effects rollback");
+        require(pool.aToken().scaledBalanceOf(address(treasury)) == 0, "share rollback");
+        require(token.allowance(address(treasury), address(pool)) == 0, "allowance rollback");
+    }
+
     function testSupplyAndWithdrawExactCashAndClearAllowance() external {
         uint256 cash = token.balanceOf(address(treasury));
         vm.prank(executor);

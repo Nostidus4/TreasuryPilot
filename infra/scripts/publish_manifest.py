@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -25,6 +26,15 @@ RUNTIME_CONTRACTS = (
     "asset",
     "eas",
     "easRegistry",
+)
+SEPOLIA_INFRASTRUCTURE = (
+    "asset",
+    "aavePool",
+    "eas",
+    "easRegistry",
+    "safeSingleton",
+    "safeProxyFactory",
+    "multiSend",
 )
 
 
@@ -70,6 +80,9 @@ def verify_deployment(prediction: dict[str, object], rpc_url: str, block: str) -
     asset = address(prediction.get("asset"), "asset")
     treasury = address(prediction.get("safeT"), "safeT")
     owner = address(prediction.get("demoOwner"), "demoOwner")
+    attester = address(prediction.get("easAttester"), "easAttester")
+    if attester == owner:
+        raise ValueError("The receipt attester must be a dedicated identity")
     require_address_call(module, "safeT()(address)", treasury, rpc_url, block)
     require_address_call(module, "asset()(address)", asset, rpc_url, block)
     require_address_call(module, "aavePool()(address)", pool, rpc_url, block)
@@ -109,6 +122,13 @@ def verify_deployment(prediction: dict[str, object], rpc_url: str, block: str) -
 
     for field in ("safeT", "safeO1", "safeO2"):
         safe = address(prediction.get(field), field)
+        require_address_call(
+            safe,
+            "masterCopy()(address)",
+            address(prediction.get("safeSingleton"), "safeSingleton"),
+            rpc_url,
+            block,
+        )
         enabled = read_scalar(safe, "isModuleEnabled(address)(bool)", [module], rpc_url, block)
         owners = read_scalar(safe, "getOwners()(address[])", [], rpc_url, block)
         threshold = read_scalar(safe, "getThreshold()(uint256)", [], rpc_url, block)
@@ -141,6 +161,18 @@ def publish(
             raise ValueError("Existing manifest belongs to another chain")
     if schema_only and not current:
         raise ValueError("Schema publication requires an existing deployment manifest")
+    if chain_id == 11155111 and not schema_only:
+        if not current:
+            raise ValueError("Sepolia publication requires the reviewed configuration manifest")
+        for field in SEPOLIA_INFRASTRUCTURE:
+            if address(current.get(field), field) != address(prediction.get(field), field):
+                raise ValueError(
+                    f"Prediction differs from the reviewed Sepolia configuration: {field}"
+                )
+        if current.get("easAttester") is not None and address(
+            current["easAttester"], "easAttester"
+        ) != address(prediction.get("easAttester"), "easAttester"):
+            raise ValueError("Prediction differs from the configured trusted attester")
     registry = address(prediction.get("easRegistry"), "easRegistry")
     uid = prediction.get("easSchemaUid")
     if not isinstance(uid, str):
@@ -175,9 +207,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prediction", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--rpc-url", required=True)
+    parser.add_argument("--rpc-url", default=os.environ.get("ETH_RPC_URL"))
     parser.add_argument("--schema-only", action="store_true")
     args = parser.parse_args()
+    if not args.rpc_url:
+        raise ValueError("Set ETH_RPC_URL or --rpc-url for mined-state verification")
     publish(args.prediction, args.manifest, args.rpc_url, schema_only=args.schema_only)
     print("Manifest published from verified mined RPC state")
 

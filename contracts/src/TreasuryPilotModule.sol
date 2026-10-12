@@ -106,8 +106,9 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         uint256 scaledBefore = IAaveToken(aToken).scaledBalanceOf(safeT);
         uint256 normalizedIncome = IAavePool(aavePool).getReserveNormalizedIncome(asset);
         if (normalizedIncome == 0) revert E.BalanceDeltaMismatch();
-        // Match Aave's RayMath.rayDiv (nearest, half up) exactly instead of
-        // comparing rebasing aToken balances to the nominal deposit amount.
+        // Support Aave's half-up and floor mint rounding. Reject any deficit below
+        // the exact floor, any surplus above half-up, and zero minted shares.
+        uint256 floorScaled = amount * 1e27 / normalizedIncome;
         uint256 expectedScaled = (amount * 1e27 + normalizedIncome / 2) / normalizedIncome;
         stepUsed[stepId] = true;
         usedOn[key] += amount;
@@ -117,8 +118,8 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         uint256 afterCash = _balance(safeT);
         uint256 scaledAfter = IAaveToken(aToken).scaledBalanceOf(safeT);
         if (
-            afterCash > beforeCash || beforeCash - afterCash != amount || scaledAfter < scaledBefore
-                || scaledAfter - scaledBefore != expectedScaled
+            afterCash > beforeCash || beforeCash - afterCash != amount || scaledAfter <= scaledBefore
+                || scaledAfter - scaledBefore < floorScaled || scaledAfter - scaledBefore > expectedScaled
         ) revert E.BalanceDeltaMismatch();
         if (afterCash < bufferOf[safeT]) revert E.SupplyFloorBreach();
         emit Supplied(stepId, amount, day);

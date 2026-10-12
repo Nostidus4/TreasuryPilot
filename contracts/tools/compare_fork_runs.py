@@ -50,8 +50,8 @@ def main() -> int:
         first, second = summary(Path(sys.argv[1])), summary(Path(sys.argv[2]))
         if first != second:
             raise ValueError("Pinned Sepolia fork results differ between runs")
-        if len(first) != 4:
-            raise ValueError(f"Expected four fork cases, found {len(first)}")
+        if len(first) != 7:
+            raise ValueError(f"Expected seven fork cases, found {len(first)}")
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(error, file=sys.stderr)
         return 1

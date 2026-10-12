@@ -19,3 +19,11 @@ and USDC are from the Aave address book commit recorded in the manifest. The EAS
 Registry and EAS addresses follow the EAS Sepolia deployment at its pinned source
 revision. Live Etherscan verification and a sample easscan attestation need the
 user's testnet broadcast key, RPC and explorer API key.
+
+Canonical Safe 1.4.1 infrastructure is pinned to the recorded safe-deployments
+revision; Anvil alone deploys local copies. `easAttester` must identify a dedicated
+receipt signer before public use. The CLI refuses an unconfigured or different
+signer; receipt consumers must check that identity, not only the public schema.
+The manifest records the USDC supply-cap blocker at the evidence block and the
+separate historical USDC success pin. See [deployment and receipt operations](../contracts/docs/DEPLOYMENT.md)
+for mandate expiry, finality and persistent retry journals.

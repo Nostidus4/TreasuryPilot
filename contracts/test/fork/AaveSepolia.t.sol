@@ -9,15 +9,15 @@ import {TreasuryPilotErrors as E} from "../../src/libraries/TreasuryPilotErrors.
 import {ITreasuryPilotModule as I} from "../../src/interfaces/ITreasuryPilotModule.sol";
 
 /// @notice Actual Aave V3 code/state; only fixture Safe cash is inserted with cheatcodes.
-contract AaveSepoliaForkTest is TreasuryFixture {
+abstract contract AaveForkFixture is TreasuryFixture {
     uint256 internal constant FORK_BLOCK = 11890000;
     address internal constant POOL = 0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
     address internal constant LINK = 0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5;
 
     function setUp() public override {
-        vm.createSelectFork(vm.envOr("SEPOLIA_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com"), FORK_BLOCK);
-        require(block.chainid == 11155111 && block.number == FORK_BLOCK, "fork pin");
-        require(POOL.code.length != 0 && LINK.code.length != 0, "deployment missing");
+        vm.createSelectFork(vm.envOr("SEPOLIA_RPC_URL", "https://sepolia.drpc.org"), _forkBlock());
+        require(block.chainid == 11155111 && block.number == _forkBlock(), "fork pin");
+        require(POOL.code.length != 0 && _forkAsset().code.length != 0, "deployment missing");
         require(_aToken().code.length != 0, "aToken deployment missing");
         super.setUp();
         require(approver.code.length == 0, "fork approver collides with contract");
@@ -27,15 +27,23 @@ contract AaveSepoliaForkTest is TreasuryFixture {
         return block.timestamp;
     }
 
+    function _forkBlock() internal pure virtual returns (uint256) {
+        return FORK_BLOCK;
+    }
+
+    function _forkAsset() internal pure virtual returns (address) {
+        return LINK;
+    }
+
     function _createToken() internal pure override returns (TestUSDC) {
-        return TestUSDC(LINK);
+        return TestUSDC(_forkAsset());
     }
 
     function _createPool() internal pure override returns (MockAavePool) {
         return MockAavePool(POOL);
     }
 
-    function _assetUnit() internal pure override returns (uint256) {
+    function _assetUnit() internal pure virtual override returns (uint256) {
         return 1e18;
     }
 
@@ -44,21 +52,23 @@ contract AaveSepoliaForkTest is TreasuryFixture {
     }
 
     function _aToken() internal view returns (address) {
-        return IAavePool(POOL).getReserveData(LINK).aTokenAddress;
+        return IAavePool(POOL).getReserveData(_forkAsset()).aTokenAddress;
     }
 
     function _fundWallet(address wallet, uint256 amount) internal override {
         if (wallet == POOL) return; // Never alter real pool liquidity/accounting.
         for (uint256 slot; slot < 100; ++slot) {
             bytes32 key = keccak256(abi.encode(wallet, slot));
-            bytes32 original = vm.load(LINK, key);
-            vm.store(LINK, key, bytes32(amount));
+            bytes32 original = vm.load(_forkAsset(), key);
+            vm.store(_forkAsset(), key, bytes32(amount));
             if (token.balanceOf(wallet) == amount) return;
-            vm.store(LINK, key, original);
+            vm.store(_forkAsset(), key, original);
         }
-        revert("LINK balance slot not found");
+        revert("asset balance slot not found");
     }
+}
 
+contract AaveSepoliaForkTest is AaveForkFixture {
     function test_D2_SupplyAccountDataAndAccrual() external {
         uint256 beforeCash = token.balanceOf(address(treasury));
         vm.prank(executor);
@@ -68,7 +78,8 @@ contract AaveSepoliaForkTest is TreasuryFixture {
         uint256 amount = 100 * _assetUnit();
         uint256 index = IAavePool(POOL).getReserveNormalizedIncome(LINK);
         uint256 expectedScaled = (amount * 1e27 + index / 2) / index;
-        require(IAaveToken(aToken).scaledBalanceOf(address(treasury)) == expectedScaled, "scaled principal");
+        uint256 scaled = IAaveToken(aToken).scaledBalanceOf(address(treasury));
+        require(scaled >= amount * 1e27 / index && scaled <= expectedScaled, "scaled principal");
         require(shares >= amount - 16 && shares <= amount + 16, "aToken principal");
         require(token.balanceOf(address(treasury)) == beforeCash - 100 * _assetUnit(), "cash delta");
         require(token.allowance(address(treasury), POOL) == 0, "allowance");
