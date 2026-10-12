@@ -628,7 +628,8 @@
           }
         },
         "summary": "Get Organization",
-        "tags": ["organizations"]
+        "tags": ["organizations"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/settings": {
@@ -679,7 +680,8 @@
           }
         },
         "summary": "Update Organization Settings",
-        "tags": ["organizations"]
+        "tags": ["organizations"],
+        "x-organization-scoped": true
       }
     }
   }
