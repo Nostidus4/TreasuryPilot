@@ -58,7 +58,7 @@ class Asset(FrozenModel):
 class LateFee(FrozenModel):
     kind: Literal["fixed", "percent_per_period"]
     amount: BaseUnits | None = None
-    rate_bps: BasisPoints | None = None
+    rate_bps: Annotated[int, Field(ge=0, le=10_000)] | None = None
     period_days: PositiveInt | None = None
     cap: BaseUnits | None = None
 
@@ -69,8 +69,6 @@ class LateFee(FrozenModel):
                 raise ValueError("a fixed late fee requires amount")
             if self.rate_bps is not None or self.period_days is not None:
                 raise ValueError("a fixed late fee cannot define rate_bps or period_days")
-            if self.cap is not None:
-                raise ValueError("a fixed late fee cannot define cap")
         else:
             if self.amount is not None:
                 raise ValueError("a percent-per-period late fee cannot define amount")
@@ -154,7 +152,23 @@ class ApprovedRequest(FrozenModel):
     amount: BaseUnits
     approved_seq: NonNegativeInt
     terms: PaymentTerms
+    early_amount: BaseUnits | None = None
+    early_pay_by: NonNegativeInt | None = None
     exception_granted: bool = False
+
+    @model_validator(mode="after")
+    def validate_early_payment_option(self) -> ApprovedRequest:
+        if (self.early_amount is None) != (self.early_pay_by is None):
+            raise ValueError("early_amount and early_pay_by must be defined together")
+        if self.early_amount is None or self.early_pay_by is None:
+            return self
+        if self.early_amount == 0:
+            raise ValueError("early_amount must be positive when an early option is present")
+        if self.early_amount > self.amount:
+            raise ValueError("early_amount cannot exceed the standard amount")
+        if self.early_pay_by > self.terms.net_due_day:
+            raise ValueError("early_pay_by cannot be after the net due day")
+        return self
 
 
 class RefillDecision(FrozenModel):

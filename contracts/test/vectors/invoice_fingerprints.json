@@ -1,0 +1,35 @@
+{
+  "encoding": "keccak256(abi.encode(string,string,uint256,address))",
+  "vectors": [
+    {
+      "name": "ascii-separators",
+      "vendor_id": " ACME-01 ",
+      "invoice_no": "INV-001",
+      "normalized_vendor_id": "acme01",
+      "normalized_invoice_no": "inv001",
+      "amount": "1250000",
+      "asset": "0x1111111111111111111111111111111111111111",
+      "fingerprint": "0xd8ff2f15fe019fba6eacb019784e714600f18ca60e3c6ea2e4c47888b2f62954"
+    },
+    {
+      "name": "unicode-nfkc-and-whitespace",
+      "vendor_id": "Café　SOCIÉTÉ",
+      "invoice_no": " INV 001 ",
+      "normalized_vendor_id": "cafésociété",
+      "normalized_invoice_no": "inv001",
+      "amount": "42000000",
+      "asset": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      "fingerprint": "0x9e125e7947019ab097b28f8693de4c02f3b30c9a618375fbe1a7f5ae59d6cf71"
+    },
+    {
+      "name": "leading-zeroes-and-large-amount",
+      "vendor_id": "Straße_GmbH",
+      "invoice_no": "\t00012 / A#\n",
+      "normalized_vendor_id": "strassegmbh",
+      "normalized_invoice_no": "00012a",
+      "amount": "1000000000000000000000000000000",
+      "asset": "0x00000000000000000000000000000000000000aa",
+      "fingerprint": "0x90a53c6f5aa2dd9f3750f136ab8d4c4e4afe9e7f2d0fcd01101d769550641bc6"
+    }
+  ]
+}
