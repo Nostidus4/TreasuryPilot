@@ -50,7 +50,13 @@ Prometheus series: `tp_queue_depth{queue}`, `tp_rpc_errors_total{provider}`, `tp
 
 ## 7. Flows
 
-Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context; Celery headers carry them; the signer receives them in a header. Traces exported via OTLP to the collector (compose service, console exporter locally).
+Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context (`treasurypilot_core.observability`); Celery headers carry them; the signer receives them in headers. Traces exported via OTLP to the collector (compose service, console exporter locally). `trace_id` is added by OBS-002 from the active span.
+
+- **HTTP (api, signer):** `X-Request-ID` is the request id and also the `correlation_id`; `X-Org-ID`, `X-Plan-ID`, `X-Operation-ID` bind the matching fields. Each value must match `^[A-Za-z0-9._:-]{8,64}$` and not be a bare 64-hex string (it would be redacted as a possible key). An invalid `X-Request-ID` is replaced by a fresh uuid; other invalid headers are dropped and logged as `invalid_context_header` (header names only). The response always carries `X-Request-ID`.
+- **Claimed, not authenticated:** org/plan/operation ids from headers are client-declared log context. Once auth exists, the authenticated org must overwrite the header value.
+- **Celery:** `SafeTask` publishes `x_correlation_id` and an `x_log_context` dict (all five ids); a delivery binds them for its lifetime and child tasks inherit them. Ids passed explicitly in `x_log_context` override the publisher's. (`correlation_id` is not used as a header name because Celery overwrites it with the task id.)
+- **Signer:** the worker must forward the same headers when it calls the signer (wired in EXE-005).
+- **Known gap:** only structlog output goes through the redaction chain. uvicorn and Celery framework logs stay plain text and are not redacted; do not log secrets in exceptions.
 
 ## 8. Algorithms
 
@@ -58,7 +64,7 @@ Savings counterfactual: for each executed batch day, re-run `schedule_edf` on th
 
 ## 9. Configuration
 
-Log level INFO (DEBUG locally); sampling: 100 % traces in M1 (low volume); Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
+Log level INFO (DEBUG locally) via `TP_LOG_LEVEL`; `TP_LOG_FORMAT` is `json` (default) or `console` (local reading, still redacted); sampling: 100 % traces in M1 (low volume); Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
 
 ## 10. Security
 

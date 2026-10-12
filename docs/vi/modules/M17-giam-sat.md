@@ -39,7 +39,13 @@ GET `/metrics/operations?from=&to=&treasuryId=` (OWN, FIN, ADM, Auditor) · GET 
 
 ## 7. Luồng
 
-Mỗi request/task gắn `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` vào ngữ cảnh structlog; header Celery mang theo; signer nhận qua header. Trace xuất qua OTLP tới collector (service compose; local in ra console).
+Mỗi request/task gắn `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` vào ngữ cảnh structlog (`treasurypilot_core.observability`); header Celery mang theo; signer nhận qua header. Trace xuất qua OTLP tới collector (service compose; local in ra console). `trace_id` do OBS-002 thêm từ span hiện tại.
+
+- **HTTP (api, signer):** `X-Request-ID` là request id và cũng là `correlation_id`; `X-Org-ID`, `X-Plan-ID`, `X-Operation-ID` gắn vào field tương ứng. Mỗi giá trị phải khớp `^[A-Za-z0-9._:-]{8,64}$` và không phải chuỗi hex 64 ký tự trần (sẽ bị che như khóa riêng). `X-Request-ID` sai thì thay bằng uuid mới; header khác sai thì bỏ và ghi log `invalid_context_header` (chỉ tên header). Response luôn trả `X-Request-ID`.
+- **Do client tự khai, chưa xác thực:** org/plan/operation id từ header chỉ là ngữ cảnh log. Khi có auth, org đã xác thực phải ghi đè giá trị header.
+- **Celery:** `SafeTask` gửi `x_correlation_id` và dict `x_log_context` (đủ 5 id); lượt chạy gắn chúng suốt vòng đời task, task con kế thừa. Id truyền tường minh trong `x_log_context` ghi đè id của bên publish. (Không dùng tên header `correlation_id` vì Celery ghi đè bằng task id.)
+- **Signer:** worker phải chuyển tiếp cùng các header khi gọi signer (nối ở EXE-005).
+- **Khoảng hở đã biết:** chỉ log structlog đi qua chuỗi che dữ liệu. Log của uvicorn và Celery vẫn là text và không được che; không được log bí mật trong exception.
 
 ## 8. Thuật toán
 

@@ -2,6 +2,8 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_core.observability import LogFormat
+
 
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
@@ -10,6 +12,8 @@ class Settings(BaseSettings):
 
     environment: str = "local"
     cors_origins: str = "http://localhost:5173"
+    log_level: str = "INFO"
+    log_format: LogFormat = "json"
 
     @property
     def cors_origin_list(self) -> list[str]:
