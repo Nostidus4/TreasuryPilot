@@ -69,8 +69,6 @@ class LateFee(FrozenModel):
                 raise ValueError("a fixed late fee requires amount")
             if self.rate_bps is not None or self.period_days is not None:
                 raise ValueError("a fixed late fee cannot define rate_bps or period_days")
-            if self.cap is not None:
-                raise ValueError("a fixed late fee cannot define cap")
         else:
             if self.amount is not None:
                 raise ValueError("a percent-per-period late fee cannot define amount")

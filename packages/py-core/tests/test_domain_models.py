@@ -71,9 +71,7 @@ def test_late_fee_requires_fields_for_its_discriminator() -> None:
         LateFee(kind="percent_per_period")
 
 
-def test_late_fee_cap_and_rate_match_the_fee_kind() -> None:
-    with pytest.raises(ValidationError, match="cannot define cap"):
-        LateFee(kind="fixed", amount=BaseUnits(10), cap=BaseUnits(5))
+def test_percent_late_fee_requires_a_positive_rate() -> None:
     with pytest.raises(ValidationError, match="positive rate_bps"):
         LateFee(kind="percent_per_period", rate_bps=0, period_days=7, cap=BaseUnits(5))
 
