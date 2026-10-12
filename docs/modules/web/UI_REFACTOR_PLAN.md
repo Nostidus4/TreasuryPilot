@@ -54,7 +54,7 @@ Nguồn:
 | Một màu nhấn | Nền trung tính (zinc). Accent xanh lục đậm dùng cho hành động chính và mục đang chọn. Xanh dương hiện tại bỏ |
 | Màu trạng thái có nghĩa | `success`, `warning`, `danger`, `info`, `neutral`. Chỉ dùng khi có trạng thái thật. Mỗi tone có cặp `bg` / `fg` / `border` riêng, đạt 4.5:1 |
 | Chữ đọc được | Body 14px, bảng 13px, chú thích 12px là nhỏ nhất. Cấm `text-[Npx]` bằng ESLint |
-| Số là số | Số tiền, địa chỉ, hash dùng Geist Mono + `tabular-nums`, căn phải trong bảng |
+| Số là số | Số tiền, địa chỉ, hash dùng IBM Plex Mono + `tabular-nums`, căn phải trong bảng |
 | Bo góc nhất quán | `sm` 4px (badge, input nhỏ), `md` 6px (button, input), `lg` 8px (card, dialog). Không giá trị nào khác |
 | Chuyển động có lý do | 120–180ms cho mở/đóng lớp nổi và đổi trạng thái timeline. Tôn trọng `prefers-reduced-motion` (đã có trong `styles.css`) |
 | Dark mode từ đầu | Token định nghĩa cho cả `:root` và `.dark`; `darkMode: ['class']` đã bật sẵn |
@@ -68,7 +68,7 @@ Nguồn:
 - Riêng nghiệp vụ: `ai` (khung "AI explanation"), `policy` (khung "Policy decision"), `test-asset` (nhãn TEST)
 - Cỡ chữ: `xs 12/16`, `sm 13/20`, `base 14/20`, `lg 16/24`, `xl 20/28`, `2xl 24/32`, `display 32/40`
 
-**Font:** Geist Sans + Geist Mono, tự host qua `@fontsource-variable` (CSP `default-src 'self'` không cho gọi Google Fonts, M16-D10).
+**Font:** IBM Plex Sans + IBM Plex Mono, tự host qua `@fontsource` (CSP `default-src 'self'` không cho gọi Google Fonts, M16-D10).
 
 ## 4. Thư viện
 

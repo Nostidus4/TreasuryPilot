@@ -181,7 +181,12 @@ export function MetricsPage() {
                         <TableHead align="right">
                           <AmountHeader label="Baseline" />
                         </TableHead>
-                        <TableHead align="right">{t('Actual')}</TableHead>
+                        <TableHead
+                          align="right"
+                          className="hidden md:table-cell"
+                        >
+                          {t('Actual')}
+                        </TableHead>
                         <TableHead align="right">{t('Saved')}</TableHead>
                       </tr>
                     </TableHeader>
@@ -206,7 +211,10 @@ export function MetricsPage() {
                               muted
                             />
                           </TableCell>
-                          <TableCell align="right">
+                          <TableCell
+                            align="right"
+                            className="hidden md:table-cell"
+                          >
                             <Amount value={row.actual} context="column" />
                           </TableCell>
                           <TableCell align="right">

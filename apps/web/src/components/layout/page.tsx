@@ -28,12 +28,13 @@ export function Page({
   titleSlot?: ReactNode;
   width?: 'narrow' | 'default' | 'wide';
 }) {
+  // Centred in the space beside the sidebar so wide screens stay balanced.
   return (
     <div
       className={cn(
         'mx-auto w-full px-4 py-6 sm:px-6 lg:px-8',
         width === 'narrow' && 'max-w-3xl',
-        width === 'default' && 'max-w-6xl',
+        width === 'default' && 'max-w-7xl',
         width === 'wide' && 'max-w-[90rem]',
       )}
     >

@@ -92,6 +92,7 @@ export function PlansPage() {
         id: 'source',
         header: t('Planner'),
         accessorKey: 'plannerSource',
+        meta: { hideOnMobile: true },
         cell: ({ row }) => <PlannerBadge source={row.original.plannerSource} />,
       },
       {

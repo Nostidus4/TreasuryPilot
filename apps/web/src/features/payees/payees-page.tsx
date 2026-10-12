@@ -316,6 +316,10 @@ export function PayeesPage() {
             <p className="truncate text-xs text-muted-foreground">
               {row.original.label}
             </p>
+            {/* The address column is hidden at 390px; keep it visible here. */}
+            <div className="mt-1 md:hidden">
+              <Address address={row.original.address} />
+            </div>
           </div>
         ),
       },
@@ -323,6 +327,7 @@ export function PayeesPage() {
         id: 'address',
         header: t('Address'),
         enableSorting: false,
+        meta: { hideOnMobile: true },
         cell: ({ row }) => <Address address={row.original.address} />,
       },
       {

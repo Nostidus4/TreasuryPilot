@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ArrowRight,
   Building2,
   Check,
@@ -7,7 +8,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import { QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
@@ -45,7 +46,10 @@ export function AccountLayout({ children }: { children: ReactNode }) {
   const me = useMe();
   const signOut = useSignOut();
   const navigate = useNavigate();
+  const location = useLocation();
   const home = me.data?.memberships[0];
+  // Wallets is reached from inside an org; give it an obvious way back.
+  const backToOrg = home && location.pathname !== '/orgs';
   return (
     <div className="min-h-dvh bg-background">
       <header className="flex h-14 items-center gap-3 border-b bg-surface px-4 sm:px-6">
@@ -58,6 +62,14 @@ export function AccountLayout({ children }: { children: ReactNode }) {
           </span>
           TreasuryPilot
         </Link>
+        {backToOrg && (
+          <Button asChild variant="ghost" size="sm" className="ml-2">
+            <Link to={`/o/${home.orgId}`}>
+              <ArrowLeft aria-hidden="true" />
+              {t('Back to {{org}}', { org: home.orgName })}
+            </Link>
+          </Button>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {me.data?.user.email}

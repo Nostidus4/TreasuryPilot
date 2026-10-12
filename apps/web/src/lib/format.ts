@@ -1,11 +1,25 @@
-import {
-  differenceInCalendarDays,
-  format,
-  formatDistanceToNowStrict,
-} from 'date-fns';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 
+const utcDate = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const DAY_MS = 86_400_000;
+
+function utcDayNumber(date: Date): number {
+  return Math.floor(date.getTime() / DAY_MS);
+}
+
+/**
+ * Calendar dates (due dates, link dates) are UTC days everywhere in the
+ * product: the mandate's daily limits and the engine's horizon reset at
+ * 00:00 UTC, so the browser's time zone must not shift them by a day.
+ */
 export function formatDate(iso: string): string {
-  return format(new Date(iso), 'MMM d, yyyy');
+  return utcDate.format(new Date(iso));
 }
 
 export function formatDateTime(iso: string): string {
@@ -29,7 +43,7 @@ export function dueLabel(
   overdue: boolean;
   soon: boolean;
 } {
-  const days = differenceInCalendarDays(new Date(iso), now);
+  const days = utcDayNumber(new Date(iso)) - utcDayNumber(now);
   if (days < 0) {
     return {
       text: `Overdue by ${-days} day${days === -1 ? '' : 's'}`,

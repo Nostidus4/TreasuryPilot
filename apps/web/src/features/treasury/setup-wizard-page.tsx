@@ -2,6 +2,8 @@ import { Check, RotateCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import { Address } from '@/components/domain/chain';
+import { KeyValueList } from '@/components/domain/display';
 import { DecodedCalls } from '@/components/domain/signing';
 import { QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
@@ -217,8 +219,31 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
     });
   };
 
+  const summaryChain =
+    chains.data?.find((item) => item.chainId === draft.chainId) ??
+    chains.data?.[0];
+  const summaryAsset =
+    summaryChain?.assets.find((asset) => asset.id === draft.assetId) ??
+    summaryChain?.assets[0];
+  const summary: SetupSummaryData = {
+    name: draft.name.trim(),
+    chain: summaryChain?.name,
+    asset:
+      summaryAsset &&
+      (summaryAsset.isTest
+        ? `${summaryAsset.symbol} (${t('test asset')})`
+        : summaryAsset.symbol),
+    safes: safeRoles.map(({ role, label }) => ({
+      role,
+      label,
+      address: /^0x[0-9a-fA-F]{40}$/.test(draft.safes[role].trim())
+        ? draft.safes[role].trim()
+        : undefined,
+    })),
+  };
+
   return (
-    <Layout current={step}>
+    <Layout current={step} summary={summary}>
       <QueryBoundary query={chains}>
         {(items) => {
           const chain =
@@ -623,15 +648,78 @@ function GuardianStep({ state }: { state: TreasuryState }) {
   );
 }
 
+interface SetupSummaryData {
+  name: string;
+  chain?: string;
+  asset?: string;
+  safes: Array<{ role: string; label: string; address?: string }>;
+  module?: string;
+  coverage?: string;
+  guardian?: string;
+}
+
+function Pending() {
+  return <span className="text-subtle-foreground">{t('Not set')}</span>;
+}
+
+/** What has been decided so far, so each step can be checked in context. */
+function SetupSummary({ data }: { data: SetupSummaryData }) {
+  return (
+    <Card>
+      <CardHeader
+        title={t('Summary')}
+        description={t(
+          'Updates as you go. Nothing is on-chain until you sign.',
+        )}
+      />
+      <CardContent className="grid gap-4">
+        <KeyValueList
+          items={[
+            { label: t('Name'), value: data.name || <Pending /> },
+            { label: t('Chain'), value: data.chain ?? <Pending /> },
+            { label: t('Asset'), value: data.asset ?? <Pending /> },
+          ]}
+        />
+        <KeyValueList
+          items={data.safes.map((safe) => ({
+            label: `${t(safe.label)} (${safe.role})`,
+            value: safe.address ? (
+              <Address address={safe.address} />
+            ) : (
+              <Pending />
+            ),
+          }))}
+        />
+        <KeyValueList
+          items={[
+            { label: t('Module'), value: data.module ?? <Pending /> },
+            { label: t('Coverage'), value: data.coverage ?? <Pending /> },
+            {
+              label: t('Guardian Safe'),
+              value: data.guardian ? (
+                <Address address={data.guardian} />
+              ) : (
+                <Pending />
+              ),
+            },
+          ]}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 function Layout({
   children,
   current,
+  summary,
 }: {
   children: ReactNode;
   current: number;
+  summary: SetupSummaryData;
 }) {
   return (
-    <div className="grid items-start gap-6 md:grid-cols-[16rem_minmax(0,1fr)]">
+    <div className="grid items-start gap-6 md:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[16rem_minmax(0,1fr)_20rem]">
       <Card className="p-2 md:sticky md:top-[4.5rem]">
         <Stepper current={current} />
       </Card>
@@ -644,6 +732,9 @@ function Layout({
         </Badge>
         {children}
       </div>
+      <aside className="md:col-start-2 xl:sticky xl:top-[4.5rem] xl:col-start-3 xl:row-start-1">
+        <SetupSummary data={summary} />
+      </aside>
     </div>
   );
 }
@@ -664,8 +755,37 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
               ? 4
               : 3;
         const current = stage ?? derived;
+        const guardian = state.wallets.find(
+          (wallet) => wallet.role === 'GUARDIAN',
+        );
+        const summary: SetupSummaryData = {
+          name: state.treasury.name,
+          chain: state.treasury.chainName,
+          asset: state.treasury.asset.isTest
+            ? `${state.treasury.asset.symbol} (${t('test asset')})`
+            : state.treasury.asset.symbol,
+          safes: safeRoles.map(({ role, label }) => ({
+            role,
+            label,
+            address: state.wallets.find((wallet) => wallet.role === role)
+              ?.safeAddress,
+          })),
+          module:
+            state.coverage.status === 'UNKNOWN'
+              ? t('Waiting for owner signatures')
+              : t('Enabled'),
+          coverage:
+            state.coverage.status === 'UNKNOWN'
+              ? undefined
+              : state.coverage.status === 'COMPLETE'
+                ? t('Complete')
+                : state.coverage.acknowledged
+                  ? t('Partial, acknowledged')
+                  : t('Partial'),
+          guardian: guardian?.safeAddress,
+        };
         return (
-          <Layout current={current}>
+          <Layout current={current} summary={summary}>
             {current === 2 && (
               <ModuleStep state={state} onDone={() => setStage(3)} />
             )}
@@ -689,6 +809,7 @@ export function SetupWizardPage() {
 
   return (
     <Page
+      width="wide"
       title={t('Set up a treasury')}
       description={t(
         'Connect your Safes and put the on-chain controls in place. Nothing here gives TreasuryPilot custody of your funds.',

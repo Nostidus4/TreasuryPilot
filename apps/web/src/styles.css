@@ -51,6 +51,7 @@
     --chart-1: #2a78d6;
     --chart-2: #eb6834;
     --chart-3: #1baf7a;
+    --chart-4: #eda100;
 
     color-scheme: light;
     font-synthesis: none;
@@ -103,6 +104,7 @@
     --chart-1: #3987e5;
     --chart-2: #d95926;
     --chart-3: #199e70;
+    --chart-4: #c98500;
     color-scheme: dark;
   }
 
@@ -133,6 +135,12 @@
 
   ::selection {
     background: hsl(var(--primary) / 18%);
+  }
+
+  /* Grid items default to min-width: auto, so a long amount or address would
+     widen its column past the viewport at 390px. Let them shrink instead. */
+  .grid > * {
+    min-width: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {

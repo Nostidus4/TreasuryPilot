@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 import { Skeleton } from '@/components/ui/misc';
+import { mockApiEnabled } from '@/lib/env';
 
 import {
   AuthGuard,
@@ -86,6 +87,10 @@ const ReviewPage = page(
   () => import('@/features/review/review-page'),
   'ReviewPage',
 );
+const ComponentsPage = page(
+  () => import('@/features/dev/components-page'),
+  'ComponentsPage',
+);
 const DashboardPage = page(
   () => import('@/features/treasury/dashboard-page'),
   'DashboardPage',
@@ -136,6 +141,9 @@ export function App() {
           <Route index element={<HomeRedirect />} />
           <Route path="/orgs" element={<OrgsPage />} />
           <Route path="/me/wallets" element={<WalletsPage />} />
+          {mockApiEnabled && (
+            <Route path="/dev/components" element={<ComponentsPage />} />
+          )}
           <Route path="/o/:org" element={<OrgLayout />}>
             <Route index element={<OrgIndexRedirect />} />
             <Route path="onboarding" element={<OnboardingPage />} />

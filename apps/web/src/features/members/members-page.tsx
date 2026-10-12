@@ -210,6 +210,12 @@ export function MembersPage() {
               <p className="truncate text-xs text-muted-foreground">
                 {row.original.email}
               </p>
+              {/* Roles column is hidden at 390px; list them under the name. */}
+              <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
+                {row.original.roles
+                  .map((role) => t(roleLabels[role]))
+                  .join(' · ')}
+              </p>
             </div>
           </div>
         ),
@@ -218,6 +224,7 @@ export function MembersPage() {
         id: 'roles',
         header: t('Roles'),
         enableSorting: false,
+        meta: { hideOnMobile: true },
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1">
             {row.original.roles.map((role) => (

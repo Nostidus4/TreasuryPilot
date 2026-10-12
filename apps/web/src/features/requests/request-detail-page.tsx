@@ -363,6 +363,8 @@ function ReadOnly({ request }: { request: RequestDetail }) {
   const canCancel =
     scope.can('OPR', 'OWN') &&
     ['AwaitingApproval', 'Approved', 'Scheduled'].includes(request.status);
+  const canWithdraw = request.status === 'AwaitingApproval' && scope.can('OPR');
+  const canExport = scope.can('FIN', 'AUD', 'ADM');
 
   return (
     <div className="grid gap-4">
@@ -469,43 +471,53 @@ function ReadOnly({ request }: { request: RequestDetail }) {
               ))}
             </ul>
           </Card>
-          <div className="flex flex-wrap gap-2">
-            {request.status === 'AwaitingApproval' && scope.can('OPR') && (
-              <Button
-                loading={transition.isPending}
-                onClick={() => act('withdraw')}
-              >
-                <Undo2 aria-hidden="true" />
-                {t('Withdraw to draft')}
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                variant="danger-outline"
-                onClick={() => setCancelOpen(true)}
-              >
-                <Ban aria-hidden="true" />
-                {t('Cancel request')}
-              </Button>
-            )}
-            {scope.can('FIN', 'AUD', 'ADM') && (
-              <Button
-                onClick={() =>
-                  void fetchEvidence(scope.orgId, request.id)
-                    .then((bundle) =>
-                      download(
-                        `evidence-${request.invoiceNumber}.json`,
-                        bundle,
-                      ),
-                    )
-                    .catch((error: unknown) => toast.error(errorMessage(error)))
-                }
-              >
-                <Download aria-hidden="true" />
-                {t('Evidence bundle')}
-              </Button>
-            )}
-          </div>
+          {(canWithdraw || canCancel || canExport) && (
+            <Card>
+              <CardHeader title={t('Actions')} />
+              <CardContent className="grid gap-2">
+                {canWithdraw && (
+                  <Button
+                    className="w-full justify-start"
+                    loading={transition.isPending}
+                    onClick={() => act('withdraw')}
+                  >
+                    <Undo2 aria-hidden="true" />
+                    {t('Withdraw to draft')}
+                  </Button>
+                )}
+                {canCancel && (
+                  <Button
+                    className="w-full justify-start"
+                    variant="danger-outline"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <Ban aria-hidden="true" />
+                    {t('Cancel request')}
+                  </Button>
+                )}
+                {canExport && (
+                  <Button
+                    className="w-full justify-start"
+                    onClick={() =>
+                      void fetchEvidence(scope.orgId, request.id)
+                        .then((bundle) =>
+                          download(
+                            `evidence-${request.invoiceNumber}.json`,
+                            bundle,
+                          ),
+                        )
+                        .catch((error: unknown) =>
+                          toast.error(errorMessage(error)),
+                        )
+                    }
+                  >
+                    <Download aria-hidden="true" />
+                    {t('Evidence bundle')}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

@@ -34,7 +34,7 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "'Geist Variable'",
+          "'IBM Plex Sans Variable'",
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
@@ -42,7 +42,7 @@ export default {
           'sans-serif',
         ],
         mono: [
-          "'Geist Mono Variable'",
+          "'IBM Plex Mono'",
           'ui-monospace',
           'SFMono-Regular',
           'Menlo',
@@ -82,6 +82,7 @@ export default {
           1: 'var(--chart-1)',
           2: 'var(--chart-2)',
           3: 'var(--chart-3)',
+          4: 'var(--chart-4)',
         },
       },
       boxShadow: {

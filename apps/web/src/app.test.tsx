@@ -70,7 +70,7 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   renderApp(T);
 
   const position = (
-    await screen.findByRole('heading', { name: 'Position' })
+    await screen.findByRole('heading', { name: 'Liquidity' })
   ).closest('section')!;
   expect(await within(position).findByText('163,000.00')).toBeInTheDocument();
   expect(within(position).getAllByText('USDC').length).toBeGreaterThan(0);
@@ -79,9 +79,26 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
 });
 
+test('selecting a Safe in one chart zooms the liquidity chart into it', async () => {
+  const user = userEvent.setup();
+  renderApp(T);
+
+  const safes = (
+    await screen.findByRole('heading', { name: 'Safes' })
+  ).closest('section')!;
+  const payroll = await within(safes).findByRole('button', {
+    name: /payroll safe/i,
+  });
+  await user.click(payroll);
+
+  expect(payroll).toHaveAttribute('aria-pressed', 'true');
+  const level = screen.getByRole('navigation', { name: 'Liquidity level' });
+  expect(within(level).getByText('Payroll Safe')).toBeInTheDocument();
+});
+
 test('a stale snapshot shows a banner', async () => {
   renderApp(T);
-  await screen.findByRole('heading', { name: 'Position' });
+  await screen.findByRole('heading', { name: 'Liquidity' });
   db.treasuries.trs_main.staleness.stale = true;
   expect(
     await screen.findByText(/balances may be out of date/i),

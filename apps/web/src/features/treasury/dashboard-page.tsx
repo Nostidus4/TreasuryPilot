@@ -1,4 +1,3 @@
-import { format } from 'date-fns';
 import {
   ArrowRight,
   Bot,
@@ -10,31 +9,35 @@ import {
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LineSeriesChart } from '@/components/charts';
 import { Amount } from '@/components/domain/amount';
 import { Address } from '@/components/domain/chain';
-import {
-  BalanceMeter,
-  KeyValueList,
-  UsageBar,
-} from '@/components/domain/display';
+import { KeyValueList } from '@/components/domain/display';
 import { StatusBadge } from '@/components/domain/status';
-import { EmptyState, QueryBoundary } from '@/components/feedback';
+import { EmptyState, ErrorState, QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Alert, Skeleton } from '@/components/ui/misc';
+import { Skeleton } from '@/components/ui/misc';
 import { useTreasuryScope } from '@/features/orgs/org-scope';
+import { useRequests } from '@/features/requests/api';
 import { useForecast, useTreasury } from '@/features/treasury/api';
-import { PositionCard } from '@/features/treasury/position-card';
+import {
+  BudgetBullets,
+  buildBranches,
+  LiquidityIcicle,
+  OverviewFocusProvider,
+  RunwayChart,
+  SafeBullets,
+} from '@/features/treasury/overview-charts';
 import { PauseDialog } from '@/features/treasury/status-banner';
 import { useAssetInfo } from '@/lib/api/chains';
 import type { TreasuryState } from '@/lib/api/types';
 import { formatDate, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
-import { formatUnits } from '@/lib/money';
+import { formatBps, sum } from '@/lib/money';
 import { mandateStatus, treasuryStatus } from '@/lib/status';
+import { cn } from '@/lib/utils';
 
 function DashboardSkeleton() {
   return (
@@ -46,63 +49,62 @@ function DashboardSkeleton() {
   );
 }
 
-function Queues({ state }: { state: TreasuryState }) {
+function QueueTiles({ state }: { state: TreasuryState }) {
   const scope = useTreasuryScope();
   const rows = [
     {
-      label: t('Approvals to sign'),
+      label: t('To approve'),
       count: state.queues.approvals,
       to: `${scope.base}/approvals`,
     },
     {
-      label: t('Governance transactions'),
+      label: t('To sign on-chain'),
       count: state.queues.governance,
       to: `${scope.base}/governance`,
     },
     {
-      label: t('Review items'),
+      label: t('To review'),
       count: state.queues.review,
       to: `${scope.base}/review`,
     },
     {
-      label: t('Payments to reconcile'),
+      label: t('To reconcile'),
       count: state.queues.reconciliation,
       to: `${scope.base}/reconciliation`,
     },
   ];
-  const total = rows.reduce((sum, row) => sum + row.count, 0);
   return (
-    <Card>
-      <CardHeader
-        title={t('Waiting on people')}
-        description={
-          total === 0
-            ? t('Nothing is waiting.')
-            : t('{{count}} items need a decision.', { count: total })
-        }
-      />
-      <ul className="divide-y">
-        {rows.map((row) => (
-          <li key={row.label}>
-            <Link
-              to={row.to}
-              className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-muted"
-            >
-              <span className="flex-1 text-base">{row.label}</span>
+    <ul
+      className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+      aria-label={t('Waiting on people')}
+    >
+      {rows.map((row) => (
+        <li key={row.label}>
+          <Link
+            to={row.to}
+            className="group flex items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3 hover:border-border-strong"
+          >
+            <span>
               <span
-                className={`num text-lg font-semibold ${row.count === 0 ? 'text-subtle-foreground' : ''}`}
+                className={cn(
+                  'num block text-2xl font-semibold leading-none',
+                  row.count === 0 && 'text-subtle-foreground',
+                )}
               >
                 {row.count}
               </span>
-              <ArrowRight
-                className="size-4 text-subtle-foreground"
-                aria-hidden="true"
-              />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </Card>
+              <span className="mt-1 block text-sm text-muted-foreground">
+                {row.label}
+              </span>
+            </span>
+            <ArrowRight
+              className="size-4 text-subtle-foreground group-hover:text-foreground"
+              aria-hidden="true"
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -176,70 +178,6 @@ function Controls({ state }: { state: TreasuryState }) {
   );
 }
 
-function Runway() {
-  const scope = useTreasuryScope();
-  const forecast = useForecast(scope.orgId, scope.treasuryId);
-  const info = useAssetInfo();
-  return (
-    <Card>
-      <CardHeader
-        title={t('7-day runway')}
-        description={t(
-          'Projected Payments Safe balance if every open request is paid on its due date and nothing is refilled.',
-        )}
-      />
-      <CardContent>
-        <QueryBoundary query={forecast} loading={<Skeleton className="h-56" />}>
-          {({ alerts, days }) => {
-            if (!info) return <Skeleton className="h-56" />;
-            const { decimals, symbol } = info.asset;
-            const number = (value: string) =>
-              Number(formatUnits(value, decimals, { group: false }));
-            return (
-              <div className="grid gap-3">
-                {alerts.map((alert) => (
-                  <Alert key={alert.date} tone="warning">
-                    {format(new Date(alert.date), 'MMM d')}: {alert.message}
-                  </Alert>
-                ))}
-                <LineSeriesChart
-                  summary={t(
-                    'Line chart of the projected Payments Safe balance for the next 7 days against its minimum buffer.',
-                  )}
-                  seriesLabel={t('Projected balance')}
-                  xLabel={t('Day')}
-                  references={
-                    days[0]
-                      ? [
-                          {
-                            value: number(days[0].buffer),
-                            label: t('Minimum buffer'),
-                          },
-                        ]
-                      : undefined
-                  }
-                  data={days.map((day) => ({
-                    label: format(new Date(day.date), 'MMM d'),
-                    value: number(day.balance),
-                    display: `${formatUnits(day.balance, decimals)} ${symbol}`,
-                    note:
-                      day.outflow !== '0'
-                        ? t('Due that day: {{amount}} {{symbol}}', {
-                            amount: formatUnits(day.outflow, decimals),
-                            symbol,
-                          })
-                        : undefined,
-                  }))}
-                />
-              </div>
-            );
-          }}
-        </QueryBoundary>
-      </CardContent>
-    </Card>
-  );
-}
-
 const actorIcon = { agent: Bot, user: User, chain: Link2 } as const;
 const actorLabel = {
   agent: 'Agent',
@@ -298,6 +236,159 @@ function Activity({ state }: { state: TreasuryState }) {
   );
 }
 
+function LiquidityHeader({ state }: { state: TreasuryState }) {
+  const scope = useTreasuryScope();
+  const { position } = state;
+  const accessible = sum([position.safeUsdc, position.aUsdc]);
+  const last = position.lastAction;
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+      <div>
+        <p className="text-sm text-muted-foreground">
+          {t('Accessible liquidity')}
+        </p>
+        <Amount value={accessible} size="xl" />
+      </div>
+      <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+        <div>
+          <dt className="text-muted-foreground">{t('Supply APY')}</dt>
+          <dd className="flex items-center gap-1.5">
+            <span className="num font-medium">
+              {formatBps(position.supplyApyBps)}
+            </span>
+            <Badge tone="warning">{t('Testnet rate')}</Badge>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">{t('Pool liquidity')}</dt>
+          <dd>
+            <Amount value={position.poolLiquidity} size="sm" context="column" />
+          </dd>
+        </div>
+        {last.kind !== 'NONE' && (
+          <div title={last.explanation}>
+            <dt className="text-muted-foreground">{t('Last action')}</dt>
+            <dd className="flex items-center gap-1.5">
+              <Badge tone="info">
+                {last.kind === 'SUPPLY' ? t('Supply') : t('Withdraw')}
+              </Badge>
+              <Amount value={last.amount} size="sm" context="column" />
+              <span className="text-xs text-subtle-foreground">
+                {formatRelative(last.at)}
+              </span>
+            </dd>
+          </div>
+        )}
+        {state.borrowProposalId && (
+          <div className="self-end">
+            <Link
+              to={`${scope.tBase}/borrow/${state.borrowProposalId}`}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              {t('Withdraw vs borrow')}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+/** Charts first: where the money is, how long it lasts, and what is left today. */
+function Overview({ state }: { state: TreasuryState }) {
+  const scope = useTreasuryScope();
+  const forecast = useForecast(scope.orgId, scope.treasuryId);
+  const requests = useRequests(scope.orgId);
+  const info = useAssetInfo(state.treasury.asset);
+  if (!info) return <DashboardSkeleton />;
+  const units = { decimals: info.asset.decimals, symbol: info.asset.symbol };
+  const o1 = state.wallets.find((wallet) => wallet.role === 'O1');
+  const branches = buildBranches(state.position, state.wallets);
+
+  return (
+    <div className="grid gap-4">
+      <QueueTiles state={state} />
+
+      <Card>
+        <CardHeader title={t('Liquidity')} />
+        <CardContent className="grid gap-5">
+          <LiquidityHeader state={state} />
+          <LiquidityIcicle branches={branches} units={units} />
+        </CardContent>
+      </Card>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader
+            title={t('7-day runway')}
+            description={
+              o1
+                ? t('{{wallet}}, if nothing is refilled', { wallet: o1.label })
+                : undefined
+            }
+          />
+          <CardContent>
+            {forecast.data && requests.data ? (
+              <RunwayChart
+                forecast={forecast.data}
+                requests={requests.data.items.filter(
+                  (request) => request.treasuryId === state.treasury.id,
+                )}
+                requestHref={(id) => `${scope.base}/requests/${id}`}
+                units={units}
+                walletLabel={o1?.label ?? t('Payments Safe')}
+              />
+            ) : forecast.isError || requests.isError ? (
+              <ErrorState
+                error={forecast.error ?? requests.error}
+                onRetry={() => {
+                  void forecast.refetch();
+                  void requests.refetch();
+                }}
+              />
+            ) : (
+              <Skeleton className="h-72" />
+            )}
+          </CardContent>
+        </Card>
+        <div className="grid gap-4">
+          <Card>
+            <CardHeader title={t('Safes')} />
+            <CardContent>
+              <SafeBullets wallets={state.wallets} units={units} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader
+              title={t('Today’s budget')}
+              description={t('Resets 00:00 UTC')}
+            />
+            <CardContent>
+              {state.budgets.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('Limits appear once a mandate is active.')}
+                </p>
+              ) : (
+                <BudgetBullets
+                  budgets={state.budgets}
+                  dueToday={forecast.data?.days[0]?.outflow ?? '0'}
+                  units={units}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Controls state={state} />
+        <Activity state={state} />
+      </div>
+    </div>
+  );
+}
+
 /** Treasury dashboard (WEB-010): health at a glance, money first. */
 export function DashboardPage() {
   const scope = useTreasuryScope();
@@ -314,7 +405,7 @@ export function DashboardPage() {
       }
       description={
         state &&
-        t('{{chain}} · chain snapshot at block {{block}}, {{when}}', {
+        t('{{chain}} · block {{block}} · {{when}}', {
           chain: state.treasury.chainName,
           block: state.staleness.blockNumber,
           when: formatRelative(state.staleness.observedAt),
@@ -363,96 +454,9 @@ export function DashboardPage() {
               />
             </Card>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="grid content-start gap-4 lg:col-span-2">
-                <PositionCard
-                  position={data.position}
-                  borrowHref={
-                    data.borrowProposalId
-                      ? `${scope.tBase}/borrow/${data.borrowProposalId}`
-                      : undefined
-                  }
-                />
-                <Card>
-                  <CardHeader
-                    title={t('Safes')}
-                    description={t(
-                      'Balance against each Safe’s minimum buffer and target.',
-                    )}
-                  />
-                  <ul className="divide-y">
-                    {data.wallets
-                      .filter((wallet) => wallet.role !== 'GUARDIAN')
-                      .map((wallet) => (
-                        <li
-                          key={wallet.safeAddress}
-                          className="grid gap-3 p-4 md:grid-cols-[14rem_1fr] md:items-center"
-                        >
-                          <div className="min-w-0">
-                            <p className="flex items-center gap-2 text-base font-medium">
-                              {wallet.label}
-                              <Badge tone="outline">{wallet.role}</Badge>
-                            </p>
-                            <Address address={wallet.safeAddress} />
-                          </div>
-                          <div>
-                            <Amount value={wallet.balance} size="lg" />
-                            <div className="mt-2">
-                              <BalanceMeter
-                                balance={wallet.balance}
-                                buffer={wallet.buffer}
-                                target={wallet.target}
-                              />
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                  </ul>
-                </Card>
-                <Runway />
-              </div>
-
-              <div className="grid content-start gap-4">
-                <Queues state={data} />
-                <Card>
-                  <CardHeader
-                    title={t('Today’s budget')}
-                    description={t('Resets at 00:00 UTC. Enforced on-chain.')}
-                  />
-                  <CardContent className="grid gap-4">
-                    {data.budgets.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        {t('Limits appear once a mandate is active.')}
-                      </p>
-                    )}
-                    {data.budgets.map((budget) => (
-                      <div key={budget.action}>
-                        <UsageBar
-                          label={
-                            budget.action === 'PAY'
-                              ? t('Payments')
-                              : t('Refills')
-                          }
-                          used={budget.usedToday}
-                          limit={budget.dailyLimit}
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {t('Per request up to')}{' '}
-                          <Amount
-                            value={budget.perRequest}
-                            size="sm"
-                            context="column"
-                            muted
-                          />
-                        </p>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-                <Controls state={data} />
-                <Activity state={data} />
-              </div>
-            </div>
+            <OverviewFocusProvider>
+              <Overview state={data} />
+            </OverviewFocusProvider>
           )
         }
       </QueryBoundary>
