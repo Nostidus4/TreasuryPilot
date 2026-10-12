@@ -3,6 +3,7 @@
 from .liquidity import (
     available,
     cap,
+    decide_refill,
     funding_deficit,
     preferred_refill,
     refill_bound,
@@ -15,6 +16,7 @@ __all__ = [
     "InvalidTerms",
     "available",
     "cap",
+    "decide_refill",
     "funding_deficit",
     "preferred_refill",
     "refill_bound",
