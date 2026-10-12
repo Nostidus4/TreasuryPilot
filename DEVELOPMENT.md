@@ -69,6 +69,8 @@ Never commit secrets. `infra/env/.env.example` contains only disposable local de
 
 Alembic lives in `services/api/migrations`. Use one migration per PR when the schema changes. Never edit a merged migration.
 
+`make dev` runs a one-shot `migrate` service (`alembic upgrade head`) before the API starts, because the API syncs platform chain configuration into the database at startup. Outside Compose, run `DATABASE_URL=... uv run alembic -c services/api/alembic.ini upgrade head`; Alembic refuses to run without a `DATABASE_URL`.
+
 ## Money
 
 Amounts are integers in base units everywhere (ADR-014). Never use floats for money.

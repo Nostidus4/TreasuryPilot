@@ -1,9 +1,15 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import get_settings
+from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
+from treasurypilot_api.treasury.sync import sync_platform_configuration
 
 
 class HealthResponse(BaseModel):
@@ -14,12 +20,38 @@ class HealthResponse(BaseModel):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        configuration = PlatformConfiguration.load(
+            settings.platform_chain_config_path,
+            settings.deployments_dir,
+        )
+        application.state.platform_configuration = configuration
+        if settings.database_url is None:
+            if configuration.chains:
+                raise PlatformConfigurationError(
+                    "DATABASE_URL is required when platform chains are configured"
+                )
+        else:
+            # Sync even an empty chain list so removed chains get disabled. The
+            # engine only serves this one-time sync, so release it before serving.
+            engine = create_async_engine(settings.database_url)
+            try:
+                session_factory = async_sessionmaker(engine, expire_on_commit=False)
+                async with session_factory() as session:
+                    await sync_platform_configuration(session, configuration)
+            finally:
+                await engine.dispose()
+        yield
+
     app = FastAPI(
         title="TreasuryPilot API",
         summary="Human-authorized, policy-enforced treasury operations.",
         version=__version__,
         docs_url="/docs",
         openapi_url="/openapi.json",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
