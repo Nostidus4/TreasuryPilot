@@ -105,6 +105,13 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "chain_id", name="uq_assets_id_chain"),
     )
     op.create_index("ix_assets_chain_id", "assets", ["chain_id"])
+    op.create_index(
+        "uq_assets_chain_native",
+        "assets",
+        ["chain_id"],
+        unique=True,
+        postgresql_where=sa.text("is_native"),
+    )
 
     op.create_table(
         "deployments",
@@ -191,11 +198,12 @@ def upgrade() -> None:
             ["org_id", "coverage_ack_by"],
             ["memberships.org_id", "memberships.user_id"],
             name="fk_treasuries_coverage_ack_membership",
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
         ),
-        sa.ForeignKeyConstraint(["coverage_ack_by"], ["users.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["coverage_ack_by"], ["users.id"], ondelete="NO ACTION"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("id", "org_id", name="uq_treasuries_id_org"),
+        sa.UniqueConstraint("id", "chain_id", name="uq_treasuries_id_chain"),
     )
     op.create_index("ix_treasuries_org_id", "treasuries", ["org_id"])
     op.create_index("ix_treasuries_chain_id", "treasuries", ["chain_id"])
@@ -205,6 +213,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("org_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("treasury_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("chain_id", sa.Integer(), nullable=False),
         sa.Column(
             "role",
             postgresql.ENUM(
@@ -240,11 +249,15 @@ def upgrade() -> None:
             name="fk_treasury_wallets_treasury_org",
             ondelete="CASCADE",
         ),
+        sa.ForeignKeyConstraint(
+            ["treasury_id", "chain_id"],
+            ["treasuries.id", "treasuries.chain_id"],
+            name="fk_treasury_wallets_treasury_chain",
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("id", "org_id", name="uq_treasury_wallets_id_org"),
-        sa.UniqueConstraint(
-            "treasury_id", "safe_address", name="uq_treasury_wallets_treasury_address"
-        ),
+        sa.UniqueConstraint("chain_id", "safe_address", name="uq_treasury_wallets_chain_address"),
     )
     op.create_index(
         "ix_treasury_wallets_org_treasury", "treasury_wallets", ["org_id", "treasury_id"]
@@ -335,6 +348,7 @@ def downgrade() -> None:
     op.drop_table("treasuries")
     op.drop_index("ix_deployments_chain_id", table_name="deployments")
     op.drop_table("deployments")
+    op.drop_index("uq_assets_chain_native", table_name="assets")
     op.drop_index("ix_assets_chain_id", table_name="assets")
     op.drop_table("assets")
     op.drop_table("chains")

@@ -18,8 +18,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv("DATABASE_URL")
-if database_url:
+# A URL set by the caller (for example the migration tests) must win over the
+# ambient DATABASE_URL so a test run can never migrate the dev database.
+if not config.get_main_option("sqlalchemy.url"):
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required to run migrations")
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
