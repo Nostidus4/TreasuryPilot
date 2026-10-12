@@ -20,6 +20,7 @@ apps/web/dist/
 contracts/cache/
 contracts/out/
 contracts/broadcast/
+contracts/slither-report/
 
 # Local environment and secrets
 .env

@@ -64,10 +64,20 @@ class BaseUnits(int):
                 )
             return cls(int(value))
 
-        python_schema = core_schema.chain_schema(
+        python_schema = core_schema.union_schema(
             [
-                core_schema.int_schema(strict=True),
-                core_schema.no_info_plain_validator_function(from_integer),
+                core_schema.chain_schema(
+                    [
+                        core_schema.int_schema(strict=True),
+                        core_schema.no_info_plain_validator_function(from_integer),
+                    ]
+                ),
+                core_schema.chain_schema(
+                    [
+                        core_schema.str_schema(strict=True),
+                        core_schema.no_info_plain_validator_function(from_json_string),
+                    ]
+                ),
             ]
         )
         json_schema = core_schema.chain_schema(
