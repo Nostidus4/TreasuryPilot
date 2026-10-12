@@ -7,6 +7,7 @@ from treasurypilot_worker.agent import (
     AiAdapter,
     AiBudgetExceeded,
     AiConfig,
+    AiInputRejected,
     AiSchemaError,
     AiTask,
     AiTimeout,
@@ -15,9 +16,11 @@ from treasurypilot_worker.agent import (
     FakeClock,
     FakeProvider,
     InMemoryBudgetLedger,
-    Message,
+    PromptTemplate,
     ProviderRequest,
     ProviderResponse,
+    SecretScanner,
+    Slot,
     StopReason,
     TextBlock,
     Tool,
@@ -39,6 +42,13 @@ class SnapshotInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     treasury_id: str
+
+
+EXPLAIN_PROMPT = PromptTemplate(
+    version="explain.test.v1",
+    system="You explain treasury plans.",
+    instructions="Why this plan?",
+).render()
 
 
 def _snapshot_tool(calls: list[str]) -> Tool[SnapshotInput]:
@@ -75,8 +85,7 @@ def _run(adapter: AiAdapter, task: AiTask = AiTask.EXPLAIN, **kwargs: object) ->
     return adapter.run(
         task,
         org_id="org-1",
-        system="You explain treasury plans.",
-        messages=[Message.user("Why this plan?")],
+        prompt=EXPLAIN_PROMPT,
         output=Answer,
         **kwargs,  # type: ignore[arg-type]
     )
@@ -91,16 +100,18 @@ def test_routes_task_to_configured_model_and_returns_validated_output(
     result = _adapter(provider, repo_config, clock, october, ledger).run(
         AiTask.EXPLAIN,
         org_id="org-1",
-        system="You explain treasury plans.",
-        messages=[Message.user("Why this plan?")],
+        prompt=EXPLAIN_PROMPT,
         output=Answer,
     )
 
     assert result.output == Answer(answer="Pay INV-7 first.")
     assert result.model == "claude-haiku-5-5"
+    assert result.prompt_version == "explain.test.v1+policy.1"
     assert result.usage == Usage(120, 30)
     request, timeout_s = provider.calls[0]
     assert request.model == "claude-haiku-5-5"
+    assert request.system == EXPLAIN_PROMPT.system
+    assert request.messages == EXPLAIN_PROMPT.messages
     assert request.max_output_tokens == 300
     assert request.output_schema == Answer.model_json_schema()
     assert request.tools == ()
@@ -370,3 +381,87 @@ def test_non_retryable_unavailability_is_not_retried(
         _run(_adapter(provider, repo_config, clock, october))
 
     assert len(provider.calls) == 1
+
+
+class Note(BaseModel):
+    note: str
+
+
+def test_secret_in_prompt_is_rejected_before_any_provider_call(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    key = "sk-" + "ant-api03-" + "a1B2" * 10
+    prompt = PromptTemplate(
+        version="t.v1", system="s.", instructions="i.", slots=(Slot.trusted("note"),)
+    ).render(note=Note(note=f"use {key}"))
+    provider = FakeProvider([])
+    ledger = InMemoryBudgetLedger()
+
+    with pytest.raises(AiInputRejected) as raised:
+        _adapter(provider, repo_config, clock, october, ledger).run(
+            AiTask.EXPLAIN, org_id="org-1", prompt=prompt, output=Answer
+        )
+
+    assert raised.value.pattern == "anthropic_key"
+    assert raised.value.source == "message[0]"
+    assert provider.calls == []
+    assert ledger.spent("org-1", "2026-10") == 0
+
+
+def test_secret_in_tool_result_is_rejected_before_it_reaches_the_model(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    def leaky(args: SnapshotInput) -> dict[str, object]:
+        return {"treasury_id": args.treasury_id, "debug": "ab" * 32}
+
+    provider = FakeProvider(
+        [fake_tool_use(ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"}))]
+    )
+    tool = Tool(name="get_snapshot", description="d", input_model=SnapshotInput, handler=leaky)
+
+    with pytest.raises(AiInputRejected) as raised:
+        _run(_adapter(provider, repo_config, clock, october), AiTask.PLAN, tools=[tool])
+
+    assert raised.value.pattern == "hex_key"
+    assert raised.value.source == "tool_result:t1"
+    assert len(provider.calls) == 1
+
+
+def test_bytes32_ids_in_tool_results_reach_the_model(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    request_id = "0x" + "ab" * 32
+
+    def ids(args: SnapshotInput) -> dict[str, object]:
+        return {"treasury_id": args.treasury_id, "requestId": request_id}
+
+    provider = FakeProvider(
+        [
+            fake_tool_use(ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"})),
+            fake_text('{"answer": "ok"}'),
+        ]
+    )
+    tool = Tool(name="get_snapshot", description="d", input_model=SnapshotInput, handler=ids)
+
+    _run(_adapter(provider, repo_config, clock, october), AiTask.PLAN, tools=[tool])
+
+    assert request_id in provider.calls[1][0].messages[-1].content[0].content  # type: ignore[union-attr]
+
+
+def test_injected_scanner_checks_known_secret_values(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    adapter = AiAdapter(
+        provider=FakeProvider([]),
+        config=repo_config,
+        ledger=InMemoryBudgetLedger(),
+        clock=clock,
+        sleep=clock.sleep,
+        now=lambda: october,
+        scanner=SecretScanner(known_secrets=["You explain treasury"]),
+    )
+
+    with pytest.raises(AiInputRejected) as raised:
+        _run(adapter)
+
+    assert raised.value.source == "system"

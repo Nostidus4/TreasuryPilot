@@ -17,6 +17,8 @@ from treasurypilot_worker.agent.errors import (
     AiToolLimitExceeded,
     AiUnavailable,
 )
+from treasurypilot_worker.agent.prompts import RenderedPrompt
+from treasurypilot_worker.agent.secret_scan import SecretScanner, default_scanner
 from treasurypilot_worker.agent.types import (
     AiResult,
     ContentBlock,
@@ -49,6 +51,7 @@ class AiAdapter:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        scanner: SecretScanner | None = None,
     ) -> None:
         self._provider = provider
         self._config = config
@@ -56,6 +59,7 @@ class AiAdapter:
         self._clock = clock
         self._sleep = sleep
         self._now = now
+        self._scanner = scanner or default_scanner()
 
     @property
     def config(self) -> AiConfig:
@@ -66,15 +70,18 @@ class AiAdapter:
         task: AiTask,
         *,
         org_id: str,
-        system: str,
-        messages: Sequence[Message],
+        prompt: RenderedPrompt,
         output: type[T],
         tools: Sequence[Tool[Any]] = (),
     ) -> AiResult[T]:
         """Run `task` to a validated `output`, or raise a subclass of `AiError`.
 
         The task's timeout is a wall-clock deadline for the whole call, including tool
-        turns, provider retries and the schema retry.
+        turns, provider retries and the schema retry. The system prompt and every message,
+        tool call and tool result are secret-scanned before they are sent; a match raises
+        `AiInputRejected` (FR-804). Tool descriptions and the output schema are code, not
+        scanned. Messages may carry `0x` bytes32 ids and hashes; untrusted blocks inside
+        them were already scanned strictly by `wrap_untrusted`.
         """
 
         task_config = self._config.tasks[task]
@@ -87,16 +94,18 @@ class AiAdapter:
         started = self._clock()
         run = _Run(task_config, deadline=started + task_config.timeout_s)
         tools_by_name = {tool.name: tool for tool in tools}
-        conversation = list(messages)
+        conversation = list(prompt.messages)
         specs = tuple(
             ToolSpec(t.name, t.description, t.input_model.model_json_schema()) for t in tools
         )
         schema = output.model_json_schema()
 
+        self._scanner.check(prompt.system, source="system")
         while True:
+            self._scan_new_messages(conversation, run)
             request = ProviderRequest(
                 model=task_config.model,
-                system=system,
+                system=prompt.system,
                 messages=tuple(conversation),
                 tools=specs,
                 output_schema=schema,
@@ -125,13 +134,14 @@ class AiAdapter:
                 if run.schema_retries >= MAX_SCHEMA_RETRIES:
                     raise AiSchemaError(f"{task} output failed validation: {error}") from error
                 run.schema_retries += 1
-                conversation.append(Message.user(_correction(error)))
+                conversation.append(Message("user", (TextBlock(_correction(error)),)))
                 continue
 
             return AiResult(
                 output=parsed,
                 task=task.value,
                 model=task_config.model,
+                prompt_version=prompt.version,
                 usage=run.usage,
                 cost_usd_micros=run.cost,
                 latency_ms=round((self._clock() - started) * 1000),
@@ -139,6 +149,22 @@ class AiAdapter:
                 schema_retries=run.schema_retries,
                 tool_calls=tuple(run.tool_calls),
             )
+
+    def _scan_new_messages(self, conversation: Sequence[Message], run: "_Run") -> None:
+        for index in range(run.scanned_messages, len(conversation)):
+            for block in conversation[index].content:
+                match block:
+                    case TextBlock(text=text):
+                        self._scanner.check(text, source=f"message[{index}]", allow_bytes32=True)
+                    case ToolCall(id=call_id, input=args):
+                        self._scanner.check(
+                            json.dumps(args), source=f"tool_call:{call_id}", allow_bytes32=True
+                        )
+                    case ToolResult(tool_call_id=call_id, content=content):
+                        self._scanner.check(
+                            content, source=f"tool_result:{call_id}", allow_bytes32=True
+                        )
+        run.scanned_messages = len(conversation)
 
     def _complete(self, request: ProviderRequest, run: "_Run") -> ProviderResponse:
         attempt = 0
@@ -187,6 +213,7 @@ class _Run:
         self.cost = 0
         self.provider_calls = 0
         self.schema_retries = 0
+        self.scanned_messages = 0
         self.tool_calls: list[ToolCallRecord] = []
 
 
