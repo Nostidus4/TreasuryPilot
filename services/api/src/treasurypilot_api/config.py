@@ -1,7 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# services/api/src/treasurypilot_api/config.py -> repository root
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
@@ -23,6 +27,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = "tp_session"
     csrf_cookie_name: str = "tp_csrf"
     csrf_header_name: str = "X-CSRF-Token"
+    platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
+    deployments_dir: Path = REPOSITORY_ROOT / "deployments"
 
     @property
     def cors_origin_list(self) -> list[str]:
