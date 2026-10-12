@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import Depends, Request
@@ -74,7 +75,7 @@ async def require_member(request: Request) -> MemberContext:
     return MemberContext(organization_id, access.user.id, frozenset(roles))
 
 
-def require_role(*roles: str):
+def require_role(*roles: str) -> Callable[..., Awaitable[MemberContext]]:
     """Build a dependency that permits only members holding one of ``roles``."""
     allowed = frozenset(roles)
     if not allowed:

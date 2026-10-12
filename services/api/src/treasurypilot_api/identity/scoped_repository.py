@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Generic, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,19 +14,21 @@ class OrganizationScopedRepository(Generic[ModelT]):
     """Base queries for rows that carry both ``id`` and ``org_id`` columns."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession], model: type[ModelT]) -> None:
-        columns = model.__table__.columns  # type: ignore[attr-defined]
+        columns: Any = cast(Any, model).__table__.columns
         if "org_id" not in columns or "id" not in columns:
             raise TypeError("organization-scoped models must define id and org_id columns")
         self._sessions = sessions
         self._model = model
 
-    def scoped(self, statement: Select[tuple[ModelT]], organization_id: uuid.UUID):
+    def scoped(self, statement: Select[ModelT], organization_id: uuid.UUID) -> Select[ModelT]:
         """Add the tenant predicate before a query can execute."""
-        return statement.where(self._model.org_id == organization_id)
+        organization_column: Any = cast(Any, self._model).org_id
+        return statement.where(organization_column == organization_id)
 
     async def get_by_id(self, *, organization_id: uuid.UUID, record_id: uuid.UUID) -> ModelT | None:
+        id_column: Any = cast(Any, self._model).id
         statement = self.scoped(
-            select(self._model).where(self._model.id == record_id),
+            select(self._model).where(id_column == record_id),
             organization_id,
         )
         async with self._sessions() as session:
