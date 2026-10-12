@@ -47,7 +47,7 @@ F-160 (FR-927), F-161 (FR-928, NFR-MAINT-01/03), F-162 (FR-929, BR-095), F-163 (
 | Workflow | Cổng |
 |---|---|
 | `ci.yml` (Python) | ruff, ruff format, mypy (strict cho py-core), pytest + coverage (py-core ≥ 85 %), import-linter, gitleaks |
-| `contracts.yml` | forge fmt, build, test (fuzz 1k trên PR, 10k trên main), bất biến, Slither (artifact) |
+| `contracts.yml` | forge fmt, build, test (fuzz 1k trên PR, 10k trên main; bất biến 192 run trên PR, 750 trên main, depth 50), Slither chỉ báo cáo với artifact `slither-report` (JSON, SARIF, markdown; SC-015 nâng lên fail ở mức high) |
 | `web.yml` | eslint, tsc, vite build, kiểm lệch client OpenAPI |
 | `e2e.yml` (main + hằng đêm) | Playwright luồng chính trên Anvil (WEB-023), test crash RCV-007 *(mặc định: hằng đêm)* |
 | `images.yml` | build + đẩy lên GHCR, tag bằng git SHA |

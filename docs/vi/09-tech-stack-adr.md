@@ -70,3 +70,4 @@
 | 016 | Attestation theo từng request (EIP-712, khóa policy riêng, hạn 15 phút) + chạy thử `eth_call` trước khi ký | Đã duyệt (M08) |
 | 017 | Gom chữ ký giao dịch Safe ngay trong app; Guardian là Safe 1-trên-N có sentinel key chỉ pause được | Đã duyệt (M03) |
 | 018 | Biên nhận thanh toán EAS trên Sepolia (chỉ hash và địa chỉ), khóa biên nhận riêng | Đã duyệt (vòng chain) |
+| 019 | Gộp spec v0.3: quản lý tiền dư trên Aave V3 (supply/withdraw tự động, vay chỉ là đề xuất), bản duyệt hai mức tiền; ADR-012 sửa: token Sepolia là USDC test của Aave | Đã duyệt (11/10/2026) |

@@ -14,6 +14,7 @@ COPY services/api services/api
 COPY services/worker services/worker
 COPY services/signer services/signer
 RUN uv sync --frozen --no-dev --package treasurypilot-worker
+COPY config config
 
 RUN groupadd --gid 65532 app \
     && useradd --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin app

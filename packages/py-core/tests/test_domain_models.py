@@ -71,6 +71,36 @@ def test_late_fee_requires_fields_for_its_discriminator() -> None:
         LateFee(kind="percent_per_period")
 
 
+def test_percent_late_fee_requires_a_positive_rate() -> None:
+    with pytest.raises(ValidationError, match="positive rate_bps"):
+        LateFee(kind="percent_per_period", rate_bps=0, period_days=7, cap=BaseUnits(5))
+
+
+def test_snapshot_containers_are_read_only() -> None:
+    shared = snapshot()
+
+    with pytest.raises(TypeError):
+        shared.used_today["refill"] = BaseUnits(0)  # type: ignore[index]
+    with pytest.raises(TypeError):
+        shared.operational["0xother"] = wallet("0xother")  # type: ignore[index]
+    assert shared.used_today["refill"] == BaseUnits(200)
+
+
+def test_schedule_sequences_are_tuples() -> None:
+    schedule = Schedule(
+        items=[ScheduledItem(request_id="r1", day=1, refill=BaseUnits(0), value=0)],
+        infeasible=[],
+        objective=(0, 0, 0, 0),
+        binding=["pay.daily"],
+        solver="EDF",
+        status="OPTIMAL",
+    )
+
+    assert isinstance(schedule.items, tuple)
+    assert isinstance(schedule.binding, tuple)
+    assert hash(schedule)
+
+
 def test_payment_terms_validate_discount_window() -> None:
     terms = PaymentTerms(
         net_due_day=100,
@@ -146,6 +176,22 @@ def test_model_json_round_trip_preserves_base_units_types() -> None:
     assert restored == original
     assert isinstance(restored.safe_usdc, BaseUnits)
     assert isinstance(restored.operational["0xoperational"].balance, BaseUnits)
+
+
+def test_model_dict_round_trip_through_python_mode_validation() -> None:
+    """Downstream consumers (FastAPI body parsing, Celery JSON args) validate a
+    dict produced by ``mode="json"`` dumping, not raw JSON bytes. That path must
+    accept the same canonical strings the wire format uses."""
+
+    original = snapshot()
+
+    via_json_loads = Snapshot.model_validate(json.loads(original.model_dump_json()))
+    via_mode_json_dump = Snapshot.model_validate(original.model_dump(mode="json"))
+
+    assert via_json_loads == original
+    assert via_mode_json_dump == original
+    assert isinstance(via_json_loads.safe_usdc, BaseUnits)
+    assert isinstance(via_mode_json_dump.safe_usdc, BaseUnits)
 
 
 def test_request_policy_refill_and_schedule_models_compose() -> None:

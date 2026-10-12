@@ -12,12 +12,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx2>=2,<3",
+    "hypothesis>=6.115,<7",
     "import-linter==2.3",
     "mypy>=1.15,<2",
     "pre-commit==4.2.0",
     "pytest==8.3.5",
     "pytest-cov>=6,<7",
     "ruff==0.11.13",
+    "types-pyyaml>=6,<7",
 ]
 
 [tool.uv]

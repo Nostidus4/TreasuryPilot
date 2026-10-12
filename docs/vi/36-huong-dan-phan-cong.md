@@ -56,3 +56,18 @@ Sau đó đi theo thứ tự ở mục 13 của từng module và các đợt tr
 5. Hằng ngày xem dashboard Google Sheet (tự cập nhật mỗi giờ): tiến độ theo module và theo người.
 
 **Cập nhật v0.3 (ADR-019):** ticket mới SC-023 (bản duyệt hai mức tiền), SC-024 (Aave supply/withdraw), SC-025 (test trên fork Sepolia), ENG-013 (công thức dự trữ), EXE-014 (chu kỳ thanh khoản), DEV-012 (cổng cấu hình) đều thuộc Tier A; ENG-014 và WEB-027 (đề xuất vay) Tier B; SC-026 và MDT-011 (thực thi vay/trả) là P2. WEB-026 (thẻ vị thế quỹ) Tier A.
+
+## 4. Phân công thực tế (trưởng nhóm chốt 11/10/2026)
+
+| Mảng | Người làm | Module / ticket | Người review mặc định |
+|---|---|---|---|
+| Frontend | **Nostidus4** (Tân) | WEB | therealtunguyen |
+| Backend (phục vụ web và nghiệp vụ) | **Nostidus4** (Tân) | IDN, TRS, MDT, INV, ENG, REC, RCV, NTF, CMP, AUD (75 ticket, 57 ngày công, 72 %) | therealtunguyen |
+| Backend (lõi thực thi) | **therealtunguyen** (Tú) | EXE, POL, CHR (27 ticket, 22,5 ngày công, 28 %) | Nostidus4 |
+| Hạ tầng | **therealtunguyen** | DEV, OBS | Nostidus4 (mặc định, đổi được) |
+| AI | **therealtunguyen** | AGT | Nostidus4 (mặc định, đổi được) |
+| Blockchain | **longhuynh55** (anh Phúc) | SC | Nostidus4 (mặc định, đổi được) |
+| Non-code | chia sau | DOM | – |
+
+Cập nhật 12/10/2026: chuyển khoảng 30 % backend (lõi thực thi: EXE, POL, CHR) cho Tú; Tân giữ phần backend phục vụ web. Đã gán trên GitHub: assignee của issue, trường **Owner** và Status **Assigned** trên Project (182 ticket code M1 còn mở). Người review mặc định nằm trong `.github/CODEOWNERS`, GitHub tự mời review khi mở PR. Chạy lại `python3 planning/tools/assign.py` sau khi thêm ticket mới.
+

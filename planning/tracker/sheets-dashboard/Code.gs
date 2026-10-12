@@ -147,6 +147,8 @@ function refresh() {
     ['CHƯA GIAO NGƯỜI', m1.filter(r => r.owner === '(chưa giao)').length, '#C62828'],
     ['NGÀY CÒN LẠI', Math.max(0, Math.ceil((DEADLINE - new Date()) / 86400000)), '#6A1B9A']];
   buildDashboard_(kpis, modRows.length, ownerRows.length);
+  writeModules_(rows);
+  writeLinks_();
   styleSheets_();
   return rows.length;
 }
@@ -305,7 +307,7 @@ function styleSheets_() {
     const ln = links.getLastRow(), lc = links.getLastColumn();
     links.getRange(1, 1, ln, lc).setFontFamily(FONT).setFontSize(10).setVerticalAlignment('middle').setWrap(true);
     band_(links, ln, lc); header_(links, lc);
-    [190, 260, 380, 320, 170].forEach((w, i) => links.setColumnWidth(i + 1, w));
+    [160, 240, 420, 90, 110].forEach((w, i) => links.setColumnWidth(i + 1, w));
     links.getRange(2, 4, ln - 1, 1).setWrap(false);
     links.setTabColor('#43A047');
   }
@@ -313,8 +315,97 @@ function styleSheets_() {
   const calc = sheet_('Calc'); calc.hideSheet(); calc.setTabColor('#9E9E9E');
   sheet_('Dashboard').setTabColor(NAVY);
   // Order: Dashboard, Links, Data, History
-  ['Dashboard', 'Links', 'Data', 'History'].forEach((name, i) => {
+  ['Dashboard', 'Modules', 'Links', 'Data', 'History'].forEach((name, i) => {
     const sh = ss.getSheetByName(name); if (sh) { ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1); }
   });
   ss.setActiveSheet(sheet_('Dashboard'));
+}
+
+// ───────────────────────── modules & links (docs ↔ tracker) ─────────────────────────
+const DOC_URL = 'https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=';
+const REPO_URL = 'https://github.com/Nostidus4/TreasuryPilot';
+// [module id, name, GitHub folder (= Project "Module" value), Doc tab id, epic issue, owner, reviewer]
+const MODULE_INFO = [
+  ['M01', 'Định danh & phân quyền', 'identity', 't.xvsvolwbxoe4', 5, 'Nostidus4', 'therealtunguyen'],
+  ['M02', 'Treasury & cấu hình chain', 'treasury', 't.ua49v9d729ex', 6, 'Nostidus4', 'therealtunguyen'],
+  ['M03', 'Mandate, payee, ngoại lệ, pause', 'mandate', 't.hav7u6wrnhrh', 7, 'Nostidus4', 'therealtunguyen'],
+  ['M04', 'Smart contract', 'contracts', 't.ftwmn7qgsviu', 2, 'longhuynh55', 'Nostidus4'],
+  ['M05', 'Hóa đơn & duyệt', 'invoices', 't.c7pc1vyism9q', 8, 'Nostidus4', 'therealtunguyen'],
+  ['M06', 'Đọc chain & theo dõi giao dịch', 'chain-reader', 't.5xkekgtj7ytn', 9, 'therealtunguyen', 'Nostidus4'],
+  ['M07', 'Financial engine', 'financial-engine', 't.opopowdic7om', 3, 'Nostidus4', 'therealtunguyen'],
+  ['M08', 'Policy engine & attestation', 'policy-engine', 't.e2tn8zn3rh1x', 4, 'therealtunguyen', 'Nostidus4'],
+  ['M09', 'AI agent', 'agent', 't.8n0pk86vmqj', 10, 'therealtunguyen', 'Nostidus4'],
+  ['M10', 'Điều phối & thực thi', 'execution', 't.z3pu3y89rrpf', 11, 'therealtunguyen', 'Nostidus4'],
+  ['M11', 'Xác minh & đối soát', 'reconciliation', 't.aq3og043wqwg', 12, 'Nostidus4', 'therealtunguyen'],
+  ['M12', 'Phục hồi & review', 'recovery', 't.wfmr5rsre8bk', 13, 'Nostidus4', 'therealtunguyen'],
+  ['M13', 'Thông báo', 'notifications', 't.aqf8wklx9g54', 14, 'Nostidus4', 'therealtunguyen'],
+  ['M14', 'Tuân thủ', 'compliance', 't.t2qyasr83441', 15, 'Nostidus4', 'therealtunguyen'],
+  ['M15', 'Audit & bằng chứng', 'audit', 't.7fguvztm9hd7', 16, 'Nostidus4', 'therealtunguyen'],
+  ['M16', 'Ứng dụng web', 'web', 't.l1smw0b1gvu7', 17, 'Nostidus4', 'therealtunguyen'],
+  ['M17', 'Giám sát & phân tích', 'observability', 't.7jzr8rwztvxq', 18, 'therealtunguyen', 'Nostidus4'],
+  ['M18', 'Quản trị nền tảng (Later)', 'admin', 't.td5yq8eho4o0', 19, '(Later)', ''],
+  ['M19', 'DevEx & chất lượng', 'devex', 't.b0ie0gmovi43', 1, 'therealtunguyen', 'Nostidus4'],
+  ['M20', 'Nghiệp vụ & bằng chứng', 'domain-evidence', 't.llpqfkgddaqt', 20, '(chia sau)', ''],
+];
+function link_(text, url) { return SpreadsheetApp.newRichTextValue().setText(text).setLinkUrl(url).build(); }
+
+function writeModules_(rows) {
+  const sh = sheet_('Modules');
+  sh.clear(); sh.getBandings().forEach(b => b.remove());
+  const head = ['ID', 'Module', 'Người làm', 'Review mặc định', 'Ticket M1', 'Xong', '% xong', 'Đang làm', 'Spec tiếng Việt', 'Spec GitHub', 'Epic'];
+  sh.getRange(1, 1, 1, head.length).setValues([head]);
+  const m1 = rows.filter(r => r.phase === 'M1');
+  MODULE_INFO.forEach((m, i) => {
+    const t = m1.filter(r => r.module === m[2]);
+    const done = t.filter(r => r.status === 'Done').length;
+    const doing = t.filter(r => r.status === 'In Progress' || r.status === 'Review').length;
+    const r = i + 2;
+    sh.getRange(r, 1, 1, 8).setValues([[m[0], m[1], m[5], m[6], t.length, done, t.length ? done / t.length : 0, doing]]);
+    sh.getRange(r, 9).setRichTextValue(link_('Mở tab ↗', DOC_URL + m[3]));
+    sh.getRange(r, 10).setRichTextValue(link_('README ↗', REPO_URL + '/blob/main/docs/modules/' + m[2] + '/README.md'));
+    sh.getRange(r, 11).setRichTextValue(link_('#' + m[4] + ' ↗', REPO_URL + '/issues/' + m[4]));
+  });
+  const n = MODULE_INFO.length + 1;
+  sh.getRange(2, 7, n - 1, 1).setNumberFormat('0%');
+  sh.getRange(1, 1, n, head.length).setFontFamily(FONT).setFontSize(10).setVerticalAlignment('middle');
+  band_(sh, n, head.length); header_(sh, head.length);
+  [50, 250, 130, 130, 80, 60, 70, 80, 120, 110, 80].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.setTabColor('#FB8C00');
+}
+
+function writeLinks_() {
+  const sh = sheet_('Links');
+  sh.clear(); sh.getBandings().forEach(b => b.remove());
+  const tab = id => DOC_URL + id, gh = p => REPO_URL + p;
+  const L = [
+    ['Bắt đầu ở đây', 'Hướng dẫn phân công', 'Ai làm mảng nào, ai review, ticket làm được ngay', tab('t.3xlngx2j9mze'), 'Cả team'],
+    ['Bắt đầu ở đây', 'Cập nhật v0.3 (Aave)', 'Thay đổi mới nhất: Aave supply/withdraw, bản duyệt hai mức tiền, D1–D10', tab('t.85x0bmmbqru0'), 'Cả team'],
+    ['Bắt đầu ở đây', 'GitHub Project (bảng việc)', 'Mọi ticket, trạng thái, người làm', 'https://github.com/users/Nostidus4/projects/1', 'Cả team'],
+    ['Bắt đầu ở đây', 'Repo GitHub', 'Code và tài liệu nguồn (tiếng Anh)', gh(''), 'Dev'],
+    ['Tổng quan sản phẩm', '1. Tổng quan', 'Sản phẩm là gì, cho ai, giải quyết gì', tab('t.0'), 'Cả team'],
+    ['Tổng quan sản phẩm', '2. Feature', 'Danh sách tính năng (M1 và Later)', tab('t.ew50tcmkirvg'), 'Cả team'],
+    ['Tổng quan sản phẩm', '3. Business Rules', 'Luật nghiệp vụ (BR)', tab('t.ffh09bp2pqht'), 'Cả team'],
+    ['Tổng quan sản phẩm', '4. Yêu cầu chức năng', 'FR', tab('t.clsimvrovdu'), 'Dev'],
+    ['Tổng quan sản phẩm', '5. Yêu cầu phi chức năng', 'NFR', tab('t.mnv5tgkjdl2m'), 'Dev'],
+    ['Quyết định', '6. Câu hỏi mở', 'Câu hỏi và kết quả', tab('t.kvfafawgpqlo'), 'Cả team'],
+    ['Quyết định', '7. Nhật ký quyết định', 'Mọi quyết định đã chốt, theo thời gian', tab('t.64yp8l3vrd3f'), 'Cả team'],
+    ['Quyết định', '9. Tech stack & ADR', 'Công nghệ và 19 quyết định kiến trúc', tab('t.p7m2nwkzrtsy'), 'Dev'],
+    ['Kiến trúc', '8. Kiến trúc hệ thống', 'Thành phần, luồng, ranh giới tin cậy', tab('t.qqng6h47nr7k'), 'Dev'],
+    ['Kiến trúc', '10. Module', 'Danh sách 20 module và tab spec của từng module', tab('t.k9zxyhbnvbxw'), 'Cả team'],
+    ['Kiến trúc', '11. Data model', 'Bảng dữ liệu', tab('t.py8ti27c4ma4'), 'Dev'],
+    ['Kiến trúc', '12. API', 'Endpoint và mã lỗi', tab('t.h95c4p9ohu6i'), 'Dev'],
+    ['Kiến trúc', '13. Kiến trúc AI', 'AI được làm gì, không được làm gì', tab('t.yed8bvlknow6'), 'Dev'],
+    ['Kiến trúc', '14. Cấu trúc repo', 'Thư mục và quy ước', tab('t.myx3296bhurc'), 'Dev'],
+    ['Kế hoạch', '15. Backlog & phụ thuộc', 'Toàn bộ ticket, đợt thực hiện, chuỗi phụ thuộc', tab('t.79j5euuyx0pj'), 'Cả team'],
+    ['Kế hoạch', 'Spec từng module', 'Xem sheet "Modules" (link tab tiếng Việt, README, epic)', '', 'Cả team'],
+    ['Kế hoạch', 'Hạn mức cắt cho bản nộp', 'Tier A / B và ước tính công', gh('/blob/main/planning/SUBMISSION_CUT.md'), 'Trưởng nhóm'],
+    ['Kế hoạch', 'Bản đồ phụ thuộc', 'Đợt thực hiện, chuỗi dài nhất', gh('/blob/main/planning/DEPENDENCIES.md'), 'Dev'],
+    ['Nguồn', 'Spec v0.3 của nhóm trưởng', 'Bản gốc đã gộp vào docs (ADR-019)', gh('/blob/main/docs/source/TreasuryPilot-v0.3-team-lead-spec.md'), 'Cả team'],
+    ['Nguồn', 'ADR-019', 'Quyết định gộp v0.3', gh('/blob/main/docs/adr/ADR-019-aave-liquidity-and-payment-options.md'), 'Dev'],
+    ['Công cụ', 'Excel tracker', 'Bản Excel của bảng việc (tạo từ GitHub)', gh('/blob/main/planning/tracker/TreasuryPilot-Tracker.xlsx'), 'Trưởng nhóm'],
+  ];
+  const head = ['Nhóm', 'Tên', 'Nội dung', 'Link', 'Ai dùng'];
+  sh.getRange(1, 1, 1, 5).setValues([head]);
+  sh.getRange(2, 1, L.length, 5).setValues(L.map(r => [r[0], r[1], r[2], '', r[4]]));
+  L.forEach((r, i) => { if (r[3]) sh.getRange(i + 2, 4).setRichTextValue(link_('Mở ↗', r[3])); });
 }
