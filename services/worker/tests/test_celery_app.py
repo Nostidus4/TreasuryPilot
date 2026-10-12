@@ -169,9 +169,7 @@ def test_real_delivery_preserves_parent_correlation_id_header() -> None:
 
     try:
         with start_worker(app, perform_ping_check=False):
-            result = capture_correlation.apply_async(
-                headers={CORRELATION_ID_HEADER: "parent-123"}
-            )
+            result = capture_correlation.apply_async(headers={CORRELATION_ID_HEADER: "parent-123"})
             assert result.get(timeout=10) == "parent-123"
     finally:
         app.tasks.pop(capture_correlation.name, None)
