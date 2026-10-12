@@ -41,6 +41,7 @@ The checked-in foundation intentionally does not seed business data or expose si
 | `uv run pytest packages/py-core` | Core unit + property tests |
 | `uv run pytest services/api services/worker` | Service tests |
 | `make test-contracts` | Contract tests in the pinned Foundry image |
+| `make slither` | Slither static analysis in the pinned Foundry image; report in `contracts/slither-report/` |
 | `pnpm --dir apps/web dev` | Web dev server |
 | `make openapi` | Regenerate the TS client from the API |
 | `make ps` / `make logs` | Inspect the Compose stack |
