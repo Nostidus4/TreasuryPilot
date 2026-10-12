@@ -7,7 +7,12 @@ addresses and code hashes. Keep that private local output out of source control.
 UID. Its status remains `configured_only` until a user broadcasts the deploy and
 schema-registration scripts. Null fields are deliberately un-deployed addresses,
 not predicted or fabricated records. A successful Sepolia broadcast replaces the
-manifest with actual addresses and code hashes.
+manifest with actual addresses and code hashes after `infra/scripts/publish_manifest.py`
+verifies mined RPC state. Forge scripts only write ignored prediction artifacts
+under `deployments/predictions/`; simulation cannot overwrite either published
+manifest. The local deployment wrappers run verification and publication after
+successful broadcast. Schema-only publication preserves the existing deployment
+metadata and stores its UID as a scalar hex string.
 
 The contracts are gated to Anvil (`31337`) and Sepolia (`11155111`). The Aave pool
 and USDC are from the Aave address book commit recorded in the manifest. The EAS

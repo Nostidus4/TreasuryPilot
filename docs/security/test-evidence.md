@@ -6,7 +6,7 @@ only claim their on-chain boundaries. Foundry v1.8.5, solc 0.8.28, optimizer 200
 
 ## Local campaign (2026-10-12)
 
-`FOUNDRY_PROFILE=ci forge test -v` passed 66 tests, including all 14 invariants:
+`FOUNDRY_PROFILE=ci forge test -v` passed 71 tests, including all 14 invariants:
 10,000 runs, depth 32, 320,000 handler calls, zero unexpected reverts.
 Fuzz tests also ran 10,000 cases. The handler checks authority, current approval,
 payee cooling, budgets, floors, replay, exception scope, status, persistent counters,
@@ -21,9 +21,23 @@ reserve has no supply cap at the pinned block.
 
 The local deployment script was exercised on fresh Anvil chains. Repeating the
 deployment produced identical CREATE2 addresses, code hashes, module clones and
-Safe addresses. The Sepolia script was simulated twice without `--broadcast`; it
+Safe addresses. A second deployment and dry run on the same Anvil chain also
+passed with the same factory and independent Safe/module identities. Script
+predictions are isolated from published manifests; publication rejects unmined
+code and verifies actual runtime hashes, identity and enablement before writing.
+Schema registration tests preserve the published manifest and write a scalar UID.
+The Sepolia script was simulated twice without `--broadcast`; it
 produced the same predicted deployment addresses. No live Sepolia transaction
 was sent.
+
+The updated Python campaign passed 52 tests (core coverage 93%), including
+attestation refusal before finality, canonical-block mismatch, unavailable
+finality, schema ABI mismatches and failed manifest publication. It handles the
+versioned JSON block envelope returned by Foundry v1.8.5. A separate local PAY
+and EAS submission through a development keystore succeeded against the deployed
+module/Safes and local EAS double; the stored 256 bytes matched all eight receipt
+fields and the actual payment transaction. This is local ABI/CLI evidence; it is
+not a public EASScan receipt.
 
 Mutation experiment: replacing the inclusive early-payment predicate with
 `bool early = false` caused I14 to fail after 39 runs / 1,219 calls. Foundry shrank

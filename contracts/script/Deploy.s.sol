@@ -18,6 +18,7 @@ contract Deploy is SafeTestHelper {
     bytes32 internal constant IMPLEMENTATION_SALT = keccak256("TreasuryPilot.module.v1");
     bytes32 internal constant FACTORY_SALT = keccak256("TreasuryPilot.factory.v1");
     bytes32 internal constant TOKEN_SALT = keccak256("TreasuryPilot.tUSDC.v1");
+    bytes32 internal constant MODULE_SALT = keccak256("TreasuryPilot.demo.module.v1");
 
     address internal implementation;
     ITreasuryPilotModuleFactory internal factory;
@@ -143,10 +144,15 @@ contract Deploy is SafeTestHelper {
             I.Limits(pool == address(0) ? 0 : 5000e6, pool == address(0) ? 0 : 20000e6)
         );
 
-        // The immutable factory constructor performs no CREATE; first clone nonce is 1.
-        module = I(address(uint160(uint256(keccak256(abi.encodePacked(hex"d694", address(factory), hex"01"))))));
+        // Each Safe has its own salt namespace; factory CREATE activity cannot change this address.
+        module = I(factory.predictDeterministicAddress(address(treasury), MODULE_SALT));
         bytes memory batch = bytes.concat(
-            _call(address(factory), abi.encodeCall(factory.create, (asset, operational, m, approvers, buffers, pool))),
+            _call(
+                address(factory),
+                abi.encodeCall(
+                    factory.createDeterministic, (asset, operational, m, approvers, buffers, pool, MODULE_SALT)
+                )
+            ),
             _call(address(treasury), abi.encodeCall(ISafeWallet.enableModule, (address(module)))),
             _call(address(module), abi.encodeCall(module.addPayee, (vendor)))
         );
@@ -157,6 +163,10 @@ contract Deploy is SafeTestHelper {
             treasury.isModuleEnabled(address(module)) && op1.isModuleEnabled(address(module))
                 && op2.isModuleEnabled(address(module)),
             "demo enable failed"
+        );
+        require(
+            address(module).code.length != 0 && TreasuryModuleIdentity(address(module)).safeT() == address(treasury),
+            "demo identity failed"
         );
     }
 
@@ -185,7 +195,7 @@ contract Deploy is SafeTestHelper {
     function _manifest() internal {
         string memory key = "deployment";
         vm.serializeUint(key, "chainId", block.chainid);
-        vm.serializeString(key, "deploymentStatus", "deployed");
+        vm.serializeString(key, "deploymentStatus", "predicted");
         vm.serializeAddress(key, "implementation", address(implementation));
         vm.serializeBytes32(key, "implementationCodeHash", address(implementation).codehash);
         vm.serializeAddress(key, "factory", address(factory));
@@ -193,7 +203,14 @@ contract Deploy is SafeTestHelper {
         vm.serializeAddress(key, "testToken", address(testToken));
         vm.serializeBytes32(key, "testTokenCodeHash", address(testToken).codehash);
         vm.serializeAddress(key, "asset", asset);
+        vm.serializeBytes32(key, "assetCodeHash", asset.codehash);
         vm.serializeAddress(key, "aavePool", pool);
+        vm.serializeBytes32(key, "aavePoolCodeHash", pool.codehash);
+        address aToken = TreasuryModuleIdentity(address(module)).aToken();
+        vm.serializeAddress(key, "aToken", aToken);
+        vm.serializeBytes32(key, "aTokenCodeHash", aToken.codehash);
+        vm.serializeUint(key, "assetDecimals", 6);
+        vm.serializeAddress(key, "demoOwner", owner);
         vm.serializeAddress(key, "module", address(module));
         vm.serializeBytes32(key, "moduleCodeHash", address(module).codehash);
         vm.serializeAddress(key, "safeT", address(treasury));
@@ -209,10 +226,17 @@ contract Deploy is SafeTestHelper {
         vm.serializeAddress(key, "multiSend", multisend);
         vm.serializeBytes32(key, "multiSendCodeHash", multisend.codehash);
         vm.serializeAddress(key, "eas", eas);
+        vm.serializeBytes32(key, "easCodeHash", eas.codehash);
         vm.serializeAddress(key, "easRegistry", registry);
+        vm.serializeBytes32(key, "easRegistryCodeHash", registry.codehash);
         vm.serializeBytes32(key, "easSchemaUid", schemaUid);
-        vm.serializeBool(key, "easSchemaRegistered", true);
+        vm.serializeBool(key, "easSchemaRegistered", false);
         string memory json = vm.serializeBool(key, "localEasMock", block.chainid == 31337);
-        vm.writeJson(json, string.concat("../deployments/", vm.toString(block.chainid), ".json"));
+        vm.writeJson(json, string.concat("../deployments/predictions/", vm.toString(block.chainid), ".json"));
     }
+}
+
+interface TreasuryModuleIdentity {
+    function safeT() external view returns (address);
+    function aToken() external view returns (address);
 }

@@ -4,25 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from typing import cast
+
+from cast_helpers import json_object, run_cast, verify_schema
 
 from treasurypilot_core.attestations import (
     PAYMENT_RECEIPT_SCHEMA,
     PaymentReceipt,
+    verify_payment_finality,
     verify_payment_receipt,
 )
-
-
-def run_cast(arguments: list[str]) -> str:
-    result = subprocess.run(["cast", *arguments], capture_output=True, text=True, check=False)
-    if result.returncode:
-        # Do not echo RPC URLs, credential paths, passwords or provider error bodies.
-        raise RuntimeError(
-            "cast command failed; check RPC connectivity and the dedicated receipt keystore"
-        )
-    return result.stdout.strip()
 
 
 def main() -> None:
@@ -74,9 +66,8 @@ def main() -> None:
     )
     if paid != "true":
         raise ValueError("The treasury module does not confirm this request as paid")
-    payment_receipt = cast(
-        dict[str, object],
-        json.loads(run_cast(["receipt", receipt.pay_tx_hash, "--rpc-url", args.rpc_url, "--json"])),
+    payment_receipt = json_object(
+        run_cast(["receipt", receipt.pay_tx_hash, "--rpc-url", args.rpc_url, "--json"])
     )
     topic = run_cast(
         [
@@ -102,21 +93,18 @@ def main() -> None:
     head = int(run_cast(["block-number", "--rpc-url", args.rpc_url]))
     if head - payment_block < confirmations:
         raise ValueError("Payment transaction has not reached the required confirmation count")
-
-    schema = run_cast(
-        [
-            "call",
-            str(manifest["easRegistry"]),
-            "getSchema(bytes32)((bytes32,address,bool,string))",
-            schema_uid,
-            "--rpc-url",
-            args.rpc_url,
-        ]
+    canonical = json_object(
+        run_cast(["block", str(payment_block), "--rpc-url", args.rpc_url, "--json"])
     )
-    if "false" not in schema.lower() or PAYMENT_RECEIPT_SCHEMA not in schema:
-        raise ValueError(
-            "The manifest EAS schema is missing, revocable, or does not match the receipt contract"
+    if observed_chain == 11155111:
+        finalized = json_object(
+            run_cast(["block", "finalized", "--rpc-url", args.rpc_url, "--json"])
         )
+    else:
+        # Local Anvil has no consensus finality; canonical receipt matching still applies.
+        finalized = canonical
+    verify_payment_finality(payment_receipt, canonical, finalized)
+    verify_schema(str(manifest["easRegistry"]), schema_uid, args.rpc_url)
     result = run_cast(
         [
             "send",
@@ -132,7 +120,7 @@ def main() -> None:
             "--json",
         ]
     )
-    transaction = cast(dict[str, object], json.loads(result))
+    transaction = json_object(result)
     print(
         json.dumps({"transactionHash": transaction.get("transactionHash"), "schemaUid": schema_uid})
     )

@@ -35,4 +35,5 @@ export DEMO_PAYEE="${DEMO_PAYEE:-0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65}"
 anvil_key="${ANVIL_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 cd "$repo_root/contracts"
 forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key "$anvil_key" --broadcast
+"$repo_root/.venv/bin/python" "$repo_root/infra/scripts/publish_manifest.py" --prediction "$repo_root/deployments/predictions/31337.json" --manifest "$repo_root/deployments/31337.json" --rpc-url http://127.0.0.1:8545
 echo "Local deployment manifest: $repo_root/deployments/31337.json"

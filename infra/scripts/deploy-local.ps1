@@ -21,6 +21,10 @@ try {
     Push-Location (Join-Path $repoRoot 'contracts')
     forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
     if ($LASTEXITCODE -ne 0) { throw "forge script failed with exit code $LASTEXITCODE" }
+    $pythonCommand = Join-Path $repoRoot '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $pythonCommand)) { throw 'Install the Python workspace with uv sync before publishing the manifest' }
+    & $pythonCommand (Join-Path $repoRoot 'infra/scripts/publish_manifest.py') --prediction (Join-Path $repoRoot 'deployments/predictions/31337.json') --manifest (Join-Path $repoRoot 'deployments/31337.json') --rpc-url http://127.0.0.1:8545
+    if ($LASTEXITCODE -ne 0) { throw 'Mined deployment verification failed; manifest was not published' }
     Pop-Location
     Write-Host 'Local deployment manifest: deployments/31337.json'
 } finally {

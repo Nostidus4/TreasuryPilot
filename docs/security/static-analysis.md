@@ -2,7 +2,7 @@
 
 Analyzer: `slither-analyzer==0.11.3`. Compiler: Solidity 0.8.28, Foundry v1.8.5. Production sources are analyzed with 100 detectors, including the deployable module, governance base, storage and factory. Dependencies, tests, scripts and deliberately insecure test assets are excluded from the finding report, not from compilation.
 
-Final rerun for this change analyzed 75 contracts and reported 22 findings. The exact-fingerprint gate passed: its one High and two Medium findings match the accepted entries below; it found no untriaged High or Medium findings.
+Final rerun for this change analyzed 75 contracts and reported 23 findings. The exact-fingerprint gate passed: its one High and two Medium findings match the accepted entries below; it found no untriaged High or Medium findings. Both factory creation paths are covered by the existing Low reentrancy-events explanation and atomic-initialization tests.
 
 Reproduce from `contracts/`:
 

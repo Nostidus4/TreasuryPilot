@@ -13,5 +13,18 @@ interface ITreasuryPilotModuleFactory {
         ITreasuryPilotModule.BufferInit[] calldata buffers,
         address aavePool
     ) external returns (address module);
+
+    /// @notice Safe-scoped CREATE2 salt; another Safe cannot consume this deployment address.
+    function createDeterministic(
+        address asset,
+        address[] calldata operational,
+        ITreasuryPilotModule.MandateInit calldata m,
+        address[] calldata approvers,
+        ITreasuryPilotModule.BufferInit[] calldata buffers,
+        address aavePool,
+        bytes32 salt
+    ) external returns (address module);
+
+    function predictDeterministicAddress(address safeT, bytes32 salt) external view returns (address module);
     function implementation() external view returns (address);
 }

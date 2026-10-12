@@ -9,7 +9,11 @@ contract RegisterReceiptSchema is SafeTestHelper {
         vm.startBroadcast();
         uid = ReceiptSchema.register(0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0);
         vm.stopBroadcast();
+        vm.serializeUint("receipt", "chainId", block.chainid);
+        vm.serializeAddress("receipt", "easRegistry", 0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0);
+        vm.serializeBool("receipt", "easSchemaRegistered", false);
         string memory json = vm.serializeBytes32("receipt", "easSchemaUid", uid);
-        vm.writeJson(json, "../deployments/11155111.json", "easSchemaUid");
+        // Prediction only: publish_manifest.py checks real RPC state before updating the manifest.
+        vm.writeJson(json, "../deployments/predictions/11155111.schema.json");
     }
 }

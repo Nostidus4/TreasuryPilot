@@ -1,6 +1,10 @@
 import pytest
 
-from treasurypilot_core.attestations import PaymentReceipt, verify_payment_receipt
+from treasurypilot_core.attestations import (
+    PaymentReceipt,
+    verify_payment_finality,
+    verify_payment_receipt,
+)
 
 
 def fixture_receipt() -> dict[str, object]:
@@ -88,4 +92,29 @@ def test_receipt_requires_matching_successful_module_event() -> None:
     with pytest.raises(ValueError, match="matching treasury event"):
         verify_payment_receipt(
             transaction, module, str(values["requestId"]), payee, amount, event_topic
+        )
+
+
+def test_payment_finality_requires_a_canonical_finalized_block() -> None:
+    block_hash = "0x" + "ab" * 32
+    receipt = {"blockNumber": "0x64", "blockHash": block_hash}
+    canonical = {"number": 100, "hash": block_hash}
+    with pytest.raises(ValueError, match="has not reached finalized"):
+        verify_payment_finality(receipt, canonical, {"number": 99, "hash": "0x" + "cd" * 32})
+    verify_payment_finality(receipt, canonical, {"number": 100, "hash": block_hash})
+    verify_payment_finality(receipt, canonical, {"number": 110, "hash": "0x" + "cd" * 32})
+    with pytest.raises(ValueError, match="canonical chain"):
+        verify_payment_finality(receipt, {"number": 100, "hash": "0x" + "cd" * 32}, canonical)
+    with pytest.raises(ValueError, match="Finalized block hash"):
+        verify_payment_finality(receipt, canonical, {"number": 100, "hash": "0x" + "cd" * 32})
+
+
+@pytest.mark.parametrize("number", [True, False, -1, "-1", "+1", "1.5", None])
+def test_finality_rejects_invalid_block_quantities(number: object) -> None:
+    block_hash = "0x" + "ab" * 32
+    with pytest.raises(ValueError, match="Invalid"):
+        verify_payment_finality(
+            {"blockNumber": 1, "blockHash": block_hash},
+            {"number": 1, "hash": block_hash},
+            {"number": number, "hash": block_hash},
         )

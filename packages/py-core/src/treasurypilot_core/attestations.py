@@ -10,6 +10,7 @@ PAYMENT_RECEIPT_SCHEMA = (
     "bytes32 requestId,bytes32 invoiceHash,bytes32 approvalHash,bytes32 planHash,"
     "bytes32 payTxHash,address payee,uint256 amount,bytes32 policyVersion"
 )
+PAYMENT_RECEIPT_SCHEMA_UID = "0x51ff02da8a076efd7ed8d58548219fba0f0a06fd5f313309c856339772ae1011"
 RECEIPT_FIELDS = (
     "requestId",
     "invoiceHash",
@@ -103,11 +104,32 @@ class PaymentReceipt:
 
 
 def _quantity(value: object, field: str) -> int:
-    if isinstance(value, int):
+    if type(value) is int and value >= 0:
         return value
-    if isinstance(value, str):
+    if isinstance(value, str) and re.fullmatch(r"0x[0-9a-fA-F]+|[0-9]+", value):
         return int(value, 16) if value.startswith("0x") else int(value)
     raise ValueError(f"Invalid {field} in chain receipt")
+
+
+def verify_payment_finality(
+    transaction: Mapping[str, object],
+    canonical_block: Mapping[str, object],
+    finalized_block: Mapping[str, object],
+) -> None:
+    """Require the PAY receipt's block to be canonical and at or below finalized."""
+    payment_number = _quantity(transaction.get("blockNumber"), "payment block number")
+    if _quantity(canonical_block.get("number"), "canonical block number") != payment_number:
+        raise ValueError("Canonical block number does not match the payment receipt")
+    receipt_hash = _hex_field(transaction.get("blockHash"), 32, "payment block hash")
+    canonical_hash = _hex_field(canonical_block.get("hash"), 32, "canonical block hash")
+    if receipt_hash != canonical_hash:
+        raise ValueError("Payment receipt is no longer in the canonical chain")
+    _hex_field(finalized_block.get("hash"), 32, "finalized block hash")
+    finalized_number = _quantity(finalized_block.get("number"), "finalized block number")
+    if payment_number > finalized_number:
+        raise ValueError("Payment block has not reached finalized")
+    if payment_number == finalized_number and receipt_hash != str(finalized_block["hash"]).lower():
+        raise ValueError("Finalized block hash does not match the payment receipt")
 
 
 def verify_payment_receipt(

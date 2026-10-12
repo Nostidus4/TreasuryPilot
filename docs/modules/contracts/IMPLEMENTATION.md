@@ -18,6 +18,8 @@ Approval signatures use `abi.encode(address approver, bytes signature)`. The exp
 
 Owner changes go through Safe T; guardian authority is pause only. Revocation is permanent even when a new mandate is configured. Current approvers can permanently cancel unpaid requests in any status. All mutable module functions use OpenZeppelin's reentrancy guard, including initialization and governance.
 
+The deployment path uses `createDeterministic` and `predictDeterministicAddress` with a salt namespaced by the calling Safe. Other CREATE traffic or another Safe using the same public salt cannot consume that address. The ordinary `create` interface remains available. Reusing a deterministic salt on the same Safe reverts before deployment; initialization remains atomic and storage stays independent.
+
 PAY and REFILL use fixed ERC20 transfers with zero native value and `Enum.Operation.Call`. Both source and recipient deltas are checked exactly, and floors are rechecked after interaction. Each counter is treasury-wide and survives configuration changes. Early payments use the early amount through the inclusive `earlyPayBy` boundary. REFILL remains bounded by the standard amount plus the destination target.
 
 SUPPLY/WITHDRAW only use the initialized pool, asset, aToken and Safe T. Supply has independent limits and preserves the static Safe floor; dynamic invoice reserves remain the off-chain validator's responsibility (ADR-019 V3-8). Approvals are exact and cleared to zero, and withdrawal validates the returned amount and cash delta.

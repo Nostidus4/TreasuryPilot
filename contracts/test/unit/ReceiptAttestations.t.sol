@@ -4,8 +4,28 @@ pragma solidity 0.8.28;
 import {IReceiptSchemaRegistry, IReceiptEAS} from "../../src/interfaces/IReceiptEAS.sol";
 import {MockReceiptSchemaRegistry, MockReceiptEAS} from "../../src/test-assets/MockReceiptEAS.sol";
 import {ReceiptSchema} from "../../script/ReceiptSchema.sol";
+import {RegisterReceiptSchema} from "../../script/RegisterReceiptSchema.s.sol";
+import {SafeTestHelper} from "../helpers/SafeTestHelper.sol";
 
-contract ReceiptAttestationsTest {
+contract ReceiptAttestationsTest is SafeTestHelper {
+    function testRegistrationWritesScalarPredictionAndPreservesPublishedManifest() external {
+        string memory beforeManifest = vm.readFile("../deployments/11155111.json");
+        MockReceiptSchemaRegistry registry = new MockReceiptSchemaRegistry();
+        address configuredRegistry = 0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0;
+        vm.etch(configuredRegistry, address(registry).code);
+        vm.chainId(11155111);
+        RegisterReceiptSchema script = new RegisterReceiptSchema();
+        bytes32 uid = script.run();
+        string memory prediction = vm.readFile("../deployments/predictions/11155111.schema.json");
+        require(vm.parseJsonBytes32(prediction, ".easSchemaUid") == uid, "UID not scalar");
+        require(vm.parseJsonUint(prediction, ".chainId") == 11155111, "chain ID");
+        require(script.run() == uid, "registration rerun");
+        require(
+            keccak256(bytes(vm.readFile("../deployments/11155111.json"))) == keccak256(bytes(beforeManifest)),
+            "published manifest changed during simulation"
+        );
+    }
+
     function testReceiptSchemaAndStaticTupleResolveLocally() external {
         MockReceiptSchemaRegistry registry = new MockReceiptSchemaRegistry();
         MockReceiptEAS eas = new MockReceiptEAS(address(registry));

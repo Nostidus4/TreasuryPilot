@@ -17,7 +17,11 @@ compilation_restrictions = [
 bytecode_hash = "none"
 fuzz = { runs = 1000 }
 invariant = { runs = 1000, depth = 32, fail_on_revert = true }
-fs_permissions = [{ access = "read", path = "test/vectors" }]
+fs_permissions = [
+  { access = "read", path = "test/vectors" },
+  { access = "read-write", path = "../deployments/predictions" },
+  { access = "read", path = "../deployments" },
+]
 no_match_path = "test/fork/**"
 
 remappings = [
@@ -34,4 +38,4 @@ no_match_path = "test/invariant/**"
 match_path = "test/fork/**"
 
 [profile.deploy]
-fs_permissions = [{ access = "read", path = "test/vectors" }, { access = "read-write", path = "../deployments" }]
+# Inherits read-only published manifests and a writable predictions directory.
