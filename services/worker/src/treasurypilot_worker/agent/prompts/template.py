@@ -119,6 +119,9 @@ def _render_slot(slot: Slot, value: object) -> str:
     return f'<data name="{slot.name}">{_trusted_text(slot.name, value)}</data>'
 
 
+_ESCAPE_ANGLE_BRACKETS = str.maketrans({"<": "\\u003c", ">": "\\u003e"})
+
+
 def _trusted_text(name: str, value: object) -> str:
     if isinstance(value, UntrustedBlock):
         raise PromptTemplateError(f"trusted slot {name!r} got an untrusted block")
@@ -136,5 +139,6 @@ def _trusted_text(name: str, value: object) -> str:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, BaseModel):
-        return value.model_dump_json()
+        # Escaped so a string field cannot close the `<data>` element.
+        return value.model_dump_json().translate(_ESCAPE_ANGLE_BRACKETS)
     raise PromptTemplateError(f"trusted slot {name!r} does not accept type {type(value).__name__}")

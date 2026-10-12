@@ -12,22 +12,32 @@ from enum import StrEnum
 from treasurypilot_worker.agent.secret_scan import SecretScanner, default_scanner
 
 MAX_UNTRUSTED_CHARS = 20_000
+# Raw text is cut to this multiple of the cap before sanitising, to bound the work done.
+RAW_CHARS_FACTOR = 4
 
 _REF = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 _KEEP_CONTROLS = frozenset("\n\t")
 
-_ACTIVE_BLOCK = re.compile(
-    r"<(script|style)\b[^>]*>.*?(?:</\1\s*>|$)|<!--.*?(?:-->|$)", re.IGNORECASE | re.DOTALL
-)
+_ACTIVE_OPENER = re.compile(r"<(script|style)\b[^<>]*>|<!--", re.IGNORECASE)
+_ACTIVE_CLOSERS = {
+    "script": re.compile(r"</script\s*>", re.IGNORECASE),
+    "style": re.compile(r"</style\s*>", re.IGNORECASE),
+    "<!--": re.compile(r"-->"),
+}
 _WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted\b[^>]*>?", re.IGNORECASE)
-_MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# Classes exclude their own opener, so a failed match stops at the next one (linear time).
+_MARKDOWN_IMAGE = re.compile(r"!\[[^\[\]]*\]\([^()]*\)")
+_MARKDOWN_LINK = re.compile(r"\[([^\[\]]*)\]\([^()]*\)")
 _URL = re.compile(
     r"\b(?:https?|ftp)://\S+|\bwww\.\S+|\b(?:javascript|vbscript):\S+"
     r"|\bdata:[a-z]+/[a-z0-9.+-]+[;,]\S*",
     re.IGNORECASE,
 )
-_HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+# Attributes must be `name=value`, so "a<b and c>d" is text, not a tag.
+_HTML_TAG = re.compile(
+    r"</?[A-Za-z][A-Za-z0-9-]*"
+    r"""(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:"[^"<>]*"|'[^'<>]*'|[^\s"'<>=`]+))*\s*/?>"""
+)
 
 
 class SourceKind(StrEnum):
@@ -73,8 +83,9 @@ def wrap_untrusted(
 ) -> UntrustedBlock:
     """Sanitise, cap and secret-scan `text`; raises `AiInputRejected` on a secret."""
 
-    clean = sanitize(text)
-    truncated = len(clean) > max_chars
+    raw_cap = max_chars * RAW_CHARS_FACTOR
+    clean = sanitize(text[:raw_cap])
+    truncated = len(text) > raw_cap or len(clean) > max_chars
     clean = clean[:max_chars]
     (scanner or default_scanner()).check(clean, source=str(source))
     return UntrustedBlock(source, clean, truncated)
@@ -88,7 +99,7 @@ def sanitize(text: str) -> str:
     """
 
     text = "".join(ch for ch in text if _visible(ch))
-    text = _ACTIVE_BLOCK.sub("", text)
+    text = _remove_active_blocks(text)
     text = _neutralise_wrapper_tags(text)
     text = _MARKDOWN_IMAGE.sub("", text)
     text = _MARKDOWN_LINK.sub(r"\1", text)
@@ -101,6 +112,26 @@ def sanitize(text: str) -> str:
 def _visible(ch: str) -> bool:
     # Cc: control characters. Cf: zero-width, bidi overrides and Unicode tag characters.
     return ch in _KEEP_CONTROLS or unicodedata.category(ch) not in ("Cc", "Cf")
+
+
+def _remove_active_blocks(text: str) -> str:
+    """Remove `<script>`/`<style>` blocks and comments; an unclosed opener alone is removed,
+    so a stray `<!--` in OCR text does not drop the rest of the document."""
+
+    parts: list[str] = []
+    pos = 0
+    unclosed: set[str] = set()  # a closer missing after one opener is missing after later ones
+    while opener := _ACTIVE_OPENER.search(text, pos):
+        parts.append(text[pos : opener.start()])
+        kind = (opener.group(1) or "<!--").lower()
+        closer = None if kind in unclosed else _ACTIVE_CLOSERS[kind].search(text, opener.end())
+        if closer is None:
+            unclosed.add(kind)
+            pos = opener.end()
+        else:
+            pos = closer.end()
+    parts.append(text[pos:])
+    return "".join(parts)
 
 
 def _neutralise_wrapper_tags(text: str) -> str:

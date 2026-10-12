@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from treasurypilot_worker.agent import AiError, AiInputRejected, SecretScanner
@@ -77,6 +79,7 @@ def _secret_cases() -> list[tuple[str, str]]:
         ("secret_assignment", 'db_password: "' + 'hunter2hunter2"'),
         ("secret_assignment", "EXECUTOR_PRIVATE_KEY = " + "abcdefgh"),
         ("secret_assignment", "wallet mnemonic: " + "something-long"),
+        ("secret_assignment", "monkey_password: " + "hunter2hunter2"),
     ]
 
 
@@ -99,6 +102,13 @@ def test_secret_shaped_input_is_found(pattern: str, text: str) -> None:
         "Please transfer the total amount to this account and make payment this month.",
         "Token: USDC on Base. Key terms: 2/10 net 30.",
         "See https://acme.example/terms for the terms.",
+        # A 13-word run of wordlist words without a valid BIP39 checksum.
+        "Please note that this account will remain open until final payment. "
+        "Any error should be reported.",
+        "Keywords: cloud-hosting, compute",
+        "Payment token: USDC-on-Sepolia",
+        '{"tok' + 'en": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", "symbol": "USDC"}',
+        '{"idempotency_key": "req_104_step_2", "status": "Approved"}',
     ],
 )
 def test_ordinary_invoice_text_passes(text: str) -> None:
@@ -110,6 +120,44 @@ def test_seed_phrase_as_json_array_is_found() -> None:
     text = "[" + ", ".join(f'"{word}"' for word in words) + "]"
 
     assert SecretScanner().find(text) == "bip39_mnemonic"
+
+
+def test_seed_phrase_inside_a_longer_run_of_wordlist_words_is_found() -> None:
+    twelve = " ".join(MNEMONIC.split()[:12])
+
+    assert SecretScanner().find(f"my seed phrase is {twelve}.") == "bip39_mnemonic"
+
+
+def test_twelve_wordlist_words_with_a_bad_checksum_are_not_a_seed_phrase() -> None:
+    words = MNEMONIC.split()[:11] + ["year"]
+
+    assert SecretScanner().find(" ".join(words)) is None
+
+
+def test_generated_value_under_a_generic_key_name_is_found() -> None:
+    text = '{"token": "' + "a1B2c3D4" * 3 + '"}'
+
+    assert SecretScanner().find(text) == "secret_assignment"
+
+
+def test_bytes32_ids_are_allowed_only_when_asked() -> None:
+    scanner = SecretScanner()
+    ids = f'{{"requestId": "0x{HEX64}"}}'
+
+    assert scanner.find(ids) == "hex_key"
+    assert scanner.find(ids, allow_bytes32=True) is None
+    assert scanner.find(f"key {HEX64}", allow_bytes32=True) == "hex_key"
+    assert scanner.find(f"sig 0x{HEX64}{HEX64}", allow_bytes32=True) == "hex_key"
+
+
+@pytest.mark.parametrize("unit", ["a.", "key", "[", "a://", '"kdf":', "abandon "])
+def test_scan_time_stays_linear_on_crafted_input(unit: str) -> None:
+    text = unit * (100_000 // len(unit))
+
+    started = time.perf_counter()
+    SecretScanner().find(text)
+
+    assert time.perf_counter() - started < 1.0
 
 
 def test_eleven_mnemonic_words_are_not_a_seed_phrase() -> None:
@@ -132,12 +180,14 @@ def test_known_secrets_come_from_secret_named_environment_variables() -> None:
             "ANTHROPIC_API_KEY": secret,
             "DB_PASSWORD": "short",
             "TP_AI_CONFIG_PATH": "/app/config/ai.yaml-long-path",
+            "SAFE_PUBLIC_KEY": "0x52908400098527886E0F7030069857D2E4169EE7",
         }
     )
 
     assert scanner.find(f"x {secret} y") == "known_secret"
     assert scanner.find("short") is None
     assert scanner.find("/app/config/ai.yaml-long-path") is None
+    assert scanner.find("0x52908400098527886E0F7030069857D2E4169EE7") is None
 
 
 def test_check_rejects_without_leaking_the_value() -> None:

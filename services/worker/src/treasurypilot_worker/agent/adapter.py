@@ -77,8 +77,11 @@ class AiAdapter:
         """Run `task` to a validated `output`, or raise a subclass of `AiError`.
 
         The task's timeout is a wall-clock deadline for the whole call, including tool
-        turns, provider retries and the schema retry. Every input is secret-scanned before
-        it is sent; a match raises `AiInputRejected` (FR-804).
+        turns, provider retries and the schema retry. The system prompt and every message,
+        tool call and tool result are secret-scanned before they are sent; a match raises
+        `AiInputRejected` (FR-804). Tool descriptions and the output schema are code, not
+        scanned. Messages may carry `0x` bytes32 ids and hashes; untrusted blocks inside
+        them were already scanned strictly by `wrap_untrusted`.
         """
 
         task_config = self._config.tasks[task]
@@ -152,11 +155,15 @@ class AiAdapter:
             for block in conversation[index].content:
                 match block:
                     case TextBlock(text=text):
-                        self._scanner.check(text, source=f"message[{index}]")
+                        self._scanner.check(text, source=f"message[{index}]", allow_bytes32=True)
                     case ToolCall(id=call_id, input=args):
-                        self._scanner.check(json.dumps(args), source=f"tool_call:{call_id}")
+                        self._scanner.check(
+                            json.dumps(args), source=f"tool_call:{call_id}", allow_bytes32=True
+                        )
                     case ToolResult(tool_call_id=call_id, content=content):
-                        self._scanner.check(content, source=f"tool_result:{call_id}")
+                        self._scanner.check(
+                            content, source=f"tool_result:{call_id}", allow_bytes32=True
+                        )
         run.scanned_messages = len(conversation)
 
     def _complete(self, request: ProviderRequest, run: "_Run") -> ProviderResponse:

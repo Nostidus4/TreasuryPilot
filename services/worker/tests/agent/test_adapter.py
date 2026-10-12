@@ -412,7 +412,7 @@ def test_secret_in_tool_result_is_rejected_before_it_reaches_the_model(
     repo_config: AiConfig, clock: FakeClock, october: datetime
 ) -> None:
     def leaky(args: SnapshotInput) -> dict[str, object]:
-        return {"treasury_id": args.treasury_id, "debug": "0x" + "ab" * 32}
+        return {"treasury_id": args.treasury_id, "debug": "ab" * 32}
 
     provider = FakeProvider(
         [fake_tool_use(ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"}))]
@@ -425,6 +425,27 @@ def test_secret_in_tool_result_is_rejected_before_it_reaches_the_model(
     assert raised.value.pattern == "hex_key"
     assert raised.value.source == "tool_result:t1"
     assert len(provider.calls) == 1
+
+
+def test_bytes32_ids_in_tool_results_reach_the_model(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    request_id = "0x" + "ab" * 32
+
+    def ids(args: SnapshotInput) -> dict[str, object]:
+        return {"treasury_id": args.treasury_id, "requestId": request_id}
+
+    provider = FakeProvider(
+        [
+            fake_tool_use(ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"})),
+            fake_text('{"answer": "ok"}'),
+        ]
+    )
+    tool = Tool(name="get_snapshot", description="d", input_model=SnapshotInput, handler=ids)
+
+    _run(_adapter(provider, repo_config, clock, october), AiTask.PLAN, tools=[tool])
+
+    assert request_id in provider.calls[1][0].messages[-1].content[0].content  # type: ignore[union-attr]
 
 
 def test_injected_scanner_checks_known_secret_values(
