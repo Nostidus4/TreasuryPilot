@@ -11,7 +11,7 @@ import binascii
 import hashlib
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,8 +35,13 @@ class DecryptionError(ValueError):
 
 
 def _decode_base64(value: str) -> bytes:
+    # Standard `secrets.token_urlsafe(32)` output (and other unpadded
+    # URL-safe base64) omits the trailing `=` padding.  Pad it the same way
+    # the envelope payload decoder below does, so a perfectly ordinary key
+    # is not rejected with "Incorrect padding".
+    padded = value + "=" * (-len(value) % 4)
     try:
-        return base64.b64decode(value, altchars=b"-_", validate=True)
+        return base64.b64decode(padded, altchars=b"-_", validate=True)
     except (ValueError, binascii.Error) as exc:
         raise EncryptionConfigurationError("field encryption key is invalid") from exc
 
@@ -99,11 +104,50 @@ class FieldEncryptionKey:
 
 
 class FieldCipher:
-    """Encrypt and decrypt field values with AES-256-GCM."""
+    """Encrypt and decrypt field values with AES-256-GCM.
 
-    def __init__(self, encryption_key: FieldEncryptionKey) -> None:
-        self._key_id = encryption_key.key_id
-        self._cipher = AESGCM(encryption_key._material)
+    Holds a keyring of known keys rather than a single key, so that rotating
+    ``TP_FIELD_ENCRYPTION_KEY`` does not break decryption of rows written
+    with an older key.  Encryption always uses the designated *primary* key;
+    decryption looks up whichever keyring entry matches the envelope's
+    ``key_id``.
+
+    ``FieldCipher(key)`` with a single :class:`FieldEncryptionKey` keeps
+    working exactly as before.  To support rotation, pass an iterable of
+    keys (current key first, followed by one or more retired keys that may
+    still appear in stored envelopes):
+
+        FieldCipher([new_key, old_key])
+
+    or pick the primary explicitly with ``primary_key_id``.
+    """
+
+    def __init__(
+        self,
+        keys: FieldEncryptionKey | Iterable[FieldEncryptionKey],
+        *,
+        primary_key_id: str | None = None,
+    ) -> None:
+        resolved = [keys] if isinstance(keys, FieldEncryptionKey) else list(keys)
+        if not resolved:
+            raise EncryptionConfigurationError("field encryption requires at least one key")
+
+        ciphers: dict[str, AESGCM] = {}
+        for encryption_key in resolved:
+            ciphers.setdefault(encryption_key.key_id, AESGCM(encryption_key._material))
+
+        self._ciphers = ciphers
+        self._primary_key_id = primary_key_id or resolved[0].key_id
+        if self._primary_key_id not in self._ciphers:
+            raise EncryptionConfigurationError("primary key id is not present in the keyring")
+
+    @property
+    def _key_id(self) -> str:
+        return self._primary_key_id
+
+    @property
+    def _cipher(self) -> AESGCM:
+        return self._ciphers[self._primary_key_id]
 
     @staticmethod
     def _metadata(key_id: str) -> bytes:
@@ -114,8 +158,14 @@ class FieldCipher:
         metadata = cls._metadata(key_id)
         return len(metadata).to_bytes(2, "big") + metadata + context
 
-    def encrypt(self, plaintext: bytes, *, context: bytes = b"") -> str:
-        """Return a versioned, authenticated envelope for arbitrary bytes."""
+    def encrypt(self, plaintext: bytes, *, context: bytes) -> str:
+        """Return a versioned, authenticated envelope for arbitrary bytes.
+
+        ``context`` binds the ciphertext to where it is used (e.g. the
+        table/column it was encrypted for) so it cannot be copied into a
+        different context-less column and still decrypt there.  It is
+        required for that reason.
+        """
 
         nonce = os.urandom(_NONCE_BYTES)
         ciphertext = self._cipher.encrypt(
@@ -126,19 +176,20 @@ class FieldCipher:
         payload = base64.urlsafe_b64encode(nonce + ciphertext).decode().rstrip("=")
         return f"{_ENVELOPE_PREFIX}:{_ENVELOPE_VERSION}:{self._key_id}:{payload}"
 
-    def encrypt_text(self, plaintext: str, *, context: str = "") -> str:
+    def encrypt_text(self, plaintext: str, *, context: str) -> str:
         """Encrypt UTF-8 text for a Confidential text column."""
 
         return self.encrypt(plaintext.encode(), context=context.encode())
 
-    def decrypt(self, envelope: str, *, context: bytes = b"") -> bytes:
+    def decrypt(self, envelope: str, *, context: bytes) -> bytes:
         """Decrypt an envelope or raise the same error for every failure mode."""
 
         try:
             prefix, version, key_id, encoded_payload = envelope.split(":", 3)
             if prefix != _ENVELOPE_PREFIX or version != _ENVELOPE_VERSION:
                 raise ValueError
-            if key_id != self._key_id:
+            cipher = self._ciphers.get(key_id)
+            if cipher is None:
                 raise ValueError
             padding = "=" * (-len(encoded_payload) % 4)
             payload = base64.b64decode(
@@ -149,7 +200,7 @@ class FieldCipher:
             if len(payload) < _NONCE_BYTES + 16:
                 raise ValueError
             nonce, ciphertext = payload[:_NONCE_BYTES], payload[_NONCE_BYTES:]
-            return self._cipher.decrypt(
+            return cipher.decrypt(
                 nonce,
                 ciphertext,
                 self._associated_data(key_id, context),
@@ -157,7 +208,7 @@ class FieldCipher:
         except (InvalidTag, ValueError, binascii.Error, UnicodeError):
             raise DecryptionError("unable to decrypt field") from None
 
-    def decrypt_text(self, envelope: str, *, context: str = "") -> str:
+    def decrypt_text(self, envelope: str, *, context: str) -> str:
         """Decrypt a UTF-8 text envelope."""
 
         try:

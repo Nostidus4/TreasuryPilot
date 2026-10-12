@@ -1,4 +1,5 @@
 import base64
+import secrets
 from pathlib import Path
 
 import pytest
@@ -82,7 +83,13 @@ def test_key_loads_from_docker_secret_file(tmp_path: Path) -> None:
 
     key = FieldEncryptionKey.from_environment({"TP_FIELD_ENCRYPTION_KEY_FILE": str(secret_file)})
 
-    assert FieldCipher(key).decrypt_text(FieldCipher(key).encrypt_text("safe")) == "safe"
+    assert (
+        FieldCipher(key).decrypt_text(
+            FieldCipher(key).encrypt_text("safe", context="vendors.contact"),
+            context="vendors.contact",
+        )
+        == "safe"
+    )
 
 
 @pytest.mark.parametrize(
@@ -100,3 +107,66 @@ def test_missing_or_invalid_configuration_fails_closed(
 ) -> None:
     with pytest.raises(EncryptionConfigurationError):
         FieldEncryptionKey.from_environment(environment, default_secret_path=tmp_path / "missing")
+
+
+def test_unpadded_url_safe_key_is_accepted() -> None:
+    # secrets.token_urlsafe(32) produces a 43-character, unpadded URL-safe
+    # base64 string with no trailing "=" -- a perfectly standard key that
+    # must not be rejected with "Incorrect padding".
+    encoded = secrets.token_urlsafe(32)
+    assert "=" not in encoded
+
+    key = FieldEncryptionKey.from_base64(encoded)
+    cipher = FieldCipher(key)
+
+    envelope = cipher.encrypt_text("hello", context="vendors.contact")
+    assert cipher.decrypt_text(envelope, context="vendors.contact") == "hello"
+
+
+def test_key_rotation_decrypts_old_envelopes_and_encrypts_with_new_key() -> None:
+    old_key = FieldEncryptionKey.from_base64(_encoded_key(1), key_id="k1")
+    new_key = FieldEncryptionKey.from_base64(_encoded_key(2), key_id="k2")
+
+    old_cipher = FieldCipher(old_key)
+    old_envelope = old_cipher.encrypt_text("legacy value", context="vendors.contact")
+
+    rotated_cipher = FieldCipher([new_key, old_key])
+
+    # New writes use the new primary key.
+    new_envelope = rotated_cipher.encrypt_text("fresh value", context="vendors.contact")
+    assert new_envelope.split(":")[2] == "k2"
+    assert rotated_cipher.decrypt_text(new_envelope, context="vendors.contact") == "fresh value"
+
+    # Old envelopes written before rotation still decrypt.
+    assert rotated_cipher.decrypt_text(old_envelope, context="vendors.contact") == "legacy value"
+
+
+def test_key_rotation_rejects_unknown_key_id() -> None:
+    known_key = FieldEncryptionKey.from_base64(_encoded_key(1), key_id="k1")
+    unknown_key = FieldEncryptionKey.from_base64(_encoded_key(2), key_id="k2")
+
+    unknown_cipher = FieldCipher(unknown_key)
+    envelope = unknown_cipher.encrypt_text("value", context="vendors.contact")
+
+    cipher = FieldCipher([known_key])
+    with pytest.raises(DecryptionError):
+        cipher.decrypt_text(envelope, context="vendors.contact")
+
+
+def test_explicit_primary_key_id_selects_encryption_key() -> None:
+    key_a = FieldEncryptionKey.from_base64(_encoded_key(1), key_id="k1")
+    key_b = FieldEncryptionKey.from_base64(_encoded_key(2), key_id="k2")
+
+    cipher = FieldCipher([key_a, key_b], primary_key_id="k2")
+    envelope = cipher.encrypt_text("value", context="vendors.contact")
+
+    assert envelope.split(":")[2] == "k2"
+
+
+def test_context_is_required_keyword_argument() -> None:
+    cipher = FieldCipher(FieldEncryptionKey.from_base64(_encoded_key()))
+
+    with pytest.raises(TypeError):
+        cipher.encrypt_text("value")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        cipher.decrypt_text("tpenc:v1:x:y")  # type: ignore[call-arg]
