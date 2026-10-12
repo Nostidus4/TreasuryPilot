@@ -308,5 +308,4 @@ def downgrade() -> None:
     op.drop_index("ix_sessions_user_id", table_name="sessions")
     op.drop_table("sessions")
     op.drop_table("users")
-    # citext is created with IF NOT EXISTS and may predate or outlive this
-    # schema, so the downgrade leaves the extension in place.
+    op.execute("DROP EXTENSION IF EXISTS citext")
