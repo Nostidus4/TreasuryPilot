@@ -3,7 +3,10 @@ name = "treasurypilot-core"
 version = "0.1.0"
 description = "Pure domain types and deterministic treasury logic for TreasuryPilot."
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "cryptography>=46,<47",
+    "structlog>=25,<26",
+]
 
 [build-system]
 requires = ["hatchling==1.27.0"]
