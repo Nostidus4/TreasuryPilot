@@ -4,7 +4,8 @@ import re
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from treasurypilot_api.identity.auth import (
@@ -13,6 +14,7 @@ from treasurypilot_api.identity.auth import (
     ProfileRecord,
     SessionAccess,
     UserRecord,
+    normalize_email,
 )
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -34,16 +36,16 @@ class MagicLinkRequest(ApiModel):
     @field_validator("email")
     @classmethod
     def valid_email(cls, value: str) -> str:
-        normalized = value.strip().casefold()
+        normalized = normalize_email(value)
         if not _SIMPLE_EMAIL.fullmatch(normalized):
             raise ValueError("invalid email address")
         return normalized
 
 
 class VerifyMagicLinkRequest(ApiModel):
-    # Let malformed bearer values reach the auth service so callers always get
-    # the stable TOKEN_INVALID problem response instead of schema-dependent 422s.
-    token: str = Field(max_length=256)
+    # No schema limits: malformed or oversized bearer values reach the auth service
+    # so callers always get the stable TOKEN_INVALID problem response, not a 422.
+    token: str
 
 
 class UserView(ApiModel):
@@ -78,6 +80,9 @@ class WalletView(ApiModel):
 
 class VerifyMagicLinkResponse(ApiModel):
     user: UserView
+    # Also returned in the body because the tp_csrf cookie is host-only and is
+    # unreadable from a web app served on a different origin than the API.
+    csrf_token: str
 
 
 class MeResponse(ApiModel):
@@ -110,6 +115,25 @@ class MeResponse(ApiModel):
         )
 
 
+def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status,
+        media_type="application/problem+json",
+        content={
+            "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
+            "title": exc.title,
+            "status": exc.status,
+            "code": exc.code,
+            "detail": exc.detail,
+            "instance": request.url.path,
+        },
+    )
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client is not None else "unknown"
+
+
 def _service(request: Request) -> AuthService:
     service = getattr(request.app.state, "auth_service", None)
     if not isinstance(service, AuthService):
@@ -140,8 +164,15 @@ router = APIRouter(prefix="/v1", tags=["identity"])
 
 
 @router.post("/auth/magic-link", status_code=202, response_class=Response)
-async def request_magic_link(payload: MagicLinkRequest, request: Request) -> Response:
-    await _service(request).request_magic_link(payload.email)
+async def request_magic_link(
+    payload: MagicLinkRequest, request: Request, background_tasks: BackgroundTasks
+) -> Response:
+    service = _service(request)
+    delivery = await service.request_magic_link(payload.email, client_ip=_client_ip(request))
+    if delivery is not None:
+        # Send after responding so known and unknown emails take the same time
+        # and a provider outage cannot reveal which emails have accounts.
+        background_tasks.add_task(service.deliver_magic_link, delivery)
     return Response(status_code=202)
 
 
@@ -149,10 +180,9 @@ async def request_magic_link(payload: MagicLinkRequest, request: Request) -> Res
 async def verify_magic_link(
     payload: VerifyMagicLinkRequest, request: Request, response: Response
 ) -> VerifyMagicLinkResponse:
-    client_ip = request.client.host if request.client is not None else "unknown"
     verified = await _service(request).verify_magic_link(
         token=payload.token,
-        client_ip=client_ip,
+        client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent", "unknown"),
     )
     settings = request.app.state.settings
@@ -174,22 +204,13 @@ async def verify_magic_link(
         httponly=False,
         samesite="lax",
     )
-    return VerifyMagicLinkResponse(user=UserView.from_record(verified.user))
-
-
-@router.post("/auth/logout", status_code=204, response_class=Response)
-async def logout(request: Request) -> Response:
-    settings = request.app.state.settings
-    session_token = _session_cookie(request)
-    if session_token is None:
-        await _authenticated(request, require_csrf=True)
-        raise AssertionError("unreachable")
-    await _service(request).logout(
-        session_token=session_token,
-        csrf_cookie=request.cookies.get(settings.csrf_cookie_name),
-        csrf_header=request.headers.get(settings.csrf_header_name),
+    return VerifyMagicLinkResponse(
+        user=UserView.from_record(verified.user), csrf_token=verified.csrf_token
     )
-    response = Response(status_code=204)
+
+
+def _clear_auth_cookies(request: Request, response: Response) -> None:
+    settings = request.app.state.settings
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
@@ -204,6 +225,26 @@ async def logout(request: Request) -> Response:
         httponly=False,
         samesite="lax",
     )
+
+
+@router.post("/auth/logout", status_code=204, response_class=Response)
+async def logout(request: Request) -> Response:
+    settings = request.app.state.settings
+    try:
+        await _service(request).logout(
+            session_token=_session_cookie(request),
+            csrf_cookie=request.cookies.get(settings.csrf_cookie_name),
+            csrf_header=request.headers.get(settings.csrf_header_name),
+        )
+    except AuthFailure as exc:
+        if exc.status != 401:
+            raise
+        # The session is already expired or revoked: still drop the stale cookies.
+        failure = problem_response(request, exc)
+        _clear_auth_cookies(request, failure)
+        return failure
+    response = Response(status_code=204)
+    _clear_auth_cookies(request, response)
     return response
 
 

@@ -47,7 +47,7 @@ Lời mời: `Pending → Accepted | Expired | Revoked`. Phiên: `Active → Exp
 | Method | Endpoint | Quyền | Lỗi |
 |---|---|---|---|
 | POST | `/auth/magic-link` | công khai, giới hạn 5/15 phút mỗi email, 20/15 phút mỗi IP | 429 `RATE_LIMITED` |
-| POST | `/auth/magic-link/verify` | công khai | `TOKEN_INVALID`, `TOKEN_EXPIRED` |
+| POST | `/auth/magic-link/verify` | công khai, giới hạn 20/15 phút mỗi IP; trả `{user, csrfToken}` | `TOKEN_INVALID`, `TOKEN_EXPIRED`, `RATE_LIMITED` |
 | POST/GET | `/auth/logout`, `/me` | đã đăng nhập | |
 | GET/POST/DELETE | `/auth/siwe/nonce`, `/me/wallets`, `/me/wallets/{a}` | đã đăng nhập | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE`, `SIGNER_ROLE_REQUIRES_WALLET` |
 | POST/GET/PATCH | `/orgs`, `/orgs/{o}`, `/orgs/{o}/settings` | đăng nhập / thành viên / ADM (solo: OWN) | 403 |
@@ -76,7 +76,7 @@ Token được băm; nonce dùng một lần; CSRF cho mọi thao tác ghi; tr�
 
 ## 11. Tình huống lỗi
 
-Dịch vụ email lỗi → 503 kèm thử lại, không tạo user dở dang; Redis lỗi → giới hạn tần suất "đóng" cho endpoint đăng nhập; kho nonce lỗi → từ chối liên kết ví.
+Dịch vụ email lỗi → link được gửi sau khi đã trả 202, gửi lỗi thì link bị vô hiệu và ghi log; người dùng vẫn nhận 202 (không lộ email có tài khoản) và yêu cầu link mới; Redis lỗi → giới hạn tần suất "đóng" cho endpoint đăng nhập; kho nonce lỗi → từ chối liên kết ví.
 
 ## 12. Kế hoạch test
 

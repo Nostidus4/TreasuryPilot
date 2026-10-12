@@ -168,7 +168,6 @@
       "VerifyMagicLinkRequest": {
         "properties": {
           "token": {
-            "maxLength": 256,
             "title": "Token",
             "type": "string"
           }
@@ -179,11 +178,15 @@
       },
       "VerifyMagicLinkResponse": {
         "properties": {
+          "csrfToken": {
+            "title": "Csrftoken",
+            "type": "string"
+          },
           "user": {
             "$ref": "#/components/schemas/UserView"
           }
         },
-        "required": ["user"],
+        "required": ["user", "csrfToken"],
         "title": "VerifyMagicLinkResponse",
         "type": "object"
       },

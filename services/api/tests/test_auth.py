@@ -23,6 +23,7 @@ from treasurypilot_api.identity.auth import (
     WalletRecord,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender
+from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
 from treasurypilot_api.main import create_app
 
 
@@ -146,7 +147,7 @@ class MemoryAuthRepository:
             session.revoked_at = now
             return None
         session.last_seen_at = now
-        return SessionAccess(self.profile.user)
+        return SessionAccess(self.profile.user, session_id)
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None:
         session = self.sessions.get(session_id)
@@ -199,7 +200,12 @@ class AuthHarness:
         self.client.__exit__(*args)
 
 
-def make_harness(*, sender_fails: bool = False) -> AuthHarness:
+class UnavailableRateLimiter:
+    async def hit(self, key: str, *, limit: int, window: timedelta) -> bool:
+        raise RateLimiterUnavailable
+
+
+def make_harness(*, sender_fails: bool = False, rate_limiter: object | None = None) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
         id=uuid.UUID("00000000-0000-4000-8000-000000000001"),
@@ -216,6 +222,7 @@ def make_harness(*, sender_fails: bool = False) -> AuthHarness:
         token_codec=SessionTokenCodec(secret),
         client_hash_secret=secret,
         magic_link_base_url="https://app.example.test/auth/verify",
+        rate_limiter=rate_limiter or MemoryRateLimiter(clock),  # type: ignore[arg-type]
         clock=clock,
     )
     settings = Settings(environment="test", session_secret=secret.decode())
@@ -417,14 +424,124 @@ def test_console_sender_outputs_usable_local_link_without_recipient() -> None:
     assert "person@example.com" not in output[0]
 
 
-def test_email_failure_invalidates_issued_token_without_leaking_provider_error() -> None:
+def test_email_failure_invalidates_issued_token_without_revealing_the_account(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     with make_harness(sender_fails=True) as harness:
-        response = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
-        assert response.status_code == 503
-        assert response.json()["code"] == "EMAIL_UNAVAILABLE"
-        assert "sensitive" not in response.text
+        known = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        unknown = harness.client.post("/v1/auth/magic-link", json={"email": "nobody@example.com"})
+
+        assert known.status_code == unknown.status_code == 202
+        assert known.content == unknown.content
+        assert harness.repository.links
         assert all(link.used_at is not None for link in harness.repository.links.values())
         assert not harness.repository.sessions
+        assert "magic link delivery failed" in caplog.text
+        assert "sensitive" not in caplog.text
+
+
+def test_magic_link_requests_are_rate_limited_per_email_for_known_and_unknown() -> None:
+    with make_harness() as harness:
+        for email in ("person@example.com", "nobody@example.com"):
+            statuses = [
+                harness.client.post("/v1/auth/magic-link", json={"email": email}).status_code
+                for _ in range(6)
+            ]
+            assert statuses == [202] * 5 + [429]
+
+        limited = harness.client.post("/v1/auth/magic-link", json={"email": "PERSON@example.com"})
+        assert limited.json()["code"] == "RATE_LIMITED"
+        assert len(harness.sender.messages) == 5
+
+        harness.clock.advance(timedelta(minutes=15))
+        assert (
+            harness.client.post(
+                "/v1/auth/magic-link", json={"email": "person@example.com"}
+            ).status_code
+            == 202
+        )
+
+
+def test_magic_link_requests_are_rate_limited_per_ip() -> None:
+    with make_harness() as harness:
+        statuses = [
+            harness.client.post(
+                "/v1/auth/magic-link", json={"email": f"user{index}@example.com"}
+            ).status_code
+            for index in range(21)
+        ]
+        assert statuses == [202] * 20 + [429]
+
+
+def test_verify_is_rate_limited_per_ip() -> None:
+    with make_harness() as harness:
+        statuses = [
+            harness.client.post("/v1/auth/magic-link/verify", json={"token": "bad"}).status_code
+            for _ in range(21)
+        ]
+        assert statuses == [400] * 20 + [429]
+
+
+def test_auth_endpoints_fail_closed_when_the_rate_limiter_is_down() -> None:
+    with make_harness(rate_limiter=UnavailableRateLimiter()) as harness:
+        response = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert response.status_code == 503
+        assert response.json()["code"] == "AUTH_UNAVAILABLE"
+        assert not harness.sender.messages
+
+
+def test_verify_returns_csrf_token_for_cross_origin_clients() -> None:
+    with make_harness() as harness:
+        response = harness.verify(harness.request_token())
+
+        assert response.json()["csrfToken"] == harness.client.cookies.get("tp_csrf")
+
+
+def test_logout_with_expired_session_still_clears_cookies() -> None:
+    with make_harness() as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        harness.clock.advance(timedelta(minutes=31))
+
+        response = harness.client.post("/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+
+        assert response.status_code == 401
+        assert not harness.client.cookies.get("tp_session")
+        assert not harness.client.cookies.get("tp_csrf")
+
+
+def test_oversized_verify_token_returns_token_invalid() -> None:
+    with make_harness() as harness:
+        response = harness.client.post("/v1/auth/magic-link/verify", json={"token": "a" * 4096})
+        assert response.status_code == 400
+        assert response.json()["code"] == "TOKEN_INVALID"
+
+
+def test_email_normalization_matches_citext_lower() -> None:
+    with make_harness() as harness:
+        user = harness.repository.users.pop("person@example.com")
+        harness.repository.users["straße@example.com"] = UserRecord(
+            id=user.id, email="straße@example.com", display_name=None, status="active"
+        )
+
+        harness.request_token("STRAßE@example.com")
+
+        assert harness.sender.messages[-1][0] == "straße@example.com"
+
+
+def test_test_environment_is_treated_as_deployed() -> None:
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        create_app(settings=Settings(environment="test", database_url=None))
+
+
+def test_local_processes_share_a_session_secret() -> None:
+    first = create_app(settings=Settings(environment="local"))
+    second = create_app(settings=Settings(environment="local"))
+    session_id = uuid.uuid4()
+
+    token = first.state.auth_service._token_codec.session_token(session_id)
+
+    assert second.state.auth_service._token_codec.parse_session_token(token) == session_id
 
 
 def test_deployed_configuration_fails_closed_without_security_settings() -> None:
@@ -450,6 +567,7 @@ def test_deployed_configuration_requires_https_secret_and_resend() -> None:
                 magic_link_base_url="http://app.example.test/auth/verify",
                 resend_api_key="resend-key",
                 resend_from_email="login@example.test",
+                redis_url="redis://redis.example.test:6379/0",
             ),
             "HTTPS",
         ),
@@ -461,6 +579,7 @@ def test_deployed_configuration_requires_https_secret_and_resend() -> None:
                 magic_link_base_url="https://app.example.test/auth/verify",
                 resend_api_key="resend-key",
                 resend_from_email="login@example.test",
+                redis_url="redis://redis.example.test:6379/0",
             ),
             "32 bytes",
         ),

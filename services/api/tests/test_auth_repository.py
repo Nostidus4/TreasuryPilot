@@ -20,6 +20,7 @@ from treasurypilot_api.identity.auth import (
     VerifiedSession,
 )
 from treasurypilot_api.identity.models import MagicLink, Session, User
+from treasurypilot_api.identity.rate_limit import MemoryRateLimiter
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 
 API_ROOT = Path(__file__).parents[1]
@@ -60,6 +61,7 @@ async def _exercise_postgres_auth_flow(database_url: str) -> None:
         token_codec=SessionTokenCodec(secret),
         client_hash_secret=secret,
         magic_link_base_url="https://app.example.test/auth/verify",
+        rate_limiter=MemoryRateLimiter(clock),
         clock=clock,
     )
     user_id = uuid.UUID("00000000-0000-4000-8000-000000000201")
@@ -76,7 +78,9 @@ async def _exercise_postgres_auth_flow(database_url: str) -> None:
                 )
             )
 
-        await service.request_magic_link("DATABASE@example.com")
+        delivery = await service.request_magic_link("DATABASE@example.com", client_ip="127.0.0.1")
+        assert delivery is not None
+        await service.deliver_magic_link(delivery)
         assert sender.url is not None
         token = parse_qs(urlparse(sender.url).query)["token"][0]
 

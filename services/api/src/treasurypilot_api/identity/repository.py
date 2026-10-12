@@ -157,7 +157,7 @@ class SqlAlchemyAuthRepository:
                 auth_session.revoked_at = now
                 return None
             auth_session.last_seen_at = now
-            return SessionAccess(user=_user_record(user))
+            return SessionAccess(user=_user_record(user), session_id=session_id)
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None:
         async with self._sessions() as session, session.begin():

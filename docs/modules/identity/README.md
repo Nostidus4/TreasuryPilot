@@ -50,7 +50,7 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | Method | Endpoint | Perm | Errors |
 |---|---|---|---|
 | POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` |
-| POST | `/auth/magic-link/verify` | public | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED` |
+| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` |
 | POST | `/auth/logout` · GET `/me` | auth | |
 | GET | `/auth/siwe/nonce` · POST `/me/wallets` · DELETE `/me/wallets/{a}` | auth | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE`, `SIGNER_ROLE_REQUIRES_WALLET` |
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
@@ -76,8 +76,10 @@ Session idle 30 min / absolute 12 h; magic link 15 min; invite 7 days; SIWE nonc
 Deployed API instances require `DATABASE_URL`, a high-entropy `TP_SESSION_SECRET`
 (at least 32 bytes), an HTTPS `TP_MAGIC_LINK_BASE_URL`, and
 `TP_RESEND_API_KEY` / `TP_RESEND_FROM_EMAIL`. The `local` environment uses the
-console delivery adapter and prints the one-time URL intentionally; deployed
-environments never fall back to console delivery or generated session secrets.
+console delivery adapter and prints the one-time URL intentionally; every other
+`TP_ENVIRONMENT` value (including `test`) is treated as deployed and never falls
+back to console delivery, the fixed local session secret or an in-process rate
+limiter (`TP_REDIS_URL` is required).
 
 ## 10. Security
 
@@ -85,7 +87,7 @@ Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit 
 
 ## 11. Failure scenarios
 
-Email provider down → 503 with retry, no half-created user; Redis down → rate limiter fails closed for auth endpoints; nonce store down → linking refused.
+Email provider down → the link is sent after the 202 response, so a failed send invalidates that link and is logged; the caller still gets 202 (no account enumeration) and requests a new link; Redis down → rate limiter fails closed for auth endpoints; nonce store down → linking refused.
 
 ## 12. Test plan
 

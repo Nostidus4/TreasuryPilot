@@ -188,6 +188,8 @@ export interface components {
     };
     /** VerifyMagicLinkResponse */
     VerifyMagicLinkResponse: {
+      /** Csrftoken */
+      csrfToken: string;
       user: components['schemas']['UserView'];
     };
     /** WalletView */

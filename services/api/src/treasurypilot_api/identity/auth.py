@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 import uuid
 from collections.abc import Callable
@@ -12,9 +13,20 @@ from enum import StrEnum
 from typing import Protocol
 from urllib.parse import urlencode
 
+from treasurypilot_api.identity.rate_limit import RateLimiter, RateLimiterUnavailable
+
 MAGIC_LINK_LIFETIME = timedelta(minutes=15)
 SESSION_IDLE_LIFETIME = timedelta(minutes=30)
 SESSION_ABSOLUTE_LIFETIME = timedelta(hours=12)
+MAX_MAGIC_LINK_TOKEN_LENGTH = 256
+
+# Identity README section 6: 5 per 15 min per email, 20 per 15 min per IP.
+RATE_LIMIT_WINDOW = timedelta(minutes=15)
+MAGIC_LINK_EMAIL_LIMIT = 5
+MAGIC_LINK_IP_LIMIT = 20
+VERIFY_IP_LIMIT = 20
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
@@ -28,7 +40,9 @@ def require_aware_utc(value: datetime) -> datetime:
 
 
 def normalize_email(value: str) -> str:
-    return value.strip().casefold()
+    # PostgreSQL CITEXT compares with lower(), so casefold() would miss rows
+    # such as "straße" (casefolds to "strasse").
+    return value.strip().lower()
 
 
 def hash_token(value: str) -> bytes:
@@ -101,6 +115,7 @@ class ConsumeResult:
 @dataclass(frozen=True, slots=True)
 class SessionAccess:
     user: UserRecord
+    session_id: uuid.UUID
 
 
 class AuthRepository(Protocol):
@@ -205,6 +220,15 @@ class SessionTokenCodec:
 
 
 @dataclass(frozen=True, slots=True)
+class MagicLinkDelivery:
+    """An issued link that still has to be sent outside the request path."""
+
+    email: str
+    url: str
+    token_hash: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class VerifiedSession:
     user: UserRecord
     session_id: uuid.UUID
@@ -221,6 +245,7 @@ class AuthService:
         token_codec: SessionTokenCodec,
         client_hash_secret: bytes,
         magic_link_base_url: str,
+        rate_limiter: RateLimiter,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if len(client_hash_secret) < 32:
@@ -230,19 +255,52 @@ class AuthService:
         self._token_codec = token_codec
         self._client_hash_secret = client_hash_secret
         self._magic_link_base_url = magic_link_base_url
+        self._rate_limiter = rate_limiter
         self._clock = clock
 
     def _now(self) -> datetime:
         return require_aware_utc(self._clock())
 
-    async def request_magic_link(self, email: str) -> None:
+    async def _enforce_limit(self, scope: str, value: str, limit: int) -> None:
+        # Key on a keyed hash so the limiter store never holds emails or IPs.
+        digest = _encode(hash_client_value(value, self._client_hash_secret))
+        try:
+            allowed = await self._rate_limiter.hit(
+                f"{scope}:{digest}", limit=limit, window=RATE_LIMIT_WINDOW
+            )
+        except RateLimiterUnavailable:
+            # Identity M01-D8: fail closed for auth endpoints when Redis is down.
+            raise AuthFailure(
+                status=503,
+                code="AUTH_UNAVAILABLE",
+                title="Authentication unavailable",
+                detail="Sign-in is temporarily unavailable. Please retry.",
+            ) from None
+        if not allowed:
+            raise AuthFailure(
+                status=429,
+                code="RATE_LIMITED",
+                title="Too many requests",
+                detail="Too many sign-in attempts. Please wait and try again.",
+            )
+
+    async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:
+        """Issue a link for an active user; delivery happens via ``deliver_magic_link``.
+
+        Limits apply to every email, known or not, and sending is left to the
+        caller's background task, so both paths return the same response in
+        about the same time.
+        """
+
         normalized = normalize_email(email)
+        await self._enforce_limit("magic-link:ip", client_ip, MAGIC_LINK_IP_LIMIT)
+        await self._enforce_limit("magic-link:email", normalized, MAGIC_LINK_EMAIL_LIMIT)
         user = await self._repository.find_active_user_by_email(normalized)
         if user is None:
             # Perform the same token work as the known-account path. No record or usable
             # token is created, and the caller receives the same HTTP response.
             hash_token(secrets.token_urlsafe(32))
-            return
+            return None
 
         raw_token = secrets.token_urlsafe(32)
         token_digest = hash_token(raw_token)
@@ -255,24 +313,31 @@ class AuthService:
         )
         separator = "&" if "?" in self._magic_link_base_url else "?"
         url = f"{self._magic_link_base_url}{separator}{urlencode({'token': raw_token})}"
+        return MagicLinkDelivery(email=normalized, url=url, token_hash=token_digest)
+
+    async def deliver_magic_link(self, delivery: MagicLinkDelivery) -> None:
+        """Send an issued link; on failure the link is invalidated and logged."""
+
         try:
-            await self._sender.send_magic_link(email=normalized, url=url)
+            await self._sender.send_magic_link(email=delivery.email, url=delivery.url)
         except Exception as exc:
             await self._repository.invalidate_magic_link(
-                token_hash=token_digest, invalidated_at=self._now()
+                token_hash=delivery.token_hash, invalidated_at=self._now()
             )
-            raise AuthFailure(
-                status=503,
-                code="EMAIL_UNAVAILABLE",
-                title="Email service unavailable",
-                detail="The sign-in email could not be sent. Please retry.",
-            ) from exc
+            # Provider errors can echo request data, so log only the error type.
+            logger.warning("magic link delivery failed: %s", type(exc).__name__)
 
     async def verify_magic_link(
         self, *, token: str, client_ip: str, user_agent: str
     ) -> VerifiedSession:
+        await self._enforce_limit("verify:ip", client_ip, VERIFY_IP_LIMIT)
         now = self._now()
-        result = await self._repository.consume_magic_link(token_hash=hash_token(token), now=now)
+        if len(token) > MAX_MAGIC_LINK_TOKEN_LENGTH:
+            result = ConsumeResult(ConsumeStatus.INVALID)
+        else:
+            result = await self._repository.consume_magic_link(
+                token_hash=hash_token(token), now=now
+            )
         if result.status is ConsumeStatus.EXPIRED:
             raise AuthFailure(
                 status=410,
@@ -339,18 +404,15 @@ class AuthService:
         return access
 
     async def logout(
-        self, *, session_token: str, csrf_cookie: str | None, csrf_header: str | None
+        self, *, session_token: str | None, csrf_cookie: str | None, csrf_header: str | None
     ) -> None:
-        await self.authenticate(
+        access = await self.authenticate(
             session_token=session_token,
             csrf_cookie=csrf_cookie,
             csrf_header=csrf_header,
             require_csrf=True,
         )
-        session_id = self._token_codec.parse_session_token(session_token)
-        if session_id is None:  # Defensive: authenticate already validated this token.
-            raise self._authentication_required()
-        await self._repository.revoke_session(session_id=session_id, now=self._now())
+        await self._repository.revoke_session(session_id=access.session_id, now=self._now())
 
     async def profile(self, access: SessionAccess) -> ProfileRecord:
         profile = await self._repository.get_profile(access.user.id)

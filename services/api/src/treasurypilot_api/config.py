@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TP_DATABASE_URL", "DATABASE_URL"),
     )
     session_secret: SecretStr | None = None
+    redis_url: SecretStr | None = None
     magic_link_base_url: str = "http://localhost:5173/auth/verify"
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None

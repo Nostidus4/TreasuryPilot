@@ -1,4 +1,3 @@
-import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -7,11 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
+from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.api import router as identity_router
 from treasurypilot_api.identity.auth import (
     AuthFailure,
@@ -19,9 +20,19 @@ from treasurypilot_api.identity.auth import (
     AuthService,
     MagicLinkSender,
     SessionTokenCodec,
+    utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.rate_limit import (
+    MemoryRateLimiter,
+    RateLimiter,
+    RedisRateLimiter,
+)
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+
+# Fixed so every local process (``--workers``, ``--reload``) verifies the same
+# cookies. Only ever used when TP_ENVIRONMENT=local.
+LOCAL_SESSION_SECRET = b"treasurypilot-local-development-only-session-secret"
 
 
 class HealthResponse(BaseModel):
@@ -43,25 +54,30 @@ class _UnavailableAuthRepository:
         return unavailable
 
 
-def _auth_service(settings: Settings) -> tuple[AuthService, AsyncEngine | None]:
-    environment = settings.environment.casefold()
-    console_delivery = environment in {"local", "test"}
-    deployed = not console_delivery
+def _auth_service(
+    settings: Settings,
+) -> tuple[AuthService, AsyncEngine | None, RedisRateLimiter | None]:
+    # Only an explicit local environment relaxes the deployment checks; any other
+    # value (including a shared "test" or QA env) is treated as deployed.
+    local = settings.environment.casefold() == "local"
+    deployed = not local
     if deployed and not settings.database_url:
-        raise ValueError("DATABASE_URL is required outside local/test environments")
+        raise ValueError("DATABASE_URL is required outside the local environment")
     if deployed and not settings.session_secret:
-        raise ValueError("TP_SESSION_SECRET is required outside local/test environments")
+        raise ValueError("TP_SESSION_SECRET is required outside the local environment")
     if deployed and not settings.magic_link_base_url.startswith("https://"):
-        raise ValueError("TP_MAGIC_LINK_BASE_URL must use HTTPS outside local/test environments")
+        raise ValueError("TP_MAGIC_LINK_BASE_URL must use HTTPS outside the local environment")
     if deployed and (not settings.resend_api_key or not settings.resend_from_email):
         raise ValueError(
-            "TP_RESEND_API_KEY and TP_RESEND_FROM_EMAIL are required outside local/test"
+            "TP_RESEND_API_KEY and TP_RESEND_FROM_EMAIL are required outside the local environment"
         )
+    if deployed and not settings.redis_url:
+        raise ValueError("TP_REDIS_URL is required outside the local environment")
 
     secret = (
         settings.session_secret.get_secret_value().encode("utf-8")
         if settings.session_secret
-        else secrets.token_bytes(32)
+        else LOCAL_SESSION_SECRET
     )
     if len(secret) < 32:
         raise ValueError("TP_SESSION_SECRET must contain at least 32 bytes")
@@ -73,8 +89,16 @@ def _auth_service(settings: Settings) -> tuple[AuthService, AsyncEngine | None]:
     else:
         repository = cast(AuthRepository, _UnavailableAuthRepository())
 
+    redis_limiter: RedisRateLimiter | None = None
+    rate_limiter: RateLimiter
+    if settings.redis_url:
+        redis_limiter = RedisRateLimiter(Redis.from_url(settings.redis_url.get_secret_value()))
+        rate_limiter = redis_limiter
+    else:
+        rate_limiter = MemoryRateLimiter(utc_now)
+
     sender: MagicLinkSender
-    if console_delivery:
+    if local:
         sender = ConsoleMagicLinkSender()
     else:
         # The deployed validation above guarantees both values are available.
@@ -91,8 +115,10 @@ def _auth_service(settings: Settings) -> tuple[AuthService, AsyncEngine | None]:
             token_codec=SessionTokenCodec(secret),
             client_hash_secret=secret,
             magic_link_base_url=settings.magic_link_base_url,
+            rate_limiter=rate_limiter,
         ),
         engine,
+        redis_limiter,
     )
 
 
@@ -101,14 +127,17 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
+    redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine = _auth_service(settings)
+        auth_service, engine, redis_limiter = _auth_service(settings)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         yield
         if engine is not None:
             await engine.dispose()
+        if redis_limiter is not None:
+            await redis_limiter.aclose()
 
     app = FastAPI(
         title="TreasuryPilot API",
@@ -135,18 +164,7 @@ def create_app(
 
     @app.exception_handler(AuthFailure)
     async def auth_failure_handler(request: Request, exc: AuthFailure) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status,
-            media_type="application/problem+json",
-            content={
-                "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
-                "title": exc.title,
-                "status": exc.status,
-                "code": exc.code,
-                "detail": exc.detail,
-                "instance": request.url.path,
-            },
-        )
+        return problem_response(request, exc)
 
     app.include_router(identity_router)
 
