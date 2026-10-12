@@ -62,7 +62,7 @@ def lint_module(module: str, source: str) -> list[Violation]:
             if name == "PromptTemplate":
                 for detail in _template_call_problems(node):
                     report("R4", node, detail)
-            if name == "replace" or _is_object_setattr(node.func):
+            if _is_dataclasses_replace(node.func, aliases) or _is_object_setattr(node.func):
                 report("R6", node, "rewrites a frozen dataclass")
             if isinstance(node.func, ast.Attribute):
                 if node.func.attr == "user" and _resolve(node.func.value, aliases) == "Message":
@@ -108,6 +108,20 @@ def _is_object_setattr(func: ast.AST) -> bool:
         and isinstance(func.value, ast.Name)
         and func.value.id == "object"
     )
+
+
+def _is_dataclasses_replace(func: ast.AST, aliases: dict[str, str]) -> bool:
+    """True only for `dataclasses.replace(...)` or an imported `replace(...)` alias.
+
+    A bare attribute-name match on "replace" also catches ordinary `str.replace(...)`
+    calls, which are unrelated to rewriting a frozen dataclass.
+    """
+
+    if isinstance(func, ast.Name):
+        return aliases.get(func.id) == "replace"
+    if isinstance(func, ast.Attribute) and func.attr == "replace":
+        return isinstance(func.value, ast.Name) and func.value.id == "dataclasses"
+    return False
 
 
 def _template_call_problems(node: ast.Call) -> list[str]:
