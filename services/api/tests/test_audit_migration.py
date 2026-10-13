@@ -83,7 +83,8 @@ async def _verify_chain(database_url: str) -> None:
                 if index == 0:
                     # Keep the head in this session's identity map (as code that reads it
                     # would), then let another request append before our next write.
-                    held_head = await session.get(AuditHead, org_id)
+                    async with session.begin():
+                        held_head = await session.get(AuditHead, org_id)
                     assert held_head is not None
                     async with sessions() as other, other.begin():
                         await write(
