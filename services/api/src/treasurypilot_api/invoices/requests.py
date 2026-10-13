@@ -18,8 +18,10 @@ from treasurypilot_api.identity.access import MemberContext, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.invoices.fingerprints import (
+    find_active_duplicate,
+)
 from treasurypilot_api.invoices.models import (
-    TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
     PaymentApproval,
     PaymentRequest,
@@ -128,6 +130,16 @@ def _not_found() -> AuthFailure:
     )
 
 
+def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
+    return AuthFailure(
+        status=409,
+        code="DUPLICATE_FINGERPRINT",
+        title="Duplicate invoice",
+        detail="An active request already uses this invoice fingerprint.",
+        extensions={"existingRequestId": str(existing_request_id)},
+    )
+
+
 def _validate_dates(issue_date: date, due_date: date) -> None:
     if due_date < issue_date:
         raise _fail(
@@ -193,7 +205,9 @@ async def _bound_fields(
     paying_wallet_id: uuid.UUID | None,
 ) -> tuple[Treasury, Vendor, Payee, Asset]:
     treasury = await session.scalar(
-        select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        select(Treasury)
+        .where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        .with_for_update()
     )
     if treasury is None:
         raise _not_found()
@@ -468,24 +482,14 @@ async def create_request(
                     idempotency_payload_hash=payload_hash,
                 )
                 _hashes(row, vendor.normalized_ref, asset.address or b"")
-                duplicate = await session.scalar(
-                    select(PaymentRequest.id)
-                    .where(
-                        PaymentRequest.treasury_id == row.treasury_id,
-                        PaymentRequest.fingerprint == row.fingerprint,
-                        PaymentRequest.status.not_in(
-                            [status.value for status in TERMINAL_REQUEST_STATUSES]
-                        ),
-                    )
-                    .limit(1)
+                assert row.fingerprint is not None
+                duplicate = await find_active_duplicate(
+                    session,
+                    treasury_id=row.treasury_id,
+                    value=row.fingerprint,
                 )
                 if duplicate is not None:
-                    raise _fail(
-                        409,
-                        "DUPLICATE_FINGERPRINT",
-                        "Duplicate invoice",
-                        "An active request already uses this vendor, invoice number, amount and asset.",
-                    )
+                    raise _duplicate_fingerprint(duplicate)
                 row.onchain_request_id = _request_id(member.organization_id, row.id)
                 row.terms_hash = (
                     keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
@@ -517,6 +521,23 @@ async def create_request(
                 flags = await _recompute_flags(session, row)
                 await session.flush()
     except IntegrityError as error:
+        constraint_name = getattr(
+            getattr(error.orig, "diag", None),
+            "constraint_name",
+            getattr(error.orig, "constraint_name", None),
+        )
+        if constraint_name == "uq_payment_requests_active_fingerprint":
+            async with factory() as session:
+                duplicate = await find_active_duplicate(
+                    session,
+                    treasury_id=row.treasury_id,
+                    value=row.fingerprint,
+                )
+            if duplicate is not None:
+                raise _duplicate_fingerprint(duplicate) from error
+            raise
+        if constraint_name != "uq_payment_requests_idempotency_key":
+            raise
         async with factory() as session:
             existing = await session.scalar(
                 select(PaymentRequest).where(
@@ -525,12 +546,7 @@ async def create_request(
                 )
             )
             if existing is None:
-                raise _fail(
-                    409,
-                    "DUPLICATE_FINGERPRINT",
-                    "Duplicate invoice",
-                    "An active request already uses this vendor, invoice number, amount and asset.",
-                ) from error
+                raise
             if existing.idempotency_payload_hash != payload_hash:
                 raise _fail(
                     409,
@@ -655,30 +671,20 @@ async def edit_request(
             row.current_revision += 1
             row.last_edited_by = member.user_id
             _hashes(row, vendor.normalized_ref, asset.address or b"")
+            assert row.fingerprint is not None
             row.terms_hash = (
                 keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
                 if row.terms is not None
                 else None
             )
-            duplicate = await session.scalar(
-                select(PaymentRequest.id)
-                .where(
-                    PaymentRequest.treasury_id == row.treasury_id,
-                    PaymentRequest.id != row.id,
-                    PaymentRequest.fingerprint == row.fingerprint,
-                    PaymentRequest.status.not_in(
-                        [status.value for status in TERMINAL_REQUEST_STATUSES]
-                    ),
-                )
-                .limit(1)
+            duplicate = await find_active_duplicate(
+                session,
+                treasury_id=row.treasury_id,
+                value=row.fingerprint,
+                exclude_request_id=row.id,
             )
             if duplicate is not None:
-                raise _fail(
-                    409,
-                    "DUPLICATE_FINGERPRINT",
-                    "Duplicate invoice",
-                    "An active request already uses this vendor, invoice number, amount and asset.",
-                )
+                raise _duplicate_fingerprint(duplicate)
             previous_status = row.status
             approval_invalidated = previous_status == RequestStatus.APPROVED.value
             await session.execute(

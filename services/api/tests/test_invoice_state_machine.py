@@ -11,6 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from treasurypilot_api.identity.models import OrganizationRole
+from treasurypilot_api.invoices.fingerprints import (
+    DuplicateAllowance,
+    DuplicateFingerprintConflict,
+)
 from treasurypilot_api.invoices.models import (
     CancelOnchainStatus,
     RequestStatus,
@@ -38,6 +42,11 @@ _USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000001")
 _OTHER_USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000002")
 _ORG_ID = uuid.UUID("00000000-0000-7000-8000-000000000010")
 _REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000020")
+_TREASURY_ID = uuid.UUID("00000000-0000-7000-8000-000000000040")
+_DUPLICATE_REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000021")
+_VENDOR_ID = uuid.UUID("00000000-0000-7000-8000-000000000030")
+_ASSET_ID = uuid.UUID("00000000-0000-7000-8000-000000000031")
+_ASSET_ADDRESS = bytes.fromhex("11" * 20)
 
 
 def _actor_for(rule: TransitionRule, *, creator_id: uuid.UUID = _USER_ID) -> TransitionActor:
@@ -258,11 +267,17 @@ def test_terminal_statuses_have_no_outgoing_transitions(terminal: RequestStatus)
 class _FakeRequest:
     id: uuid.UUID = _REQUEST_ID
     org_id: uuid.UUID = _ORG_ID
+    treasury_id: uuid.UUID = _TREASURY_ID
     status: str = RequestStatus.DRAFT.value
     cancel_onchain: str = CancelOnchainStatus.NOT_NEEDED.value
     version: int = 1
     created_by: uuid.UUID = _USER_ID
     last_edited_by: uuid.UUID | None = None
+    vendor_id: uuid.UUID = _VENDOR_ID
+    asset_id: uuid.UUID = _ASSET_ID
+    invoice_no: str = "INV-001"
+    amount: int = 1234
+    fingerprint: bytes | None = None
 
 
 @dataclass
@@ -271,6 +286,8 @@ class _FakeSession:
     events: list[object] = field(default_factory=list)
     has_approved_event: bool = False
     solo_mode: bool = False
+    duplicate_request_id: uuid.UUID | None = None
+    statements: list[object] = field(default_factory=list)
 
     async def __aenter__(self) -> _FakeSession:
         return self
@@ -279,11 +296,18 @@ class _FakeSession:
         return None
 
     async def scalar(self, statement: object, *_: object, **__: object) -> object:
+        self.statements.append(statement)
+        if "payment_requests.fingerprint =" in str(statement):
+            return self.duplicate_request_id
         if "request_status_events" in str(statement):
             return _REQUEST_ID if self.has_approved_event else None
         if "organizations" in str(statement):
             return self.solo_mode
         return self.request
+
+    async def execute(self, statement: object, *_: object, **__: object) -> _FakeResult:
+        self.statements.append(statement)
+        return _FakeResult(("vendor-reference", _ASSET_ADDRESS))
 
     def add(self, value: object) -> None:
         self.events.append(value)
@@ -318,6 +342,14 @@ class _FakeTransaction:
         return False
 
 
+@dataclass
+class _FakeResult:
+    row: tuple[str, bytes]
+
+    def one(self) -> tuple[str, bytes]:
+        return self.row
+
+
 class _FakeAudit:
     def __init__(self, *, fail: bool = False) -> None:
         self.entries: list[AuditEntry] = []
@@ -344,11 +376,13 @@ def _machine(
     session: _FakeSession,
     audit: _FakeAudit,
     guard: _FakePayOperationGuard | None = None,
+    duplicate_allowance: DuplicateAllowance | None = None,
 ) -> RequestStateMachine:
     return RequestStateMachine(
         lambda: session,  # type: ignore[arg-type]
         audit=audit,  # type: ignore[arg-type]
         pay_operation_guard=guard or _FakePayOperationGuard(),  # type: ignore[arg-type]
+        duplicate_allowance=duplicate_allowance,
     )
 
 
@@ -384,6 +418,77 @@ def test_transition_writes_status_event_and_audit_entry() -> None:
     assert audit.session is session
     assert audit.entries[0].action == TransitionAction.SUBMIT.value
     assert audit.entries[0].data["from"] == RequestStatus.DRAFT.value
+    assert session.request.fingerprint is not None
+    assert len(session.request.fingerprint) == 32
+
+
+def test_submit_recomputes_fingerprint_and_reports_existing_request_id() -> None:
+    session = _FakeSession(_FakeRequest(), duplicate_request_id=_DUPLICATE_REQUEST_ID)
+    actor = TransitionActor(
+        actor_type=StatusEventActorType.USER,
+        action=TransitionAction.SUBMIT,
+        actor_id=_USER_ID,
+        roles=frozenset({OrganizationRole.OPERATOR}),
+    )
+
+    with pytest.raises(DuplicateFingerprintConflict) as error:
+        asyncio.run(
+            _machine(session, _FakeAudit()).transition(
+                organization_id=_ORG_ID,
+                request_id=_REQUEST_ID,
+                expected_version=1,
+                target=RequestStatus.AWAITING_APPROVAL,
+                actor=actor,
+            )
+        )
+
+    assert error.value.code == "DUPLICATE_FINGERPRINT"
+    assert error.value.existing_request_id == _DUPLICATE_REQUEST_ID
+    assert session.request.status == RequestStatus.DRAFT.value
+    assert session.events == []
+    assert session.statements[1].__str__().lower().find("for update") >= 0
+
+
+class _AllowedDuplicate:
+    def __init__(self) -> None:
+        self.calls: list[tuple[uuid.UUID, bytes]] = []
+
+    async def allows(
+        self,
+        *,
+        session: AsyncSession,
+        request_id: uuid.UUID,
+        fingerprint: bytes,
+    ) -> bool:
+        self.calls.append((request_id, fingerprint))
+        return request_id == _REQUEST_ID
+
+
+def test_submit_honors_an_allow_duplicate_grant_for_this_request() -> None:
+    session = _FakeSession(_FakeRequest(), duplicate_request_id=_DUPLICATE_REQUEST_ID)
+    allowance = _AllowedDuplicate()
+    actor = TransitionActor(
+        actor_type=StatusEventActorType.USER,
+        action=TransitionAction.SUBMIT,
+        actor_id=_USER_ID,
+        roles=frozenset({OrganizationRole.OPERATOR}),
+    )
+
+    result = asyncio.run(
+        _machine(session, _FakeAudit(), duplicate_allowance=allowance).transition(
+            organization_id=_ORG_ID,
+            request_id=_REQUEST_ID,
+            expected_version=1,
+            target=RequestStatus.AWAITING_APPROVAL,
+            actor=actor,
+        )
+    )
+
+    assert result.status == RequestStatus.AWAITING_APPROVAL
+    assert session.request.status == RequestStatus.AWAITING_APPROVAL.value
+    assert len(allowance.calls) == 1
+    assert allowance.calls[0][0] == _REQUEST_ID
+    assert len(allowance.calls[0][1]) == 32
 
 
 def test_audit_failure_rolls_back_request_and_status_event() -> None:

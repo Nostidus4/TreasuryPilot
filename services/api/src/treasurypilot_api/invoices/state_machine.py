@@ -9,6 +9,11 @@ from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
+from treasurypilot_api.invoices.fingerprints import (
+    DenyDuplicateAllowance,
+    DuplicateAllowance,
+    assert_no_active_duplicate,
+)
 from treasurypilot_api.invoices.models import (
     CancelOnchainStatus,
     PaymentRequest,
@@ -372,10 +377,12 @@ class RequestStateMachine:
         *,
         audit: AuditAppender,
         pay_operation_guard: PayOperationGuard,
+        duplicate_allowance: DuplicateAllowance | None = None,
     ) -> None:
         self._sessions = sessions
         self._audit = audit
         self._pay_operation_guard = pay_operation_guard
+        self._duplicate_allowance = duplicate_allowance or DenyDuplicateAllowance()
 
     async def transition(
         self,
@@ -428,6 +435,13 @@ class RequestStateMachine:
                 solo_mode=solo_mode,
                 pay_operation_in_flight=pay_operation_in_flight,
             )
+
+            if actor.action == TransitionAction.SUBMIT:
+                await assert_no_active_duplicate(
+                    session,
+                    request,
+                    allowance=self._duplicate_allowance,
+                )
 
             if target == RequestStatus.CANCELLED:
                 approved_before = source == RequestStatus.APPROVED
