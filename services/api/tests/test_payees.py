@@ -427,7 +427,7 @@ def test_provider_error_blocks_registration() -> None:
         payee_id = next(iter(store.payees))
         registration = client.post(f"{PAYEES}/{payee_id}/registration-tx")
 
-    assert response.status_code == 422 and response.json()["code"] == "DATA_MISSING"
+    assert response.status_code == 503 and response.json()["code"] == "DATA_MISSING"
     assert store.payees[payee_id].status == "ScreeningFailed"
     assert registration.json()["code"] == "SCREENING_NOT_CLEAR"
     assert store.screenings.rows[-1].result == ScreeningResult.ERROR

@@ -674,8 +674,9 @@ async def propose_payee(
             extensions={"payeeId": str(payee.id), "status": updated.status},
         )
     if record.result != ScreeningResult.CLEAR:
+        # ERROR: the provider is unavailable, so the payee stays ScreeningFailed (fail closed).
         raise AuthFailure(
-            status=422,
+            status=503,
             code="DATA_MISSING",
             title="Screening could not complete",
             detail="The screening provider did not answer; the payee is blocked (fail closed).",
