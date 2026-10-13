@@ -294,6 +294,12 @@ class MandateVersion(Base):
     __table_args__ = (
         UniqueConstraint("treasury_id", "version", name="uq_mandate_versions_treasury_version"),
         UniqueConstraint("id", "org_id", name="uq_mandate_versions_id_org"),
+        Index(
+            "uq_mandate_versions_active",
+            "treasury_id",
+            unique=True,
+            postgresql_where=text("status = 'Active'::mandate_version_status"),
+        ),
         _treasury_fk("mandate_versions"),
         _governance_tx_fk("mandate_versions", "governance_tx_id"),
         CheckConstraint("version > 0", name="ck_mandate_versions_version"),
@@ -416,7 +422,9 @@ class Payee(VersionedMixin, Base):
             "treasury_id",
             "address",
             unique=True,
-            postgresql_where=text("status <> 'Deactivated'::payee_status"),
+            postgresql_where=text(
+                "status NOT IN ('Deactivated'::payee_status, 'ScreeningFailed'::payee_status)"
+            ),
         ),
     )
 
@@ -450,7 +458,7 @@ class Screening(Base):
             ["payee_id", "org_id"],
             ["payees.id", "payees.org_id"],
             name="fk_screenings_payee_org",
-            ondelete="CASCADE",
+            ondelete="SET NULL (payee_id)",
         ),
         CheckConstraint("octet_length(address) = 20", name="ck_screenings_address_length"),
         CheckConstraint("length(btrim(provider)) > 0", name="ck_screenings_provider"),
@@ -480,7 +488,7 @@ class MandateException(VersionedMixin, Base):
         _treasury_fk("exceptions"),
         _governance_tx_fk("exceptions", "governance_tx_id"),
         CheckConstraint("mandate_onchain_version > 0", name="ck_exceptions_mandate_version"),
-        CheckConstraint("amount >= 0", name="ck_exceptions_amount"),
+        CheckConstraint("amount > 0", name="ck_exceptions_amount"),
         CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_length"),
         CheckConstraint("version > 0", name="ck_exceptions_version"),
         Index("ix_exceptions_org_treasury", "org_id", "treasury_id"),
@@ -490,7 +498,8 @@ class MandateException(VersionedMixin, Base):
             "request_id",
             unique=True,
             postgresql_where=text(
-                "status IN ('Proposed'::exception_status, 'Granted'::exception_status)"
+                "status IN ('Requested'::exception_status, 'Proposed'::exception_status, "
+                "'Granted'::exception_status)"
             ),
         ),
     )

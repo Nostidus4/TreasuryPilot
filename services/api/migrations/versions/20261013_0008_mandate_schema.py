@@ -296,6 +296,13 @@ def upgrade() -> None:
     op.create_index(
         "ix_mandate_versions_org_treasury", "mandate_versions", ["org_id", "treasury_id"]
     )
+    op.create_index(
+        "uq_mandate_versions_active",
+        "mandate_versions",
+        ["treasury_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'Active'::mandate_version_status"),
+    )
 
     op.create_table(
         "mandate_status_events",
@@ -380,7 +387,9 @@ def upgrade() -> None:
         "payees",
         ["treasury_id", "address"],
         unique=True,
-        postgresql_where=sa.text("status <> 'Deactivated'::payee_status"),
+        postgresql_where=sa.text(
+            "status NOT IN ('Deactivated'::payee_status, 'ScreeningFailed'::payee_status)"
+        ),
     )
 
     op.create_table(
@@ -402,7 +411,8 @@ def upgrade() -> None:
             ["payee_id", "org_id"],
             ["payees.id", "payees.org_id"],
             name="fk_screenings_payee_org",
-            ondelete="CASCADE",
+            # Keeps the BR-085 evidence; org_id stays set (PG15+ column list).
+            ondelete="SET NULL (payee_id)",
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -427,7 +437,7 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=True),
         *_audit_columns("exceptions"),
         sa.CheckConstraint("mandate_onchain_version > 0", name="ck_exceptions_mandate_version"),
-        sa.CheckConstraint("amount >= 0", name="ck_exceptions_amount"),
+        sa.CheckConstraint("amount > 0", name="ck_exceptions_amount"),
         sa.CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_length"),
         _treasury_fk("exceptions"),
         _governance_tx_fk("exceptions", "governance_tx_id"),
@@ -442,7 +452,8 @@ def upgrade() -> None:
         ["request_id"],
         unique=True,
         postgresql_where=sa.text(
-            "status IN ('Proposed'::exception_status, 'Granted'::exception_status)"
+            "status IN ('Requested'::exception_status, 'Proposed'::exception_status, "
+            "'Granted'::exception_status)"
         ),
     )
 
@@ -641,12 +652,18 @@ def upgrade() -> None:
         FOR EACH STATEMENT EXECUTE FUNCTION guard_mandate_version()
         """
     )
-    # Row-level so a cascade that deletes no events (discarding a Draft) is not rejected.
+    # Row-level so discarding a Draft can cascade to its events: the cascade runs after the
+    # parent row is gone, and the version guard only lets a Draft be deleted.
     op.execute(
         """
         CREATE FUNCTION reject_mandate_status_event_mutation() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
+            IF TG_OP = 'DELETE' AND NOT EXISTS (
+                SELECT 1 FROM mandate_versions WHERE id = OLD.mandate_version_id
+            ) THEN
+                RETURN OLD;
+            END IF;
             RAISE EXCEPTION 'mandate_status_events is append-only' USING ERRCODE = '55000';
         END;
         $$

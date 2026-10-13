@@ -134,7 +134,7 @@ async def _verify_behaviour(database_url: str) -> None:
         await _expect_rejected(
             engine, f"DELETE FROM mandate_versions WHERE id = '{mandate}'", DBAPIError
         )
-        # Only a Draft may be discarded.
+        # Only a Draft may be discarded, together with its creation event.
         async with engine.begin() as connection:
             await connection.execute(
                 text(
@@ -144,7 +144,24 @@ async def _verify_behaviour(database_url: str) -> None:
                     f"{HASH}, now(), now() + interval '30 days', '{USER}')"
                 )
             )
+            await connection.execute(
+                text(
+                    "INSERT INTO mandate_status_events (id, org_id, mandate_version_id, "
+                    "to_status) VALUES ('00000000-0000-7000-8000-000000000063', "
+                    f"'{ORG}', '00000000-0000-7000-8000-000000000062', 'Draft')"
+                )
+            )
             await connection.execute(text("DELETE FROM mandate_versions WHERE version = 2"))
+        # At most one Active version per treasury.
+        await _expect_rejected(
+            engine,
+            "INSERT INTO mandate_versions (id, org_id, treasury_id, version, status, "
+            "onchain_version, activated_at, config, config_hash, valid_from, expires_at, "
+            f"created_by) VALUES ('00000000-0000-7000-8000-000000000064', '{ORG}', "
+            f"'{TREASURY}', 3, 'Active', 2, now(), '{{}}', {HASH}, now(), "
+            f"now() + interval '30 days', '{USER}')",
+            IntegrityError,
+        )
         await _expect_rejected(engine, "TRUNCATE mandate_versions CASCADE", DBAPIError)
         await _expect_rejected(
             engine, "UPDATE mandate_status_events SET to_status = 'Active'", DBAPIError
