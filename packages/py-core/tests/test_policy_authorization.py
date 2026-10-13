@@ -507,3 +507,106 @@ def test_unparseable_input_fails_with_data_missing() -> None:
 
     assert _failing(authorization_checks(_plan(), naive)) == [C.DATA_MISSING]
     assert C.DATA_MISSING in _failing(authorization_checks(_plan(), bad_amount))
+
+
+def _policy_state(**update: Any):
+    from treasurypilot_core.policy import Limits, PolicyState
+
+    fields = {
+        "pay_limits": Limits(per_request=2_000, daily=10_000),
+        "refill_limits": Limits(per_request=2_500, daily=12_000),
+        "supply_limits": Limits(per_request=1_000, daily=10_000),
+        "balances": {SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(1_600)},
+        "buffers": {SAFE_T.lower(): BaseUnits(1_000), O1.lower(): BaseUnits(10)},
+        "targets": {O1.lower(): BaseUnits(150)},
+        "used_today": {"PAY": BaseUnits(0), "REFILL": BaseUnits(0), "SUPPLY": BaseUnits(0)},
+        "available_for_supply": BaseUnits(2_000),
+        "payment_reserve": BaseUnits(500),
+    }
+    return PolicyState.model_validate(fields | update)
+
+
+def test_validate_plan_projects_refill_before_pay() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    ctx = _ctx(
+        policy_state=_policy_state(
+            balances={SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(1_500)}
+        )
+    )
+    result = validate_plan(_plan(refill=100), ctx)
+    assert result.decision == "ALLOW", result.codes
+    assert result.stage == "PLAN"
+
+
+def test_validate_plan_fails_closed_without_policy_state() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    result = validate_plan(_plan(), _ctx())
+    assert result.decision == "BLOCK"
+    assert C.DATA_MISSING in result.codes
+
+
+def test_valid_exception_only_lifts_per_request_limit() -> None:
+    from treasurypilot_core.policy import ExceptionView, validate_plan
+
+    state = _policy_state(
+        pay_limits={"per_request": 1_000, "daily": 10_000},
+        exception=ExceptionView(
+            amount=BaseUnits(1_500), payee=PAYEE, expiry=NOW + 1, mandate_version=1, used=False
+        ),
+    )
+    result = validate_plan(_plan(), _ctx(policy_state=state))
+    assert result.decision == "ALLOW", result.codes
+    assert C.OVER_PER_REQUEST_LIMIT not in result.codes
+
+
+def test_supply_cannot_reduce_payment_reserve() -> None:
+    from treasurypilot_core.policy import Action, PlanStep, validate_step
+
+    plan = _plan().model_copy(
+        update={
+            "steps": [
+                PlanStep(
+                    seq=0,
+                    step_id=b"\x0c" * 32,
+                    action=Action.SUPPLY,
+                    from_wallet=SAFE_T,
+                    to=SAFE_T,
+                    asset=ASSET,
+                    amount=BaseUnits(4_600),
+                )
+            ]
+        }
+    )
+    state = _policy_state(balances={SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(1_500)})
+    result = validate_step(plan, 0, _ctx(policy_state=state))
+    assert C.RESERVE_BREACH in result.codes
+
+
+def test_late_payment_is_allowed_with_deadline_warning() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    request = _request(deadline=NOW - 1)
+    approval = _approval(_typed(request))
+    result = validate_plan(
+        _plan(), _ctx(request=request, approval=approval, policy_state=_policy_state())
+    )
+    assert result.decision == "ALLOW"
+    assert result.warnings == [C.DEADLINE_MISSED]
+
+
+def test_invalid_exception_does_not_mask_daily_limit_failure() -> None:
+    from treasurypilot_core.policy import ExceptionView, validate_plan
+
+    state = _policy_state(
+        pay_limits={"per_request": 1_000, "daily": 1_000},
+        used_today={"PAY": BaseUnits(1), "REFILL": BaseUnits(0), "SUPPLY": BaseUnits(0)},
+        exception=ExceptionView(
+            amount=BaseUnits(9_999), payee=PAYEE, expiry=NOW - 1, mandate_version=0, used=True
+        ),
+    )
+    result = validate_plan(_plan(), _ctx(policy_state=state))
+    assert C.EXCEPTION_INVALID in result.codes
+    assert C.OVER_DAILY_LIMIT in result.codes
+    assert result.decision == "BLOCK"
