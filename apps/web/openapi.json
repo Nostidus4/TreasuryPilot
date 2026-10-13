@@ -6,8 +6,7 @@
           "country": {
             "anyOf": [
               {
-                "maxLength": 2,
-                "minLength": 2,
+                "pattern": "^[A-Za-z]{2}$",
                 "type": "string"
               },
               {

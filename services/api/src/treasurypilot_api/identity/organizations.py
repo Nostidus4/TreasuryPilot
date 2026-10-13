@@ -4,10 +4,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Request, Response
 from pydantic import Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel, _authenticated
@@ -17,11 +18,10 @@ from treasurypilot_api.identity.models import (
     MembershipStatus,
     Organization,
     OrganizationRole,
-    User,
     WalletLink,
     uuid7,
 )
-from treasurypilot_api.treasury.models import Treasury
+from treasurypilot_api.treasury.models import Treasury, TreasuryStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,14 +110,6 @@ class SqlAlchemyOrganizationRepository:
         display_tz: str,
     ) -> OrganizationRecord:
         async with self._sessions() as session, session.begin():
-            user_exists = await session.scalar(select(User.id).where(User.id == user_id))
-            if user_exists is None:
-                raise AuthFailure(
-                    status=401,
-                    code="AUTH_REQUIRED",
-                    title="Authentication required",
-                    detail="A valid session is required.",
-                )
             organization = Organization(
                 id=uuid7(),
                 name=name,
@@ -146,45 +138,46 @@ class SqlAlchemyOrganizationRepository:
     async def get_for_member(
         self, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> OrganizationOverview:
+        active_member = Membership.status == MembershipStatus.ACTIVE
+        # One statement so the membership check and every checklist flag come
+        # from the same snapshot.
+        statement = select(
+            Organization,
+            select(func.count(Membership.id))
+            .where(Membership.org_id == organization_id, active_member)
+            .scalar_subquery(),
+            exists().where(
+                WalletLink.user_id == Membership.user_id,
+                Membership.org_id == organization_id,
+                active_member,
+                WalletLink.unlinked_at.is_(None),
+            ),
+            exists().where(Treasury.org_id == organization_id),
+            exists().where(
+                Treasury.org_id == organization_id,
+                Treasury.module_address.is_not(None),
+                Treasury.status == TreasuryStatus.READY,
+            ),
+        ).where(
+            Organization.id == organization_id,
+            exists().where(
+                Membership.org_id == organization_id,
+                Membership.user_id == user_id,
+                active_member,
+            ),
+        )
         async with self._sessions() as session:
-            member = await session.scalar(
-                select(Membership.id).where(
-                    Membership.org_id == organization_id,
-                    Membership.user_id == user_id,
-                    Membership.status == MembershipStatus.ACTIVE,
-                )
-            )
-            if member is None:
+            row = (await session.execute(statement)).one_or_none()
+            if row is None:
                 raise OrganizationNotFound
-            organization = await session.get(Organization, organization_id)
-            if organization is None:
-                raise OrganizationNotFound
-            member_count = await session.scalar(
-                select(func.count(Membership.id)).where(
-                    Membership.org_id == organization_id,
-                    Membership.status == MembershipStatus.ACTIVE,
-                )
-            )
-            wallet_linked = await session.scalar(
-                select(WalletLink.id)
-                .join(Membership, Membership.user_id == WalletLink.user_id)
-                .where(
-                    Membership.org_id == organization_id,
-                    Membership.status == MembershipStatus.ACTIVE,
-                    WalletLink.unlinked_at.is_(None),
-                )
-                .limit(1)
-            )
-            treasury = await session.scalar(
-                select(Treasury).where(Treasury.org_id == organization_id).limit(1)
-            )
+            organization, member_count, wallet_linked, treasury_created, module_enabled = row
             return OrganizationOverview(
-                organization=_record(organization),
+                organization=_record(cast(Organization, organization)),
                 checklist=OnboardingChecklist(
-                    member_count=int(member_count or 0),
-                    wallet_linked=wallet_linked is not None,
-                    treasury_created=treasury is not None,
-                    module_enabled=treasury is not None and treasury.module_address is not None,
+                    member_count=cast(int | None, member_count) or 0,
+                    wallet_linked=bool(wallet_linked),
+                    treasury_created=bool(treasury_created),
+                    module_enabled=bool(module_enabled),
                 ),
             )
 
@@ -209,6 +202,8 @@ class SqlAlchemyOrganizationRepository:
             if membership is None:
                 raise OrganizationNotFound
             roles = set(membership.roles)
+            # Owner is granted only through role assignment (#107), never at org
+            # creation: it means the user's linked wallet owns Safe T (M01-D5, M01-D7).
             if solo_mode is not None and OrganizationRole.OWNER.value not in roles:
                 raise OrganizationPermissionDenied
             if auto_match is not None and not roles.intersection(
@@ -241,22 +236,13 @@ class OrganizationView(ApiModel):
 
     @classmethod
     def from_record(cls, organization: OrganizationRecord) -> OrganizationView:
-        return cls(
-            id=organization.id,
-            name=organization.name,
-            legal_name=organization.legal_name,
-            country=organization.country,
-            display_tz=organization.display_tz,
-            solo_mode=organization.solo_mode,
-            auto_match=organization.auto_match,
-            created_at=organization.created_at,
-        )
+        return cls.model_validate(organization, from_attributes=True)
 
 
 class CreateOrganizationRequest(ApiModel):
     name: str = Field(min_length=1, max_length=200)
     legal_name: str | None = Field(default=None, max_length=300)
-    country: str | None = Field(default=None, min_length=2, max_length=2)
+    country: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
     display_tz: str = Field(default="UTC", min_length=1, max_length=64)
 
     @field_validator("name", "display_tz")
@@ -265,6 +251,15 @@ class CreateOrganizationRequest(ApiModel):
         if not value.strip():
             raise ValueError("must not be blank")
         return value.strip()
+
+    @field_validator("display_tz")
+    @classmethod
+    def known_time_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            raise ValueError("must be an IANA time zone") from None
+        return value
 
     @field_validator("legal_name")
     @classmethod
@@ -308,7 +303,7 @@ def _repository(request: Request) -> OrganizationRepository:
     if repository is None:
         raise AuthFailure(
             status=503,
-            code="AUTH_UNAVAILABLE",
+            code="ORG_UNAVAILABLE",
             title="Organization service unavailable",
             detail="Organization storage is not configured.",
         )
@@ -370,12 +365,7 @@ async def get_organization(
         raise _not_found() from None
     return OrganizationDetailsResponse(
         org=OrganizationView.from_record(overview.organization),
-        checklist=OrganizationChecklist(
-            member_count=overview.checklist.member_count,
-            wallet_linked=overview.checklist.wallet_linked,
-            treasury_created=overview.checklist.treasury_created,
-            module_enabled=overview.checklist.module_enabled,
-        ),
+        checklist=OrganizationChecklist.model_validate(overview.checklist, from_attributes=True),
     )
 
 
@@ -385,6 +375,7 @@ async def update_organization_settings(
     payload: OrganizationSettingsRequest,
     request: Request,
 ) -> OrganizationResponse:
+    access = await _authenticated(request, require_csrf=True)
     if payload.solo_mode is None and payload.auto_match is None:
         raise AuthFailure(
             status=422,
@@ -392,7 +383,6 @@ async def update_organization_settings(
             title="No settings provided",
             detail="At least one supported setting must be provided.",
         )
-    access = await _authenticated(request, require_csrf=True)
     try:
         organization = await _repository(request).update_settings(
             organization_id=organization_id,
