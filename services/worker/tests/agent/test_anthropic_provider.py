@@ -19,6 +19,7 @@ from treasurypilot_worker.agent import (
     AiTask,
     AiTimeout,
     AiUnavailable,
+    InMemoryAiCallLog,
     InMemoryBudgetLedger,
     Message,
     PromptTemplate,
@@ -234,7 +235,10 @@ def test_adapter_deadline_holds_against_a_real_slow_provider(
     tasks[AiTask.EXPLAIN] = tasks[AiTask.EXPLAIN].model_copy(update={"timeout_s": 0.3})
     config = repo_config.model_copy(update={"tasks": tasks})
     adapter = AiAdapter(
-        provider=_provider(state, url), config=config, ledger=InMemoryBudgetLedger()
+        provider=_provider(state, url),
+        config=config,
+        ledger=InMemoryBudgetLedger(),
+        call_log=InMemoryAiCallLog(),
     )
 
     started = time.monotonic()
