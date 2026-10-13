@@ -1,7 +1,7 @@
 """track on-chain owner capability freshness
 
-Revision ID: 20261013_0004
-Revises: 20261013_0003
+Revision ID: 20261013_0008
+Revises: 20261013_0007
 Create Date: 2026-10-13 00:15:00
 
 """
@@ -11,8 +11,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261013_0004"
-down_revision: str | None = "20261013_0003"
+revision: str = "20261013_0008"
+down_revision: str | None = "20261013_0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

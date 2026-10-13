@@ -21,6 +21,7 @@ from treasurypilot_api.identity.models import (
     WalletLink,
     uuid7,
 )
+from treasurypilot_api.identity.wallets import owner_not_onchain
 from treasurypilot_api.treasury.models import Treasury, TreasuryStatus
 
 
@@ -395,17 +396,17 @@ async def update_organization_settings(
         )
     try:
         if getattr(request.app.state, "wallet_repository", None) is not None:
+            # Check on-chain only when Owner authority is what allows this change: solo
+            # mode always, auto_match only for an Owner who is not also an OrgAdmin. An
+            # admin's auto_match change must not depend on RPC availability.
             wallet_service = _wallet_service(request)
-            if payload.solo_mode is not None:
-                await wallet_service.require_onchain_owner(
-                    org_id=organization_id,
-                    user_id=_current_user(access),
-                )
-            else:
-                await wallet_service.refresh_org_owner_status(
-                    org_id=organization_id,
-                    user_id=_current_user(access),
-                )
+            user_id = _current_user(access)
+            roles = await wallet_service.membership_roles(org_id=organization_id, user_id=user_id)
+            needs_owner = payload.solo_mode is not None or (
+                roles is not None and OrganizationRole.ORG_ADMIN.value not in roles
+            )
+            if needs_owner:
+                await wallet_service.require_onchain_owner(org_id=organization_id, user_id=user_id)
         organization = await _repository(request).update_settings(
             organization_id=organization_id,
             user_id=_current_user(access),
@@ -415,12 +416,7 @@ async def update_organization_settings(
     except OrganizationNotFound:
         raise _not_found() from None
     except OrganizationOwnerNotOnchain:
-        raise AuthFailure(
-            status=403,
-            code="OWNER_NOT_ONCHAIN",
-            title="On-chain owner required",
-            detail="Your linked wallet is not an on-chain owner of Safe T.",
-        ) from None
+        raise owner_not_onchain() from None
     except OrganizationPermissionDenied:
         raise _forbidden() from None
     return OrganizationResponse(org=OrganizationView.from_record(organization))
