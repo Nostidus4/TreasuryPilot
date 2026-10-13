@@ -41,6 +41,7 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.identity.webauthn import WebAuthnMfaService
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
@@ -75,6 +76,7 @@ def _auth_service(
     RedisRateLimiter | None,
     OrganizationRepository | None,
     MfaService | None,
+    WebAuthnMfaService | None,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -131,6 +133,21 @@ def _auth_service(
             api_key=settings.resend_api_key.get_secret_value(),
             from_email=settings.resend_from_email,
         )
+    mfa_service = (
+        MfaService(mfa_sessions, secret, rate_limiter) if mfa_sessions is not None else None
+    )
+    rp_id = settings.webauthn_rp_id or ("localhost" if local else None)
+    origin = settings.webauthn_origin or ("http://localhost:5173" if local else None)
+    if (rp_id is None) != (origin is None):
+        raise ValueError("TP_WEBAUTHN_RP_ID and TP_WEBAUTHN_ORIGIN must be configured together")
+    webauthn_service = (
+        WebAuthnMfaService(mfa_sessions, mfa_service, rp_id=rp_id, origin=origin)
+        if mfa_sessions is not None
+        and mfa_service is not None
+        and rp_id is not None
+        and origin is not None
+        else None
+    )
     return (
         AuthService(
             repository=repository,
@@ -143,7 +160,8 @@ def _auth_service(
         engine,
         redis_limiter,
         organization_repository,
-        MfaService(mfa_sessions, secret, rate_limiter) if mfa_sessions is not None else None,
+        mfa_service,
+        webauthn_service,
     )
 
 
@@ -153,6 +171,7 @@ def create_app(
     auth_service: AuthService | None = None,
     organization_repository: OrganizationRepository | None = None,
     mfa_service: MfaService | None = None,
+    webauthn_service: WebAuthnMfaService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -164,13 +183,20 @@ def create_app(
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine, redis_limiter, default_organizations, default_mfa = _auth_service(
-            settings
-        )
+        (
+            auth_service,
+            engine,
+            redis_limiter,
+            default_organizations,
+            default_mfa,
+            default_webauthn,
+        ) = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
         if mfa_service is None:
             mfa_service = default_mfa
+        if webauthn_service is None:
+            webauthn_service = default_webauthn
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -213,6 +239,7 @@ def create_app(
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
     app.state.mfa_service = mfa_service
+    app.state.webauthn_service = webauthn_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

@@ -157,6 +157,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/mfa/webauthn/authentication/options': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Begin Webauthn Authentication */
+    post: operations['begin_webauthn_authentication_v1_me_mfa_webauthn_authentication_options_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/mfa/webauthn/authentication/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Webauthn Authentication */
+    post: operations['complete_webauthn_authentication_v1_me_mfa_webauthn_authentication_verify_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/mfa/webauthn/registration/options': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Begin Webauthn Registration */
+    post: operations['begin_webauthn_registration_v1_me_mfa_webauthn_registration_options_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/mfa/webauthn/registration/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Webauthn Registration */
+    post: operations['complete_webauthn_registration_v1_me_mfa_webauthn_registration_verify_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs': {
     parameters: {
       query?: never;
@@ -399,6 +467,30 @@ export interface components {
        */
       linkedAt: string;
     };
+    /** WebAuthnChallengeResponse */
+    WebAuthnChallengeResponse: {
+      /**
+       * Challengeid
+       * Format: uuid
+       */
+      challengeId: string;
+      /** Options */
+      options: {
+        [key: string]: unknown;
+      };
+    };
+    /** WebAuthnVerifyRequest */
+    WebAuthnVerifyRequest: {
+      /**
+       * Challengeid
+       * Format: uuid
+       */
+      challengeId: string;
+      /** Credential */
+      credential: {
+        [key: string]: unknown;
+      };
+    };
   };
   responses: never;
   parameters: never;
@@ -632,6 +724,110 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TotpEnrollment'];
+        };
+      };
+    };
+  };
+  begin_webauthn_authentication_v1_me_mfa_webauthn_authentication_options_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebAuthnChallengeResponse'];
+        };
+      };
+    };
+  };
+  complete_webauthn_authentication_v1_me_mfa_webauthn_authentication_verify_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebAuthnVerifyRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StepUpResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  begin_webauthn_registration_v1_me_mfa_webauthn_registration_options_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebAuthnChallengeResponse'];
+        };
+      };
+    };
+  };
+  complete_webauthn_registration_v1_me_mfa_webauthn_registration_verify_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebAuthnVerifyRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

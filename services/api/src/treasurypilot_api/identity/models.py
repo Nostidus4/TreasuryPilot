@@ -118,6 +118,9 @@ class MfaTotp(Base):
     encrypted_secret: Mapped[bytes | None] = mapped_column(LargeBinary())
     pending_secret: Mapped[bytes | None] = mapped_column(LargeBinary())
     pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pending_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="SET NULL")
+    )
     last_counter: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=-1, server_default="-1"
     )
@@ -133,6 +136,40 @@ class MfaRecoveryCode(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     code_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)
+
+
+class MfaWebAuthnCredential(Base):
+    __tablename__ = "mfa_webauthn_credentials"
+    __table_args__ = (Index("ix_mfa_webauthn_credentials_user_id", "user_id"),)
+
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary(1024), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    public_key: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
+    sign_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class MfaWebAuthnChallenge(Base):
+    __tablename__ = "mfa_webauthn_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('registration', 'authentication')", name="ck_mfa_webauthn_challenge_kind"
+        ),
+        Index("ix_mfa_webauthn_challenges_user_session", "user_id", "session_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    challenge: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MagicLink(Base):

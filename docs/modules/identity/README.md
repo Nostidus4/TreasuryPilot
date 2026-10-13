@@ -99,11 +99,13 @@ IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 
 
 ### IDN-L01 foundation (partial)
 
-The API exposes POST `/v1/me/mfa/totp/enrollment`, POST
-`/v1/me/mfa/totp/confirm`, and POST `/v1/me/mfa/step-up`. All three require
-an authenticated session and CSRF token. Enrollment presents the TOTP seed once,
+The API exposes TOTP enrollment/confirmation and step-up under
+`/v1/me/mfa/`, plus WebAuthn registration and authentication options/verification
+under `/v1/me/mfa/webauthn/`. All mutations require an authenticated session
+and CSRF token. TOTP enrollment presents the seed once,
 expires after ten minutes, and becomes active only after a valid code. Confirmation
-returns ten one-use recovery codes once; only keyed hashes are stored. TOTP seeds
+is bound to the initiating session and returns ten one-use recovery codes once;
+only keyed hashes are stored. TOTP seeds
 are encrypted at rest with a key derived from `TP_SESSION_SECRET`; rotating that
 secret requires an MFA seed migration or reenrollment plan. Verification permits
 one adjacent 30-second time step for clock drift and persists the last accepted
@@ -112,9 +114,17 @@ the limiter fails closed. A successful TOTP or recovery verification marks only
 the current session as stepped up for five minutes. The
 `require_recent_mfa` FastAPI dependency is the guard for sensitive handlers.
 
-IDN-L01 remains open: WebAuthn enrollment and attaching that guard to approve,
-exception and mandate edit handlers are still required. Those handlers do not
-exist on `main` yet.
+WebAuthn uses the `webauthn` library for attestation and assertion validation,
+requiring user verification, the stored challenge, exact configured origin and
+RP ID. Challenges expire after five minutes, are bound to the current user and
+session, and only one outstanding challenge per session is kept. Each enrolled
+credential belongs to one user; assertion counters are updated under a row lock.
+Adding a new factor to an account that already has one requires a fresh step-up.
+Configure `TP_WEBAUTHN_RP_ID` and `TP_WEBAUTHN_ORIGIN` together in deployed
+environments; localhost defaults apply only to the local environment.
+
+IDN-L01 remains open: attaching the guard to approve, exception and mandate edit
+handlers is still required. Those handlers do not exist on `main` yet.
 
 ## 14. Decisions
 

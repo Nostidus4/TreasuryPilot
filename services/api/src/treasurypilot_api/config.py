@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = "tp_session"
     csrf_cookie_name: str = "tp_csrf"
     csrf_header_name: str = "X-CSRF-Token"
+    webauthn_rp_id: str | None = None
+    webauthn_origin: str | None = None
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"
 

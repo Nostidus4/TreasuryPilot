@@ -33,7 +33,7 @@ def test_totp_matches_rfc6238_sha1_and_rejects_replay_or_bad_format() -> None:
 
 class _MfaStub(MfaService):
     async def begin_enrollment(
-        self, user_id: uuid.UUID, now: datetime, issuer: str
+        self, user_id: uuid.UUID, session_id: uuid.UUID, now: datetime, issuer: str
     ) -> tuple[str, str]:
         return "SECRET", "otpauth://totp/test"
 
@@ -110,6 +110,7 @@ async def _exercise_mfa(database_url: str) -> None:
     try:
         async with sessions() as db, db.begin():
             db.add(User(id=user_id, email=f"{user_id}@example.test"))
+            await db.flush()
             db.add(
                 Session(
                     id=session_id,
@@ -124,11 +125,13 @@ async def _exercise_mfa(database_url: str) -> None:
             )
         with pytest.raises(AuthFailure, match="MFA_STEP_UP_REQUIRED"):
             await service.require_fresh_step_up(user_id, session_id, clock.value)
-        secret_text, uri = await service.begin_enrollment(user_id, clock.value, "TreasuryPilot")
+        secret_text, uri = await service.begin_enrollment(
+            user_id, session_id, clock.value, "TreasuryPilot"
+        )
         assert secret_text in uri
         secret = base64.b32decode(secret_text + "=" * (-len(secret_text) % 8))
         code = totp_at(secret, int(clock.value.timestamp()) // 30)
-        recovery_codes = await service.confirm_enrollment(user_id, code, clock.value)
+        recovery_codes = await service.confirm_enrollment(user_id, session_id, code, clock.value)
         assert len(recovery_codes) == 10
         with pytest.raises(AuthFailure, match="MFA_CODE_INVALID"):
             await service.verify_step_up(user_id, session_id, code, clock.value)

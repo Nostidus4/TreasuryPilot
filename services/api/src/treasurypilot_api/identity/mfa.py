@@ -19,7 +19,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import MfaRecoveryCode, MfaTotp, Session
+from treasurypilot_api.identity.models import (
+    MfaRecoveryCode,
+    MfaTotp,
+    MfaWebAuthnCredential,
+    Session,
+)
 from treasurypilot_api.identity.rate_limit import RateLimiter, RateLimiterUnavailable
 
 TOTP_PERIOD = 30
@@ -70,11 +75,11 @@ class MfaService:
         self._cipher = Fernet(key)
         self._recovery_pepper = hmac.digest(secret, b"treasurypilot/mfa/recovery/v1", "sha256")
 
-    async def _limit(self, user_id: uuid.UUID) -> None:
+    async def limit_attempt(self, user_id: uuid.UUID, *, scope: str = "verify") -> None:
         key = hmac.digest(self._recovery_pepper, user_id.bytes, "sha256").hex()
         try:
             result = await self._limiter.hit(
-                f"mfa:verify:{key}", limit=MFA_ATTEMPT_LIMIT, window=MFA_ATTEMPT_WINDOW
+                f"mfa:{scope}:{key}", limit=MFA_ATTEMPT_LIMIT, window=MFA_ATTEMPT_WINDOW
             )
         except RateLimiterUnavailable:
             raise _failure(
@@ -93,8 +98,16 @@ class MfaService:
         return hmac.digest(self._recovery_pepper, code.encode("ascii"), "sha256")
 
     async def begin_enrollment(
-        self, user_id: uuid.UUID, now: datetime, issuer: str
+        self, user_id: uuid.UUID, session_id: uuid.UUID, now: datetime, issuer: str
     ) -> tuple[str, str]:
+        async with self._sessions() as db:
+            existing_webauthn = await db.scalar(
+                select(MfaWebAuthnCredential.credential_id)
+                .where(MfaWebAuthnCredential.user_id == user_id)
+                .limit(1)
+            )
+        if existing_webauthn is not None:
+            await self.require_fresh_step_up(user_id, session_id, now)
         raw_secret = secrets.token_bytes(20)
         encoded_secret = base64.b32encode(raw_secret).decode("ascii").rstrip("=")
         async with self._sessions() as db, db.begin():
@@ -108,6 +121,7 @@ class MfaService:
                 db.add(record)
             record.pending_secret = self._cipher.encrypt(raw_secret)
             record.pending_expires_at = now + ENROLLMENT_LIFETIME
+            record.pending_session_id = session_id
         uri = (
             f"otpauth://totp/{quote(issuer)}:{user_id}"
             f"?secret={encoded_secret}&issuer={quote(issuer)}"
@@ -115,8 +129,10 @@ class MfaService:
         )
         return encoded_secret, uri
 
-    async def confirm_enrollment(self, user_id: uuid.UUID, code: str, now: datetime) -> list[str]:
-        await self._limit(user_id)
+    async def confirm_enrollment(
+        self, user_id: uuid.UUID, session_id: uuid.UUID, code: str, now: datetime
+    ) -> list[str]:
+        await self.limit_attempt(user_id)
         async with self._sessions() as db, db.begin():
             record = await db.scalar(
                 select(MfaTotp).where(MfaTotp.user_id == user_id).with_for_update()
@@ -126,9 +142,33 @@ class MfaService:
                 or record.encrypted_secret is not None
                 or record.pending_secret is None
                 or record.pending_expires_at is None
+                or record.pending_session_id != session_id
                 or now >= record.pending_expires_at
             ):
                 raise _failure("MFA_ENROLLMENT_EXPIRED", "Start TOTP enrollment again.")
+            session = await db.scalar(
+                select(Session)
+                .where(
+                    Session.id == session_id,
+                    Session.user_id == user_id,
+                    Session.revoked_at.is_(None),
+                    Session.expires_at > now,
+                )
+                .with_for_update()
+            )
+            if session is None:
+                raise _failure("MFA_ENROLLMENT_EXPIRED", "Start TOTP enrollment again.")
+            existing_webauthn = await db.scalar(
+                select(MfaWebAuthnCredential.credential_id)
+                .where(MfaWebAuthnCredential.user_id == user_id)
+                .limit(1)
+            )
+            if existing_webauthn is not None and (
+                session.step_up_at is None
+                or session.step_up_at > now
+                or now - session.step_up_at >= STEP_UP_LIFETIME
+            ):
+                raise _failure("MFA_STEP_UP_REQUIRED", "Complete a fresh second-factor challenge.")
             try:
                 secret = self._cipher.decrypt(record.pending_secret)
             except InvalidToken:
@@ -142,6 +182,7 @@ class MfaService:
             record.encrypted_secret = record.pending_secret
             record.pending_secret = None
             record.pending_expires_at = None
+            record.pending_session_id = None
             record.last_counter = counter
             for recovery_code in recovery_codes:
                 db.add(
@@ -152,7 +193,7 @@ class MfaService:
     async def verify_step_up(
         self, user_id: uuid.UUID, session_id: uuid.UUID, code: str, now: datetime
     ) -> datetime:
-        await self._limit(user_id)
+        await self.limit_attempt(user_id)
         async with self._sessions() as db, db.begin():
             record = await db.scalar(
                 select(MfaTotp).where(MfaTotp.user_id == user_id).with_for_update()

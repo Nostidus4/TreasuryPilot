@@ -454,6 +454,40 @@
         "required": ["address", "chainFamily", "isContract", "linkedAt"],
         "title": "WalletView",
         "type": "object"
+      },
+      "WebAuthnChallengeResponse": {
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "title": "Challengeid",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          }
+        },
+        "required": ["challengeId", "options"],
+        "title": "WebAuthnChallengeResponse",
+        "type": "object"
+      },
+      "WebAuthnVerifyRequest": {
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "title": "Challengeid",
+            "type": "string"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          }
+        },
+        "required": ["challengeId", "credential"],
+        "title": "WebAuthnVerifyRequest",
+        "type": "object"
       }
     }
   },
@@ -698,6 +732,115 @@
           }
         },
         "summary": "Begin Totp Enrollment",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/webauthn/authentication/options": {
+      "post": {
+        "operationId": "begin_webauthn_authentication_v1_me_mfa_webauthn_authentication_options_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Begin Webauthn Authentication",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/webauthn/authentication/verify": {
+      "post": {
+        "operationId": "complete_webauthn_authentication_v1_me_mfa_webauthn_authentication_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Webauthn Authentication",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/webauthn/registration/options": {
+      "post": {
+        "operationId": "begin_webauthn_registration_v1_me_mfa_webauthn_registration_options_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Begin Webauthn Registration",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/webauthn/registration/verify": {
+      "post": {
+        "operationId": "complete_webauthn_registration_v1_me_mfa_webauthn_registration_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Webauthn Registration",
         "tags": ["identity"]
       }
     },
