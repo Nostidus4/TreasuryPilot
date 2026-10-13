@@ -101,7 +101,7 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
-| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day due horizon | **tests and benchmarks only** |
+| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
 | `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
 | `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
@@ -207,7 +207,7 @@ Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-
 
 Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a share of the time limit (default 5 s total). **Determinism:** `num_workers = 1`, fixed `random_seed`, inputs sorted by id (M07-D7). **Fallback:** status `UNKNOWN`/error/no solution in time ⇒ return EDF with `status = FALLBACK` and log it.
 
-**Oracle (tests and benchmarks):** enumerate every assignment of at most 8 requests to a day through the latest due date (maximum 5 days) or to the unscheduled set. Inputs outside either bound are rejected. The oracle shares EDF's payment feasibility transition and BR-052 scoring helper. Reusable bounded Hypothesis inputs for the oracle and ENG-007 equivalence tests live in `packages/py-core/tests/strategies/financial_engine.py`; the oracle is never called from production paths.
+**Oracle (tests and benchmarks):** search, with memoized dynamic programming, every assignment of at most 8 requests to a day through the latest due or payee activation day (maximum 5 days) or to the unscheduled set, every same-day payment order, and for each payment both BR-032 refill outcomes (`preferred` top-up or `shortage` only). Refill amounts between those two (for example pre-funding a later request) are not searched. Inputs outside either bound are rejected. The oracle shares EDF's payment feasibility transition and BR-052 scoring helper. Reusable bounded Hypothesis inputs for the oracle and ENG-007 equivalence tests live in `packages/py-core/tests/strategies/financial_engine.py`; the oracle is never called from production paths.
 
 ### 8.5 Fingerprint
 
