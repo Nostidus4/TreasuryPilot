@@ -167,12 +167,21 @@ class MagicLinkSender(Protocol):
 
 
 class AuthFailure(Exception):
-    def __init__(self, *, status: int, code: str, title: str, detail: str) -> None:
+    def __init__(
+        self,
+        *,
+        status: int,
+        code: str,
+        title: str,
+        detail: str,
+        extensions: dict[str, object] | None = None,
+    ) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
+        self.extensions = extensions or {}
 
 
 class SessionTokenCodec:
