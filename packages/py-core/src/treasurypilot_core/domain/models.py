@@ -155,6 +155,18 @@ class Snapshot(FrozenModel):
             raise ValueError("health_factor is required when debt exists")
         return self
 
+    @model_validator(mode="after")
+    def validate_wallet_addresses(self) -> Snapshot:
+        # Balances are tracked per address, so every wallet must be distinct from the
+        # source and from each other, and keyed by its own address.
+        addresses = [self.source.address, *(w.address for w in self.operational.values())]
+        if len(set(addresses)) != len(addresses):
+            raise ValueError("wallet addresses in a snapshot must be unique")
+        for key, wallet in self.operational.items():
+            if key != wallet.address:
+                raise ValueError(f"operational wallet {key!r} is keyed by another address")
+        return self
+
 
 class ApprovedRequest(FrozenModel):
     id: Annotated[str, Field(min_length=1)]
@@ -259,9 +271,16 @@ class ForecastDay(FrozenModel):
     balances: FrozenMapping[str, BaseUnits]
     buffer_hit_wallets: FrozenSequence[str]
     suggested_refills: FrozenSequence[ForecastRefill]
+    # Standard amount of obligations due on or before this day and not paid by it.
+    unpaid_due: BaseUnits
 
 
 class Forecast(FrozenModel):
     days: FrozenSequence[ForecastDay]
     buffer_hit_days: FrozenMapping[str, FrozenSequence[int]]
+    # Days with an unpaid due obligation: the cash shortfall the balances cannot show,
+    # because the scheduler never pays below a buffer.
+    shortfall_days: FrozenSequence[int]
     unplanned_request_ids: FrozenSequence[str]
+    # Scheduled, but only after the forecast window.
+    deferred_request_ids: FrozenSequence[str]

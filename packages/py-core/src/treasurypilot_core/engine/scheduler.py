@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
@@ -56,12 +57,42 @@ def _deadline_feasible(request: ApprovedRequest, snapshot: Snapshot, policy: Pol
     )
 
 
+@dataclass(frozen=True, slots=True)
+class EdfMovement:
+    """One scheduled payment and its refill, in the order the scheduler decided them."""
+
+    day: int
+    request_id: str
+    wallet: str
+    refill: int
+    payment: int
+
+
+@dataclass(frozen=True, slots=True)
+class EdfRun:
+    schedule: Schedule
+    movements: tuple[EdfMovement, ...]
+
+
 def schedule_edf(
     requests: Sequence[ApprovedRequest],
     snapshot: Snapshot,
     policy: PolicyView,
 ) -> Schedule:
+    """Build the rolling-horizon B1 schedule (section 8.3); see ``run_edf``."""
+
+    return run_edf(requests, snapshot, policy).schedule
+
+
+def run_edf(
+    requests: Sequence[ApprovedRequest],
+    snapshot: Snapshot,
+    policy: PolicyView,
+) -> EdfRun:
     """Build the rolling-horizon B1 schedule in due-day and approval order (section 8.3).
+
+    Also returns the balance movements in decision order, so projections such as
+    the forecast replay exactly what the scheduler decided instead of re-simulating it.
 
     Requests that do not fit today remain eligible on following days. The
     scheduler carries wallet balances, source drawdown, and daily usage forward
@@ -75,7 +106,7 @@ def schedule_edf(
         key=lambda request: (request.terms.net_due_day, request.approved_seq, request.id),
     )
     if not ordered:
-        return Schedule(
+        empty = Schedule(
             items=(),
             infeasible=(),
             objective=(0, 0, 0, 0),
@@ -83,6 +114,7 @@ def schedule_edf(
             solver="EDF",
             status="OPTIMAL",
         )
+        return EdfRun(schedule=empty, movements=())
     if len({request.id for request in ordered}) != len(ordered):
         raise ValueError("request ids must be unique")
 
@@ -94,6 +126,7 @@ def schedule_edf(
     operational = dict(snapshot.operational)
     source = snapshot.source
     scheduled: list[ScheduledItem] = []
+    movements: list[EdfMovement] = []
     blocked_reason: dict[str, str] = {}
     binding: set[str] = set()
     transaction_count = 0
@@ -176,6 +209,9 @@ def schedule_edf(
                     value=request_value(request, day, supply_rate_bps=snapshot.supply_rate_bps),
                 )
             )
+            movements.append(
+                EdfMovement(day, request.id, wallet.address, refill_amount, int(amount))
+            )
             transaction_count += 1 + int(refill_amount > 0)
 
         remaining = next_remaining
@@ -215,7 +251,7 @@ def schedule_edf(
         )
     )
     total_value = sum(item.value for item in scheduled)
-    return Schedule(
+    schedule = Schedule(
         items=tuple(scheduled),
         infeasible=tuple(infeasible),
         objective=(0, missed_deadlines, -total_value, transaction_count),
@@ -223,3 +259,4 @@ def schedule_edf(
         solver="EDF",
         status="FEASIBLE",
     )
+    return EdfRun(schedule=schedule, movements=tuple(movements))
