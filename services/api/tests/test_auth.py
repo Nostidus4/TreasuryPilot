@@ -860,3 +860,28 @@ def test_every_organization_route_hides_resources_from_non_members() -> None:
                     request_options["headers"] = {"X-CSRF-Token": csrf}
                 response = harness.client.request(method, path, **request_options)
                 assert response.status_code == 404, (method, path, response.text)
+
+
+def test_organization_input_is_validated_and_settings_require_authentication() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        anonymous = harness.client.patch(f"/v1/orgs/{uuid.uuid4()}/settings", json={})
+        assert anonymous.status_code == 401
+
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        for payload in (
+            {"name": "Acme", "country": "1a"},
+            {"name": "Acme", "displayTz": "Not/AZone"},
+        ):
+            response = harness.client.post("/v1/orgs", json=payload, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 422
+        assert organizations.organizations == {}
+
+        created = harness.client.post(
+            "/v1/orgs",
+            json={"name": "Acme", "displayTz": "Asia/Ho_Chi_Minh"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 201
+        assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
