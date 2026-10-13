@@ -50,7 +50,9 @@ Prometheus series: `tp_queue_depth{queue}`, `tp_rpc_errors_total{provider}`, `tp
 
 ## 7. Flows
 
-Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context (`treasurypilot_core.observability`); Celery headers carry them; the signer receives them in headers. Traces exported via OTLP to the collector (compose service, console exporter locally). `trace_id` is added by OBS-002 from the active span.
+Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context (`treasurypilot_core.observability`); Celery headers carry them; the signer receives them in headers. Traces are exported via OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (locally: `--profile observability` starts Jaeger, endpoint `http://jaeger:4318`, UI on `127.0.0.1:16686`); unset, spans are still created but not exported. Every log line inside a span carries its `trace_id`.
+
+- **Tracing (OBS-002):** FastAPI (api, signer), Celery (worker, through task headers), `httpx2` (worker → signer) and SQLAlchemy (api) are instrumented, so one api request and the tasks and signer calls it causes form one trace. A process that publishes Celery tasks must install `CeleryInstrumentor` (the api does not publish yet), and the signer client must use `httpx2`, or the trace breaks at that hop.
 
 - **HTTP (api, signer):** `X-Request-ID` is the request id and also the `correlation_id`; `X-Org-ID`, `X-Plan-ID`, `X-Operation-ID` bind the matching fields. Each value must match `^[A-Za-z0-9._:-]{8,64}$` and survive redaction unchanged (e.g. not a bare 64-hex string or `token:...`), so it stays searchable. An invalid `X-Request-ID` is replaced by a fresh uuid; other invalid headers are dropped and logged as `invalid_context_header` (header names only). The response always carries `X-Request-ID` (exposed to the web app via CORS).
 - **Claimed, not authenticated:** org/plan/operation ids from headers are client-declared log context. Once auth exists, the authenticated org must overwrite the header value.
@@ -64,7 +66,7 @@ Savings counterfactual: for each executed batch day, re-run `schedule_edf` on th
 
 ## 9. Configuration
 
-Log level INFO (DEBUG locally) via `TP_LOG_LEVEL`; `TP_LOG_FORMAT` is `json` (default) or `console` (local reading, still redacted); sampling: 100 % traces in M1 (low volume); Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
+Log level INFO (DEBUG locally) via `TP_LOG_LEVEL`; `TP_LOG_FORMAT` is `json` (default) or `console` (local reading, still redacted); sampling: 100 % traces in M1 (low volume; standard `OTEL_TRACES_SAMPLER*` variables override); OTLP endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT`; Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
 
 ## 10. Security
 
