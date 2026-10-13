@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,8 @@ class Settings(BaseSettings):
     visibility_timeout_seconds: int = 3600
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
+    # Compose sets DATABASE_URL unprefixed; empty means this process has no DB access.
+    database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
 
 
 @lru_cache

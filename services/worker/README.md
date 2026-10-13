@@ -5,9 +5,10 @@ The worker package runs as three Compose services:
 - `worker` consumes the `core` queue and is the only worker allowed to receive
   policy-attestation and signer credentials.
 - `worker-ai` consumes the `ai` queue. Its environment is an explicit allowlist of the Redis
-  URL, an optional least-privilege database URL and the LLM provider key. An unset
-  `AI_DATABASE_URL` gives this process no database credential rather than falling back to the
-  core database user.
+  URL, a least-privilege database URL and the LLM provider key. An unset `AI_DATABASE_URL`
+  gives this process no database credential rather than falling back to the core database
+  user; AI tasks then fail when they build the adapter, because every AI call must be
+  written to `ai_calls` (AGT-002).
 - `beat` publishes periodic jobs. Business schedules are added by their owning tickets.
 
 All tasks inherit `SafeTask`: late acknowledgement, rejection/redelivery when a worker process
