@@ -10,6 +10,13 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
+from treasurypilot_api.audit import AuditLog, ChainVerification
+from treasurypilot_api.audit.api import (
+    AuditFilters,
+    AuditNotFound,
+    AuditPage,
+    AuditPermissionDenied,
+)
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.auth import (
     AuthService,
@@ -221,6 +228,7 @@ def make_harness(
     sender_fails: bool = False,
     rate_limiter: object | None = None,
     organization_repository: object | None = None,
+    audit_repository: object | None = None,
 ) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
@@ -246,6 +254,7 @@ def make_harness(
         settings=settings,
         auth_service=service,
         organization_repository=organization_repository,  # type: ignore[arg-type]
+        audit_repository=audit_repository,  # type: ignore[arg-type]
     )
     return AuthHarness(
         clock=clock,
@@ -835,6 +844,113 @@ def test_organization_input_is_validated_and_settings_require_authentication() -
         )
         assert created.status_code == 201
         assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
+
+
+class MemoryAuditRepository:
+    def __init__(self, rows: list[AuditLog], result: ChainVerification) -> None:
+        self.rows = rows
+        self.result = result
+        self.roles: dict[tuple[uuid.UUID, uuid.UUID], set[str]] = {}
+        self.list_calls: list[tuple[AuditFilters, int | None, int]] = []
+
+    def _check(self, organization_id: uuid.UUID, user_id: uuid.UUID, allowed: set[str]) -> None:
+        roles = self.roles.get((organization_id, user_id))
+        if roles is None:
+            raise AuditNotFound
+        if not roles & allowed:
+            raise AuditPermissionDenied
+
+    async def list(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        filters: AuditFilters,
+        cursor: int | None,
+        limit: int,
+    ) -> AuditPage:
+        self._check(organization_id, user_id, {"Auditor", "Owner", "OrgAdmin"})
+        self.list_calls.append((filters, cursor, limit))
+        return AuditPage(items=self.rows, next_cursor=self.rows[-1].seq)
+
+    async def verify(self, *, organization_id: uuid.UUID, user_id: uuid.UUID) -> ChainVerification:
+        self._check(organization_id, user_id, {"Auditor", "Owner"})
+        return self.result
+
+
+def test_audit_log_routes_return_records_and_verification_to_allowed_roles() -> None:
+    org_id = uuid.uuid4()
+    row = AuditLog(
+        seq=7,
+        org_id=org_id,
+        at=datetime(2026, 10, 13, 1, 2, 3, 456789, tzinfo=UTC),
+        actor_type="USER",
+        actor_id="u-1",
+        action="request.approve",
+        entity_type="request",
+        entity_id="r-1",
+        data={"amount": "100"},
+        prev_hash=bytes(32),
+        hash=bytes([1]) * 32,
+    )
+    audit = MemoryAuditRepository([row], ChainVerification("BROKEN", 4, 12))
+    with make_harness(audit_repository=audit) as harness:
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log").status_code == 401
+        harness.login()
+        user_id = harness.repository.profile.user.id
+
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log").status_code == 404
+        audit.roles[(org_id, user_id)] = {"Finance"}
+        forbidden = harness.client.get(f"/v1/orgs/{org_id}/audit-log")
+        assert forbidden.status_code == 403
+        assert forbidden.json()["code"] == "FORBIDDEN"
+
+        audit.roles[(org_id, user_id)] = {"OrgAdmin"}
+        listed = harness.client.get(
+            f"/v1/orgs/{org_id}/audit-log",
+            params={
+                "entityType": "request",
+                "entityId": "r-1",
+                "actor": "u-1",
+                "from": "2026-10-01T00:00:00Z",
+                "to": "2026-10-14T00:00:00+07:00",
+                "cursor": "3",
+                "limit": "2",
+            },
+        )
+        assert listed.status_code == 200
+        assert listed.json() == {
+            "items": [
+                {
+                    "seq": 7,
+                    "orgId": str(org_id),
+                    "at": "2026-10-13T01:02:03.456789Z",
+                    "actorType": "USER",
+                    "actorId": "u-1",
+                    "action": "request.approve",
+                    "entityType": "request",
+                    "entityId": "r-1",
+                    "data": {"amount": "100"},
+                    "prevHash": "0x" + "00" * 32,
+                    "hash": "0x" + "01" * 32,
+                }
+            ],
+            "nextCursor": "7",
+        }
+        filters, cursor, limit = audit.list_calls[-1]
+        assert (filters.entity_type, filters.entity_id, filters.actor) == ("request", "r-1", "u-1")
+        assert filters.since == datetime(2026, 10, 1, tzinfo=UTC)
+        assert filters.until == datetime(2026, 10, 13, 17, tzinfo=UTC)
+        assert (cursor, limit) == (3, 2)
+        naive = harness.client.get(f"/v1/orgs/{org_id}/audit-log", params={"from": "2026-10-01"})
+        assert naive.status_code == 422
+
+        # OrgAdmin reads the log but only Auditor and Owner verify it.
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log/verify").status_code == 403
+        audit.roles[(org_id, user_id)] = {"Auditor"}
+        verified = harness.client.get(f"/v1/orgs/{org_id}/audit-log/verify")
+        assert verified.status_code == 200
+        assert verified.json() == {"status": "BROKEN", "checked": 4, "brokenAt": 12}
 
 
 def test_retry_after_is_readable_cross_origin() -> None:

@@ -34,17 +34,17 @@ F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (
 
 ## 5. State
 
-Append-only. Verification status computed on demand: `INTACT | BROKEN_AT(seq)`.
+Append-only. Verification status computed on demand: `INTACT | BROKEN_AT(seq)`. `brokenAt` is the first record whose `prev_hash` does not link or whose hash does not recompute; the API also checks the chain ends at the org's head, so a record past the head or a removed tail is reported (a removed tail at the head's `last_seq`). The API reads the head and the rows in one `REPEATABLE READ` snapshot.
 
 ## 6. Interfaces
 
 | Method | Endpoint | Perm |
 |---|---|---|
-| GET | `/orgs/{o}/audit-log?entity=&actor=&from=&to=` | Auditor, OWN, ADM |
-| GET | `/orgs/{o}/audit-log/verify` → `{status, checked, brokenAt?}` | Auditor, OWN |
+| GET | `/orgs/{o}/audit-log?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` (`from` inclusive, `to` exclusive, both timezone-aware) | Auditor, OWN, ADM |
+| GET | `/orgs/{o}/audit-log/verify` → `{status, checked, brokenAt}` | Auditor, OWN |
 | GET | `/orgs/{o}/requests/{r}/evidence` → bundle (JSON) | Auditor, OWN, FIN |
 | POST | `/orgs/{o}/scenarios/{id}/evidence` (demo/benchmark runs) | OWN, ADM |
-| CLI | `python -m treasurypilot.audit verify --dump file.jsonl` | offline |
+| CLI | `python -m treasurypilot_api.audit verify --dump file.jsonl` (JSON Lines of `audit-log` items; exit 0 intact, 1 broken, 2 unreadable) | offline |
 
 ## 7. Flows
 
