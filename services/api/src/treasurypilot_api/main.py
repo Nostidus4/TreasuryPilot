@@ -22,6 +22,7 @@ from treasurypilot_api.identity.auth import (
     AuthService,
     MagicLinkSender,
     SessionTokenCodec,
+    auth_unavailable,
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
@@ -38,6 +39,7 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
@@ -59,12 +61,7 @@ class HealthResponse(BaseModel):
 class _UnavailableAuthRepository:
     def __getattr__(self, name: str) -> object:
         async def unavailable(*args: object, **kwargs: object) -> None:
-            raise AuthFailure(
-                status=503,
-                code="AUTH_UNAVAILABLE",
-                title="Authentication unavailable",
-                detail="Authentication storage is not configured.",
-            )
+            raise auth_unavailable("Authentication storage is not configured.")
 
         return unavailable
 
@@ -211,7 +208,8 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+        # Retry-After is not CORS-safelisted; the SPA needs it for 429/503 backoff.
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
     )
 
     app.add_middleware(CorrelationMiddleware)
@@ -228,6 +226,7 @@ def create_app(
 
     app.include_router(identity_router)
     app.include_router(organizations_router)
+    app.include_router(treasury_router)
 
     return app
 

@@ -4,6 +4,7 @@ import pytest
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
+    BorrowProposal,
     Limits,
     LiquidityDecision,
     LiquidityPolicy,
@@ -13,7 +14,7 @@ from treasurypilot_core.domain import (
     Snapshot,
     WalletState,
 )
-from treasurypilot_core.engine import decide_liquidity, liquidity_position
+from treasurypilot_core.engine import decide_liquidity, liquidity_position, propose_borrow
 from treasurypilot_core.money import BaseUnits
 
 DAY = 100
@@ -28,6 +29,10 @@ def snapshot(
     supplied_today: int = 0,
     withdrawn_today: int = 0,
     source_balance: int | None = None,
+    supply_rate_bps: int = 0,
+    borrow_rate_bps: int = 0,
+    debt: int = 0,
+    health_factor: int | None = None,
 ) -> Snapshot:
     return Snapshot(
         day=DAY,
@@ -48,9 +53,10 @@ def snapshot(
         safe_usdc=BaseUnits(safe),
         a_usdc=BaseUnits(a_usdc),
         pool_available=BaseUnits(pool),
-        supply_rate_bps=0,
-        borrow_rate_bps=0,
-        debt=BaseUnits(0),
+        supply_rate_bps=supply_rate_bps,
+        borrow_rate_bps=borrow_rate_bps,
+        debt=BaseUnits(debt),
+        health_factor=health_factor,
     )
 
 
@@ -190,3 +196,86 @@ def test_zero_supply_or_withdraw_decisions_cannot_be_built() -> None:
 def test_source_wallet_must_be_safe_t() -> None:
     with pytest.raises(ValueError, match="safe_usdc"):
         liquidity_position(snapshot(safe=6_000, source_balance=5_000), [], schedule(), policy())
+
+
+def test_borrow_proposal_covers_unwithdrawable_shortfall_and_estimates_costs() -> None:
+    snap = snapshot(
+        safe=1_000,
+        a_usdc=500,
+        pool=500,
+        supply_rate_bps=300,
+        borrow_rate_bps=500,
+        debt=1_000,
+        health_factor=1_200_000_000_000_000_000,
+    )
+    decision = decide_liquidity(snap, [obligation("r1", 3_000)], schedule(), policy())
+    assert decision.kind == "INSUFFICIENT_LIQUIDITY"
+
+    proposal = propose_borrow(snap, decision.shortfall, until_day=DAY + 365)
+
+    assert proposal.amount == 2_500
+    assert proposal.cost_to_repayment == 125
+    assert proposal.withdraw_cost == 75
+    assert proposal.health_factor_before == 1_200_000_000_000_000_000
+    assert proposal.health_factor_after == 342_857_142_857_142_857
+    assert "below 1.0" in proposal.reason
+    assert isinstance(proposal, BorrowProposal)
+
+
+def test_borrow_proposal_cannot_become_an_executable_schedule_item() -> None:
+    proposal = propose_borrow(
+        snapshot(safe=1_000, debt=1_000, health_factor=2 * 10**18), BaseUnits(100), DAY + 30
+    )
+
+    with pytest.raises(ValueError, match="ScheduledItem"):
+        Schedule(
+            items=[proposal],  # type: ignore[list-item]
+            infeasible=[],
+            objective=(0, 0, 0, 0),
+            binding=[],
+            solver="EDF",
+            status="FEASIBLE",
+        )
+
+
+def test_borrow_proposal_marks_health_factor_unknown_without_existing_debt() -> None:
+    proposal = propose_borrow(snapshot(safe=1_000), BaseUnits(100), DAY + 30)
+
+    assert proposal.health_factor_before is None
+    assert proposal.health_factor_after is None
+    assert "unknown" in proposal.reason
+
+
+@pytest.mark.parametrize(
+    ("deficit", "until_day", "message"),
+    [
+        (0, DAY + 1, "positive deficit"),
+        (100, DAY - 1, "cannot precede"),
+    ],
+)
+def test_borrow_proposal_rejects_invalid_shortfalls(
+    deficit: int, until_day: int, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        propose_borrow(snapshot(safe=1_000), BaseUnits(deficit), until_day)
+
+
+def test_borrow_reason_always_compares_costs() -> None:
+    # Review repro: no debt, cheaper borrowing; the comparison must still be stated.
+    proposal = propose_borrow(
+        snapshot(safe=1_000, borrow_rate_bps=100, supply_rate_bps=500),
+        BaseUnits(10**9),
+        DAY + 30,
+    )
+    assert (proposal.cost_to_repayment, proposal.withdraw_cost) == (821_917, 4_109_589)
+    assert proposal.reason.startswith("Estimated borrowing cost is lower")
+    assert "unknown" in proposal.reason
+
+
+def test_borrow_reason_warns_just_above_health_factor_one() -> None:
+    proposal = propose_borrow(
+        snapshot(safe=1_000, debt=1_000, health_factor=15 * 10**17), BaseUnits(400), DAY + 30
+    )
+    assert proposal.health_factor_after is not None
+    assert 10**18 <= proposal.health_factor_after < 11 * 10**17
+    assert "below 1.1" in proposal.reason

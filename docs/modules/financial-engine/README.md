@@ -213,6 +213,19 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 
 `normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
 
+### 8.6 Seven-day liquidity forecast
+
+`forecast(snapshot, requests, policy, days=7)` runs the deterministic EDF schedule and
+replays its payments and refills in scheduler order. It returns each wallet's end-of-day
+balance, days when a wallet is below its buffer, and the refills selected by the same
+source-buffer, refill-bound, per-request, and daily-limit rules as scheduling. The
+window can be set from 1 to 30 days. Approved obligations that remain unpaid after
+their due day are reported as `unpaid_due` (`amount_due`: the payable amount plus any
+accrued late fee) and `shortfall_days`, and count against their paying wallet when
+deciding buffer hits, so a wallet that cannot cover an upcoming invoice shows up even
+though the scheduler never plans that payment. `snapshot.source` must be Safe T; scheduled payments
+outside the requested window are listed in `deferred_request_ids`.
+
 ## 9. Configuration and defaults
 
 | Parameter | Default | Where |
@@ -255,6 +268,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 | Determinism | identical input ⇒ identical output | ENG-007 |
 | Timeout/fallback | forced tiny limit ⇒ FALLBACK = EDF | ENG-007 |
 | Vectors | fingerprint matches Solidity | ENG-009 |
+| Forecast | hand-computed balances; refills within source buffer and refill limits | ENG-011 |
 | Coverage | ≥ 85 % lines (NFR-MAINT-03) | CI |
 
 ## 13. Tickets (order of work)
@@ -301,6 +315,6 @@ Example: Safe 6,000, aUSDC 0, floor 1,000, approved unpaid 2,000 → Required 3,
 
 **Value of paying on day p (replaces §8.2's discount term):** `saving(p) = amount − pay_amount(p)` (exact, from the approval) minus late fees; early payment is preferred only if `saving − fee_in_asset − lost_supply_interest > 0`, where `lost_supply_interest = floor(pay_amount × supply_rate_bps × days_earlier / (10000 × 365))`. The CP-SAT objective keeps its order (deadlines → value → transactions → approval order) with value now = savings − late fees − gas − lost interest + expected supply interest of the cash kept supplied.
 
-**Borrow proposal (F-069):** `propose_borrow(snapshot, deficit, until_day)` → amount, borrow cost to repayment `= amount × borrow_rate_bps × days / (10000 × 365)`, withdraw cost (lost interest), health factor before/after (from Aave account data), reason. Never part of an executable plan without authorization (BR-044).
+**Borrow proposal (F-069):** `propose_borrow(snapshot, deficit, until_day)` returns a `BorrowProposal` with amount, borrow cost to repayment `= amount × borrow_rate_bps × days / (10000 × 365)`, estimated supply interest lost by withdrawing the same amount, and the health factor before/after borrowing. Health factor after borrowing is estimated as `health_factor_before × debt / (debt + amount)` when an existing debt position is present; otherwise it stays unknown. The reason always states whether borrowing costs less or more than withdrawing, then adds a note when the health factor after borrowing is unknown, below 1.0 (risk review required), or below 1.1 (advisory liquidation-risk warning; it changes no decision). The proposal is a separate analysis model and cannot be inserted into `Schedule.items`; it never creates a transaction. Borrow execution requires a separate owner authorization (BR-044).
 
 **Tickets:** ENG-013 reserve and liquidity decision, ENG-014 borrow proposal; ENG-001/005/007/011 revised.

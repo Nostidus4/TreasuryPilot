@@ -14,6 +14,7 @@ from treasurypilot_api.identity.auth import (
     ProfileRecord,
     SessionAccess,
     UserRecord,
+    auth_unavailable,
     normalize_email,
 )
 
@@ -116,9 +117,11 @@ class MeResponse(ApiModel):
 
 
 def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
+    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
     return JSONResponse(
         status_code=exc.status,
         media_type="application/problem+json",
+        headers=headers,
         content={
             "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
             "title": exc.title,
@@ -137,12 +140,7 @@ def _client_ip(request: Request) -> str:
 def _service(request: Request) -> AuthService:
     service = getattr(request.app.state, "auth_service", None)
     if not isinstance(service, AuthService):
-        raise AuthFailure(
-            status=503,
-            code="AUTH_UNAVAILABLE",
-            title="Authentication unavailable",
-            detail="Authentication is not configured.",
-        )
+        raise auth_unavailable("Authentication is not configured.")
     return service
 
 

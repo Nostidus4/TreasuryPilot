@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
+    BorrowProposal,
     LiquidityDecision,
     LiquidityPolicy,
     LiquidityPosition,
@@ -15,7 +16,7 @@ from treasurypilot_core.domain import (
     Snapshot,
     WalletState,
 )
-from treasurypilot_core.engine.payment_terms import pay_amount
+from treasurypilot_core.engine.payment_terms import _BASIS_POINTS_SCALE, _DAYS_PER_YEAR, pay_amount
 from treasurypilot_core.money import BaseUnits
 
 _ZERO = BaseUnits(0)
@@ -329,4 +330,66 @@ def decide_liquidity(
         ),
         reason=SUPPLY_AVAILABLE,
         position=position,
+    )
+
+
+_HEALTH_FACTOR_ONE = 10**18
+# Advisory only: below this the reason warns about liquidation risk; no decision changes.
+HEALTH_FACTOR_WARNING = 11 * 10**17
+
+
+def propose_borrow(snapshot: Snapshot, deficit: BaseUnits, until_day: int) -> BorrowProposal:
+    """Estimate a borrow for an uncovered shortfall without adding an executable action.
+
+    Costs use integer base units and simple interest. Health factor after borrowing is
+    estimated from the current health factor and debt; it remains unknown when the
+    snapshot does not contain an existing debt position.
+    """
+
+    amount = int(deficit)
+    if amount <= 0:
+        raise ValueError("borrow proposal requires a positive deficit")
+    if until_day < snapshot.day:
+        raise ValueError("repayment day cannot precede the snapshot day")
+
+    days = until_day - snapshot.day
+    # Same simple-interest basis as the lost-interest term in request_value.
+    denominator = _BASIS_POINTS_SCALE * _DAYS_PER_YEAR
+    borrow_cost = amount * int(snapshot.borrow_rate_bps) * days // denominator
+    withdraw_cost = amount * int(snapshot.supply_rate_bps) * days // denominator
+
+    health_factor_before = snapshot.health_factor
+    health_factor_after: int | None = None
+    if snapshot.health_factor is not None and snapshot.debt > 0:
+        health_factor_after = (
+            int(snapshot.health_factor) * int(snapshot.debt) // (int(snapshot.debt) + amount)
+        )
+
+    # The cost comparison is the proposal's purpose (F-069), so it always leads; the
+    # health-factor note follows as a second sentence.
+    if borrow_cost < withdraw_cost:
+        reason = "Estimated borrowing cost is lower than the supply interest lost by withdrawing."
+    elif borrow_cost > withdraw_cost:
+        reason = "Estimated borrowing cost is higher than the supply interest lost by withdrawing."
+    else:
+        reason = "Estimated borrowing cost equals the supply interest lost by withdrawing."
+    if health_factor_after is None:
+        reason += (
+            " Health factor after borrowing is unknown because the snapshot has no existing"
+            " debt position."
+        )
+    elif health_factor_after < _HEALTH_FACTOR_ONE:
+        reason += (
+            " Borrowing would put the estimated health factor below 1.0 and requires risk review."
+        )
+    elif health_factor_after < HEALTH_FACTOR_WARNING:
+        reason += " The estimated health factor after borrowing is below 1.1; review the liquidation risk."
+
+    return BorrowProposal(
+        amount=BaseUnits(amount),
+        cost_to_repayment=BaseUnits(borrow_cost),
+        withdraw_cost=BaseUnits(withdraw_cost),
+        health_factor_before=health_factor_before,
+        health_factor_after=health_factor_after,
+        reason=reason,
     )
