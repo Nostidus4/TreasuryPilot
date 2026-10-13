@@ -53,7 +53,9 @@ def test_mandate_upgrade_and_downgrade_compile_offline() -> None:
     assert "WHERE status IN ('Collecting', 'Ready', 'Submitted')" in sql
     assert "CREATE TRIGGER trg_mandate_versions_immutable" in sql
     assert "CREATE TRIGGER trg_mandate_status_events_append_only" in sql
-    assert "fk_payees_placeholder" not in sql
+    assert "fk_payees_vendor_org" in sql
+    assert "ck_payees_oob_method_value" in sql
+    assert "uq_mandate_versions_active_treasury" in sql
 
 
 async def _verify_mandate_constraints(database_url: str) -> None:
@@ -137,6 +139,95 @@ async def _verify_mandate_constraints(database_url: str) -> None:
                         "0, 7, 1, ARRAY[decode(repeat('44', 20), 'hex')], 'Ready')"
                     )
                 )
+
+        # A Draft is linked to its governance tx after insert, then frozen.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    f"UPDATE mandate_versions SET governance_tx_id = '{governance_tx_id}', "
+                    "valid_from = now() "
+                    f"WHERE id = '{mandate_id}'"
+                )
+            )
+            await connection.execute(
+                text(f"UPDATE mandate_versions SET status = 'Active' WHERE id = '{mandate_id}'")
+            )
+        with pytest.raises(DBAPIError, match="mandate_versions configuration is immutable"):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "UPDATE mandate_versions SET expires_at = now() + interval '1 day' "
+                        f"WHERE id = '{mandate_id}'"
+                    )
+                )
+
+        with pytest.raises(IntegrityError, match="uq_mandate_versions_active_treasury"):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "INSERT INTO mandate_versions "
+                        "(id, treasury_id, version, status, config, config_hash) VALUES "
+                        f"('00000000-0000-7000-8000-000000000061', '{treasury_id}', 2, "
+                        "'Active', '{}'::jsonb, decode(repeat('bb', 32), 'hex'))"
+                    )
+                )
+
+        other_org_id = "00000000-0000-7000-8000-000000000011"
+        vendor_id = "00000000-0000-7000-8000-000000000080"
+        foreign_vendor_id = "00000000-0000-7000-8000-000000000081"
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(f"INSERT INTO organizations (id, name) VALUES ('{other_org_id}', 'Other')")
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO vendors (id, org_id, name, normalized_ref) VALUES "
+                    f"('{vendor_id}', '{org_id}', 'Vendor', 'vendor'), "
+                    f"('{foreign_vendor_id}', '{other_org_id}', 'Foreign', 'foreign')"
+                )
+            )
+
+        def payee_insert(payee_id: str, vendor: str, status: str, oob: str = "NULL") -> str:
+            return (
+                "INSERT INTO payees "
+                "(id, treasury_id, org_id, vendor_id, label, address, status, oob_method) "
+                f"VALUES ('{payee_id}', '{treasury_id}', '{org_id}', '{vendor}', 'Payee', "
+                f"decode(repeat('55', 20), 'hex'), '{status}', {oob})"
+            )
+
+        with pytest.raises(IntegrityError, match="fk_payees_vendor_org"):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        payee_insert(
+                            "00000000-0000-7000-8000-000000000090", foreign_vendor_id, "Proposed"
+                        )
+                    )
+                )
+        with pytest.raises(IntegrityError, match="ck_payees_oob_method_value"):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        payee_insert(
+                            "00000000-0000-7000-8000-000000000090",
+                            vendor_id,
+                            "Proposed",
+                            "'email'",
+                        )
+                    )
+                )
+        # A terminal ScreeningFailed payee does not block re-proposing the address.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    payee_insert(
+                        "00000000-0000-7000-8000-000000000091", vendor_id, "ScreeningFailed"
+                    )
+                )
+            )
+            await connection.execute(
+                text(payee_insert("00000000-0000-7000-8000-000000000092", vendor_id, "Proposed"))
+            )
     finally:
         await engine.dispose()
 

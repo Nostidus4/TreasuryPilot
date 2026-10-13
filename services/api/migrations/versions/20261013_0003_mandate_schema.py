@@ -50,6 +50,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("org_id", "normalized_ref", name="uq_vendors_org_normalized_ref"),
+        sa.UniqueConstraint("id", "org_id", name="uq_vendors_id_org"),
     )
     op.create_index("ix_vendors_org_id", "vendors", ["org_id"])
 
@@ -182,8 +183,13 @@ def upgrade() -> None:
             "expires_at IS NULL OR valid_from IS NULL OR expires_at > valid_from",
             name="ck_mandate_versions_expiry",
         ),
-        sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["governance_tx_id"], ["governance_txs.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
+        sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["governance_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_mandate_versions_governance_tx_treasury",
+        ),
         sa.ForeignKeyConstraint(["treasury_id"], ["treasuries.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("id", "treasury_id", name="uq_mandate_versions_id_treasury"),
@@ -191,6 +197,13 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_mandate_versions_treasury_status", "mandate_versions", ["treasury_id", "status"]
+    )
+    op.create_index(
+        "uq_mandate_versions_active_treasury",
+        "mandate_versions",
+        ["treasury_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'Active'"),
     )
 
     op.create_table(
@@ -204,7 +217,7 @@ def upgrade() -> None:
             "at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
         ),
         sa.Column("by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.ForeignKeyConstraint(["by"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["by"], ["users.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["mandate_version_id"], ["mandate_versions.id"], ondelete="RESTRICT"
         ),
@@ -218,6 +231,7 @@ def upgrade() -> None:
         "payees",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("treasury_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("org_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("vendor_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("label", sa.String(length=200), nullable=False),
         sa.Column("address", sa.LargeBinary(length=20), nullable=False),
@@ -246,11 +260,30 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "oob_verified_by IS NULL OR oob_method IS NOT NULL", name="ck_payees_oob_method"
         ),
-        sa.ForeignKeyConstraint(["oob_verified_by"], ["users.id"], ondelete="SET NULL"),
+        sa.CheckConstraint(
+            f"oob_method IS NULL OR oob_method IN ({_OOB_METHODS})",
+            name="ck_payees_oob_method_value",
+        ),
+        # ck_payees_oob_verification_actor needs the verifier, so it cannot be nulled.
+        sa.ForeignKeyConstraint(["oob_verified_by"], ["users.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["proposed_by"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["registration_tx_id"], ["governance_txs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["treasury_id"], ["treasuries.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["vendor_id"], ["vendors.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["registration_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_payees_registration_tx_treasury",
+        ),
+        sa.ForeignKeyConstraint(
+            ["treasury_id", "org_id"],
+            ["treasuries.id", "treasuries.org_id"],
+            name="fk_payees_treasury_org",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["vendor_id", "org_id"],
+            ["vendors.id", "vendors.org_id"],
+            name="fk_payees_vendor_org",
+            ondelete="RESTRICT",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("id", "treasury_id", name="uq_payees_id_treasury"),
     )
@@ -260,26 +293,23 @@ def upgrade() -> None:
         "payees",
         ["treasury_id", "address"],
         unique=True,
-        postgresql_where=sa.text("status != 'Deactivated'"),
+        # ScreeningFailed is terminal, so it must not block re-proposing the address.
+        postgresql_where=sa.text("status NOT IN ('Deactivated', 'ScreeningFailed')"),
     )
 
     op.create_table(
         "screenings",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("payee_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("address", sa.LargeBinary(length=20), nullable=True),
+        # Always snapshotted so the row stays meaningful after its payee is deleted.
+        sa.Column("address", sa.LargeBinary(length=20), nullable=False),
         sa.Column("provider", sa.String(length=120), nullable=False),
         sa.Column("result", sa.String(length=16), nullable=False),
         sa.Column("source_ref", sa.String(length=300), nullable=True),
         sa.Column("checked_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("ttl_until", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(f"result IN ({_SCREENING_RESULTS})", name="ck_screenings_result"),
-        sa.CheckConstraint(
-            "payee_id IS NOT NULL OR address IS NOT NULL", name="ck_screenings_subject"
-        ),
-        sa.CheckConstraint(
-            "address IS NULL OR octet_length(address) = 20", name="ck_screenings_address"
-        ),
+        sa.CheckConstraint("octet_length(address) = 20", name="ck_screenings_address"),
         sa.ForeignKeyConstraint(["payee_id"], ["payees.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -291,6 +321,7 @@ def upgrade() -> None:
     op.create_table(
         "exceptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("treasury_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("request_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("mandate_onchain_version", sa.BigInteger(), nullable=False),
         sa.Column("amount", sa.Numeric(precision=78, scale=0), nullable=False),
@@ -310,7 +341,12 @@ def upgrade() -> None:
         sa.CheckConstraint("amount > 0", name="ck_exceptions_amount_positive"),
         sa.CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_address"),
         sa.CheckConstraint(f"status IN ({_EXCEPTION_STATUSES})", name="ck_exceptions_status"),
-        sa.ForeignKeyConstraint(["governance_tx_id"], ["governance_txs.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["treasury_id"], ["treasuries.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["governance_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_exceptions_governance_tx_treasury",
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -318,8 +354,9 @@ def upgrade() -> None:
         "exceptions",
         ["request_id"],
         unique=True,
-        postgresql_where=sa.text("status IN ('Proposed', 'Granted')"),
+        postgresql_where=sa.text("status IN ('Requested', 'Proposed', 'Granted')"),
     )
+    op.create_index("ix_exceptions_treasury_status", "exceptions", ["treasury_id", "status"])
     op.create_index("ix_exceptions_status_expiry", "exceptions", ["status", "expiry"])
 
     op.create_table(
@@ -350,7 +387,11 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "status IN ('Pending', 'Active', 'Failed', 'Revoked')", name="ck_guardian_setups_status"
         ),
-        sa.ForeignKeyConstraint(["created_tx_id"], ["governance_txs.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["created_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_guardian_setups_created_tx_treasury",
+        ),
         sa.ForeignKeyConstraint(["treasury_id"], ["treasuries.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("id", "treasury_id", name="uq_guardian_setups_id_treasury"),
@@ -398,6 +439,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["accepted_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["treasury_id"], ["treasuries.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "treasury_id", "version", name="uq_treasury_fee_policies_treasury_version"
+        ),
     )
     op.create_index(
         "uq_treasury_fee_policies_active",
@@ -405,11 +449,6 @@ def upgrade() -> None:
         ["treasury_id"],
         unique=True,
         postgresql_where=sa.text("active"),
-    )
-    op.create_index(
-        "ix_treasury_fee_policies_treasury_version",
-        "treasury_fee_policies",
-        ["treasury_id", "version"],
     )
 
     op.create_table(
@@ -450,13 +489,18 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE FUNCTION reject_mandate_version_mutation() RETURNS trigger AS $$
+        DECLARE
+            mutable text[] := ARRAY['status', 'onchain_version', 'activated_at'];
         BEGIN
             IF TG_OP = 'DELETE' THEN
                 RAISE EXCEPTION 'mandate_versions rows cannot be deleted' USING ERRCODE = '55000';
             END IF;
-            IF (to_jsonb(NEW) - ARRAY['status', 'onchain_version', 'activated_at'])
-               IS DISTINCT FROM
-               (to_jsonb(OLD) - ARRAY['status', 'onchain_version', 'activated_at']) THEN
+            -- A Draft is linked to its governance tx and validity window after insert;
+            -- everything is frozen once the row leaves Draft.
+            IF OLD.status = 'Draft' THEN
+                mutable := mutable || ARRAY['governance_tx_id', 'valid_from', 'expires_at'];
+            END IF;
+            IF (to_jsonb(NEW) - mutable) IS DISTINCT FROM (to_jsonb(OLD) - mutable) THEN
                 RAISE EXCEPTION 'mandate_versions configuration is immutable' USING ERRCODE = '55000';
             END IF;
             RETURN NEW;
@@ -499,12 +543,12 @@ def downgrade() -> None:
     op.drop_table("backend_pause")
     op.drop_index("ix_fee_acceptances_plan_at", table_name="fee_acceptances")
     op.drop_table("fee_acceptances")
-    op.drop_index("ix_treasury_fee_policies_treasury_version", table_name="treasury_fee_policies")
     op.drop_index("uq_treasury_fee_policies_active", table_name="treasury_fee_policies")
     op.drop_table("treasury_fee_policies")
     op.drop_index("uq_guardian_setups_active_treasury", table_name="guardian_setups")
     op.drop_table("guardian_setups")
     op.drop_index("ix_exceptions_status_expiry", table_name="exceptions")
+    op.drop_index("ix_exceptions_treasury_status", table_name="exceptions")
     op.drop_index("uq_exceptions_open_request", table_name="exceptions")
     op.drop_table("exceptions")
     op.drop_index("ix_screenings_address_checked", table_name="screenings")
@@ -515,6 +559,7 @@ def downgrade() -> None:
     op.drop_table("payees")
     op.drop_index("ix_mandate_status_events_version_at", table_name="mandate_status_events")
     op.drop_table("mandate_status_events")
+    op.drop_index("uq_mandate_versions_active_treasury", table_name="mandate_versions")
     op.drop_index("ix_mandate_versions_treasury_status", table_name="mandate_versions")
     op.drop_table("mandate_versions")
     op.drop_index("ix_governance_signatures_tx_id", table_name="governance_signatures")
