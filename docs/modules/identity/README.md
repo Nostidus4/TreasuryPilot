@@ -49,8 +49,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 
 | Method | Endpoint | Perm | Errors |
 |---|---|---|---|
-| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` |
-| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` |
+| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` with `Retry-After: 900` |
+| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` with `Retry-After: 900` |
 | POST | `/auth/logout` · GET `/me` | auth | |
 | GET | `/auth/siwe/nonce` · POST `/me/wallets` · DELETE `/me/wallets/{a}` | auth | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE`, `SIGNER_ROLE_REQUIRES_WALLET` |
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
