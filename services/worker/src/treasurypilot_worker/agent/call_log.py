@@ -12,8 +12,11 @@ import asyncpg  # type: ignore[import-untyped]
 from treasurypilot_core.ids import uuid7
 from treasurypilot_worker.agent.types import ToolCallRecord
 
-# Tool results and error messages can quote document text; the log keeps only a preview.
+# Tool inputs, tool results and error messages can quote document text; the log keeps only a
+# preview.
 PREVIEW_CHARS = 200
+# A hung database must fail the task fast, not hold it for asyncpg's 60 s connect default.
+DB_TIMEOUT_S = 5
 
 
 class ValidationResult(StrEnum):
@@ -88,7 +91,9 @@ class PostgresAiCallLog:
         # shortcut: one connection per AI call (calls take seconds), and `record` must not run
         # inside an event loop (sync Celery tasks only); pool it and go async if that changes.
         row_id = uuid7()
-        connection = await asyncpg.connect(self._dsn)
+        connection = await asyncpg.connect(
+            self._dsn, timeout=DB_TIMEOUT_S, command_timeout=DB_TIMEOUT_S
+        )
         try:
             await connection.execute(
                 _INSERT,
@@ -113,10 +118,12 @@ class PostgresAiCallLog:
 
 
 def _tool_call_json(call: ToolCallRecord) -> dict[str, Any]:
+    input_json = json.dumps(call.input)
     return {
         "id": call.id,
         "name": call.name,
-        "input": call.input,
+        "input_preview": input_json[:PREVIEW_CHARS],
+        "input_chars": len(input_json),
         "result_preview": call.result[:PREVIEW_CHARS],
         "result_chars": len(call.result),
         "is_error": call.is_error,

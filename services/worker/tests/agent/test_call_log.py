@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,8 @@ from treasurypilot_worker.agent import (
     fake_tool_use,
     wrap_untrusted,
 )
+from treasurypilot_worker.agent.call_log import _tool_call_json
+from treasurypilot_worker.agent.types import ToolCallRecord
 
 API_ROOT = Path(__file__).resolve().parents[3] / "api"
 ORG_ID = "00000000-0000-7000-8000-000000000010"
@@ -175,6 +178,24 @@ def test_error_text_is_cut_to_a_preview(
         )
 
     assert len(log.entries[0].error or "") == 200
+
+
+def test_tool_input_is_cut_to_a_preview() -> None:
+    call = ToolCallRecord("t1", "lookup", {"quote": "y" * 1_000}, "ok", False, False)
+
+    logged = _tool_call_json(call)
+
+    assert len(logged["input_preview"]) == 200
+    assert logged["input_chars"] == len(json.dumps(call.input))
+    assert "input" not in logged
+
+
+def test_purpose_and_validation_values_match_the_api_model() -> None:
+    # Tests may import both services; a value missing from the DB enum would fail every call.
+    from treasurypilot_api.agent.models import AiPurpose, AiValidationResult
+
+    assert [task.value for task in AiTask] == [purpose.value for purpose in AiPurpose]
+    assert [v.value for v in ValidationResult] == [v.value for v in AiValidationResult]
 
 
 @pytest.mark.parametrize(
