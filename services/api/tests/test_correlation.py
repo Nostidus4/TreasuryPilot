@@ -90,4 +90,8 @@ def test_unhandled_error_keeps_request_id_and_logs_with_context(
 def test_cors_exposes_request_id(client: TestClient) -> None:
     response = client.get("/_context", headers={"Origin": "http://localhost:5173"})
 
-    assert response.headers["access-control-expose-headers"] == "x-request-id"
+    exposed = {
+        name.strip().casefold()
+        for name in response.headers["access-control-expose-headers"].split(",")
+    }
+    assert {"x-request-id", "retry-after"} <= exposed
