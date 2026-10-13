@@ -227,7 +227,7 @@ def test_borrow_proposal_cannot_become_an_executable_schedule_item() -> None:
         snapshot(safe=1_000, debt=1_000, health_factor=2 * 10**18), BaseUnits(100), DAY + 30
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="ScheduledItem"):
         Schedule(
             items=[proposal],  # type: ignore[list-item]
             infeasible=[],
@@ -258,3 +258,24 @@ def test_borrow_proposal_rejects_invalid_shortfalls(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         propose_borrow(snapshot(safe=1_000), BaseUnits(deficit), until_day)
+
+
+def test_borrow_reason_always_compares_costs() -> None:
+    # Review repro: no debt, cheaper borrowing; the comparison must still be stated.
+    proposal = propose_borrow(
+        snapshot(safe=1_000, borrow_rate_bps=100, supply_rate_bps=500),
+        BaseUnits(10**9),
+        DAY + 30,
+    )
+    assert (proposal.cost_to_repayment, proposal.withdraw_cost) == (821_917, 4_109_589)
+    assert proposal.reason.startswith("Estimated borrowing cost is lower")
+    assert "unknown" in proposal.reason
+
+
+def test_borrow_reason_warns_just_above_health_factor_one() -> None:
+    proposal = propose_borrow(
+        snapshot(safe=1_000, debt=1_000, health_factor=15 * 10**17), BaseUnits(400), DAY + 30
+    )
+    assert proposal.health_factor_after is not None
+    assert 10**18 <= proposal.health_factor_after < 11 * 10**17
+    assert "below 1.1" in proposal.reason
