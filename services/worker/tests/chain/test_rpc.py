@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from eth_abi import encode
+from prometheus_client import REGISTRY
 
 from treasurypilot_worker.chain import rpc as rpc_module
 from treasurypilot_worker.chain.rpc import (
@@ -49,12 +50,19 @@ def client(*providers: FakeProvider) -> RpcClient:
     )
 
 
+def _rpc_errors(provider: str) -> float:
+    return REGISTRY.get_sample_value("tp_rpc_errors_total", {"provider": provider}) or 0
+
+
 def test_call_fails_over_to_the_second_provider_when_the_first_is_down() -> None:
     primary = FakeProvider(down=True)
     secondary = FakeProvider({"eth_blockNumber": "0x64"})
+    before = {name: _rpc_errors(name) for name in ("p0", "p1")}
 
     assert asyncio.run(client(primary, secondary).call("eth_blockNumber", [])) == "0x64"
     assert len(primary.requests) == 3  # first attempt + 2 retries
+    assert _rpc_errors("p0") == before["p0"] + 3
+    assert _rpc_errors("p1") == before["p1"]
 
 
 def test_call_raises_rpc_unavailable_when_every_provider_is_down() -> None:

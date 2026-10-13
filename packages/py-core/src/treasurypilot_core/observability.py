@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import Literal, cast
 from uuid import uuid4
 
+import sentry_sdk
 import structlog
 from opentelemetry import trace
 from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
@@ -53,6 +54,8 @@ def bind_context(**fields: str) -> None:
     if unknown:
         raise ValueError(f"unknown log context fields: {sorted(unknown)}")
     bind_contextvars(**fields)
+    # Sentry captures unhandled errors outside the request, after the log context is cleared.
+    sentry_sdk.set_tags(fields)
 
 
 def clear_context() -> None:

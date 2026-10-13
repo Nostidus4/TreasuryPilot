@@ -14,6 +14,11 @@ import '@/styles.css';
 
 async function start() {
   initTheme();
+  if (import.meta.env.VITE_SENTRY_DSN) {
+    // Loaded only when configured, so builds without a DSN ship no Sentry code.
+    const Sentry = await import('@sentry/react');
+    Sentry.init({ dsn: import.meta.env.VITE_SENTRY_DSN, environment: import.meta.env.MODE });
+  }
   if (mockApiEnabled) {
     const { startMockApi } = await import('@/mocks/browser');
     await startMockApi();

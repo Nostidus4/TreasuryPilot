@@ -3,9 +3,11 @@ from kombu import Exchange, Queue
 from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
 
+from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import configure_logging
 from treasurypilot_core.tracing import configure_tracing
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.metrics import start_metrics_server
 from treasurypilot_worker.runtime import SafeTask
 
 
@@ -61,3 +63,12 @@ def _configure_observability(**_: object) -> None:
     for instrumentor in (CeleryInstrumentor(), HTTPX2ClientInstrumentor()):
         if not instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.instrument()
+    configure_error_tracking("worker")
+
+
+# worker_init runs once in the parent process, before the prefork pool starts.
+@signals.worker_init.connect
+def _serve_metrics(**_: object) -> None:
+    port = get_settings().metrics_port
+    if port is not None:
+        start_metrics_server(app, port)

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel
 
+from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import configure_logging
 from treasurypilot_core.observability_asgi import CorrelationMiddleware
 from treasurypilot_core.tracing import configure_tracing
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging("signer", settings.log_level, settings.log_format)
     configure_tracing("signer")
+    configure_error_tracking("signer")
     app = FastAPI(
         title="TreasuryPilot Signer",
         description=(
