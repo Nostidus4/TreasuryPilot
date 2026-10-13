@@ -37,6 +37,7 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
 from treasurypilot_api.mandate.routes import (
@@ -224,6 +225,7 @@ def create_app(
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
+    app.state.request_sessions = sessions
     app.state.screening_service = screening_service
     app.state.vendor_repository = vendor_repository
     app.state.payee_repository = payee_repository
@@ -250,6 +252,7 @@ def create_app(
     app.include_router(mandate_router)
     app.include_router(vendors_router)
     app.include_router(payees_router)
+    app.include_router(requests_router)
 
     return app
 
