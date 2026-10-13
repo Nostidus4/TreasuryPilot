@@ -329,6 +329,7 @@ def test_me_returns_current_user_memberships_and_linked_wallets() -> None:
                 "orgId": "00000000-0000-4000-8000-000000000012",
                 "roles": ["Finance", "Auditor"],
                 "status": "active",
+                "signerRolesActive": False,
             }
         ]
         assert payload["wallets"][0]["address"] == "0x" + "11" * 20
@@ -636,6 +637,7 @@ class MemoryOrganizationRepository:
     def __init__(self) -> None:
         self.organizations: dict[uuid.UUID, OrganizationRecord] = {}
         self.memberships: dict[tuple[uuid.UUID, uuid.UUID], set[str]] = {}
+        self.signer_wallets: set[tuple[uuid.UUID, uuid.UUID]] = set()
         self.wallets: set[uuid.UUID] = set()
         self.treasuries: set[uuid.UUID] = set()
         self.enabled_modules: set[uuid.UUID] = set()
@@ -684,6 +686,11 @@ class MemoryOrganizationRepository:
     ) -> tuple[str, ...] | None:
         roles = self.memberships.get((organization_id, user_id))
         return tuple(roles) if roles is not None else None
+
+    async def has_active_signer_wallet(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
+        return (organization_id, user_id) in self.signer_wallets
 
     async def update_settings(
         self,
@@ -792,6 +799,14 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         assert denied.json()["code"] == "FORBIDDEN"
 
         organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {"Owner"}
+        owner_without_wallet = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert owner_without_wallet.status_code == 403
+
+        organizations.signer_wallets.add((organization_id, harness.repository.profile.user.id))
         owner_setting = harness.client.patch(
             f"/v1/orgs/{organization_id}/settings",
             json={"soloMode": True},

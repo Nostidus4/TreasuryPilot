@@ -77,6 +77,130 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "InviteCreateRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationRole"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["email", "roles"],
+        "title": "InviteCreateRequest",
+        "type": "object"
+      },
+      "InviteCreatedResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "roles",
+          "createdAt",
+          "expiresAt",
+          "token"
+        ],
+        "title": "InviteCreatedResponse",
+        "type": "object"
+      },
+      "InviteView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["id", "orgId", "email", "roles", "createdAt", "expiresAt"],
+        "title": "InviteView",
+        "type": "object"
+      },
+      "InvitesResponse": {
+        "properties": {
+          "invites": {
+            "items": {
+              "$ref": "#/components/schemas/InviteView"
+            },
+            "title": "Invites",
+            "type": "array"
+          }
+        },
+        "required": ["invites"],
+        "title": "InvitesResponse",
+        "type": "object"
+      },
       "MagicLinkRequest": {
         "properties": {
           "email": {
@@ -114,6 +238,61 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MemberResponse": {
+        "properties": {
+          "member": {
+            "$ref": "#/components/schemas/MemberView"
+          }
+        },
+        "required": ["member"],
+        "title": "MemberResponse",
+        "type": "object"
+      },
+      "MemberView": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "signerRolesActive": {
+            "title": "Signerrolesactive",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": ["userId", "email", "roles", "status", "signerRolesActive"],
+        "title": "MemberView",
+        "type": "object"
+      },
+      "MembersResponse": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberView"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": ["members"],
+        "title": "MembersResponse",
+        "type": "object"
+      },
       "MembershipView": {
         "properties": {
           "id": {
@@ -133,12 +312,16 @@
             "title": "Roles",
             "type": "array"
           },
+          "signerRolesActive": {
+            "title": "Signerrolesactive",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
           }
         },
-        "required": ["id", "orgId", "roles", "status"],
+        "required": ["id", "orgId", "roles", "status", "signerRolesActive"],
         "title": "MembershipView",
         "type": "object"
       },
@@ -192,6 +375,20 @@
         "required": ["org"],
         "title": "OrganizationResponse",
         "type": "object"
+      },
+      "OrganizationRole": {
+        "enum": [
+          "OrgAdmin",
+          "Owner",
+          "Approver",
+          "Operator",
+          "Finance",
+          "Guardian",
+          "Auditor",
+          "PlatformAdmin"
+        ],
+        "title": "OrganizationRole",
+        "type": "string"
       },
       "OrganizationSettingsRequest": {
         "properties": {
@@ -283,6 +480,22 @@
           "createdAt"
         ],
         "title": "OrganizationView",
+        "type": "object"
+      },
+      "RoleUpdateRequest": {
+        "properties": {
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationRole"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["roles"],
+        "title": "RoleUpdateRequest",
         "type": "object"
       },
       "UserView": {
@@ -531,6 +744,46 @@
         "tags": ["system"]
       }
     },
+    "/v1/invites/{token}/accept": {
+      "post": {
+        "operationId": "accept_invite_v1_invites__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invite",
+        "tags": ["membership"]
+      }
+    },
     "/v1/me": {
       "get": {
         "operationId": "me_v1_me_get",
@@ -628,6 +881,290 @@
         },
         "summary": "Get Organization",
         "tags": ["organizations"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invites": {
+      "get": {
+        "operationId": "list_invites_v1_orgs__organization_id__invites_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invites",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_invite_v1_orgs__organization_id__invites_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invite",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invites/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_invite_v1_orgs__organization_id__invites__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invite",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/members": {
+      "get": {
+        "operationId": "list_members_v1_orgs__organization_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Members",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "remove_member_v1_orgs__organization_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Member",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      },
+      "patch": {
+        "operationId": "update_member_v1_orgs__organization_id__members__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Member",
+        "tags": ["membership"],
         "x-organization-scoped": true
       }
     },
