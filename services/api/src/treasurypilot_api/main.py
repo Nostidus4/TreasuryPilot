@@ -38,6 +38,8 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
+from treasurypilot_core.observability_asgi import CorrelationMiddleware
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
 # cookies. Only ever used when TP_ENVIRONMENT=local.
@@ -146,6 +148,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    configure_logging("api", settings.log_level, settings.log_format)
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
@@ -198,7 +201,10 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
+
+    app.add_middleware(CorrelationMiddleware)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     @app.get("/v1/health", response_model=HealthResponse, tags=["system"])

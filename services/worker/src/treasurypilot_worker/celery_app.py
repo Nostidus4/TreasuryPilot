@@ -1,6 +1,7 @@
-from celery import Celery
+from celery import Celery, signals
 from kombu import Exchange, Queue
 
+from treasurypilot_core.observability import configure_logging
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.runtime import SafeTask
 
@@ -43,3 +44,11 @@ def create_celery_app() -> Celery:
 
 
 app = create_celery_app()
+
+
+# setup_logging fires for both `celery worker` and `celery beat`, and stops Celery from
+# installing its own root handler.
+@signals.setup_logging.connect
+def _configure_logging(**_: object) -> None:
+    settings = get_settings()
+    configure_logging("worker", settings.log_level, settings.log_format)
