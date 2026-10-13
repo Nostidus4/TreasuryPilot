@@ -11,8 +11,8 @@ from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.audit.chain import ChainVerification, verify_chain
 from treasurypilot_api.audit.models import AuditHead, AuditLog
-from treasurypilot_api.audit.verify import ChainVerification, verify_chain
 from treasurypilot_api.audit.writer import AuditHeadMissing
 from treasurypilot_api.identity.api import ApiModel, _authenticated
 from treasurypilot_api.identity.auth import AuthFailure
@@ -136,7 +136,7 @@ class SqlAlchemyAuditRepository:
 
 
 class AuditRecordView(ApiModel):
-    """One audit record; JSON Lines of these are the offline verifier's dump format."""
+    """One audit record; JSON Lines of these are the dump that ``chain.py verify`` reads."""
 
     seq: int
     org_id: uuid.UUID
@@ -164,21 +164,6 @@ class AuditRecordView(ApiModel):
             data=row.data,
             prev_hash="0x" + row.prev_hash.hex(),
             hash="0x" + row.hash.hex(),
-        )
-
-    def to_row(self) -> AuditLog:
-        return AuditLog(
-            seq=self.seq,
-            org_id=self.org_id,
-            at=self.at,
-            actor_type=self.actor_type,
-            actor_id=self.actor_id,
-            action=self.action,
-            entity_type=self.entity_type,
-            entity_id=self.entity_id,
-            data=self.data,
-            prev_hash=bytes.fromhex(self.prev_hash.removeprefix("0x")),
-            hash=bytes.fromhex(self.hash.removeprefix("0x")),
         )
 
 

@@ -35,7 +35,7 @@ Chỉ ghi thêm. Trạng thái kiểm tính khi cần: `INTACT | BROKEN_AT(seq)`
 
 ## 6. Giao diện
 
-GET `/audit-log?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` (Auditor, OWN, ADM) · GET `/audit-log/verify` → `{status, checked, brokenAt}` (Auditor, OWN) · GET `/requests/{r}/evidence` (Auditor, OWN, FIN) · POST `/scenarios/{id}/evidence` (lượt demo/benchmark) · CLI `python -m treasurypilot_api.audit verify --dump file.jsonl` (offline; JSON Lines các item của `audit-log`; exit 0 nguyên vẹn, 1 hỏng, 2 không đọc được; dump không có head nên mất bản ghi cuối chỉ API phát hiện).
+GET `/audit-log?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` (Auditor, OWN, ADM) · GET `/audit-log/verify` → `{status, checked, brokenAt}` (Auditor, OWN) · GET `/requests/{r}/evidence` (Auditor, OWN, FIN) · POST `/scenarios/{id}/evidence` (lượt demo/benchmark) · CLI `python services/api/src/treasurypilot_api/audit/chain.py verify --dump file.jsonl` (offline, chỉ cần thư viện chuẩn; JSON Lines các item của `audit-log`; exit 0 nguyên vẹn, 1 hỏng, 2 không đọc được; dump không có head nên mất bản ghi cuối chỉ API phát hiện).
 
 ## 7. Luồng
 

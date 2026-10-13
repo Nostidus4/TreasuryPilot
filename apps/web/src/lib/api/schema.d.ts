@@ -204,7 +204,7 @@ export interface components {
     };
     /**
      * AuditRecordView
-     * @description One audit record; JSON Lines of these are the offline verifier's dump format.
+     * @description One audit record; JSON Lines of these are the dump that ``chain.py verify`` reads.
      */
     AuditRecordView: {
       /** Action */

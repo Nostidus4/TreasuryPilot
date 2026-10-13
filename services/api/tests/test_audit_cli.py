@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from treasurypilot_api.audit import ZERO_HASH, AuditLog, compute_hash
+from treasurypilot_api.audit import ZERO_HASH, AuditLog, chain, compute_hash
 from treasurypilot_api.audit.api import AuditRecordView
 
 
@@ -35,8 +35,9 @@ def _dump(path: Path) -> list[str]:
 
 
 def _verify(path: Path) -> subprocess.CompletedProcess[str]:
+    # -I -S: no site-packages and no repo on the path, so the script runs on the stdlib alone.
     return subprocess.run(
-        [sys.executable, "-m", "treasurypilot_api.audit", "verify", "--dump", str(path)],
+        [sys.executable, "-I", "-S", chain.__file__, "verify", "--dump", str(path)],
         capture_output=True,
         text=True,
         check=False,
