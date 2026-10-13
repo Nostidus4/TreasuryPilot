@@ -34,17 +34,17 @@ F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (
 
 ## 5. State
 
-Append-only. Verification status computed on demand: `INTACT | BROKEN_AT(seq)`.
+Append-only. Verification status computed on demand: `INTACT | BROKEN_AT(seq)`. `brokenAt` is the first record whose `prev_hash` does not link or whose hash does not recompute; the API also checks the chain ends at the org's head, so a record past the head or a removed tail is reported (a removed tail at the head's `last_seq`). The API reads the head and the rows in one `REPEATABLE READ` snapshot.
 
 ## 6. Interfaces
 
 | Method | Endpoint | Perm |
 |---|---|---|
-| GET | `/orgs/{o}/audit-log?entity=&actor=&from=&to=` | Auditor, OWN, ADM |
-| GET | `/orgs/{o}/audit-log/verify` → `{status, checked, brokenAt?}` | Auditor, OWN |
+| GET | `/orgs/{o}/audit-log?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` (`from` inclusive, `to` exclusive, both timezone-aware) | Auditor, OWN, ADM |
+| GET | `/orgs/{o}/audit-log/verify` → `{status, checked, brokenAt}` | Auditor, OWN |
 | GET | `/orgs/{o}/requests/{r}/evidence` → bundle (JSON) | Auditor, OWN, FIN |
 | POST | `/orgs/{o}/scenarios/{id}/evidence` (demo/benchmark runs) | OWN, ADM |
-| CLI | `python -m treasurypilot.audit verify --dump file.jsonl` | offline |
+| CLI | `python services/api/src/treasurypilot_api/audit/chain.py verify --dump file.jsonl` (standard library only, the same module the API hashes with; JSON Lines of `audit-log` items; exit 0 intact, 1 broken, 2 unreadable; a dump has no head, so a removed tail is only caught by the API) | offline |
 
 ## 7. Flows
 
@@ -52,7 +52,7 @@ Service performs action → `audit.write(...)` inside the same DB transaction (r
 
 ## 8. Algorithms
 
-- **Chain head lock:** each organization gets its genesis head (`last_hash` = 32 zero bytes) when it is created (DB trigger); a missing head raises `AuditHeadMissing`, never a new chain. `write()` locks the head with `SELECT … FOR UPDATE` (re-read, never from the session cache) and allocates `seq` in the same statement, inserts with `prev_hash = head.last_hash` and updates the head, all in the caller's transaction (it flushes, never commits). The lock is held until commit: call `write()` last, and write several orgs in ascending `org_id` order. `hash = sha256(canonical_json(record))`; the record includes `prev_hash` as lowercase hex, and `compute_hash(row)` recomputes it from a stored row. Canonical JSON uses sorted keys and no spaces; amounts are integer base-unit strings (integral Decimals are converted; floats, fractional Decimals and NUL are rejected so values survive the JSONB round trip); timestamps are ISO-8601 UTC. `audit_log` rejects UPDATE, DELETE and TRUNCATE; a started head cannot be deleted or truncated.
+- **Chain head lock:** each organization gets its genesis head (`last_hash` = 32 zero bytes) when it is created (DB trigger); a missing head raises `AuditHeadMissing`, never a new chain. `write()` locks the head with `SELECT … FOR UPDATE` (re-read, never from the session cache) and allocates `seq` in the same statement, inserts with `prev_hash = head.last_hash` and updates the head, all in the caller's transaction (it flushes, never commits). The lock is held until commit: call `write()` last, and write several orgs in ascending `org_id` order. `hash = sha256(canonical_json(record))`; the record includes `prev_hash` as lowercase hex, and `compute_hash(row)` (in the stdlib-only `audit/chain.py`) recomputes it from a stored row. Canonical JSON uses sorted keys and no spaces; amounts are integer base-unit strings (integral Decimals are converted; floats, fractional Decimals and NUL are rejected so values survive the JSONB round trip); timestamps are ISO-8601 UTC. `audit_log` rejects UPDATE, DELETE and TRUNCATE; a started head cannot be deleted or truncated.
 - **Evidence bundle v1 fields:** request (ids, vendor display, amounts, fingerprint, invoiceHash), approval (typed data, signer address, signature hash only), flags + acks, plan (planner source, plan hash, steps), validations (all stages), ai_calls (purpose, model, prompt version, output summary), attestation (typed data, signer), operations/transactions (hashes, blocks, fees), verifications, reconciliation, EAS UID, coverage labels, fixture labels (TEST asset/router), generated_at, app version. **No fabricated hashes**: a blocked request has no tx section (BR-095).
 - **Coverage labels:** every status DTO includes `coverage {level, missing[], snapshotBlock}`.
 
