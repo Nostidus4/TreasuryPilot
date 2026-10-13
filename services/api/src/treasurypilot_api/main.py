@@ -211,7 +211,8 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+        # Retry-After is not CORS-safelisted; the SPA needs it for 429/503 backoff.
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
     )
 
     app.add_middleware(CorrelationMiddleware)

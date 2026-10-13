@@ -97,10 +97,13 @@ export const identityHandlers = [
         fail(422, 'EMAIL_INVALID', 'Enter a valid work email address.');
       }
       if (email.startsWith('ratelimit')) {
+        // Matches the API: a 15-minute fixed window, Retry-After = seconds left.
         fail(
           429,
           'RATE_LIMITED',
-          'Too many sign-in links requested. Try again in a minute.',
+          'Too many sign-in attempts. Please wait and try again.',
+          undefined,
+          { 'Retry-After': '900' },
         );
       }
     },
