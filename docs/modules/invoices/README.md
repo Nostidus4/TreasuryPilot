@@ -248,6 +248,8 @@ Due dates earlier than issue dates are retained and receive `DUE_BEFORE_ISSUE` H
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
 
+`services/api/src/treasurypilot_api/invoices/approval.py` is the server-side typed-data builder for INV-010. It accepts the current normalized request view and on-chain module context, derives expiry from the due deadline and mandate `approvalMaxAge`, and delegates the exact 13-field EIP-712/domain encoding to `treasurypilot_core.eip712`. The INV-010 API routes must call it after loading the latest request revision; route, persistence, linked-wallet authorization, and signature submission wiring remain part of the invoice approval endpoint implementation.
+
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 
 ### 8.7 Invalidation and expiry
