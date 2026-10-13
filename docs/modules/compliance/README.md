@@ -55,6 +55,14 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 
 Screening TTL 24 h; provider `fixture` in M1; encryption key from Docker secret `field_key`; redaction on in all environments.
 
+The API exposes the screening adapter through `app.state.screening_service` for
+payee-registration and pre-PAY callers. `screen()` persists each result and
+reuses CLEAR/HIT records for 24 hours. Provider exceptions are persisted as
+ERROR without a cache lifetime; `require_clear()` raises `DATA_MISSING` for
+ERROR and `SCREENING_HIT` for HIT. The fixture includes static `TEST DATA`
+addresses, including a sample from the [OFAC SDN-list update on 2026-03-12](https://ofac.treasury.gov/recent-actions/20260312).
+The fixture is not a live sanctions list and must not be used for real screening.
+
 The `field_key` secret contains a base64-encoded 32-byte key. Services load it from
 `/run/secrets/field_key` by default; managed environments may inject
 `TP_FIELD_ENCRYPTION_KEY` or configure `TP_FIELD_ENCRYPTION_KEY_FILE`. Encrypted

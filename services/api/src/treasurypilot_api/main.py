@@ -10,6 +10,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from treasurypilot_api import __version__
+from treasurypilot_api.compliance.screening import (
+    FixtureScreeningProvider,
+    ScreeningService,
+    SqlAlchemyScreeningRepository,
+)
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -152,6 +157,7 @@ def create_app(
     auth_service: AuthService | None = None,
     organization_repository: OrganizationRepository | None = None,
     mandate_repository: MandateRepository | None = None,
+    screening_service: ScreeningService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -163,6 +169,11 @@ def create_app(
     if mandate_repository is None and engine is not None:
         mandate_repository = SqlAlchemyMandateRepository(
             async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if screening_service is None and engine is not None:
+        screening_service = ScreeningService(
+            SqlAlchemyScreeningRepository(async_sessionmaker(engine, expire_on_commit=False)),
+            FixtureScreeningProvider(),
         )
 
     @asynccontextmanager
@@ -205,6 +216,7 @@ def create_app(
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
+    app.state.screening_service = screening_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
