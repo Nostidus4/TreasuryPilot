@@ -317,7 +317,7 @@ A valid exception removes `OVER_PER_REQUEST_LIMIT` from `failing` before aggrega
 
 ### 8.3 planHash
 
-`planHash = keccak256(abi.encode(PLAN_TYPEHASH, requestId, treasury, chainId, keccak256(abi.encodePacked(stepHash_0, stepHash_1, …))))` with `stepHash_i = hashStruct(Step_i)` (EIP-712 struct hash, §6.3). `PLAN_TYPEHASH = keccak256("Plan(bytes32 requestId,address treasury,uint256 chainId,Step[] steps)Step(…)")`, so planHash is the EIP-712 `hashStruct(Plan)`. Field order is fixed; JSON is never hashed (POL-005). Python and TypeScript share golden vectors.
+`planHash = keccak256(abi.encode(PLAN_TYPEHASH, requestId, treasury, chainId, keccak256(abi.encodePacked(stepHash_0, stepHash_1, …))))` with `stepHash_i = hashStruct(Step_i)` (EIP-712 struct hash, §6.3). `PLAN_TYPEHASH = keccak256("Plan(bytes32 requestId,address treasury,uint256 chainId,Step[] steps)Step(…)")`, so planHash is the EIP-712 `hashStruct(Plan)`. `treasury` is the module clone, the same address as the approval `treasury` and the attestation `verifyingContract` (not Safe T). Field order is fixed; JSON is never hashed (POL-005). Python and TypeScript share golden vectors.
 
 ### 8.4 stepId
 
