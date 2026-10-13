@@ -77,6 +77,25 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LinkWalletRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["message", "signature"],
+        "title": "LinkWalletRequest",
+        "type": "object"
+      },
       "MagicLinkRequest": {
         "properties": {
           "email": {
@@ -126,6 +145,22 @@
             "title": "Orgid",
             "type": "string"
           },
+          "ownerCheckedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownercheckedat"
+          },
+          "ownerIsOnchain": {
+            "title": "Ownerisonchain",
+            "type": "boolean"
+          },
           "roles": {
             "items": {
               "type": "string"
@@ -133,12 +168,24 @@
             "title": "Roles",
             "type": "array"
           },
+          "signerRolesActive": {
+            "title": "Signerrolesactive",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
           }
         },
-        "required": ["id", "orgId", "roles", "status"],
+        "required": [
+          "id",
+          "orgId",
+          "roles",
+          "status",
+          "ownerIsOnchain",
+          "ownerCheckedAt",
+          "signerRolesActive"
+        ],
         "title": "MembershipView",
         "type": "object"
       },
@@ -283,6 +330,34 @@
           "createdAt"
         ],
         "title": "OrganizationView",
+        "type": "object"
+      },
+      "SiweNonceResponse": {
+        "properties": {
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "scheme": {
+            "title": "Scheme",
+            "type": "string"
+          }
+        },
+        "required": ["nonce", "domain", "scheme", "chainId", "expiresAt"],
+        "title": "SiweNonceResponse",
         "type": "object"
       },
       "UserView": {
@@ -512,6 +587,25 @@
         "tags": ["identity"]
       }
     },
+    "/v1/auth/siwe/nonce": {
+      "get": {
+        "operationId": "siwe_nonce_v1_auth_siwe_nonce_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiweNonceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Siwe Nonce",
+        "tags": ["identity"]
+      }
+    },
     "/v1/health": {
       "get": {
         "operationId": "health_v1_health_get",
@@ -547,6 +641,78 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/wallets": {
+      "post": {
+        "operationId": "link_wallet_v1_me_wallets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkWalletRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Wallet",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/wallets/{address}": {
+      "delete": {
+        "operationId": "unlink_wallet_v1_me_wallets__address__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "schema": {
+              "title": "Address",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlink Wallet",
         "tags": ["identity"]
       }
     },
