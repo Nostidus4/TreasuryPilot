@@ -38,7 +38,7 @@ class Action(StrEnum):
     WITHDRAW = "WITHDRAW"  # pool → Safe T ahead of a REFILL (financial-engine §15)
 
 
-# The module's uint8 action codes (M08 §8.4); SWAP is P2 and has no code yet.
+# The module's uint8 action codes (M08 §8.4); SWAP is P2 and not mapped to SWAP_IN yet.
 _ACTION_CODES = {Action.PAY: PAY, Action.REFILL: REFILL, Action.WITHDRAW: WITHDRAW}
 
 

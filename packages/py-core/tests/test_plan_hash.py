@@ -7,7 +7,15 @@ from typing import Any
 import pytest
 from eth_hash.auto import keccak
 
-from treasurypilot_core.eip712 import PAY, PLAN_TYPE, liquidity_cycle_id, plan_hash, step_id
+from treasurypilot_core.eip712 import (
+    PAY,
+    PLAN_TYPE,
+    REFILL,
+    WITHDRAW,
+    liquidity_cycle_id,
+    plan_hash,
+    step_id,
+)
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 
@@ -103,7 +111,7 @@ def test_the_plan_treasury_is_the_module_clone_not_safe_t() -> None:
 
 def test_an_execution_plan_hashes_like_the_typescript_oracle() -> None:
     vector = PLANS["request"]
-    actions = {5: Action.WITHDRAW, 2: Action.REFILL, PAY: Action.PAY}
+    actions = {WITHDRAW: Action.WITHDRAW, REFILL: Action.REFILL, PAY: Action.PAY}
     plan = ExecutionPlan(
         request_id=bytes.fromhex(vector["requestId"][2:]),
         treasury=vector["treasury"],
