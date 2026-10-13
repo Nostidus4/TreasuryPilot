@@ -123,6 +123,19 @@ class AttackCase(LabelModel):
     expected: AttackExpected
 
 
+class CopilotCase(LabelModel):
+    id: Annotated[str, Field(pattern=r"^cp-[0-9]{3}$")]
+    scenario: Annotated[str, Field(pattern=r"^sc-[0-9]{3}$")]
+    question: Annotated[str, Field(min_length=1)]
+    expected_numbers: Annotated[dict[str, AmountText], Field(min_length=1)]
+    tolerance: Literal["exact"]
+    must_refuse: bool
+    units: dict[str, Literal["base_units"]]
+    evidence_sources: dict[str, str]
+    context: dict[str, object]
+    safe_response: str
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
@@ -330,10 +343,50 @@ def redteam() -> int:
     return len(paths)
 
 
+def copilot() -> int:
+    directory = ROOT / "copilot"
+    paths = sorted(directory.glob("cp-*.yaml"))
+    if not paths:
+        return 0
+    schema = json.loads((directory / "case.schema.json").read_text(encoding="utf-8"))
+    require(schema == CopilotCase.model_json_schema(), "Copilot schema/model drift")
+    spec = importlib.util.spec_from_file_location("copilot_author", directory / "author.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    reference = {case["id"]: case for case in module.build_cases()}
+    refusals = 0
+    for path in paths:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        case = CopilotCase.model_validate(raw)
+        require(
+            case.id == path.stem and raw == reference.get(case.id), "Copilot reference/answer drift"
+        )
+        require(
+            (ROOT / "scenarios/dev" / (case.scenario + ".yaml")).is_file(),
+            "Copilot must reference dev data",
+        )
+        require(
+            set(case.expected_numbers) == set(case.units) == set(case.evidence_sources),
+            "Numeric provenance incomplete",
+        )
+        for key, value in case.expected_numbers.items():
+            units(value)
+            source = case.evidence_sources[key]
+            require(
+                case.context["tool_outputs"][source][key] == value, "Unsupported numeric answer"
+            )
+        refusals += int(case.must_refuse)
+    require(len(paths) == 20 and refusals == 4, "Copilot case/refusal count drift")
+    print("Copilot: 20 numeric cases, four refused write requests, dev-only references")
+    return len(paths)
+
+
 def main() -> None:
     scenarios()
     invoices()
     redteam()
+    copilot()
     print("Evaluation authoring validation passed; human ground-truth review remains pending")
 
 
