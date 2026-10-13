@@ -278,29 +278,31 @@ async def _verify_invoice_constraints(database_url: str) -> None:
                 )
             )
 
-        def request_insert(vendor: str, asset: str) -> str:
+        def request_insert(vendor: str, asset: str, request_suffix: str) -> str:
             return (
                 "INSERT INTO payment_requests "
                 "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, "
                 "issue_date, due_at, amount, asset_id) VALUES "
-                f"('00000000-0000-7000-8000-000000000072', '{org_id}', '{treasury_id}', "
+                f"('00000000-0000-7000-8000-000000000{request_suffix}', "
+                f"'{org_id}', '{treasury_id}', "
                 f"11155111, '{vendor}', '{payee_id}', 'INV-003', '2026-10-02', '2026-10-31', "
                 f"1000, '{asset}')"
             )
 
-        for vendor, asset, constraint in (
+        for request_suffix, vendor, asset, constraint in (
             # Either composite FK may report this one first; both reject it.
             (
+                    "075",
                 foreign_vendor_id,
                 asset_id,
                 "fk_payment_requests_(vendor_org|payee_treasury_vendor)",
             ),
-            (other_vendor_id, asset_id, "fk_payment_requests_payee_treasury_vendor"),
-            (vendor_id, mainnet_asset_id, "fk_payment_requests_asset_chain"),
+            ("076", other_vendor_id, asset_id, "fk_payment_requests_payee_treasury_vendor"),
+            ("077", vendor_id, mainnet_asset_id, "fk_payment_requests_asset_chain"),
         ):
             with pytest.raises(IntegrityError, match=constraint):
                 async with engine.begin() as connection:
-                    await connection.execute(text(request_insert(vendor, asset)))
+                    await connection.execute(text(request_insert(vendor, asset, request_suffix)))
 
         with pytest.raises(DBAPIError, match="request_revisions are append-only"):
             async with engine.begin() as connection:
