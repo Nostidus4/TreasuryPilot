@@ -2,6 +2,14 @@
 
 from treasurypilot_worker.agent.adapter import AiAdapter
 from treasurypilot_worker.agent.budget import BudgetLedger, InMemoryBudgetLedger, cost_usd_micros
+from treasurypilot_worker.agent.call_log import (
+    AiCallEntry,
+    AiCallLog,
+    AiCallLogError,
+    InMemoryAiCallLog,
+    PostgresAiCallLog,
+    ValidationResult,
+)
 from treasurypilot_worker.agent.config import (
     AiConfig,
     AiTask,
@@ -72,6 +80,9 @@ __all__ = [
     "UNTRUSTED_DATA_POLICY",
     "AiAdapter",
     "AiBudgetExceeded",
+    "AiCallEntry",
+    "AiCallLog",
+    "AiCallLogError",
     "AiConfig",
     "AiError",
     "AiInputRejected",
@@ -86,11 +97,13 @@ __all__ = [
     "FailoverProvider",
     "FakeClock",
     "FakeProvider",
+    "InMemoryAiCallLog",
     "InMemoryBudgetLedger",
     "InstructionMatch",
     "InstructionScan",
     "Message",
     "ModelPrice",
+    "PostgresAiCallLog",
     "PromptTemplate",
     "PromptTemplateError",
     "Provider",
@@ -112,6 +125,7 @@ __all__ = [
     "UntrustedBlock",
     "UntrustedSource",
     "Usage",
+    "ValidationResult",
     "cost_usd_micros",
     "default_scanner",
     "detect_instructions",

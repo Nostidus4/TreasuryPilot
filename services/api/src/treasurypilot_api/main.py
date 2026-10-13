@@ -5,9 +5,11 @@ from typing import cast
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import Settings, get_settings
@@ -40,6 +42,7 @@ from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformCon
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
 from treasurypilot_core.observability_asgi import CorrelationMiddleware
+from treasurypilot_core.tracing import configure_tracing
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
 # cookies. Only ever used when TP_ENVIRONMENT=local.
@@ -149,6 +152,10 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
+    configure_tracing("api")
+    # Before any engine exists: SQLAlchemy is traced by wrapping engine creation.
+    if not SQLAlchemyInstrumentor().is_instrumented_by_opentelemetry:
+        SQLAlchemyInstrumentor().instrument()
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
@@ -171,9 +178,10 @@ def create_app(
         else:
             # Sync even an empty chain list so removed chains get disabled. The
             # engine only serves this one-time sync, so release it before serving.
-            sync_engine = create_async_engine(settings.database_url.get_secret_value())
+            sync_engine, session_factory = create_session_factory(
+                settings.database_url.get_secret_value()
+            )
             try:
-                session_factory = async_sessionmaker(sync_engine, expire_on_commit=False)
                 async with session_factory() as session:
                     await sync_platform_configuration(session, configuration)
             finally:
@@ -205,6 +213,7 @@ def create_app(
     )
 
     app.add_middleware(CorrelationMiddleware)
+    FastAPIInstrumentor.instrument_app(app)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     @app.get("/v1/health", response_model=HealthResponse, tags=["system"])
