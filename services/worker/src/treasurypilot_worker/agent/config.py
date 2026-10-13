@@ -73,6 +73,11 @@ class AiConfig(_Strict):
         unpriced = sorted({t.model for t in self.tasks.values()} - set(self.prices))
         if unpriced:
             raise ValueError(f"models without a price: {', '.join(unpriced)}")
+        names = [p.name for p in self.providers]
+        if len(set(names)) != len(names):
+            raise ValueError(f"duplicate AI providers: {', '.join(names)}")
+        if any(p.name == "bedrock" and not p.model_prefix for p in self.providers):
+            raise ValueError("bedrock provider needs a model_prefix such as 'anthropic.'")
         return self
 
 

@@ -27,21 +27,22 @@ def build_ai_adapter(settings: Settings) -> AiAdapter:
 
 
 def build_providers(config: AiConfig) -> list[AnthropicProvider]:
-    """Providers in failover order; one whose credentials are missing is skipped."""
+    """Providers in failover order; a secondary whose credentials are missing is skipped."""
 
     providers = []
-    for entry in config.providers:
+    for index, entry in enumerate(config.providers):
         try:
             client = _client(entry)
         except (anthropic.AnthropicError, ValueError) as error:
+            if index == 0:
+                # Never run on the backup alone: the ledger prices every call at first-party rates.
+                raise RuntimeError(f"primary AI provider {entry.name} not configured") from error
             # A missing secondary must not take the primary down with it (local dev, CI).
             logger.warning("AI provider %s not configured, skipped: %s", entry.name, error)
             continue
         providers.append(
             AnthropicProvider(client, name=entry.name, model_prefix=entry.model_prefix)
         )
-    if not providers:
-        raise RuntimeError("no AI provider in the AI config could be configured")
     return providers
 
 

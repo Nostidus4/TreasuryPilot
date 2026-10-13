@@ -85,3 +85,20 @@ def test_unknown_provider_is_rejected(tmp_path: Path, repo_config: AiConfig) -> 
 
     with pytest.raises(ValidationError, match="openai"):
         load_ai_config(_write(tmp_path, raw))
+
+
+@pytest.mark.parametrize(
+    ("providers", "message"),
+    [
+        ([{"name": "anthropic"}, {"name": "anthropic"}], "duplicate"),
+        ([{"name": "anthropic"}, {"name": "bedrock"}], "model_prefix"),
+    ],
+)
+def test_misconfigured_providers_are_rejected(
+    tmp_path: Path, repo_config: AiConfig, providers: list[dict[str, str]], message: str
+) -> None:
+    raw = _raw(repo_config)
+    raw["providers"] = providers
+
+    with pytest.raises(ValidationError, match=message):
+        load_ai_config(_write(tmp_path, raw))

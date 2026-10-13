@@ -28,16 +28,15 @@ def test_bedrock_secondary_is_skipped_without_its_api_key(
     assert len(build_providers(repo_config)) == 1
 
 
-def test_primary_without_its_api_key_leaves_bedrock_serving(
+def test_primary_without_its_api_key_fails_startup(
     monkeypatch: pytest.MonkeyPatch, repo_config: AiConfig
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "test-bedrock-key")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
 
-    (only,) = build_providers(repo_config)
-
-    assert isinstance(only._client, anthropic.AnthropicBedrockMantle)
+    with pytest.raises(RuntimeError, match="primary AI provider anthropic"):
+        build_providers(repo_config)
 
 
 def test_bedrock_secondary_follows_the_primary_when_configured(
@@ -48,6 +47,8 @@ def test_bedrock_secondary_follows_the_primary_when_configured(
     monkeypatch.setenv("AWS_REGION", "us-east-1")
 
     primary, secondary = build_providers(repo_config)
+
+    assert (primary.name, secondary.name) == ("anthropic", "bedrock")
 
     assert isinstance(secondary._client, anthropic.AnthropicBedrockMantle)
     assert secondary._model_prefix == "anthropic."

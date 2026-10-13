@@ -108,8 +108,9 @@ def _message(content: list[dict[str, object]], stop_reason: str = "end_turn") ->
 def _provider(state: Stub, base_url: str) -> AnthropicProvider:
     if state.provider == "bedrock":
         client = anthropic.AnthropicBedrockMantle(api_key="test-key", base_url=base_url)
-        return AnthropicProvider(client, model_prefix="anthropic.")
-    return AnthropicProvider(anthropic.Anthropic(api_key="test-key", base_url=base_url))
+        return AnthropicProvider(client, name="bedrock", model_prefix="anthropic.")
+    client = anthropic.Anthropic(api_key="test-key", base_url=base_url)
+    return AnthropicProvider(client, name="anthropic")
 
 
 def _request(**overrides: object) -> ProviderRequest:
@@ -249,10 +250,18 @@ def test_adapter_deadline_holds_against_a_real_slow_provider(
 
 
 @pytest.mark.parametrize(
-    ("status", "retryable"), [(429, True), (529, True), (500, True), (400, False), (401, False)]
+    ("status", "retryable", "failover"),
+    [
+        (429, True, True),
+        (529, True, True),
+        (500, True, True),
+        (400, False, False),
+        (401, False, True),
+        (403, False, True),
+    ],
 )
 def test_status_errors_map_to_ai_unavailable(
-    stub: tuple[Stub, str], status: int, retryable: bool
+    stub: tuple[Stub, str], status: int, retryable: bool, failover: bool
 ) -> None:
     state, url = stub
     state.respond = lambda body: (
@@ -264,6 +273,8 @@ def test_status_errors_map_to_ai_unavailable(
         _provider(state, url).complete(_request(), timeout_s=5)
 
     assert caught.value.retryable is retryable
+    assert caught.value.failover is failover
+    assert str(caught.value).startswith(f"{state.provider} returned {status}")
     assert len(state.bodies) == 1  # the SDK does not retry on its own
 
 
@@ -271,5 +282,8 @@ def test_unknown_stop_reason_is_unavailable(stub: tuple[Stub, str]) -> None:
     state, url = stub
     state.respond = lambda body: (200, _message([], stop_reason="pause_turn"))
 
-    with pytest.raises(AiUnavailable, match="pause_turn"):
+    with pytest.raises(AiUnavailable, match="pause_turn") as caught:
         _provider(state, url).complete(_request(), timeout_s=5)
+
+    assert caught.value.failover is False  # billed request; another provider would bill again
+    assert caught.value.usage == Usage(100, 20, cache_write_tokens=50, cache_read_tokens=400)
