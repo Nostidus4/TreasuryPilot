@@ -54,7 +54,7 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
 
     assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
     assert entry["schedule"] == timedelta(seconds=1)
-    assert entry["options"] == {"queue": "core"}
+    assert entry["options"] == {"queue": "core", "expires": 2}
 
 
 def test_overdue_review_escalation_is_scheduled_every_minute() -> None:

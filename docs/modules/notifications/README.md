@@ -80,6 +80,9 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 - **Dedup:** unique(user_id, event_id). **Rate:** at most 1 Telegram message per user per 10 s, bursts merged into a digest line.
 - Governance signature events include `ownerUserIds` with the organization user IDs linked to that Safe's current owners. The publisher delivers only to those active organization members.
 - `NeedsReview:<Role>` encodes the routed M12 role in the event type (for example, `NeedsReview:Finance`); event payloads still contain IDs only.
+- If `ownerUserIds` is missing or empty, the event goes to every Owner and a warning is logged, so a pending signature never reaches nobody.
+- `ApprovalNeeded` carries `excludeUserIds` (the request's creator and last editor) unless the org has solo mode on, so people maker-checker forbids from approving get no action item.
+- The publisher (beat, every 1 s, task expiry 2 s) routes each event in its own savepoint with one `INSERT … SELECT` per event. An event that cannot be routed is dead-lettered (`failed_at`, `last_error`) and logged instead of blocking the outbox; unknown event types or review roles fall back to the CRITICAL policy with a warning, and an event with no recipients is logged. Each worker process reuses one connection pool.
 
 ## 9. Configuration
 

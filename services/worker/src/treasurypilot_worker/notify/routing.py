@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +16,8 @@ class NotificationPolicy:
     body: str
     include_creator: bool = False
     specific_user_ids_key: str | None = None
+    # Who to notify when an event names its recipients but the list is missing or empty.
+    fallback_roles: tuple[str, ...] = ("Owner",)
 
 
 ROUTING_TABLE: dict[str, NotificationPolicy] = {
@@ -123,5 +128,11 @@ def policy_for_event(event_type: str) -> NotificationPolicy:
             return NotificationPolicy(
                 (role,), "ACTION", "Review required", "A treasury review item needs your attention."
             )
+        # A typo or wrong case must show up in logs, not silently become a CRITICAL fallback.
+        logger.warning("notification_review_role_unknown", extra={"type": event_type})
         return _FALLBACK_POLICY
-    return ROUTING_TABLE.get(event_type, _FALLBACK_POLICY)
+    policy = ROUTING_TABLE.get(event_type)
+    if policy is None:
+        logger.warning("notification_event_type_unknown", extra={"type": event_type})
+        return _FALLBACK_POLICY
+    return policy

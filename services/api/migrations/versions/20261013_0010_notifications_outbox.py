@@ -1,6 +1,6 @@
 """create the domain-event outbox and in-app notification schema
 
-Revision ID: 20261013_0005
+Revision ID: 20261013_0010
 Revises: 20261013_0004
 Create Date: 2026-10-13 00:00:00
 """
@@ -11,7 +11,10 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261013_0005"
+revision: str = "20261013_0010"
+# 0005-0007 are taken on main (rpc_health, ai_calls, audit_log). This stack (0003 mandate,
+# 0004 invoice) is not on main yet: when it lands, chain 0003 onto main's head so this
+# file follows one linear history.
 down_revision: str | None = "20261013_0004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -39,6 +42,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
+        # Dead letter: an event that could not be routed is parked, not retried forever.
+        sa.Column("failed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_error", sa.Text(), nullable=True),
         sa.CheckConstraint("length(btrim(type)) > 0", name="ck_domain_events_type"),
         sa.CheckConstraint("length(btrim(entity_type)) > 0", name="ck_domain_events_entity_type"),
         sa.CheckConstraint(
@@ -58,7 +64,7 @@ def upgrade() -> None:
         "ix_domain_events_pending",
         "domain_events",
         ["created_at", "id"],
-        postgresql_where=sa.text("published_at IS NULL"),
+        postgresql_where=sa.text("published_at IS NULL AND failed_at IS NULL"),
     )
 
     op.create_table(
@@ -79,7 +85,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint("type <> ''", name="ck_notifications_type"),
+        sa.CheckConstraint("length(btrim(type)) > 0", name="ck_notifications_type"),
         sa.CheckConstraint("length(btrim(title)) > 0", name="ck_notifications_title"),
         sa.CheckConstraint("length(btrim(body)) > 0", name="ck_notifications_body"),
         sa.CheckConstraint("link LIKE '/%'", name="ck_notifications_internal_link"),
@@ -98,7 +104,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_notifications_org_created", "notifications", ["org_id", "created_at"])
     op.create_index(
-        "ix_notifications_user_unread", "notifications", ["user_id", "org_id", "created_at"]
+        "ix_notifications_user_unread",
+        "notifications",
+        ["user_id", "org_id", "created_at"],
+        postgresql_where=sa.text("read_at IS NULL"),
     )
 
 

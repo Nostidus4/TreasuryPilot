@@ -482,6 +482,15 @@ class RequestStateMachine:
             )
             session.add(event)
             if target == RequestStatus.AWAITING_APPROVAL:
+                approval_ids: dict[str, uuid.UUID | list[uuid.UUID]] = {"requestId": request_id}
+                org_solo_mode = await session.scalar(
+                    select(Organization.solo_mode).where(Organization.id == organization_id)
+                )
+                if not org_solo_mode:
+                    # Maker-checker: the creator and last editor cannot approve, so they
+                    # get no "Approval required" notification they cannot act on.
+                    makers = {request.created_by, request.last_edited_by} - {None}
+                    approval_ids["excludeUserIds"] = sorted(makers, key=str)  # type: ignore[arg-type]
                 append_domain_event(
                     session,
                     organization_id=organization_id,
@@ -489,7 +498,7 @@ class RequestStateMachine:
                     event_type="ApprovalNeeded",
                     entity_type="payment_request",
                     entity_id=request_id,
-                    payload_ids={"requestId": request_id},
+                    payload_ids=approval_ids,
                 )
             elif target == RequestStatus.PAID:
                 payload_ids = {"requestId": request_id}

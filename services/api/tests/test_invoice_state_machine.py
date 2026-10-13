@@ -387,7 +387,11 @@ def test_transition_writes_status_event_and_audit_entry() -> None:
     assert domain_event.org_id == _ORG_ID
     assert domain_event.treasury_id == _TREASURY_ID
     assert domain_event.entity_id == _REQUEST_ID
-    assert domain_event.payload == {"requestId": str(_REQUEST_ID)}
+    # Maker-checker: the creator (no solo mode) is excluded from the approval notice.
+    assert domain_event.payload == {
+        "requestId": str(_REQUEST_ID),
+        "excludeUserIds": [str(_USER_ID)],
+    }
     assert len(audit.entries) == 1
     assert audit.session is session
     assert audit.entries[0].action == TransitionAction.SUBMIT.value

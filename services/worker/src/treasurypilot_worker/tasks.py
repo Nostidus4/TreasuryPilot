@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Any
 
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.locks import create_worker_pool
@@ -21,6 +22,42 @@ def ai_probe() -> dict[str, str]:
     return {"status": "ok", "queue": "ai"}
 
 
+class _PublisherRuntime:
+    """One event loop and connection pool per worker process, reused across runs.
+
+    The publish task fires every second; opening a pool (TCP + Postgres session) on
+    every run would cost ~86k connections a day for a usually empty SELECT. A forked
+    child (prefork pool) builds its own loop and pool on first use.
+    """
+
+    def __init__(self) -> None:
+        self._pid: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._pool: Any = None
+
+    def publish(self, database_url: str) -> int:
+        if self._pid != os.getpid() or self._loop is None:
+            self._pid, self._loop, self._pool = os.getpid(), asyncio.new_event_loop(), None
+        loop = self._loop
+
+        async def run() -> int:
+            if self._pool is None:
+                self._pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+            return await publish_from_pool(self._pool)
+
+        try:
+            return loop.run_until_complete(run())
+        except Exception:
+            # A broken connection must not poison later runs: rebuild the pool next time.
+            if self._pool is not None:
+                pool, self._pool = self._pool, None
+                loop.run_until_complete(pool.close())
+            raise
+
+
+_publisher = _PublisherRuntime()
+
+
 @app.task(name="treasurypilot.notifications.publish-domain-events", queue="core")
 def publish_domain_events() -> dict[str, int]:
     """Materialize pending in-app notifications from the PostgreSQL outbox."""
@@ -28,15 +65,7 @@ def publish_domain_events() -> dict[str, int]:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for domain-event publishing")
-
-    async def publish() -> int:
-        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
-        try:
-            return await publish_from_pool(pool)
-        finally:
-            await pool.close()
-
-    return {"published": asyncio.run(publish())}
+    return {"published": _publisher.publish(database_url)}
 
 
 @app.task(name="treasurypilot.recovery.escalate-overdue-review-items", queue="core")
