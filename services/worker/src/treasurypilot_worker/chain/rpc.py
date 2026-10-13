@@ -15,7 +15,7 @@ from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 import aiohttp
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 from eth_abi import decode, encode
 from eth_abi.exceptions import DecodingError
 from web3 import AsyncHTTPProvider, Web3
