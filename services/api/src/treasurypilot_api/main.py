@@ -38,6 +38,7 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
@@ -76,6 +77,7 @@ def _auth_service(
     AsyncEngine | None,
     RedisRateLimiter | None,
     OrganizationRepository | None,
+    WalletRepository | None,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -104,10 +106,12 @@ def _auth_service(
 
     engine: AsyncEngine | None = None
     organization_repository: OrganizationRepository | None = None
+    wallet_repository: WalletRepository | None = None
     if settings.database_url:
         engine, sessions = create_session_factory(settings.database_url.get_secret_value())
         repository: AuthRepository = SqlAlchemyAuthRepository(sessions)
         organization_repository = SqlAlchemyOrganizationRepository(sessions)
+        wallet_repository = WalletRepository(sessions)
     else:
         repository = cast(AuthRepository, _UnavailableAuthRepository())
 
@@ -142,6 +146,7 @@ def _auth_service(
         engine,
         redis_limiter,
         organization_repository,
+        wallet_repository,
     )
 
 
@@ -150,6 +155,7 @@ def create_app(
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
     organization_repository: OrganizationRepository | None = None,
+    wallet_repository: WalletRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -161,9 +167,13 @@ def create_app(
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine, redis_limiter, default_organizations = _auth_service(settings)
+        auth_service, engine, redis_limiter, default_organizations, default_wallets = _auth_service(
+            settings
+        )
         if organization_repository is None:
             organization_repository = default_organizations
+        if wallet_repository is None:
+            wallet_repository = default_wallets
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -205,6 +215,7 @@ def create_app(
     app.state.settings = settings
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
+    app.state.wallet_repository = wallet_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

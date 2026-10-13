@@ -238,6 +238,10 @@ class Membership(Base):
         CheckConstraint("array_position(roles, NULL) IS NULL", name="ck_memberships_roles_no_null"),
         CheckConstraint(_VALID_ROLES_SQL, name="ck_memberships_roles_valid"),
         CheckConstraint("status IN ('active', 'suspended')", name="ck_memberships_status"),
+        CheckConstraint(
+            "NOT owner_is_onchain OR owner_checked_at IS NOT NULL",
+            name="ck_memberships_owner_check_time",
+        ),
         CheckConstraint("version > 0", name="ck_memberships_version"),
         Index("ix_memberships_user_id", "user_id"),
     )
@@ -256,6 +260,10 @@ class Membership(Base):
         default=MembershipStatus.ACTIVE,
         server_default=MembershipStatus.ACTIVE,
     )
+    owner_is_onchain: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    owner_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

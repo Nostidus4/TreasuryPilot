@@ -196,6 +196,9 @@ class SqlAlchemyAuthRepository:
                         org_id=item.org_id,
                         roles=tuple(item.roles),
                         status=item.status,
+                        owner_is_onchain=item.owner_is_onchain,
+                        owner_checked_at=item.owner_checked_at,
+                        signer_roles_active=bool(wallets),
                     )
                     for item in memberships
                 ),

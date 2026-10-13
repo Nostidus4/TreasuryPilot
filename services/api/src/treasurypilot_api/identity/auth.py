@@ -83,6 +83,9 @@ class MembershipRecord:
     org_id: uuid.UUID
     roles: tuple[str, ...]
     status: str
+    owner_is_onchain: bool = False
+    owner_checked_at: datetime | None = None
+    signer_roles_active: bool = False
 
 
 @dataclass(frozen=True, slots=True)
