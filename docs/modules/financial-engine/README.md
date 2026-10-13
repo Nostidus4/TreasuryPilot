@@ -220,7 +220,10 @@ replays its payments and refills in scheduler order. It returns each wallet's en
 balance, days when a wallet is below its buffer, and the refills selected by the same
 source-buffer, refill-bound, per-request, and daily-limit rules as scheduling. The
 window can be set from 1 to 30 days. Approved obligations that remain unpaid after
-their due day are reported as `unpaid_due` and `shortfall_days`; scheduled payments
+their due day are reported as `unpaid_due` (`amount_due`: the payable amount plus any
+accrued late fee) and `shortfall_days`, and count against their paying wallet when
+deciding buffer hits, so a wallet that cannot cover an upcoming invoice shows up even
+though the scheduler never plans that payment. `snapshot.source` must be Safe T; scheduled payments
 outside the requested window are listed in `deferred_request_ids`.
 
 ## 9. Configuration and defaults

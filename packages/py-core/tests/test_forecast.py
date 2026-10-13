@@ -4,6 +4,7 @@ import pytest
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
+    LateFee,
     Limits,
     PaymentTerms,
     PolicyView,
@@ -166,3 +167,37 @@ def test_forecast_rejects_days_outside_supported_horizon(days: int) -> None:
 def test_forecast_rejects_non_integer_days() -> None:
     with pytest.raises(TypeError, match="days must be an integer"):
         forecast(snapshot(), [], policy(), days=True)  # type: ignore[arg-type]
+
+
+def test_unpaid_due_includes_accrued_late_fees() -> None:
+    # Review repro: 1,000 due today, 5% per day late, payee cooling until DAY + 5.
+    late = ApprovedRequest(
+        id="late",
+        paying_wallet=WALLET,
+        payee="0xpayee",
+        amount=BaseUnits(1_000),
+        approved_seq=1,
+        terms=PaymentTerms(
+            net_due_day=DAY,
+            late_fee=LateFee(kind="percent_per_period", rate_bps=500, period_days=1),
+        ),
+    )
+    result = forecast(snapshot(payees={"0xpayee": DAY + 5}), [late], policy())
+    assert result.days[0].unpaid_due == 1_000
+    assert result.days[3].unpaid_due == 1_150
+
+
+def test_buffer_hit_reflects_an_obligation_the_scheduler_cannot_pay() -> None:
+    # Review repro: balance 60, buffer 50, 40 due tomorrow, no refill capacity.
+    snap = snapshot(ops_balance=60, ops_buffer=50, ops_target=50, source_balance=100)
+    result = forecast(snap, [obligation("r1", 40, due=DAY + 1)], policy())
+    assert result.unplanned_request_ids == ("r1",)
+    assert result.days[0].buffer_hit_wallets == ()
+    assert result.days[1].buffer_hit_wallets == (WALLET,)
+    assert result.buffer_hit_days[WALLET] == tuple(range(DAY + 1, DAY + 7))
+
+
+def test_forecast_requires_safe_t_as_the_source() -> None:
+    snap = snapshot().model_copy(update={"safe_usdc": BaseUnits(5)})
+    with pytest.raises(ValueError, match="safe_usdc"):
+        forecast(snap, [], policy())

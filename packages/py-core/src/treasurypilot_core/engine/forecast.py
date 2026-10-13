@@ -13,11 +13,12 @@ from treasurypilot_core.domain import (
     ScheduledItem,
     Snapshot,
 )
-from treasurypilot_core.engine.payment_terms import pay_amount
-from treasurypilot_core.engine.scheduler import schedule_edf
+from treasurypilot_core.engine.payment_terms import amount_due, pay_amount
+from treasurypilot_core.engine.scheduler import HORIZON_DAYS, schedule_edf
 from treasurypilot_core.money import BaseUnits
 
-_MAX_FORECAST_DAYS = 30
+# Never project past what the scheduler plans.
+_MAX_FORECAST_DAYS = HORIZON_DAYS
 
 
 def forecast(
@@ -31,6 +32,11 @@ def forecast(
     The projection replays the scheduler's payment and refill decisions in their
     original order. This keeps same-day wallet balances consistent with the schedule
     and preserves the refill limits and source buffer enforced by the engine.
+
+    The scheduler never plans a payment that breaks a buffer, so the projection also
+    charges each wallet with what it still owes: an obligation due on or before a day
+    and not paid by it counts against its paying wallet (``amount_due``, late fees
+    included) when deciding buffer hits, and is reported as ``unpaid_due``.
     """
 
     if not isinstance(snapshot, Snapshot):
@@ -41,6 +47,9 @@ def forecast(
         raise ValueError(f"days must be between 1 and {_MAX_FORECAST_DAYS}")
 
     source = snapshot.source
+    # Same rule as liquidity_position: refills come from Safe T only.
+    if source.balance != snapshot.safe_usdc:
+        raise ValueError("snapshot.source must be Safe T: its balance differs from safe_usdc")
     balances = {source.address: int(source.balance)}
     buffers = {source.address: int(source.buffer)}
     for wallet in snapshot.operational.values():
@@ -60,6 +69,8 @@ def forecast(
             # that order: one payment can consume a refill made for an earlier item.
             scheduled_by_day.setdefault(item.day, []).append(item)
 
+    # Only obligations due inside the window can be unpaid on a window day.
+    overdue_candidates = [r for r in requests if r.terms.net_due_day < window_end]
     daily: list[ForecastDay] = []
     hit_days: dict[str, list[int]] = {address: [] for address in balances}
     shortfall_days: list[int] = []
@@ -74,8 +85,8 @@ def forecast(
             target_address = wallet.address
             refill_amount = int(item.refill)
             if refill_amount:
-                if balances[source_address] < refill_amount + buffers[source_address]:
-                    raise ValueError("schedule exceeds the projected source buffer")
+                # decide_refill keeps the source buffer; the replay cannot break it.
+                assert balances[source_address] - refill_amount >= buffers[source_address]
                 balances[source_address] -= refill_amount
                 balances[target_address] += refill_amount
                 refills.append(
@@ -89,20 +100,23 @@ def forecast(
                 )
 
             payment = int(pay_amount(request, day))
-            if balances[target_address] < payment:
-                raise ValueError("schedule exceeds the projected operational balance")
+            assert balances[target_address] >= payment  # guaranteed by the scheduler
             balances[target_address] -= payment
 
-        unpaid_due = sum(
-            int(request.amount)
-            for request in requests
-            if request.terms.net_due_day <= day
-            and (request.id not in paid_day or paid_day[request.id] > day)
-        )
+        owed: dict[str, int] = {}
+        for request in overdue_candidates:
+            if request.terms.net_due_day <= day and paid_day.get(request.id, day + 1) > day:
+                address = snapshot.operational[request.paying_wallet].address
+                owed[address] = owed.get(address, 0) + int(amount_due(request, day))
+        unpaid_due = sum(owed.values())
         if unpaid_due:
             shortfall_days.append(day)
         buffer_hits = tuple(
-            sorted(address for address, balance in balances.items() if balance < buffers[address])
+            sorted(
+                address
+                for address, balance in balances.items()
+                if balance - owed.get(address, 0) < buffers[address]
+            )
         )
         for address in buffer_hits:
             hit_days[address].append(day)
