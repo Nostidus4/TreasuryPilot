@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any, Literal, Protocol, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,14 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.audit.chain import ChainVerification, verify_chain
 from treasurypilot_api.audit.models import AuditHead, AuditLog
 from treasurypilot_api.audit.writer import AuditHeadMissing
-from treasurypilot_api.identity.api import ApiModel, _authenticated
+from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Membership, MembershipStatus, OrganizationRole
+from treasurypilot_api.identity.rbac import MemberAccess, organization_not_found, require_role
 
-READ_ROLES = frozenset(
-    {OrganizationRole.AUDITOR.value, OrganizationRole.OWNER.value, OrganizationRole.ORG_ADMIN.value}
-)
-VERIFY_ROLES = frozenset({OrganizationRole.AUDITOR.value, OrganizationRole.OWNER.value})
+_READ = (OrganizationRole.AUDITOR, OrganizationRole.OWNER, OrganizationRole.ORG_ADMIN)
+_VERIFY = (OrganizationRole.AUDITOR, OrganizationRole.OWNER)
+READ_ROLES = frozenset(role.value for role in _READ)
+VERIFY_ROLES = frozenset(role.value for role in _VERIFY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,16 +194,6 @@ def _repository(request: Request) -> AuditRepository:
     return cast(AuditRepository, repository)
 
 
-# Local copy, not an import: identity.organizations._not_found is private and moves in #321.
-def _not_found() -> AuthFailure:
-    return AuthFailure(
-        status=404,
-        code="ORG_NOT_FOUND",
-        title="Organization not found",
-        detail="The organization does not exist or is not available to this user.",
-    )
-
-
 def _forbidden() -> AuthFailure:
     return AuthFailure(
         status=403,
@@ -217,8 +208,8 @@ router = APIRouter(prefix="/v1/orgs", tags=["audit"])
 
 @router.get("/{organization_id}/audit-log", response_model=AuditLogResponse)
 async def list_audit_log(
-    organization_id: uuid.UUID,
     request: Request,
+    member: Annotated[MemberAccess, Depends(require_role(*_READ))],
     entity_type: Annotated[str | None, Query(alias="entityType", min_length=1)] = None,
     entity_id: Annotated[str | None, Query(alias="entityId", min_length=1)] = None,
     actor: Annotated[str | None, Query(min_length=1)] = None,
@@ -227,17 +218,16 @@ async def list_audit_log(
     cursor: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> AuditLogResponse:
-    access = await _authenticated(request)
     try:
         page = await _repository(request).list(
-            organization_id=organization_id,
-            user_id=access.user.id,
+            organization_id=member.organization_id,
+            user_id=member.user_id,
             filters=AuditFilters(entity_type, entity_id, actor, since, until),
             cursor=cursor,
             limit=limit,
         )
     except AuditNotFound:
-        raise _not_found() from None
+        raise organization_not_found() from None
     except AuditPermissionDenied:
         raise _forbidden() from None
     return AuditLogResponse(
@@ -247,14 +237,15 @@ async def list_audit_log(
 
 
 @router.get("/{organization_id}/audit-log/verify", response_model=AuditVerifyResponse)
-async def verify_audit_log(organization_id: uuid.UUID, request: Request) -> AuditVerifyResponse:
-    access = await _authenticated(request)
+async def verify_audit_log(
+    request: Request, member: Annotated[MemberAccess, Depends(require_role(*_VERIFY))]
+) -> AuditVerifyResponse:
     try:
         result = await _repository(request).verify(
-            organization_id=organization_id, user_id=access.user.id
+            organization_id=member.organization_id, user_id=member.user_id
         )
     except AuditNotFound:
-        raise _not_found() from None
+        raise organization_not_found() from None
     except AuditPermissionDenied:
         raise _forbidden() from None
     return AuditVerifyResponse.from_result(result)
