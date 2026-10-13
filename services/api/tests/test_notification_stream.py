@@ -31,9 +31,21 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 FAST = StreamOptions(poll_interval=0.01, heartbeat_interval=0.05, max_lifetime=0.3)
 
 
-def _event(entity_type: str = "operation", ids: dict[str, str] | None = None) -> StreamedEvent:
+def _uuid7_at(at: datetime) -> uuid.UUID:
+    millis = int(at.timestamp() * 1000)
+    return uuid.UUID(int=(millis << 80) | (7 << 76) | (0x8 << 62) | uuid.uuid4().int % (1 << 62))
+
+
+T0 = datetime(2026, 10, 14, tzinfo=UTC)
+
+
+def _event(
+    entity_type: str = "operation",
+    ids: dict[str, str] | None = None,
+    at: datetime | None = None,
+) -> StreamedEvent:
     return StreamedEvent(
-        id=uuid.uuid4(),
+        id=_uuid7_at(at or T0),
         event_type="OperationConfirmed",
         entity_type=entity_type,
         entity_id=uuid.uuid4(),
@@ -132,17 +144,18 @@ def test_other_orgs_receive_nothing_and_get_heartbeats() -> None:
 
 def test_resume_replays_only_events_after_last_event_id() -> None:
     source = _Source()
-    events = sorted((_event() for _ in range(3)), key=lambda e: e.id)
+    events = [_event(at=T0 + timedelta(seconds=20 * i)) for i in range(3)]
     source.events[ORG_ID].extend(events)
     first = asyncio.run(_collect(source, _start()))
-    last_id = [line[4:] for line in first.splitlines() if line.startswith("id: ")][0]
+    last_id = [line[4:] for line in first.splitlines() if line.startswith("id: ")][-1]
 
     resumed_cursor = parse_cursor(last_id)
     assert resumed_cursor is not None
     resumed = asyncio.run(_collect(source, resumed_cursor))
 
     assert str(events[0].entity_id) not in resumed
-    assert str(events[1].entity_id) in resumed
+    assert str(events[1].entity_id) not in resumed
+    # The window may re-send the last event; clients de-duplicate on its stable ids.
     assert str(events[2].entity_id) in resumed
 
 
@@ -323,3 +336,88 @@ def test_streamed_batch_never_exceeds_the_limit_and_keeps_draining() -> None:
         )
 
     assert asyncio.run(run()).count("event: notification.created") == 5
+
+
+def _collect_live(source: _Source, cursor: StreamCursor, publish: list[StreamedEvent]) -> str:
+    """Run the stream; between polls, reveal one pending event per poll."""
+
+    async def disconnected() -> bool:
+        if publish:
+            source.events[ORG_ID].append(publish.pop(0))
+        return False
+
+    async def run() -> str:
+        return "".join(
+            [
+                f
+                async for f in event_stream(
+                    source,
+                    organization_id=ORG_ID,
+                    user_id=USER_ID,
+                    cursor=cursor,
+                    options=FAST,
+                    is_disconnected=disconnected,
+                )
+            ]
+        )
+
+    return asyncio.run(run())
+
+
+def test_late_committed_older_row_inside_window_is_delivered_exactly_once() -> None:
+    source = _Source()
+    newer = _event(at=T0 + timedelta(seconds=10))
+    source.events[ORG_ID].append(newer)
+    late = _event(at=T0 + timedelta(seconds=8))  # older id, becomes visible afterwards
+    assert late.id < newer.id
+
+    body = _collect_live(source, _start(), [late])
+
+    assert body.count(str(newer.entity_id)) == 1
+    assert body.count(str(late.entity_id)) == 1
+    # The cursor never regressed: the late frame carries the newer event's position.
+    ids = [line[4:] for line in body.splitlines() if line.startswith("id: ")]
+    assert ids[0].split(".")[0] == ids[1].split(".")[0] == str(newer.id)
+
+
+def test_rows_older_than_the_window_are_not_replayed() -> None:
+    source = _Source()
+    newer = _event(at=T0 + timedelta(seconds=60))
+    source.events[ORG_ID].append(newer)
+    stale = _event(at=T0 + timedelta(seconds=10))  # 50 s behind: outside the 5 s window
+
+    body = _collect_live(source, _start(), [stale])
+
+    assert str(newer.entity_id) in body
+    assert str(stale.entity_id) not in body
+
+
+def test_resume_resends_at_most_the_window_and_fresh_connection_marks_it_seen() -> None:
+    source = _Source()
+    inside = _event(at=T0 + timedelta(seconds=58))
+    old = _event(at=T0 + timedelta(seconds=10))
+    last = _event(at=T0 + timedelta(seconds=60))
+    source.events[ORG_ID].extend([old, inside, last])
+    cursor = StreamCursor(last.id, EPOCH, NIL)
+
+    resumed = asyncio.run(_collect(source, cursor))
+    assert str(inside.entity_id) in resumed  # duplicate within the window is acceptable
+    assert str(old.entity_id) not in resumed
+
+    async def fresh() -> str:
+        return "".join(
+            [
+                f
+                async for f in event_stream(
+                    source,
+                    organization_id=ORG_ID,
+                    user_id=USER_ID,
+                    cursor=cursor,
+                    options=FAST,
+                    is_disconnected=_never,
+                    resumed=False,
+                )
+            ]
+        )
+
+    assert "event:" not in asyncio.run(fresh())

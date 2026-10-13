@@ -330,6 +330,7 @@ async def stream_events(
     """Server-sent events for this organization; resume with ``Last-Event-ID``."""
     repository = _repository(request)
     cursor = parse_cursor(last_event_id)
+    resumed = cursor is not None
     if cursor is None:
         cursor = await repository.initial_cursor(
             organization_id=member.organization_id, user_id=member.user_id
@@ -343,6 +344,7 @@ async def stream_events(
             cursor=cursor,
             options=options,
             is_disconnected=request.is_disconnected,
+            resumed=resumed,
         ):
             yield frame
 

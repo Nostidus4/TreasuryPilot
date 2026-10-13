@@ -12,6 +12,7 @@ import asyncio
 import json
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,7 @@ EVENT_STREAM_TYPES: dict[str, str] = {
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MICROSECOND = timedelta(microseconds=1)
+_NIL_UUID = uuid.UUID(int=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,11 @@ class StreamOptions:
     max_lifetime: float | None = 900.0
     batch_size: int = 100
     retry_ms: int = 2000
+    # Transactions can commit out of order, so a row older than the cursor may become
+    # visible after the cursor passed it. Every poll therefore re-queries this far
+    # behind the cursor and de-duplicates against ids already sent.
+    lookback: timedelta = timedelta(seconds=5)
+    sent_memory: int = 1000  # bounded per-connection set of already-sent ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +60,21 @@ class StreamCursor:
     def encode(self) -> str:
         micros = (self.notification_at - _EPOCH) // _MICROSECOND
         return f"{self.event_id}.{micros}.{self.notification_id}"
+
+
+def _lookback_cursor(cursor: StreamCursor, window: timedelta) -> StreamCursor:
+    """Cursor moved ``window`` back; domain event ids are uuid7 (48-bit ms prefix)."""
+    event_id = cursor.event_id
+    if event_id.int:
+        millis = max((event_id.int >> 80) - int(window.total_seconds() * 1000), 0)
+        event_id = uuid.UUID(int=millis << 80)
+    return StreamCursor(event_id, cursor.notification_at - window, _NIL_UUID)
+
+
+def _remember(sent: OrderedDict[uuid.UUID, None], item_id: uuid.UUID, limit: int) -> None:
+    sent[item_id] = None
+    while len(sent) > limit:
+        sent.popitem(last=False)
 
 
 def parse_cursor(value: str | None) -> StreamCursor | None:
@@ -149,30 +171,61 @@ async def event_stream(
     cursor: StreamCursor,
     options: StreamOptions,
     is_disconnected: Callable[[], Awaitable[bool]],
+    resumed: bool = True,
 ) -> AsyncIterator[str]:
-    """Yield SSE text frames until the client disconnects or the lifetime ends."""
+    """Yield SSE text frames until the client disconnects or the lifetime ends.
+
+    Each poll reads from ``cursor - options.lookback`` and skips ids already sent on
+    this connection, so a late-committed row with an older id is still delivered once.
+    A resumed connection (``Last-Event-ID``) starts with an empty sent set and may
+    therefore re-send up to ``lookback`` of frames; frame payload ids are stable, so
+    clients de-duplicate on ``eventId`` / ``notificationId``. A fresh connection
+    (``resumed=False``) first marks the rows inside the window as already seen.
+    """
+    sent_events: OrderedDict[uuid.UUID, None] = OrderedDict()
+    sent_notes: OrderedDict[uuid.UUID, None] = OrderedDict()
+    memory = max(options.sent_memory, 1)
+    if not resumed:
+        primed = await source.stream_batch(
+            organization_id=organization_id,
+            user_id=user_id,
+            cursor=_lookback_cursor(cursor, options.lookback),
+            limit=memory,
+        )
+        for event in primed.events:
+            if event.id <= cursor.event_id:
+                _remember(sent_events, event.id, memory)
+        for item in primed.notifications:
+            if (item.created_at, item.id) <= (cursor.notification_at, cursor.notification_id):
+                _remember(sent_notes, item.id, memory)
     yield f"retry: {options.retry_ms}\n\n"
     started = last_sent = time.monotonic()
     while True:
+        # Room for the already-sent rows of the window plus a full page of new ones.
+        limit = options.batch_size + memory
         batch = await source.stream_batch(
             organization_id=organization_id,
             user_id=user_id,
-            cursor=cursor,
-            limit=options.batch_size,
+            cursor=_lookback_cursor(cursor, options.lookback),
+            limit=limit,
         )
-        for event in batch.events:
-            cursor = replace(cursor, event_id=event.id)
+        fresh_events = [e for e in batch.events if e.id not in sent_events][: options.batch_size]
+        fresh_notes = [n for n in batch.notifications if n.id not in sent_notes][
+            : options.batch_size
+        ]
+        for event in fresh_events:
+            _remember(sent_events, event.id, memory)
+            cursor = replace(cursor, event_id=max(cursor.event_id, event.id))
             yield event_frame(event, cursor)
-        for item in batch.notifications:
-            cursor = replace(cursor, notification_at=item.created_at, notification_id=item.id)
+        for item in fresh_notes:
+            _remember(sent_notes, item.id, memory)
+            if (item.created_at, item.id) > (cursor.notification_at, cursor.notification_id):
+                cursor = replace(cursor, notification_at=item.created_at, notification_id=item.id)
             yield notification_frame(item, cursor)
         now = time.monotonic()
-        if batch.events or batch.notifications:
+        if fresh_events or fresh_notes:
             last_sent = now
-            if (
-                len(batch.events) >= options.batch_size
-                or len(batch.notifications) >= options.batch_size
-            ):
+            if len(fresh_events) >= options.batch_size or len(fresh_notes) >= options.batch_size:
                 continue  # more is waiting: drain without sleeping
         elif now - last_sent >= options.heartbeat_interval:
             last_sent = now
