@@ -9,7 +9,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
@@ -44,6 +44,8 @@ from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
+from treasurypilot_api.treasury.safe import RpcSafeVerifier
+from treasurypilot_api.treasury.service import TreasuryService
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
@@ -78,6 +80,7 @@ def _auth_service(
     OrganizationRepository | None,
     WalletRepository | None,
     AuditRepository | None,
+    async_sessionmaker[AsyncSession] | None,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -108,6 +111,7 @@ def _auth_service(
     organization_repository: OrganizationRepository | None = None
     wallet_repository: WalletRepository | None = None
     audit_repository: AuditRepository | None = None
+    sessions: async_sessionmaker[AsyncSession] | None = None
     if settings.database_url:
         engine, sessions = create_session_factory(settings.database_url.get_secret_value())
         repository: AuthRepository = SqlAlchemyAuthRepository(sessions)
@@ -150,6 +154,7 @@ def _auth_service(
         organization_repository,
         wallet_repository,
         audit_repository,
+        sessions,
     )
 
 
@@ -160,6 +165,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    treasury_service: TreasuryService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -170,6 +176,7 @@ def create_app(
     configure_error_tracking("api")
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
+    sessions: async_sessionmaker[AsyncSession] | None = None
     if auth_service is None:
         (
             auth_service,
@@ -178,6 +185,7 @@ def create_app(
             default_organizations,
             default_wallets,
             default_audit,
+            sessions,
         ) = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
@@ -193,6 +201,10 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if application.state.treasury_service is None and sessions is not None:
+            application.state.treasury_service = TreasuryService(
+                sessions, RpcSafeVerifier(configuration), configuration
+            )
         if settings.database_url is None:
             if configuration.chains:
                 raise PlatformConfigurationError(
@@ -228,6 +240,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.treasury_service = treasury_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
