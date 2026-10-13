@@ -110,10 +110,7 @@ def score(
         1
         for request in ordered
         if _deadline_feasible(request, snapshot, policy)
-        and (
-            request.id not in valid
-            or valid[request.id].day > request.terms.net_due_day
-        )
+        and (request.id not in valid or valid[request.id].day > request.terms.net_due_day)
     )
     total_value = sum(
         request_value(
@@ -174,15 +171,21 @@ def binding_constraints(
         if active_day is not None and item.day < active_day:
             details.append(
                 BindingConstraintDetail(
-                    name="COOLING", request_id=request.id, day=item.day,
-                    used=item.day, limit=active_day,
+                    name="COOLING",
+                    request_id=request.id,
+                    day=item.day,
+                    used=item.day,
+                    limit=active_day,
                 )
             )
         if item.day > request.terms.net_due_day:
             details.append(
                 BindingConstraintDetail(
-                    name="DEADLINE", request_id=request.id, day=item.day,
-                    used=item.day, limit=request.terms.net_due_day,
+                    name="DEADLINE",
+                    request_id=request.id,
+                    day=item.day,
+                    used=item.day,
+                    limit=request.terms.net_due_day,
                 )
             )
 
@@ -190,8 +193,11 @@ def binding_constraints(
         if pay_used >= int(policy.pay.daily):
             details.append(
                 BindingConstraintDetail(
-                    name="PAY_DAILY_CAP", request_id=request.id, day=item.day,
-                    used=pay_used, limit=int(policy.pay.daily),
+                    name="PAY_DAILY_CAP",
+                    request_id=request.id,
+                    day=item.day,
+                    used=pay_used,
+                    limit=int(policy.pay.daily),
                 )
             )
 
@@ -201,32 +207,44 @@ def binding_constraints(
         if refill > 0 and refill >= bound:
             details.append(
                 BindingConstraintDetail(
-                    name="REFILL_BOUND", request_id=request.id, day=item.day,
-                    used=refill, limit=bound,
+                    name="REFILL_BOUND",
+                    request_id=request.id,
+                    day=item.day,
+                    used=refill,
+                    limit=bound,
                 )
             )
         source_available = int(source_capacity(state.source, _ZERO))
         if refill > 0 and refill >= source_available:
             details.append(
                 BindingConstraintDetail(
-                    name="SOURCE_CAPACITY", request_id=request.id, day=item.day,
-                    used=refill, limit=source_available,
+                    name="SOURCE_CAPACITY",
+                    request_id=request.id,
+                    day=item.day,
+                    used=refill,
+                    limit=source_available,
                 )
             )
         refill_used = state.refill_used + refill
         if refill > 0 and refill_used >= int(policy.refill.daily):
             details.append(
                 BindingConstraintDetail(
-                    name="REFILL_DAILY_CAP", request_id=request.id, day=item.day,
-                    used=refill_used, limit=int(policy.refill.daily),
+                    name="REFILL_DAILY_CAP",
+                    request_id=request.id,
+                    day=item.day,
+                    used=refill_used,
+                    limit=int(policy.refill.daily),
                 )
             )
         balance_after = int(wallet.balance) + refill - amount
         if balance_after <= int(wallet.buffer):
             details.append(
                 BindingConstraintDetail(
-                    name="BUFFER", request_id=request.id, day=item.day,
-                    used=balance_after, limit=int(wallet.buffer),
+                    name="BUFFER",
+                    request_id=request.id,
+                    day=item.day,
+                    used=balance_after,
+                    limit=int(wallet.buffer),
                 )
             )
 

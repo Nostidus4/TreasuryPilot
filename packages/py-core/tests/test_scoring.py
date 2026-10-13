@@ -57,9 +57,7 @@ def _policy(
 ) -> PolicyView:
     return PolicyView(
         pay=Limits(per_request=BaseUnits(pay_per_request), daily=BaseUnits(pay_daily)),
-        refill=Limits(
-            per_request=BaseUnits(refill_per_request), daily=BaseUnits(refill_daily)
-        ),
+        refill=Limits(per_request=BaseUnits(refill_per_request), daily=BaseUnits(refill_daily)),
         cooling_seconds=0,
     )
 
