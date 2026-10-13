@@ -183,7 +183,7 @@ value(p) = discount(p) − late(p)
 
 ### 8.3 Baseline B1 — EDF
 
-Sort by `(net_due_day, approved_seq)`. For each day from today, take requests in order while: payee active that day, per-request cap respected (or exception granted), daily pay cap not exceeded, refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day; anything not placed in the horizon is `Infeasible` with its first blocking reason.
+Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-D7). For each day of the 30-day rolling horizon from today, take requests in order while: payee known (else `PAYEE_UNKNOWN`) and active that day, per-request cap respected for the amount actually paid that day, i.e. `pay_amount(r, d)` with early or legacy-discount amounts (or exception granted, else `NEEDS_EXCEPTION`), daily pay cap not exceeded (`OVER_DAILY_LIMIT`), refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day, including past their due day; anything not placed in the horizon is `Infeasible` with its first blocking reason. The objective's second term counts only deadlines some schedule could meet: payee known and active by the due day, due day not already past, and no exception needed.
 
 ### 8.4 Optimizer B2 — CP-SAT model (M07-D5)
 

@@ -15,6 +15,7 @@ from treasurypilot_core.domain import (
     Snapshot,
     WalletState,
 )
+from treasurypilot_core.engine.payment_terms import pay_amount
 from treasurypilot_core.money import BaseUnits
 
 _ZERO = BaseUnits(0)
@@ -248,15 +249,7 @@ def liquidity_position(
         if reserve_day > horizon_end:
             continue
 
-        amount = request.amount
-        if (
-            pay_day is not None
-            and request.early_amount is not None
-            and request.early_pay_by is not None
-            and pay_day <= request.early_pay_by
-        ):
-            amount = request.early_amount
-        payment_reserve += int(amount)
+        payment_reserve += int(request.amount if pay_day is None else pay_amount(request, pay_day))
 
     safe_floor = snapshot.source.buffer
     required = (
