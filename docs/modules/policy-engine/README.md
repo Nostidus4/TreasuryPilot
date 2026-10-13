@@ -147,6 +147,7 @@ A re-plan after partial completion (RCV-003) produces a **new** plan containing 
 | `validate_step(plan, seq, ctx) → Decision` | stage PRE_STEP: one step against a fresh snapshot |
 | `decide(checks) → Decision` | aggregation (§8.2) |
 | `plan_hash(plan) → bytes32` | §8.3 |
+| `ExecutionPlan.message() → dict` | the §8.3 Plan mapping (hex strings, module action codes) that `plan_hash` and `attestation_typed_data` take |
 | `step_id(request_id, action, wallet) → bytes32` | §8.4 |
 | `policy_version(mandate_version, cfg) → bytes32` | §3 |
 | `attestation_typed_data(plan, decision, nonce, valid_until, evidence_digest) → dict` | EIP-712 message |
