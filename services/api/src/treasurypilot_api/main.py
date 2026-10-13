@@ -9,11 +9,12 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
+from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -160,6 +161,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    screening_service: ScreeningService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -185,6 +187,10 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if screening_service is None and engine is not None:
+        screening_service = build_screening_service(
+            settings.environment, async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -228,6 +234,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.screening_service = screening_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
