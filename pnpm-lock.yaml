@@ -180,6 +180,10 @@ importers:
       '@safe-global/safe-contracts':
         specifier: 1.4.1
         version: 1.4.1(ethers@5.4.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
+    devDependencies:
+      ethers:
+        specifier: 5.4.0
+        version: 5.4.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
 packages:
 
