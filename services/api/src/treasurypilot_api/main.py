@@ -149,7 +149,9 @@ def create_app(
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine, redis_limiter, organization_repository = _auth_service(settings)
+        auth_service, engine, redis_limiter, default_organizations = _auth_service(settings)
+        if organization_repository is None:
+            organization_repository = default_organizations
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
