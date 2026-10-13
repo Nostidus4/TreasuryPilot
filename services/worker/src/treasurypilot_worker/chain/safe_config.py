@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-import asyncpg  # type: ignore[import-untyped]
+import asyncpg
 
 from treasurypilot_worker.chain.rpc import (
     RpcClient,

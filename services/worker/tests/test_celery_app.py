@@ -33,7 +33,7 @@ def test_safe_config_refresh_is_scheduled_every_ten_minutes() -> None:
     entry = app.conf.beat_schedule["refresh-safe-config-snapshots"]
 
     assert entry["task"] == "treasurypilot.treasury.refresh_safe_config_snapshots"
-    assert entry["schedule"].minute == "*/10"
+    assert entry["schedule"].minute == {0, 10, 20, 30, 40, 50}
     assert entry["options"]["queue"] == "core"
 
 
