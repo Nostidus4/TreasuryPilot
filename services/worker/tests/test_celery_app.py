@@ -29,6 +29,14 @@ def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
 
 
+def test_safe_config_refresh_is_scheduled_every_ten_minutes() -> None:
+    entry = app.conf.beat_schedule["refresh-safe-config-snapshots"]
+
+    assert entry["task"] == "treasurypilot.treasury.refresh_safe_config_snapshots"
+    assert entry["schedule"].minute == "*/10"
+    assert entry["options"]["queue"] == "core"
+
+
 def test_registered_tasks_inherit_safe_base() -> None:
     assert isinstance(core_probe, SafeTask)
     assert core_probe.acks_late is True

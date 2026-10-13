@@ -20,6 +20,7 @@ from treasurypilot_worker.chain.rpc import (
     SafeConfig,
     build_rpc_client,
     rpc_health_sink,
+    safe_config_changed,
 )
 
 
@@ -210,6 +211,20 @@ def test_safe_config_stops_paging_modules_that_never_end() -> None:
     with pytest.raises(RpcError, match="did not end"):
         asyncio.run(client(provider, FakeProvider()).safe_config(SAFE))
     assert len(provider.requests) < 50
+
+
+def test_safe_config_change_detection_ignores_owner_order_and_block_metadata() -> None:
+    previous = SafeConfig(10, BLOCK, (SAFE, GUARD), 2, (GUARD,), None, None, 7)
+    reordered = SafeConfig(11, OTHER_BLOCK, (GUARD, SAFE), 2, (GUARD,), None, None, 8)
+
+    assert not safe_config_changed(previous, reordered)
+
+
+def test_safe_config_change_detection_detects_security_configuration_changes() -> None:
+    previous = SafeConfig(10, BLOCK, (SAFE, GUARD), 2, (GUARD,), None, None, 7)
+    changed = SafeConfig(11, OTHER_BLOCK, (SAFE, "0x" + "33" * 20), 1, (), SAFE, None, 8)
+
+    assert safe_config_changed(previous, changed)
 
 
 class Erroring(FakeProvider):

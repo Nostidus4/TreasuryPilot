@@ -112,6 +112,31 @@ class SafeConfig:
     nonce: int
 
 
+def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeConfig) -> bool:
+    """Compare the security-relevant Safe configuration, ignoring block metadata."""
+
+    if isinstance(previous, SafeConfig):
+        owners = previous.owners
+        threshold = previous.threshold
+        modules = previous.modules
+        guard = previous.guard
+    else:
+        owners = tuple(str(owner).lower() for owner in previous["owners"])
+        threshold = int(previous["threshold"])
+        modules = tuple(
+            "0x" + bytes(module).hex() if not isinstance(module, str) else module.lower()
+            for module in previous["modules"]
+        )
+        guard_value = previous["guard"]
+        guard = "0x" + bytes(guard_value).hex() if guard_value is not None else None
+    return (
+        set(owners) != set(current.owners)
+        or threshold != current.threshold
+        or set(modules) != set(current.modules)
+        or guard != current.guard
+    )
+
+
 HealthSink = Callable[[RpcHealthSample], Awaitable[None]]
 
 
