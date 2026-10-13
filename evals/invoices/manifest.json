@@ -1,0 +1,166 @@
+{
+  "schema": "label.schema.json",
+  "synthetic": true,
+  "as_of": "2026-10-14",
+  "review_status": "pending_second_person",
+  "font_sha256": "b3658eadae55e682b5f69eb64c439c1ecc8f196c0bb8d4756d145d13bc86476a",
+  "render_library": "reportlab 4.4.9",
+  "entries": [
+    {
+      "id": "inv-001",
+      "pdf_sha256": "53b00930631e477011184164d845a482a745af873dc07967c4ad9897988a7141",
+      "pages": 1
+    },
+    {
+      "id": "inv-002",
+      "pdf_sha256": "96a860b86f5d9271fa0db294dd7f864e6f8429bbeb89f4371b54642b8527caf9",
+      "pages": 1
+    },
+    {
+      "id": "inv-003",
+      "pdf_sha256": "3d347ddf34be78d029e0793c3a260db5d81ae0af9fed0d1155a574e98e12e1cd",
+      "pages": 1
+    },
+    {
+      "id": "inv-004",
+      "pdf_sha256": "7ffe5e61f83b147b4f1346fd8107eac111e008218094710a4bb826330a4f615f",
+      "pages": 1
+    },
+    {
+      "id": "inv-005",
+      "pdf_sha256": "5f9dd22cf2e7c0f13cb32fc4d24d8eabe0ae016c2737880c1293a17291813c72",
+      "pages": 1
+    },
+    {
+      "id": "inv-006",
+      "pdf_sha256": "692c1e3b0059c6be60b959041aab24d5fcd352e5e53e267766965faa137ff787",
+      "pages": 1
+    },
+    {
+      "id": "inv-007",
+      "pdf_sha256": "7490f97c5a969e524235fc94ebd25e2be6619f9b6d7ee2e72a94b4a0e9a43631",
+      "pages": 1
+    },
+    {
+      "id": "inv-008",
+      "pdf_sha256": "0a5773ac5c9b17833f5fd8fd5d630dbbbc1b9eeff61d4a3f4e55f5fa55de7a20",
+      "pages": 1
+    },
+    {
+      "id": "inv-009",
+      "pdf_sha256": "10e56be1a1da90cbc1d525332073b55a057f2a0718262387b96fb2e53967107c",
+      "pages": 1
+    },
+    {
+      "id": "inv-010",
+      "pdf_sha256": "3ea432c2358896812fae0dd1c82888f700ae127737a8e14410d88f1dfb3a271f",
+      "pages": 1
+    },
+    {
+      "id": "inv-011",
+      "pdf_sha256": "849fab4da56e8495938d079655ae3e199912f4c00287389edc2dd2f894287cd2",
+      "pages": 1
+    },
+    {
+      "id": "inv-012",
+      "pdf_sha256": "5f40c4eb06db2e3217113bb7d01f8067ba87b07fe18cf939f1ed2cf8f7af20b0",
+      "pages": 1
+    },
+    {
+      "id": "inv-013",
+      "pdf_sha256": "209612e111094a8f9bcd9296c6a72dee2970e4cd9230472f6bf721fa3a2520b3",
+      "pages": 1
+    },
+    {
+      "id": "inv-014",
+      "pdf_sha256": "8baf40b4d36d73c317cea03426d3101bca4a63df24b6ae5b6bf92810b19dbee9",
+      "pages": 1
+    },
+    {
+      "id": "inv-015",
+      "pdf_sha256": "464b212968c4182187d508f2d64d2faf10cbda7ace974b3a2349185a959d99f5",
+      "pages": 1
+    },
+    {
+      "id": "inv-016",
+      "pdf_sha256": "8d8bbcba64b2e602623ffdcfc34967cc1fbc45dbd3122a6444b162144882df4f",
+      "pages": 1
+    },
+    {
+      "id": "inv-017",
+      "pdf_sha256": "496fa2d010c440acf8542f8b38808a6ef6350711091f363313c0b28965090686",
+      "pages": 1
+    },
+    {
+      "id": "inv-018",
+      "pdf_sha256": "ef7810be98caf652baf4b99626152f31eafb724721a73345f88be84ed6a1eee4",
+      "pages": 1
+    },
+    {
+      "id": "inv-019",
+      "pdf_sha256": "95e74a66c24402093863b706b7d729b5f2de8c1605dc01101ece29e9804d7365",
+      "pages": 2
+    },
+    {
+      "id": "inv-020",
+      "pdf_sha256": "d88736a641f340b1d6f019667102654ad3057de89f1c2af44bbfe441eb3a8f89",
+      "pages": 2
+    },
+    {
+      "id": "inv-021",
+      "pdf_sha256": "bc9b1fcf164e8d7e498f75054f9688906f7058e3f1b5039ce0b19f60abfeefcc",
+      "pages": 1
+    },
+    {
+      "id": "inv-022",
+      "pdf_sha256": "033a63edefae483edf4d39cd56f3b4cc25ab1edfcfa1f5010744c4897cbb3b9d",
+      "pages": 1
+    },
+    {
+      "id": "inv-023",
+      "pdf_sha256": "e8f91ffb04e2277ecf13795b0b2a026318b2282a53bbb525ace5c9f9ee4ff009",
+      "pages": 1
+    },
+    {
+      "id": "inv-024",
+      "pdf_sha256": "4991255855800584bd3c2428bc0ab29acc7dbc5409216c61557271a669cabe4a",
+      "pages": 1
+    },
+    {
+      "id": "inv-025",
+      "pdf_sha256": "7476a725a22f1d9ca5e75c1809653aca5f9f088b35ff29e73f6bb9d74d18821b",
+      "pages": 1
+    },
+    {
+      "id": "inv-026",
+      "pdf_sha256": "1ca99dfac58cd73e525daf6da5858a73bd7c8f2c96adce5116f322fa9cbb4917",
+      "pages": 1
+    },
+    {
+      "id": "inv-027",
+      "pdf_sha256": "c487df4137105f1f35ced54e53b09c7fda50a9e129a136ed8737ef3b38cc9525",
+      "pages": 1
+    },
+    {
+      "id": "inv-028",
+      "pdf_sha256": "5f152e373d875d926f0955a169a9df7f51db0a72250ec69cadeebbd2e86d1c10",
+      "pages": 1
+    },
+    {
+      "id": "inv-029",
+      "pdf_sha256": "5bc4740d92f51b25a373dda339ee7393ef8fbd5c46f8a355259212482529c78f",
+      "pages": 1
+    },
+    {
+      "id": "inv-030",
+      "pdf_sha256": "3e8cbf2866f70fba5256b45ed8efdd5d897b646310f41a53be2f808f7119038b",
+      "pages": 1
+    }
+  ],
+  "context": {
+    "registry_payee": "0x1111111111111111111111111111111111111111",
+    "payment_currency": "USDC",
+    "prior_paid_invoice_for_inv_027": "inv-005",
+    "prior_payee_for_inv_025": "0x1111111111111111111111111111111111111111"
+  }
+}
