@@ -56,11 +56,22 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 Screening TTL 24 h; provider `fixture` in M1; encryption key from Docker secret `field_key`; redaction on in all environments.
 
 The API exposes the screening adapter through `app.state.screening_service` for
-payee-registration and pre-PAY callers. `screen()` persists each result and
-reuses CLEAR/HIT records for 24 hours. Provider exceptions are persisted as
-ERROR without a cache lifetime; `require_clear()` raises `DATA_MISSING` for
-ERROR and `SCREENING_HIT` for HIT. The fixture includes static `TEST DATA`
-addresses, including a sample from the [OFAC SDN-list update on 2026-03-12](https://ofac.treasury.gov/recent-actions/20260312).
+payee-registration and pre-PAY callers. `screen(address, chain_id)` persists each
+result with its `chain_id` and provider, and reuses a CLEAR/HIT record for 24 hours
+only for the same address, chain and provider; a reused result is also recorded for
+the requesting payee so its screening history is complete. Address matching ignores
+case and checksum (`0x`/`0X` or bare hex). The provider call has a 5-second timeout
+(M14-D7). A timeout or provider error (`ScreeningProviderError`, network errors) is
+logged and persisted as ERROR without a cache lifetime; `require_clear()` raises
+`DATA_MISSING` for ERROR and `SCREENING_HIT` for HIT (fail closed, BR-085). Invalid
+input (address, `chain_id <= 0`, a naive clock) raises instead of being recorded.
+
+The fixture provider reads the `screening_lists` table (TEST DATA rows seeded by
+migration `20261013_0009`, including a sample from the
+[OFAC SDN-list update on 2026-03-12](https://ofac.treasury.gov/recent-actions/20260312))
+and is only used when `TP_ENVIRONMENT` is `local`, `test` or `demo`. In any other
+environment no real provider exists yet, so screening fails closed (every check is
+ERROR → `DATA_MISSING`) and startup logs `screening_provider_unconfigured`.
 The fixture is not a live sanctions list and must not be used for real screening.
 
 The `field_key` secret contains a base64-encoded 32-byte key. Services load it from

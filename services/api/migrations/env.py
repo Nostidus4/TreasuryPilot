@@ -9,6 +9,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from treasurypilot_api.compliance import models as compliance_models  # noqa: F401
 from treasurypilot_api.database import Base
 from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.mandate import models as mandate_models  # noqa: F401
