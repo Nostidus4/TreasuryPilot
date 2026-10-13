@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     log_format: LogFormat = "json"
     # Unset keeps the Prometheus endpoint off (tests, beat); compose serves it on the internal net.
     metrics_port: int | None = None
+    # Docker secrets in the core worker only; unset means no attestation can be issued.
+    policy_keystore_path: Path | None = None
+    policy_keystore_password_file: Path | None = None
 
 
 @lru_cache

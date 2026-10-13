@@ -29,7 +29,18 @@ def test_ai_worker_environment_is_an_explicit_non_signing_allowlist() -> None:
         "TP_METRICS_PORT",
         "TP_REDIS_URL",
     }
-    assert "TP_ATTESTATION_PRIVATE_KEY" not in ai_worker
+    assert "POLICY_KEYSTORE" not in ai_worker
+    assert "secrets:" not in ai_worker
     assert "TP_SIGNER_SHARED_SECRET" not in ai_worker
     assert "${POSTGRES_USER}" not in ai_worker
     assert "${POSTGRES_PASSWORD}" not in ai_worker
+
+
+def test_only_the_core_worker_mounts_the_policy_keystore() -> None:
+    compose = (Path(__file__).resolve().parents[3] / "infra" / "compose.yaml").read_text()
+    core_worker = _service_block(compose, "worker", "worker-ai")
+
+    assert "TP_ATTESTATION_PRIVATE_KEY" not in compose
+    assert "secrets: [policy_keystore, policy_keystore_password]" in core_worker
+    assert "TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore" in core_worker
+    assert compose.count("policy_keystore_password]") == 1
