@@ -17,6 +17,64 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "ChannelKind": {
+        "enum": ["TELEGRAM"],
+        "title": "ChannelKind",
+        "type": "string"
+      },
+      "ChannelList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "ChannelList",
+        "type": "object"
+      },
+      "ChannelPatch": {
+        "properties": {
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          }
+        },
+        "required": ["showAmounts"],
+        "title": "ChannelPatch",
+        "type": "object"
+      },
+      "ChannelView": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChannelKind"
+          },
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "title": "Verifiedat",
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "active", "showAmounts", "verifiedAt"],
+        "title": "ChannelView",
+        "type": "object"
+      },
       "CreateOrganizationRequest": {
         "properties": {
           "country": {
@@ -91,6 +149,26 @@
         },
         "required": ["status", "service", "version"],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "LinkCodeIssued": {
+        "properties": {
+          "botUrl": {
+            "title": "Boturl",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": ["code", "botUrl", "expiresAt"],
+        "title": "LinkCodeIssued",
         "type": "object"
       },
       "MagicLinkRequest": {
@@ -1146,6 +1224,127 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/v1/me/channels": {
+      "get": {
+        "operationId": "list_channels_v1_me_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Channels",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/telegram/link-code": {
+      "post": {
+        "operationId": "create_link_code_v1_me_channels_telegram_link_code_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCodeIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Link Code",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/{channel_id}": {
+      "delete": {
+        "operationId": "delete_channel_v1_me_channels__channel_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Channel",
+        "tags": ["notifications"]
+      },
+      "patch": {
+        "operationId": "update_channel_v1_me_channels__channel_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Channel",
+        "tags": ["notifications"]
       }
     },
     "/v1/orgs": {
