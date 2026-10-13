@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterator
 from uuid import UUID
 
@@ -31,7 +32,8 @@ def test_valid_ids(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", [None, "", "short", "x" * 65, "has space1", "line\nbreak1", HEX64]
+    "value",
+    [None, "", "short", "x" * 65, "has space1", "line\nbreak1", HEX64, "token:12345678"],
 )
 def test_invalid_ids(value: object) -> None:
     assert not is_valid_id(value)
@@ -114,3 +116,16 @@ def test_console_format_is_redacted_too(capsys: pytest.CaptureFixture[str]) -> N
 def test_unknown_level_is_rejected() -> None:
     with pytest.raises(ValueError):
         configure_logging("api", "LOUD")
+
+
+def test_stdlib_logs_get_context_redaction_and_json(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("worker", "INFO", "json")
+    bind_context(correlation_id="corr-12345")
+
+    logging.getLogger("celery.app.trace").info("Task succeeded: %s", {"key": HEX64})
+
+    line = json.loads(capsys.readouterr().out)
+    assert line["event"].startswith("Task succeeded")
+    assert line["service"] == "worker"
+    assert line["correlation_id"] == "corr-12345"
+    assert HEX64 not in json.dumps(line)

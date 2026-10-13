@@ -10,7 +10,7 @@ from uuid import uuid4
 from celery import Task
 from structlog.contextvars import bound_contextvars
 
-from treasurypilot_core.observability import CONTEXT_FIELDS, current_context
+from treasurypilot_core.observability import CONTEXT_FIELDS, current_context, is_valid_id
 
 CORRELATION_ID_HEADER = "x_correlation_id"
 # All log context ids as one dict header; ``correlation_id`` alone would be overwritten by Celery.
@@ -26,6 +26,14 @@ def current_correlation_id() -> str | None:
     """Return the correlation id bound to the task currently being executed."""
 
     return current_context().get("correlation_id")
+
+
+def _valid_log_context(value: object) -> dict[str, str]:
+    """Keep only well-formed ids from an ``x_log_context`` header; anything else is dropped."""
+
+    if not isinstance(value, dict):
+        return {}
+    return {name: value[name] for name in CONTEXT_FIELDS if is_valid_id(value.get(name))}
 
 
 def make_idempotency_key(namespace: str, *identifiers: object) -> str:
@@ -76,9 +84,10 @@ class SafeTask(Task):
         """
 
         headers = dict(options.pop("headers", None) or {})
-        context = {**current_context(), **(headers.get(LOG_CONTEXT_HEADER) or {})}
+        context = {**current_context(), **_valid_log_context(headers.get(LOG_CONTEXT_HEADER))}
+        explicit = headers.get(CORRELATION_ID_HEADER)
         correlation_id = (
-            headers.get(CORRELATION_ID_HEADER) or context.get("correlation_id") or str(uuid4())
+            explicit if is_valid_id(explicit) else context.get("correlation_id") or str(uuid4())
         )
         headers[CORRELATION_ID_HEADER] = correlation_id
         headers[LOG_CONTEXT_HEADER] = {**context, "correlation_id": correlation_id}
@@ -88,10 +97,14 @@ class SafeTask(Task):
         """Bind a delivery's log context for logs and child task publication."""
 
         headers = getattr(self.request, "headers", None) or {}
-        sent = headers.get(LOG_CONTEXT_HEADER) or {}
-        context = {name: str(sent[name]) for name in CONTEXT_FIELDS if sent.get(name)}
-        context["correlation_id"] = str(
-            context.get("correlation_id") or headers.get(CORRELATION_ID_HEADER) or uuid4()
+        context = _valid_log_context(headers.get(LOG_CONTEXT_HEADER))
+        header_id = headers.get(CORRELATION_ID_HEADER)
+        # A direct call without headers keeps the caller's bound correlation id.
+        context["correlation_id"] = (
+            context.get("correlation_id")
+            or (header_id if is_valid_id(header_id) else None)
+            or current_context().get("correlation_id")
+            or str(uuid4())
         )
         with bound_contextvars(**context):
             return super().__call__(*args, **kwargs)

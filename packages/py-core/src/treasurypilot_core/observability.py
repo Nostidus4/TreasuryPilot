@@ -1,12 +1,14 @@
 """Structured JSON logging and correlation context shared by api, worker and signer.
 
-Framework-free on purpose: ASGI middleware and Celery hooks live in each service.
+Framework-free on purpose: the ASGI middleware is in ``observability_asgi`` and the Celery hooks
+live in the worker.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import sys
 from collections.abc import Mapping
 from typing import Literal, cast
 from uuid import uuid4
@@ -16,6 +18,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars, get_conte
 from structlog.typing import EventDict, Processor, WrappedLogger
 
 from treasurypilot_core.privacy import redact_event
+from treasurypilot_core.privacy.redaction import _redact_string
 
 CONTEXT_FIELDS = ("correlation_id", "request_id", "org_id", "plan_id", "operation_id")
 REQUEST_ID_HEADER = "x-request-id"
@@ -29,8 +32,6 @@ CONTEXT_HEADERS = {
 LogFormat = Literal["json", "console"]
 
 _VALID_ID = re.compile(r"[A-Za-z0-9._:-]{8,64}")
-# A bare 64-hex string looks like a private key and would be redacted, so it is not a valid id.
-_BARE_HEX_64 = re.compile(r"[0-9a-fA-F]{64}")
 
 
 def is_valid_id(value: object) -> bool:
@@ -39,7 +40,8 @@ def is_valid_id(value: object) -> bool:
     return (
         isinstance(value, str)
         and _VALID_ID.fullmatch(value) is not None
-        and _BARE_HEX_64.fullmatch(value) is None
+        # e.g. a bare 64-hex string or ``token:12345678`` would be logged redacted, unsearchable.
+        and _redact_string(value) == value
     )
 
 
@@ -86,6 +88,17 @@ def context_from_headers(headers: Mapping[str, str]) -> tuple[dict[str, str], li
     return context, invalid
 
 
+class _StdoutHandler(logging.StreamHandler):
+    """Write to the current ``sys.stdout`` (like structlog's print logger), not the one at setup.
+
+    Safe under Celery: with a ``setup_logging`` receiver it does not redirect stdout to logging.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.stream = sys.stdout
+        super().emit(record)
+
+
 def configure_logging(service: str, level: str = "INFO", fmt: LogFormat = "json") -> None:
     """Route structlog output through context merge, redaction and a single renderer."""
 
@@ -102,20 +115,38 @@ def configure_logging(service: str, level: str = "INFO", fmt: LogFormat = "json"
         if fmt == "console"
         else structlog.processors.JSONRenderer()
     )
+    shared: list[Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        add_service,
+    ]
     structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            add_service,
-            cast(
-                Processor, redact_event
-            ),  # last before the renderer so no field added above escapes it
-            renderer,
-        ],
+        processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         wrapper_class=structlog.make_filtering_bound_logger(level_no),
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
     )
+    # One root handler so stdlib loggers (Celery, uvicorn, libraries) get the same context,
+    # redaction and renderer as structlog events.
+    handler = _StdoutHandler()
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=shared,
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                cast(Processor, redact_event),  # last before the renderer so nothing escapes it
+                renderer,
+            ],
+        )
+    )
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(level_no)
+    # uvicorn installs its own non-propagating handlers before the app is imported.
+    for name in ("uvicorn", "uvicorn.access"):
+        server_logger = logging.getLogger(name)
+        server_logger.handlers = []
+        server_logger.propagate = True
 
 
 def log_invalid_headers(invalid: list[str]) -> None:

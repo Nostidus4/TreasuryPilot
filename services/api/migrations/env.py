@@ -15,7 +15,8 @@ from treasurypilot_api.identity import models as identity_models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before migrations (e.g. structlog's stdlib loggers) enabled.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:

@@ -11,4 +11,4 @@
 ## Consequences
 Correlation ids must be propagated through Celery headers (`x_correlation_id`, `x_log_context`) and HTTP headers (`X-Request-ID`, `X-Org-ID`, `X-Plan-ID`, `X-Operation-ID`). Ids from HTTP headers are client-declared, not authenticated.
 
-Accepted gap (OBS-001): logs emitted by uvicorn and Celery themselves are not routed through structlog, so they are plain text and bypass redaction. Revisit by routing stdlib logging through `structlog.stdlib.ProcessorFormatter`.
+Stdlib logging (uvicorn, Celery, libraries) goes through the same root handler (`structlog.stdlib.ProcessorFormatter`), so it gets the same context, redaction and renderer.

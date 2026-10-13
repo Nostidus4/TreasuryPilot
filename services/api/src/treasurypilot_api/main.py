@@ -4,8 +4,8 @@ from pydantic import BaseModel
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import get_settings
-from treasurypilot_api.middleware import CorrelationMiddleware
-from treasurypilot_core.observability import configure_logging
+from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
+from treasurypilot_core.observability_asgi import CorrelationMiddleware
 
 
 class HealthResponse(BaseModel):
@@ -30,6 +30,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
 
     app.add_middleware(CorrelationMiddleware)

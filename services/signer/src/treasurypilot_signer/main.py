@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from treasurypilot_core.observability import configure_logging
+from treasurypilot_core.observability_asgi import CorrelationMiddleware
 from treasurypilot_signer import __version__
 from treasurypilot_signer.config import get_settings
-from treasurypilot_signer.middleware import CorrelationMiddleware
 
 
 class HealthResponse(BaseModel):

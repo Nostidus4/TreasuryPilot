@@ -62,3 +62,26 @@ def test_context_does_not_leak_between_requests(client: TestClient) -> None:
     client.get("/_context", headers={"X-Org-ID": "org-12345"})
 
     assert "org_id" not in client.get("/_context").json()
+
+
+def test_unhandled_error_keeps_request_id_and_logs_with_context(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    app = create_app()
+
+    @app.get("/_boom")
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/_boom", headers={"X-Request-ID": "req-12345"}
+    )
+
+    assert response.status_code == 500
+    assert response.headers["x-request-id"] == "req-12345"
+    out = capsys.readouterr().out.splitlines()
+    lines = [json.loads(line) for line in out if line.startswith("{")]
+    error = next(line for line in lines if line["event"] == "unhandled_exception")
+    assert error["correlation_id"] == "req-12345"
+    assert "RuntimeError: boom" in error["exception"]
+    assert current_context() == {}

@@ -1,12 +1,13 @@
 """Correlation ids across Celery headers and the api -> worker -> signer path."""
 
 import json
+import logging
 import time
 from collections.abc import Iterator
 
 import pytest
 import structlog
-from celery import Task
+from celery import Task, signals
 from celery.contrib.testing.worker import start_worker
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -103,6 +104,52 @@ def test_delivery_without_log_context_falls_back_to_correlation_header() -> None
         assert task() == {"correlation_id": "corr-12345"}
     finally:
         task.pop_request()
+
+
+def test_direct_call_without_headers_inherits_bound_correlation_id() -> None:
+    _CaptureContextTask.bind(app)
+    bind_context(correlation_id="corr-12345", request_id="req-12345")
+
+    assert _CaptureContextTask()() == {"correlation_id": "corr-12345", "request_id": "req-12345"}
+
+
+@pytest.mark.parametrize(
+    "sent", ["not-a-dict", ["corr-12345"], {"correlation_id": "bad id", "org_id": "token:12345678"}]
+)
+def test_malformed_log_context_header_is_dropped(sent: object) -> None:
+    _CaptureContextTask.bind(app)
+    task = _CaptureContextTask()
+    task.push_request(headers={LOG_CONTEXT_HEADER: sent, CORRELATION_ID_HEADER: "corr-12345"})
+    try:
+        assert task() == {"correlation_id": "corr-12345"}
+    finally:
+        task.pop_request()
+
+
+def test_publish_drops_malformed_log_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _published_headers(monkeypatch)
+    _CaptureContextTask.bind(app)
+    bind_context(**CONTEXT)
+
+    _CaptureContextTask().apply_async(
+        headers={LOG_CONTEXT_HEADER: "oops", CORRELATION_ID_HEADER: "bad id"}
+    )
+
+    assert captured[LOG_CONTEXT_HEADER] == CONTEXT
+    assert captured[CORRELATION_ID_HEADER] == "corr-12345"
+
+
+def test_celery_logging_setup_configures_structlog(capsys: pytest.CaptureFixture[str]) -> None:
+    # Celery sends setup_logging from both `celery worker` and `celery beat`.
+    signals.setup_logging.send(
+        sender=None, loglevel="INFO", logfile=None, format="", colorize=False
+    )
+
+    logging.getLogger("celery.beat").info("beat: Starting...")
+
+    line = json.loads(capsys.readouterr().out)
+    assert line["service"] == "worker"
+    assert line["event"] == "beat: Starting..."
 
 
 def test_one_request_id_finds_log_lines_in_api_worker_and_signer(
