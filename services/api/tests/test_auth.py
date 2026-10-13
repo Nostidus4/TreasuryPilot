@@ -328,6 +328,9 @@ def test_me_returns_current_user_memberships_and_linked_wallets() -> None:
                 "orgId": "00000000-0000-4000-8000-000000000012",
                 "roles": ["Finance", "Auditor"],
                 "status": "active",
+                "ownerIsOnchain": False,
+                "ownerCheckedAt": None,
+                "signerRolesActive": False,
             }
         ]
         assert payload["wallets"][0]["address"] == "0x" + "11" * 20
