@@ -41,6 +41,7 @@ The checked-in foundation intentionally does not seed business data or expose si
 | `uv run pytest packages/py-core` | Core unit + property tests |
 | `uv run pytest services/api services/worker` | Service tests |
 | `make test-contracts` | Contract tests in the pinned Foundry image |
+| `make slither` | Slither static analysis in the pinned Foundry image; report in `contracts/slither-report/` |
 | `pnpm --dir apps/web dev` | Web dev server |
 | `make openapi` | Regenerate the TS client from the API |
 | `make ps` / `make logs` | Inspect the Compose stack |
@@ -67,6 +68,8 @@ Never commit secrets. `infra/env/.env.example` contains only disposable local de
 ## Database migrations
 
 Alembic lives in `services/api/migrations`. Use one migration per PR when the schema changes. Never edit a merged migration.
+
+`make dev` runs a one-shot `migrate` service (`alembic upgrade head`) before the API starts, because the API syncs platform chain configuration into the database at startup. Outside Compose, run `DATABASE_URL=... uv run alembic -c services/api/alembic.ini upgrade head`; Alembic refuses to run without a `DATABASE_URL`.
 
 ## Money
 

@@ -45,11 +45,17 @@ jobs:
       - name: Test
         working-directory: contracts
         env:
+          # Fuzz: 1k on PRs, 10k on main (DEV-004). Invariant runs are 75% of
+          # 256/1000 to keep PR feedback fast; depth stays at the Foundry default.
           FOUNDRY_FUZZ_RUNS: ${{ github.ref == 'refs/heads/main' && '10000' || '1000' }}
+          FOUNDRY_INVARIANT_RUNS: ${{ github.ref == 'refs/heads/main' && '750' || '192' }}
+          FOUNDRY_INVARIANT_DEPTH: '50'
         run: |
           set -o pipefail
           {
-            echo "Revision: $GITHUB_SHA; profile: default; solc: 0.8.28; optimizer: 200; module: IR"
+            echo "Revision: $GITHUB_SHA"
+            # Record the effective settings instead of hardcoding them.
+            forge config --json | jq -c '{solc, optimizer, optimizer_runs, via_ir, fuzz_runs: .fuzz.runs, invariant_runs: .invariant.runs, invariant_depth: .invariant.depth}'
             forge --version
             forge test --gas-report -vv
           } | tee gas-report.txt
@@ -57,3 +63,50 @@ jobs:
         with:
           name: contracts-gas-report
           path: contracts/gas-report.txt
+
+  slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+      - name: Install Solidity dependencies
+        run: pnpm install --frozen-lockfile
+      # Report-only: slither.config.json sets fail_on=none. SC-015 fixes the
+      # findings and raises it to fail on high severity.
+      - name: Slither
+        working-directory: contracts
+        run: |
+          mkdir -p slither-report
+          uvx --python 3.12 --from "slither-analyzer==$(cat .slither-version)" slither . \
+            --config-file slither.config.json \
+            --json slither-report/slither.json \
+            --sarif slither-report/slither.sarif \
+            --checklist \
+            --markdown-root "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/contracts/" \
+            > slither-report/slither.md
+      - name: Job summary
+        if: always()
+        working-directory: contracts
+        run: |
+          echo '## Slither (report-only)' >> "$GITHUB_STEP_SUMMARY"
+          cat slither-report/slither.md >> "$GITHUB_STEP_SUMMARY" || echo 'No report produced.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Slither report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report
+          path: contracts/slither-report/
+          if-no-files-found: warn

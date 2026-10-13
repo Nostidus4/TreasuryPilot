@@ -13,6 +13,7 @@ COPY packages/py-core packages/py-core
 COPY services/api services/api
 COPY services/worker services/worker
 COPY services/signer services/signer
+COPY deployments deployments
 RUN uv sync --frozen --no-dev --package treasurypilot-api
 
 USER 65532:65532

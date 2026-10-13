@@ -62,11 +62,12 @@ Then follow each module's §13 order and `planning/DEPENDENCIES.md` waves. Prior
 | Area | Owner | Modules / tickets | Default reviewer |
 |---|---|---|---|
 | Frontend | **@Nostidus4** | WEB | @therealtunguyen |
-| Backend | **@Nostidus4** | IDN, TRS, MDT, INV, CHR, ENG, POL, EXE, REC, RCV, NTF, CMP, AUD | @therealtunguyen |
+| Backend (web-facing and business) | **@Nostidus4** | IDN, TRS, MDT, INV, ENG, REC, RCV, NTF, CMP, AUD (75 tickets, 57 dev-days, 72 %) | @therealtunguyen |
+| Backend (execution core) | **@therealtunguyen** | EXE, POL, CHR (27 tickets, 22.5 dev-days, 28 %) | @Nostidus4 |
 | Infrastructure | **@therealtunguyen** | DEV, OBS | @Nostidus4 (default, can change) |
 | AI | **@therealtunguyen** | AGT | @Nostidus4 (default, can change) |
 | Blockchain | **@longhuynh55** (anh Phúc) | SC | @Nostidus4 (default, can change) |
 | Non-code | to be split later | DOM | – |
 
-Applied on GitHub: issue assignees, Project **Owner** field and Status **Assigned** (182 open M1 code tickets). Default reviewers live in `.github/CODEOWNERS`. Re-run `python3 planning/tools/assign.py` after adding tickets. The suggested tracks in §1 are superseded by this table.
+Updated 2026-10-12: about 30 % of backend (execution core: EXE, POL, CHR) moved to @therealtunguyen. Applied on GitHub: issue assignees, Project **Owner** field and Status **Assigned** (182 open M1 code tickets). Default reviewers live in `.github/CODEOWNERS`. Re-run `python3 planning/tools/assign.py` after adding tickets. The suggested tracks in §1 are superseded by this table.
 

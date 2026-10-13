@@ -23,6 +23,7 @@ contracts/broadcast/
 deployments/31337.json
 deployments/predictions/*
 !deployments/predictions/.gitkeep
+contracts/slither-report/
 
 # Local environment and secrets
 .env

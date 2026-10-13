@@ -100,6 +100,19 @@ services:
     restart: unless-stopped
     networks: [public, internal]
 
+  migrate:
+    build:
+      <<: *python-build
+      dockerfile: services/api/Dockerfile
+    command: ['alembic', '-c', 'services/api/alembic.ini', 'upgrade', 'head']
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    networks: [internal]
+
   api:
     build:
       <<: *python-build
@@ -110,6 +123,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio-init:
@@ -147,6 +162,9 @@ services:
     environment:
       <<: *app-environment
       CHAIN_RPC_URL: http://anvil:8545
+      # Core-only credentials are deliberately not part of x-app-environment.
+      TP_ATTESTATION_PRIVATE_KEY: ${TP_ATTESTATION_PRIVATE_KEY:-}
+      TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,9 +188,11 @@ services:
         '--hostname=ai@%h',
       ]
     environment:
+      # Keep this an explicit allowlist: never merge x-app-environment or core secrets here.
       TP_ENVIRONMENT: local
       TP_REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: ${AI_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+      # Empty means no DB access; when needed, provide a URL for a least-privilege AI role.
+      DATABASE_URL: ${AI_DATABASE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:

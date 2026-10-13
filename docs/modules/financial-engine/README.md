@@ -67,6 +67,8 @@ class ApprovedRequest(BaseModel):
     id: str; paying_wallet: str; payee: str; amount: BaseUnits
     approved_seq: int                      # approval order (tie-break)
     terms: PaymentTerms                    # confirmed terms only (BR-075)
+    early_amount: BaseUnits | None = None  # exact signed option; positive when present (ADR-019)
+    early_pay_by: int | None = None        # paired with early_amount; UTC day
     exception_granted: bool = False        # Owner grant exists on-chain (M04-D3)
 class RefillDecision(BaseModel):
     kind: Literal["none", "preferred", "shortage", "stop"]; amount: BaseUnits; reason: ReasonCode
@@ -93,8 +95,8 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `shortage(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + F − B)` | |
 | `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
 | `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
-| `decide_refill(req, wallet, source, policy, used_today, protected_other) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4) |
-| `request_value(req, pay_day) → int` | discount − late fee | §8.2 |
+| `decide_refill(req, wallet, source, policy, used_today, protected_other, *, source_protected) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4); `source_protected` = `R_T + L_T` |
+| `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
 | `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, N ≤ 8 | **tests only** |
@@ -104,6 +106,8 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
 
 Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
+Pydantic raises `ValidationError` while constructing input models; engine entry points defensively
+revalidate unchecked model instances and surface the corresponding typed domain error.
 
 ## 7. Main flows
 
@@ -139,7 +143,7 @@ if Shortage == 0:                 → none
 elif Shortage > Bound:            → stop (REFILL_BOUND)        # buffer/other holds exceed target
 elif Cap ≥ min(Pref, Bound):      → preferred, amount = min(Pref, Bound)
 elif Cap ≥ Shortage:              → shortage,  amount = Shortage   (report TARGET_NOT_REACHED)
-else:                             → stop (SOURCE_INSUFFICIENT or OVER_REFILL_DAILY)
+else:                             → stop (OVER_REFILL_DAILY, else OVER_REFILL_PER_REQUEST, else SOURCE_INSUFFICIENT)
 ```
 
 | Example | B | P_o | D | F | H | Shortage | Pref | Bound | Cap | Decision |
@@ -205,7 +209,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 
 ### 8.5 Fingerprint
 
-`normalize(s) = s.strip().casefold()` then remove spaces, `-`, `_`, `/`, `.`, `#`. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`. Vectors are shared with the contracts (SC-017) and the web.
+`normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
 
 ## 9. Configuration and defaults
 

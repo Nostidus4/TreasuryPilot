@@ -21,6 +21,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/auth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Logout */
+    post: operations['logout_v1_auth_logout_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/magic-link': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request Magic Link */
+    post: operations['request_magic_link_v1_auth_magic_link_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/magic-link/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify Magic Link */
+    post: operations['verify_magic_link_v1_auth_magic_link_verify_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/health': {
     parameters: {
       query?: never;
@@ -38,10 +89,32 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Me */
+    get: operations['me_v1_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components['schemas']['ValidationError'][];
+    };
     /** HealthResponse */
     HealthResponse: {
       /** Service */
@@ -50,6 +123,88 @@ export interface components {
       status: string;
       /** Version */
       version: string;
+    };
+    /** MagicLinkRequest */
+    MagicLinkRequest: {
+      /** Email */
+      email: string;
+    };
+    /** MeResponse */
+    MeResponse: {
+      /** Memberships */
+      memberships: components['schemas']['MembershipView'][];
+      user: components['schemas']['UserView'];
+      /** Wallets */
+      wallets: components['schemas']['WalletView'][];
+    };
+    /** MembershipView */
+    MembershipView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+      /** Status */
+      status: string;
+    };
+    /** UserView */
+    UserView: {
+      /** Displayname */
+      displayName: string | null;
+      /** Email */
+      email: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Status */
+      status: string;
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
+    /** VerifyMagicLinkRequest */
+    VerifyMagicLinkRequest: {
+      /** Token */
+      token: string;
+    };
+    /** VerifyMagicLinkResponse */
+    VerifyMagicLinkResponse: {
+      /** Csrftoken */
+      csrfToken: string;
+      user: components['schemas']['UserView'];
+    };
+    /** WalletView */
+    WalletView: {
+      /** Address */
+      address: string;
+      /** Chainfamily */
+      chainFamily: string;
+      /** Iscontract */
+      isContract: boolean;
+      /**
+       * Linkedat
+       * Format: date-time
+       */
+      linkedAt: string;
     };
   };
   responses: never;
@@ -80,6 +235,88 @@ export interface operations {
       };
     };
   };
+  logout_v1_auth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  request_magic_link_v1_auth_magic_link_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MagicLinkRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  verify_magic_link_v1_auth_magic_link_verify_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VerifyMagicLinkRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VerifyMagicLinkResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_v1_health_get: {
     parameters: {
       query?: never;
@@ -96,6 +333,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HealthResponse'];
+        };
+      };
+    };
+  };
+  me_v1_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MeResponse'];
         };
       };
     };
