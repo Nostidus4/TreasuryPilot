@@ -49,8 +49,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 
 | Method | Endpoint | Perm | Errors |
 |---|---|---|---|
-| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` |
-| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` |
+| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` with `Retry-After` = seconds left in the fixed 15-min window (1–900); 503 `AUTH_UNAVAILABLE` with `Retry-After: 30` |
+| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` with `Retry-After` = seconds left in the fixed 15-min window (1–900); 503 `AUTH_UNAVAILABLE` with `Retry-After: 30` |
 | POST | `/auth/logout` · GET `/me` | auth | |
 | GET | `/auth/siwe/nonce` | auth; returns domain, Sepolia chain ID, and single-use 10-minute nonce; spent/expired nonces are deleted on issue and at most 5 may be open per user | 429 `RATE_LIMITED` |
 | POST | `/me/wallets` | auth + CSRF; verifies EOA or ERC-1271 signature and writes a `wallet.linked` audit record in every org the user is an active member of at that time (a user with no membership has no org log; the link is kept in `wallet_links`) | `SIWE_INVALID` (also a malformed signature), `ADDRESS_LINKED_ELSEWHERE`, `WALLET_ALREADY_LINKED` |

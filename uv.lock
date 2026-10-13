@@ -1900,6 +1900,7 @@ source = { editable = "packages/py-core" }
 dependencies = [
     { name = "cryptography" },
     { name = "eth-abi" },
+    { name = "eth-account" },
     { name = "eth-hash", extra = ["pycryptodome"] },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -1913,6 +1914,7 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=46,<47" },
     { name = "eth-abi", specifier = ">=5.2,<6" },
+    { name = "eth-account", specifier = ">=0.14,<0.15" },
     { name = "eth-hash", extras = ["pycryptodome"], specifier = ">=0.7,<1" },
     { name = "opentelemetry-api", specifier = ">=1.45,<2" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45,<2" },

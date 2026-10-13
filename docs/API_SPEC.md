@@ -142,8 +142,8 @@
 | POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | Flag a discrepancy | FIN | `{note}` → `{reconciliation}` | |
 | GET | `/orgs/{o}/exports/reconciliation.csv` | CSV/journal export | FIN, AUD | `?from=&to=&treasuryId=&format=csv\|journal` → file | |
 | GET | `/orgs/{o}/requests/{rId}/evidence` | Evidence bundle | FIN, AUD, ADM | → JSON (schema `evidence-bundle.v1`) | |
-| GET | `/orgs/{o}/audit-log` | Audit records | AUD, ADM | `?entityType=&entityId=` → `{items}` | |
-| GET | `/orgs/{o}/audit-log/verify` | Hash-chain check | AUD | → `{valid, brokenAt?}` | |
+| GET | `/orgs/{o}/audit-log` | Audit records in `seq` order | AUD, OWN, ADM | `?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` | 422 naive `from`/`to` |
+| GET | `/orgs/{o}/audit-log/verify` | Hash-chain check | AUD, OWN | → `{status: INTACT\|BROKEN, checked, brokenAt}` | |
 | GET | `/orgs/{o}/metrics/operations` | Operational metrics | OWN, FIN, AUD | `?from=&to=` → `{metrics}` | |
 | GET | `/orgs/{o}/metrics/savings` | Savings vs B1 | OWN, FIN | → `{totals, perRequest[], methodology}` | |
 

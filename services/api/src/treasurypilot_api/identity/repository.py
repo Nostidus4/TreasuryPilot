@@ -20,6 +20,7 @@ from treasurypilot_api.identity.models import (
     SIGNER_ROLES,
     MagicLink,
     Membership,
+    MembershipStatus,
     Session,
     User,
     UserStatus,
@@ -200,7 +201,9 @@ class SqlAlchemyAuthRepository:
                         owner_is_onchain=item.owner_is_onchain,
                         owner_checked_at=item.owner_checked_at,
                         # A wallet only activates the signer roles this membership holds.
+                        # Suspended memberships hold no active signer roles.
                         signer_roles_active=bool(wallets)
+                        and item.status == MembershipStatus.ACTIVE
                         and not SIGNER_ROLES.isdisjoint(item.roles),
                     )
                     for item in memberships

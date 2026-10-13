@@ -5,13 +5,19 @@ import hashlib
 import logging
 import os
 import re
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
-from siwe import SiweMessage, VerificationError, generate_nonce  # type: ignore[import-untyped]
+from siwe import (  # type: ignore[import-untyped]
+    InvalidSignature,
+    SiweMessage,
+    VerificationError,
+    generate_nonce,
+)
 from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,7 +26,6 @@ from web3 import HTTPProvider, Web3
 from treasurypilot_api.audit import AuditActor, AuditActorType, AuditEntity, write
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import (
-    SIGNER_ROLES,
     Membership,
     MembershipStatus,
     OrganizationRole,
@@ -35,6 +40,9 @@ SIWE_CHAIN_ID = 11155111
 SIWE_NONCE_LIFETIME = timedelta(minutes=10)
 SIWE_CLOCK_SKEW = timedelta(minutes=2)
 OWNER_CHECK_INTERVAL = timedelta(hours=1)
+# After an RPC outage, /me skips the owner refresh for this long instead of making every
+# request wait on dead endpoints (per process; the stored status is kept meanwhile).
+OWNER_REFRESH_BACKOFF_SECONDS = 60.0
 MAX_SIWE_MESSAGE_LENGTH = 4096
 MAX_SIWE_SIGNATURE_LENGTH = 4096
 # Outstanding (unused, unexpired) challenges per user; more is a nonce flood.
@@ -42,6 +50,9 @@ MAX_OPEN_SIWE_NONCES = 5
 _SIGNATURE = re.compile(r"^0x(?:[0-9a-fA-F]{2})+$")
 
 logger = logging.getLogger(__name__)
+
+# time.monotonic() before which /me does not retry the owner refresh.
+_owner_refresh_blocked_until = 0.0
 
 _SAFE_OWNERS_ABI = [
     {
@@ -89,6 +100,11 @@ class WalletRepository:
     ) -> SiweNonceRecord:
         expires_at = created_at + SIWE_NONCE_LIFETIME
         async with self._sessions() as session, session.begin():
+            # Serialize per user so concurrent requests cannot all pass the cap check.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"siwe-nonce:{user_id}"},
+            )
             # Keep the table bounded: drop this user's spent or expired challenges, and
             # refuse a new one while too many are still open.
             await session.execute(
@@ -131,16 +147,13 @@ class WalletRepository:
 
     async def owner_contexts(self, *, user_id: uuid.UUID) -> tuple[OwnerContext, ...]:
         async with self._sessions() as session:
-            memberships = (
-                await session.scalars(
-                    select(Membership)
-                    .where(
-                        Membership.user_id == user_id,
-                        Membership.status == MembershipStatus.ACTIVE,
-                    )
-                    .order_by(Membership.org_id)
-                )
-            ).all()
+            memberships = [
+                membership
+                for membership in await self._active_memberships(session, user_id, lock=False)
+                if OrganizationRole.OWNER.value in membership.roles
+            ]
+            if not memberships:
+                return ()
             wallets = (
                 await session.scalars(
                     select(WalletLink.address).where(
@@ -149,29 +162,25 @@ class WalletRepository:
                     )
                 )
             ).all()
-            contexts: list[OwnerContext] = []
-            for membership in memberships:
-                if OrganizationRole.OWNER.value not in membership.roles:
-                    continue
-                safe_addresses = (
-                    await session.scalars(
-                        select(TreasuryWallet.safe_address).where(
-                            TreasuryWallet.org_id == membership.org_id,
-                            TreasuryWallet.chain_id == SIWE_CHAIN_ID,
-                            TreasuryWallet.role == WalletRole.SOURCE,
-                        )
-                    )
-                ).all()
-                contexts.append(
-                    OwnerContext(
-                        org_id=membership.org_id,
-                        wallet_addresses=tuple(wallets),
-                        safe_addresses=tuple(safe_addresses),
-                        owner_is_onchain=membership.owner_is_onchain,
-                        owner_checked_at=membership.owner_checked_at,
-                    )
+            safes: dict[uuid.UUID, list[bytes]] = {}
+            for org_id, safe_address in await session.execute(
+                select(TreasuryWallet.org_id, TreasuryWallet.safe_address).where(
+                    TreasuryWallet.org_id.in_([item.org_id for item in memberships]),
+                    TreasuryWallet.chain_id == SIWE_CHAIN_ID,
+                    TreasuryWallet.role == WalletRole.SOURCE,
                 )
-            return tuple(contexts)
+            ):
+                safes.setdefault(org_id, []).append(safe_address)
+            return tuple(
+                OwnerContext(
+                    org_id=membership.org_id,
+                    wallet_addresses=tuple(wallets),
+                    safe_addresses=tuple(safes.get(membership.org_id, ())),
+                    owner_is_onchain=membership.owner_is_onchain,
+                    owner_checked_at=membership.owner_checked_at,
+                )
+                for membership in memberships
+            )
 
     async def membership_roles(
         self, *, org_id: uuid.UUID, user_id: uuid.UUID
@@ -192,10 +201,18 @@ class WalletRepository:
         user_id: uuid.UUID,
         statuses: Mapping[uuid.UUID, bool],
         checked_at: datetime,
+        started_at: datetime,
     ) -> None:
+        """Store refreshed statuses unless a link/unlink wrote a newer one meanwhile.
+
+        ``started_at`` is when the slow on-chain read began; a membership already checked
+        after that holds fresher data than this result.
+        """
+
         async with self._sessions() as session, session.begin():
-            await self._apply_owner_statuses(
-                session, user_id=user_id, statuses=statuses, checked_at=checked_at
+            memberships = await self._active_memberships(session, user_id)
+            self._apply_owner_statuses(
+                memberships, statuses=statuses, checked_at=checked_at, started_at=started_at
             )
             await session.flush()
 
@@ -229,6 +246,8 @@ class WalletRepository:
                         "The SIWE nonce is invalid, expired, or already used.",
                     )
 
+                # Same lock order as unlink (memberships, then wallet rows).
+                memberships = await self._active_memberships(session, user_id)
                 existing = await session.scalar(
                     select(WalletLink)
                     .where(
@@ -280,6 +299,7 @@ class WalletRepository:
                 challenge.used_at = now
                 await self._write_audit(
                     session,
+                    memberships,
                     user_id=user_id,
                     action="wallet.linked",
                     address=address,
@@ -289,12 +309,7 @@ class WalletRepository:
                         "signature_sha256": signature_hash,
                     },
                 )
-                await self._apply_owner_statuses(
-                    session,
-                    user_id=user_id,
-                    statuses=owner_statuses,
-                    checked_at=now,
-                )
+                self._apply_owner_statuses(memberships, statuses=owner_statuses, checked_at=now)
                 await session.flush()
                 return WalletLinkRecord(wallet.address, wallet.is_contract, wallet.linked_at)
         except IntegrityError as exc:
@@ -322,6 +337,19 @@ class WalletRepository:
                 ) from None
             raise
 
+    async def has_active_wallet(self, *, user_id: uuid.UUID, address: bytes) -> bool:
+        async with self._sessions() as session:
+            return (
+                await session.scalar(
+                    select(WalletLink.id).where(
+                        WalletLink.user_id == user_id,
+                        WalletLink.address == address,
+                        WalletLink.unlinked_at.is_(None),
+                    )
+                )
+                is not None
+            )
+
     async def unlink_wallet(
         self,
         *,
@@ -331,17 +359,7 @@ class WalletRepository:
         owner_statuses: Mapping[uuid.UUID, bool],
     ) -> None:
         async with self._sessions() as session, session.begin():
-            memberships = (
-                await session.scalars(
-                    select(Membership)
-                    .where(
-                        Membership.user_id == user_id,
-                        Membership.status == MembershipStatus.ACTIVE,
-                    )
-                    .order_by(Membership.org_id)
-                    .with_for_update()
-                )
-            ).all()
+            memberships = await self._active_memberships(session, user_id)
             wallet = await session.scalar(
                 select(WalletLink)
                 .where(
@@ -358,86 +376,41 @@ class WalletRepository:
                     "Wallet not found",
                     "No linked wallet has this address.",
                 )
-            active_wallets = await session.scalar(
-                select(func.count(WalletLink.id)).where(
-                    WalletLink.user_id == user_id,
-                    WalletLink.unlinked_at.is_(None),
-                )
-            )
-            signer_roles = set(SIGNER_ROLES)
-            signer_memberships = [
-                membership
-                for membership in memberships
-                if signer_roles.intersection(membership.roles)
-            ]
-            if active_wallets == 1 and signer_memberships:
-                has_review_items = await session.scalar(
-                    text("SELECT to_regclass('review_items') IS NOT NULL")
-                )
-                if has_review_items:
-                    has_pending_items = await session.scalar(
-                        text(
-                            """
-                            SELECT EXISTS (
-                                SELECT 1
-                                FROM review_items
-                                WHERE org_id = ANY(CAST(:org_ids AS uuid[]))
-                                  AND status::text = 'Open'
-                                  AND assigned_role::text = ANY(CAST(:roles AS text[]))
-                            )
-                            """
-                        ),
-                        {
-                            "org_ids": [item.org_id for item in signer_memberships],
-                            "roles": sorted(
-                                signer_roles.intersection(
-                                    role for item in signer_memberships for role in item.roles
-                                )
-                            ),
-                        },
-                    )
-                    if has_pending_items:
-                        raise _failure(
-                            409,
-                            "SIGNER_ITEMS_PENDING",
-                            "Wallet cannot be unlinked",
-                            "Resolve the pending signer items before unlinking your last signer wallet.",
-                        )
             wallet.unlinked_at = now
             await self._write_audit(
                 session,
+                memberships,
                 user_id=user_id,
                 action="wallet.unlinked",
                 address=address,
                 data={"chain_id": SIWE_CHAIN_ID},
             )
-            await self._apply_owner_statuses(
-                session,
-                user_id=user_id,
-                statuses=owner_statuses,
-                checked_at=now,
-            )
+            self._apply_owner_statuses(memberships, statuses=owner_statuses, checked_at=now)
             await session.flush()
+
+    @staticmethod
+    async def _active_memberships(
+        session: AsyncSession, user_id: uuid.UUID, *, lock: bool = True
+    ) -> Sequence[Membership]:
+        query = (
+            select(Membership)
+            .where(Membership.user_id == user_id, Membership.status == MembershipStatus.ACTIVE)
+            .order_by(Membership.org_id)
+        )
+        if lock:
+            query = query.with_for_update()
+        return (await session.scalars(query)).all()
 
     @staticmethod
     async def _write_audit(
         session: AsyncSession,
+        memberships: Sequence[Membership],
         *,
         user_id: uuid.UUID,
         action: str,
         address: bytes,
         data: dict[str, object],
     ) -> None:
-        memberships = (
-            await session.scalars(
-                select(Membership)
-                .where(
-                    Membership.user_id == user_id,
-                    Membership.status == MembershipStatus.ACTIVE,
-                )
-                .order_by(Membership.org_id)
-            )
-        ).all()
         for membership in memberships:
             await write(
                 session,
@@ -449,26 +422,24 @@ class WalletRepository:
             )
 
     @staticmethod
-    async def _apply_owner_statuses(
-        session: AsyncSession,
+    def _apply_owner_statuses(
+        memberships: Sequence[Membership],
         *,
-        user_id: uuid.UUID,
         statuses: Mapping[uuid.UUID, bool],
         checked_at: datetime,
+        started_at: datetime | None = None,
     ) -> None:
-        memberships = (
-            await session.scalars(
-                select(Membership)
-                .where(Membership.user_id == user_id, Membership.status == MembershipStatus.ACTIVE)
-                .order_by(Membership.org_id)
-                .with_for_update()
-            )
-        ).all()
         for membership in memberships:
             if OrganizationRole.OWNER.value not in membership.roles:
                 # A flag left over from a removed Owner role must not survive a re-grant.
                 membership.owner_is_onchain = False
             elif membership.org_id in statuses:
+                if (
+                    started_at is not None
+                    and membership.owner_checked_at is not None
+                    and membership.owner_checked_at > started_at
+                ):
+                    continue
                 membership.owner_is_onchain = statuses[membership.org_id]
                 membership.owner_checked_at = checked_at
 
@@ -490,8 +461,6 @@ class WalletLinkService:
             if (normalized := _normalized_origin(origin)) is not None
         )
         self._platform_configuration = platform_configuration
-        # RPC URLs already confirmed to serve SIWE_CHAIN_ID during this service's life.
-        self._verified_rpc_urls: set[str] = set()
 
     def origin_details(self, origin: str | None) -> tuple[str, str]:
         if origin is None:
@@ -584,21 +553,19 @@ class WalletLinkService:
             raise _invalid_siwe()
 
         verification_time = _verification_time(now, not_before, expires_at)
-        rpc_urls = self._rpc_urls()
         is_contract = await self._verify_signature(
             message=message,
             signature=signature,
             domain=domain,
             nonce=challenge.nonce,
             timestamp=verification_time,
-            rpc_urls=rpc_urls,
         )
         address = bytes.fromhex(message.address.removeprefix("0x"))
         contexts = await self._repository.owner_contexts(user_id=user_id)
+        # Linking can only add ownership, so an RPC outage must not block it: orgs left
+        # out here keep their stored status and are rechecked by the next /me.
         owner_statuses = await self._owner_statuses(
-            contexts,
-            added_address=address,
-            rpc_urls=rpc_urls,
+            contexts, added_address=address, tolerate_unavailable=True
         )
         return await self._repository.link_wallet(
             nonce=challenge.nonce,
@@ -618,17 +585,19 @@ class WalletLinkService:
                 422, "ADDRESS_INVALID", "Invalid wallet address", "The address is invalid."
             ) from None
         address_bytes = bytes.fromhex(checksum_address.removeprefix("0x"))
+        # Unknown wallets are a 404 even when the RPC is down.
+        if not await self._repository.has_active_wallet(user_id=user_id, address=address_bytes):
+            raise _failure(
+                404, "WALLET_NOT_FOUND", "Wallet not found", "No linked wallet has this address."
+            )
         contexts = await self._repository.owner_contexts(user_id=user_id)
-        needs_owner_check = any(
-            context.safe_addresses
-            and any(wallet != address_bytes for wallet in context.wallet_addresses)
-            for context in contexts
-        )
+        # Unlinking must work during an RPC outage (e.g. a compromised wallet): an org whose
+        # status cannot be recomputed fails closed to "not an on-chain owner".
         owner_statuses = await self._owner_statuses(
-            contexts,
-            removed_address=address_bytes,
-            rpc_urls=self._rpc_urls() if needs_owner_check else (),
+            contexts, removed_address=address_bytes, tolerate_unavailable=True
         )
+        for context in contexts:
+            owner_statuses.setdefault(context.org_id, False)
         await self._repository.unlink_wallet(
             user_id=user_id,
             address=address_bytes,
@@ -639,32 +608,34 @@ class WalletLinkService:
     async def refresh_owner_statuses(self, *, user_id: uuid.UUID) -> None:
         """Best-effort hourly refresh for display (``/me``); never fails the caller."""
 
+        global _owner_refresh_blocked_until
+        if time.monotonic() < _owner_refresh_blocked_until:
+            return
         try:
             await self._refresh_owner_statuses(user_id=user_id)
         except AuthFailure as failure:
             if failure.status != 503:
                 raise
+            _owner_refresh_blocked_until = time.monotonic() + OWNER_REFRESH_BACKOFF_SECONDS
             logger.warning("owner_status_refresh_unavailable")
 
     async def _refresh_owner_statuses(self, *, user_id: uuid.UUID) -> None:
-        now = datetime.now(UTC)
+        started_at = datetime.now(UTC)
         contexts = await self._repository.owner_contexts(user_id=user_id)
         stale = tuple(
             context
             for context in contexts
             if context.owner_checked_at is None
-            or now - context.owner_checked_at >= OWNER_CHECK_INTERVAL
+            or started_at - context.owner_checked_at >= OWNER_CHECK_INTERVAL
         )
         if not stale:
             return
-        needs_owner_check = any(
-            context.safe_addresses and context.wallet_addresses for context in stale
-        )
-        statuses = await self._owner_statuses(
-            stale, rpc_urls=self._rpc_urls() if needs_owner_check else ()
-        )
+        statuses = await self._owner_statuses(stale)
         await self._repository.update_owner_statuses(
-            user_id=user_id, statuses=statuses, checked_at=now
+            user_id=user_id,
+            statuses=statuses,
+            checked_at=datetime.now(UTC),
+            started_at=started_at,
         )
 
     async def refresh_org_owner_status(
@@ -672,7 +643,7 @@ class WalletLinkService:
     ) -> bool | None:
         """Return the Owner's on-chain status; ``fresh`` skips the hourly cache."""
 
-        now = datetime.now(UTC)
+        started_at = datetime.now(UTC)
         contexts = await self._repository.owner_contexts(user_id=user_id)
         context = next((item for item in contexts if item.org_id == org_id), None)
         if context is None:
@@ -680,14 +651,14 @@ class WalletLinkService:
         if (
             fresh
             or context.owner_checked_at is None
-            or now - context.owner_checked_at >= OWNER_CHECK_INTERVAL
+            or started_at - context.owner_checked_at >= OWNER_CHECK_INTERVAL
         ):
-            needs_owner_check = bool(context.safe_addresses and context.wallet_addresses)
-            statuses = await self._owner_statuses(
-                (context,), rpc_urls=self._rpc_urls() if needs_owner_check else ()
-            )
+            statuses = await self._owner_statuses((context,))
             await self._repository.update_owner_statuses(
-                user_id=user_id, statuses=statuses, checked_at=now
+                user_id=user_id,
+                statuses=statuses,
+                checked_at=datetime.now(UTC),
+                started_at=started_at,
             )
             return statuses[org_id]
         return context.owner_is_onchain
@@ -716,9 +687,13 @@ class WalletLinkService:
         if chain is None:
             raise _wallet_unavailable()
         try:
-            return tuple(resolve_rpc_url(url, os.environ) for url in chain.rpc_urls)
+            urls = tuple(resolve_rpc_url(url, os.environ) for url in chain.rpc_urls)
         except Exception:
             raise _wallet_unavailable() from None
+        if not urls:
+            # An enabled chain without endpoints is a configuration gap, not a bad request.
+            raise _wallet_unavailable()
+        return urls
 
     async def _verify_signature(
         self,
@@ -728,10 +703,17 @@ class WalletLinkService:
         domain: str,
         nonce: str,
         timestamp: datetime,
-        rpc_urls: Sequence[str],
     ) -> bool:
+        # An EOA signature is recovered offline, so normal wallets link during an RPC outage.
+        try:
+            await asyncio.to_thread(_verify_eoa_sync, message, signature, domain, nonce, timestamp)
+            return False
+        except InvalidSignature:
+            pass  # possibly a contract wallet: ERC-1271 needs the RPC
+        except VerificationError:
+            raise _invalid_siwe() from None
         last_error: Exception | None = None
-        for rpc_url in rpc_urls:
+        for rpc_url in self._rpc_urls():
             try:
                 return await asyncio.to_thread(
                     _verify_siwe_sync,
@@ -746,18 +728,19 @@ class WalletLinkService:
                 raise _invalid_siwe() from None
             except Exception as exc:
                 last_error = exc
-        if last_error is not None:
-            raise _wallet_unavailable() from None
-        raise _invalid_siwe()
+        assert last_error is not None  # _rpc_urls() never returns an empty tuple
+        raise _wallet_unavailable() from None
 
     async def _owner_statuses(
         self,
         contexts: Sequence[OwnerContext],
         *,
-        rpc_urls: Sequence[str],
         added_address: bytes | None = None,
         removed_address: bytes | None = None,
+        tolerate_unavailable: bool = False,
     ) -> dict[uuid.UUID, bool]:
+        """Recompute Safe-owner status; with ``tolerate_unavailable`` omit unreadable orgs."""
+
         statuses: dict[uuid.UUID, bool] = {}
         for context in contexts:
             addresses = set(context.wallet_addresses)
@@ -769,30 +752,33 @@ class WalletLinkService:
                 statuses[context.org_id] = False
                 continue
             owners: set[str] = set()
-            for safe_address in context.safe_addresses:
-                owners.update(await self._safe_owners(safe_address, rpc_urls))
+            try:
+                for safe_address in context.safe_addresses:
+                    owners.update(await self._safe_owners(safe_address))
+            except AuthFailure as failure:
+                if not tolerate_unavailable or failure.status != 503:
+                    raise
+                continue
             statuses[context.org_id] = bool(
                 addresses.intersection(bytes.fromhex(owner.removeprefix("0x")) for owner in owners)
             )
         return statuses
 
-    async def _safe_owners(self, address: bytes, rpc_urls: Sequence[str]) -> set[str]:
-        last_error: Exception | None = None
-        for rpc_url in rpc_urls:
+    async def _safe_owners(self, address: bytes) -> set[str]:
+        for rpc_url in self._rpc_urls():
             try:
-                owners = await asyncio.to_thread(
-                    _safe_owners_sync,
-                    rpc_url,
-                    address,
-                    check_chain=rpc_url not in self._verified_rpc_urls,
-                )
-                self._verified_rpc_urls.add(rpc_url)
-                return owners
-            except Exception as exc:
-                last_error = exc
-        if last_error is not None:
-            raise _wallet_unavailable() from None
-        return set()
+                return await asyncio.to_thread(_safe_owners_sync, rpc_url, address)
+            except Exception:
+                continue
+        raise _wallet_unavailable()
+
+
+def _verify_eoa_sync(
+    message: SiweMessage, signature: str, domain: str, nonce: str, timestamp: datetime
+) -> None:
+    """Verify an EOA signature by local recovery; raises ``InvalidSignature`` otherwise."""
+
+    message.verify(signature, domain=domain, nonce=nonce, timestamp=timestamp)
 
 
 def _verify_siwe_sync(
@@ -818,10 +804,10 @@ def _verify_siwe_sync(
     return is_contract
 
 
-def _safe_owners_sync(rpc_url: str, address: bytes, *, check_chain: bool = True) -> set[str]:
+def _safe_owners_sync(rpc_url: str, address: bytes) -> set[str]:
     provider = HTTPProvider(rpc_url, request_kwargs={"timeout": 5})
     web3 = Web3(provider)
-    if check_chain and web3.eth.chain_id != SIWE_CHAIN_ID:
+    if web3.eth.chain_id != SIWE_CHAIN_ID:
         raise RuntimeError("configured RPC is on the wrong chain")
     safe = web3.eth.contract(
         address=Web3.to_checksum_address("0x" + address.hex()), abi=_SAFE_OWNERS_ABI

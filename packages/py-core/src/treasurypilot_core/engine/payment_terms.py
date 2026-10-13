@@ -149,6 +149,12 @@ def pay_amount(request: ApprovedRequest, pay_day: int) -> BaseUnits:
     return request.amount if early is None else BaseUnits(early[0])
 
 
+def amount_due(request: ApprovedRequest, day: int) -> BaseUnits:
+    """Return what the vendor is owed on ``day``: ``pay_amount`` plus any accrued late fee."""
+
+    return BaseUnits(int(pay_amount(request, day)) + _late_fee_amount(request, day))
+
+
 def request_value(
     request: ApprovedRequest,
     pay_day: int,

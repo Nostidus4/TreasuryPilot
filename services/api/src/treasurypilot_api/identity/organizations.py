@@ -357,6 +357,10 @@ def _current_user(access: SessionAccess) -> uuid.UUID:
     return access.user.id
 
 
+# shortcut: alias kept because #325's audit/api.py imports it; drop once audit uses rbac.
+_not_found = organization_not_found
+
+
 def _forbidden() -> AuthFailure:
     return AuthFailure(
         status=403,
