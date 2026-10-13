@@ -1,7 +1,7 @@
 """create append-only attestations (M08 §4.2)
 
-Revision ID: 20261014_0008
-Revises: 20261013_0007
+Revision ID: 20261014_0009
+Revises: 20261013_0008
 Create Date: 2026-10-14 00:00:00
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0008"
-down_revision: str | None = "20261013_0007"
+revision: str = "20261014_0009"
+down_revision: str | None = "20261013_0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
