@@ -129,8 +129,8 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
-| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT` |
-| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER` |
+| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT`; a provider ERROR fails closed with `DATA_MISSING` (payee `ScreeningFailed`) |
+| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER`, `OOB_ALREADY_VERIFIED` (evidence is recorded once) |
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
 | GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |

@@ -37,6 +37,8 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
+from treasurypilot_api.mandate.payees import router as payees_router
 from treasurypilot_api.mandate.routes import (
     MandateRepository,
     SqlAlchemyMandateRepository,
@@ -44,6 +46,12 @@ from treasurypilot_api.mandate.routes import (
 from treasurypilot_api.mandate.routes import (
     router as mandate_router,
 )
+from treasurypilot_api.mandate.vendors import (
+    FieldCipher,
+    SqlAlchemyVendorRepository,
+    VendorRepository,
+)
+from treasurypilot_api.mandate.vendors import router as vendors_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 
@@ -154,6 +162,9 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     mandate_repository: MandateRepository | None = None,
     screening_service: ScreeningService | None = None,
+    vendor_repository: VendorRepository | None = None,
+    payee_repository: PayeeRepository | None = None,
+    field_cipher: FieldCipher | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -166,6 +177,10 @@ def create_app(
     sessions = async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
     if mandate_repository is None and sessions is not None:
         mandate_repository = SqlAlchemyMandateRepository(sessions)
+    if vendor_repository is None and sessions is not None:
+        vendor_repository = SqlAlchemyVendorRepository(sessions)
+    if payee_repository is None and sessions is not None:
+        payee_repository = SqlAlchemyPayeeRepository(sessions)
     if screening_service is None and sessions is not None:
         screening_service = build_screening_service(settings.environment, sessions)
 
@@ -210,6 +225,9 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
     app.state.screening_service = screening_service
+    app.state.vendor_repository = vendor_repository
+    app.state.payee_repository = payee_repository
+    app.state.field_cipher = field_cipher
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -230,6 +248,8 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(organizations_router)
     app.include_router(mandate_router)
+    app.include_router(vendors_router)
+    app.include_router(payees_router)
 
     return app
 
