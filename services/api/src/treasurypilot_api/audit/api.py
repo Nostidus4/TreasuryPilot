@@ -17,7 +17,6 @@ from treasurypilot_api.audit.writer import AuditHeadMissing
 from treasurypilot_api.identity.api import ApiModel, _authenticated
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Membership, MembershipStatus, OrganizationRole
-from treasurypilot_api.identity.organizations import _not_found
 
 READ_ROLES = frozenset(
     {OrganizationRole.AUDITOR.value, OrganizationRole.OWNER.value, OrganizationRole.ORG_ADMIN.value}
@@ -192,6 +191,16 @@ def _repository(request: Request) -> AuditRepository:
             detail="Audit storage is not configured.",
         )
     return cast(AuditRepository, repository)
+
+
+# Local copy, not an import: identity.organizations._not_found is private and moves in #321.
+def _not_found() -> AuthFailure:
+    return AuthFailure(
+        status=404,
+        code="ORG_NOT_FOUND",
+        title="Organization not found",
+        detail="The organization does not exist or is not available to this user.",
+    )
 
 
 def _forbidden() -> AuthFailure:
