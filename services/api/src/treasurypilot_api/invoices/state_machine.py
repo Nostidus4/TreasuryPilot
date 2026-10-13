@@ -8,6 +8,7 @@ from typing import Protocol
 from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.events.writer import append_domain_event
 from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
 from treasurypilot_api.invoices.models import (
     CancelOnchainStatus,
@@ -457,6 +458,29 @@ class RequestStateMachine:
                 reason=reason,
             )
             session.add(event)
+            if target == RequestStatus.AWAITING_APPROVAL:
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="ApprovalNeeded",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids={"requestId": request_id},
+                )
+            elif target == RequestStatus.PAID:
+                payload_ids = {"requestId": request_id}
+                if request.created_by is not None:
+                    payload_ids["creatorId"] = request.created_by
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="PaymentDone",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids=payload_ids,
+                )
             await session.flush()
 
             await self._audit.append(

@@ -44,7 +44,7 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 | ApprovalNeeded (request submitted) | Approver | ACTION |
 | HighFlagRaised | Approver, Operator | ACTION |
 | ExceptionNeeded (NEEDS_APPROVAL) | Owner | ACTION |
-| GovernanceSignatureNeeded | Owners of that Safe | ACTION |
+| GovernanceSignatureNeeded | User IDs linked to owners of that Safe (`ownerUserIds`) | ACTION |
 | FeeAcceptanceNeeded | Finance, Operator, Owner | ACTION |
 | PaymentDone (Paid) | Operator, Finance, request creator | INFO |
 | NeedsReview (any review item) | routed role (M12) | ACTION |
@@ -78,6 +78,8 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 
 - **Telegram content (OQ-17):** default `"[TreasuryPilot] Approval needed for request R-1042 · open: <link>"` — no amounts, addresses, vendor names; with `show_amounts` opt-in: adds amount and vendor display name. Deep links require app login.
 - **Dedup:** unique(user_id, event_id). **Rate:** at most 1 Telegram message per user per 10 s, bursts merged into a digest line.
+- Governance signature events include `ownerUserIds` with the organization user IDs linked to that Safe's current owners. The publisher delivers only to those active organization members.
+- `NeedsReview:<Role>` encodes the routed M12 role in the event type (for example, `NeedsReview:Finance`); event payloads still contain IDs only.
 
 ## 9. Configuration
 

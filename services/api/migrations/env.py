@@ -10,9 +10,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from treasurypilot_api.database import Base
+from treasurypilot_api.events import models as event_models  # noqa: F401
 from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.invoices import models as invoice_models  # noqa: F401
 from treasurypilot_api.mandate import models as mandate_models  # noqa: F401
+from treasurypilot_api.notifications import models as notification_models  # noqa: F401
 from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 
 config = context.config

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import UUID
 
 import pytest
@@ -12,7 +13,7 @@ from treasurypilot_worker.runtime import (
     current_correlation_id,
     make_idempotency_key,
 )
-from treasurypilot_worker.tasks import ai_probe, core_probe
+from treasurypilot_worker.tasks import ai_probe, core_probe, publish_domain_events
 
 
 def test_worker_uses_safe_delivery_settings() -> None:
@@ -37,6 +38,16 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert core_probe.retry_kwargs == {"max_retries": MAX_TASK_RETRIES}
     assert core_probe.queue == "core"
     assert ai_probe.queue == "ai"
+    assert isinstance(publish_domain_events, SafeTask)
+    assert publish_domain_events.queue == "core"
+
+
+def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
+    entry = app.conf.beat_schedule["publish-domain-events"]
+
+    assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
+    assert entry["schedule"] == timedelta(seconds=1)
+    assert entry["options"] == {"queue": "core"}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

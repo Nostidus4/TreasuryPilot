@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from celery import Celery
 from kombu import Exchange, Queue
 
@@ -38,6 +40,13 @@ def create_celery_app() -> Celery:
         worker_prefetch_multiplier=1,
         timezone="UTC",
         enable_utc=True,
+        beat_schedule={
+            "publish-domain-events": {
+                "task": "treasurypilot.notifications.publish-domain-events",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "core"},
+            }
+        },
     )
     return app
 
