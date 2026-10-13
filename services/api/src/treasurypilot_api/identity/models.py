@@ -46,6 +46,12 @@ class OrganizationRole(StrEnum):
     PLATFORM_ADMIN = "PlatformAdmin"
 
 
+# Roles that sign with a linked wallet; they are inactive until one is linked (FR-012).
+SIGNER_ROLES = frozenset(
+    {OrganizationRole.OWNER.value, OrganizationRole.APPROVER.value, OrganizationRole.GUARDIAN.value}
+)
+
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (

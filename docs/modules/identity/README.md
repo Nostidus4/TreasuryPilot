@@ -52,14 +52,14 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` |
 | POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` |
 | POST | `/auth/logout` · GET `/me` | auth | |
-| GET | `/auth/siwe/nonce` | auth; returns domain, Sepolia chain ID, and single-use 10-minute nonce | |
-| POST | `/me/wallets` | auth + CSRF; verifies EOA or ERC-1271 signature and writes an audit record | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE` |
+| GET | `/auth/siwe/nonce` | auth; returns domain, Sepolia chain ID, and single-use 10-minute nonce; spent/expired nonces are deleted on issue and at most 5 may be open per user | 429 `RATE_LIMITED` |
+| POST | `/me/wallets` | auth + CSRF; verifies EOA or ERC-1271 signature and writes a `wallet.linked` audit record in every org the user is an active member of at that time (a user with no membership has no org log; the link is kept in `wallet_links`) | `SIWE_INVALID` (also a malformed signature), `ADDRESS_LINKED_ELSEWHERE`, `WALLET_ALREADY_LINKED` |
 | DELETE | `/me/wallets/{a}` | auth + CSRF; writes an audit record | `WALLET_NOT_FOUND` |
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
 | GET/POST | `/orgs/{o}/members`, `/orgs/{o}/invites` · POST `/invites/{token}/accept` | ADM | `ALREADY_MEMBER`, `INVITE_EXPIRED` |
 | PATCH/DELETE | `/orgs/{o}/members/{u}` | ADM | `LAST_ADMIN`, `LAST_OWNER` |
 
-SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values.
+SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values; `signerRolesActive` is true only when the membership holds Owner, Approver or Guardian and a wallet is linked.
 
 ## 7. Flows
 
@@ -69,7 +69,7 @@ Sign-in: email → link (Resend; console locally) → verify → session cookie 
 
 - **RBAC:** FastAPI dependencies `require_member(org)` (non-member → **404**) and `require_role(*roles)` (member without role → 403); repositories always filter by `org_id`. An automated test enumerates every org-scoped route and calls it as a non-member.
 - **Maker-checker:** `approver ∉ {created_by, last_edited_by}` unless `solo_mode` (Owner-only toggle), then the approval and audit entry carry `solo_mode = true`.
-- **Owner check:** at link time, on `/me` at least hourly, and before Owner-only organization settings, compare the user's linked addresses with Safe T owners. Mismatch leaves the role label in place but sets `ownerIsOnchain = false`; Owner-only settings fail with `OWNER_NOT_ONCHAIN`.
+- **Owner check:** compare the user's linked addresses with Safe T owners at link/unlink time, before every Owner-only write (solo mode, or `autoMatch` by an Owner who is not OrgAdmin) with no cache, and on `/me` at most hourly as a best-effort display refresh (an RPC outage keeps the cached value). Mismatch leaves the role label in place but sets `ownerIsOnchain = false`; Owner-only settings fail with `OWNER_NOT_ONCHAIN`. A membership without the Owner role always has `ownerIsOnchain = false`.
 
 ## 9. Configuration
 

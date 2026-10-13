@@ -16,7 +16,7 @@ from treasurypilot_api.identity.auth import (
     UserRecord,
     normalize_email,
 )
-from treasurypilot_api.identity.wallets import WalletLinkService, WalletRepository
+from treasurypilot_api.identity.wallets import SIWE_CHAIN_ID, WalletLinkService, WalletRepository
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SESSION_MAX_AGE_SECONDS = 12 * 60 * 60
@@ -213,7 +213,7 @@ async def siwe_nonce(request: Request) -> SiweNonceResponse:
         nonce=challenge.nonce,
         domain=domain,
         scheme=scheme,
-        chain_id=11155111,
+        chain_id=SIWE_CHAIN_ID,
         expires_at=challenge.expires_at,
     )
 

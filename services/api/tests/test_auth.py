@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Self
 from urllib.parse import parse_qs, urlparse
@@ -13,7 +15,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
+from treasurypilot_api.identity import wallets as wallets_module
 from treasurypilot_api.identity.auth import (
+    AuthFailure,
     AuthService,
     ConsumeResult,
     ConsumeStatus,
@@ -33,6 +37,7 @@ from treasurypilot_api.identity.organizations import (
     OrganizationRecord,
 )
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
+from treasurypilot_api.identity.wallets import OwnerContext, WalletLinkService, WalletRepository
 from treasurypilot_api.main import create_app
 
 
@@ -219,6 +224,7 @@ def make_harness(
     sender_fails: bool = False,
     rate_limiter: object | None = None,
     organization_repository: object | None = None,
+    wallet_repository: object | None = None,
 ) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
@@ -244,6 +250,7 @@ def make_harness(
         settings=settings,
         auth_service=service,
         organization_repository=organization_repository,  # type: ignore[arg-type]
+        wallet_repository=wallet_repository,  # type: ignore[arg-type]
     )
     return AuthHarness(
         clock=clock,
@@ -881,3 +888,160 @@ def test_member_without_required_role_gets_403_before_input_validation() -> None
         )
         assert missing_csrf.status_code == 403
         assert missing_csrf.json()["code"] == "CSRF_INVALID"
+
+
+class FakeWalletRepository(WalletRepository):
+    """Owner contexts in memory; records the owner statuses the service writes."""
+
+    def __init__(self, contexts: dict[uuid.UUID, OwnerContext], roles: set[str]) -> None:
+        self.contexts = contexts
+        self.roles = frozenset(roles)
+        self.written: list[dict[uuid.UUID, bool]] = []
+
+    async def owner_contexts(self, *, user_id: uuid.UUID) -> tuple[OwnerContext, ...]:
+        return tuple(self.contexts.values())
+
+    async def membership_roles(
+        self, *, org_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None:
+        return self.roles if org_id in self.contexts else None
+
+    async def update_owner_statuses(
+        self, *, user_id: uuid.UUID, statuses: Mapping[uuid.UUID, bool], checked_at: datetime
+    ) -> None:
+        self.written.append(dict(statuses))
+        for org_id, is_owner in statuses.items():
+            context = self.contexts[org_id]
+            self.contexts[org_id] = replace(
+                context, owner_is_onchain=is_owner, owner_checked_at=checked_at
+            )
+
+
+WALLET = bytes.fromhex("11" * 20)
+SAFE = bytes.fromhex("22" * 20)
+
+
+def owner_context(
+    org_id: uuid.UUID, *, wallets: tuple[bytes, ...] = (WALLET,), checked_ago: timedelta | None
+) -> OwnerContext:
+    return OwnerContext(
+        org_id=org_id,
+        wallet_addresses=wallets,
+        safe_addresses=(SAFE,),
+        owner_is_onchain=True,
+        owner_checked_at=None if checked_ago is None else datetime.now(UTC) - checked_ago,
+    )
+
+
+def org_with_wallets(
+    roles: set[str], context: OwnerContext | None = None, *, stale: bool = True
+) -> tuple[MemoryOrganizationRepository, FakeWalletRepository, AuthHarness, uuid.UUID]:
+    organizations = MemoryOrganizationRepository()
+    harness = make_harness(organization_repository=organizations)
+    harness.__enter__()
+    harness.login()
+    csrf = harness.client.cookies.get("tp_csrf")
+    created = harness.client.post("/v1/orgs", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf})
+    org_id = uuid.UUID(created.json()["org"]["id"])
+    organizations.memberships[(org_id, harness.repository.profile.user.id)] = roles
+    wallets = FakeWalletRepository(
+        {org_id: context or owner_context(org_id, checked_ago=None if stale else timedelta(0))},
+        roles,
+    )
+    harness.client.app.state.wallet_repository = wallets  # type: ignore[attr-defined]
+    return organizations, wallets, harness, org_id
+
+
+def _rpc_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(self: WalletLinkService) -> tuple[str, ...]:
+        raise AuthFailure(status=503, code="WALLET_VERIFICATION_UNAVAILABLE", title="x", detail="x")
+
+    monkeypatch.setattr(WalletLinkService, "_rpc_urls", unavailable)
+
+
+def _safe_owners(monkeypatch: pytest.MonkeyPatch, owners: set[str]) -> None:
+    monkeypatch.setattr(WalletLinkService, "_rpc_urls", lambda self: ("http://rpc.test",))
+    monkeypatch.setattr(wallets_module, "_safe_owners_sync", lambda *args, **kwargs: set(owners))
+
+
+def test_me_keeps_the_cached_owner_status_when_rpc_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rpc_down(monkeypatch)
+    _, wallets, harness, _ = org_with_wallets({"Owner"})
+    try:
+        assert harness.client.get("/v1/me").status_code == 200
+        assert wallets.written == []
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_admin_auto_match_does_not_need_the_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    _rpc_down(monkeypatch)
+    _, _, harness, org_id = org_with_wallets({"OrgAdmin", "Owner"})
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"autoMatch": False},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 200
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_solo_mode_rechecks_ownership_despite_a_fresh_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Checked 5 minutes ago as an owner, removed from the Safe since.
+    _safe_owners(monkeypatch, owners=set())
+    _, wallets, harness, org_id = org_with_wallets({"Owner"}, stale=False)
+    wallets.contexts[org_id] = owner_context(org_id, checked_ago=timedelta(minutes=5))
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "OWNER_NOT_ONCHAIN"
+        assert wallets.written == [{org_id: False}]
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_regranted_owner_without_a_wallet_cannot_enable_solo_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A stale True flag from before the role was removed must not authorize solo mode.
+    _safe_owners(monkeypatch, owners={"0x" + WALLET.hex()})
+    _, wallets, harness, org_id = org_with_wallets({"Owner"})
+    wallets.contexts[org_id] = owner_context(org_id, wallets=(), checked_ago=timedelta(0))
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "OWNER_NOT_ONCHAIN"
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_malformed_signature_is_a_bad_request_not_an_outage() -> None:
+    service = WalletLinkService(
+        FakeWalletRepository({}, set()),
+        allowed_origins=["https://app.example.test"],
+        platform_configuration=None,
+    )
+    with pytest.raises(AuthFailure) as failure:
+        asyncio.run(
+            service.link_wallet(
+                user_id=uuid.uuid4(),
+                origin="https://app.example.test",
+                message_text="message",
+                signature="0xZZ",
+            )
+        )
+    assert (failure.value.status, failure.value.code) == (400, "SIWE_INVALID")
