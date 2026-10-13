@@ -6,7 +6,7 @@ from typing import Annotated
 
 from pydantic import Field, model_validator
 
-from treasurypilot_core.domain.models import FrozenModel
+from treasurypilot_core.domain.models import FrozenModel, NonNegativeInt, PositiveInt
 from treasurypilot_core.money import BaseUnits
 
 
@@ -14,9 +14,10 @@ class FxRate(FrozenModel):
     """Exact ratio: stablecoin base units per fiat minor unit."""
 
     fiat_currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
+    # Peg guard in the engine assumes a USD-pegged asset (spec: USDC only).
     stablecoin_asset: Annotated[str, Field(min_length=1)]
-    stablecoin_units: Annotated[int, Field(gt=0)]
-    fiat_minor_units: Annotated[int, Field(gt=0)]
+    stablecoin_units: PositiveInt
+    fiat_minor_units: PositiveInt
 
 
 class FiatApproval(FrozenModel):
@@ -39,13 +40,13 @@ class FxQuote(FrozenModel):
 
     source_id: Annotated[str, Field(min_length=1)]
     rate: FxRate
-    observed_at: Annotated[int, Field(ge=0)]
-    stablecoin_usd_price_micros: Annotated[int, Field(gt=0)]
+    observed_at: NonNegativeInt
+    stablecoin_usd_price_micros: PositiveInt
 
 
 class FxPolicy(FrozenModel):
     """Owner-configured source, freshness window and USD peg tolerance."""
 
     source_id: Annotated[str, Field(min_length=1)]
-    max_quote_age_seconds: Annotated[int, Field(ge=0)]
+    max_quote_age_seconds: NonNegativeInt
     depeg_threshold_bps: Annotated[int, Field(ge=0, le=10_000)]

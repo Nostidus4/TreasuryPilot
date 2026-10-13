@@ -106,7 +106,7 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
-| `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.6 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
+| `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
 
 Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
 Pydantic raises `ValidationError` while constructing input models; engine entry points defensively
@@ -214,7 +214,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 
 `normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
 
-### 8.6 Fiat FX safety core (ENG-L02, Later)
+### 8.7 Fiat FX safety core (ENG-L02)
 
 `FiatApproval` binds the fiat amount in minor units, the reference `FxRate`, the
 maximum stablecoin amount in token base units and the tolerated rate deviation in
@@ -231,7 +231,10 @@ integer cross multiplication. Conversion is `ceil(fiat_minor_amount × quote_rat
 to token base units. If that exceeds the approved token maximum, the function
 raises `FiatPaymentBlocked(APPROVED_MAX_EXCEEDED)` instead of clipping the payment.
 The caller must route any block to review, bind the returned token amount to the
-approval, and repeat this check immediately before PAY. Invoice persistence,
+approval, and repeat this check immediately before PAY. Wrong argument types raise
+`TypeError` and malformed values raise `ValidationError`/`ValueError`;
+`FiatPaymentBlocked` is not a `ValueError`, so callers can tell bad input from a review
+block. The depeg guard assumes a USD-pegged stablecoin (USDC). Invoice persistence,
 approval signing and payment orchestration belong to INV-L04.
 
 ### 8.6 Seven-day liquidity forecast

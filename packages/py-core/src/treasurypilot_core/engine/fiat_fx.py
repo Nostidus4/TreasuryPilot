@@ -19,8 +19,13 @@ type FxBlockReason = Literal[
 ]
 
 
-class FiatPaymentBlocked(ValueError):
-    """No amount may be proposed; the invoice needs review or a fresh quote."""
+class FiatPaymentBlocked(Exception):
+    """No amount may be proposed; the invoice needs review or a fresh quote.
+
+    Deliberately not a ``ValueError``: malformed input raises ``TypeError`` /
+    ``ValueError`` / ``ValidationError``, so ``except ValueError`` can never swallow a
+    legitimate review block.
+    """
 
     def __init__(self, reason: FxBlockReason) -> None:
         self.reason = reason
@@ -42,6 +47,12 @@ def propose_fiat_payment(
     before PAY; the caller must also bind the returned amount to its approval.
     """
 
+    if not isinstance(approval, FiatApproval):
+        raise TypeError("approval must be FiatApproval")
+    if not isinstance(quote, FxQuote):
+        raise TypeError("quote must be FxQuote")
+    if not isinstance(policy, FxPolicy):
+        raise TypeError("policy must be FxPolicy")
     if isinstance(now_timestamp, bool) or not isinstance(now_timestamp, int):
         raise TypeError("now_timestamp must be an integer")
     if now_timestamp < 0:
@@ -75,7 +86,9 @@ def propose_fiat_payment(
     ):
         raise FiatPaymentBlocked("FX_OUTSIDE_TOLERANCE")
 
-    # Price is USD micros per whole token; 1,000,000 represents a $1 peg.
+    # Price is USD micros per whole token; 1,000,000 represents a $1 peg. This assumes
+    # a USD-pegged stablecoin (the spec allows only USDC); a non-USD peg such as EURC
+    # would be reported as STABLECOIN_DEPEG on every call.
     if abs(quote.stablecoin_usd_price_micros - _USD_MICROS) * _BPS > (
         _USD_MICROS * policy.depeg_threshold_bps
     ):

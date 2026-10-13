@@ -138,6 +138,7 @@ def test_maximum_is_never_exceeded_across_many_valid_rates() -> None:
         (quote(execution_rate=rate(stablecoin_asset="USDT")), policy(), "PAIR_MISMATCH"),
         (quote(observed_at=999), policy(), "STALE_FX_QUOTE"),
         (quote(observed_at=1_061), policy(), "STALE_FX_QUOTE"),
+        (quote(price_micros=1_000_001), policy(depeg_threshold_bps=0), "STABLECOIN_DEPEG"),
     ],
 )
 def test_invalid_execution_quote_blocks(
@@ -163,3 +164,27 @@ def test_invalid_inputs_are_rejected_at_schema_and_engine_boundaries() -> None:
         propose_fiat_payment(approval(), forged, policy(), now_timestamp=1_060)
     with pytest.raises(TypeError, match="now_timestamp"):
         propose_fiat_payment(approval(), quote(), policy(), now_timestamp=True)  # type: ignore[arg-type]
+
+
+def test_policy_boundaries_at_zero_are_inclusive() -> None:
+    now_quote = quote(observed_at=1_060)
+    assert propose_fiat_payment(
+        approval(), now_quote, policy(max_quote_age_seconds=0), now_timestamp=1_060
+    ) == BaseUnits(1_100_000_000)
+    assert propose_fiat_payment(
+        approval(), quote(), policy(depeg_threshold_bps=0), now_timestamp=1_060
+    ) == BaseUnits(1_100_000_000)
+
+
+def test_wrong_argument_types_raise_type_error_not_a_review_block() -> None:
+    a, q, p = approval(), quote(), policy()
+    for args in (
+        (a.model_dump(), q, p),
+        (a, q.model_dump(), p),
+        (a, q, p.model_dump()),
+        (q, a, p),  # swapped models
+    ):
+        with pytest.raises(TypeError) as error:
+            propose_fiat_payment(*args, now_timestamp=1_060)  # type: ignore[arg-type]
+        assert not isinstance(error.value, FiatPaymentBlocked)
+    assert not issubclass(FiatPaymentBlocked, ValueError)
