@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+/// @notice Error signatures are stable policy reason codes. Namespaced to permit
+/// the spec's RequestCancelled and Revoked events with the same names.
+library TreasuryPilotErrors {
+    error AlreadyInitialized();
+    error InvalidConfiguration();
+    error NotOwner();
+    error InvalidMandate(bytes32 field);
+    error NoApprovers();
+    error UnknownWallet();
+    error TargetBelowBuffer();
+    error InvalidPayee();
+    error UnknownPayee();
+    error ExpiryInPast();
+    error AlreadyPaid();
+    error NotPaused();
+    error AlreadyRevoked();
+    error NotGuardianOrOwner();
+    error Revoked();
+    error NotOwnerOrApprover();
+    error NotExecutor();
+    error NotActive();
+    error MandateExpired();
+    error ApprovalInvalid();
+    error ApprovalExpired();
+    error NotApprover();
+    error RequestAlreadyPaid();
+    error RequestCancelled();
+    error StepAlreadyExecuted();
+    error WrongRefillTarget();
+    error AlreadyRefilledForRequest();
+    error OverRefillPerRequest();
+    error OverRefillDaily();
+    error SourceBufferBreach();
+    error RefillExceedsNeed();
+    error TransferFailed();
+    error BalanceDeltaMismatch();
+    error NotOperationalWallet();
+    error PayeeUnknown();
+    error PayeeCooling();
+    error DuplicateFingerprint();
+    error OverPerRequestLimit();
+    error ExceptionInvalid();
+    error OverDailyLimit();
+    error BufferBreach();
+    error WrongPaymentOption();
+    error InvalidAmount();
+    error SupplyFloorBreach();
+    error OverSupplyPerTx();
+    error OverSupplyDaily();
+    error InsufficientAToken();
+    error AllowanceNotCleared();
+    error BorrowNotAuthorized();
+    error RepayNotAuthorized();
+    error HealthFactorTooLow();
+    error AuthorizationExpired();
+    error BorrowRateTooHigh();
+    error AuthorizationAlreadyUsed();
+    error RouterNotAllowed();
+    error OverSwapPerTx();
+    error OverSwapDaily();
+    error InsufficientOutput();
+}
