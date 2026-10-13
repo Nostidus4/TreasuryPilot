@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 import sentry_sdk
 import structlog
+import structlog.testing
 from celery import signals
 from celery.app import trace as celery_trace
 from celery.contrib.testing.worker import start_worker
@@ -42,6 +43,7 @@ def telegram(monkeypatch: pytest.MonkeyPatch) -> list[urllib.request.Request]:
     monkeypatch.setenv("SENTRY_DSN", "https://public@sentry.invalid/1")
     monkeypatch.setenv("TP_TELEGRAM_BOT_TOKEN", "123456789:test-bot-token")
     monkeypatch.setenv("TP_TELEGRAM_ALERT_CHAT_ID", "-100123")
+    monkeypatch.setattr(error_tracking, "_last_alert", {})
     sent: list[urllib.request.Request] = []
     monkeypatch.setattr(
         error_tracking.urllib.request,
@@ -57,7 +59,7 @@ def _install_transport() -> _CapturingTransport:
     return transport
 
 
-def test_api_500_reaches_sentry_with_the_request_id(
+def test_api_500s_reach_sentry_with_the_request_id_and_alert_once(
     telegram: list[urllib.request.Request],
 ) -> None:
     api_app: FastAPI = create_api_app()
@@ -65,12 +67,18 @@ def test_api_500_reaches_sentry_with_the_request_id(
 
     @api_app.get("/_boom")
     async def boom() -> None:
+        # The shape of an RPC call made before the failure: the key is in the path.
+        sentry_sdk.add_breadcrumb(
+            type="http",
+            category="httplib",
+            data={"url": "https://eth.example:8443/v2/AlchemyKey123?x=1", "http.query": "x=1"},
+        )
         raise RuntimeError("db_password=hunter2 rejected")
 
     try:
-        response = TestClient(api_app, raise_server_exceptions=False).get(
-            "/_boom", headers={"X-Request-ID": "req-12345"}
-        )
+        client = TestClient(api_app, raise_server_exceptions=False)
+        response = client.get("/_boom", headers={"X-Request-ID": "req-12345"})
+        client.get("/_boom", headers={"X-Request-ID": "req-67890"})
         sentry_sdk.flush()
     finally:
         sentry_sdk.init(dsn="")
@@ -78,11 +86,17 @@ def test_api_500_reaches_sentry_with_the_request_id(
         structlog.reset_defaults()
 
     assert response.status_code == 500
-    [event] = transport.events
+    event, second = transport.events
     assert event["tags"]["correlation_id"] == "req-12345"
+    assert second["tags"]["correlation_id"] == "req-67890"
     assert event["tags"]["service"] == "api"
     assert event["exception"]["values"][-1]["value"] == "db_password=[REDACTED] rejected"
-    [alert] = _wait_for(telegram)
+    [crumb] = [c for c in event["breadcrumbs"]["values"] if c.get("type") == "http"]
+    assert crumb["data"] == {"url": "https://eth.example"}
+    # The same error type within the window alerts once.
+    _wait_for(telegram)
+    time.sleep(0.1)  # let a second alert thread land if dedup were broken
+    [alert] = telegram
     assert alert.data is not None
     assert b"req-12345" in alert.data
     assert b"hunter2" not in alert.data
@@ -140,6 +154,19 @@ def test_handled_errors_do_not_alert(telegram: list[urllib.request.Request]) -> 
     assert len(transport.events) == 1
     time.sleep(0.1)
     assert telegram == []
+
+
+def test_telegram_without_a_sentry_dsn_warns(
+    telegram: list[urllib.request.Request], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SENTRY_DSN")
+    try:
+        with structlog.testing.capture_logs() as logs:
+            error_tracking.configure_error_tracking("api")
+    finally:
+        sentry_sdk.init(dsn="")
+
+    assert {"event": "telegram_alerts_need_sentry_dsn", "log_level": "warning"} in logs
 
 
 def _wait_for[T](items: list[T]) -> list[T]:

@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from '@/app';
 import { mockApiEnabled } from '@/lib/env';
 import '@/lib/i18n';
+import { scrubBreadcrumb, scrubEvent } from '@/lib/sentry';
 import { initTheme } from '@/lib/theme';
 import { AppProviders } from '@/providers/app-providers';
 import '@/styles.css';
@@ -17,7 +18,12 @@ async function start() {
   if (import.meta.env.VITE_SENTRY_DSN) {
     // Loaded only when configured, so builds without a DSN ship no Sentry code.
     const Sentry = await import('@sentry/react');
-    Sentry.init({ dsn: import.meta.env.VITE_SENTRY_DSN, environment: import.meta.env.MODE });
+    Sentry.init({
+      dsn: import.meta.env.VITE_SENTRY_DSN,
+      environment: import.meta.env.MODE,
+      beforeSend: scrubEvent,
+      beforeBreadcrumb: scrubBreadcrumb,
+    });
   }
   if (mockApiEnabled) {
     const { startMockApi } = await import('@/mocks/browser');

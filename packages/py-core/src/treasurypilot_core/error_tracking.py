@@ -1,6 +1,7 @@
 """Sentry error reporting and the Telegram alert hook (OBS-003), shared by api, worker and signer.
 
-Sentry reads ``SENTRY_DSN`` and ``SENTRY_ENVIRONMENT`` itself; without a DSN nothing is sent.
+Sentry reads ``SENTRY_DSN`` and ``SENTRY_ENVIRONMENT`` itself; without a DSN nothing is sent,
+and no Telegram alert either: the alert fires from Sentry's ``before_send``.
 The correlation ids arrive as tags through ``bind_context``.
 """
 
@@ -9,8 +10,10 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 
 import sentry_sdk
 import structlog
@@ -19,6 +22,10 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from treasurypilot_core.privacy import redact_event
 
 _TELEGRAM_TIMEOUT_S = 5
+# One alert per (service, error type) per window, so a crash loop stays readable (and under 429).
+_ALERT_WINDOW_S = 300
+_last_alert: dict[tuple[str, str], float] = {}
+_alert_lock = threading.Lock()
 
 
 def configure_error_tracking(service: str) -> None:
@@ -36,7 +43,22 @@ def configure_error_tracking(service: str) -> None:
         integrations=[LoggingIntegration(level=None, event_level=None)],
         include_local_variables=False,  # locals can hold keys, tokens and invoice text
         before_send=before_send,
+        before_breadcrumb=_strip_url,
     )
+    if os.environ.get("TP_TELEGRAM_BOT_TOKEN") and not sentry_sdk.get_client().dsn:
+        structlog.get_logger().warning("telegram_alerts_need_sentry_dsn")
+
+
+def _strip_url(crumb: dict[str, Any], _hint: Any) -> dict[str, Any]:
+    """Keep only scheme and host of HTTP breadcrumb URLs: RPC and bot URLs embed keys in the path."""
+
+    data = crumb.get("data") or {}
+    if isinstance(data.get("url"), str):
+        parts = urlsplit(data["url"])
+        data["url"] = f"{parts.scheme}://{parts.hostname or ''}"
+        data.pop("http.query", None)
+        data.pop("http.fragment", None)
+    return crumb
 
 
 def _is_unhandled(event: dict[str, Any]) -> bool:
@@ -53,6 +75,12 @@ def _alert_telegram(event: dict[str, Any]) -> None:
         return
     tags = event.get("tags", {})
     error_type = event["exception"]["values"][-1].get("type", "error")
+    key = (str(tags.get("service")), str(error_type))
+    now = time.monotonic()
+    with _alert_lock:
+        if now - _last_alert.get(key, -_ALERT_WINDOW_S) < _ALERT_WINDOW_S:
+            return
+        _last_alert[key] = now
     # Ids only: the exception message can carry business data.
     text = (
         f"[{tags.get('service')}] unhandled {error_type}\n"

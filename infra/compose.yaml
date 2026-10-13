@@ -11,7 +11,7 @@ x-app-environment: &app-environment
   S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
   # Empty: spans are created (trace_id in logs) but not exported.
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-  # Unhandled errors also ping Telegram when both are set (OBS-003).
+  # Unhandled errors also ping Telegram when both are set and SENTRY_DSN is too (OBS-003).
   TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
   TP_TELEGRAM_ALERT_CHAT_ID: ${TP_TELEGRAM_ALERT_CHAT_ID:-}
 
