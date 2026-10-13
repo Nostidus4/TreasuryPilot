@@ -242,6 +242,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Governance Tx */
+    get: operations['get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Exec Call */
+    get: operations['get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add Governance Signature */
+    post: operations['add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report Submission */
+    post: operations['report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -287,6 +355,23 @@ export interface paths {
     get: operations['get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Governance Tx */
+    post: operations['create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -368,6 +453,23 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+    /** CallInput */
+    CallInput: {
+      /** Data */
+      data: string;
+      /**
+       * Operation
+       * @default 0
+       */
+      operation: number;
+      /** To */
+      to: string;
+      /**
+       * Value
+       * @default 0
+       */
+      value: string;
+    };
     /** ChainView */
     ChainView: {
       /** Assets */
@@ -389,6 +491,12 @@ export interface components {
      * @enum {string}
      */
     Coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+    /** CreateGovernanceTxRequest */
+    CreateGovernanceTxRequest: {
+      /** Calls */
+      calls: components['schemas']['CallInput'][];
+      purpose: components['schemas']['GovernanceTxPurpose'];
+    };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
       /** Country */
@@ -415,6 +523,23 @@ export interface components {
       /** Wallets */
       wallets: components['schemas']['WalletRequest'][];
     };
+    /**
+     * GovernanceTxPurpose
+     * @enum {string}
+     */
+    GovernanceTxPurpose:
+      | 'MODULE_SETUP'
+      | 'MANDATE'
+      | 'PAYEE_ADD'
+      | 'PAYEE_DEACTIVATE'
+      | 'EXCEPTION_GRANT'
+      | 'EXCEPTION_REVOKE'
+      | 'ALLOW_DUPLICATE'
+      | 'CANCEL_REQUEST'
+      | 'PAUSE'
+      | 'RESUME'
+      | 'REVOKE'
+      | 'GUARDIAN_SETUP';
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -524,6 +649,11 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** SignatureRequest */
+    SignatureRequest: {
+      /** Signature */
+      signature: string;
+    };
     /** SiweNonceResponse */
     SiweNonceResponse: {
       /** Chainid */
@@ -539,6 +669,11 @@ export interface components {
       nonce: string;
       /** Scheme */
       scheme: string;
+    };
+    /** SubmittedRequest */
+    SubmittedRequest: {
+      /** Transactionhash */
+      transactionHash: string;
     };
     /** TreasuryResponse */
     TreasuryResponse: {
@@ -1055,6 +1190,150 @@ export interface operations {
       };
     };
   };
+  get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: string;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SignatureRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubmittedRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   update_organization_settings_v1_orgs__organization_id__settings_patch: {
     parameters: {
       query?: never;
@@ -1144,6 +1423,44 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGovernanceTxRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
