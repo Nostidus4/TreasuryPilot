@@ -20,7 +20,7 @@ from webauthn import (
     verify_authentication_response,
     verify_registration_response,
 )
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
+from webauthn.helpers.exceptions import WebAuthnException
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
@@ -215,7 +215,7 @@ class WebAuthnMfaService:
                     expected_origin=self._origin,
                     require_user_verification=True,
                 )
-            except (InvalidRegistrationResponse, ValueError, TypeError):
+            except (WebAuthnException, ValueError, TypeError):
                 raise _invalid() from None
             if len(verified.credential_id) > 1024:
                 raise _invalid()
@@ -278,7 +278,7 @@ class WebAuthnMfaService:
             user_handle = assertion["response"].get("userHandle")
             if user_handle is not None and base64url_to_bytes(user_handle) != user_id.bytes:
                 raise _invalid()
-        except (KeyError, TypeError, ValueError, binascii.Error):
+        except (AttributeError, KeyError, TypeError, ValueError, binascii.Error):
             raise _invalid() from None
         async with self._sessions() as db, db.begin():
             challenge = await self._challenge(
@@ -304,7 +304,7 @@ class WebAuthnMfaService:
                     credential_current_sign_count=credential.sign_count,
                     require_user_verification=True,
                 )
-            except (InvalidAuthenticationResponse, ValueError, TypeError):
+            except (WebAuthnException, ValueError, TypeError):
                 raise _invalid() from None
             if verified.credential_id != credential_id:
                 raise _invalid()

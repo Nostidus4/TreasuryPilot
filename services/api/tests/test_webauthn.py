@@ -302,6 +302,58 @@ async def _exercise_webauthn(database_url: str) -> None:
         await engine.dispose()
 
 
+async def _exercise_malformed_payloads(database_url: str) -> None:
+    engine, sessions = create_session_factory(database_url)
+    clock = _Clock()
+    mfa = MfaService(sessions, b"webauthn-malformed-secret-32-bytes!!", MemoryRateLimiter(clock))
+    service = WebAuthnMfaService(
+        sessions, mfa, rp_id="app.example.test", origin="https://app.example.test"
+    )
+    user_id, session_id = uuid.uuid4(), uuid.uuid4()
+    try:
+        async with sessions() as db, db.begin():
+            db.add(User(id=user_id, email=f"{user_id}@example.test"))
+            await db.flush()
+            db.add(
+                Session(
+                    id=session_id,
+                    user_id=user_id,
+                    token_hash=os.urandom(32),
+                    created_at=clock.value,
+                    expires_at=clock.value + timedelta(hours=12),
+                    last_seen_at=clock.value,
+                    ip_hash=os.urandom(32),
+                    ua_hash=os.urandom(32),
+                )
+            )
+        registration_id, _ = await service.begin_registration(
+            user_id, session_id, "person@example.test", clock.value
+        )
+        async with sessions() as db, db.begin():
+            db.add(
+                MfaWebAuthnCredential(
+                    credential_id=os.urandom(32), user_id=user_id, public_key=b"x", sign_count=0
+                )
+            )
+        authentication_id, _ = await service.begin_authentication(user_id, session_id, clock.value)
+        for payload in ({}, {"id": "AA", "rawId": "AA", "response": {}, "type": "x"}):
+            with pytest.raises(AuthFailure, match="WEBAUTHN_INVALID"):
+                await service.complete_registration(
+                    user_id, session_id, registration_id, payload, clock.value
+                )
+        for payload in (
+            {},
+            {"id": "AA", "response": "x"},
+            {"id": "AA", "rawId": "AA", "response": {}, "type": "x"},
+        ):
+            with pytest.raises(AuthFailure, match="WEBAUTHN_INVALID"):
+                await service.complete_authentication(
+                    user_id, session_id, authentication_id, payload, clock.value
+                )
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.skipif(
     "TP_TEST_DATABASE_URL" not in os.environ,
     reason="TP_TEST_DATABASE_URL is required for PostgreSQL WebAuthn integration",
@@ -312,5 +364,6 @@ def test_postgres_webauthn_binding_origin_rp_replay_and_revocation() -> None:
     command.upgrade(config, "head")
     try:
         asyncio.run(_exercise_webauthn(database_url))
+        asyncio.run(_exercise_malformed_payloads(database_url))
     finally:
         command.downgrade(config, "base")
