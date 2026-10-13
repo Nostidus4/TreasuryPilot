@@ -27,8 +27,8 @@
 | GET | `/auth/siwe/nonce` | Get a SIWE nonce | auth | → `{nonce, expiresAt}` | |
 | POST | `/me/wallets` | Link a wallet via SIWE | auth | `{message, signature}` → `201 {address}` | 400 `SIWE_INVALID`, 409 `ADDRESS_LINKED_ELSEWHERE` |
 | DELETE | `/me/wallets/{address}` | Unlink a wallet | auth | → `204` | 409 `SIGNER_ROLE_REQUIRES_WALLET` |
-| POST | `/orgs` | Create an org (caller → OrgAdmin) | auth | `{name, legalName?, country, displayTz}` → `201 {org}` | |
-| GET | `/orgs/{orgId}` | Org details and onboarding checklist | ANY | → `{org, checklist}` | |
+| POST | `/orgs` | Create an org (caller → OrgAdmin) | auth | `{name, legalName?, country?, displayTz?}` → `201 {org}` | |
+| GET | `/orgs/{orgId}` | Org details and onboarding checklist | ANY | → `{org, checklist:{memberCount, walletLinked, treasuryCreated, moduleEnabled}}` | |
 | PATCH | `/orgs/{orgId}/settings` | Solo mode, auto-match, etc. | ADM (solo mode: OWN) | `{soloMode?, autoMatch?}` → `{org}` | 403 |
 | GET | `/orgs/{orgId}/members` | List members | ANY | → `{items}` | |
 | POST | `/orgs/{orgId}/invites` | Invite a member | ADM | `{email, roles[]}` → `201 {invite}` | 409 `ALREADY_MEMBER` |
@@ -190,5 +190,5 @@ These map 1:1 to validator reason codes where applicable, so the UI and the cont
 | `AI_PLAN_REJECTED`, `AI_UNAVAILABLE` | AI path | BR-055, BR-056 |
 | `ATTESTATION_INVALID`, `PAYLOAD_MISMATCH` | Signer | BR-059 |
 | `ATTESTATION_EXPIRED`, `NONCE_REUSED` | Signer | BR-059 |
-| `FLAG_UNACKNOWLEDGED`, `APPROVAL_STALE`, `EXCEPTION_INVALID`, `NOT_OPERATIONAL_WALLET`, `WRONG_REFILL_TARGET`, `ALREADY_REFILLED_FOR_REQUEST`, `OVER_REFILL_PER_REQUEST`, `OVER_REFILL_DAILY`, `SOURCE_BUFFER_BREACH`, `REFILL_EXCEEDS_NEED`, `REFILL_BOUND`, `PAUSE_REQUESTED`, `CIRCUIT_OPEN`, `DATA_MISSING`, `CHAIN_MISMATCH`, `ASSET_MISMATCH`, `EXECUTOR_MISMATCH`, `MANDATE_REVOKED`, `PLAN_MALFORMED`, `SIMULATION_REVERTED`, `SIMULATION_UNAVAILABLE` | Added in M08; full catalogue with decisions and contract errors in docs/modules/policy-engine §6.4 | |
-| Warnings: `DEADLINE_MISSED`, `DISCOUNT_MISSED`, `TARGET_NOT_REACHED` | Never change the decision | M08-D7 |
+| `FLAG_UNACKNOWLEDGED`, `APPROVAL_STALE`, `EXCEPTION_INVALID`, `NOT_OPERATIONAL_WALLET`, `WRONG_REFILL_TARGET`, `ALREADY_REFILLED_FOR_REQUEST`, `OVER_REFILL_PER_REQUEST`, `OVER_REFILL_DAILY`, `SOURCE_BUFFER_BREACH`, `REFILL_EXCEEDS_NEED`, `REFILL_BOUND`, `PAUSE_REQUESTED`, `CIRCUIT_OPEN`, `DATA_MISSING`, `CHAIN_MISMATCH`, `ASSET_MISMATCH`, `EXECUTOR_MISMATCH`, `MANDATE_REVOKED`, `PLAN_MALFORMED`, `SIMULATION_REVERTED`, `SIMULATION_UNAVAILABLE`, `OVER_SUPPLY_PER_TX`, `OVER_SUPPLY_DAILY`, `SUPPLY_FLOOR_BREACH`, `RESERVE_BREACH`, `INSUFFICIENT_POOL_LIQUIDITY`, `INSUFFICIENT_A_TOKEN`, `BORROW_NOT_AUTHORIZED`, `HEALTH_FACTOR_TOO_LOW`, `WRONG_PAYMENT_OPTION`, `TRANSFER_FAILED`, `BALANCE_DELTA_MISMATCH`, `ALLOWANCE_NOT_CLEARED`, `REQUEST_CANCELLED` | Added in M08; full catalogue with decisions and contract errors in docs/modules/policy-engine §6.4 | |
+| Warnings: `DEADLINE_MISSED`, `DISCOUNT_MISSED`, `TARGET_NOT_REACHED`, `BELOW_MIN_SUPPLY` | Never change the decision | M08-D7 |

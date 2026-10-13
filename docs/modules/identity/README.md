@@ -61,7 +61,7 @@ SIWE message: domain = app host, `chainId` = treasury chain (11155111), statemen
 
 ## 7. Flows
 
-Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
+Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
 
 ## 8. Algorithms
 

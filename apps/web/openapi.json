@@ -1,6 +1,50 @@
 {
   "components": {
     "schemas": {
+      "CreateOrganizationRequest": {
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "displayTz": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Displaytz",
+            "type": "string"
+          },
+          "legalName": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legalname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["name"],
+        "title": "CreateOrganizationRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -96,6 +140,149 @@
         },
         "required": ["id", "orgId", "roles", "status"],
         "title": "MembershipView",
+        "type": "object"
+      },
+      "OrganizationChecklist": {
+        "properties": {
+          "memberCount": {
+            "title": "Membercount",
+            "type": "integer"
+          },
+          "moduleEnabled": {
+            "title": "Moduleenabled",
+            "type": "boolean"
+          },
+          "treasuryCreated": {
+            "title": "Treasurycreated",
+            "type": "boolean"
+          },
+          "walletLinked": {
+            "title": "Walletlinked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "memberCount",
+          "walletLinked",
+          "treasuryCreated",
+          "moduleEnabled"
+        ],
+        "title": "OrganizationChecklist",
+        "type": "object"
+      },
+      "OrganizationDetailsResponse": {
+        "properties": {
+          "checklist": {
+            "$ref": "#/components/schemas/OrganizationChecklist"
+          },
+          "org": {
+            "$ref": "#/components/schemas/OrganizationView"
+          }
+        },
+        "required": ["org", "checklist"],
+        "title": "OrganizationDetailsResponse",
+        "type": "object"
+      },
+      "OrganizationResponse": {
+        "properties": {
+          "org": {
+            "$ref": "#/components/schemas/OrganizationView"
+          }
+        },
+        "required": ["org"],
+        "title": "OrganizationResponse",
+        "type": "object"
+      },
+      "OrganizationSettingsRequest": {
+        "properties": {
+          "autoMatch": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automatch"
+          },
+          "soloMode": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solomode"
+          }
+        },
+        "title": "OrganizationSettingsRequest",
+        "type": "object"
+      },
+      "OrganizationView": {
+        "properties": {
+          "autoMatch": {
+            "title": "Automatch",
+            "type": "boolean"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "displayTz": {
+            "title": "Displaytz",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legalName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legalname"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "soloMode": {
+            "title": "Solomode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "legalName",
+          "country",
+          "displayTz",
+          "soloMode",
+          "autoMatch",
+          "createdAt"
+        ],
+        "title": "OrganizationView",
         "type": "object"
       },
       "UserView": {
@@ -361,6 +548,137 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/v1/orgs": {
+      "post": {
+        "operationId": "create_organization_v1_orgs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Organization",
+        "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}": {
+      "get": {
+        "operationId": "get_organization_v1_orgs__organization_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationDetailsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Organization",
+        "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/settings": {
+      "patch": {
+        "operationId": "update_organization_settings_v1_orgs__organization_id__settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Organization Settings",
+        "tags": ["organizations"]
       }
     }
   }

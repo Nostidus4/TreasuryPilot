@@ -19,8 +19,14 @@ def test_ai_worker_environment_is_an_explicit_non_signing_allowlist() -> None:
 
     assert configured_names == {
         "ANTHROPIC_API_KEY",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_REGION",
         "DATABASE_URL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "PROMETHEUS_MULTIPROC_DIR",
+        "SENTRY_DSN",
         "TP_ENVIRONMENT",
+        "TP_METRICS_PORT",
         "TP_REDIS_URL",
     }
     assert "TP_ATTESTATION_PRIVATE_KEY" not in ai_worker

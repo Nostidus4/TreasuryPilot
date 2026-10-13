@@ -9,6 +9,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from treasurypilot_api.agent import models as agent_models  # noqa: F401
+from treasurypilot_api.audit import models as audit_models  # noqa: F401
 from treasurypilot_api.database import Base
 from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
@@ -16,7 +18,8 @@ from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before migrations (e.g. structlog's stdlib loggers) enabled.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # A URL set by the caller (for example the migration tests) must win over the
 # ambient DATABASE_URL so a test run can never migrate the dev database.
