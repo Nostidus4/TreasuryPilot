@@ -47,6 +47,7 @@ from treasurypilot_api.mandate.routes import (
     SqlAlchemyMandateRepository,
 )
 from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
@@ -239,6 +240,9 @@ def create_app(
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.mandate_repository = mandate_repository
+    app.state.review_sessions = (
+        async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -266,6 +270,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(treasury_router)
     app.include_router(mandate_router)
+    app.include_router(review_router)
 
     return app
 
