@@ -30,7 +30,11 @@ from treasurypilot_api.identity.organizations import (
     OrganizationPermissionDenied,
     OrganizationRecord,
 )
-from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
+from treasurypilot_api.identity.rate_limit import (
+    MemoryRateLimiter,
+    RateLimiterUnavailable,
+    RateLimitResult,
+)
 from treasurypilot_api.main import create_app
 from treasurypilot_api.treasury.config import ChainConfig, PlatformConfiguration
 from treasurypilot_api.treasury.sync import asset_id
@@ -210,7 +214,7 @@ class AuthHarness:
 
 
 class UnavailableRateLimiter:
-    async def hit(self, key: str, *, limit: int, window: timedelta) -> bool:
+    async def hit(self, key: str, *, limit: int, window: timedelta) -> RateLimitResult:
         raise RateLimiterUnavailable
 
 
@@ -469,7 +473,21 @@ def test_magic_link_requests_are_rate_limited_per_email_for_known_and_unknown() 
 
         limited = harness.client.post("/v1/auth/magic-link", json={"email": "PERSON@example.com"})
         assert limited.json()["code"] == "RATE_LIMITED"
+        assert limited.headers["Retry-After"] == "900"
         assert len(harness.sender.messages) == 5
+
+        # Retry-After is what is left of the fixed window, not its full length.
+        harness.clock.advance(timedelta(minutes=14, seconds=50))
+        later = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert later.status_code == 429
+        assert later.headers["Retry-After"] == "10"
+        harness.clock.advance(timedelta(seconds=10))
+        assert (
+            harness.client.post(
+                "/v1/auth/magic-link", json={"email": "person@example.com"}
+            ).status_code
+            == 202
+        )
 
         harness.clock.advance(timedelta(minutes=15))
         assert (
@@ -498,6 +516,13 @@ def test_verify_is_rate_limited_per_ip() -> None:
             for _ in range(21)
         ]
         assert statuses == [400] * 20 + [429]
+        rejected = harness.client.post("/v1/auth/magic-link/verify", json={"token": "bad"})
+        assert 1 <= int(rejected.headers["Retry-After"]) <= 900
+        # Only rate limits and outages carry Retry-After.
+        harness.clock.advance(timedelta(minutes=15))
+        invalid = harness.client.post("/v1/auth/magic-link/verify", json={"token": "bad"})
+        assert invalid.status_code == 400
+        assert "Retry-After" not in invalid.headers
 
 
 def test_auth_endpoints_fail_closed_when_the_rate_limiter_is_down() -> None:
@@ -505,6 +530,7 @@ def test_auth_endpoints_fail_closed_when_the_rate_limiter_is_down() -> None:
         response = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
         assert response.status_code == 503
         assert response.json()["code"] == "AUTH_UNAVAILABLE"
+        assert response.headers["Retry-After"] == "30"
         assert not harness.sender.messages
 
 
@@ -869,3 +895,40 @@ def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
                 }
             ]
         }
+
+
+def test_retry_after_is_readable_cross_origin() -> None:
+    with make_harness() as harness:
+        response = harness.client.post(
+            "/v1/auth/magic-link",
+            json={"email": "person@example.com"},
+            headers={"Origin": "http://localhost:5173"},
+        )
+        exposed = response.headers.get("Access-Control-Expose-Headers", "")
+        assert "Retry-After" in exposed
+
+
+def test_retry_after_covers_the_longest_exceeded_limit() -> None:
+    with make_harness() as harness:
+        # Exhaust the per-IP limit (20) ten minutes before the per-email limit (5).
+        for index in range(15):
+            harness.client.post("/v1/auth/magic-link", json={"email": f"u{index}@example.com"})
+        harness.clock.advance(timedelta(minutes=10))
+        for _ in range(5):
+            harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+
+        limited = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == "900"  # the email window, not the IP's 300
+
+        harness.clock.advance(timedelta(seconds=900))
+        retried = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert retried.status_code == 202
+
+
+def test_unconfigured_auth_storage_sends_retry_after() -> None:
+    app = create_app(settings=Settings(environment="local"))
+    with TestClient(app, base_url="https://app.example.test") as client:
+        response = client.post("/v1/auth/magic-link/verify", json={"token": "x" * 43})
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"
