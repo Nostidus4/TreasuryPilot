@@ -9,11 +9,15 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from treasurypilot_worker.agent.budget import BudgetLedger, cost_usd_micros
-from treasurypilot_worker.agent.call_log import AiCallEntry, AiCallLog, ValidationResult
+from treasurypilot_worker.agent.call_log import (
+    PREVIEW_CHARS,
+    AiCallEntry,
+    AiCallLog,
+    ValidationResult,
+)
 from treasurypilot_worker.agent.config import AiConfig, AiTask, TaskConfig
 from treasurypilot_worker.agent.errors import (
     AiBudgetExceeded,
-    AiError,
     AiSchemaError,
     AiTimeout,
     AiToolLimitExceeded,
@@ -95,8 +99,8 @@ class AiAdapter:
         run = _Run(task_config, started=started, deadline=started + task_config.timeout_s)
         try:
             parsed = self._run(task, org_id, prompt, output, tools, run)
-        except AiError as error:
-            # Logged before re-raising; a failed write raises AiCallLogError instead.
+        except Exception as error:
+            # Any failure is logged before re-raising; a failed write raises AiCallLogError.
             self._log(task, org_id, prompt, run, None, error)
             raise
         ai_call_id = self._log(task, org_id, prompt, run, parsed, None)
@@ -150,16 +154,9 @@ class AiAdapter:
                 response = self._complete(request, run)
             except AiUnavailable as error:
                 if error.usage is not None:
-                    price = self._config.prices[task_config.model]
-                    cost = cost_usd_micros(price, error.usage)
-                    self._ledger.record(org_id, month, cost)
-                    run.usage += error.usage
-                    run.cost += cost
+                    self._charge(org_id, month, error.usage, run)
                 raise
-            cost = cost_usd_micros(self._config.prices[task_config.model], response.usage)
-            self._ledger.record(org_id, month, cost)
-            run.usage += response.usage
-            run.cost += cost
+            self._charge(org_id, month, response.usage, run)
             if self._clock() > run.deadline:
                 raise AiTimeout(f"{task} exceeded its {task_config.timeout_s}s deadline")
 
@@ -180,6 +177,12 @@ class AiAdapter:
                 run.schema_retries += 1
                 conversation.append(Message("user", (TextBlock(_correction(error)),)))
 
+    def _charge(self, org_id: str, month: str, usage: Usage, run: "_Run") -> None:
+        cost = cost_usd_micros(self._config.prices[run.task.model], usage)
+        self._ledger.record(org_id, month, cost)
+        run.usage += usage
+        run.cost += cost
+
     def _log(
         self,
         task: AiTask,
@@ -187,9 +190,9 @@ class AiAdapter:
         prompt: RenderedPrompt,
         run: "_Run",
         parsed: BaseModel | None,
-        error: AiError | None,
+        error: Exception | None,
     ) -> str:
-        run.latency_ms = round((self._clock() - run.started) * 1000)
+        run.latency_ms = round((self._clock() - run.started) * 1000)  # also read by AiResult
         if parsed is not None:
             validation: ValidationResult | None = ValidationResult.OK
         elif isinstance(error, AiSchemaError):
@@ -210,8 +213,8 @@ class AiAdapter:
                 input_tokens=run.usage.input_tokens,
                 output_tokens=run.usage.output_tokens,
                 cost_usd_micros=run.cost,
-                # Never carries secret values: AiInputRejected names only the pattern.
-                error=None if error is None else f"{type(error).__name__}: {error}",
+                # A preview: messages can quote model output (schema errors) or document text.
+                error=None if error is None else f"{type(error).__name__}: {error}"[:PREVIEW_CHARS],
             )
         )
 

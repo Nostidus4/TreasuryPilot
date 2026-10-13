@@ -2,17 +2,18 @@
 
 import asyncio
 import json
-import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
+from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.ids import uuid7
 from treasurypilot_worker.agent.types import ToolCallRecord
 
-# Tool results can quote document text; the log keeps only a preview of each.
-TOOL_RESULT_PREVIEW_CHARS = 200
+# Tool results and error messages can quote document text; the log keeps only a preview.
+PREVIEW_CHARS = 200
 
 
 class ValidationResult(StrEnum):
@@ -61,15 +62,14 @@ class InMemoryAiCallLog:
 
     def record(self, entry: AiCallEntry) -> str:
         self.entries.append(entry)
-        return str(uuid.uuid4())
+        return str(uuid7())
 
 
 _INSERT = """
 INSERT INTO ai_calls (
-    org_id, purpose, model, prompt_version, input_refs, tool_calls, output,
+    id, org_id, purpose, model, prompt_version, input_refs, tool_calls, output,
     validation_result, latency_ms, input_tokens, output_tokens, cost_usd_micros, error
-) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13)
-RETURNING id
+) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14)
 """
 
 
@@ -85,12 +85,15 @@ class PostgresAiCallLog:
             raise AiCallLogError(f"ai_calls write failed: {type(error).__name__}") from error
 
     async def _insert(self, entry: AiCallEntry) -> str:
-        # shortcut: one connection per AI call (calls take seconds); pool it if volume grows.
+        # shortcut: one connection per AI call (calls take seconds), and `record` must not run
+        # inside an event loop (sync Celery tasks only); pool it and go async if that changes.
+        row_id = uuid7()
         connection = await asyncpg.connect(self._dsn)
         try:
-            row_id = await connection.fetchval(
+            await connection.execute(
                 _INSERT,
-                uuid.UUID(entry.org_id),
+                row_id,
+                UUID(entry.org_id),
                 entry.purpose,
                 entry.model,
                 entry.prompt_version,
@@ -114,7 +117,7 @@ def _tool_call_json(call: ToolCallRecord) -> dict[str, Any]:
         "id": call.id,
         "name": call.name,
         "input": call.input,
-        "result_preview": call.result[:TOOL_RESULT_PREVIEW_CHARS],
+        "result_preview": call.result[:PREVIEW_CHARS],
         "result_chars": len(call.result),
         "is_error": call.is_error,
         "truncated": call.truncated,

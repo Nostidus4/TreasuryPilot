@@ -17,12 +17,12 @@ from sqlalchemy import (
     Text,
     desc,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from treasurypilot_api.database import Base
+from treasurypilot_core.ids import uuid7
 
 
 class AiPurpose(StrEnum):
@@ -70,9 +70,7 @@ class AiCall(Base):
         Index("ix_ai_calls_org_created", "org_id", desc("created_at")),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )

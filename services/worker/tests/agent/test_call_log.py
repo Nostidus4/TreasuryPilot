@@ -144,6 +144,39 @@ def test_provider_failure_is_logged_without_a_validation_result(
     assert entry.error == "AiUnavailable: bad request"
 
 
+def test_unexpected_exception_is_logged_too(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    def broken(_: NoInput) -> object:
+        raise KeyError("missing snapshot")
+
+    log = InMemoryAiCallLog()
+    tool = Tool("read_document", "Read the document text.", NoInput, broken)
+    provider = FakeProvider([fake_tool_use(ToolCall("t1", "read_document", {}))])
+
+    with pytest.raises(KeyError):
+        _adapter(provider, repo_config, clock, october, log).run(
+            AiTask.PLAN, org_id=ORG_ID, prompt=PROMPT, output=Answer, tools=[tool]
+        )
+
+    [entry] = log.entries
+    assert entry.error == "KeyError: 'missing snapshot'"
+
+
+def test_error_text_is_cut_to_a_preview(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    log = InMemoryAiCallLog()
+    provider = FakeProvider([AiUnavailable("x" * 1_000, retryable=False)])
+
+    with pytest.raises(AiUnavailable):
+        _adapter(provider, repo_config, clock, october, log).run(
+            AiTask.EXPLAIN, org_id=ORG_ID, prompt=PROMPT, output=Answer
+        )
+
+    assert len(log.entries[0].error or "") == 200
+
+
 @pytest.mark.parametrize(
     "response", [fake_text('{"answer": "ok"}'), AiUnavailable("down", retryable=False)]
 )

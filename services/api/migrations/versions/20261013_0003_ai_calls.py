@@ -40,12 +40,7 @@ def upgrade() -> None:
 
     op.create_table(
         "ai_calls",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("org_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("purpose", postgresql.ENUM(name="ai_purpose", create_type=False), nullable=False),
         sa.Column("model", sa.String(length=100), nullable=False),
