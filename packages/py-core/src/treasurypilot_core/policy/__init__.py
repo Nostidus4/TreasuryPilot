@@ -1,10 +1,10 @@
 """Deterministic policy decisions and reason codes."""
 
-from .decision import Check, Decision
+from .decision import Check, Decision, aggregate
 from .reason_codes import (
     REASON_CODES,
     Group,
-    ReasonCode,
+    PolicyReasonCode,
     ReasonInfo,
     catalogue_markdown,
     decode_revert,
@@ -15,10 +15,11 @@ from .reason_codes import (
 
 __all__ = [
     "REASON_CODES",
+    "aggregate",
     "Check",
     "Decision",
     "Group",
-    "ReasonCode",
+    "PolicyReasonCode",
     "ReasonInfo",
     "catalogue_markdown",
     "decode_revert",
