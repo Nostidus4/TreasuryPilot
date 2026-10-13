@@ -50,7 +50,7 @@ Prometheus series: `tp_queue_depth{queue}`, `tp_rpc_errors_total{provider}`, `tp
 
 ## 7. Flows
 
-Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context; Celery headers carry them; the signer receives them in a header. Traces exported via OTLP to the collector (compose service, console exporter locally).
+Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context; Celery headers carry them; the signer receives them in a header. Wire names: HTTP `x-tp-correlation-id`, `x-tp-org-id`, `x-tp-request-id`, `x-tp-plan-id`, `x-tp-operation-id` (the public api trusts only the correlation id and echoes it on every response; the internal signer trusts all five); Celery `x_<id>` headers (`correlation_id` is reserved by Celery). Shared config: `treasurypilot_core.observability`. Traces exported via OTLP to the collector (compose service, console exporter locally).
 
 ## 8. Algorithms
 

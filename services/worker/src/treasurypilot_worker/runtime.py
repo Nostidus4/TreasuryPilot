@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
-from contextvars import ContextVar
 from typing import Any
 from uuid import uuid4
 
+import structlog
 from celery import Task
+from structlog.contextvars import bind_contextvars, get_contextvars
 
-CORRELATION_ID_HEADER = "x_correlation_id"
+from treasurypilot_core.observability import CONTEXT_IDS
+
+# Prefixed because Celery reserves ``correlation_id`` for the task id on every delivery.
+TASK_HEADERS = {key: f"x_{key}" for key in CONTEXT_IDS}
+CORRELATION_ID_HEADER = TASK_HEADERS["correlation_id"]
 MAX_TASK_RETRIES = 5
 
-_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+logger = structlog.get_logger(__name__)
 
 
 class RetryableTaskError(Exception):
@@ -23,7 +29,8 @@ class RetryableTaskError(Exception):
 def current_correlation_id() -> str | None:
     """Return the correlation id bound to the task currently being executed."""
 
-    return _correlation_id.get()
+    correlation_id = get_contextvars().get("correlation_id")
+    return None if correlation_id is None else str(correlation_id)
 
 
 def make_idempotency_key(namespace: str, *identifiers: object) -> str:
@@ -68,22 +75,32 @@ class SafeTask(Task):
         kwargs: dict[str, Any] | None = None,
         **options: Any,
     ) -> Any:
-        """Publish a task with the current correlation id, or create one at the boundary."""
+        """Publish a task with the bound correlation ids, or a new correlation id at the boundary."""
 
         headers = dict(options.pop("headers", None) or {})
-        headers.setdefault(CORRELATION_ID_HEADER, current_correlation_id() or str(uuid4()))
+        bound = get_contextvars()
+        for key, header in TASK_HEADERS.items():
+            if bound.get(key):
+                headers.setdefault(header, str(bound[key]))
+        headers.setdefault(CORRELATION_ID_HEADER, str(uuid4()))
         return super().apply_async(args=args, kwargs=kwargs, headers=headers, **options)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        """Bind a delivery's correlation id for logs and child task publication."""
+        """Bind a delivery's correlation ids for logs and child task publication."""
 
         headers = getattr(self.request, "headers", None) or {}
-        correlation_id = str(headers.get(CORRELATION_ID_HEADER) or uuid4())
-        token = _correlation_id.set(correlation_id)
-        try:
-            return super().__call__(*args, **kwargs)
-        finally:
-            _correlation_id.reset(token)
+        ids = {
+            key: str(headers[header]) for key, header in TASK_HEADERS.items() if headers.get(header)
+        }
+        ids.setdefault("correlation_id", str(uuid4()))
+        # A fresh context copy so ids bound by this task never leak into the next
+        # task run on the same pool thread.
+        return contextvars.copy_context().run(self._run_bound, ids, args, kwargs)
+
+    def _run_bound(self, ids: dict[str, str], args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        bind_contextvars(**ids)
+        logger.info("task.started", task=self.name)
+        return super().__call__(*args, **kwargs)
 
     def idempotency_key(self, *identifiers: object) -> str:
         """Create a key namespaced to this task from durable entity ids only."""

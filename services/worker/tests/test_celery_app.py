@@ -1,9 +1,12 @@
+import json
 from uuid import UUID
 
 import pytest
 from celery import Task
 from celery.contrib.testing.worker import start_worker
+from structlog.contextvars import bound_contextvars
 
+from treasurypilot_core.observability import configure_logging
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.runtime import (
     CORRELATION_ID_HEADER,
@@ -177,3 +180,39 @@ def test_real_delivery_preserves_parent_correlation_id_header() -> None:
             broker_url=original_broker_url,
             result_backend=original_result_backend,
         )
+
+
+def test_real_delivery_logs_publisher_ids(capsys: pytest.CaptureFixture[str]) -> None:
+    """Ids bound where a task is published (e.g. an api request) reach the worker's logs."""
+
+    configure_logging("worker")
+    original_broker_url = app.conf.broker_url
+    original_result_backend = app.conf.result_backend
+    app.conf.update(broker_url="memory://", result_backend="cache+memory://")
+
+    @app.task(base=SafeTask, name="test.e2e-log-ids", ignore_result=False)
+    def log_ids() -> None:
+        return None
+
+    ids = {
+        "correlation_id": "corr-42",
+        "org_id": "org-1",
+        "request_id": "req-2",
+        "plan_id": "plan-3",
+        "operation_id": "op-4",
+    }
+    try:
+        with start_worker(app, perform_ping_check=False):
+            with bound_contextvars(**ids):
+                result = log_ids.apply_async()
+            result.get(timeout=10)
+    finally:
+        app.tasks.pop(log_ids.name, None)
+        app.conf.update(broker_url=original_broker_url, result_backend=original_result_backend)
+
+    lines = [json.loads(line) for line in capsys.readouterr().err.splitlines() if line]
+    started = [line for line in lines if line.get("event") == "task.started"]
+    assert started == [started[0]]
+    assert started[0]["service"] == "worker"
+    assert started[0]["task"] == "test.e2e-log-ids"
+    assert {key: started[0][key] for key in ids} == ids

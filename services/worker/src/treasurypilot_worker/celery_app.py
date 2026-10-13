@@ -1,8 +1,18 @@
+from typing import Any
+
 from celery import Celery
+from celery.signals import setup_logging
 from kombu import Exchange, Queue
 
+from treasurypilot_core.observability import configure_logging
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.runtime import SafeTask
+
+
+@setup_logging.connect
+def _configure_worker_logging(**_kwargs: Any) -> None:
+    # Connecting this signal also stops Celery from replacing the root logger.
+    configure_logging("worker")
 
 
 def create_celery_app() -> Celery:

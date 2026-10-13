@@ -2,12 +2,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from structlog.contextvars import bind_contextvars
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import Settings, get_settings
@@ -38,10 +39,34 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.observability import (
+    CONTEXT_HEADERS,
+    CorrelationMiddleware,
+    configure_logging,
+)
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
 # cookies. Only ever used when TP_ENVIRONMENT=local.
 LOCAL_SESSION_SECRET = b"treasurypilot-local-development-only-session-secret"
+
+
+# Route path parameters that name a correlation id bound into every log line.
+_PATH_CONTEXT_IDS = {
+    "organization_id": "org_id",
+    "request_id": "request_id",
+    "plan_id": "plan_id",
+    "operation_id": "operation_id",
+}
+
+
+async def _bind_path_ids(request: Request) -> None:
+    bind_contextvars(
+        **{
+            key: str(value)
+            for name, key in _PATH_CONTEXT_IDS.items()
+            if (value := request.path_params.get(name)) is not None
+        }
+    )
 
 
 class HealthResponse(BaseModel):
@@ -146,6 +171,8 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    local = settings.environment.casefold() == "local"
+    configure_logging("api", "DEBUG" if local else "INFO")
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
@@ -188,6 +215,7 @@ def create_app(
         docs_url="/docs",
         openapi_url="/openapi.json",
         lifespan=lifespan,
+        dependencies=[Depends(_bind_path_ids)],
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
@@ -198,7 +226,10 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[CONTEXT_HEADERS["correlation_id"]],
     )
+    # Added last so it wraps CORS and every response carries the correlation id.
+    app.add_middleware(CorrelationMiddleware)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     @app.get("/v1/health", response_model=HealthResponse, tags=["system"])
