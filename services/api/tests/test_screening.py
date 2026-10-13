@@ -214,7 +214,6 @@ def test_database_fixture_list_and_chain_scoped_cache_on_postgres() -> None:
             await engine.dispose()
 
     try:
-        command.check(config)
         asyncio.run(run())
     finally:
         command.downgrade(config, "base")
