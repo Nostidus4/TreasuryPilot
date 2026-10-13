@@ -3,6 +3,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_core.observability import LogFormat
+
 
 class Settings(BaseSettings):
     """Worker runtime settings. Queue-specific secrets stay outside this model."""
@@ -13,6 +15,8 @@ class Settings(BaseSettings):
     visibility_timeout_seconds: int = 3600
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
+    log_level: str = "INFO"
+    log_format: LogFormat = "json"
 
 
 @lru_cache

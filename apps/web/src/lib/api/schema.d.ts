@@ -106,10 +106,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Organization */
+    post: operations['create_organization_v1_orgs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization */
+    get: operations['get_organization_v1_orgs__organization_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Organization Settings */
+    patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** CreateOrganizationRequest */
+    CreateOrganizationRequest: {
+      /** Country */
+      country?: string | null;
+      /**
+       * Displaytz
+       * @default UTC
+       */
+      displayTz: string;
+      /** Legalname */
+      legalName?: string | null;
+      /** Name */
+      name: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -153,6 +218,58 @@ export interface components {
       roles: string[];
       /** Status */
       status: string;
+    };
+    /** OrganizationChecklist */
+    OrganizationChecklist: {
+      /** Membercount */
+      memberCount: number;
+      /** Moduleenabled */
+      moduleEnabled: boolean;
+      /** Treasurycreated */
+      treasuryCreated: boolean;
+      /** Walletlinked */
+      walletLinked: boolean;
+    };
+    /** OrganizationDetailsResponse */
+    OrganizationDetailsResponse: {
+      checklist: components['schemas']['OrganizationChecklist'];
+      org: components['schemas']['OrganizationView'];
+    };
+    /** OrganizationResponse */
+    OrganizationResponse: {
+      org: components['schemas']['OrganizationView'];
+    };
+    /** OrganizationSettingsRequest */
+    OrganizationSettingsRequest: {
+      /** Automatch */
+      autoMatch?: boolean | null;
+      /** Solomode */
+      soloMode?: boolean | null;
+    };
+    /** OrganizationView */
+    OrganizationView: {
+      /** Automatch */
+      autoMatch: boolean;
+      /** Country */
+      country: string | null;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Displaytz */
+      displayTz: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Legalname */
+      legalName: string | null;
+      /** Name */
+      name: string;
+      /** Solomode */
+      soloMode: boolean;
     };
     /** UserView */
     UserView: {
@@ -353,6 +470,105 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  create_organization_v1_orgs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateOrganizationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_organization_v1_orgs__organization_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_organization_settings_v1_orgs__organization_id__settings_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OrganizationSettingsRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
