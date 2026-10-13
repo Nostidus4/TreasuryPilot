@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
@@ -53,6 +55,9 @@ def _request(**update: Any) -> RequestView:
         "paying_wallet": O1,
         "payee": PAYEE,
         "amount": BaseUnits(1_500),
+        "early_amount": BaseUnits(0),
+        "early_pay_by": 0,
+        "deadline": NOW + 86_400,
     }
     return RequestView.model_validate(fields | update)
 
@@ -67,9 +72,9 @@ def _typed(request: RequestView, **update: Any) -> dict[str, Any]:
         "asset": ASSET,
         "payee": request.payee,
         "amount": request.amount,
-        "earlyAmount": 0,
-        "earlyPayBy": 0,
-        "deadline": NOW + 86_400,
+        "earlyAmount": request.early_amount,
+        "earlyPayBy": request.early_pay_by,
+        "deadline": request.deadline,
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": NOW + 14 * 86_400,
     } | update
@@ -374,3 +379,131 @@ def test_worked_examples_8_5(
     assert _failing(checks) == codes
     assert aggregate(codes) == ("BLOCK", codes[0])
     assert bool(_skipped(checks)) is skips_steps
+
+
+@pytest.mark.parametrize(
+    "update",
+    [{"early_amount": BaseUnits(1_400)}, {"early_pay_by": NOW}, {"deadline": NOW + 1}],
+    ids=["early-amount", "early-pay-by", "deadline"],
+)
+def test_changed_early_terms_make_the_approval_stale(update: dict[str, Any]) -> None:
+    assert _failing(authorization_checks(_plan(), _ctx(request=_request(**update)))) == [
+        C.APPROVAL_STALE
+    ]
+
+
+EARLY = json.loads(
+    (
+        Path(__file__).resolve().parents[3]
+        / "contracts"
+        / "test"
+        / "vectors"
+        / "payment-approval-early.json"
+    ).read_text()
+)
+
+
+def _early_ctx(now: int) -> tuple[ValidationContext, Callable[[int], ExecutionPlan]]:
+    """The signed two-option approval from the contract vectors (ADR-019)."""
+    m = EARLY["message"]
+    request = _request(
+        request_id=bytes.fromhex(m["requestId"][2:]),
+        invoice_hash=bytes.fromhex(m["invoiceHash"][2:]),
+        fingerprint=bytes.fromhex(m["fingerprint"][2:]),
+        terms_hash=bytes.fromhex(m["termsHash"][2:]),
+        paying_wallet=m["payingWallet"],
+        payee=m["payee"],
+        amount=BaseUnits(int(m["amount"])),
+        early_amount=BaseUnits(int(m["earlyAmount"])),
+        early_pay_by=m["earlyPayBy"],
+        deadline=m["deadline"],
+    )
+    approval = _approval(
+        m,
+        signature=bytes.fromhex(EARLY["signature"][2:]),
+        signer=EARLY["signer"],
+    )
+    snapshot = _snapshot(
+        chain_id=EARLY["domain"]["chainId"],
+        treasury=m["treasury"],
+        asset=m["asset"],
+        read_at=now - 5,
+        approvers=[EARLY["signer"]],
+        payees={m["payee"]: PayeeView(active=True, active_from=0)},
+        mandate=_mandate(valid_from=0),
+    )
+    ctx = _ctx(now=now, snapshot=snapshot, request=request, approval=approval)
+
+    def plan(pay: int) -> ExecutionPlan:
+        step = PlanStep(
+            seq=0,
+            step_id=b"\x0b" * 32,
+            action=Action.PAY,
+            from_wallet=m["payingWallet"],
+            to=m["payee"],
+            asset=m["asset"],
+            amount=BaseUnits(pay),
+        )
+        return _plan().model_copy(
+            update={
+                "request_id": request.request_id,
+                "treasury": m["treasury"],
+                "chain_id": EARLY["domain"]["chainId"],
+                "steps": [step],
+            }
+        )
+
+    return ctx, plan
+
+
+def test_two_option_approval_pays_the_early_amount_until_early_pay_by() -> None:
+    pay_by = EARLY["message"]["earlyPayBy"]
+    early, standard = int(EARLY["message"]["earlyAmount"]), int(EARLY["message"]["amount"])
+
+    ctx, plan = _early_ctx(now=pay_by)
+    assert _failing(authorization_checks(plan(early), ctx)) == []
+    assert _failing(authorization_checks(plan(standard), ctx)) == [C.PLAN_MALFORMED]
+
+    ctx, plan = _early_ctx(now=pay_by + 1)
+    assert _failing(authorization_checks(plan(standard), ctx)) == []
+    assert _failing(authorization_checks(plan(early), ctx)) == [C.PLAN_MALFORMED]
+
+
+def _withdraw_plan(to: str = SAFE_T) -> ExecutionPlan:
+    refill, pay = _plan(refill=100).steps
+    withdraw = PlanStep(
+        seq=0,
+        step_id=b"\x0c" * 32,
+        action=Action.WITHDRAW,
+        from_wallet="0x" + "aa" * 20,  # lending pool
+        to=to,
+        asset=ASSET,
+        amount=BaseUnits(60),
+    )
+    steps = [withdraw, refill.model_copy(update={"seq": 1}), pay.model_copy(update={"seq": 2})]
+    return _plan().model_copy(update={"steps": steps})
+
+
+def test_withdraw_before_refill_is_a_valid_plan() -> None:
+    assert _failing(authorization_checks(_withdraw_plan(), _ctx())) == []
+    assert C.PLAN_MALFORMED in _failing(authorization_checks(_withdraw_plan(to=O1), _ctx()))
+    # A WITHDRAW without the REFILL it funds is not a planner shape.
+    no_refill = _withdraw_plan().model_copy(
+        update={
+            "steps": [_withdraw_plan().steps[0], _plan().steps[0].model_copy(update={"seq": 1})]
+        }
+    )
+    assert C.PLAN_MALFORMED in _failing(authorization_checks(no_refill, _ctx()))
+
+
+def test_an_unknown_step_seq_is_plan_malformed() -> None:
+    assert _failing(authorization_checks(_plan(), _ctx(), seq=7)) == [C.PLAN_MALFORMED]
+
+
+def test_unparseable_input_fails_with_data_missing() -> None:
+    naive = _ctx(flags=[_flag(datetime(2026, 1, 1))])  # noqa: DTZ001 - the bad input under test
+    signed = _approval(_typed(_request()))
+    bad_amount = _ctx(approval=signed.model_copy(update={"typed": {**signed.typed, "amount": "x"}}))
+
+    assert _failing(authorization_checks(_plan(), naive)) == [C.DATA_MISSING]
+    assert C.DATA_MISSING in _failing(authorization_checks(_plan(), bad_amount))

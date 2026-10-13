@@ -51,14 +51,14 @@ It is the second of three checking layers:
 ### 4.1 Python (frozen Pydantic)
 
 ```python
-class Action(StrEnum): REFILL = "REFILL"; PAY = "PAY"; SWAP = "SWAP"   # SWAP is P2
+class Action(StrEnum): REFILL = "REFILL"; PAY = "PAY"; SWAP = "SWAP"; WITHDRAW = "WITHDRAW"   # SWAP is P2
 
 class PlanStep(BaseModel):
     seq: int                      # 0, 1, …
     step_id: bytes32              # deterministic, §8.4
     action: Action
     from_wallet: Address
-    to: Address                   # payingWallet for REFILL, payee for PAY
+    to: Address                   # payingWallet for REFILL, payee for PAY, Safe T for WITHDRAW
     asset: Address
     amount: BaseUnits
 
@@ -89,7 +89,7 @@ class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10
                                    # mandate (status, version, window, limits, executor), approver set,
                                    # payee statuses, usedOn counters, requestPaid/stepUsed/fingerprintPaid,
                                    # refilledFor, exception for this request, duplicateAllowedFor
-    request: RequestView           # status, amount, payee, payingWallet, fingerprint, invoiceHash, termsHash, due day
+    request: RequestView           # status, amount, earlyAmount, earlyPayBy, deadline, payee, payingWallet, fingerprint, invoiceHash, termsHash
     approval: ApprovalView | None
     flags: list[FlagView]
     coverage: Literal["COMPLETE", "PARTIAL_ACK", "PARTIAL", "NONE"]
@@ -202,7 +202,7 @@ The table is generated from `treasurypilot_core.policy.REASON_CODES` (POL-001); 
 | 3 | Approval | `APPROVAL_INVALID` | B | `ApprovalInvalid()` | BR-004 |  |
 | 3 | Approval | `APPROVAL_EXPIRED` | B | `ApprovalExpired()` | BR-003 |  |
 | 3 | Approval | `NOT_IN_APPROVER_SET` | B | `NotApprover()` | BR-001, OQ-08 |  |
-| 3 | Approval | `APPROVAL_STALE` | B | — | BR-002 | invoiceHash/termsHash/amount/payee differ from the current request |
+| 3 | Approval | `APPROVAL_STALE` | B | — | BR-002 | invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/payee differ from the current request |
 | 3 | Approval | `MAKER_CHECKER` | B | — | BR-005 |  |
 | 3 | Approval | `FLAG_UNACKNOWLEDGED` | B | — | BR-066, FR-313 |  |
 | 3 | Approval | `SCREENING_HIT` | B | — | BR-085 |  |
@@ -234,7 +234,7 @@ The table is generated from `treasurypilot_core.policy.REASON_CODES` (POL-001); 
 | 8 | Liquidity | `INSUFFICIENT_A_TOKEN` | B | `InsufficientAToken()` | ADR-019 |  |
 | 8 | Liquidity | `BORROW_NOT_AUTHORIZED` | B | `BorrowNotAuthorized()`, `AuthorizationExpired()` | ADR-019 | P2 |
 | 8 | Liquidity | `HEALTH_FACTOR_TOO_LOW` | B | `HealthFactorTooLow()` | ADR-019 | P2 |
-| 9 | Plan | `PLAN_MALFORMED` | B | — | BR-056 | wrong step order, >1 PAY, amount ≠ approval, refill not for this request |
+| 9 | Plan | `PLAN_MALFORMED` | B | — | BR-056 | wrong step order, >1 PAY, amount ≠ approval option, refill/withdraw not for this request |
 | 9 | Plan | `AI_PLAN_REJECTED` | B | — | BR-056 |  |
 | 9 | Plan | `AI_UNAVAILABLE` | B | — | BR-055 |  |
 | 10 | Simulation | `SIMULATION_REVERTED` | B | — | BR-067 | every revert; known errors also add their own code |
@@ -299,13 +299,13 @@ sequenceDiagram
 
 **Request/approval (PLAN and PRE_STEP):** request status `Approved`/`Scheduled`/`Paying` → approval present → typed fields equal the current request (`APPROVAL_STALE`) → signature recovers / ERC-1271 → signer is in the **current** approver set (OQ-08) → `now ≤ expiry` → maker-checker (creator and last editor ≠ approving user, unless solo mode) → every HIGH flag raised **before** the approval is in `acknowledged_flag_ids`, and no HIGH flag was raised **after** it (M08-D4; a new HIGH flag needs re-approval) → screening.
 
-**Plan shape (PLAN):** steps sorted by `seq`; at most one REFILL, exactly one PAY, PAY last; `PAY.amount == approval.amount`, `PAY.from == approval.payingWallet`, `PAY.to == approval.payee`; `REFILL.to == approval.payingWallet`, `REFILL.from == safeT`; each `stepId` equals §8.4.
+**Plan shape (PLAN):** steps sorted by `seq`; actions are `[PAY]`, `[REFILL, PAY]` or `[WITHDRAW, REFILL, PAY]` (financial-engine §15); `PAY.amount == approval.earlyAmount` when `earlyAmount > 0` and `now ≤ earlyPayBy`, else `approval.amount` (ADR-019, as the module's `pay`); `PAY.from == approval.payingWallet`, `PAY.to == approval.payee`; `REFILL.to == approval.payingWallet`, `REFILL.from == safeT`; `WITHDRAW.to == safeT`; each `stepId` equals §8.4. At PRE_STEP a `seq` not in the plan is `PLAN_MALFORMED`.
 
 **REFILL** mirrors M04 §6.4 refill checks 1–9; **PAY** mirrors pay checks 1–9. At stage PLAN the PAY step is checked against the state *projected* after the REFILL (balance + refill amount, counters + refill).
 
 **Deadline warning:** confirmation expected after the due day → `DEADLINE_MISSED`; after the discount day → `DISCOUNT_MISSED`. Decision unchanged (M08-D7).
 
-All checks run (no short-circuit after the gates), so the review item lists every problem at once. Exception: if a gate fails, step checks are skipped and marked `skipped` (their inputs may be untrustworthy). Without an approval, only `NOT_APPROVED` is reported and the approval checks are marked `skipped`.
+All checks run (no short-circuit after the gates), so the review item lists every problem at once. Exception: if a gate fails, step checks are skipped and marked `skipped` (their inputs may be untrustworthy). Without an approval, only `NOT_APPROVED` is reported and the approval checks are marked `skipped`. A check whose input cannot be parsed (naive datetime, non-numeric amount, missing field) fails with `DATA_MISSING`.
 
 ### 8.2 Aggregation
 

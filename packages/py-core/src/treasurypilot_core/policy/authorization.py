@@ -128,6 +128,9 @@ def _approval_matches_request(i: _Inputs) -> bool:
         and _same(t["payingWallet"], r.paying_wallet)
         and _same(t["payee"], r.payee)
         and int(t["amount"]) == r.amount
+        and int(t["earlyAmount"]) == r.early_amount
+        and int(t["earlyPayBy"]) == r.early_pay_by
+        and int(t["deadline"]) == r.deadline
     )
 
 
@@ -190,6 +193,13 @@ _PAY_RULES: list[_Rule] = [
 ]
 
 
+_PLAN_SHAPES = (
+    [Action.PAY],
+    [Action.REFILL, Action.PAY],
+    [Action.WITHDRAW, Action.REFILL, Action.PAY],
+)
+
+
 def _plan_well_formed(i: _Inputs) -> bool:
     """§8.1 plan shape. Request fields stand in for the approval's (APPROVAL_STALE covers drift).
 
@@ -199,26 +209,39 @@ def _plan_well_formed(i: _Inputs) -> bool:
     actions = [s.action for s in steps]
     if (
         [s.seq for s in steps] != list(range(len(steps)))
-        or actions not in ([Action.PAY], [Action.REFILL, Action.PAY])
+        or actions not in _PLAN_SHAPES
         or len({s.step_id for s in steps}) != len(steps)
         or i.plan.request_id != r.request_id
     ):
         return False
-    *refill, pay = steps
+    # Same choice as the module's pay(): the early option while it is open (ADR-019).
+    early = r.early_amount > 0 and i.ctx.now <= r.early_pay_by
+    by_action = {s.action: s for s in steps}
+    pay, refill, withdraw = (by_action.get(a) for a in (Action.PAY, Action.REFILL, Action.WITHDRAW))
+    assert pay is not None
     return (
-        pay.amount == r.amount
+        pay.amount == (r.early_amount if early else r.amount)
         and _same(pay.from_wallet, r.paying_wallet)
         and _same(pay.to, r.payee)
-        and all(_same(s.to, r.paying_wallet) and _same(s.from_wallet, snap.safe_t) for s in refill)
+        and (
+            refill is None
+            or (_same(refill.to, r.paying_wallet) and _same(refill.from_wallet, snap.safe_t))
+        )
+        and (withdraw is None or _same(withdraw.to, snap.safe_t))
     )
 
 
 _PLAN_RULES: list[_Rule] = [("plan_shape", C.PLAN_MALFORMED, _plan_well_formed)]
+_STEP_RULES: list[_Rule] = [("step_exists", C.PLAN_MALFORMED, lambda i: len(i.steps) == 1)]
 
 
 def _run(rule: _Rule, inputs: _Inputs) -> Check:
     name, code, passes = rule
-    ok = passes(inputs)
+    try:
+        ok = passes(inputs)
+    except (LookupError, TypeError, ValueError):
+        # Unparseable input (naive datetime, non-numeric amount, missing key) fails closed.
+        ok, code = False, C.DATA_MISSING
     return Check(name=name, passed=ok, code=None if ok else code, expected=None, observed=None)
 
 
@@ -238,11 +261,13 @@ def authorization_checks(
     Pass ``erc1271`` exactly when the approval signer has code (see ``verify_signature``).
     Every check runs; a failed gate skips the rest, and a missing approval skips its checks.
     """
-    steps = list(plan.steps) if seq is None else [{s.seq: s for s in plan.steps}[seq]]
+    steps = list(plan.steps) if seq is None else [s for s in plan.steps if s.seq == seq]
     inputs = _Inputs(plan, steps, ctx, erc1271)
 
     gates = [_run(rule, inputs) for rule in _GATES]
     rest = _REQUEST_RULES + _APPROVAL_RULES
+    if seq is not None:
+        rest = rest + _STEP_RULES
     if any(s.action == Action.PAY for s in steps):
         rest = rest + _PAY_RULES
     if seq is None:

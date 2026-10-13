@@ -35,6 +35,7 @@ class Action(StrEnum):
     REFILL = "REFILL"
     PAY = "PAY"
     SWAP = "SWAP"  # P2
+    WITHDRAW = "WITHDRAW"  # pool → Safe T ahead of a REFILL (financial-engine §15)
 
 
 class PlanStep(_HexModel):
@@ -42,7 +43,7 @@ class PlanStep(_HexModel):
     step_id: Bytes32
     action: Action
     from_wallet: Address
-    to: Address  # payingWallet for REFILL, payee for PAY
+    to: Address  # payingWallet for REFILL, payee for PAY, Safe T for WITHDRAW
     asset: Address
     amount: BaseUnits
 
@@ -91,6 +92,9 @@ class RequestView(_HexModel):
     paying_wallet: Address
     payee: Address
     amount: BaseUnits
+    early_amount: BaseUnits  # 0 = no early option (ADR-019)
+    early_pay_by: NonNegativeInt
+    deadline: NonNegativeInt
 
 
 class ApprovalView(FrozenModel):
