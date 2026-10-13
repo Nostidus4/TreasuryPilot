@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Response
 from pydantic import Field
 
 from treasurypilot_api.identity.api import ApiModel, _authenticated
-from treasurypilot_api.identity.auth import auth_unavailable, utc_now
+from treasurypilot_api.identity.auth import SessionAccess, auth_unavailable, utc_now
 from treasurypilot_api.identity.mfa import MfaService
 
 
@@ -35,6 +35,13 @@ def _service(request: Request) -> MfaService:
     if not isinstance(service, MfaService):
         raise auth_unavailable("Second-factor storage is not configured.")
     return service
+
+
+async def require_recent_mfa(request: Request) -> SessionAccess:
+    """FastAPI dependency for future sensitive mutation handlers."""
+    access = await _authenticated(request, require_csrf=True)
+    await _service(request).require_fresh_step_up(access.user.id, access.session_id, utc_now())
+    return access
 
 
 @router.post("/totp/enrollment", response_model=TotpEnrollment)

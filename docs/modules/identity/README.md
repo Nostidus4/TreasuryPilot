@@ -109,8 +109,8 @@ secret requires an MFA seed migration or reenrollment plan. Verification permits
 one adjacent 30-second time step for clock drift and persists the last accepted
 counter to reject replay. Five attempts per 15 minutes per account are allowed;
 the limiter fails closed. A successful TOTP or recovery verification marks only
-the current session as stepped up for five minutes. `MfaService.require_fresh_step_up`
-is the guard for sensitive handlers.
+the current session as stepped up for five minutes. The
+`require_recent_mfa` FastAPI dependency is the guard for sensitive handlers.
 
 IDN-L01 remains open: WebAuthn enrollment and attaching that guard to approve,
 exception and mandate edit handlers are still required. Those handlers do not

@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from alembic import command
+from fastapi import Depends
 from services.api.tests.test_auth import MutableClock, make_harness
 from services.api.tests.test_auth_repository import _alembic_config
 
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.mfa import MfaService, matching_counter, totp_at
+from treasurypilot_api.identity.mfa_api import require_recent_mfa
 from treasurypilot_api.identity.models import Session, User
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter
 
@@ -34,6 +37,17 @@ class _MfaStub(MfaService):
     ) -> tuple[str, str]:
         return "SECRET", "otpauth://totp/test"
 
+    async def require_fresh_step_up(
+        self, user_id: uuid.UUID, session_id: uuid.UUID, now: datetime
+    ) -> None:
+        if not self.fresh:
+            raise AuthFailure(
+                status=403,
+                code="MFA_STEP_UP_REQUIRED",
+                title="MFA required",
+                detail="Complete a fresh challenge.",
+            )
+
 
 def test_mfa_enrollment_requires_session_and_csrf() -> None:
     with make_harness() as harness:
@@ -49,6 +63,38 @@ def test_mfa_enrollment_requires_session_and_csrf() -> None:
         assert enrolled.status_code == 200
         assert enrolled.headers["cache-control"] == "no-store"
         assert enrolled.json()["secret"] == "SECRET"
+
+
+def test_sensitive_dependency_rejects_unstepped_session() -> None:
+    with make_harness() as harness:
+        stub = _MfaStub.__new__(_MfaStub)
+        stub.fresh = False
+        harness.client.app.state.mfa_service = stub
+
+        @harness.client.app.post("/test/sensitive")
+        async def sensitive(access: object = Depends(require_recent_mfa)) -> dict[str, bool]:
+            return {"ok": True}
+
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        assert csrf is not None
+        denied = harness.client.post("/test/sensitive", headers={"X-CSRF-Token": csrf})
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "MFA_STEP_UP_REQUIRED"
+        stub.fresh = True
+        allowed = harness.client.post("/test/sensitive", headers={"X-CSRF-Token": csrf})
+        assert allowed.status_code == 200
+
+
+def test_mfa_migration_compiles_offline() -> None:
+    config = _alembic_config("postgresql+asyncpg://offline/offline")
+    output = io.StringIO()
+    config.output_buffer = output
+    command.upgrade(config, "head", sql=True)
+    sql = output.getvalue()
+    assert "CREATE TABLE mfa_totp" in sql
+    assert "CREATE TABLE mfa_recovery_codes" in sql
+    assert "ADD COLUMN step_up_at" in sql
 
 
 async def _exercise_mfa(database_url: str) -> None:

@@ -125,6 +125,9 @@ class MfaTotp(Base):
 
 class MfaRecoveryCode(Base):
     __tablename__ = "mfa_recovery_codes"
+    __table_args__ = (
+        CheckConstraint("octet_length(code_hash) = 32", name="ck_mfa_recovery_codes_hash_length"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
