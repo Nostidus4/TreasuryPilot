@@ -1,5 +1,6 @@
 """Deterministic, I/O-free financial calculations."""
 
+from .fiat_fx import FiatPaymentBlocked, propose_fiat_payment
 from .forecast import forecast
 from .liquidity import (
     available,
@@ -19,6 +20,7 @@ from .scheduler import schedule_edf
 
 __all__ = [
     "InvalidTerms",
+    "FiatPaymentBlocked",
     "amount_due",
     "available",
     "cap",
@@ -30,6 +32,7 @@ __all__ = [
     "pay_amount",
     "preferred_refill",
     "propose_borrow",
+    "propose_fiat_payment",
     "refill_bound",
     "request_value",
     "shortage",
