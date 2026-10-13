@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import defer
 
 from treasurypilot_api.identity.scoped_repository import OrganizationScopedRepository
 from treasurypilot_api.treasury.models import Treasury
@@ -67,3 +68,19 @@ def test_organization_scoped_repository_always_filters_by_org_id() -> None:
         organization_id
         in session_factory.statements[1].compile(dialect=postgresql.dialect()).params.values()
     )
+
+
+def test_organization_scoped_repository_never_lazy_loads_relationships() -> None:
+    session_factory = _CapturingSessionFactory()
+    repository = OrganizationScopedRepository(session_factory, Treasury)
+    eager = defer(Treasury.module_address)
+
+    import asyncio
+
+    asyncio.run(
+        repository.get_by_id(organization_id=uuid.uuid4(), record_id=uuid.uuid4(), options=(eager,))
+    )
+
+    options = session_factory.statements[0]._with_options
+    assert options[0] is eager
+    assert options[-1].strategy == (("lazy", "raise"),)
