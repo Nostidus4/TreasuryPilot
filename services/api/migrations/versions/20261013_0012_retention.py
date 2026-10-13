@@ -1,7 +1,7 @@
 """Add configurable invitation retention and hash-only deletion receipts.
 
 Revision ID: 20261013_0012
-Revises: 20261013_0008
+Revises: 20261014_0010
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261013_0012"
-down_revision: str | None = "20261013_0008"
+down_revision: str | None = "20261014_0010"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
