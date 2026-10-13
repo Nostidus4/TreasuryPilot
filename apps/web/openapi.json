@@ -1315,7 +1315,8 @@
           }
         },
         "summary": "List Review Items",
-        "tags": ["review"]
+        "tags": ["review"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/review-items/{item_id}": {
@@ -1366,7 +1367,8 @@
           }
         },
         "summary": "Get Review Item",
-        "tags": ["review"]
+        "tags": ["review"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/review-items/{item_id}/actions": {
@@ -1427,7 +1429,8 @@
           }
         },
         "summary": "Act On Review Item",
-        "tags": ["review"]
+        "tags": ["review"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/settings": {

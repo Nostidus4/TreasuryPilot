@@ -289,7 +289,7 @@ def _failure(*, status: int, code: str, title: str, detail: str) -> AuthFailure:
 router = APIRouter(prefix="/v1/orgs/{organization_id}/review-items", tags=["review"])
 
 
-@router.get("", response_model=ReviewItemList)
+@router.get("", response_model=ReviewItemList, openapi_extra={"x-organization-scoped": True})
 async def list_review_items(
     request: Request,
     status: ReviewStatus | None = None,
@@ -314,7 +314,11 @@ async def list_review_items(
     return ReviewItemList(items=[ReviewItemView.from_item(item) for item in items])
 
 
-@router.get("/{item_id}", response_model=ReviewItemResponse)
+@router.get(
+    "/{item_id}",
+    response_model=ReviewItemResponse,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def get_review_item(
     item_id: uuid.UUID,
     request: Request,
@@ -335,7 +339,11 @@ async def get_review_item(
     return ReviewItemResponse(item=ReviewItemView.from_item(item))
 
 
-@router.post("/{item_id}/actions", response_model=ReviewItemResponse)
+@router.post(
+    "/{item_id}/actions",
+    response_model=ReviewItemResponse,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def act_on_review_item(
     item_id: uuid.UUID,
     payload: ReviewActionRequest,
