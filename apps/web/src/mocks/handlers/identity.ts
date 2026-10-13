@@ -97,7 +97,8 @@ export const identityHandlers = [
         fail(422, 'EMAIL_INVALID', 'Enter a valid work email address.');
       }
       if (email.startsWith('ratelimit')) {
-        // Matches the API: a 15-minute fixed window, Retry-After = seconds left.
+        // The API sends the seconds left in its 15-minute fixed window; the mock always
+        // reports the full window.
         fail(
           429,
           'RATE_LIMITED',

@@ -846,3 +846,29 @@ def test_retry_after_is_readable_cross_origin() -> None:
         )
         exposed = response.headers.get("Access-Control-Expose-Headers", "")
         assert "Retry-After" in exposed
+
+
+def test_retry_after_covers_the_longest_exceeded_limit() -> None:
+    with make_harness() as harness:
+        # Exhaust the per-IP limit (20) ten minutes before the per-email limit (5).
+        for index in range(15):
+            harness.client.post("/v1/auth/magic-link", json={"email": f"u{index}@example.com"})
+        harness.clock.advance(timedelta(minutes=10))
+        for _ in range(5):
+            harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+
+        limited = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == "900"  # the email window, not the IP's 300
+
+        harness.clock.advance(timedelta(seconds=900))
+        retried = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert retried.status_code == 202
+
+
+def test_unconfigured_auth_storage_sends_retry_after() -> None:
+    app = create_app(settings=Settings(environment="local"))
+    with TestClient(app, base_url="https://app.example.test") as client:
+        response = client.post("/v1/auth/magic-link/verify", json={"token": "x" * 43})
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"

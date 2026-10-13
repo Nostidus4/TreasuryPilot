@@ -63,3 +63,15 @@ def test_redis_limiter_counts_within_a_shared_expiring_window() -> None:
     assert [result.allowed for result in results] == [True, True, False]
     assert all(1 <= result.retry_after <= 900 for result in results)
     assert 0 < ttl <= 15 * 60
+
+
+def test_memory_limiter_never_reports_more_than_one_window() -> None:
+    clock = {"now": datetime(2026, 10, 12, tzinfo=UTC)}
+    limiter = MemoryRateLimiter(lambda: clock["now"])
+
+    async def run() -> RateLimitResult:
+        await limiter.hit("k", limit=1, window=timedelta(minutes=15))
+        clock["now"] -= timedelta(minutes=5)  # the clock moved backwards
+        return await limiter.hit("k", limit=1, window=timedelta(minutes=15))
+
+    assert asyncio.run(run()).retry_after == 900

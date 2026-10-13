@@ -72,7 +72,8 @@ class MemoryRateLimiter:
         if now - started >= window:
             started, count = now, 0
         self._windows[key] = (started, count + 1)
-        remaining = started + window - now
+        # Clamp: a clock that moved backwards must not report more than one window.
+        remaining = min(started + window - now, window)
         return RateLimitResult(
             count + 1 <= limit, _seconds_left(remaining.total_seconds() * 1000, window)
         )

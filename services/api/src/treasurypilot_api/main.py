@@ -22,6 +22,7 @@ from treasurypilot_api.identity.auth import (
     AuthService,
     MagicLinkSender,
     SessionTokenCodec,
+    auth_unavailable,
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
@@ -59,12 +60,7 @@ class HealthResponse(BaseModel):
 class _UnavailableAuthRepository:
     def __getattr__(self, name: str) -> object:
         async def unavailable(*args: object, **kwargs: object) -> None:
-            raise AuthFailure(
-                status=503,
-                code="AUTH_UNAVAILABLE",
-                title="Authentication unavailable",
-                detail="Authentication storage is not configured.",
-            )
+            raise auth_unavailable("Authentication storage is not configured.")
 
         return unavailable
 
