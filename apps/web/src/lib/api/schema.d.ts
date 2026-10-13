@@ -106,6 +106,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/mfa/step-up': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify Step Up */
+    post: operations['verify_step_up_v1_me_mfa_step_up_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/mfa/totp/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Confirm Totp Enrollment */
+    post: operations['confirm_totp_enrollment_v1_me_mfa_totp_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/mfa/totp/enrollment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Begin Totp Enrollment */
+    post: operations['begin_totp_enrollment_v1_me_mfa_totp_enrollment_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs': {
     parameters: {
       query?: never;
@@ -219,6 +270,11 @@ export interface components {
       /** Status */
       status: string;
     };
+    /** MfaCodeRequest */
+    MfaCodeRequest: {
+      /** Code */
+      code: string;
+    };
     /** OrganizationChecklist */
     OrganizationChecklist: {
       /** Membercount */
@@ -270,6 +326,26 @@ export interface components {
       name: string;
       /** Solomode */
       soloMode: boolean;
+    };
+    /** StepUpResponse */
+    StepUpResponse: {
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+    };
+    /** TotpConfirmation */
+    TotpConfirmation: {
+      /** Recoverycodes */
+      recoveryCodes: string[];
+    };
+    /** TotpEnrollment */
+    TotpEnrollment: {
+      /** Otpauthuri */
+      otpauthUri: string;
+      /** Secret */
+      secret: string;
     };
     /** UserView */
     UserView: {
@@ -470,6 +546,92 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  verify_step_up_v1_me_mfa_step_up_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MfaCodeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StepUpResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  confirm_totp_enrollment_v1_me_mfa_totp_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MfaCodeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TotpConfirmation'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  begin_totp_enrollment_v1_me_mfa_totp_enrollment_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TotpEnrollment'];
         };
       };
     };

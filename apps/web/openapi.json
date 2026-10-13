@@ -142,6 +142,19 @@
         "title": "MembershipView",
         "type": "object"
       },
+      "MfaCodeRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 24,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": ["code"],
+        "title": "MfaCodeRequest",
+        "type": "object"
+      },
       "OrganizationChecklist": {
         "properties": {
           "memberCount": {
@@ -283,6 +296,47 @@
           "createdAt"
         ],
         "title": "OrganizationView",
+        "type": "object"
+      },
+      "StepUpResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": ["expiresAt"],
+        "title": "StepUpResponse",
+        "type": "object"
+      },
+      "TotpConfirmation": {
+        "properties": {
+          "recoveryCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recoverycodes",
+            "type": "array"
+          }
+        },
+        "required": ["recoveryCodes"],
+        "title": "TotpConfirmation",
+        "type": "object"
+      },
+      "TotpEnrollment": {
+        "properties": {
+          "otpauthUri": {
+            "title": "Otpauthuri",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": ["secret", "otpauthUri"],
+        "title": "TotpEnrollment",
         "type": "object"
       },
       "UserView": {
@@ -547,6 +601,103 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/step-up": {
+      "post": {
+        "operationId": "verify_step_up_v1_me_mfa_step_up_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Step Up",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/totp/confirm": {
+      "post": {
+        "operationId": "confirm_totp_enrollment_v1_me_mfa_totp_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpConfirmation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Totp Enrollment",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/mfa/totp/enrollment": {
+      "post": {
+        "operationId": "begin_totp_enrollment_v1_me_mfa_totp_enrollment_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Begin Totp Enrollment",
         "tags": ["identity"]
       }
     },
