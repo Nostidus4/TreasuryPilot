@@ -183,6 +183,12 @@ class PaymentRequest(Base):
         ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         ForeignKeyConstraint(["last_edited_by"], ["users.id"], ondelete="SET NULL"),
         UniqueConstraint("id", "treasury_id", name="uq_payment_requests_id_treasury"),
+        UniqueConstraint("org_id", "idempotency_key", name="uq_payment_requests_idempotency_key"),
+        CheckConstraint(
+            "(idempotency_key IS NULL AND idempotency_payload_hash IS NULL) OR "
+            "(idempotency_key IS NOT NULL AND octet_length(idempotency_payload_hash) = 32)",
+            name="ck_payment_requests_idempotency_hash",
+        ),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
         Index(
@@ -250,6 +256,8 @@ class PaymentRequest(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    idempotency_payload_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
 
     __mapper_args__ = {"version_id_col": version}
 
