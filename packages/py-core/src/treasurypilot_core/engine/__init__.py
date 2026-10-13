@@ -1,5 +1,6 @@
 """Deterministic, I/O-free financial calculations."""
 
+from .forecast import forecast
 from .liquidity import (
     available,
     cap,
@@ -13,15 +14,17 @@ from .liquidity import (
     shortage,
     source_capacity,
 )
-from .payment_terms import InvalidTerms, pay_amount, request_value, validate_terms
+from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, validate_terms
 from .scheduler import schedule_edf
 
 __all__ = [
     "InvalidTerms",
+    "amount_due",
     "available",
     "cap",
     "decide_liquidity",
     "decide_refill",
+    "forecast",
     "funding_deficit",
     "liquidity_position",
     "pay_amount",
