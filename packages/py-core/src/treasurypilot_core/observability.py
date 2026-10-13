@@ -30,7 +30,7 @@ _handler: logging.Handler | None = None
 logger = structlog.get_logger("treasurypilot.http")
 
 
-def configure_logging(service: str, level: str = "INFO") -> None:
+def configure_logging(service: str, level: str | int = "INFO") -> None:
     """Render structlog and stdlib records as one redacted JSON line on stderr."""
 
     global _handler
@@ -69,6 +69,12 @@ def configure_logging(service: str, level: str = "INFO") -> None:
     root.addHandler(handler)
     root.setLevel(level)
     _handler = handler
+    # uvicorn installs its own plain-text handlers; route errors through ours and
+    # drop its access log, which the middleware's ``http.request`` line replaces.
+    for name in ("uvicorn", "uvicorn.error"):
+        logging.getLogger(name).handlers.clear()
+        logging.getLogger(name).propagate = True
+    logging.getLogger("uvicorn.access").disabled = True
 
 
 def context_headers() -> dict[str, str]:

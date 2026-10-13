@@ -10,9 +10,9 @@ from treasurypilot_worker.runtime import SafeTask
 
 
 @setup_logging.connect
-def _configure_worker_logging(**_kwargs: Any) -> None:
+def _configure_worker_logging(loglevel: str | int | None = None, **_kwargs: Any) -> None:
     # Connecting this signal also stops Celery from replacing the root logger.
-    configure_logging("worker")
+    configure_logging("worker", loglevel or "INFO")
 
 
 def create_celery_app() -> Celery:

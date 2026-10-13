@@ -41,6 +41,20 @@ def test_structlog_and_stdlib_records_render_as_redacted_json(
     assert "alice@example.com" not in stdlib["event"]
 
 
+def test_uvicorn_errors_render_as_json_and_access_log_is_dropped(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    logging.getLogger("uvicorn.error").addHandler(logging.StreamHandler())
+    configure_logging("api")
+
+    logging.getLogger("uvicorn.error").error("bind failed for token=abc")
+    logging.getLogger("uvicorn.access").info("GET /verify?token=abc")
+
+    (line,) = _lines(capsys)
+    assert line["logger"] == "uvicorn.error"
+    assert "abc" not in line["event"]
+
+
 def test_exception_tracebacks_are_redacted(capsys: pytest.CaptureFixture[str]) -> None:
     configure_logging("worker")
 

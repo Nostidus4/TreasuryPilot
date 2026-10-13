@@ -32,7 +32,7 @@ TreasuryPilot/
 │       └── tests/
 ├── packages/
 │   └── py-core/                     # pure domain: money, models, financial engine (M07), policy (M08), eip712
-│       ├── src/treasurypilot_core/{money,domain,engine,policy,eip712,fingerprint}
+│       ├── src/treasurypilot_core/{money,domain,engine,policy,eip712,fingerprint,privacy,observability}
 │       └── tests/                   # unit + hypothesis property tests + Domain §3.4 goldens
 ├── contracts/                       # Foundry (M04)
 │   ├── src/{TreasuryPilotModule.sol,interfaces/,test-assets/TestUSDC.sol,test-assets/TestRouter.sol}

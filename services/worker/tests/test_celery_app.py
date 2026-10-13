@@ -202,7 +202,7 @@ def test_real_delivery_logs_publisher_ids(capsys: pytest.CaptureFixture[str]) ->
         "operation_id": "op-4",
     }
     try:
-        with start_worker(app, perform_ping_check=False):
+        with start_worker(app, perform_ping_check=False, loglevel="INFO"):
             with bound_contextvars(**ids):
                 result = log_ids.apply_async()
             result.get(timeout=10)
