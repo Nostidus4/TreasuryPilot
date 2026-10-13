@@ -30,7 +30,7 @@ F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (
 
 ## 4. Data model
 
-`audit_log` (bigserial seq, per-org chain, no UPDATE/DELETE trigger), `evidence_bundles` (id, org_id, request_id or scenario_id, storage_key, sha256, schema_version, created_at).
+`audit_log` (bigserial seq, per-org chain, no UPDATE/DELETE trigger), `audit_heads` (one locked head per org), and `evidence_bundles` (id, org_id, request_id or scenario_id, storage_key, sha256, schema_version, created_at).
 
 ## 5. State
 
@@ -52,7 +52,7 @@ Service performs action → `audit.write(...)` inside the same DB transaction (r
 
 ## 8. Algorithms
 
-- **Chain head lock:** `SELECT … FROM audit_heads WHERE org_id = ? FOR UPDATE` then insert with `prev_hash = head.hash`; update head. Canonical JSON: sorted keys, no spaces, amounts as strings, timestamps ISO-8601 UTC.
+- **Chain head lock:** create the head row if needed, then `SELECT … FROM audit_heads WHERE org_id = ? FOR UPDATE`; insert with `prev_hash = head.last_hash` and update the head. The genesis hash is 32 zero bytes. The writer uses the caller's database transaction and flushes the append without committing. Canonical JSON uses sorted keys, no spaces, amounts as integer base-unit strings, and timestamps normalized to ISO-8601 UTC. Decimal values in audit data are serialized as strings.
 - **Evidence bundle v1 fields:** request (ids, vendor display, amounts, fingerprint, invoiceHash), approval (typed data, signer address, signature hash only), flags + acks, plan (planner source, plan hash, steps), validations (all stages), ai_calls (purpose, model, prompt version, output summary), attestation (typed data, signer), operations/transactions (hashes, blocks, fees), verifications, reconciliation, EAS UID, coverage labels, fixture labels (TEST asset/router), generated_at, app version. **No fabricated hashes**: a blocked request has no tx section (BR-095).
 - **Coverage labels:** every status DTO includes `coverage {level, missing[], snapshotBlock}`.
 
