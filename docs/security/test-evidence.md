@@ -6,12 +6,18 @@ only claim their on-chain boundaries. Foundry v1.8.5, solc 0.8.28, optimizer 200
 
 ## Local campaign (2026-10-12)
 
-`FOUNDRY_PROFILE=ci forge test -vv` passed 73 tests, including all 14 invariants:
+`FOUNDRY_PROFILE=ci forge test -vv` passed 86 tests, including all 16 invariants:
 10,000 runs, depth 32, 320,000 handler calls, zero unexpected reverts.
 Fuzz tests also ran 10,000 cases. The handler checks authority, current approval,
 payee cooling, budgets, floors, replay, exception scope, status, persistent counters,
 refill bound, cancellation, fixed-pool deltas, zero allowance and exact discount.
-It first executes successful PAY and REFILL, so those checks are not vacuous.
+It first executes successful PAY, REFILL and owner-authorized BORROW, plus a
+replayed step with a fresh request and an attempted reused borrow grant.
+The handler reuses historical successful stepIds and keeps independent owner
+grant/consumption records. Isolated step-guard and borrow-used-guard mutations
+are detected by I5 and I15; `tools/check_mutations.py` always restores exact source
+bytes and CI requires both failures. Revoke remains in the random campaign with
+reduced frequency so it does not immediately terminate most active sequences.
 `FOUNDRY_PROFILE=fork forge test` passed seven tests against Sepolia Aave V3.
 Four LINK cases use block 11,890,000; two USDC cases use block 8,000,000 and
 one USDC cap/rollback case uses 11,890,000. Supply, accrual, withdrawal, refill, payment,
@@ -32,12 +38,12 @@ code and verifies actual runtime hashes, identity and enablement before writing.
 Schema registration tests preserve the published manifest and write a scalar UID.
 The Sepolia path was broadcast twice to an owned LOCAL Anvil fork at 11,890,000
 with the Cancun EVM profile. It verified canonical Safe 1.4.1 runtime hashes,
-reused T/O1/O2/module and preserved mandate expiry. The owner mismatch check
+reused T/O1/module and preserved mandate expiry. The owner mismatch check
 failed before broadcasting; its nonce did not change. CI repeats this local fork
 deployment and also compares payee cooling across runs. No live Sepolia transaction
 was sent; this does not prove behavior under a later EVM gas schedule.
 
-The updated Python campaign passed 80 tests (core coverage 93%), including
+The updated Python campaign passed 87 tests (core coverage 93%), including
 attestation refusal before finality, canonical-block mismatch, unavailable
 finality, schema ABI mismatches and failed manifest publication. It handles the
 versioned JSON block envelope returned by Foundry v1.8.5. A separate local PAY
@@ -48,7 +54,9 @@ was checked against the keystore and the actual EAS record. A journal retry
 returned the existing UID with no additional signer nonce, and explicit UID
 recovery was read-only. Regression cases include wrong signer, timeout,
 duplicate retry, changed payload, concurrent lock and exact-record mismatches.
-Publisher tests reject drift in all seven reviewed Sepolia infrastructure fields.
+Publisher tests reject drift in all seven reviewed Sepolia infrastructure fields,
+reviewed decimals/wallet count and previously pinned aToken. Sepolia uses one
+operational wallet, Anvil two; the mined operational list must match exactly.
 This is local ABI/CLI evidence; it is
 not a public EASScan receipt.
 
@@ -57,6 +65,17 @@ Mutation experiment: replacing the inclusive early-payment predicate with
 the sequence to `pay(1667625102)`, seed
 `0x40462ea8f428947d290ab90b6b352e077e34020d9fb69a0d56e3082019aab7f7`.
 The mutation was restored before the successful 10,000-run campaign.
+
+The requirement matrix now includes negative refill per-request/daily caps and
+exact boundaries, exception payee/expiry/request/revocation, a signature prepared
+before UTC midnight, native-value/arbitrary-selector rejection and a real 1-of-2
+Guardian Safe pause path. Recorded logs assert canonical `BorrowExecuted` and
+factory topics/fields. See [contract-rule-test-mapping.md](contract-rule-test-mapping.md).
+SC-017 adds policy PlanAttestation vectors for two/zero stepIds and a large nonce
+under `TreasuryPilot Policy`; Foundry verifies struct/domain/digest/recovery and
+domain separation using a test-only encoder. The module gains no policy authority.
+CI stores `contracts-gas-report`, including revision, compiler/profile, Foundry
+version and the function gas table from `forge test --gas-report`.
 
 ## Source acceptance mapping
 

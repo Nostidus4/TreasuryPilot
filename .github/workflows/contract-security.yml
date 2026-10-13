@@ -72,8 +72,11 @@ jobs:
         with:
           version: v1.8.5
       - run: pnpm install --frozen-lockfile
-      - name: I1-I14 at 10,000 runs and 32 calls per run
+      - name: I1-I15 at 10,000 runs and 32 calls per run
         working-directory: contracts
         env:
           FOUNDRY_PROFILE: ci
         run: forge test --match-contract TreasuryInvariantTest -vv
+      - name: I5 and I15 must detect isolated step and borrow replay mutations
+        working-directory: contracts
+        run: python tools/check_mutations.py

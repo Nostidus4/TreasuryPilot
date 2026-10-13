@@ -30,6 +30,7 @@ def prediction_values() -> dict[str, object]:
         "aavePool": "0x" + "00" * 20,
         "aToken": "0x" + "00" * 20,
         "assetDecimals": 6,
+        "operationalWalletCount": 2,
         "demoOwner": "0x" + "ff" * 20,
         "easAttester": "0x" + "ee" * 20,
         "easSchemaUid": PAYMENT_RECEIPT_SCHEMA_UID,
@@ -46,7 +47,7 @@ def mock_deployment_rpc(
 ) -> None:
     def run_cast(arguments: list[str]) -> str:
         if arguments[0] == "chain-id":
-            return "31337"
+            return str(values["chainId"])
         if arguments[0] == "block-number":
             return "42"
         if arguments[0] == "code":
@@ -70,6 +71,9 @@ def mock_deployment_rpc(
             "getOwners()(address[])": [values["demoOwner"]],
             "isModuleEnabled(address)(bool)": True,
             "isOperational(address)(bool)": True,
+            "operationalList()(address[])": [values["safeO1"]]
+            if values["operationalWalletCount"] == 1
+            else [values["safeO1"], values["safeO2"]],
         }
         assert block == "42"
         return identity[signature]
@@ -520,6 +524,79 @@ def test_cast_rejects_missing_or_failed_block_objects(response: object) -> None:
     helpers = load_script("cast_helpers")
     with pytest.raises(ValueError, match="Cast returned"):
         helpers.json_object(json.dumps(response))
+
+
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [("assetDecimals", 18), ("operationalWalletCount", 2), ("aToken", "0x" + "bb" * 20)],
+)
+def test_reviewed_sepolia_metadata_mismatch_preserves_manifest(
+    field: str, bad_value: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = load_script("publish_manifest")
+    values = prediction_values()
+    values.update(
+        chainId=11155111,
+        operationalWalletCount=1,
+        safeO2="0x" + "00" * 20,
+        aavePool="0x" + "aa" * 20,
+        aToken="0x" + "cc" * 20,
+    )
+    reviewed = dict(values)
+    reviewed[field] = bad_value
+    manifest = tmp_path / "manifest.json"
+    original = json.dumps(reviewed)
+    manifest.write_text(original)
+    prediction = tmp_path / "prediction.json"
+    prediction.write_text(json.dumps(values))
+    mock_deployment_rpc(monkeypatch, publisher, values)
+    with pytest.raises(ValueError, match="reviewed Sepolia configuration"):
+        publisher.publish(prediction, manifest, "http://mock.invalid")
+    assert manifest.read_text() == original
+
+
+@pytest.mark.parametrize("mode", ["valid", "extra_wallet", "nonzero_o2", "bad_count"])
+def test_sepolia_single_wallet_profile(
+    mode: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = load_script("publish_manifest")
+    values = prediction_values()
+    values.update(chainId=11155111, operationalWalletCount=1, safeO2="0x" + "00" * 20)
+    mock_deployment_rpc(monkeypatch, publisher, values)
+    original_read = publisher.read_scalar
+
+    def read_scalar(contract: str, signature: str, *args: object) -> object:
+        if mode == "extra_wallet" and signature == "operationalList()(address[])":
+            return [values["safeO1"], "0x" + "dd" * 20]
+        return original_read(contract, signature, *args)
+
+    monkeypatch.setattr(publisher, "read_scalar", read_scalar)
+    if mode == "nonzero_o2":
+        values["safeO2"] = "0x" + "dd" * 20
+    if mode == "bad_count":
+        values["operationalWalletCount"] = 2
+    if mode == "valid":
+        publisher.verify_deployment(values, "http://mock.invalid", "42")
+    else:
+        with pytest.raises(ValueError, match="wallet count|wallet list|safeO2"):
+            publisher.verify_deployment(values, "http://mock.invalid", "42")
+
+
+def test_unset_wallets_are_published_as_null_not_zero() -> None:
+    publisher = load_script("publish_manifest")
+    published = publisher._unset_as_null(
+        {
+            "safeO1": "0x" + "ab" * 20,
+            "safeO2": "0x" + "00" * 20,
+            "safeO2CodeHash": "0x" + "00" * 32,
+            "operationalWalletCount": 1,
+        }
+    )
+
+    assert published["safeO2"] is None
+    assert published["safeO2CodeHash"] is None
+    assert published["safeO1"] == "0x" + "ab" * 20
+    assert published["operationalWalletCount"] == 1
 
 
 @pytest.mark.parametrize("status", [True, False, "0x0", 0, None])

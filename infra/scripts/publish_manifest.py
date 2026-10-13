@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from cast_helpers import read_scalar, run_cast, verify_schema
 
@@ -59,9 +59,15 @@ def verify_deployment(prediction: dict[str, object], rpc_url: str, block: str) -
         raise ValueError("Expected a prediction artifact, not a published deployment")
     pool = address(prediction.get("aavePool"), "aavePool", allow_zero=True)
     a_token = address(prediction.get("aToken"), "aToken", allow_zero=True)
-    contracts = (
-        (*RUNTIME_CONTRACTS, "aavePool", "aToken") if int(pool[2:], 16) else RUNTIME_CONTRACTS
-    )
+    count = prediction.get("operationalWalletCount")
+    expected_count = 1 if prediction.get("chainId") == 11155111 else 2
+    if type(count) is not int or count != expected_count:
+        raise ValueError("Operational wallet count does not match the chain's demo profile")
+    safe_fields = ("safeT", "safeO1") if count == 1 else ("safeT", "safeO1", "safeO2")
+    if count == 1 and int(address(prediction.get("safeO2"), "safeO2", allow_zero=True)[2:], 16):
+        raise ValueError("The single-wallet Sepolia demo must not configure safeO2")
+    runtimes = tuple(field for field in RUNTIME_CONTRACTS if field != "safeO2" or count == 2)
+    contracts = (*runtimes, "aavePool", "aToken") if int(pool[2:], 16) else runtimes
     for field in contracts:
         deployed = address(prediction.get(field), field)
         expected_hash = prediction.get(field + "CodeHash")
@@ -120,7 +126,12 @@ def verify_deployment(prediction: dict[str, object], rpc_url: str, block: str) -
     elif int(a_token[2:], 16):
         raise ValueError("Anvil without an Aave pool must not have an aToken")
 
-    for field in ("safeT", "safeO1", "safeO2"):
+    operations = read_scalar(module, "operationalList()(address[])", [], rpc_url, block)
+    if not isinstance(operations, list) or [str(value).lower() for value in operations] != [
+        address(prediction.get(field), field) for field in safe_fields if field != "safeT"
+    ]:
+        raise ValueError("Mined operational wallet list differs from the demo profile")
+    for field in safe_fields:
         safe = address(prediction.get(field), field)
         require_address_call(
             safe,
@@ -169,6 +180,15 @@ def publish(
                 raise ValueError(
                     f"Prediction differs from the reviewed Sepolia configuration: {field}"
                 )
+        for field in ("assetDecimals", "operationalWalletCount"):
+            if type(current.get(field)) is not int or current[field] != prediction.get(field):
+                raise ValueError(
+                    f"Prediction differs from the reviewed Sepolia configuration: {field}"
+                )
+        if current.get("aToken") is not None and address(current["aToken"], "aToken") != address(
+            prediction.get("aToken"), "aToken"
+        ):
+            raise ValueError("Prediction differs from the reviewed Sepolia configuration: aToken")
         if current.get("easAttester") is not None and address(
             current["easAttester"], "easAttester"
         ) != address(prediction.get("easAttester"), "easAttester"):
@@ -182,7 +202,7 @@ def publish(
     verify_schema(registry, uid, rpc_url, block)
     if not schema_only:
         verify_deployment(prediction, rpc_url, block)
-        current.update(prediction)
+        current.update(_unset_as_null(prediction))
         current["deploymentStatus"] = "deployed"
         current["verifiedAtBlock"] = int(block)
     current.update(
@@ -201,6 +221,25 @@ def publish(
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+_ZERO_ADDRESS = "0x" + "0" * 40
+_ZERO_HASH = "0x" + "0" * 64
+
+
+def _unset_as_null(prediction: dict[str, Any]) -> dict[str, Any]:
+    """Forge serializes an unset address or code hash as zeros; record it as absent.
+
+    A zero string is truthy, so leaving it in place would make consumers treat an
+    un-deployed wallet (for example Sepolia's optional second Safe) as a real one.
+    """
+
+    return {
+        key: None
+        if isinstance(value, str) and value.lower() in (_ZERO_ADDRESS, _ZERO_HASH)
+        else value
+        for key, value in prediction.items()
+    }
 
 
 def main() -> None:

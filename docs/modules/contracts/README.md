@@ -440,4 +440,12 @@ Withdraw has no cap because funds only move back into Safe T. Fixed targets only
 
 **Tests:** MockAavePool for unit tests; Sepolia fork at a pinned block for integration (supply, withdraw, account data); Sepolia for the demo (D2, D3).
 
+**Demo topology:** Sepolia uses T + O1 (ADR-019 V3-6); the generic module and
+Anvil test fixture retain O1/O2 to exercise shared counters. `BorrowExecuted`
+is the canonical P2 borrow event used by the chain reader, with indexed planId
+and the exact borrowed amount. Contract ABI tests verify this topic and payload.
+The invariant campaign includes I15 when P2 borrow execution is enabled, and
+isolated step/borrow-used-guard mutations must fail I5/I15. The C-rule mapping is
+maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-mapping.md).
+
 **Tickets:** SC-023 payment options, SC-024 supply/withdraw, SC-025 Aave fork tests, SC-026 borrow/repay (P2); SC-002/005/006/014/017/021 revised.
