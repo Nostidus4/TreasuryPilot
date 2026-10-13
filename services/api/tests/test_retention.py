@@ -181,8 +181,8 @@ async def _integration_case(database_url: str) -> None:
                 org_id=org_id,
                 actor=AuditActor(actor_type="SYSTEM"),
                 action="invite.revoked",
-                entity=AuditEntity(entity_type="other"),
-                data={"email": "cased-person@example.test"},
+                entity=AuditEntity(entity_type="invite", entity_id="cased-person@example.test"),
+                data={},
             )
 
         held = await run_retention(sessions, now=now, dry_run=False)
