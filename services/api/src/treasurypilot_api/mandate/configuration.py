@@ -41,6 +41,19 @@ def _integer(value: object) -> int | None:
     return None
 
 
+def _is_sandbox(environment: str) -> bool:
+    return environment.casefold() in {"local", "demo"}
+
+
+def default_payee_cooling_seconds(environment: str) -> int:
+    return 300 if _is_sandbox(environment) else 86_400
+
+
+def default_min_supply(environment: str, asset_decimals: int) -> BaseUnits | None:
+    """Sandbox default for ``minSupply``; elsewhere it must be configured explicitly."""
+    return BaseUnits(500 * 10**asset_decimals) if _is_sandbox(environment) else None
+
+
 def _camel_case(value: str) -> str:
     first, *rest = value.split("_")
     return first + "".join(word.capitalize() for word in rest)
@@ -120,12 +133,10 @@ class MandateConfig(MandateModel):
     def json_config(self, *, environment: str, asset_decimals: int) -> dict[str, object]:
         payload = self.model_dump(mode="json", by_alias=True, exclude_none=True)
         if self.payee_cooling_seconds is None:
-            payload["payeeCoolingSeconds"] = (
-                300 if environment.casefold() in {"local", "demo"} else 86_400
-            )
+            payload["payeeCoolingSeconds"] = default_payee_cooling_seconds(environment)
         min_supply = self.min_supply
-        if min_supply is None and environment.casefold() in {"local", "demo"}:
-            min_supply = BaseUnits(500 * 10**asset_decimals)
+        if min_supply is None:
+            min_supply = default_min_supply(environment, asset_decimals)
         if min_supply is not None:
             payload["minSupply"] = str(int(min_supply))
         return payload
@@ -145,6 +156,7 @@ def validate_mandate_config(
     known_wallets: dict[str, str],
     environment: str,
     asset_decimals: int,
+    now: datetime,
 ) -> None:
     required = (
         "actions",
@@ -158,10 +170,7 @@ def validate_mandate_config(
         "valid_from",
         "expires_at",
     )
-    missing = [field for field in required if field not in config.model_fields_set]
-    missing.extend(
-        field for field in required if getattr(config, field) is None and field not in missing
-    )
+    missing = [field for field in required if getattr(config, field) is None]
     if missing:
         public_names = [_camel_case(field) for field in missing]
         raise MandateValidationError(
@@ -190,7 +199,9 @@ def validate_mandate_config(
             "SWAP_UNAVAILABLE", "SWAP requires the optional router integration, which is disabled."
         )
     if not 0 <= asset_decimals <= 255:
-        raise ValueError("asset decimals must be between 0 and 255")
+        raise MandateValidationError(
+            "ASSET_DECIMALS_OUT_OF_RANGE", "The treasury asset must use 0 to 255 decimals."
+        )
     if config.executor == _ZERO_ADDRESS:
         raise MandateValidationError(
             "MANDATE_INCOMPLETE", "The executor cannot be the zero address."
@@ -204,6 +215,10 @@ def validate_mandate_config(
 
     if config.valid_from >= config.expires_at:
         raise MandateValidationError("EXPIRY_BEFORE_START", "expiresAt must be after validFrom.")
+    if config.expires_at <= now:
+        raise MandateValidationError(
+            "MANDATE_ALREADY_EXPIRED", "expiresAt must be in the future.", fields=["expiresAt"]
+        )
     if config.expires_at - config.valid_from > _DAY * 365:
         raise MandateValidationError(
             "MANDATE_EXPIRY_TOO_LONG", "A mandate may be active for at most 365 days."
@@ -211,10 +226,8 @@ def validate_mandate_config(
 
     cooling = config.payee_cooling_seconds
     if cooling is None:
-        cooling = 300 if environment.casefold() in {"local", "demo"} else 86_400
-    min_cooling, max_cooling = (
-        (60, 3_600) if environment.casefold() in {"local", "demo"} else (3_600, 604_800)
-    )
+        cooling = default_payee_cooling_seconds(environment)
+    min_cooling, max_cooling = (60, 3_600) if _is_sandbox(environment) else (3_600, 604_800)
     if not min_cooling <= cooling <= max_cooling:
         raise MandateValidationError(
             "COOLING_OUT_OF_RANGE",
@@ -229,10 +242,6 @@ def validate_mandate_config(
     if set(normalized_limits) - {"PAY", "REFILL"}:
         raise MandateValidationError(
             "MANDATE_INCOMPLETE", "Only PAY and REFILL limits are supported."
-        )
-    if any(key != key.upper() for key in normalized_limits):
-        raise MandateValidationError(
-            "MANDATE_INCOMPLETE", "Limit keys must use canonical uppercase action names."
         )
     for action in config.actions:
         if action == "SUPPLY":
@@ -266,17 +275,16 @@ def validate_mandate_config(
             )
     min_supply = config.min_supply
     if min_supply is None:
-        if environment.casefold() in {"local", "demo"}:
-            min_supply = BaseUnits(500 * 10**asset_decimals)
-        else:
-            raise MandateValidationError(
-                "MANDATE_INCOMPLETE",
-                "minSupply must be configured outside local and demo environments.",
-                fields=["minSupply"],
-            )
+        min_supply = default_min_supply(environment, asset_decimals)
+    if min_supply is None and "SUPPLY" in config.actions:
+        raise MandateValidationError(
+            "MANDATE_INCOMPLETE",
+            "minSupply must be configured for SUPPLY outside local and demo environments.",
+            fields=["minSupply"],
+        )
     if (
         config.gas_funding_cap_wei > _MAX_UINT128
-        or min_supply > _MAX_UINT128
+        or (min_supply is not None and min_supply > _MAX_UINT128)
         or config.supply_limits is not None
         and (
             config.supply_limits.per_request > _MAX_UINT128
@@ -286,11 +294,16 @@ def validate_mandate_config(
         raise MandateValidationError(
             "AMOUNT_PRECISION", "A configured amount exceeds uint128 range."
         )
-    if "SUPPLY" in config.actions and (
-        min_supply == 0
-        or config.supply_limits is not None
+    if (
+        min_supply is not None
+        and "SUPPLY" in config.actions
         and (
-            min_supply > config.supply_limits.per_request or min_supply > config.supply_limits.daily
+            min_supply == 0
+            or config.supply_limits is not None
+            and (
+                min_supply > config.supply_limits.per_request
+                or min_supply > config.supply_limits.daily
+            )
         )
     ):
         raise MandateValidationError(
@@ -547,7 +560,9 @@ def build_diff(
         return []
     diffs: list[dict[str, object]] = []
 
-    def add(path: str, before: object, after: object, risk: str) -> None:
+    def add(path: str, before: object, after: object, risk: str, *, critical: bool = False) -> None:
+        # ``critical`` fields hand control to another address, so they always need
+        # confirmation even though they are neither looser nor stricter.
         if before == after:
             return
         marker = {"looser": "▲", "stricter": "▼", "changed": "•"}[risk]
@@ -558,7 +573,7 @@ def build_diff(
                 "after": after,
                 "risk": risk,
                 "marker": marker,
-                "requiresConfirmation": risk == "looser",
+                "requiresConfirmation": critical or risk == "looser",
             }
         )
 
@@ -635,12 +650,13 @@ def build_diff(
         add(f"buffers.{wallet}.minimum", before, after, risk)
         before, after = old_buffer.get("target"), new_buffer.get("target")
         if before != after:
+            # A new target newly permits refills up to it; dropping one removes them.
             risk = _numeric_risk(
                 before,
                 after,
                 higher_is_looser=True,
-                missing_before="stricter",
-                missing_after="looser",
+                missing_before="looser",
+                missing_after="stricter",
             )
             add(f"buffers.{wallet}.target", before, after, risk)
 
@@ -680,7 +696,7 @@ def build_diff(
 
     for field in ("executor", "guardian", "swap"):
         before, after = previous.get(field), current.get(field)
-        add(field, before, after, "changed")
+        add(field, before, after, "changed", critical=True)
 
     old_approvers = _string_set(previous.get("approvers", []))
     new_approvers = _string_set(current.get("approvers", []))
@@ -733,9 +749,15 @@ def build_bundle_preview(
             }
         )
     old_buffers = {item.get("wallet"): item for item in _object_list(previous.get("buffers", []))}
-    for item in _object_list(current.get("buffers", [])):
-        if old_buffers.get(item.get("wallet")) != item:
+    new_buffers = {item.get("wallet"): item for item in _object_list(current.get("buffers", []))}
+    for wallet, item in new_buffers.items():
+        if old_buffers.get(wallet) != item:
             calls.append({"method": "setBuffer", "arguments": item})
+    for wallet in sorted(old_buffers.keys() - new_buffers.keys(), key=str):
+        # A removed buffer is cleared on-chain; otherwise the old one stays in force.
+        calls.append(
+            {"method": "setBuffer", "arguments": {"wallet": wallet, "minimum": "0", "target": "0"}}
+        )
     treasury_settings = [
         {"field": field, "value": current.get(field)}
         for field in ("minSupply", "reserveHorizonDays")

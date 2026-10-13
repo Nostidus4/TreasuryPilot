@@ -4,7 +4,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol, cast
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -23,7 +23,7 @@ from treasurypilot_api.mandate.configuration import (
     build_summary,
     validate_mandate_config,
 )
-from treasurypilot_api.mandate.models import MandateVersion
+from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 
 
@@ -53,7 +53,9 @@ class MandateRepository(Protocol):
 
     async def list_versions(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
-    ) -> tuple[MandateVersionRecord, ...]: ...
+    ) -> tuple[MandateVersionRecord, ...] | None:
+        """Return the versions newest first, or ``None`` if the treasury is not visible."""
+        ...
 
     async def get_version(
         self,
@@ -79,6 +81,11 @@ class MandateRepository(Protocol):
         treasury_id: uuid.UUID,
         mandate_id: uuid.UUID,
     ) -> MandateVersionRecord | None: ...
+
+
+def _config_time(config: dict[str, object], key: str) -> datetime | None:
+    value = config.get(key)
+    return datetime.fromisoformat(value) if isinstance(value, str) else None
 
 
 def _record(row: MandateVersion) -> MandateVersionRecord:
@@ -124,7 +131,7 @@ class SqlAlchemyMandateRepository:
                 select(MandateVersion)
                 .where(
                     MandateVersion.treasury_id == treasury_id,
-                    MandateVersion.status == "Active",
+                    MandateVersion.status == MandateVersionStatus.ACTIVE,
                 )
                 .order_by(MandateVersion.version.desc())
                 .limit(1)
@@ -138,18 +145,23 @@ class SqlAlchemyMandateRepository:
 
     async def list_versions(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
-    ) -> tuple[MandateVersionRecord, ...]:
+    ) -> tuple[MandateVersionRecord, ...] | None:
+        # One round trip: the outer join yields a single NULL row for a visible
+        # treasury without versions and no row at all for an invisible one.
         async with self._sessions() as session:
-            rows = await session.scalars(
-                select(MandateVersion)
-                .join(Treasury, Treasury.id == MandateVersion.treasury_id)
-                .where(
-                    Treasury.org_id == organization_id,
-                    Treasury.id == treasury_id,
+            rows = (
+                await session.execute(
+                    select(MandateVersion)
+                    .select_from(Treasury)
+                    .outerjoin(MandateVersion, MandateVersion.treasury_id == Treasury.id)
+                    .where(Treasury.org_id == organization_id, Treasury.id == treasury_id)
+                    .order_by(MandateVersion.version.desc())
                 )
-                .order_by(MandateVersion.version.desc())
-            )
-            return tuple(_record(row) for row in rows)
+            ).scalars()
+            found = rows.all()
+            if not found:
+                return None
+            return tuple(_record(row) for row in found if row is not None)
 
     async def get_version(
         self,
@@ -198,9 +210,11 @@ class SqlAlchemyMandateRepository:
                 id=uuid7(),
                 treasury_id=treasury_id,
                 version=int(latest_version or 0) + 1,
-                status="Draft",
+                status=MandateVersionStatus.DRAFT,
                 config=config,
                 config_hash=hashlib.sha256(canonical_config).digest(),
+                valid_from=_config_time(config, "validFrom"),
+                expires_at=_config_time(config, "expiresAt"),
                 created_by=user_id,
             )
             session.add(row)
@@ -227,8 +241,8 @@ class SqlAlchemyMandateRepository:
             )
             if row is None:
                 return None
-            if row.status == "Draft":
-                row.status = "Discarded"
+            if row.status == MandateVersionStatus.DRAFT:
+                row.status = MandateVersionStatus.DISCARDED
                 await session.flush()
             return _record(row)
 
@@ -329,15 +343,12 @@ async def list_mandates(
     request: Request,
     member: MemberContext = Depends(require_member),  # noqa: B008
 ) -> MandateListResponse:
-    context = await _repository(request).get_context(
-        organization_id=organization_id, treasury_id=treasury_id
-    )
-    if context is None:
-        raise _not_found()
     rows = await _repository(request).list_versions(
         organization_id=member.organization_id,
         treasury_id=treasury_id,
     )
+    if rows is None:
+        raise _not_found()
     return MandateListResponse(items=[MandateView.from_record(row) for row in rows])
 
 
@@ -369,6 +380,7 @@ async def create_mandate_draft(
             known_wallets=context.wallets,
             environment=environment,
             asset_decimals=context.asset_decimals,
+            now=datetime.now(UTC),
         )
     except MandateValidationError as error:
         raise _validation_failure(error) from None
@@ -430,6 +442,7 @@ async def clone_mandate_draft(
             known_wallets=context.wallets,
             environment=environment,
             asset_decimals=context.asset_decimals,
+            now=datetime.now(UTC),
         )
     except MandateValidationError as error:
         raise _validation_failure(error) from None
@@ -471,7 +484,7 @@ async def discard_mandate_draft(
     )
     if row is None:
         raise _not_found()
-    if row.status != "Discarded":
+    if row.status != MandateVersionStatus.DISCARDED:
         raise AuthFailure(
             status=409,
             code="NOT_DRAFT",

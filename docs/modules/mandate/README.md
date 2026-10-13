@@ -120,7 +120,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET | `/…/treasuries/{t}/mandates` | ANY | → `{items}` | |
-| POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
+| POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
 | POST | `/…/mandates/{v}/clone` | OWN | → `201 {draft}` | |
 | POST | `/…/mandates/{v}/governance-tx` | OWN | → `{governanceTx}` (§6.3) | 409 `NOT_DRAFT`, `NO_CHANGES` |
 | DELETE | `/…/mandates/{v}` | OWN | discard a Draft | 409 `NOT_DRAFT` |

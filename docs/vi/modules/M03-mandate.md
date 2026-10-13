@@ -71,7 +71,7 @@ M03 là **phòng điều khiển của Owner**. Nó biến điều Owner muốn 
 
 ## 6. API (API_SPEC §3, đã sửa)
 
-**Mandate:** GET/POST `/…/treasuries/{t}/mandates` (OWN tạo; lỗi `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `COOLING_OUT_OF_RANGE`, `NO_APPROVERS`, `AMOUNT_PRECISION`…), `/mandates/{v}/clone`, `/mandates/{v}/governance-tx`, DELETE bản nháp.
+**Mandate:** GET/POST `/…/treasuries/{t}/mandates` (OWN tạo; lỗi `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `NO_APPROVERS`, `AMOUNT_PRECISION`…), `/mandates/{v}/clone`, `/mandates/{v}/governance-tx`, DELETE bản nháp.
 
 **Payee, ngoại lệ, trùng, pause:**
 
