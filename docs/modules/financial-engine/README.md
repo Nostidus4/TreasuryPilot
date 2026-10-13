@@ -96,6 +96,8 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
 | `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
 | `decide_refill(req, wallet, source, policy, used_today, protected_other, *, source_protected) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4); `source_protected` = `R_T + L_T` |
+| `liquidity_position(snapshot, requests, schedule, policy) → LiquidityPosition` | payment reserve, Safe floor, holds and available liquidity | approved unpaid requests due, or scheduled to be paid, on or before `today + reserve_horizon_days` (1–30, inclusive); `snapshot.source` must be Safe T (`source.balance == safe_usdc`) |
+| `decide_liquidity(snapshot, requests, schedule, policy) → LiquidityDecision` | `NONE`, `SUPPLY`, `WITHDRAW`, or `INSUFFICIENT_LIQUIDITY` | `min_supply` is compared with AvailableForSupply, then the supply caps (`used_today["supply"]`) bound the amount; never a zero SUPPLY/WITHDRAW; no SUPPLY on a day with a WITHDRAW (`used_today["withdraw"]`); borrow is never authorized here |
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
@@ -181,7 +183,7 @@ value(p) = discount(p) − late(p)
 
 ### 8.3 Baseline B1 — EDF
 
-Sort by `(net_due_day, approved_seq)`. For each day from today, take requests in order while: payee active that day, per-request cap respected (or exception granted), daily pay cap not exceeded, refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day; anything not placed in the horizon is `Infeasible` with its first blocking reason.
+Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-D7). For each day of the 30-day rolling horizon from today, take requests in order while: payee known (else `PAYEE_UNKNOWN`) and active that day, per-request cap respected for the amount actually paid that day, i.e. `pay_amount(r, d)` with early or legacy-discount amounts (or exception granted, else `NEEDS_EXCEPTION`), daily pay cap not exceeded (`OVER_DAILY_LIMIT`), refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day, including past their due day; anything not placed in the horizon is `Infeasible` with its first blocking reason. The objective's second term counts only deadlines some schedule could meet: payee known and active by the due day, due day not already past, and no exception needed.
 
 ### 8.4 Optimizer B2 — CP-SAT model (M07-D5)
 
