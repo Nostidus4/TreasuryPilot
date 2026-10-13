@@ -1,7 +1,7 @@
 """Add TOTP, recovery codes and session-bound step-up.
 
 Revision ID: 20261013_0011
-Revises: 20261013_0010
+Revises: 20261013_0012
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261013_0011"
-down_revision: str | None = "20261013_0010"
+down_revision: str | None = "20261013_0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
