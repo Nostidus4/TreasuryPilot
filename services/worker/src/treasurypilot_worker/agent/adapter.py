@@ -41,6 +41,7 @@ from treasurypilot_worker.agent.types import (
     ToolSpec,
     Usage,
 )
+from treasurypilot_worker.metrics import LLM_COST, LLM_LATENCY
 
 MAX_PROVIDER_RETRIES = 2
 RETRY_BACKOFF_S = 0.5
@@ -193,6 +194,8 @@ class AiAdapter:
         error: Exception | None,
     ) -> str:
         run.latency_ms = round((self._clock() - run.started) * 1000)  # also read by AiResult
+        LLM_LATENCY.labels(task=task.value).observe(run.latency_ms / 1000)
+        LLM_COST.labels(task=task.value).inc(run.cost / 1_000_000)
         if parsed is not None:
             validation: ValidationResult | None = ValidationResult.OK
         elif isinstance(error, AiSchemaError):

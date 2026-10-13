@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     log_level: str = "INFO"
     log_format: LogFormat = "json"
+    # Unset keeps the Prometheus endpoint off (tests, beat); compose serves it on the internal net.
+    metrics_port: int | None = None
 
 
 @lru_cache

@@ -40,6 +40,7 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
 from treasurypilot_core.observability_asgi import CorrelationMiddleware
 from treasurypilot_core.tracing import configure_tracing
@@ -156,6 +157,7 @@ def create_app(
     # Before any engine exists: SQLAlchemy is traced by wrapping engine creation.
     if not SQLAlchemyInstrumentor().is_instrumented_by_opentelemetry:
         SQLAlchemyInstrumentor().instrument()
+    configure_error_tracking("api")
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:

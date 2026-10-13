@@ -20,6 +20,8 @@ from eth_abi import decode, encode
 from eth_abi.exceptions import DecodingError
 from web3 import AsyncHTTPProvider, Web3
 
+from treasurypilot_worker.metrics import RPC_ERRORS
+
 TIMEOUT_SECONDS: Final = 4.0
 RETRIES_PER_PROVIDER: Final = 2
 RETRY_BACKOFF_SECONDS: Final = 0.25
@@ -274,6 +276,8 @@ class RpcClient:
         head: int | None = None,
         error: str | None = None,
     ) -> None:
+        if not ok:
+            RPC_ERRORS.labels(provider=provider.name).inc()
         if self._on_health is None:
             return
         latency_ms = round((time.monotonic() - started) * 1000)

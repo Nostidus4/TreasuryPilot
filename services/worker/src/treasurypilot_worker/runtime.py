@@ -7,6 +7,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
+import sentry_sdk
 from celery import Task
 from structlog.contextvars import bound_contextvars
 
@@ -106,6 +107,8 @@ class SafeTask(Task):
             or current_context().get("correlation_id")
             or str(uuid4())
         )
+        # Sentry captures a task's error after this frame unbinds the log context.
+        sentry_sdk.set_tags(context)
         with bound_contextvars(**context):
             return super().__call__(*args, **kwargs)
 

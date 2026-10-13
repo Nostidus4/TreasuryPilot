@@ -11,6 +11,9 @@ x-app-environment: &app-environment
   S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
   # Empty: spans are created (trace_id in logs) but not exported.
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  # Unhandled errors also ping Telegram when both are set and SENTRY_DSN is too (OBS-003).
+  TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+  TP_TELEGRAM_ALERT_CHAT_ID: ${TP_TELEGRAM_ALERT_CHAT_ID:-}
 
 services:
   postgres:
@@ -121,6 +124,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       <<: *app-environment
+      SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       postgres:
@@ -163,10 +167,15 @@ services:
       ]
     environment:
       <<: *app-environment
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+      # Prometheus /metrics on the internal network only; prefork children share the tmpfs dir.
+      TP_METRICS_PORT: '9100'
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
       CHAIN_RPC_URL: http://anvil:8545
       # Core-only credentials are deliberately not part of x-app-environment.
       TP_ATTESTATION_PRIVATE_KEY: ${TP_ATTESTATION_PRIVATE_KEY:-}
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+    tmpfs: [/tmp/prometheus]
     depends_on:
       postgres:
         condition: service_healthy
@@ -200,6 +209,10 @@ services:
       AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
       AWS_REGION: ${AWS_REGION:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+      TP_METRICS_PORT: '9100'
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+    tmpfs: [/tmp/prometheus]
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,6 +236,7 @@ services:
       ]
     environment:
       <<: *app-environment
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -237,6 +251,9 @@ services:
       TP_ENVIRONMENT: local
       CHAIN_RPC_URL: http://anvil:8545
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN_SIGNER:-}
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_TELEGRAM_ALERT_CHAT_ID: ${TP_TELEGRAM_ALERT_CHAT_ID:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -271,6 +288,7 @@ services:
         VITE_API_URL: /api
         VITE_CHAIN_ID: '31337'
         VITE_RPC_URL: http://localhost:8545
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
     depends_on:
       api:
         condition: service_healthy
