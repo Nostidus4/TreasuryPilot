@@ -13,7 +13,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.access import require_member
+from treasurypilot_api.identity.access import MemberContext, require_member
 from treasurypilot_api.identity.auth import (
     AuthService,
     ConsumeResult,
@@ -30,7 +30,6 @@ from treasurypilot_api.identity.organizations import (
     OnboardingChecklist,
     OrganizationNotFound,
     OrganizationOverview,
-    OrganizationPermissionDenied,
     OrganizationRecord,
 )
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
@@ -666,11 +665,10 @@ class MemoryOrganizationRepository:
         self.memberships[(organization.id, user_id)] = {"OrgAdmin"}
         return organization
 
-    async def get_for_member(
-        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
-    ) -> OrganizationOverview:
+    async def get_for_member(self, member: MemberContext) -> OrganizationOverview:
+        organization_id = member.organization_id
         organization = self.organizations.get(organization_id)
-        if organization is None or (organization_id, user_id) not in self.memberships:
+        if organization is None or (organization_id, member.user_id) not in self.memberships:
             raise OrganizationNotFound
         member_count = sum(1 for org_id, _ in self.memberships if org_id == organization_id)
         return OrganizationOverview(
@@ -691,20 +689,15 @@ class MemoryOrganizationRepository:
 
     async def update_settings(
         self,
+        member: MemberContext,
         *,
-        organization_id: uuid.UUID,
-        user_id: uuid.UUID,
         solo_mode: bool | None,
         auto_match: bool | None,
     ) -> OrganizationRecord:
+        organization_id = member.organization_id
         organization = self.organizations.get(organization_id)
-        roles = self.memberships.get((organization_id, user_id))
-        if organization is None or roles is None:
+        if organization is None or (organization_id, member.user_id) not in self.memberships:
             raise OrganizationNotFound
-        if solo_mode is not None and "Owner" not in roles:
-            raise OrganizationPermissionDenied
-        if auto_match is not None and not roles.intersection({"OrgAdmin", "Owner"}):
-            raise OrganizationPermissionDenied
         updated = OrganizationRecord(
             id=organization.id,
             name=organization.name,
@@ -835,7 +828,7 @@ def test_every_organization_route_hides_resources_from_non_members() -> None:
         routes = [
             route
             for route in iter_api_routes(harness.client.app.routes)
-            if route.path.startswith("/v1/orgs/{")
+            if "{organization_id}" in route.path
         ]
         assert routes
 
@@ -851,8 +844,8 @@ def test_every_organization_route_hides_resources_from_non_members() -> None:
             assert route.openapi_extra.get("x-organization-scoped") is True
             assert includes_member_guard(route.dependant)
             path = route.path
-            for parameter in route.dependant.path_params:
-                path = path.replace("{" + parameter.name + "}", str(organization_id))
+            for parameter in route.param_convertors:
+                path = path.replace("{" + parameter + "}", str(organization_id))
             for method in route.methods or set():
                 if method in {"HEAD", "OPTIONS"}:
                     continue
@@ -862,3 +855,39 @@ def test_every_organization_route_hides_resources_from_non_members() -> None:
                     request_options["headers"] = {"X-CSRF-Token": csrf}
                 response = harness.client.request(method, path, **request_options)
                 assert response.status_code == 404, (method, path, response.text)
+
+
+def test_organization_input_is_validated_and_settings_require_authentication() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        anonymous = harness.client.patch(f"/v1/orgs/{uuid.uuid4()}/settings", json={})
+        assert anonymous.status_code == 401
+
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        for payload in (
+            {"name": "Acme", "country": "1a"},
+            {"name": "Acme", "displayTz": "Not/AZone"},
+        ):
+            response = harness.client.post("/v1/orgs", json=payload, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 422
+        assert organizations.organizations == {}
+
+        created = harness.client.post(
+            "/v1/orgs",
+            json={"name": "Acme", "displayTz": "Asia/Ho_Chi_Minh"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 201
+        assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
+
+
+def test_member_guard_authenticates_before_resolving_the_organization() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        anonymous = harness.client.get(f"/v1/orgs/{uuid.uuid4()}")
+        assert anonymous.status_code == 401
+
+        harness.login()
+        malformed = harness.client.get("/v1/orgs/not-a-uuid")
+        assert malformed.status_code == 422

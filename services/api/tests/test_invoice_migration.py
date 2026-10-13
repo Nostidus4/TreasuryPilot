@@ -109,8 +109,8 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             await connection.execute(
                 text(
                     "INSERT INTO payees "
-                    "(id, treasury_id, vendor_id, label, address, status) VALUES "
-                    f"('{payee_id}', '{treasury_id}', '{vendor_id}', 'Main', "
+                    "(id, treasury_id, org_id, vendor_id, label, address, status) VALUES "
+                    f"('{payee_id}', '{treasury_id}', '{org_id}', '{vendor_id}', 'Main', "
                     "decode(repeat('22', 20), 'hex'), 'Active')"
                 )
             )
@@ -204,8 +204,9 @@ async def _verify_invoice_constraints(database_url: str) -> None:
                 await connection.execute(
                     text(
                         "INSERT INTO exceptions "
-                        "(id, request_id, mandate_onchain_version, amount, payee, expiry, status) "
-                        "VALUES ('00000000-0000-7000-8000-000000000099', "
+                        "(id, treasury_id, request_id, mandate_onchain_version, amount, payee, "
+                        "expiry, status) "
+                        f"VALUES ('00000000-0000-7000-8000-000000000099', '{treasury_id}', "
                         "'00000000-0000-7000-8000-000000000098', 1, 1000, "
                         "decode(repeat('44', 20), 'hex'), '2027-01-01T00:00:00Z', 'Requested')"
                     )
