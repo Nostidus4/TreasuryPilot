@@ -16,7 +16,7 @@ from .liquidity import (
     source_capacity,
 )
 from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, validate_terms
-from .scheduler import schedule_edf
+from .scheduler import schedule_edf, schedule_oracle
 
 __all__ = [
     "InvalidTerms",
@@ -37,6 +37,7 @@ __all__ = [
     "request_value",
     "shortage",
     "schedule_edf",
+    "schedule_oracle",
     "source_capacity",
     "validate_terms",
 ]
