@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    WrapSerializer,
+    model_validator,
+)
 
 from treasurypilot_core.money import BaseUnits
 
@@ -13,6 +23,22 @@ PositiveInt = Annotated[int, Field(gt=0)]
 BasisPoints = Annotated[int, Field(ge=0)]
 type ReasonCode = str
 type BindingConstraint = str
+
+
+def _freeze_mapping(value: Mapping[Any, Any]) -> Mapping[Any, Any]:
+    return MappingProxyType(dict(value))
+
+
+def _serialize_mapping(value: Mapping[Any, Any], handler: SerializerFunctionWrapHandler) -> Any:
+    return handler(dict(value))
+
+
+# ``frozen=True`` only blocks attribute assignment, so container fields are
+# converted to read-only views to keep shared snapshots immutable.
+type FrozenMapping[K, V] = Annotated[
+    Mapping[K, V], AfterValidator(_freeze_mapping), WrapSerializer(_serialize_mapping)
+]
+type FrozenSequence[T] = Annotated[Sequence[T], AfterValidator(tuple)]
 
 
 class FrozenModel(BaseModel):
@@ -32,7 +58,7 @@ class Asset(FrozenModel):
 class LateFee(FrozenModel):
     kind: Literal["fixed", "percent_per_period"]
     amount: BaseUnits | None = None
-    rate_bps: BasisPoints | None = None
+    rate_bps: Annotated[int, Field(ge=0, le=10_000)] | None = None
     period_days: PositiveInt | None = None
     cap: BaseUnits | None = None
 
@@ -48,6 +74,8 @@ class LateFee(FrozenModel):
                 raise ValueError("a percent-per-period late fee cannot define amount")
             if self.rate_bps is None or self.period_days is None:
                 raise ValueError("a percent-per-period late fee requires rate_bps and period_days")
+            if self.rate_bps == 0:
+                raise ValueError("a percent-per-period late fee requires a positive rate_bps")
         return self
 
 
@@ -97,9 +125,9 @@ class PolicyView(FrozenModel):
 class Snapshot(FrozenModel):
     day: NonNegativeInt
     source: WalletState
-    operational: dict[str, WalletState]
-    used_today: dict[Literal["pay", "refill"], BaseUnits]
-    payee_active_day: dict[str, NonNegativeInt]
+    operational: FrozenMapping[str, WalletState]
+    used_today: FrozenMapping[Literal["pay", "refill"], BaseUnits]
+    payee_active_day: FrozenMapping[str, NonNegativeInt]
     safe_usdc: BaseUnits
     a_usdc: BaseUnits
     pool_available: BaseUnits
@@ -124,7 +152,23 @@ class ApprovedRequest(FrozenModel):
     amount: BaseUnits
     approved_seq: NonNegativeInt
     terms: PaymentTerms
+    early_amount: BaseUnits | None = None
+    early_pay_by: NonNegativeInt | None = None
     exception_granted: bool = False
+
+    @model_validator(mode="after")
+    def validate_early_payment_option(self) -> ApprovedRequest:
+        if (self.early_amount is None) != (self.early_pay_by is None):
+            raise ValueError("early_amount and early_pay_by must be defined together")
+        if self.early_amount is None or self.early_pay_by is None:
+            return self
+        if self.early_amount == 0:
+            raise ValueError("early_amount must be positive when an early option is present")
+        if self.early_amount > self.amount:
+            raise ValueError("early_amount cannot exceed the standard amount")
+        if self.early_pay_by > self.terms.net_due_day:
+            raise ValueError("early_pay_by cannot be after the net due day")
+        return self
 
 
 class RefillDecision(FrozenModel):
@@ -147,9 +191,9 @@ class Infeasible(FrozenModel):
 
 
 class Schedule(FrozenModel):
-    items: list[ScheduledItem]
-    infeasible: list[Infeasible]
+    items: FrozenSequence[ScheduledItem]
+    infeasible: FrozenSequence[Infeasible]
     objective: tuple[int, int, int, int]
-    binding: list[BindingConstraint]
+    binding: FrozenSequence[BindingConstraint]
     solver: Literal["EDF", "CPSAT", "ORACLE"]
     status: Literal["OPTIMAL", "FEASIBLE", "FALLBACK"]

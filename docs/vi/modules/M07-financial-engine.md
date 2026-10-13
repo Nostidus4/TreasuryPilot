@@ -77,7 +77,7 @@ Shortage == 0                → không refill
 Shortage > Bound             → dừng (REFILL_BOUND)
 Cap ≥ min(Pref, Bound)       → refill min(Pref, Bound)
 Cap ≥ Shortage               → refill Shortage (báo TARGET_NOT_REACHED)
-còn lại                      → dừng (SOURCE_INSUFFICIENT hoặc OVER_REFILL_DAILY)
+còn lại                      → dừng (OVER_REFILL_DAILY, rồi OVER_REFILL_PER_REQUEST, rồi SOURCE_INSUFFICIENT)
 ```
 
 | Ví dụ | B | P_o | D | F | H | Shortage | Pref | Bound | Cap | Kết quả |
@@ -127,7 +127,7 @@ Sắp theo `(ngày đến hạn, thứ tự duyệt)`. Từ hôm nay, lấy lầ
 
 ### 8.5 Fingerprint
 
-`normalize(s)` = trim, casefold, bỏ khoảng trắng và `- _ / . #`. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`. Vector dùng chung với contract (SC-017) và web.
+`normalize(s) = s.strip().casefold()`, sau đó bỏ mọi khoảng trắng Unicode và `- _ / . #`; các số 0 ở đầu được giữ nguyên. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, trong đó `amount` là số nguyên base unit được mã hóa thành `uint256` và `asset` là địa chỉ EVM. Vector dùng chung với contract (SC-017) và web.
 
 ## 9. Cấu hình
 

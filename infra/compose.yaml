@@ -100,6 +100,19 @@ services:
     restart: unless-stopped
     networks: [public, internal]
 
+  migrate:
+    build:
+      <<: *python-build
+      dockerfile: services/api/Dockerfile
+    command: ['alembic', '-c', 'services/api/alembic.ini', 'upgrade', 'head']
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    networks: [internal]
+
   api:
     build:
       <<: *python-build
@@ -110,6 +123,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio-init:
@@ -179,6 +194,9 @@ services:
       # Empty means no DB access; when needed, provide a URL for a least-privilege AI role.
       DATABASE_URL: ${AI_DATABASE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Secondary LLM provider (AGT-017); unset means no failover.
+      AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
+      AWS_REGION: ${AWS_REGION:-}
     depends_on:
       postgres:
         condition: service_healthy

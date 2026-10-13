@@ -1,17 +1,32 @@
+import '@fontsource-variable/ibm-plex-sans';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from '@/app';
+import { mockApiEnabled } from '@/lib/env';
+import '@/lib/i18n';
+import { initTheme } from '@/lib/theme';
 import { AppProviders } from '@/providers/app-providers';
 import '@/styles.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <AppProviders>
-        <App />
-      </AppProviders>
-    </BrowserRouter>
-  </React.StrictMode>,
-);
+async function start() {
+  initTheme();
+  if (mockApiEnabled) {
+    const { startMockApi } = await import('@/mocks/browser');
+    await startMockApi();
+  }
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AppProviders>
+          <App />
+        </AppProviders>
+      </BrowserRouter>
+    </React.StrictMode>,
+  );
+}
+
+void start();
