@@ -137,6 +137,18 @@ def _early_payment(request: ApprovedRequest, pay_day: int) -> tuple[int, int] | 
     return int(request.amount) - saving, saving
 
 
+def pay_amount(request: ApprovedRequest, pay_day: int) -> BaseUnits:
+    """Return what paying ``request`` on ``pay_day`` debits: the early amount while
+    an early option (exact or legacy ``discount_bps``) is active, else the standard amount.
+
+    The scheduler, the liquidity reserve and the forecast share this so the debited
+    amount always matches the one ``request_value`` credits.
+    """
+
+    early = _early_payment(request, pay_day)
+    return request.amount if early is None else BaseUnits(early[0])
+
+
 def request_value(
     request: ApprovedRequest,
     pay_day: int,
