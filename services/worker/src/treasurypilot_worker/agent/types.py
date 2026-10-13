@@ -118,6 +118,7 @@ class ToolCallRecord:
 @dataclass(frozen=True)
 class AiResult[T: BaseModel]:
     output: T
+    ai_call_id: str
     task: str
     model: str
     prompt_version: str
