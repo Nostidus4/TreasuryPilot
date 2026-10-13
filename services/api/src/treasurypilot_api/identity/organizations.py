@@ -425,12 +425,16 @@ async def update_organization_settings(
             # admin's auto_match change must not depend on RPC availability.
             wallet_service = _wallet_service(request)
             user_id = member.user_id
-            roles = await wallet_service.membership_roles(org_id=organization_id, user_id=user_id)
+            roles = await wallet_service.membership_roles(
+                org_id=member.organization_id, user_id=user_id
+            )
             needs_owner = payload.solo_mode is not None or (
                 roles is not None and OrganizationRole.ORG_ADMIN.value not in roles
             )
             if needs_owner:
-                await wallet_service.require_onchain_owner(org_id=organization_id, user_id=user_id)
+                await wallet_service.require_onchain_owner(
+                    org_id=member.organization_id, user_id=user_id
+                )
         organization = await _repository(request).update_settings(
             organization_id=member.organization_id,
             user_id=member.user_id,

@@ -109,7 +109,6 @@ class WalletRepository:
                     code="RATE_LIMITED",
                     title="Too many requests",
                     detail="Too many open wallet challenges. Please wait and try again.",
-                    retry_after=int(SIWE_NONCE_LIFETIME.total_seconds()),
                 )
             session.add(
                 SiweNonce(
