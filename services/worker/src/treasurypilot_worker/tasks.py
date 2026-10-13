@@ -4,6 +4,7 @@ import os
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
+from treasurypilot_worker.recovery.escalation import escalate_from_pool
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -36,3 +37,20 @@ def publish_domain_events() -> dict[str, int]:
             await pool.close()
 
     return {"published": asyncio.run(publish())}
+
+
+@app.task(name="treasurypilot.recovery.escalate-overdue-review-items", queue="core")
+def escalate_overdue_review_items() -> dict[str, int]:
+    """Route overdue open review items to Owner and enqueue their notification."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for review-item escalation")
+
+    async def escalate() -> int:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            return await escalate_from_pool(pool)
+        finally:
+            await pool.close()
+
+    return {"escalated": asyncio.run(escalate())}

@@ -45,7 +45,12 @@ def create_celery_app() -> Celery:
                 "task": "treasurypilot.notifications.publish-domain-events",
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "core"},
-            }
+            },
+            "escalate-overdue-review-items": {
+                "task": "treasurypilot.recovery.escalate-overdue-review-items",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "core"},
+            },
         },
     )
     return app

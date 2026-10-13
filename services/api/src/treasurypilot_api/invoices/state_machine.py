@@ -17,6 +17,8 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
+from treasurypilot_api.review.models import ReviewType
+from treasurypilot_api.review.service import open_review_item
 
 
 class TransitionAction(StrEnum):
@@ -364,6 +366,24 @@ class RequestTransitionResult:
     version: int
 
 
+def review_type_for_outcome(action: TransitionAction, reason: str | None) -> ReviewType | None:
+    """Map terminal non-ALLOW request outcomes to their recovery queue category."""
+    if action == TransitionAction.NEEDS_APPROVAL:
+        return ReviewType.NEEDS_AUTHORITY
+    if action == TransitionAction.PLAN_BLOCKED:
+        return ReviewType.POLICY_BLOCK
+    if action == TransitionAction.PREPARATION_FAILED:
+        normalized_reason = (reason or "").upper()
+        if normalized_reason.startswith(("AI_", "PAYLOAD_MISMATCH", "ATTESTATION_")):
+            return ReviewType.AI_REJECTED
+        if normalized_reason.startswith("SIMULATION_REVERTED"):
+            return ReviewType.POLICY_BLOCK
+        return ReviewType.INFRA
+    if action == TransitionAction.PAY_UNKNOWN:
+        return ReviewType.UNCERTAIN_TX
+    return None
+
+
 class RequestStateMachine:
     """Apply request transitions and audit them in one database transaction."""
 
@@ -387,6 +407,9 @@ class RequestStateMachine:
         actor: TransitionActor,
         expected_version: int | None = None,
         reason: str | None = None,
+        review_reason_codes: tuple[str, ...] | None = None,
+        completed_steps: list[dict[str, object]] | None = None,
+        plan_id: uuid.UUID | None = None,
     ) -> RequestTransitionResult:
         """Apply ``target``; user actors must pass the version they saw (``If-Match``)."""
         async with self._sessions() as session, session.begin():
@@ -482,6 +505,30 @@ class RequestStateMachine:
                     payload_ids=payload_ids,
                 )
             await session.flush()
+
+            review_type = review_type_for_outcome(actor.action, reason)
+            default_code = review_type.value if review_type is not None else ""
+
+            if review_type is not None:
+                primary_code = (reason or default_code).strip().upper()
+                if (
+                    not primary_code
+                    or len(primary_code) > 64
+                    or not primary_code.replace("_", "").isalnum()
+                ):
+                    primary_code = default_code
+                await open_review_item(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    request_id=request_id,
+                    request_version=request.version,
+                    item_type=review_type,
+                    primary_code=primary_code,
+                    reason_codes=review_reason_codes or (primary_code,),
+                    completed_steps=completed_steps,
+                    plan_id=plan_id,
+                )
 
             await self._audit.append(
                 session=session,

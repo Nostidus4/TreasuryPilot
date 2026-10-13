@@ -43,6 +43,8 @@ from treasurypilot_api.mandate.routes import (
 from treasurypilot_api.mandate.routes import (
     router as mandate_router,
 )
+from treasurypilot_api.review.routes import ReviewRepository, SqlAlchemyReviewRepository
+from treasurypilot_api.review.routes import router as review_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 
@@ -152,6 +154,7 @@ def create_app(
     auth_service: AuthService | None = None,
     organization_repository: OrganizationRepository | None = None,
     mandate_repository: MandateRepository | None = None,
+    review_repository: ReviewRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -162,6 +165,10 @@ def create_app(
             organization_repository = default_organizations
     if mandate_repository is None and engine is not None:
         mandate_repository = SqlAlchemyMandateRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if review_repository is None and engine is not None:
+        review_repository = SqlAlchemyReviewRepository(
             async_sessionmaker(engine, expire_on_commit=False)
         )
 
@@ -205,6 +212,7 @@ def create_app(
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
+    app.state.review_repository = review_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -225,6 +233,7 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(organizations_router)
     app.include_router(mandate_router)
+    app.include_router(review_router)
 
     return app
 

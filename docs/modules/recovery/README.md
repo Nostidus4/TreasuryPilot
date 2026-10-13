@@ -43,7 +43,7 @@ M12 makes sure **uncertainty never turns into a second payment**. It resolves in
 
 | Table | Columns | Notes |
 |---|---|---|
-| `review_items` | id, org_id, treasury_id, request_id, plan_id, type enum(POLICY_BLOCK, NEEDS_AUTHORITY, FEE_APPROVAL, UNCERTAIN_TX, DISCREPANCY, AI_REJECTED, INFRA, UNEXPECTED_OUTFLOW), primary_code, reason_codes[], completed_steps jsonb, assigned_role, status enum(Open, Resolved, Dismissed), sla_due_at, resolved_by/at, resolution enum(RETRY, REPLAN, CANCEL, EDIT_REQUEST, GRANT_EXCEPTION, ACCEPT_FEE, ACKNOWLEDGE, MARK_MATCHED), note, version | unique(request_id, type) where Open |
+| `review_items` | id, org_id, treasury_id, request_id, plan_id, type enum(POLICY_BLOCK, NEEDS_AUTHORITY, FEE_APPROVAL, UNCERTAIN_TX, DISCREPANCY, AI_REJECTED, INFRA, UNEXPECTED_OUTFLOW), primary_code, reason_codes[], completed_steps jsonb, assigned_role, status enum(Open, Resolved, Dismissed), sla_due_at, source_version, resolved_by/at, resolution enum(RETRY, REPLAN, CANCEL, EDIT_REQUEST, GRANT_EXCEPTION, ACCEPT_FEE, ACKNOWLEDGE, MARK_MATCHED), note, version | unique(request_id, type) where Open; optimistic request-version check |
 | `recovery_runs` | id, operation_id, evidence jsonb, outcome enum(CONFIRMED, REVERTED, NEVER_BROADCAST, STILL_PENDING, ESCALATED), at | append-only |
 | `circuit_rules` | id, treasury_id null (global default), rule, threshold, window_s, action enum(ALERT, PAUSE), cooldown_s, enabled | |
 | `circuit_events` | id, treasury_id, rule, details, action, at | |
@@ -62,6 +62,10 @@ Operation recovery: `Unknown → (Confirmed | Reverted | Abandoned (never broadc
 | POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | routed role | `{action, note?, version}` → `{item}` | 403 `NOT_ROUTED_ROLE`, 409 `STALE_ITEM`, `ACTION_NOT_ALLOWED` |
 | GET/PUT | `/orgs/{o}/treasuries/{t}/circuit-rules` | OWN | rules | |
 | GET | `/orgs/{o}/treasuries/{t}/circuit-events` | ANY | → `{items}` | |
+
+The API exposes these review operations under `/v1/orgs/{orgId}/review-items`: list (filtered to the caller's routed roles), get, and post an action. The source request version is captured when an item is opened; actions compare both that version and the item's optimistic `version`. A changed request or stale item returns `STALE_ITEM`. `uq_review_items_open_request_type` is a partial unique index, and review creation only emits `NeedsReview:<Role>` when it inserts a new open item, so retries and concurrent workers cannot fan out duplicate work or notifications.
+
+`RequestStateMachine` opens review items in the same transaction for `NEEDS_APPROVAL`, `PLAN_BLOCKED`, `PREPARATION_FAILED`, and `PAY_UNKNOWN` outcomes. Other recovery producers use the same `open_review_item` helper and type-specific routing table. The worker escalates items after `sla_due_at` every 60 seconds, moving the routed role to Owner and enqueueing an outbox notification.
 
 ## 7. Flows
 

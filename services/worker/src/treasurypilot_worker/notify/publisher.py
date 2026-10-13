@@ -82,6 +82,8 @@ def _specific_user_ids(
 def _link(entity_type: str, entity_id: uuid.UUID, treasury_id: uuid.UUID | None) -> str:
     if entity_type == "payment_request":
         return f"/requests/{entity_id}"
+    if entity_type == "review_item":
+        return f"/review-items/{entity_id}"
     if treasury_id is not None:
         return f"/treasuries/{treasury_id}"
     return "/"

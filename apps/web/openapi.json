@@ -614,6 +614,248 @@
         "title": "RefillPath",
         "type": "object"
       },
+      "ReviewAction": {
+        "enum": [
+          "RETRY",
+          "REPLAN",
+          "CANCEL",
+          "EDIT_REQUEST",
+          "GRANT_EXCEPTION",
+          "ACCEPT_FEE",
+          "ACKNOWLEDGE",
+          "MARK_MATCHED"
+        ],
+        "title": "ReviewAction",
+        "type": "string"
+      },
+      "ReviewActionRequest": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ReviewAction"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["action", "version"],
+        "title": "ReviewActionRequest",
+        "type": "object"
+      },
+      "ReviewItemList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "ReviewItemList",
+        "type": "object"
+      },
+      "ReviewItemResponse": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ReviewItemView"
+          }
+        },
+        "required": ["item"],
+        "title": "ReviewItemResponse",
+        "type": "object"
+      },
+      "ReviewItemView": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAction"
+            },
+            "title": "Allowedactions",
+            "type": "array"
+          },
+          "assignedRole": {
+            "title": "Assignedrole",
+            "type": "string"
+          },
+          "completedSteps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Completedsteps",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "planId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planid"
+          },
+          "primaryCode": {
+            "title": "Primarycode",
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoncodes",
+            "type": "array"
+          },
+          "requestId": {
+            "format": "uuid",
+            "title": "Requestid",
+            "type": "string"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedby"
+          },
+          "slaDueAt": {
+            "format": "date-time",
+            "title": "Sladueat",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "title": "Sourceversion",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ReviewType"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "requestId",
+          "planId",
+          "type",
+          "primaryCode",
+          "reasonCodes",
+          "completedSteps",
+          "assignedRole",
+          "status",
+          "slaDueAt",
+          "sourceVersion",
+          "version",
+          "resolvedBy",
+          "resolvedAt",
+          "resolution",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ReviewItemView",
+        "type": "object"
+      },
+      "ReviewStatus": {
+        "enum": ["Open", "Resolved", "Dismissed"],
+        "title": "ReviewStatus",
+        "type": "string"
+      },
+      "ReviewType": {
+        "enum": [
+          "POLICY_BLOCK",
+          "NEEDS_AUTHORITY",
+          "FEE_APPROVAL",
+          "UNCERTAIN_TX",
+          "DISCREPANCY",
+          "AI_REJECTED",
+          "INFRA",
+          "UNEXPECTED_OUTFLOW"
+        ],
+        "title": "ReviewType",
+        "type": "string"
+      },
       "UserView": {
         "properties": {
           "displayName": {
@@ -985,6 +1227,207 @@
         "summary": "Get Organization",
         "tags": ["organizations"],
         "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/review-items": {
+      "get": {
+        "operationId": "list_review_items_v1_orgs__organization_id__review_items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReviewStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReviewType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewItemList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Review Items",
+        "tags": ["review"]
+      }
+    },
+    "/v1/orgs/{organization_id}/review-items/{item_id}": {
+      "get": {
+        "operationId": "get_review_item_v1_orgs__organization_id__review_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Review Item",
+        "tags": ["review"]
+      }
+    },
+    "/v1/orgs/{organization_id}/review-items/{item_id}/actions": {
+      "post": {
+        "operationId": "act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Act On Review Item",
+        "tags": ["review"]
       }
     },
     "/v1/orgs/{organization_id}/settings": {
