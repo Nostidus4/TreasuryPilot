@@ -65,12 +65,17 @@ def attest(
     decision: Decision,
     executor: str,
     evidence_digest: str,
-    module: str,
     now: datetime,
+    liquidity_cycle_id: str | None = None,
 ) -> tuple[dict[str, Any], bytes]:
     """Sign the PlanAttestation for an ALLOW@PLAN decision; return it only once its row is stored."""
     typed = attestation_typed_data(
-        plan, decision, executor=executor, evidence_digest=evidence_digest, module=module, now=now
+        plan,
+        decision,
+        executor=executor,
+        evidence_digest=evidence_digest,
+        now=now,
+        liquidity_cycle_id=liquidity_cycle_id,
     )
     signature = sign_attestation(typed, policy_key)
     try:

@@ -59,7 +59,6 @@ def _attest(database_url: str) -> tuple[dict[str, Any], bytes]:
         decision=DECISION,
         executor="0x22223333444455556666777788889999aaaabbbb",
         evidence_digest="0x" + "ee" * 32,
-        module="0x111122223333444455556666777788889999aaaa",
         now=NOW,
     )
 
@@ -116,9 +115,10 @@ def test_the_attestation_row_is_stored_before_the_signature_is_returned() -> Non
                 typed,
                 signature,
                 plan=PLAN,
+                executor="0x22223333444455556666777788889999aaaabbbb",
                 trusted_signers=[POLICY_KEY.address],
                 now=NOW,
-                nonce_plan_hash=lambda nonce: None,
+                bind_nonce=lambda nonce, plan_hash: plan_hash,
             )
             is None
         )
