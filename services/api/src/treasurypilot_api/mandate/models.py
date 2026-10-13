@@ -389,6 +389,8 @@ class Screening(Base):
         CheckConstraint("octet_length(address) = 20", name="ck_screenings_address"),
         Index("ix_screenings_payee_checked", "payee_id", "checked_at"),
         Index("ix_screenings_address_checked", "address", text("checked_at DESC")),
+        CheckConstraint("chain_id IS NULL OR chain_id > 0", name="ck_screenings_chain_id"),
+        Index("ix_screenings_lookup", "address", "chain_id", "provider", text("checked_at DESC")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -397,6 +399,8 @@ class Screening(Base):
     )
     # Always snapshotted so the row stays meaningful after its payee is deleted.
     address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    # NULL only for rows from before chain scoping; the cache never reuses them.
+    chain_id: Mapped[int | None] = mapped_column(Integer)
     provider: Mapped[str] = mapped_column(String(120), nullable=False)
     result: Mapped[str] = mapped_column(String(16), nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String(300))
