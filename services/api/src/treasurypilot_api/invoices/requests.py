@@ -9,7 +9,7 @@ from typing import cast
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
-from pydantic import Field
+from pydantic import Field, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -36,6 +36,8 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
 from treasurypilot_api.mandate.models import Payee, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
+from treasurypilot_core.domain import PaymentTerms
+from treasurypilot_core.engine import InvalidTerms, validate_terms
 from treasurypilot_core.fingerprint import fingerprint, normalize
 from treasurypilot_core.money import BaseUnits
 
@@ -73,6 +75,58 @@ class RequestPatch(ApiModel):
     note: str | None = None
     tags: list[str] | None = Field(default=None, max_length=50)
     cost_center: str | None = Field(default=None, max_length=120)
+
+
+class ConfirmTermsRequest(ApiModel):
+    terms: dict[str, object]
+
+
+_TERMS_KEYS = {
+    "netDueDay": "net_due_day",
+    "discountBps": "discount_bps",
+    "discountDeadlineDay": "discount_deadline_day",
+    "lateFee": "late_fee",
+    "priorityNote": "priority_note",
+}
+
+
+def _validated_terms(
+    raw: dict[str, object], amount: int
+) -> tuple[dict[str, object], bytes, int, int]:
+    normalized = {_TERMS_KEYS.get(key, key): value for key, value in raw.items()}
+    if isinstance(normalized.get("late_fee"), dict):
+        late_fee = cast(dict[str, object], normalized["late_fee"])
+        normalized["late_fee"] = {
+            {"rateBps": "rate_bps", "periodDays": "period_days"}.get(key, key): value
+            for key, value in late_fee.items()
+        }
+    try:
+        terms = PaymentTerms.model_validate(normalized)
+        validate_terms(terms)
+    except (ValidationError, InvalidTerms) as error:
+        raise _fail(422, "TERMS_INVALID", "Payment terms invalid", str(error)) from None
+    stored = terms.model_dump(mode="json", exclude_none=True)
+    digest = keccak(json.dumps(stored, sort_keys=True, separators=(",", ":")).encode())
+    early_amount = 0
+    early_pay_by = 0
+    if terms.discount_deadline_day is not None:
+        early_amount = amount - amount * terms.discount_bps // 10_000
+        if early_amount <= 0:
+            raise _fail(
+                422,
+                "TERMS_INVALID",
+                "Payment terms invalid",
+                "A discount must leave a positive early payment amount.",
+            )
+        early_pay_by = terms.discount_deadline_day * 86_400 + 86_399
+    return stored, digest, early_amount, early_pay_by
+
+
+def confirmed_payment_terms(row: PaymentRequest) -> PaymentTerms | None:
+    """Only confirmed terms may enter scheduler input."""
+    if row.terms_confirmed_by is None or row.terms is None:
+        return None
+    return PaymentTerms.model_validate(row.terms)
 
 
 def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
@@ -136,6 +190,10 @@ def _validate_dates(issue_date: date, due_date: date) -> None:
 
 
 def _serialize(row: PaymentRequest) -> dict[str, object]:
+    early_amount = 0
+    early_pay_by = 0
+    if confirmed_payment_terms(row) is not None:
+        _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
@@ -150,6 +208,10 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
         "termsHash": "0x" + row.terms_hash.hex() if row.terms_hash else None,
+        "termsConfirmedBy": str(row.terms_confirmed_by) if row.terms_confirmed_by else None,
+        "termsConfirmedAt": row.terms_confirmed_at.isoformat() if row.terms_confirmed_at else None,
+        "earlyAmount": str(early_amount),
+        "earlyPayBy": early_pay_by,
         "fingerprint": "0x" + row.fingerprint.hex() if row.fingerprint else None,
         "invoiceHash": "0x" + row.invoice_hash.hex() if row.invoice_hash else None,
         "onchainRequestId": "0x" + row.onchain_request_id.hex() if row.onchain_request_id else None,
@@ -487,11 +549,7 @@ async def create_request(
                         "An active request already uses this vendor, invoice number, amount and asset.",
                     )
                 row.onchain_request_id = _request_id(member.organization_id, row.id)
-                row.terms_hash = (
-                    keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
-                    if row.terms is not None
-                    else None
-                )
+                row.terms_hash = None
                 session.add(row)
                 await session.flush()
                 session.add(
@@ -655,11 +713,9 @@ async def edit_request(
             row.current_revision += 1
             row.last_edited_by = member.user_id
             _hashes(row, vendor.normalized_ref, asset.address or b"")
-            row.terms_hash = (
-                keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
-                if row.terms is not None
-                else None
-            )
+            row.terms_hash = None
+            row.terms_confirmed_by = None
+            row.terms_confirmed_at = None
             duplicate = await session.scalar(
                 select(PaymentRequest.id)
                 .where(
@@ -741,3 +797,61 @@ async def edit_request(
         "approvalInvalidated": approval_invalidated,
         "flags": flags,
     }
+
+
+@router.post("/{request_id}/terms/confirm", openapi_extra={"x-organization-scoped": True})
+async def confirm_request_terms(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: ConfirmTermsRequest,
+    request: Request,
+    response: Response,
+    member: MemberContext = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.status != RequestStatus.DRAFT.value:
+            raise _fail(
+                409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
+            )
+        stored, digest, _, _ = _validated_terms(payload.terms, int(row.amount))
+        if row.terms != stored:
+            await session.execute(
+                update(RequestFlag)
+                .where(
+                    RequestFlag.request_id == row.id,
+                    RequestFlag.status.in_(
+                        [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
+                    ),
+                )
+                .values(status=RequestFlagStatus.SUPERSEDED.value)
+            )
+            row.terms = stored
+            row.current_revision += 1
+            row.last_edited_by = member.user_id
+            session.add(
+                RequestRevision(
+                    id=uuid7(),
+                    request_id=row.id,
+                    revision=row.current_revision,
+                    snapshot=_snapshot(row),
+                    edited_by=member.user_id,
+                    reason="payment terms confirmed",
+                )
+            )
+            await _recompute_flags(session, row)
+        row.terms_hash = digest
+        row.terms_confirmed_by = member.user_id
+        row.terms_confirmed_at = datetime.now(UTC)
+        await session.flush()
+        await session.refresh(row)
+        result = _serialize(row)
+        version = row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
