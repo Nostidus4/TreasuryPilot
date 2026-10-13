@@ -69,6 +69,7 @@ class MembershipView(ApiModel):
     org_id: uuid.UUID
     roles: list[str]
     status: str
+    signer_roles_active: bool
 
 
 class WalletView(ApiModel):
@@ -100,6 +101,7 @@ class MeResponse(ApiModel):
                     org_id=item.org_id,
                     roles=list(item.roles),
                     status=item.status,
+                    signer_roles_active=item.signer_roles_active,
                 )
                 for item in profile.memberships
             ],

@@ -25,6 +25,8 @@ from treasurypilot_api.identity.models import (
     WalletLink,
 )
 
+_SIGNER_ROLES = {"Owner", "Approver", "Guardian"}
+
 
 def _user_record(user: User) -> UserRecord:
     return UserRecord(
@@ -196,6 +198,8 @@ class SqlAlchemyAuthRepository:
                         org_id=item.org_id,
                         roles=tuple(item.roles),
                         status=item.status,
+                        signer_roles_active=bool(wallets)
+                        and bool(_SIGNER_ROLES.intersection(item.roles)),
                     )
                     for item in memberships
                 ),

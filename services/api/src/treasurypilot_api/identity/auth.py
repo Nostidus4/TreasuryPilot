@@ -83,6 +83,7 @@ class MembershipRecord:
     org_id: uuid.UUID
     roles: tuple[str, ...]
     status: str
+    signer_roles_active: bool = False
 
 
 @dataclass(frozen=True, slots=True)

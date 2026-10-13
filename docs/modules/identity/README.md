@@ -54,8 +54,13 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | POST | `/auth/logout` · GET `/me` | auth | |
 | GET | `/auth/siwe/nonce` · POST `/me/wallets` · DELETE `/me/wallets/{a}` | auth | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE`, `SIGNER_ROLE_REQUIRES_WALLET` |
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
-| GET/POST | `/orgs/{o}/members`, `/orgs/{o}/invites` · POST `/invites/{token}/accept` | ADM | `ALREADY_MEMBER`, `INVITE_EXPIRED` |
-| PATCH/DELETE | `/orgs/{o}/members/{u}` | ADM | `LAST_ADMIN`, `LAST_OWNER` |
+| GET/POST | `/orgs/{o}/members`, `/orgs/{o}/invites` · POST `/invites/{token}/accept` | OrgAdmin; invite token returned once, expires in 7 days | `ALREADY_MEMBER`, `INVITE_EXPIRED`, `INVITE_EMAIL_MISMATCH` |
+| PATCH/DELETE | `/orgs/{o}/members/{u}` · DELETE `/orgs/{o}/invites/{id}` | OrgAdmin | `LAST_ADMIN`, `LAST_OWNER` |
+
+Membership responses include `signerRolesActive`. Owner, Approver, and Guardian
+roles remain visible when assigned, but their signing permissions are inactive
+until that member has an active linked wallet. Role updates and removals lock the
+organization memberships and refuse to remove its final active OrgAdmin or Owner.
 
 SIWE message: domain = app host, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min.
 

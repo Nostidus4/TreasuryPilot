@@ -20,9 +20,18 @@ class MemberContext:
     organization_id: uuid.UUID
     user_id: uuid.UUID
     roles: frozenset[str]
+    signer_roles_active: bool = False
 
     def has_any(self, *roles: OrganizationRole) -> bool:
-        return not self.roles.isdisjoint(role.value for role in roles)
+        signer_roles = {
+            OrganizationRole.OWNER,
+            OrganizationRole.APPROVER,
+            OrganizationRole.GUARDIAN,
+        }
+        return any(
+            role.value in self.roles and (role not in signer_roles or self.signer_roles_active)
+            for role in roles
+        )
 
 
 def not_found() -> AuthFailure:
@@ -71,7 +80,19 @@ async def require_member(organization_id: uuid.UUID, request: Request) -> Member
     )
     if roles is None:
         raise not_found()
-    return MemberContext(organization_id, access.user.id, frozenset(roles))
+    repository = organization_repository(request)
+    signer_wallet_check = getattr(repository, "has_active_signer_wallet", None)
+    signer_roles_active = (
+        await signer_wallet_check(organization_id=organization_id, user_id=access.user.id)
+        if signer_wallet_check is not None
+        else False
+    )
+    return MemberContext(
+        organization_id,
+        access.user.id,
+        frozenset(roles),
+        signer_roles_active=signer_roles_active,
+    )
 
 
 def require_role(*roles: OrganizationRole) -> Callable[..., Awaitable[MemberContext]]:

@@ -23,6 +23,13 @@ from treasurypilot_api.identity.auth import (
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.memberships import (
+    MembershipRepository,
+    SqlAlchemyMembershipRepository,
+)
+from treasurypilot_api.identity.memberships import (
+    router as memberships_router,
+)
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
     SqlAlchemyOrganizationRepository,
@@ -144,6 +151,7 @@ def create_app(
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
     organization_repository: OrganizationRepository | None = None,
+    membership_repository: MembershipRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -152,6 +160,10 @@ def create_app(
         auth_service, engine, redis_limiter, default_organizations = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
+    if membership_repository is None and engine is not None:
+        membership_repository = SqlAlchemyMembershipRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -192,6 +204,7 @@ def create_app(
     app.state.settings = settings
     app.state.auth_service = auth_service
     app.state.organization_repository = organization_repository
+    app.state.membership_repository = membership_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -211,6 +224,7 @@ def create_app(
 
     app.include_router(identity_router)
     app.include_router(organizations_router)
+    app.include_router(memberships_router)
 
     return app
 

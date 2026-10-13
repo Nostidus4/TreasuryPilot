@@ -79,6 +79,10 @@ class OrganizationRepository(Protocol):
         self, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> tuple[str, ...] | None: ...
 
+    async def has_active_signer_wallet(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool: ...
+
     async def update_settings(
         self,
         member: MemberContext,
@@ -197,6 +201,24 @@ class SqlAlchemyOrganizationRepository:
                 )
             )
             return tuple(membership.roles) if membership is not None else None
+
+    async def has_active_signer_wallet(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
+        async with self._sessions() as session:
+            return bool(
+                await session.scalar(
+                    select(
+                        exists().where(
+                            Membership.org_id == organization_id,
+                            Membership.user_id == user_id,
+                            Membership.status == MembershipStatus.ACTIVE,
+                            WalletLink.user_id == user_id,
+                            WalletLink.unlinked_at.is_(None),
+                        )
+                    )
+                )
+            )
 
     async def update_settings(
         self,
