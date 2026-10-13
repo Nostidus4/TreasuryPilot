@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -13,6 +14,7 @@ from enum import StrEnum
 from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
+import aiohttp
 import asyncpg  # type: ignore[import-untyped]
 from eth_abi import decode, encode
 from eth_abi.exceptions import DecodingError
@@ -20,8 +22,14 @@ from web3 import AsyncHTTPProvider, Web3
 
 TIMEOUT_SECONDS: Final = 4.0
 RETRIES_PER_PROVIDER: Final = 2
+RETRY_BACKOFF_SECONDS: Final = 0.25
+# Health is telemetry: a slow sink must not stall chain reads for longer than this.
+HEALTH_TIMEOUT_SECONDS: Final = 0.5
+# What a provider's transport can raise; anything else is a bug and propagates.
+TRANSPORT_ERRORS: Final = (TimeoutError, OSError, aiohttp.ClientError, json.JSONDecodeError)
 SAFE_SENTINEL: Final = "0x" + "00" * 19 + "01"
 SAFE_MODULES_PAGE_SIZE: Final = 50
+SAFE_MODULES_MAX_PAGES: Final = 20
 # keccak256("guard_manager.guard.address") and keccak256("fallback_manager.handler.address")
 SAFE_GUARD_SLOT: Final = "0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8"
 SAFE_FALLBACK_HANDLER_SLOT: Final = (
@@ -93,6 +101,7 @@ class SafeConfig:
     """A Safe's configuration read at one block; addresses are lowercase hex."""
 
     block_number: int
+    block_hash: str
     owners: tuple[str, ...]
     threshold: int
     modules: tuple[str, ...]
@@ -141,13 +150,15 @@ class RpcClient:
     async def safe_config(self, safe: str) -> SafeConfig:
         """Read owners, threshold, modules, guard, fallback handler and nonce at the head block."""
 
-        block = await self.call("eth_blockNumber", [])
+        head = await self.call("eth_getBlockByNumber", ["latest", False])
+        # Pin by hash (EIP-1898): reads can fail over to another provider or cross a reorg.
+        block = {"blockHash": head["hash"]}
         (owners,) = await self._safe_view(safe, block, "getOwners()", ["address[]"])
         (threshold,) = await self._safe_view(safe, block, "getThreshold()", ["uint256"])
         (nonce,) = await self._safe_view(safe, block, "nonce()", ["uint256"])
         modules: list[str] = []
         cursor = SAFE_SENTINEL
-        while True:
+        for _ in range(SAFE_MODULES_MAX_PAGES):
             page, cursor = await self._safe_view(
                 safe,
                 block,
@@ -159,8 +170,11 @@ class RpcClient:
             modules += page
             if not page or cursor.lower() == SAFE_SENTINEL:
                 break
+        else:
+            raise RpcError(f"{safe}: getModulesPaginated did not end after {len(modules)} modules")
         return SafeConfig(
-            block_number=int(block, 16),
+            block_number=int(head["number"], 16),
+            block_hash=str(head["hash"]).lower(),
             owners=tuple(owner.lower() for owner in owners),
             threshold=threshold,
             modules=tuple(module.lower() for module in modules),
@@ -172,7 +186,7 @@ class RpcClient:
     async def _safe_view(
         self,
         safe: str,
-        block: str,
+        block: Mapping[str, str],
         signature: str,
         output_types: list[str],
         input_types: Sequence[str] = (),
@@ -185,7 +199,9 @@ class RpcClient:
         except (DecodingError, ValueError):
             raise RpcError(f"{safe} is not a Safe: {signature} returned {raw!r}") from None
 
-    async def _storage_address(self, contract: str, slot: str, block: str) -> str | None:
+    async def _storage_address(
+        self, contract: str, slot: str, block: Mapping[str, str]
+    ) -> str | None:
         word = await self.call("eth_getStorageAt", [contract, slot, block])
         address = "0x" + str(word).removeprefix("0x").rjust(64, "0")[-40:].lower()
         return None if int(address, 16) == 0 else address
@@ -227,12 +243,15 @@ class RpcClient:
         self, provider: RpcProvider, method: str, params: Sequence[Any]
     ) -> Any:
         error = "unknown"
-        for _ in range(1 + RETRIES_PER_PROVIDER):
+        for attempt in range(1 + RETRIES_PER_PROVIDER):
+            if attempt:
+                # Back off so a rate-limited (HTTP 429) provider is not hit again at once.
+                await asyncio.sleep(RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1))
             started = time.monotonic()
             try:
                 async with asyncio.timeout(TIMEOUT_SECONDS):
                     response = await provider.transport.make_request(method, list(params))
-            except Exception as exc:  # any transport failure means try again
+            except TRANSPORT_ERRORS as exc:
                 # The type only: transport messages can contain the URL and its API key.
                 error = type(exc).__name__
                 await self._record(provider, started, ok=False, error=error)
@@ -259,7 +278,8 @@ class RpcClient:
             return
         latency_ms = round((time.monotonic() - started) * 1000)
         try:
-            await self._on_health(RpcHealthSample(provider.name, ok, latency_ms, head, error))
+            async with asyncio.timeout(HEALTH_TIMEOUT_SECONDS):
+                await self._on_health(RpcHealthSample(provider.name, ok, latency_ms, head, error))
         except Exception:
             # Health is telemetry: losing a sample must not fail a chain read.
             logger.warning("rpc health sample dropped", exc_info=True)

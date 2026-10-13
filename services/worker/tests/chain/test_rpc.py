@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from eth_abi import encode
 
+from treasurypilot_worker.chain import rpc as rpc_module
 from treasurypilot_worker.chain.rpc import (
     CrossCheck,
     FeeHistory,
@@ -19,6 +20,11 @@ from treasurypilot_worker.chain.rpc import (
     build_rpc_client,
     rpc_health_sink,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rpc_module, "RETRY_BACKOFF_SECONDS", 0)
 
 
 class FakeProvider:
@@ -142,25 +148,29 @@ GUARD = "0x" + "9d" * 20
 SENTINEL = "0x" + "00" * 19 + "01"
 
 
-def safe_provider(*, guard: str | None) -> FakeProvider:
+HEAD = {"number": "0x64", "hash": BLOCK}
+PINNED = {"blockHash": BLOCK}
+
+
+def safe_provider(*, guard: str | None, next_module: str = SENTINEL) -> FakeProvider:
     returns = {
         "0xa0e67e2b": encode(["address[]"], [[OWNER_A, OWNER_B]]),  # getOwners()
         "0xe75235b8": encode(["uint256"], [2]),  # getThreshold()
-        "0xcc2f8452": encode(["address[]", "address"], [[MODULE], SENTINEL]),  # getModules...
+        "0xcc2f8452": encode(["address[]", "address"], [[MODULE], next_module]),  # getModules...
         "0xaffed0e0": encode(["uint256"], [7]),  # nonce()
     }
 
     def eth_call(params: list[Any]) -> str:
-        assert params[1] == "0x64"  # every read is pinned to the head block
+        assert params[1] == PINNED  # every read is pinned to the head block's hash
         return "0x" + returns[params[0]["data"][:10]].hex()
 
     def storage(params: list[Any]) -> str:
-        assert params[2] == "0x64"
+        assert params[2] == PINNED
         value = guard if params[1].startswith("0x4a204f62") and guard else "0x" + "00" * 20
         return "0x" + "00" * 12 + value.removeprefix("0x")
 
     return FakeProvider(
-        {"eth_blockNumber": "0x64", "eth_call": eth_call, "eth_getStorageAt": storage}
+        {"eth_getBlockByNumber": HEAD, "eth_call": eth_call, "eth_getStorageAt": storage}
     )
 
 
@@ -169,6 +179,7 @@ def test_safe_config_reads_one_block() -> None:
 
     assert config == SafeConfig(
         block_number=100,
+        block_hash=BLOCK,
         owners=(OWNER_A, OWNER_B),
         threshold=2,
         modules=(MODULE,),
@@ -179,10 +190,18 @@ def test_safe_config_reads_one_block() -> None:
 
 
 def test_safe_config_rejects_an_address_without_a_safe() -> None:
-    provider = FakeProvider({"eth_blockNumber": "0x64", "eth_call": "0x"})
+    provider = FakeProvider({"eth_getBlockByNumber": HEAD, "eth_call": "0x"})
 
     with pytest.raises(RpcError):
         asyncio.run(client(provider, FakeProvider()).safe_config(SAFE))
+
+
+def test_safe_config_stops_paging_modules_that_never_end() -> None:
+    provider = safe_provider(guard=None, next_module=MODULE)  # the cursor never reaches the end
+
+    with pytest.raises(RpcError, match="did not end"):
+        asyncio.run(client(provider, FakeProvider()).safe_config(SAFE))
+    assert len(provider.requests) < 50
 
 
 class Erroring(FakeProvider):
@@ -241,6 +260,32 @@ def test_a_failing_health_sink_does_not_fail_the_call() -> None:
     )
 
     assert asyncio.run(rpc.call("eth_chainId", [])) == "0xaa36a7"
+
+
+def test_a_slow_health_sink_does_not_stall_the_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rpc_module, "HEALTH_TIMEOUT_SECONDS", 0.01)
+
+    async def stuck_sink(sample: RpcHealthSample) -> None:
+        await asyncio.sleep(60)
+
+    rpc = RpcClient(
+        [RpcProvider("p0", FakeProvider({"eth_chainId": "0xaa36a7"}))], on_health=stuck_sink
+    )
+
+    assert asyncio.run(asyncio.wait_for(rpc.call("eth_chainId", []), 1)) == "0xaa36a7"
+
+
+def test_programming_errors_are_not_retried() -> None:
+    class Broken(FakeProvider):
+        async def make_request(self, method: str, params: Any) -> dict[str, Any]:
+            self.requests.append((method, params))
+            raise TypeError("bad params")
+
+    broken = Broken()
+
+    with pytest.raises(TypeError):
+        asyncio.run(client(broken, FakeProvider()).call("eth_chainId", []))
+    assert len(broken.requests) == 1
 
 
 def test_build_rpc_client_expands_keys_but_names_providers_by_host() -> None:

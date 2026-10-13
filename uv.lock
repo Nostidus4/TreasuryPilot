@@ -1653,6 +1653,7 @@ name = "treasurypilot-worker"
 version = "0.1.0"
 source = { editable = "services/worker" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "anthropic" },
     { name = "asyncpg" },
     { name = "celery", extra = ["redis"] },
@@ -1666,6 +1667,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9,<4" },
     { name = "anthropic", specifier = ">=1,<2" },
     { name = "asyncpg", specifier = ">=0.30,<1" },
     { name = "celery", extras = ["redis"], specifier = ">=5.5,<6" },
