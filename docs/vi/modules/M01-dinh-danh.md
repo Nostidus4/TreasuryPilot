@@ -63,7 +63,7 @@ Thông điệp SIWE: domain = host của app, `chainId` = chain của treasury (
 ## 8. Thuật toán
 
 - **RBAC:** dependency `require_member(org)` (không phải thành viên → **404**) và `require_role(...)` (thiếu vai trò → 403); repository luôn lọc theo `org_id`. Test tự động liệt kê mọi route thuộc tổ chức và gọi thử bằng người ngoài.
-- **Maker-checker:** người duyệt ∉ {người tạo, người sửa cuối}, trừ khi bật solo mode (chỉ Owner bật), khi đó bản duyệt và audit ghi `solo_mode = true`.
+- **Maker-checker:** handler duyệt gọi `assert_maker_checker(request, user_id=..., organization=...)`, hàm tự đọc `solo_mode` từ tổ chức. Người tạo và người sửa cuối bị từ chối với 409 `MAKER_CHECKER`, trừ khi tổ chức bật solo mode (chỉ Owner bật). `solo_mode` trả về chỉ là `true` khi solo mode thực sự cho phép tự duyệt; lưu giá trị này trên bản duyệt và trong dữ liệu audit.
 - **Kiểm tra Owner:** khi liên kết và mỗi giờ, so địa chỉ ví với danh sách owner của Safe T; lệch thì mất quyền Owner thực tế (vai trò vẫn còn nhưng hiện "không phải owner on-chain").
 
 ## 9. Cấu hình

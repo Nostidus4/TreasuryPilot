@@ -4,22 +4,30 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
+from treasurypilot_api.identity.access import maker_checker_conflict
+
 
 class ApprovalRequest(Protocol):
-    created_by: uuid.UUID | None
-    last_edited_by: uuid.UUID | None
+    # Read-only members, so models with non-optional or read-only ids also satisfy it.
+    @property
+    def created_by(self) -> uuid.UUID | None: ...
+
+    @property
+    def last_edited_by(self) -> uuid.UUID | None: ...
 
 
-class MakerCheckerFailure(Exception):
-    """The approver created or most recently edited the request."""
+class SoloModeSetting(Protocol):
+    """The organization (e.g. ``Organization`` or ``OrganizationRecord``) owning the request."""
 
-    code = "MAKER_CHECKER"
+    @property
+    def solo_mode(self) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
 class MakerCheckerDecision:
     """Approval metadata that must be stored on the approval and audit event."""
 
+    # True only when solo mode actually allowed a self-approval (BR-005).
     solo_mode: bool
 
     def audit_data(self) -> dict[str, bool]:
@@ -30,10 +38,14 @@ def assert_maker_checker(
     request: ApprovalRequest,
     *,
     user_id: uuid.UUID,
-    solo_mode: bool,
+    organization: SoloModeSetting,
 ) -> MakerCheckerDecision:
-    """Reject self-approval unless the organization has Owner-enabled solo mode."""
+    """Reject self-approval (409 ``MAKER_CHECKER``) unless the org has Owner-enabled solo mode.
 
-    if not solo_mode and user_id in {request.created_by, request.last_edited_by}:
-        raise MakerCheckerFailure
-    return MakerCheckerDecision(solo_mode=solo_mode)
+    The solo-mode flag is read from the organization itself, never passed by the caller.
+    """
+
+    is_maker = user_id in {request.created_by, request.last_edited_by}
+    if is_maker and not organization.solo_mode:
+        raise maker_checker_conflict()
+    return MakerCheckerDecision(solo_mode=is_maker)

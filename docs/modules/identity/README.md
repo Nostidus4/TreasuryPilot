@@ -66,7 +66,7 @@ Sign-in: email → link (Resend; console locally) → verify → session cookie 
 ## 8. Algorithms
 
 - **RBAC:** FastAPI dependencies `require_member(org)` (non-member → **404**) and `require_role(*roles)` (member without role → 403); repositories always filter by `org_id`. An automated test enumerates every org-scoped route and calls it as a non-member.
-- **Maker-checker:** approval handlers call `assert_maker_checker(request, user_id, solo_mode)`. The creator and latest editor are rejected with `MAKER_CHECKER` unless Owner-enabled `solo_mode` is active. Persist the returned `solo_mode` value on the approval and include it in the audit event's data.
+- **Maker-checker:** approval handlers call `assert_maker_checker(request, user_id=..., organization=...)`, which reads `solo_mode` from the organization itself. The creator and latest editor are rejected with 409 `MAKER_CHECKER` unless Owner-enabled solo mode is on. The returned `solo_mode` is true only when solo mode actually allowed a self-approval; persist it on the approval and include it in the audit event's data.
 - **Owner check:** at link time and every hour, compare the user's linked addresses with Safe T owners; mismatch removes the effective Owner capability (role stays but shows "not an on-chain owner").
 
 ## 9. Configuration
