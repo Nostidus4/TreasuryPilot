@@ -3,15 +3,16 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, cast
+from typing import Annotated, Protocol, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, field_validator
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.api import ApiModel, _authenticated
+from treasurypilot_api.common.repository import OrgScopedRepository
+from treasurypilot_api.identity.api import ApiModel, _authenticated, _wallet_service
 from treasurypilot_api.identity.auth import AuthFailure, SessionAccess
 from treasurypilot_api.identity.models import (
     Membership,
@@ -21,6 +22,13 @@ from treasurypilot_api.identity.models import (
     WalletLink,
     uuid7,
 )
+from treasurypilot_api.identity.rbac import (
+    MemberAccess,
+    organization_not_found,
+    require_member,
+    require_role,
+)
+from treasurypilot_api.identity.wallets import owner_not_onchain
 from treasurypilot_api.treasury.models import Treasury, TreasuryStatus
 
 
@@ -58,7 +66,15 @@ class OrganizationPermissionDenied(Exception):
     """The member does not hold a role allowed to change the requested setting."""
 
 
+class OrganizationOwnerNotOnchain(Exception):
+    """The Owner role is inactive because no linked wallet owns Safe T on-chain."""
+
+
 class OrganizationRepository(Protocol):
+    async def member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None: ...
+
     async def create(
         self,
         *,
@@ -96,9 +112,30 @@ def _record(organization: Organization) -> OrganizationRecord:
     )
 
 
+class MembershipRepository(OrgScopedRepository[Membership]):
+    model = Membership
+
+    async def active_for_user(self, user_id: uuid.UUID) -> Membership | None:
+        membership: Membership | None = await self.session.scalar(
+            self.select().where(
+                Membership.user_id == user_id, Membership.status == MembershipStatus.ACTIVE
+            )
+        )
+        return membership
+
+
 class SqlAlchemyOrganizationRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None:
+        async with self._sessions() as session:
+            membership = await MembershipRepository(session, organization_id).active_for_user(
+                user_id
+            )
+            return None if membership is None else frozenset(membership.roles)
 
     async def create(
         self,
@@ -191,9 +228,9 @@ class SqlAlchemyOrganizationRepository:
     ) -> OrganizationRecord:
         async with self._sessions() as session, session.begin():
             membership = await session.scalar(
-                select(Membership)
+                MembershipRepository(session, organization_id)
+                .select()
                 .where(
-                    Membership.org_id == organization_id,
                     Membership.user_id == user_id,
                     Membership.status == MembershipStatus.ACTIVE,
                 )
@@ -202,14 +239,20 @@ class SqlAlchemyOrganizationRepository:
             if membership is None:
                 raise OrganizationNotFound
             roles = set(membership.roles)
+            owner_authorized = OrganizationRole.OWNER.value in roles and membership.owner_is_onchain
             # Owner is granted only through role assignment (#107), never at org
             # creation: it means the user's linked wallet owns Safe T (M01-D5, M01-D7).
             if solo_mode is not None and OrganizationRole.OWNER.value not in roles:
                 raise OrganizationPermissionDenied
+            if solo_mode is not None and not owner_authorized:
+                raise OrganizationOwnerNotOnchain
             if auto_match is not None and not roles.intersection(
-                {OrganizationRole.ORG_ADMIN.value, OrganizationRole.OWNER.value}
+                {OrganizationRole.ORG_ADMIN.value}
             ):
-                raise OrganizationPermissionDenied
+                if OrganizationRole.OWNER.value not in roles:
+                    raise OrganizationPermissionDenied
+                if not owner_authorized:
+                    raise OrganizationOwnerNotOnchain
             organization = await session.scalar(
                 select(Organization).where(Organization.id == organization_id).with_for_update()
             )
@@ -314,13 +357,8 @@ def _current_user(access: SessionAccess) -> uuid.UUID:
     return access.user.id
 
 
-def _not_found() -> AuthFailure:
-    return AuthFailure(
-        status=404,
-        code="ORG_NOT_FOUND",
-        title="Organization not found",
-        detail="The organization does not exist or is not available to this user.",
-    )
+# shortcut: alias kept because #325's audit/api.py imports it; drop once audit uses rbac.
+_not_found = organization_not_found
 
 
 def _forbidden() -> AuthFailure:
@@ -353,16 +391,15 @@ async def create_organization(
 
 @router.get("/{organization_id}", response_model=OrganizationDetailsResponse)
 async def get_organization(
-    organization_id: uuid.UUID, request: Request
+    request: Request, member: Annotated[MemberAccess, Depends(require_member)]
 ) -> OrganizationDetailsResponse:
-    access = await _authenticated(request)
     try:
         overview = await _repository(request).get_for_member(
-            organization_id=organization_id,
-            user_id=_current_user(access),
+            organization_id=member.organization_id,
+            user_id=member.user_id,
         )
     except OrganizationNotFound:
-        raise _not_found() from None
+        raise organization_not_found() from None
     return OrganizationDetailsResponse(
         org=OrganizationView.from_record(overview.organization),
         checklist=OrganizationChecklist.model_validate(overview.checklist, from_attributes=True),
@@ -371,11 +408,13 @@ async def get_organization(
 
 @router.patch("/{organization_id}/settings", response_model=OrganizationResponse)
 async def update_organization_settings(
-    organization_id: uuid.UUID,
     payload: OrganizationSettingsRequest,
     request: Request,
+    member: Annotated[
+        MemberAccess,
+        Depends(require_role(OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER)),
+    ],
 ) -> OrganizationResponse:
-    access = await _authenticated(request, require_csrf=True)
     if payload.solo_mode is None and payload.auto_match is None:
         raise AuthFailure(
             status=422,
@@ -384,14 +423,32 @@ async def update_organization_settings(
             detail="At least one supported setting must be provided.",
         )
     try:
+        if getattr(request.app.state, "wallet_repository", None) is not None:
+            # Check on-chain only when Owner authority is what allows this change: solo
+            # mode always, auto_match only for an Owner who is not also an OrgAdmin. An
+            # admin's auto_match change must not depend on RPC availability.
+            wallet_service = _wallet_service(request)
+            user_id = member.user_id
+            roles = await wallet_service.membership_roles(
+                org_id=member.organization_id, user_id=user_id
+            )
+            needs_owner = payload.solo_mode is not None or (
+                roles is not None and OrganizationRole.ORG_ADMIN.value not in roles
+            )
+            if needs_owner:
+                await wallet_service.require_onchain_owner(
+                    org_id=member.organization_id, user_id=user_id
+                )
         organization = await _repository(request).update_settings(
-            organization_id=organization_id,
-            user_id=_current_user(access),
+            organization_id=member.organization_id,
+            user_id=member.user_id,
             solo_mode=payload.solo_mode,
             auto_match=payload.auto_match,
         )
     except OrganizationNotFound:
-        raise _not_found() from None
+        raise organization_not_found() from None
+    except OrganizationOwnerNotOnchain:
+        raise owner_not_onchain() from None
     except OrganizationPermissionDenied:
         raise _forbidden() from None
     return OrganizationResponse(org=OrganizationView.from_record(organization))

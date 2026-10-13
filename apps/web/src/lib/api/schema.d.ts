@@ -72,6 +72,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/auth/siwe/nonce': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Siwe Nonce */
+    get: operations['siwe_nonce_v1_auth_siwe_nonce_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/chains': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Chains */
+    get: operations['list_chains_v1_chains_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/health': {
     parameters: {
       query?: never;
@@ -101,6 +135,40 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Link Wallet */
+    post: operations['link_wallet_v1_me_wallets_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets/{address}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Unlink Wallet */
+    delete: operations['unlink_wallet_v1_me_wallets__address__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -140,6 +208,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/audit-log': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Audit Log */
+    get: operations['list_audit_log_v1_orgs__organization_id__audit_log_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/audit-log/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Verify Audit Log */
+    get: operations['verify_audit_log_v1_orgs__organization_id__audit_log_verify_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -161,6 +263,93 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AssetView */
+    AssetView: {
+      /** Address */
+      address: string;
+      /** Decimals */
+      decimals: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Istest */
+      isTest: boolean;
+      /** Symbol */
+      symbol: string;
+    };
+    /** AuditLogResponse */
+    AuditLogResponse: {
+      /** Items */
+      items: components['schemas']['AuditRecordView'][];
+      /** Nextcursor */
+      nextCursor: string | null;
+    };
+    /**
+     * AuditRecordView
+     * @description One audit record; JSON Lines of these are the dump that ``chain.py verify`` reads.
+     */
+    AuditRecordView: {
+      /** Action */
+      action: string;
+      /** Actorid */
+      actorId: string | null;
+      /** Actortype */
+      actorType: string;
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Data */
+      data: {
+        [key: string]: unknown;
+      };
+      /** Entityid */
+      entityId: string | null;
+      /** Entitytype */
+      entityType: string;
+      /** Hash */
+      hash: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Prevhash */
+      prevHash: string;
+      /** Seq */
+      seq: number;
+    };
+    /** AuditVerifyResponse */
+    AuditVerifyResponse: {
+      /** Brokenat */
+      brokenAt: number | null;
+      /** Checked */
+      checked: number;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'INTACT' | 'BROKEN';
+    };
+    /** ChainView */
+    ChainView: {
+      /** Assets */
+      assets: components['schemas']['AssetView'][];
+      /** Chainid */
+      chainId: number;
+      /** Explorerurl */
+      explorerUrl: string;
+      /** Name */
+      name: string;
+    };
+    /** ChainsResponse */
+    ChainsResponse: {
+      /** Chains */
+      chains: components['schemas']['ChainView'][];
+    };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
       /** Country */
@@ -189,6 +378,13 @@ export interface components {
       /** Version */
       version: string;
     };
+    /** LinkWalletRequest */
+    LinkWalletRequest: {
+      /** Message */
+      message: string;
+      /** Signature */
+      signature: string;
+    };
     /** MagicLinkRequest */
     MagicLinkRequest: {
       /** Email */
@@ -214,8 +410,14 @@ export interface components {
        * Format: uuid
        */
       orgId: string;
+      /** Ownercheckedat */
+      ownerCheckedAt: string | null;
+      /** Ownerisonchain */
+      ownerIsOnchain: boolean;
       /** Roles */
       roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
       /** Status */
       status: string;
     };
@@ -270,6 +472,22 @@ export interface components {
       name: string;
       /** Solomode */
       soloMode: boolean;
+    };
+    /** SiweNonceResponse */
+    SiweNonceResponse: {
+      /** Chainid */
+      chainId: number;
+      /** Domain */
+      domain: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Nonce */
+      nonce: string;
+      /** Scheme */
+      scheme: string;
     };
     /** UserView */
     UserView: {
@@ -434,6 +652,46 @@ export interface operations {
       };
     };
   };
+  siwe_nonce_v1_auth_siwe_nonce_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SiweNonceResponse'];
+        };
+      };
+    };
+  };
+  list_chains_v1_chains_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChainsResponse'];
+        };
+      };
+    };
+  };
   health_v1_health_get: {
     parameters: {
       query?: never;
@@ -470,6 +728,68 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  link_wallet_v1_me_wallets_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LinkWalletRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WalletView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unlink_wallet_v1_me_wallets__address__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -525,6 +845,76 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_audit_log_v1_orgs__organization_id__audit_log_get: {
+    parameters: {
+      query?: {
+        entityType?: string | null;
+        entityId?: string | null;
+        actor?: string | null;
+        from?: string | null;
+        to?: string | null;
+        cursor?: number | null;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  verify_audit_log_v1_orgs__organization_id__audit_log_verify_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditVerifyResponse'];
         };
       };
       /** @description Validation Error */

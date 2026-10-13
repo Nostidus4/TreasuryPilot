@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from treasurypilot_api.audit import ZERO_HASH, AuditLog, compute_hash
-from treasurypilot_api.audit.writer import _json_value
+from treasurypilot_api.audit.chain import _json_value
 
 
 def test_integral_decimals_have_one_canonical_form() -> None:

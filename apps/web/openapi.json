@@ -1,6 +1,207 @@
 {
   "components": {
     "schemas": {
+      "AssetView": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "decimals": {
+            "title": "Decimals",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isTest": {
+            "title": "Istest",
+            "type": "boolean"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": ["id", "symbol", "decimals", "address", "isTest"],
+        "title": "AssetView",
+        "type": "object"
+      },
+      "AuditLogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRecordView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": ["items", "nextCursor"],
+        "title": "AuditLogResponse",
+        "type": "object"
+      },
+      "AuditRecordView": {
+        "description": "One audit record; JSON Lines of these are the dump that ``chain.py verify`` reads.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorid"
+          },
+          "actorType": {
+            "title": "Actortype",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "entityId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entityid"
+          },
+          "entityType": {
+            "title": "Entitytype",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "prevHash": {
+            "title": "Prevhash",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "orgId",
+          "at",
+          "actorType",
+          "actorId",
+          "action",
+          "entityType",
+          "entityId",
+          "data",
+          "prevHash",
+          "hash"
+        ],
+        "title": "AuditRecordView",
+        "type": "object"
+      },
+      "AuditVerifyResponse": {
+        "properties": {
+          "brokenAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brokenat"
+          },
+          "checked": {
+            "title": "Checked",
+            "type": "integer"
+          },
+          "status": {
+            "enum": ["INTACT", "BROKEN"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["status", "checked", "brokenAt"],
+        "title": "AuditVerifyResponse",
+        "type": "object"
+      },
+      "ChainView": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/AssetView"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "explorerUrl": {
+            "title": "Explorerurl",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["chainId", "name", "explorerUrl", "assets"],
+        "title": "ChainView",
+        "type": "object"
+      },
+      "ChainsResponse": {
+        "properties": {
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/ChainView"
+            },
+            "title": "Chains",
+            "type": "array"
+          }
+        },
+        "required": ["chains"],
+        "title": "ChainsResponse",
+        "type": "object"
+      },
       "CreateOrganizationRequest": {
         "properties": {
           "country": {
@@ -77,6 +278,25 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LinkWalletRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["message", "signature"],
+        "title": "LinkWalletRequest",
+        "type": "object"
+      },
       "MagicLinkRequest": {
         "properties": {
           "email": {
@@ -126,6 +346,22 @@
             "title": "Orgid",
             "type": "string"
           },
+          "ownerCheckedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownercheckedat"
+          },
+          "ownerIsOnchain": {
+            "title": "Ownerisonchain",
+            "type": "boolean"
+          },
           "roles": {
             "items": {
               "type": "string"
@@ -133,12 +369,24 @@
             "title": "Roles",
             "type": "array"
           },
+          "signerRolesActive": {
+            "title": "Signerrolesactive",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
           }
         },
-        "required": ["id", "orgId", "roles", "status"],
+        "required": [
+          "id",
+          "orgId",
+          "roles",
+          "status",
+          "ownerIsOnchain",
+          "ownerCheckedAt",
+          "signerRolesActive"
+        ],
         "title": "MembershipView",
         "type": "object"
       },
@@ -283,6 +531,34 @@
           "createdAt"
         ],
         "title": "OrganizationView",
+        "type": "object"
+      },
+      "SiweNonceResponse": {
+        "properties": {
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          },
+          "scheme": {
+            "title": "Scheme",
+            "type": "string"
+          }
+        },
+        "required": ["nonce", "domain", "scheme", "chainId", "expiresAt"],
+        "title": "SiweNonceResponse",
         "type": "object"
       },
       "UserView": {
@@ -512,6 +788,44 @@
         "tags": ["identity"]
       }
     },
+    "/v1/auth/siwe/nonce": {
+      "get": {
+        "operationId": "siwe_nonce_v1_auth_siwe_nonce_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiweNonceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Siwe Nonce",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/chains": {
+      "get": {
+        "operationId": "list_chains_v1_chains_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Chains",
+        "tags": ["treasury"]
+      }
+    },
     "/v1/health": {
       "get": {
         "operationId": "health_v1_health_get",
@@ -547,6 +861,78 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/wallets": {
+      "post": {
+        "operationId": "link_wallet_v1_me_wallets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkWalletRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Wallet",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/me/wallets/{address}": {
+      "delete": {
+        "operationId": "unlink_wallet_v1_me_wallets__address__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "schema": {
+              "title": "Address",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlink Wallet",
         "tags": ["identity"]
       }
     },
@@ -628,6 +1014,202 @@
         },
         "summary": "Get Organization",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/audit-log": {
+      "get": {
+        "operationId": "list_audit_log_v1_orgs__organization_id__audit_log_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entitytype"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entityid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit Log",
+        "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/audit-log/verify": {
+      "get": {
+        "operationId": "verify_audit_log_v1_orgs__organization_id__audit_log_verify_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Audit Log",
+        "tags": ["audit"]
       }
     },
     "/v1/orgs/{organization_id}/settings": {

@@ -1,4 +1,4 @@
-"""Validator output models (M08 §4.1). Check evaluation and `decide` are POL-003."""
+"""Validator output models (M08 §4.1). `decide` is POL-003."""
 
 from __future__ import annotations
 
@@ -35,6 +35,13 @@ class Check(FrozenModel):
     code: Code | None
     expected: str | None
     observed: str | None
+    skipped: bool = False  # not run because a gate failed or its input is absent (M08 §8.1)
+
+    @model_validator(mode="after")
+    def validate_skipped(self) -> Check:
+        if self.skipped and (self.passed or self.code is not None):
+            raise ValueError("a skipped check neither passes nor carries a code")
+        return self
 
 
 class Decision(FrozenModel):
@@ -58,7 +65,7 @@ class Decision(FrozenModel):
             raise ValueError("warnings must contain only warning codes")
         if (self.decision, self.primary) != aggregate(self.codes):
             raise ValueError("decision and primary must follow from codes (M08 §8.2)")
-        failed = {check.code for check in self.checks if not check.passed}
+        failed = {c.code for c in self.checks if not c.passed and not c.skipped}
         if failed != {*self.codes, *self.warnings}:
             raise ValueError("codes and warnings must be exactly the codes of failed checks")
         if (self.stage == "PLAN") != (self.step_seq is None):

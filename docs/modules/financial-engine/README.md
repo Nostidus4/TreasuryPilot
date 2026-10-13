@@ -15,7 +15,7 @@ The engine is the **only place where amounts and schedules are computed** (BR-03
 | Liquidity calculator: Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity, Cap, refill decision | Deciding *whether* a step is allowed (M08 validator does that, using engine numbers) |
 | Payment-terms model and value function (discounts, late fees) | Extracting terms from text (M09) |
 | Scheduler: B1 baseline (EDF) and B2 optimizer (CP-SAT) + exhaustive oracle for tests | Calling the LLM; the AI proposes orderings that the engine scores (M09 → M07) |
-| Plan scoring, binding constraints, infeasibility reasons | FX / depeg (F-041, Later), multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
+| Plan scoring, binding constraints, infeasibility reasons; pure FX conversion and depeg guard (F-041) | Multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
 | 7-day forecast (P2) | |
 
 ## 2. Features, requirements and rules
@@ -101,11 +101,12 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
-| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, N ≤ 8 | **tests only** |
+| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
 | `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
 | `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
+| `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
 
 Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
 Pydantic raises `ValidationError` while constructing input models; engine entry points defensively
@@ -207,11 +208,47 @@ Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-
 
 Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a share of the time limit (default 5 s total). **Determinism:** `num_workers = 1`, fixed `random_seed`, inputs sorted by id (M07-D7). **Fallback:** status `UNKNOWN`/error/no solution in time ⇒ return EDF with `status = FALLBACK` and log it.
 
-**Oracle (tests):** enumerate all day assignments for N ≤ 8 requests and horizon ≤ 5 days; CP-SAT must match its objective on generated cases (hypothesis).
+**Oracle (tests and benchmarks):** search, with memoized dynamic programming, every assignment of at most 8 requests to a day through the latest due or payee activation day (maximum 5 days) or to the unscheduled set, every same-day payment order, and for each payment both BR-032 refill outcomes (`preferred` top-up or `shortage` only). Refill amounts between those two (for example pre-funding a later request) are not searched. Inputs outside either bound are rejected. The oracle shares EDF's payment feasibility transition and BR-052 scoring helper. Reusable bounded Hypothesis inputs for the oracle and ENG-007 equivalence tests live in `packages/py-core/tests/strategies/financial_engine.py`; the oracle is never called from production paths.
 
 ### 8.5 Fingerprint
 
 `normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
+
+### 8.7 Fiat FX safety core (ENG-L02)
+
+`FiatApproval` binds the fiat amount in minor units, the reference `FxRate`, the
+maximum stablecoin amount in token base units and the tolerated rate deviation in
+basis points. `FxRate` is an exact rational number of stablecoin base units per fiat
+minor unit. `FxPolicy` names the configured source, maximum quote age and USD peg
+deviation. `FxQuote` supplies that source's observed rate, timestamp and stablecoin
+USD price in microdollars per whole token (1,000,000 = $1).
+
+At the execution boundary, the caller obtains a fresh quote and invokes
+`propose_fiat_payment`. It rejects a mismatched source/pair, future or stale quote,
+rate outside `abs(execution_rate / approved_rate - 1) ≤ tolerance_bps / 10000`,
+and `abs(USD price - $1) > depeg_threshold_bps / 10000`. Rational comparison uses
+integer cross multiplication. Conversion is `ceil(fiat_minor_amount × quote_rate)`
+to token base units. If that exceeds the approved token maximum, the function
+raises `FiatPaymentBlocked(APPROVED_MAX_EXCEEDED)` instead of clipping the payment.
+The caller must route any block to review, bind the returned token amount to the
+approval, and repeat this check immediately before PAY. Wrong argument types raise
+`TypeError` and malformed values raise `ValidationError`/`ValueError`;
+`FiatPaymentBlocked` is not a `ValueError`, so callers can tell bad input from a review
+block. The depeg guard assumes a USD-pegged stablecoin (USDC). Invoice persistence,
+approval signing and payment orchestration belong to INV-L04.
+
+### 8.6 Seven-day liquidity forecast
+
+`forecast(snapshot, requests, policy, days=7)` runs the deterministic EDF schedule and
+replays its payments and refills in scheduler order. It returns each wallet's end-of-day
+balance, days when a wallet is below its buffer, and the refills selected by the same
+source-buffer, refill-bound, per-request, and daily-limit rules as scheduling. The
+window can be set from 1 to 30 days. Approved obligations that remain unpaid after
+their due day are reported as `unpaid_due` (`amount_due`: the payable amount plus any
+accrued late fee) and `shortfall_days`, and count against their paying wallet when
+deciding buffer hits, so a wallet that cannot cover an upcoming invoice shows up even
+though the scheduler never plans that payment. `snapshot.source` must be Safe T; scheduled payments
+outside the requested window are listed in `deferred_request_ids`.
 
 ## 9. Configuration and defaults
 
@@ -255,6 +292,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 | Determinism | identical input ⇒ identical output | ENG-007 |
 | Timeout/fallback | forced tiny limit ⇒ FALLBACK = EDF | ENG-007 |
 | Vectors | fingerprint matches Solidity | ENG-009 |
+| Forecast | hand-computed balances; refills within source buffer and refill limits | ENG-011 |
 | Coverage | ≥ 85 % lines (NFR-MAINT-03) | CI |
 
 ## 13. Tickets (order of work)

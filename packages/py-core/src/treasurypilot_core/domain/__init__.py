@@ -1,10 +1,14 @@
 """TreasuryPilot's immutable, I/O-free financial domain models."""
 
+from .fiat_fx import FiatApproval, FxPolicy, FxQuote, FxRate
 from .models import (
     ApprovedRequest,
     Asset,
     BindingConstraint,
     BorrowProposal,
+    Forecast,
+    ForecastDay,
+    ForecastRefill,
     Infeasible,
     LateFee,
     Limits,
@@ -28,6 +32,13 @@ __all__ = [
     "Asset",
     "BindingConstraint",
     "BorrowProposal",
+    "Forecast",
+    "FiatApproval",
+    "FxPolicy",
+    "FxQuote",
+    "FxRate",
+    "ForecastDay",
+    "ForecastRefill",
     "Infeasible",
     "LiquidityDecision",
     "LiquidityPolicy",
