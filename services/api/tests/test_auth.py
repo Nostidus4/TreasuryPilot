@@ -32,6 +32,8 @@ from treasurypilot_api.identity.organizations import (
 )
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
 from treasurypilot_api.main import create_app
+from treasurypilot_api.treasury.config import ChainConfig, PlatformConfiguration
+from treasurypilot_api.treasury.sync import asset_id
 
 
 class MutableClock:
@@ -809,3 +811,61 @@ def test_organization_input_is_validated_and_settings_require_authentication() -
         )
         assert created.status_code == 201
         assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
+
+
+def _configured_chain(chain_id: int, *, enabled: bool) -> ChainConfig:
+    return ChainConfig.model_validate(
+        {
+            "chainId": chain_id,
+            "name": f"Chain {chain_id}",
+            "isTestnet": True,
+            "confirmations": 3,
+            "explorerUrl": "https://explorer.example",
+            "rpcUrls": ["https://rpc-one.example", "https://rpc-two.example"],
+            "enabled": enabled,
+            "assets": [
+                {
+                    "address": "0x" + "AB" * 20,
+                    "symbol": "tUSDC",
+                    "decimals": 6,
+                    "issuerLabel": "TreasuryPilot test token",
+                    "isTest": True,
+                }
+            ],
+        }
+    )
+
+
+def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
+    with make_harness() as harness:
+        harness.client.app.state.platform_configuration = PlatformConfiguration(  # type: ignore[attr-defined]
+            chains=(
+                _configured_chain(11155111, enabled=True),
+                _configured_chain(1, enabled=False),
+            ),
+            manifests=(),
+        )
+        assert harness.client.get("/v1/chains").status_code == 401
+
+        harness.login()
+        response = harness.client.get("/v1/chains")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "chains": [
+                {
+                    "chainId": 11155111,
+                    "name": "Chain 11155111",
+                    "explorerUrl": "https://explorer.example/",
+                    "assets": [
+                        {
+                            "id": str(asset_id(11155111, "0x" + "ab" * 20)),
+                            "symbol": "tUSDC",
+                            "decimals": 6,
+                            "address": "0x" + "ab" * 20,
+                            "isTest": True,
+                        }
+                    ],
+                }
+            ]
+        }
