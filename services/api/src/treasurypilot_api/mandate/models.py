@@ -343,6 +343,7 @@ class Payee(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("id", "treasury_id", name="uq_payees_id_treasury"),
+        UniqueConstraint("id", "treasury_id", "vendor_id", name="uq_payees_id_treasury_vendor"),
         Index("ix_payees_treasury_status", "treasury_id", "status"),
         Index(
             "uq_payees_active_treasury_address",
@@ -416,6 +417,12 @@ class ExceptionRecord(Base):
             ["governance_txs.id", "governance_txs.treasury_id"],
             name="fk_exceptions_governance_tx_treasury",
         ),
+        ForeignKeyConstraint(
+            ["request_id", "treasury_id"],
+            ["payment_requests.id", "payment_requests.treasury_id"],
+            name="fk_exceptions_request_treasury",
+            ondelete="RESTRICT",
+        ),
         Index(
             "uq_exceptions_open_request",
             "request_id",
@@ -430,9 +437,7 @@ class ExceptionRecord(Base):
     treasury_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
     )
-    request_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
-    )
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     mandate_onchain_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
     payee: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
