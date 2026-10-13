@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import uuid7
+from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.mandate.configuration import (
     MandateConfig,
     MandateValidationError,
@@ -320,6 +320,7 @@ def _draft_response(
 router = APIRouter(
     prefix="/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates", tags=["mandates"]
 )
+_require_owner = require_role(OrganizationRole.OWNER)
 
 
 @router.get("", response_model=MandateListResponse, openapi_extra={"x-organization-scoped": True})
@@ -353,7 +354,7 @@ async def create_mandate_draft(
     payload: MandateConfig,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberContext = Depends(_require_owner),  # noqa: B008
 ) -> MandateDraftResponse:
     repository = _repository(request)
     context = await repository.get_context(
@@ -400,7 +401,7 @@ async def clone_mandate_draft(
     mandate_id: uuid.UUID,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberContext = Depends(_require_owner),  # noqa: B008
 ) -> MandateDraftResponse:
     repository = _repository(request)
     context = await repository.get_context(
@@ -462,7 +463,7 @@ async def discard_mandate_draft(
     treasury_id: uuid.UUID,
     mandate_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberContext = Depends(_require_owner),  # noqa: B008
 ) -> Response:
     row = await _repository(request).discard_draft(
         organization_id=member.organization_id,
