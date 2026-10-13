@@ -70,8 +70,11 @@ manifest. The local deployment wrappers run verification and publication after
 successful broadcast. Schema-only publication preserves the existing deployment
 metadata and stores its UID as a scalar hex string.
 
-The contracts are gated to Anvil (`31337`) and Sepolia (`11155111`). The Aave pool
-and USDC are from the Aave address book commit recorded in the manifest. The EAS
+The contracts are gated to Anvil (`31337`) and Sepolia (`11155111`). The Aave pool,
+USDC and USDC aToken are from the Aave address book commit recorded in the manifest.
+`make config-check` compares the live RPC chain id, token decimals, reserve mapping,
+and aToken identity against that reviewed manifest; set `SEPOLIA_RPC_URL` or
+`ETH_RPC_URL` before running it locally or before a demo. The EAS
 Registry and EAS addresses follow the EAS Sepolia deployment at its pinned source
 revision. Live Etherscan verification and a sample easscan attestation need the
 user's testnet broadcast key, RPC and explorer API key.
