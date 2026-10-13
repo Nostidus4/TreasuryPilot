@@ -50,6 +50,7 @@ async def _exercise_membership_flow(database_url: str) -> None:
                 (signer_id, "signer@example.test"),
             ):
                 session.add(User(id=user_id, email=email, display_name=email))
+            await session.flush()
             session.add(
                 Organization(
                     id=org_id,
@@ -59,6 +60,7 @@ async def _exercise_membership_flow(database_url: str) -> None:
                     updated_by=owner_id,
                 )
             )
+            await session.flush()
             session.add_all(
                 [
                     Membership(
@@ -134,8 +136,20 @@ async def _exercise_membership_flow(database_url: str) -> None:
                 roles=("OrgAdmin",),
                 updated_by=admin_id,
             )
+        await repository.update_member(
+            org_id=org_id,
+            user_id=owner_id,
+            roles=("Owner",),
+            updated_by=admin_id,
+        )
         with pytest.raises(LastAdministrator):
             await repository.remove_member(org_id=org_id, user_id=admin_id)
+        await repository.update_member(
+            org_id=org_id,
+            user_id=owner_id,
+            roles=("OrgAdmin", "Owner"),
+            updated_by=admin_id,
+        )
 
         changed = await repository.update_member(
             org_id=org_id,
