@@ -298,6 +298,14 @@ def test_rejects_invalid_or_duplicate_assets(
         PlatformConfiguration.load(config_path, deployments_dir)
 
 
+def test_chain_with_assets_requires_an_http_rpc_url(tmp_path: Path) -> None:
+    chain = _chain(assets=[_asset()], rpcUrls=["wss://rpc-one.example", "wss://rpc-two.example"])
+    config_path, deployments_dir = _write_configuration(tmp_path, chain=chain, manifest=_manifest())
+
+    with pytest.raises(PlatformConfigurationError, match="http"):
+        PlatformConfiguration.load(config_path, deployments_dir)
+
+
 def test_deployment_id_is_stable_and_keyed_by_natural_key() -> None:
     first = deployment_id(CHAIN_ID, "TREASURY_MODULE_IMPLEMENTATION", "1.0.0")
 

@@ -114,6 +114,11 @@ class ChainConfig(_ConfigModel):
         addresses = [asset.address for asset in self.assets]
         if len(addresses) != len(set(addresses)):
             raise ValueError("asset addresses must be unique per chain")
+        # Asset decimals are verified over HTTP JSON-RPC (treasury/onchain.py).
+        if self.assets and not any(
+            url.startswith(("http://", "https://")) for url in self.rpc_urls
+        ):
+            raise ValueError("chains with assets require at least one http(s) RPC URL")
         return self
 
 
