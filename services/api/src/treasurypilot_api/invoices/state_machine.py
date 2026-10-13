@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from sqlalchemy import select, text
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
 from treasurypilot_api.invoices.models import (
     CancelOnchainStatus,
     PaymentRequest,
@@ -31,6 +31,7 @@ class TransitionAction(StrEnum):
     EXCEPTION_GRANTED = "exception_granted"
     PLAN_ALLOWED = "plan_allowed"
     PLAN_BLOCKED = "plan_blocked"
+    PREPARATION_FAILED = "preparation_failed"
     PAY_SUBMITTED = "pay_submitted"
     PAY_CONFIRMED = "pay_confirmed"
     PAY_UNKNOWN = "pay_unknown"
@@ -54,8 +55,17 @@ class TransitionForbidden(RequestTransitionError):
     code = "TRANSITION_FORBIDDEN"
 
 
+class MakerCheckerViolation(TransitionForbidden):
+    code = "MAKER_CHECKER"
+
+
 class PayOperationInFlight(RequestTransitionError):
     code = "PAYMENT_IN_FLIGHT"
+
+
+class RequestVersionConflict(RequestTransitionError):
+    status_code = 412
+    code = "PRECONDITION_FAILED"
 
 
 class RequestNotFound(Exception):
@@ -78,6 +88,8 @@ class TransitionRule:
     actor_type: StatusEventActorType
     roles: frozenset[OrganizationRole] = frozenset()
     creator_only: bool = False
+    # Maker-checker: the actor must be neither the creator nor the last editor.
+    checker_only: bool = False
 
 
 def _user_rule(
@@ -86,6 +98,7 @@ def _user_rule(
     action: TransitionAction,
     *roles: OrganizationRole,
     creator_only: bool = False,
+    checker_only: bool = False,
 ) -> TransitionRule:
     return TransitionRule(
         source,
@@ -94,6 +107,7 @@ def _user_rule(
         StatusEventActorType.USER,
         frozenset(roles),
         creator_only,
+        checker_only,
     )
 
 
@@ -123,18 +137,21 @@ _RULES: tuple[TransitionRule, ...] = (
         RequestStatus.DRAFT,
         TransitionAction.REQUEST_CHANGES,
         OrganizationRole.APPROVER,
+        checker_only=True,
     ),
     _user_rule(
         RequestStatus.AWAITING_APPROVAL,
         RequestStatus.APPROVED,
         TransitionAction.APPROVE,
         OrganizationRole.APPROVER,
+        checker_only=True,
     ),
     _user_rule(
         RequestStatus.AWAITING_APPROVAL,
         RequestStatus.REJECTED,
         TransitionAction.REJECT,
         OrganizationRole.APPROVER,
+        checker_only=True,
     ),
     _user_rule(
         RequestStatus.APPROVED,
@@ -160,6 +177,11 @@ _RULES: tuple[TransitionRule, ...] = (
     ),
     _system_rule(RequestStatus.PLANNING, RequestStatus.PREPARING, TransitionAction.PLAN_ALLOWED),
     _system_rule(RequestStatus.PLANNING, RequestStatus.NEEDS_REVIEW, TransitionAction.PLAN_BLOCKED),
+    _system_rule(
+        RequestStatus.PREPARING,
+        RequestStatus.NEEDS_REVIEW,
+        TransitionAction.PREPARATION_FAILED,
+    ),
     _system_rule(RequestStatus.PREPARING, RequestStatus.PAYING, TransitionAction.PAY_SUBMITTED),
     _system_rule(RequestStatus.PAYING, RequestStatus.PAID, TransitionAction.PAY_CONFIRMED),
     _system_rule(RequestStatus.PAYING, RequestStatus.NEEDS_REVIEW, TransitionAction.PAY_UNKNOWN),
@@ -196,19 +218,30 @@ _RULES: tuple[TransitionRule, ...] = (
         OrganizationRole.OWNER,
     ),
 )
+# M05 §5: cancel is allowed from every state before Paying.
 _RULES += tuple(
     _user_rule(source, RequestStatus.CANCELLED, TransitionAction.CANCEL, role)
     for source in (
         RequestStatus.AWAITING_APPROVAL,
         RequestStatus.APPROVED,
         RequestStatus.SCHEDULED,
+        RequestStatus.PLANNING,
         RequestStatus.AWAITING_AUTHORITY,
+        RequestStatus.PREPARING,
         RequestStatus.NEEDS_REVIEW,
     )
     for role in (OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER)
 )
 
 PAY_IN_FLIGHT_STATUSES = frozenset({"NotSubmitted", "Submitted", "Pending", "Unknown"})
+
+
+_CHECKER_ACTIONS = frozenset(rule.action for rule in _RULES if rule.checker_only)
+
+
+def _blocked_by_pay_in_flight(target: RequestStatus, action: TransitionAction) -> bool:
+    """Cancelling and editing bound fields both need no PAY operation in flight."""
+    return target == RequestStatus.CANCELLED or action == TransitionAction.EDIT_BOUND_FIELDS
 
 
 def _coerce_status(status: RequestStatus | str) -> RequestStatus:
@@ -224,6 +257,8 @@ def validate_transition(
     target: RequestStatus | str,
     actor: TransitionActor,
     created_by: uuid.UUID | None,
+    last_edited_by: uuid.UUID | None = None,
+    solo_mode: bool = False,
     pay_operation_in_flight: bool = False,
 ) -> TransitionRule:
     source_status = _coerce_status(source)
@@ -262,11 +297,18 @@ def validate_transition(
     if not authorized:
         raise TransitionForbidden("The actor does not have permission for this transition.")
 
-    if target_status == RequestStatus.CANCELLED and pay_operation_in_flight:
-        raise PayOperationInFlight(
-            "A payment request cannot be cancelled while a PAY operation is in flight."
+    rule = authorized[0]
+    if (
+        rule.checker_only
+        and not solo_mode
+        and actor.actor_id in {created_by, last_edited_by} - {None}
+    ):
+        raise MakerCheckerViolation(
+            "The creator or last editor of a request cannot review it unless solo mode is on."
         )
-    return authorized[0]
+    if _blocked_by_pay_in_flight(target_status, actor.action) and pay_operation_in_flight:
+        raise PayOperationInFlight("This change is not allowed while a PAY operation is in flight.")
+    return rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,16 +331,26 @@ class PayOperationGuard(Protocol):
 
 
 class SqlAlchemyPayOperationGuard:
+    """Look for an in-flight PAY operation of a request.
+
+    The ``operations`` table belongs to the execution module (M07) and is not
+    migrated yet. Until it exists no PAY operation can be in flight, so the guard
+    checks for the table first instead of failing every cancel with UndefinedTable.
+    """
+
+    _IN_FLIGHT = text(
+        "SELECT EXISTS ("
+        "SELECT 1 FROM operations "
+        "WHERE request_id = :request_id AND kind = 'PAY' AND status IN :statuses"
+        ")"
+    ).bindparams(bindparam("statuses", expanding=True))
+
     async def has_in_flight_pay(self, *, session: AsyncSession, request_id: uuid.UUID) -> bool:
+        if await session.scalar(text("SELECT to_regclass('operations')")) is None:
+            return False
         result = await session.scalar(
-            text(
-                "SELECT EXISTS ("
-                "SELECT 1 FROM operations "
-                "WHERE request_id = :request_id AND kind = 'PAY' "
-                "AND status IN ('NotSubmitted', 'Submitted', 'Pending', 'Unknown')"
-                ")"
-            ),
-            {"request_id": request_id},
+            self._IN_FLIGHT,
+            {"request_id": request_id, "statuses": sorted(PAY_IN_FLIGHT_STATUSES)},
         )
         return bool(result)
 
@@ -332,8 +384,10 @@ class RequestStateMachine:
         request_id: uuid.UUID,
         target: RequestStatus,
         actor: TransitionActor,
+        expected_version: int | None = None,
         reason: str | None = None,
     ) -> RequestTransitionResult:
+        """Apply ``target``; user actors must pass the version they saw (``If-Match``)."""
         async with self._sessions() as session, session.begin():
             request = await session.scalar(
                 select(PaymentRequest)
@@ -345,23 +399,35 @@ class RequestStateMachine:
             )
             if request is None:
                 raise RequestNotFound
+            if actor.actor_type == StatusEventActorType.USER and expected_version is None:
+                raise RequestVersionConflict("If-Match with the request version is required.")
+            if expected_version is not None and expected_version != request.version:
+                raise RequestVersionConflict(
+                    "The request changed since it was read; reload and try again."
+                )
 
             source = _coerce_status(request.status)
+            solo_mode = False
+            if actor.action in _CHECKER_ACTIONS:
+                solo_mode = bool(
+                    await session.scalar(
+                        select(Organization.solo_mode).where(Organization.id == organization_id)
+                    )
+                )
+            pay_operation_in_flight = _blocked_by_pay_in_flight(
+                target, actor.action
+            ) and await self._pay_operation_guard.has_in_flight_pay(
+                session=session, request_id=request_id
+            )
             rule = validate_transition(
                 source=source,
                 target=target,
                 actor=actor,
                 created_by=request.created_by,
+                last_edited_by=request.last_edited_by,
+                solo_mode=solo_mode,
+                pay_operation_in_flight=pay_operation_in_flight,
             )
-            if (
-                target == RequestStatus.CANCELLED
-                and await self._pay_operation_guard.has_in_flight_pay(
-                    session=session, request_id=request_id
-                )
-            ):
-                raise PayOperationInFlight(
-                    "A payment request cannot be cancelled while a PAY operation is in flight."
-                )
 
             if target == RequestStatus.CANCELLED:
                 approved_before = source == RequestStatus.APPROVED
@@ -406,6 +472,7 @@ class RequestStateMachine:
                         "from": source.value,
                         "to": rule.target.value,
                         "reason": reason,
+                        "soloMode": solo_mode,
                         "cancelOnchain": request.cancel_onchain,
                         "version": request.version,
                     },
