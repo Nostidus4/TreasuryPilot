@@ -35,6 +35,7 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
+from treasurypilot_api.invoices.near_duplicates import find_near_duplicates
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
 from treasurypilot_api.mandate.models import Payee, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
@@ -358,6 +359,14 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
     )
     if (paid_count or 0) < 5:
         flags.append(("NO_BASELINE", RequestFlagSeverity.LOW, {"minimumHistory": 5}))
+    for duplicate in await find_near_duplicates(session, row):
+        flags.append(
+            (
+                "POSSIBLE_DUPLICATE",
+                RequestFlagSeverity(duplicate.severity),
+                duplicate.evidence(row.invoice_no),
+            )
+        )
     result: list[dict[str, object]] = []
     for code, severity, evidence in flags:
         flag = RequestFlag(

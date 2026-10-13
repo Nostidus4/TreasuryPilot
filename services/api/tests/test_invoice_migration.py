@@ -46,6 +46,7 @@ def test_invoice_upgrade_and_downgrade_compile_offline() -> None:
 
     assert "uq_payment_requests_active_fingerprint" in sql
     assert "uq_payment_requests_idempotency_key" in sql
+    assert "ix_payment_requests_vendor_amount_issue_date" in sql
     assert "idempotency_payload_hash" in sql
     assert "status NOT IN ('Rejected', 'Cancelled', 'Expired')" in sql
     assert "CREATE TRIGGER trg_approvals_immutable" in sql

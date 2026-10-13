@@ -191,6 +191,7 @@ class PaymentRequest(Base):
         ),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
+        Index("ix_payment_requests_vendor_amount_issue_date", "vendor_id", "amount", "issue_date"),
         Index(
             "uq_payment_requests_active_fingerprint",
             "treasury_id",
