@@ -140,6 +140,80 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Stream Events
+     * @description Server-sent events for this organization; resume with ``Last-Event-ID``.
+     */
+    get: operations['stream_events_v1_orgs__organization_id__events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/notifications': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Notifications */
+    get: operations['list_notifications_v1_orgs__organization_id__notifications_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/notifications/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark Notifications Read */
+    post: operations['mark_notifications_read_v1_orgs__organization_id__notifications_read_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/notifications/{notification_id}/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mark Notification Read
+     * @description Mark one notification read; idempotent for the owner, 404 for anyone else.
+     */
+    post: operations['mark_notification_read_v1_orgs__organization_id__notifications__notification_id__read_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/review-items': {
     parameters: {
       query?: never;
@@ -399,6 +473,16 @@ export interface components {
       /** Version */
       version: number;
     };
+    /** MarkReadRequest */
+    MarkReadRequest: {
+      /** Ids */
+      ids: string[];
+    };
+    /** MarkReadResponse */
+    MarkReadResponse: {
+      /** Updated */
+      updated: number;
+    };
     /** MeResponse */
     MeResponse: {
       /** Memberships */
@@ -423,6 +507,43 @@ export interface components {
       roles: string[];
       /** Status */
       status: string;
+    };
+    /** NotificationList */
+    NotificationList: {
+      /** Items */
+      items: components['schemas']['NotificationView'][];
+      /** Unreadcount */
+      unreadCount: number;
+    };
+    /** NotificationView */
+    NotificationView: {
+      /** Body */
+      body: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Eventid
+       * Format: uuid
+       */
+      eventId: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Link */
+      link: string;
+      /** Readat */
+      readAt: string | null;
+      /** Severity */
+      severity: string;
+      /** Title */
+      title: string;
+      /** Type */
+      type: string;
     };
     /** OrganizationChecklist */
     OrganizationChecklist: {
@@ -854,6 +975,138 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  stream_events_v1_orgs__organization_id__events_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Last-Event-ID'?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_notifications_v1_orgs__organization_id__notifications_get: {
+    parameters: {
+      query?: {
+        unread?: boolean;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mark_notifications_read_v1_orgs__organization_id__notifications_read_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MarkReadRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MarkReadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mark_notification_read_v1_orgs__organization_id__notifications__notification_id__read_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        notification_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MarkReadResponse'];
         };
       };
       /** @description Validation Error */

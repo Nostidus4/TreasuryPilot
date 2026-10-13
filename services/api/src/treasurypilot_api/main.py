@@ -43,6 +43,11 @@ from treasurypilot_api.mandate.routes import (
 from treasurypilot_api.mandate.routes import (
     router as mandate_router,
 )
+from treasurypilot_api.notifications.routes import (
+    NotificationRepository,
+    SqlAlchemyNotificationRepository,
+)
+from treasurypilot_api.notifications.routes import router as notifications_router
 from treasurypilot_api.review.routes import ReviewRepository, SqlAlchemyReviewRepository
 from treasurypilot_api.review.routes import router as review_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -155,6 +160,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     mandate_repository: MandateRepository | None = None,
     review_repository: ReviewRepository | None = None,
+    notification_repository: NotificationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -169,6 +175,10 @@ def create_app(
         )
     if review_repository is None and engine is not None:
         review_repository = SqlAlchemyReviewRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if notification_repository is None and engine is not None:
+        notification_repository = SqlAlchemyNotificationRepository(
             async_sessionmaker(engine, expire_on_commit=False)
         )
 
@@ -213,6 +223,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
     app.state.review_repository = review_repository
+    app.state.notification_repository = notification_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -234,6 +245,7 @@ def create_app(
     app.include_router(organizations_router)
     app.include_router(mandate_router)
     app.include_router(review_router)
+    app.include_router(notifications_router)
 
     return app
 
