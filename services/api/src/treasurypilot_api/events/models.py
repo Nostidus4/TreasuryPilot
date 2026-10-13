@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -41,7 +42,7 @@ class DomainEvent(Base):
             "ix_domain_events_pending",
             "created_at",
             "id",
-            postgresql_where=text("published_at IS NULL"),
+            postgresql_where=text("published_at IS NULL AND failed_at IS NULL"),
         ),
     )
 
@@ -60,3 +61,6 @@ class DomainEvent(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Dead letter: an event that could not be routed is parked, not retried forever.
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)

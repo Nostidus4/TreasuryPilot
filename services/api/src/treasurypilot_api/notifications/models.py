@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,7 +32,7 @@ class NotificationSeverity(StrEnum):
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
-        CheckConstraint("type <> ''", name="ck_notifications_type"),
+        CheckConstraint("length(btrim(type)) > 0", name="ck_notifications_type"),
         CheckConstraint("length(btrim(title)) > 0", name="ck_notifications_title"),
         CheckConstraint("length(btrim(body)) > 0", name="ck_notifications_body"),
         CheckConstraint("link LIKE '/%'", name="ck_notifications_internal_link"),
@@ -46,7 +47,13 @@ class Notification(Base):
         ),
         UniqueConstraint("user_id", "event_id", name="uq_notifications_user_event"),
         Index("ix_notifications_org_created", "org_id", "created_at"),
-        Index("ix_notifications_user_unread", "user_id", "org_id", "created_at"),
+        Index(
+            "ix_notifications_user_unread",
+            "user_id",
+            "org_id",
+            "created_at",
+            postgresql_where=text("read_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)

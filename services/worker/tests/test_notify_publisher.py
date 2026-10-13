@@ -5,10 +5,13 @@ import json
 import os
 import uuid
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
 from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.notify import publisher as publisher_module
+from treasurypilot_worker.notify import routing as routing_module
 from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.routing import ROUTING_TABLE, policy_for_event
 
@@ -57,7 +60,7 @@ class _FakeConnection:
         self.finance_id = uuid.uuid4()
         self.owner_id = uuid.uuid4()
         self.other_owner_id = uuid.uuid4()
-        self.event = {
+        self.event_data = {
             "id": uuid.uuid4(),
             "org_id": self.org_id,
             "treasury_id": None,
@@ -66,7 +69,9 @@ class _FakeConnection:
             "entity_id": uuid.uuid4(),
             "payload": json.dumps({"requestId": str(uuid.uuid4())}),
             "published": False,
+            "failed": False,
         }
+        self.events = [self.event_data]
         self.memberships = (
             {"user_id": self.approver_id, "roles": ["Approver"]},
             {"user_id": self.finance_id, "roles": ["Finance"]},
@@ -81,34 +86,45 @@ class _FakeConnection:
         return _FakeTransaction()
 
     async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
-        if "FOR UPDATE SKIP LOCKED" in query:
-            self.claim_query = query
-            return [self.event] if not self.event["published"] else []
-        assert "m.roles && $2::text[]" in query
-        roles = set(args[1])
-        user_ids = set(args[2])
-        creator_id = args[3]
-        return [
-            membership
-            for membership in self.memberships
-            if roles.intersection(membership["roles"])
-            or membership["user_id"] in user_ids
-            or membership["user_id"] == creator_id
-        ]
+        assert "FOR UPDATE SKIP LOCKED" in query
+        self.claim_query = query
+        return [event for event in self.events if not event["published"] and not event["failed"]]
 
     async def execute(self, query: str, *args: object) -> str:
         if "ON CONFLICT (user_id, event_id) DO NOTHING" in query:
             self.insert_query = query
-            user_id = args[2]
-            event_id = args[3]
-            key = (user_id, event_id)
-            if key in self.notifications:
-                return "INSERT 0 0"
-            self.notifications[key] = args
-            return "INSERT 0 1"
-        assert "UPDATE domain_events" in query
-        self.event["published"] = True
+            org_id, event_id = args[0], args[1]
+            roles, user_ids, creator_id, excluded = (
+                set(args[7]),
+                set(args[8]),
+                args[9],
+                set(args[10]),
+            )
+            inserted = 0
+            for membership in self.memberships:
+                user_id = membership["user_id"]
+                if user_id in excluded:
+                    continue
+                if (
+                    roles.intersection(membership["roles"])
+                    or user_id in user_ids
+                    or user_id == creator_id
+                ) and (user_id, event_id) not in self.notifications:
+                    self.notifications[(user_id, event_id)] = args
+                    inserted += 1
+            assert org_id == self.org_id
+            return f"INSERT 0 {inserted}"
+        event = next(event for event in self.events if event["id"] == args[0])
+        if "failed_at" in query:
+            event["failed"] = True
+            event["last_error"] = args[1]
+        else:
+            event["published"] = True
         return "UPDATE 1"
+
+    @property
+    def event(self) -> dict[str, Any]:
+        return self.events[0]
 
 
 class _FakeAcquire:
@@ -236,3 +252,75 @@ def test_postgres_publisher_routes_and_deduplicates_notifications() -> None:
             await pool.close()
 
     asyncio.run(exercise())
+
+
+def _event(connection: _FakeConnection, event_type: str, payload: object) -> dict[str, Any]:
+    return {
+        "id": uuid.uuid4(),
+        "org_id": connection.org_id,
+        "treasury_id": None,
+        "type": event_type,
+        "entity_type": "payment_request",
+        "entity_id": uuid.uuid4(),
+        "payload": json.dumps(payload),
+        "published": False,
+        "failed": False,
+    }
+
+
+def test_a_poison_event_is_dead_lettered_and_does_not_block_the_next() -> None:
+    connection = _FakeConnection()
+    poison = _event(connection, "PaymentDone", {"creatorId": "not-a-uuid"})
+    connection.events = [poison, connection.event_data]
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    assert poison["failed"] and "creatorId" in poison["last_error"]
+    assert connection.event_data["published"]
+    assert {user_id for user_id, _ in connection.notifications} == {connection.approver_id}
+    # The parked event is not claimed again.
+    assert asyncio.run(publish_from_pool(_FakePool(connection))) == 0  # type: ignore[arg-type]
+
+
+def test_missing_owner_user_ids_falls_back_to_owners(monkeypatch: pytest.MonkeyPatch) -> None:
+    logger = Mock()
+    monkeypatch.setattr(publisher_module, "logger", logger)
+    connection = _FakeConnection()
+    connection.events = [_event(connection, "GovernanceSignatureNeeded", {"ownerUserIds": []})]
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    recipients = {user_id for user_id, _ in connection.notifications}
+    assert recipients == {connection.owner_id, connection.other_owner_id}
+    assert logger.warning.call_args_list[0].args[0] == "notification_recipients_missing"
+
+
+def test_approval_needed_skips_the_requests_makers() -> None:
+    connection = _FakeConnection()
+    other_approver = uuid.uuid4()
+    connection.memberships = (
+        *connection.memberships,
+        {"user_id": other_approver, "roles": ["Approver"]},
+    )
+    connection.events = [
+        _event(
+            connection,
+            "ApprovalNeeded",
+            {"requestId": str(uuid.uuid4()), "excludeUserIds": [str(connection.approver_id)]},
+        )
+    ]
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    assert {user_id for user_id, _ in connection.notifications} == {other_approver}
+
+
+def test_unknown_routing_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    logger = Mock()
+    monkeypatch.setattr(routing_module, "logger", logger)
+    policy_for_event("NeedsReview:finance")
+    policy_for_event("SomethingNew")
+    assert [call.args[0] for call in logger.warning.call_args_list] == [
+        "notification_review_role_unknown",
+        "notification_event_type_unknown",
+    ]

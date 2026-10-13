@@ -44,7 +44,9 @@ def create_celery_app() -> Celery:
             "publish-domain-events": {
                 "task": "treasurypilot.notifications.publish-domain-events",
                 "schedule": timedelta(seconds=1),
-                "options": {"queue": "core"},
+                # A run nobody picked up within 2 s is superseded by the next one; without
+                # this, a busy or stopped worker lets thousands pile up in Redis.
+                "options": {"queue": "core", "expires": 2},
             }
         },
     )
