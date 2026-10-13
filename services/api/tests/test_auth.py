@@ -850,9 +850,7 @@ def test_governance_routes_hide_transactions_from_non_member_organizations() -> 
 
     with make_harness(organization_repository=organizations) as harness:
         harness.login()
-        response = harness.client.get(
-            f"/v1/orgs/{uuid.uuid4()}/governance-txs/{uuid.uuid4()}"
-        )
+        response = harness.client.get(f"/v1/orgs/{uuid.uuid4()}/governance-txs/{uuid.uuid4()}")
 
     assert response.status_code == 404
     assert response.json()["code"] == "ORG_NOT_FOUND"
