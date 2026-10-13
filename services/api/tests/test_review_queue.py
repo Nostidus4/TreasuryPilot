@@ -25,10 +25,13 @@ from treasurypilot_api.invoices.state_machine import (
 from treasurypilot_api.review.models import ReviewAction, ReviewItem, ReviewStatus, ReviewType
 from treasurypilot_api.review.routes import (
     ReviewForbidden,
+    ReviewItemView,
     SqlAlchemyReviewRepository,
     StaleReviewItem,
 )
 from treasurypilot_api.review.service import default_sla_due_at, open_review_item, route_for_review
+from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.recovery.escalation import escalate_from_pool
 
 API_ROOT = Path(__file__).parents[1]
 
@@ -119,6 +122,9 @@ def test_open_review_item_emits_only_on_first_insert() -> None:
                 return item.id if self.insert_count == 1 else None
             return item
 
+        async def execute(self, statement: object) -> None:
+            del statement  # superseding stale open items: none in this test
+
         def add(self, value: object) -> None:
             self.events.append(value)
 
@@ -152,13 +158,31 @@ def test_open_review_item_emits_only_on_first_insert() -> None:
     assert len(session.events) == 1
 
 
-async def _integration_review_queue(database_url: str) -> None:
+def _alembic_config(database_url: str) -> Config:
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
-    command.upgrade(config, "head")
+    return config
+
+
+async def _integration_review_queue(database_url: str) -> None:
     engine, sessions = create_session_factory(database_url)
-    repository = SqlAlchemyReviewRepository(sessions)
+
+    class NoopAudit:
+        async def append(self, *, session: object, entry: object) -> None:
+            del session, entry
+
+    class NoPayOperationGuard:
+        async def has_in_flight_pay(self, *, session: object, request_id: uuid.UUID) -> bool:
+            del session, request_id
+            return False
+
+    machine = RequestStateMachine(
+        sessions,
+        audit=NoopAudit(),  # type: ignore[arg-type]
+        pay_operation_guard=NoPayOperationGuard(),  # type: ignore[arg-type]
+    )
+    repository = SqlAlchemyReviewRepository(sessions, state_machine=machine)
     user_id = uuid.uuid4()
     org_id = uuid.uuid4()
     treasury_id = uuid.uuid4()
@@ -240,6 +264,10 @@ async def _integration_review_queue(database_url: str) -> None:
                 text("UPDATE payment_requests SET status = 'Planning' WHERE id = :request_id"),
                 {"request_id": request_ids[2]},
             )
+            await connection.execute(
+                text("UPDATE payment_requests SET status = 'NeedsReview' WHERE id = :request_id"),
+                {"request_id": request_ids[1]},
+            )
 
         async with sessions() as session, session.begin():
             first, created = await open_review_item(
@@ -284,20 +312,6 @@ async def _integration_review_queue(database_url: str) -> None:
                 == 1
             )
 
-        class NoopAudit:
-            async def append(self, *, session: object, entry: object) -> None:
-                del session, entry
-
-        class NoPayOperationGuard:
-            async def has_in_flight_pay(self, *, session: object, request_id: uuid.UUID) -> bool:
-                del session, request_id
-                return False
-
-        machine = RequestStateMachine(
-            sessions,
-            audit=NoopAudit(),  # type: ignore[arg-type]
-            pay_operation_guard=NoPayOperationGuard(),  # type: ignore[arg-type]
-        )
         result = await machine.transition(
             organization_id=org_id,
             request_id=request_ids[2],
@@ -383,7 +397,12 @@ async def _integration_review_queue(database_url: str) -> None:
             )
             assert created is True
             second_id = second.id
-        assert await repository.escalate_overdue(organization_id=org_id) == 1
+        # Escalation is the worker's job (one implementation, with a batch limit).
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            assert await escalate_from_pool(pool) >= 1
+        finally:
+            await pool.close()
         escalated = await repository.get_item(
             organization_id=org_id, item_id=second_id, roles=("Owner",)
         )
@@ -402,6 +421,62 @@ async def _integration_review_queue(database_url: str) -> None:
         )
         assert resolved.status == ReviewStatus.RESOLVED.value
         assert resolved.resolution == ReviewAction.RETRY.value
+        # The view is built after the session closed: no DetachedInstanceError.
+        assert ReviewItemView.from_item(resolved).updated_at == resolved.resolved_at
+        async with sessions() as session:
+            retried = await session.get(PaymentRequest, request_ids[1])
+            assert retried is not None and retried.status == RequestStatus.SCHEDULED.value
+
+        # Re-entering review: the old item is dismissed when the request leaves review,
+        # and the next visit gets a fresh item that can be acted on.
+        system = StatusEventActorType.SYSTEM
+        for target, action in (
+            (RequestStatus.SCHEDULED, TransitionAction.REVIEW_RESOLVED),
+            (RequestStatus.PLANNING, TransitionAction.EXECUTION_WINDOW),
+        ):
+            await machine.transition(
+                organization_id=org_id,
+                request_id=request_ids[2],
+                target=target,
+                actor=TransitionActor(actor_type=system, action=action),
+            )
+        reentered = await machine.transition(
+            organization_id=org_id,
+            request_id=request_ids[2],
+            target=RequestStatus.NEEDS_REVIEW,
+            actor=TransitionActor(actor_type=system, action=TransitionAction.PLAN_BLOCKED),
+            reason="LIMIT_EXCEEDED: daily cap",
+        )
+        async with sessions() as session:
+            items = (
+                await session.scalars(
+                    select(ReviewItem)
+                    .where(ReviewItem.request_id == request_ids[2])
+                    .order_by(ReviewItem.created_at)
+                )
+            ).all()
+        assert [item.status for item in items] == [
+            ReviewStatus.DISMISSED.value,
+            ReviewStatus.OPEN.value,
+        ]
+        fresh = items[1]
+        assert fresh.source_version == reentered.version
+        # 'LIMIT_EXCEEDED: daily cap' routes on its code token, to Owner.
+        assert (fresh.primary_code, fresh.assigned_role) == ("LIMIT_EXCEEDED", "Owner")
+
+        cancelled = await repository.act(
+            organization_id=org_id,
+            item_id=fresh.id,
+            actor_id=user_id,
+            roles=("Owner",),
+            action=ReviewAction.CANCEL,
+            note=None,
+            expected_version=fresh.version,
+        )
+        assert cancelled.status == ReviewStatus.RESOLVED.value
+        async with sessions() as session:
+            request = await session.get(PaymentRequest, request_ids[2])
+            assert request is not None and request.status == RequestStatus.CANCELLED.value
     finally:
         await engine.dispose()
 
@@ -412,4 +487,11 @@ async def _integration_review_queue(database_url: str) -> None:
     reason="TP_TEST_DATABASE_URL is required for review queue PostgreSQL integration tests",
 )
 def test_postgres_review_queue_is_idempotent_role_routed_and_versioned() -> None:
-    asyncio.run(_integration_review_queue(os.environ["TP_TEST_DATABASE_URL"]))
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    # Alembic's env runs its own event loop, so migrate outside the test's loop.
+    config = _alembic_config(database_url)
+    command.upgrade(config, "head")
+    try:
+        asyncio.run(_integration_review_queue(database_url))
+    finally:
+        command.downgrade(config, "base")

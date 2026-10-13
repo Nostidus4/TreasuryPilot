@@ -1,7 +1,7 @@
 """add routed review items
 
-Revision ID: 20261013_0006
-Revises: 20261013_0005
+Revision ID: 20261013_0011
+Revises: 20261013_0010
 Create Date: 2026-10-13 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261013_0006"
-down_revision: str | None = "20261013_0005"
+revision: str = "20261013_0011"
+down_revision: str | None = "20261013_0010"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

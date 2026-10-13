@@ -4,11 +4,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from treasurypilot_api.events.writer import append_domain_event
+from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.review.models import ReviewAction, ReviewItem, ReviewStatus, ReviewType
 
 
@@ -18,6 +19,10 @@ class ReviewRoute:
     actions: frozenset[ReviewAction]
 
 
+OWNER = OrganizationRole.OWNER.value
+OPERATOR = OrganizationRole.OPERATOR.value
+FINANCE = OrganizationRole.FINANCE.value
+
 _OWNER_POLICY_CODES = ("PAYEE_", "LIMIT_", "BUDGET_", "MANDATE_")
 _DEFAULT_ACTIONS = frozenset({ReviewAction.ACKNOWLEDGE})
 
@@ -26,47 +31,35 @@ def route_for_review(item_type: ReviewType | str, primary_code: str) -> ReviewRo
     """Resolve a review item's initial role and allowed actions deterministically."""
     review_type = ReviewType(item_type)
     if review_type == ReviewType.NEEDS_AUTHORITY:
-        return ReviewRoute("Owner", frozenset({ReviewAction.GRANT_EXCEPTION, ReviewAction.CANCEL}))
+        return ReviewRoute(OWNER, frozenset({ReviewAction.GRANT_EXCEPTION, ReviewAction.CANCEL}))
     if review_type == ReviewType.POLICY_BLOCK:
         if primary_code.startswith(_OWNER_POLICY_CODES):
-            return ReviewRoute("Owner", frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL}))
-        return ReviewRoute("Operator", frozenset({ReviewAction.EDIT_REQUEST, ReviewAction.CANCEL}))
+            return ReviewRoute(OWNER, frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL}))
+        return ReviewRoute(OPERATOR, frozenset({ReviewAction.EDIT_REQUEST, ReviewAction.CANCEL}))
     if review_type == ReviewType.FEE_APPROVAL:
-        return ReviewRoute("Finance", frozenset({ReviewAction.ACCEPT_FEE}))
+        return ReviewRoute(FINANCE, frozenset({ReviewAction.ACCEPT_FEE}))
     if review_type == ReviewType.UNCERTAIN_TX:
-        return ReviewRoute("Operator", frozenset({ReviewAction.ACKNOWLEDGE}))
+        return ReviewRoute(OPERATOR, frozenset({ReviewAction.ACKNOWLEDGE}))
     if review_type == ReviewType.DISCREPANCY:
         return ReviewRoute(
-            "Finance", frozenset({ReviewAction.ACKNOWLEDGE, ReviewAction.MARK_MATCHED})
+            FINANCE, frozenset({ReviewAction.ACKNOWLEDGE, ReviewAction.MARK_MATCHED})
         )
     if review_type == ReviewType.AI_REJECTED:
-        return ReviewRoute("Operator", frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL}))
+        return ReviewRoute(OPERATOR, frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL}))
     if review_type == ReviewType.INFRA:
-        return ReviewRoute("Operator", frozenset({ReviewAction.RETRY}))
+        return ReviewRoute(OPERATOR, frozenset({ReviewAction.RETRY}))
     if review_type == ReviewType.UNEXPECTED_OUTFLOW:
-        return ReviewRoute("Owner", frozenset({ReviewAction.ACKNOWLEDGE}))
-    return ReviewRoute("Operator", _DEFAULT_ACTIONS)
+        return ReviewRoute(OWNER, frozenset({ReviewAction.ACKNOWLEDGE}))
+    return ReviewRoute(OPERATOR, _DEFAULT_ACTIONS)
 
 
 def allowed_actions_for(item: ReviewItem) -> frozenset[ReviewAction]:
     """Escalated Owner items retain the deterministic action set for their type."""
-    route = route_for_review(item.type, item.primary_code)
-    if item.assigned_role == route.role:
-        return route.actions
-    if item.assigned_role == "Owner":
-        if ReviewType(item.type) == ReviewType.POLICY_BLOCK:
-            return frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL})
-        if ReviewType(item.type) == ReviewType.AI_REJECTED:
-            return frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL})
-        if ReviewType(item.type) == ReviewType.INFRA:
-            return frozenset({ReviewAction.RETRY})
-        if ReviewType(item.type) == ReviewType.UNCERTAIN_TX:
-            return frozenset({ReviewAction.ACKNOWLEDGE})
-        if ReviewType(item.type) == ReviewType.DISCREPANCY:
-            return frozenset({ReviewAction.ACKNOWLEDGE, ReviewAction.MARK_MATCHED})
-        if ReviewType(item.type) == ReviewType.FEE_APPROVAL:
-            return frozenset({ReviewAction.ACCEPT_FEE})
-    return route.actions
+    # Only an escalated Operator policy block differs: an Owner may REPLAN after a
+    # policy edit instead of editing the request.
+    if item.assigned_role == OWNER and ReviewType(item.type) == ReviewType.POLICY_BLOCK:
+        return frozenset({ReviewAction.REPLAN, ReviewAction.CANCEL})
+    return route_for_review(item.type, item.primary_code).actions
 
 
 def default_sla_due_at(item_type: ReviewType | str, *, now: datetime | None = None) -> datetime:
@@ -109,6 +102,25 @@ async def open_review_item(
     )
     if not codes or any(not code for code in codes):
         raise ValueError("reason_codes must contain non-empty codes")
+    # An open item from an earlier visit to review (older request version) can no longer
+    # be acted on; close it so this visit gets a fresh, actionable item.
+    await session.execute(
+        update(ReviewItem)
+        .where(
+            ReviewItem.request_id == request_id,
+            ReviewItem.type == normalized_type.value,
+            ReviewItem.status == ReviewStatus.OPEN.value,
+            ReviewItem.source_version < request_version,
+        )
+        .values(
+            status=ReviewStatus.DISMISSED.value,
+            # System dismissal: no actor, recorded as an acknowledgement with a note.
+            resolved_at=func.now(),
+            resolution=ReviewAction.ACKNOWLEDGE.value,
+            note="Superseded: the request re-entered review.",
+            version=ReviewItem.version + 1,
+        )
+    )
     item_id = uuid.uuid4()
     statement = (
         insert(ReviewItem)
@@ -156,3 +168,19 @@ async def open_review_item(
             payload_ids={"requestId": request_id, "reviewItemId": item.id},
         )
     return item, created
+
+
+async def dismiss_open_review_items(session: AsyncSession, *, request_id: uuid.UUID) -> None:
+    """Close every open item of a request that left review without being resolved."""
+    await session.execute(
+        update(ReviewItem)
+        .where(ReviewItem.request_id == request_id, ReviewItem.status == ReviewStatus.OPEN.value)
+        .values(
+            status=ReviewStatus.DISMISSED.value,
+            # System dismissal: no actor, recorded as an acknowledgement with a note.
+            resolved_at=func.now(),
+            resolution=ReviewAction.ACKNOWLEDGE.value,
+            note="Dismissed: the request left review.",
+            version=ReviewItem.version + 1,
+        )
+    )

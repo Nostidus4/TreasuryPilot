@@ -62,7 +62,7 @@ def test_overdue_review_escalation_is_scheduled_every_minute() -> None:
 
     assert entry["task"] == "treasurypilot.recovery.escalate-overdue-review-items"
     assert entry["schedule"] == timedelta(seconds=60)
-    assert entry["options"] == {"queue": "core"}
+    assert entry["options"] == {"queue": "core", "expires": 30}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

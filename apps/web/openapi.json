@@ -1290,6 +1290,28 @@
               ],
               "title": "Role"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeClosed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Includeclosed",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

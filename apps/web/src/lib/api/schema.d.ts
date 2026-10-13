@@ -873,6 +873,8 @@ export interface operations {
         status?: components['schemas']['ReviewStatus'] | null;
         type?: components['schemas']['ReviewType'] | null;
         role?: string | null;
+        limit?: number;
+        includeClosed?: boolean;
       };
       header?: never;
       path: {

@@ -50,7 +50,7 @@ M12 makes sure **uncertainty never turns into a second payment**. It resolves in
 
 ## 5. State
 
-Review item: `Open → Resolved | Dismissed`; acting on an item whose underlying state changed returns `STALE_ITEM` (optimistic version).
+Review item: `Open → Resolved | Dismissed`; acting on an item whose underlying state changed returns `STALE_ITEM` (optimistic version). When the request leaves review any other way (`REVIEW_RESOLVED`, `EXCEPTION_GRANTED`, cancel, expiry) its open items are Dismissed, and an item from an earlier visit is Dismissed when the request re-enters review, so every visit gets one fresh, actionable item.
 Operation recovery: `Unknown → (Confirmed | Reverted | Abandoned (never broadcast, safe to re-plan) | Unknown (escalated))`.
 
 ## 6. Interfaces
@@ -59,11 +59,11 @@ Operation recovery: `Unknown → (Confirmed | Reverted | Abandoned (never broadc
 |---|---|---|---|---|
 | GET | `/orgs/{o}/review-items?status=&type=&role=` | ANY (filtered by role) | → `{items}` | |
 | GET | `/orgs/{o}/review-items/{id}` | ANY | → `{item, request, plan, steps, validations, evidence, allowedActions[]}` | |
-| POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | routed role | `{action, note?, version}` → `{item}` | 403 `NOT_ROUTED_ROLE`, 409 `STALE_ITEM`, `ACTION_NOT_ALLOWED` |
+| POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | routed role | `{action, note?, version}` → `{item}` | 403 `NOT_ROUTED_ROLE`, 409 `STALE_ITEM`, `ACTION_NOT_ALLOWED`, request-transition errors (e.g. 403 `TRANSITION_FORBIDDEN`), 503 `REVIEW_UNAVAILABLE` |
 | GET/PUT | `/orgs/{o}/treasuries/{t}/circuit-rules` | OWN | rules | |
 | GET | `/orgs/{o}/treasuries/{t}/circuit-events` | ANY | → `{items}` | |
 
-The API exposes these review operations under `/v1/orgs/{orgId}/review-items`: list (filtered to the caller's routed roles), get, and post an action. The source request version is captured when an item is opened; actions compare both that version and the item's optimistic `version`. A changed request or stale item returns `STALE_ITEM`. `uq_review_items_open_request_type` is a partial unique index, and review creation only emits `NeedsReview:<Role>` when it inserts a new open item, so retries and concurrent workers cannot fan out duplicate work or notifications.
+The API exposes these review operations under `/v1/orgs/{orgId}/review-items`: list (filtered to the caller's routed roles), get, and post an action. The source request version is captured when an item is opened; actions compare both that version and the item's optimistic `version`. A changed request or stale item returns `STALE_ITEM`. `uq_review_items_open_request_type` is a partial unique index, and review creation only emits `NeedsReview:<Role>` when it inserts a new open item, so retries and concurrent workers cannot fan out duplicate work or notifications. Resolving moves the payment request in the same transaction: `CANCEL` → Cancelled (under the request state machine's cancel rules), `RETRY`/`REPLAN` → Scheduled; `GRANT_EXCEPTION` (M03), `EDIT_REQUEST` (re-approval), `ACCEPT_FEE` and the acknowledgements leave it in place. Until the API wires a request state machine, actions that move the request return 503 instead of resolving without effect. Listing defaults to Open items (`includeClosed=true` for history) with `limit` (default 100, max 500). Primary and reason codes use the code token before any `:` detail. Overdue escalation runs only in the worker.
 
 `RequestStateMachine` opens review items in the same transaction for `NEEDS_APPROVAL`, `PLAN_BLOCKED`, `PREPARATION_FAILED`, and `PAY_UNKNOWN` outcomes. Other recovery producers use the same `open_review_item` helper and type-specific routing table. The worker escalates items after `sla_due_at` every 60 seconds, moving the routed role to Owner and enqueueing an outbox notification.
 
