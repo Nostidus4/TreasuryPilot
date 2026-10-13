@@ -42,6 +42,8 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
@@ -166,6 +168,7 @@ def create_app(
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
     treasury_service: TreasuryService | None = None,
+    governance_service: GovernanceService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -205,6 +208,10 @@ def create_app(
             application.state.treasury_service = TreasuryService(
                 sessions, RpcSafeVerifier(configuration), configuration
             )
+        if application.state.governance_service is None and sessions is not None:
+            application.state.governance_service = GovernanceService(
+                sessions, RpcSafeVerifier(configuration), configuration
+            )
         if settings.database_url is None:
             if configuration.chains:
                 raise PlatformConfigurationError(
@@ -241,6 +248,7 @@ def create_app(
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.treasury_service = treasury_service
+    app.state.governance_service = governance_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -267,6 +275,7 @@ def create_app(
     app.include_router(organizations_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(governance_router)
 
     return app
 
