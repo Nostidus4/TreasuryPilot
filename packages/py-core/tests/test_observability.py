@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 import structlog
+from opentelemetry.sdk.trace import TracerProvider
 
 from treasurypilot_core.observability import (
     bind_context,
@@ -141,3 +142,19 @@ def test_reconfigure_keeps_foreign_handlers_and_one_own_handler(
 
     assert "delivery failed" in caplog.text
     assert len(capsys.readouterr().out.splitlines()) == 1
+
+
+def test_logs_inside_a_span_carry_its_trace_id(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("api")
+    tracer = TracerProvider().get_tracer(__name__)
+
+    with tracer.start_as_current_span("work") as span:
+        structlog.get_logger().info("structlog_event")
+        logging.getLogger("lib").warning("stdlib_event")
+    structlog.get_logger().info("outside_span")
+
+    trace_id = format(span.get_span_context().trace_id, "032x")
+    inside, stdlib, outside = (json.loads(line) for line in capsys.readouterr().out.splitlines())
+    assert inside["trace_id"] == trace_id
+    assert stdlib["trace_id"] == trace_id
+    assert "trace_id" not in outside

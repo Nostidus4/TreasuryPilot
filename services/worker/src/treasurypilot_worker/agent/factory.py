@@ -9,6 +9,7 @@ import anthropic
 from treasurypilot_worker.agent.adapter import AiAdapter
 from treasurypilot_worker.agent.anthropic_provider import AnthropicProvider
 from treasurypilot_worker.agent.budget import InMemoryBudgetLedger
+from treasurypilot_worker.agent.call_log import PostgresAiCallLog
 from treasurypilot_worker.agent.config import AiConfig, ProviderConfig, load_ai_config
 from treasurypilot_worker.agent.failover import FailoverProvider
 from treasurypilot_worker.config import Settings, get_settings
@@ -18,11 +19,15 @@ logger = logging.getLogger(__name__)
 
 def build_ai_adapter(settings: Settings) -> AiAdapter:
     config = load_ai_config(settings.ai_config_path)
+    if not settings.database_url:
+        # No AI decision without a record (F-093), so no adapter without the ai_calls log.
+        raise RuntimeError("DATABASE_URL is required for the AI call log")
     # In-memory until the ai_budgets table exists; spend resets when the worker restarts.
     return AiAdapter(
         provider=FailoverProvider(build_providers(config)),
         config=config,
         ledger=InMemoryBudgetLedger(),
+        call_log=PostgresAiCallLog(settings.database_url),
     )
 
 

@@ -9,6 +9,12 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from treasurypilot_worker.agent.budget import BudgetLedger, cost_usd_micros
+from treasurypilot_worker.agent.call_log import (
+    PREVIEW_CHARS,
+    AiCallEntry,
+    AiCallLog,
+    ValidationResult,
+)
 from treasurypilot_worker.agent.config import AiConfig, AiTask, TaskConfig
 from treasurypilot_worker.agent.errors import (
     AiBudgetExceeded,
@@ -48,6 +54,7 @@ class AiAdapter:
         provider: Provider,
         config: AiConfig,
         ledger: BudgetLedger,
+        call_log: AiCallLog,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -56,6 +63,7 @@ class AiAdapter:
         self._provider = provider
         self._config = config
         self._ledger = ledger
+        self._call_log = call_log
         self._clock = clock
         self._sleep = sleep
         self._now = now
@@ -87,12 +95,43 @@ class AiAdapter:
         task_config = self._config.tasks[task]
         if tools and task_config.max_tool_calls == 0:
             raise ValueError(f"task {task} has no tool-call budget in the AI config")
+        started = self._clock()
+        run = _Run(task_config, started=started, deadline=started + task_config.timeout_s)
+        try:
+            parsed = self._run(task, org_id, prompt, output, tools, run)
+        except Exception as error:
+            # Any failure is logged before re-raising; a failed write raises AiCallLogError.
+            self._log(task, org_id, prompt, run, None, error)
+            raise
+        ai_call_id = self._log(task, org_id, prompt, run, parsed, None)
+        return AiResult(
+            output=parsed,
+            ai_call_id=ai_call_id,
+            task=task.value,
+            model=task_config.model,
+            prompt_version=prompt.version,
+            usage=run.usage,
+            cost_usd_micros=run.cost,
+            latency_ms=run.latency_ms,
+            provider_calls=run.provider_calls,
+            schema_retries=run.schema_retries,
+            tool_calls=tuple(run.tool_calls),
+        )
+
+    def _run[T: BaseModel](
+        self,
+        task: AiTask,
+        org_id: str,
+        prompt: RenderedPrompt,
+        output: type[T],
+        tools: Sequence[Tool[Any]],
+        run: "_Run",
+    ) -> T:
+        task_config = run.task
         month = self._now().strftime("%Y-%m")
         if self._ledger.spent(org_id, month) >= self._config.monthly_budget_usd_micros:
             raise AiBudgetExceeded(f"monthly AI budget spent for org {org_id} in {month}")
 
-        started = self._clock()
-        run = _Run(task_config, deadline=started + task_config.timeout_s)
         tools_by_name = {tool.name: tool for tool in tools}
         conversation = list(prompt.messages)
         specs = tuple(
@@ -115,13 +154,9 @@ class AiAdapter:
                 response = self._complete(request, run)
             except AiUnavailable as error:
                 if error.usage is not None:
-                    price = self._config.prices[task_config.model]
-                    self._ledger.record(org_id, month, cost_usd_micros(price, error.usage))
+                    self._charge(org_id, month, error.usage, run)
                 raise
-            cost = cost_usd_micros(self._config.prices[task_config.model], response.usage)
-            self._ledger.record(org_id, month, cost)
-            run.usage += response.usage
-            run.cost += cost
+            self._charge(org_id, month, response.usage, run)
             if self._clock() > run.deadline:
                 raise AiTimeout(f"{task} exceeded its {task_config.timeout_s}s deadline")
 
@@ -135,26 +170,53 @@ class AiAdapter:
 
             text = response.text or ""
             try:
-                parsed = output.model_validate_json(text)
+                return output.model_validate_json(text)
             except ValidationError as error:
                 if run.schema_retries >= MAX_SCHEMA_RETRIES:
                     raise AiSchemaError(f"{task} output failed validation: {error}") from error
                 run.schema_retries += 1
                 conversation.append(Message("user", (TextBlock(_correction(error)),)))
-                continue
 
-            return AiResult(
-                output=parsed,
-                task=task.value,
-                model=task_config.model,
+    def _charge(self, org_id: str, month: str, usage: Usage, run: "_Run") -> None:
+        cost = cost_usd_micros(self._config.prices[run.task.model], usage)
+        self._ledger.record(org_id, month, cost)
+        run.usage += usage
+        run.cost += cost
+
+    def _log(
+        self,
+        task: AiTask,
+        org_id: str,
+        prompt: RenderedPrompt,
+        run: "_Run",
+        parsed: BaseModel | None,
+        error: Exception | None,
+    ) -> str:
+        run.latency_ms = round((self._clock() - run.started) * 1000)  # also read by AiResult
+        if parsed is not None:
+            validation: ValidationResult | None = ValidationResult.OK
+        elif isinstance(error, AiSchemaError):
+            validation = ValidationResult.SCHEMA_ERROR
+        else:
+            validation = None
+        return self._call_log.record(
+            AiCallEntry(
+                org_id=org_id,
+                purpose=task.value,
+                model=run.task.model,
                 prompt_version=prompt.version,
-                usage=run.usage,
-                cost_usd_micros=run.cost,
-                latency_ms=round((self._clock() - started) * 1000),
-                provider_calls=run.provider_calls,
-                schema_retries=run.schema_retries,
+                input_refs=prompt.input_refs,
                 tool_calls=tuple(run.tool_calls),
+                output=None if parsed is None else parsed.model_dump(mode="json"),
+                validation_result=validation,
+                latency_ms=run.latency_ms,
+                input_tokens=run.usage.input_tokens,
+                output_tokens=run.usage.output_tokens,
+                cost_usd_micros=run.cost,
+                # A preview: messages can quote model output (schema errors) or document text.
+                error=None if error is None else f"{type(error).__name__}: {error}"[:PREVIEW_CHARS],
             )
+        )
 
     def _scan_new_messages(self, conversation: Sequence[Message], run: "_Run") -> None:
         for index in range(run.scanned_messages, len(conversation)):
@@ -212,9 +274,11 @@ class AiAdapter:
 
 
 class _Run:
-    def __init__(self, task: TaskConfig, deadline: float) -> None:
+    def __init__(self, task: TaskConfig, *, started: float, deadline: float) -> None:
         self.task = task
+        self.started = started
         self.deadline = deadline
+        self.latency_ms = 0
         self.usage = Usage(0, 0)
         self.cost = 0
         self.provider_calls = 0

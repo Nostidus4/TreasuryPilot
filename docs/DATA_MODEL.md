@@ -118,7 +118,7 @@ erDiagram
 | `plan_steps` | id, plan_id, seq, step_id (bytes32, deterministic), request_id, action enum(REFILL,PAY,SWAP), from_wallet, to_address, amount, params jsonb, status | unique(step_id) |
 | `validations` | id, plan_id, step_id null, decision enum(ALLOW,NEEDS_APPROVAL,BLOCK), reason_codes text[], checks jsonb, policy_version | append-only |
 | `attestations` | id, plan_id, typed_data jsonb, signature, nonce, valid_until | unique(nonce) |
-| `ai_calls` | id, org_id, purpose enum(EXTRACT,TERMS,ANOMALY,PLAN,EXCEPTION_DRAFT,COPILOT,EVAL), model, prompt_version, input_refs jsonb, tool_calls jsonb, output jsonb, validation_result, latency_ms, input_tokens, output_tokens, cost_usd_micros, error | **AI decision history**, append-only |
+| `ai_calls` | id, org_id, purpose enum(EXTRACT,TERMS,ANOMALY,PLAN,EXPLAIN,EXCEPTION_DRAFT,COPILOT,EVAL), model, prompt_version, input_refs jsonb (untrusted-input sources, no text), tool_calls jsonb (result previews), output jsonb, validation_result enum(OK,SCHEMA_ERROR,POSTCHECK_FAILED,REJECTED)?, latency_ms, input_tokens, output_tokens, cost_usd_micros, error? (preview), created_at | **AI decision history**, append-only; validation_result or error is set |
 | `copilot_threads` / `copilot_messages` | id, org_id, user_id / thread_id, role, content, ai_call_id | |
 
 ### 2.6 Execution & chain (M06, M10)
