@@ -1,5 +1,6 @@
 """Deterministic, I/O-free financial calculations."""
 
+from .forecast import forecast
 from .liquidity import (
     available,
     cap,
@@ -22,6 +23,7 @@ __all__ = [
     "decide_liquidity",
     "decide_refill",
     "funding_deficit",
+    "forecast",
     "liquidity_position",
     "preferred_refill",
     "refill_bound",
