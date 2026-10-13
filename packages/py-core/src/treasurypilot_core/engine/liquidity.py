@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
+    BorrowProposal,
     LiquidityDecision,
     LiquidityPolicy,
     LiquidityPosition,
@@ -329,4 +330,53 @@ def decide_liquidity(
         ),
         reason=SUPPLY_AVAILABLE,
         position=position,
+    )
+
+
+def propose_borrow(snapshot: Snapshot, deficit: BaseUnits, until_day: int) -> BorrowProposal:
+    """Estimate a borrow for an uncovered shortfall without adding an executable action.
+
+    Costs use integer base units and simple interest. Health factor after borrowing is
+    estimated from the current health factor and debt; it remains unknown when the
+    snapshot does not contain an existing debt position.
+    """
+
+    amount = int(deficit)
+    if amount <= 0:
+        raise ValueError("borrow proposal requires a positive deficit")
+    if until_day < snapshot.day:
+        raise ValueError("repayment day cannot precede the snapshot day")
+
+    days = until_day - snapshot.day
+    denominator = 10_000 * 365
+    borrow_cost = amount * int(snapshot.borrow_rate_bps) * days // denominator
+    withdraw_cost = amount * int(snapshot.supply_rate_bps) * days // denominator
+
+    health_factor_before = snapshot.health_factor
+    health_factor_after: int | None = None
+    if snapshot.health_factor is not None and snapshot.debt > 0:
+        health_factor_after = (
+            int(snapshot.health_factor) * int(snapshot.debt) // (int(snapshot.debt) + amount)
+        )
+
+    if health_factor_after is None:
+        reason = "Health factor after borrowing is unknown because the snapshot has no existing debt position."
+    elif health_factor_after < 10**18:
+        reason = (
+            "Borrowing would put the estimated health factor below 1.0 and requires risk review."
+        )
+    elif borrow_cost < withdraw_cost:
+        reason = "Estimated borrowing cost is lower than the supply interest lost by withdrawing."
+    elif borrow_cost > withdraw_cost:
+        reason = "Estimated borrowing cost is higher than the supply interest lost by withdrawing."
+    else:
+        reason = "Estimated borrowing cost equals the supply interest lost by withdrawing."
+
+    return BorrowProposal(
+        amount=BaseUnits(amount),
+        cost_to_repayment=BaseUnits(borrow_cost),
+        withdraw_cost=BaseUnits(withdraw_cost),
+        health_factor_before=health_factor_before,
+        health_factor_after=health_factor_after,
+        reason=reason,
     )
