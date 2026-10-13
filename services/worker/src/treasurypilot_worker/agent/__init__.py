@@ -19,7 +19,16 @@ from treasurypilot_worker.agent.errors import (
     AiUnavailable,
     PromptTemplateError,
 )
+from treasurypilot_worker.agent.failover import FailoverProvider
 from treasurypilot_worker.agent.fake import FakeClock, FakeProvider, fake_text, fake_tool_use
+from treasurypilot_worker.agent.instruction_detector import (
+    INSTRUCTION_MATCH_WINDOW,
+    INSTRUCTION_REASON_CODE,
+    INSTRUCTION_SEVERITY,
+    InstructionMatch,
+    InstructionScan,
+    detect_instructions,
+)
 from treasurypilot_worker.agent.prompts import (
     POLICY_VERSION,
     UNTRUSTED_DATA_POLICY,
@@ -55,6 +64,9 @@ from treasurypilot_worker.agent.untrusted import (
 )
 
 __all__ = [
+    "INSTRUCTION_MATCH_WINDOW",
+    "INSTRUCTION_REASON_CODE",
+    "INSTRUCTION_SEVERITY",
     "MAX_UNTRUSTED_CHARS",
     "POLICY_VERSION",
     "UNTRUSTED_DATA_POLICY",
@@ -71,9 +83,12 @@ __all__ = [
     "AiUnavailable",
     "BudgetLedger",
     "ContentBlock",
+    "FailoverProvider",
     "FakeClock",
     "FakeProvider",
     "InMemoryBudgetLedger",
+    "InstructionMatch",
+    "InstructionScan",
     "Message",
     "ModelPrice",
     "PromptTemplate",
@@ -99,6 +114,7 @@ __all__ = [
     "Usage",
     "cost_usd_micros",
     "default_scanner",
+    "detect_instructions",
     "fake_text",
     "fake_tool_use",
     "load_ai_config",

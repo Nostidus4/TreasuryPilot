@@ -88,6 +88,8 @@ class ProviderResponse:
 
 
 class Provider(Protocol):
+    name: str
+
     def complete(self, request: ProviderRequest, *, timeout_s: float) -> ProviderResponse:
         """Run one model turn. Raises `AiTimeout` or `AiUnavailable` on failure."""
         ...

@@ -11,14 +11,19 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from treasurypilot_api.database import Base
 from treasurypilot_api.identity import models as identity_models  # noqa: F401
+from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv("DATABASE_URL")
-if database_url:
+# A URL set by the caller (for example the migration tests) must win over the
+# ambient DATABASE_URL so a test run can never migrate the dev database.
+if not config.get_main_option("sqlalchemy.url"):
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required to run migrations")
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata

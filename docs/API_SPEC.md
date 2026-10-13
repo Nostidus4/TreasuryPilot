@@ -21,7 +21,7 @@
 | Method | Endpoint | Purpose | Perm | Request → Response | Errors |
 |---|---|---|---|---|---|
 | POST | `/auth/magic-link` | Send a login link | public (rate-limited) | `{email}` → `202` | 429 `RATE_LIMITED` |
-| POST | `/auth/magic-link/verify` | Exchange the token for a session | public | `{token}` → `200 {user}` + Set-Cookie | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED` |
+| POST | `/auth/magic-link/verify` | Exchange the token for a session | public | `{token}` → `200 {user, csrfToken}` + Set-Cookie | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` |
 | POST | `/auth/logout` | End the session | auth | → `204` | |
 | GET | `/me` | Current user, memberships, linked wallets | auth | → `{user, memberships[], wallets[]}` | |
 | GET | `/auth/siwe/nonce` | Get a SIWE nonce | auth | → `{nonce, expiresAt}` | |

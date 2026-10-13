@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from typing import Literal
 
-from Crypto.Hash import keccak
+from eth_hash.auto import keccak
 
 
 class Group(IntEnum):
@@ -238,7 +238,7 @@ def is_warning(code: PolicyReasonCode) -> bool:
 def error_selector(signature: str) -> bytes:
     """First four bytes of keccak256 of a Solidity error signature, e.g. `NotActive()`."""
 
-    return keccak.new(digest_bits=256, data=signature.encode()).digest()[:4]
+    return keccak(signature.encode())[:4]
 
 
 # Selectors hash the full signature, so an error that gains arguments must be listed with
