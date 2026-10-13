@@ -10,6 +10,7 @@ export class MockProblem extends Error {
     readonly code: string,
     detail: string,
     readonly errors?: Problem['errors'],
+    readonly headers?: Record<string, string>,
   ) {
     super(detail);
   }
@@ -21,8 +22,9 @@ export function fail(
   code: string,
   detail: string,
   errors?: Problem['errors'],
+  headers?: Record<string, string>,
 ): never {
-  throw new MockProblem(status, code, detail, errors);
+  throw new MockProblem(status, code, detail, errors, headers);
 }
 
 interface Context<Body> {
@@ -84,7 +86,10 @@ export function route<Body = undefined>(
         };
         return HttpResponse.json(problem, {
           status: error.status,
-          headers: { 'Content-Type': 'application/problem+json' },
+          headers: {
+            'Content-Type': 'application/problem+json',
+            ...error.headers,
+          },
         });
       }
       throw error;

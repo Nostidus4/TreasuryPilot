@@ -246,6 +246,25 @@ class LiquidityDecision(FrozenModel):
         return self
 
 
+class BorrowProposal(FrozenModel):
+    """A non-executable estimate for covering a liquidity shortfall with borrowing."""
+
+    amount: BaseUnits
+    cost_to_repayment: BaseUnits
+    withdraw_cost: BaseUnits
+    health_factor_before: NonNegativeInt | None
+    health_factor_after: NonNegativeInt | None
+    reason: str
+
+    @model_validator(mode="after")
+    def validate_proposal(self) -> BorrowProposal:
+        if self.amount == 0:
+            raise ValueError("borrow proposal requires a positive amount")
+        if not self.reason.strip():
+            raise ValueError("borrow proposal requires a reason")
+        return self
+
+
 class ForecastRefill(FrozenModel):
     day: NonNegativeInt
     request_id: Annotated[str, Field(min_length=1)]
