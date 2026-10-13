@@ -96,8 +96,8 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
 | `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
 | `decide_refill(req, wallet, source, policy, used_today, protected_other, *, source_protected) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4); `source_protected` = `R_T + L_T` |
-| `liquidity_position(snapshot, requests, schedule, policy) → LiquidityPosition` | payment reserve, Safe floor, holds and available liquidity | approved unpaid requests due within the configured 1–30 day reserve horizon |
-| `decide_liquidity(snapshot, requests, schedule, policy) → LiquidityDecision` | `NONE`, `SUPPLY`, `WITHDRAW`, or `INSUFFICIENT_LIQUIDITY` | supply caps and minimum are applied after reserves; borrow is never authorized here |
+| `liquidity_position(snapshot, requests, schedule, policy) → LiquidityPosition` | payment reserve, Safe floor, holds and available liquidity | approved unpaid requests due, or scheduled to be paid, on or before `today + reserve_horizon_days` (1–30, inclusive); `snapshot.source` must be Safe T (`source.balance == safe_usdc`) |
+| `decide_liquidity(snapshot, requests, schedule, policy) → LiquidityDecision` | `NONE`, `SUPPLY`, `WITHDRAW`, or `INSUFFICIENT_LIQUIDITY` | `min_supply` is compared with AvailableForSupply, then the supply caps (`used_today["supply"]`) bound the amount; never a zero SUPPLY/WITHDRAW; no SUPPLY on a day with a WITHDRAW (`used_today["withdraw"]`); borrow is never authorized here |
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |

@@ -127,7 +127,6 @@ class LiquidityPolicy(FrozenModel):
 
     supply: Limits
     min_supply: BaseUnits
-    supply_used_today: BaseUnits = BaseUnits(0)
     debt_service_reserve: BaseUnits = BaseUnits(0)
     execution_holds: BaseUnits = BaseUnits(0)
     reserve_horizon_days: Annotated[int, Field(ge=1, le=30)] = 30
@@ -137,7 +136,8 @@ class Snapshot(FrozenModel):
     day: NonNegativeInt
     source: WalletState
     operational: FrozenMapping[str, WalletState]
-    used_today: FrozenMapping[Literal["pay", "refill"], BaseUnits]
+    # "pay" and "refill" are required; "supply" and "withdraw" default to zero.
+    used_today: FrozenMapping[Literal["pay", "refill", "supply", "withdraw"], BaseUnits]
     payee_active_day: FrozenMapping[str, NonNegativeInt]
     safe_usdc: BaseUnits
     a_usdc: BaseUnits
@@ -149,8 +149,8 @@ class Snapshot(FrozenModel):
 
     @model_validator(mode="after")
     def validate_usage_counters(self) -> Snapshot:
-        if set(self.used_today) != {"pay", "refill"}:
-            raise ValueError("used_today must contain exactly the pay and refill counters")
+        if not {"pay", "refill"} <= set(self.used_today):
+            raise ValueError("used_today must contain the pay and refill counters")
         if self.debt > 0 and self.health_factor is None:
             raise ValueError("health_factor is required when debt exists")
         return self
@@ -216,13 +216,31 @@ class LiquidityPosition(FrozenModel):
     debt_service_reserve: BaseUnits
     execution_holds: BaseUnits
     required_safe_reserve: BaseUnits
+    deficit: BaseUnits
     available_for_supply: BaseUnits
     accessible_liquidity: BaseUnits
 
 
 class LiquidityDecision(FrozenModel):
+    """One liquidity action per cycle.
+
+    ``amount`` is what to SUPPLY or WITHDRAW. For ``INSUFFICIENT_LIQUIDITY`` it is the
+    partial withdrawal still worth making before a borrow proposal, and it is zero
+    when nothing can be withdrawn: callers must not submit a zero withdrawal.
+    """
+
     kind: Literal["NONE", "SUPPLY", "WITHDRAW", "INSUFFICIENT_LIQUIDITY"]
     amount: BaseUnits
     shortfall: BaseUnits = BaseUnits(0)
     reason: str
     position: LiquidityPosition
+
+    @model_validator(mode="after")
+    def validate_amounts(self) -> LiquidityDecision:
+        if self.kind in ("SUPPLY", "WITHDRAW") and self.amount == 0:
+            raise ValueError(f"{self.kind} requires a positive amount")
+        if self.kind == "NONE" and self.amount != 0:
+            raise ValueError("NONE carries no amount")
+        if (self.kind == "INSUFFICIENT_LIQUIDITY") != (self.shortfall > 0):
+            raise ValueError("only INSUFFICIENT_LIQUIDITY carries a shortfall")
+        return self
