@@ -1,0 +1,144 @@
+"""Validator inputs (M08 §4.1): the execution plan and the context the worker builds around it.
+
+Only the fields POL-002 checks read are modelled; POL-003 adds balances, counters and limits.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Any, Literal
+from uuid import UUID
+
+from pydantic import ConfigDict, Field, field_validator
+
+from treasurypilot_core.domain.models import (
+    FrozenMapping,
+    FrozenModel,
+    FrozenSequence,
+    NonNegativeInt,
+)
+from treasurypilot_core.eip712 import PAYMENT_APPROVAL_TYPE
+from treasurypilot_core.money import BaseUnits
+
+type Address = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
+type Bytes32 = Annotated[bytes, Field(min_length=32, max_length=32)]
+
+_APPROVAL_FIELDS = {field["name"] for field in PAYMENT_APPROVAL_TYPE}
+
+
+class _HexModel(FrozenModel):
+    model_config = ConfigDict(ser_json_bytes="hex", val_json_bytes="hex")
+
+
+class Action(StrEnum):
+    REFILL = "REFILL"
+    PAY = "PAY"
+    SWAP = "SWAP"  # P2
+
+
+class PlanStep(_HexModel):
+    seq: NonNegativeInt
+    step_id: Bytes32
+    action: Action
+    from_wallet: Address
+    to: Address  # payingWallet for REFILL, payee for PAY
+    asset: Address
+    amount: BaseUnits
+
+
+class ExecutionPlan(_HexModel):
+    request_id: Bytes32
+    treasury: Address  # module clone
+    chain_id: int
+    steps: FrozenSequence[PlanStep]
+    planner_source: Literal["AI", "DETERMINISTIC", "RULE_BASED"]
+    evidence_ids: FrozenSequence[str]
+
+
+class MandateView(FrozenModel):
+    status: Literal["Active", "Paused", "Revoked"]
+    version: NonNegativeInt
+    valid_from: NonNegativeInt
+    expires_at: NonNegativeInt
+    executor: Address
+
+
+class PayeeView(FrozenModel):
+    active: bool
+    active_from: NonNegativeInt
+
+
+class ChainSnapshot(FrozenModel):
+    chain_id: int
+    treasury: Address
+    block_number: NonNegativeInt
+    read_at: NonNegativeInt  # unix seconds the worker finished reading
+    safe_t: Address
+    asset: Address
+    mandate: MandateView | None  # None when the read failed: DATA_MISSING
+    approvers: FrozenSequence[Address]
+    payees: FrozenMapping[str, PayeeView]  # lowercase address; absent = never added
+    request_cancelled: bool
+
+
+class RequestView(_HexModel):
+    request_id: Bytes32
+    status: str
+    invoice_hash: Bytes32
+    fingerprint: Bytes32
+    terms_hash: Bytes32
+    paying_wallet: Address
+    payee: Address
+    amount: BaseUnits
+
+
+class ApprovalView(FrozenModel):
+    typed: FrozenMapping[str, Any]  # the signed PaymentApproval message, EIP-712 field names
+    signature: bytes
+    signer: Address
+    approved_at: datetime
+    created_by: UUID
+    last_edited_by: UUID
+    approved_by_user: UUID
+    acknowledged_flag_ids: FrozenSequence[UUID]
+    solo_mode: bool
+
+    @field_validator("typed")
+    @classmethod
+    def validate_fields(cls, typed: Any) -> Any:
+        if set(typed) != _APPROVAL_FIELDS:
+            raise ValueError(
+                f"typed must hold exactly the PaymentApproval fields {_APPROVAL_FIELDS}"
+            )
+        return typed
+
+
+class FlagView(FrozenModel):
+    id: UUID
+    code: str
+    severity: Literal["LOW", "HIGH"]
+    raised_at: datetime
+
+
+class PolicyConfig(FrozenModel):
+    """M08 §9 defaults (M08-D6: Sepolia, 12 s blocks)."""
+
+    snapshot_max_age_seconds: NonNegativeInt = 30
+    snapshot_max_blocks_behind: NonNegativeInt = 2
+
+
+class ValidationContext(FrozenModel):
+    now: NonNegativeInt
+    head_block: NonNegativeInt
+    executor: Address  # the worker's executor key; must equal mandate.executor
+    snapshot: ChainSnapshot
+    request: RequestView | None  # None when the request could not be loaded: DATA_MISSING
+    approval: ApprovalView | None
+    flags: FrozenSequence[FlagView]
+    coverage: Literal["COMPLETE", "PARTIAL_ACK", "PARTIAL", "NONE"]
+    unknown_operations: NonNegativeInt
+    pause_requested: bool
+    circuit_open: bool
+    screening_hit: bool
+    config: PolicyConfig = PolicyConfig()

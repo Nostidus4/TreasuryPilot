@@ -74,6 +74,7 @@ class ApprovalView(BaseModel):    # from M05
     typed: PaymentApproval        # the 11 signed fields (M04 §6.1)
     signature: bytes
     signer: Address
+    approved_at: datetime         # flags raised at or after it need re-approval (M08-D4)
     created_by: UUID; last_edited_by: UUID; approved_by_user: UUID
     acknowledged_flag_ids: list[UUID]
     solo_mode: bool
@@ -83,6 +84,7 @@ class ExceptionView(BaseModel):   amount: BaseUnits; payee: Address; expiry: int
 
 class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10 data
     now: int; head_block: int
+    executor: Address              # the worker's executor key; must equal mandate.executor
     snapshot: ChainSnapshot        # block number, block timestamp, read_at, balances, buffers/targets,
                                    # mandate (status, version, window, limits, executor), approver set,
                                    # payee statuses, usedOn counters, requestPaid/stepUsed/fingerprintPaid,
@@ -98,6 +100,7 @@ class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10
     config: PolicyConfig           # §9
 
 class Check(BaseModel):    name: str; passed: bool; code: PolicyReasonCode | None; expected: str | None; observed: str | None
+                           skipped: bool = False   # not run: a gate failed, or no approval for an approval check
 class Decision(BaseModel):
     decision: Literal["ALLOW", "NEEDS_APPROVAL", "BLOCK"]
     primary: PolicyReasonCode | None     # first failing code by precedence (§8.2)
@@ -302,7 +305,7 @@ sequenceDiagram
 
 **Deadline warning:** confirmation expected after the due day → `DEADLINE_MISSED`; after the discount day → `DISCOUNT_MISSED`. Decision unchanged (M08-D7).
 
-All checks run (no short-circuit after the gates), so the review item lists every problem at once. Exception: if a gate fails, step checks are skipped and marked `skipped` (their inputs may be untrustworthy).
+All checks run (no short-circuit after the gates), so the review item lists every problem at once. Exception: if a gate fails, step checks are skipped and marked `skipped` (their inputs may be untrustworthy). Without an approval, only `NOT_APPROVED` is reported and the approval checks are marked `skipped`.
 
 ### 8.2 Aggregation
 
