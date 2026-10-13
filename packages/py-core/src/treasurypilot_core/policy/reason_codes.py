@@ -140,7 +140,7 @@ REASON_CODES: dict[PolicyReasonCode, ReasonInfo] = {
     PolicyReasonCode.APPROVAL_STALE: _info(
         _G.APPROVAL,
         "BR-002",
-        note="invoiceHash/termsHash/amount/payee differ from the current request",
+        note="invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/payee differ from the current request",
     ),
     PolicyReasonCode.MAKER_CHECKER: _info(_G.APPROVAL, "BR-005"),
     PolicyReasonCode.FLAG_UNACKNOWLEDGED: _info(_G.APPROVAL, "BR-066, FR-313"),
@@ -193,7 +193,7 @@ REASON_CODES: dict[PolicyReasonCode, ReasonInfo] = {
     PolicyReasonCode.PLAN_MALFORMED: _info(
         _G.PLAN,
         "BR-056",
-        note="wrong step order, >1 PAY, amount ≠ approval, refill not for this request",
+        note="wrong step order, >1 PAY, amount ≠ approval option, refill/withdraw not for this request",
     ),
     PolicyReasonCode.AI_PLAN_REJECTED: _info(_G.PLAN, "BR-056"),
     PolicyReasonCode.AI_UNAVAILABLE: _info(_G.PLAN, "BR-055"),
