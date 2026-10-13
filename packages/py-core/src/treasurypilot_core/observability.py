@@ -14,6 +14,7 @@ from typing import Literal, cast
 from uuid import uuid4
 
 import structlog
+from opentelemetry import trace
 from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
 from structlog.typing import EventDict, Processor, WrappedLogger
 
@@ -99,6 +100,15 @@ class _StdoutHandler(logging.StreamHandler):
         super().emit(record)
 
 
+def add_trace_id(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> EventDict:
+    """Add the active OpenTelemetry span's trace id so a log line leads to its trace."""
+
+    span_context = trace.get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict["trace_id"] = format(span_context.trace_id, "032x")
+    return event_dict
+
+
 def configure_logging(service: str, level: str = "INFO", fmt: LogFormat = "json") -> None:
     """Route structlog output through context merge, redaction and a single renderer."""
 
@@ -120,6 +130,7 @@ def configure_logging(service: str, level: str = "INFO", fmt: LogFormat = "json"
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         add_service,
+        add_trace_id,
     ]
     structlog.configure(
         processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
@@ -162,6 +173,7 @@ __all__ = [
     "CONTEXT_FIELDS",
     "CONTEXT_HEADERS",
     "REQUEST_ID_HEADER",
+    "add_trace_id",
     "bind_context",
     "clear_context",
     "configure_logging",

@@ -13,10 +13,20 @@ CONFIG_PATH = Path(__file__).resolve().parents[4] / "config" / "ai.yaml"
 def test_config_path_comes_from_tp_ai_config_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TP_AI_CONFIG_PATH", str(CONFIG_PATH))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://ai@postgres/treasurypilot")
 
     adapter = build_ai_adapter(Settings())
 
     assert adapter.config.tasks[AiTask.PLAN].model == "claude-opus-5-5"
+
+
+def test_adapter_without_a_database_fails_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TP_AI_CONFIG_PATH", str(CONFIG_PATH))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("DATABASE_URL", "")
+
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        build_ai_adapter(Settings())
 
 
 def test_bedrock_secondary_is_skipped_without_its_api_key(

@@ -49,8 +49,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 
 | Method | Endpoint | Perm | Errors |
 |---|---|---|---|
-| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` with `Retry-After: 900` |
-| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` with `Retry-After: 900` |
+| POST | `/auth/magic-link` | public, rate-limited (5/15 min per email, 20/15 min per IP) | 429 `RATE_LIMITED` with `Retry-After` = seconds left in the fixed 15-min window (1–900); 503 `AUTH_UNAVAILABLE` with `Retry-After: 30` |
+| POST | `/auth/magic-link/verify` | public, rate-limited (20/15 min per IP); returns `{user, csrfToken}` | 400 `TOKEN_INVALID`, 410 `TOKEN_EXPIRED`, 429 `RATE_LIMITED` with `Retry-After` = seconds left in the fixed 15-min window (1–900); 503 `AUTH_UNAVAILABLE` with `Retry-After: 30` |
 | POST | `/auth/logout` · GET `/me` | auth | |
 | GET | `/auth/siwe/nonce` | auth; returns domain, Sepolia chain ID, and single-use 10-minute nonce | |
 | POST | `/me/wallets` | auth + CSRF; verifies EOA or ERC-1271 signature and writes an audit record | `SIWE_INVALID`, `ADDRESS_LINKED_ELSEWHERE` |

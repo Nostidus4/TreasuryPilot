@@ -22,6 +22,8 @@ MAX_MAGIC_LINK_TOKEN_LENGTH = 256
 
 # Identity README section 6: 5 per 15 min per email, 20 per 15 min per IP.
 RATE_LIMIT_WINDOW = timedelta(minutes=15)
+# RFC 9110 §10.2.3: hint a short backoff while the limiter backend is down.
+AUTH_UNAVAILABLE_RETRY_AFTER_S = 30
 MAGIC_LINK_EMAIL_LIMIT = 5
 MAGIC_LINK_IP_LIMIT = 20
 VERIFY_IP_LIMIT = 20
@@ -277,7 +279,7 @@ class AuthService:
         # Key on a keyed hash so the limiter store never holds emails or IPs.
         digest = _encode(hash_client_value(value, self._client_hash_secret))
         try:
-            allowed = await self._rate_limiter.hit(
+            result = await self._rate_limiter.hit(
                 f"{scope}:{digest}", limit=limit, window=RATE_LIMIT_WINDOW
             )
         except RateLimiterUnavailable:
@@ -287,14 +289,16 @@ class AuthService:
                 code="AUTH_UNAVAILABLE",
                 title="Authentication unavailable",
                 detail="Sign-in is temporarily unavailable. Please retry.",
+                retry_after=AUTH_UNAVAILABLE_RETRY_AFTER_S,
             ) from None
-        if not allowed:
+        if not result.allowed:
             raise AuthFailure(
                 status=429,
                 code="RATE_LIMITED",
                 title="Too many requests",
                 detail="Too many sign-in attempts. Please wait and try again.",
-                retry_after=int(RATE_LIMIT_WINDOW.total_seconds()),
+                # The time left in the fixed window, not the full window length.
+                retry_after=result.retry_after,
             )
 
     async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:

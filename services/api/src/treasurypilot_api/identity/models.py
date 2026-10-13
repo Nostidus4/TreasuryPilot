@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import secrets
-import time
 import uuid
 from datetime import datetime
 from enum import StrEnum
@@ -24,20 +22,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from treasurypilot_api.database import Base
-
-
-def uuid7() -> uuid.UUID:
-    """Generate a time-ordered UUIDv7 without requiring a pre-3.14 backport."""
-
-    timestamp_ms = time.time_ns() // 1_000_000
-    random_a = secrets.randbits(12)
-    random_b = secrets.randbits(62)
-    value = (timestamp_ms & ((1 << 48) - 1)) << 80
-    value |= 0x7 << 76
-    value |= random_a << 64
-    value |= 0b10 << 62
-    value |= random_b
-    return uuid.UUID(int=value)
+from treasurypilot_core.ids import uuid7
 
 
 class UserStatus(StrEnum):

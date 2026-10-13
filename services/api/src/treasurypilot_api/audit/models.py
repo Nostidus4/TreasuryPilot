@@ -71,7 +71,7 @@ class AuditHead(Base):
 
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
         primary_key=True,
     )
     last_seq: Mapped[int | None] = mapped_column(BigInteger)

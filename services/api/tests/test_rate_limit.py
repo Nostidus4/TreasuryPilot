@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from treasurypilot_api.identity.rate_limit import (
     MemoryRateLimiter,
     RateLimiterUnavailable,
+    RateLimitResult,
     RedisRateLimiter,
 )
 
@@ -19,10 +20,12 @@ def test_memory_limiter_resets_after_the_window() -> None:
     now = datetime(2026, 10, 12, tzinfo=UTC)
     limiter = MemoryRateLimiter(lambda: now)
 
-    async def run() -> list[bool]:
+    async def run() -> list[RateLimitResult]:
         return [await limiter.hit("k", limit=2, window=timedelta(minutes=15)) for _ in range(3)]
 
-    assert asyncio.run(run()) == [True, True, False]
+    results = asyncio.run(run())
+    assert [result.allowed for result in results] == [True, True, False]
+    assert results[-1].retry_after == 900
 
 
 def test_redis_limiter_fails_closed_when_redis_is_unreachable() -> None:
@@ -46,7 +49,7 @@ def test_redis_limiter_counts_within_a_shared_expiring_window() -> None:
     client = Redis.from_url(os.environ["TP_TEST_REDIS_URL"])
     limiter = RedisRateLimiter(client, prefix=f"test:{uuid.uuid4()}:")
 
-    async def run() -> tuple[list[bool], int]:
+    async def run() -> tuple[list[RateLimitResult], int]:
         try:
             results = [
                 await limiter.hit("email", limit=2, window=timedelta(minutes=15)) for _ in range(3)
@@ -57,5 +60,6 @@ def test_redis_limiter_counts_within_a_shared_expiring_window() -> None:
             await limiter.aclose()
 
     results, ttl = asyncio.run(run())
-    assert results == [True, True, False]
+    assert [result.allowed for result in results] == [True, True, False]
+    assert all(1 <= result.retry_after <= 900 for result in results)
     assert 0 < ttl <= 15 * 60
