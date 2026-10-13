@@ -140,6 +140,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Request */
+    post: operations['create_request_v1_orgs__organization_id__requests_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Edit Request */
+    patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -612,6 +646,86 @@ export interface components {
       /** To */
       to: string;
     };
+    /** RequestCreate */
+    RequestCreate: {
+      /** Amount */
+      amount: string;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Costcenter */
+      costCenter?: string | null;
+      /**
+       * Duedate
+       * Format: date
+       */
+      dueDate: string;
+      /** Invoiceno */
+      invoiceNo: string;
+      /**
+       * Issuedate
+       * Format: date
+       */
+      issueDate: string;
+      /** Note */
+      note?: string | null;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Tags */
+      tags?: string[];
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** RequestPatch */
+    RequestPatch: {
+      /** Amount */
+      amount?: string | null;
+      /** Assetid */
+      assetId?: string | null;
+      /** Costcenter */
+      costCenter?: string | null;
+      /** Duedate */
+      dueDate?: string | null;
+      /** Invoiceno */
+      invoiceNo?: string | null;
+      /** Issuedate */
+      issueDate?: string | null;
+      /** Note */
+      note?: string | null;
+      /** Payeeid */
+      payeeId?: string | null;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Tags */
+      tags?: string[] | null;
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /** Treasuryid */
+      treasuryId?: string | null;
+      /** Vendorid */
+      vendorId?: string | null;
+    };
     /** ScreeningView */
     ScreeningView: {
       /**
@@ -947,6 +1061,85 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_request_v1_orgs__organization_id__requests_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  edit_request_v1_orgs__organization_id__requests__request_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

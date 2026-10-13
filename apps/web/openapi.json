@@ -13,10 +13,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "perRequest",
-          "daily"
-        ],
+        "required": ["perRequest", "daily"],
         "title": "ActionLimits",
         "type": "object"
       },
@@ -60,9 +57,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "CreateOrganizationRequest",
         "type": "object"
       },
@@ -94,11 +89,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "status",
-          "service",
-          "version"
-        ],
+        "required": ["status", "service", "version"],
         "title": "HealthResponse",
         "type": "object"
       },
@@ -111,9 +102,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "email"
-        ],
+        "required": ["email"],
         "title": "MagicLinkRequest",
         "type": "object"
       },
@@ -124,12 +113,7 @@
             "anyOf": [
               {
                 "items": {
-                  "enum": [
-                    "REFILL",
-                    "PAY",
-                    "SUPPLY",
-                    "SWAP"
-                  ],
+                  "enum": ["REFILL", "PAY", "SUPPLY", "SWAP"],
                   "type": "string"
                 },
                 "type": "array"
@@ -368,9 +352,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "title": "MandateListResponse",
         "type": "object"
       },
@@ -441,11 +423,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "user",
-          "memberships",
-          "wallets"
-        ],
+        "required": ["user", "memberships", "wallets"],
         "title": "MeResponse",
         "type": "object"
       },
@@ -473,22 +451,12 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "orgId",
-          "roles",
-          "status"
-        ],
+        "required": ["id", "orgId", "roles", "status"],
         "title": "MembershipView",
         "type": "object"
       },
       "OobMethod": {
-        "enum": [
-          "PHONE",
-          "IN_PERSON",
-          "SIGNED_LETTER",
-          "OTHER"
-        ],
+        "enum": ["PHONE", "IN_PERSON", "SIGNED_LETTER", "OTHER"],
         "title": "OobMethod",
         "type": "string"
       },
@@ -504,10 +472,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "method",
-          "note"
-        ],
+        "required": ["method", "note"],
         "title": "OobVerification",
         "type": "object"
       },
@@ -548,10 +513,7 @@
             "$ref": "#/components/schemas/OrganizationView"
           }
         },
-        "required": [
-          "org",
-          "checklist"
-        ],
+        "required": ["org", "checklist"],
         "title": "OrganizationDetailsResponse",
         "type": "object"
       },
@@ -561,9 +523,7 @@
             "$ref": "#/components/schemas/OrganizationView"
           }
         },
-        "required": [
-          "org"
-        ],
+        "required": ["org"],
         "title": "OrganizationResponse",
         "type": "object"
       },
@@ -678,11 +638,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "vendorId",
-          "label",
-          "address"
-        ],
+        "required": ["vendorId", "label", "address"],
         "title": "PayeeCreate",
         "type": "object"
       },
@@ -696,9 +652,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "title": "PayeeListResponse",
         "type": "object"
       },
@@ -708,9 +662,7 @@
             "$ref": "#/components/schemas/PayeeView"
           }
         },
-        "required": [
-          "payee"
-        ],
+        "required": ["payee"],
         "title": "PayeeResponse",
         "type": "object"
       },
@@ -860,10 +812,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "from",
-          "to"
-        ],
+        "required": ["from", "to"],
         "title": "RefillPath",
         "type": "object"
       },
@@ -1222,12 +1171,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "email",
-          "displayName",
-          "status"
-        ],
+        "required": ["id", "email", "displayName", "status"],
         "title": "UserView",
         "type": "object"
       },
@@ -1263,11 +1207,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError",
         "type": "object"
       },
@@ -1328,9 +1268,7 @@
             "title": "Taxid"
           }
         },
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "VendorCreate",
         "type": "object"
       },
@@ -1344,9 +1282,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "title": "VendorListResponse",
         "type": "object"
       },
@@ -1411,9 +1347,7 @@
             "$ref": "#/components/schemas/VendorView"
           }
         },
-        "required": [
-          "vendor"
-        ],
+        "required": ["vendor"],
         "title": "VendorResponse",
         "type": "object"
       },
@@ -1476,9 +1410,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "token"
-        ],
+        "required": ["token"],
         "title": "VerifyMagicLinkRequest",
         "type": "object"
       },
@@ -1492,10 +1424,7 @@
             "$ref": "#/components/schemas/UserView"
           }
         },
-        "required": [
-          "user",
-          "csrfToken"
-        ],
+        "required": ["user", "csrfToken"],
         "title": "VerifyMagicLinkResponse",
         "type": "object"
       },
@@ -1522,10 +1451,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "wallet",
-          "minimum"
-        ],
+        "required": ["wallet", "minimum"],
         "title": "WalletBuffer",
         "type": "object"
       },
@@ -1549,12 +1475,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "address",
-          "chainFamily",
-          "isContract",
-          "linkedAt"
-        ],
+        "required": ["address", "chainFamily", "isContract", "linkedAt"],
         "title": "WalletView",
         "type": "object"
       }
@@ -1583,9 +1504,7 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "system"
-        ]
+        "tags": ["system"]
       }
     },
     "/v1/auth/logout": {
@@ -1597,9 +1516,7 @@
           }
         },
         "summary": "Logout",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/auth/magic-link": {
@@ -1631,9 +1548,7 @@
           }
         },
         "summary": "Request Magic Link",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/auth/magic-link/verify": {
@@ -1672,9 +1587,7 @@
           }
         },
         "summary": "Verify Magic Link",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/health": {
@@ -1693,9 +1606,7 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "system"
-        ]
+        "tags": ["system"]
       }
     },
     "/v1/me": {
@@ -1714,9 +1625,7 @@
           }
         },
         "summary": "Me",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/orgs": {
@@ -1755,9 +1664,7 @@
           }
         },
         "summary": "Create Organization",
-        "tags": [
-          "organizations"
-        ]
+        "tags": ["organizations"]
       }
     },
     "/v1/orgs/{organization_id}": {
@@ -1798,9 +1705,7 @@
           }
         },
         "summary": "Get Organization",
-        "tags": [
-          "organizations"
-        ],
+        "tags": ["organizations"],
         "x-organization-scoped": true
       }
     },
@@ -1872,9 +1777,7 @@
           }
         },
         "summary": "Create Request",
-        "tags": [
-          "requests"
-        ],
+        "tags": ["requests"],
         "x-organization-scoped": true
       }
     },
@@ -1954,9 +1857,7 @@
           }
         },
         "summary": "Edit Request",
-        "tags": [
-          "requests"
-        ],
+        "tags": ["requests"],
         "x-organization-scoped": true
       }
     },
@@ -2008,9 +1909,7 @@
           }
         },
         "summary": "Update Organization Settings",
-        "tags": [
-          "organizations"
-        ],
+        "tags": ["organizations"],
         "x-organization-scoped": true
       }
     },
@@ -2062,9 +1961,7 @@
           }
         },
         "summary": "List Mandates",
-        "tags": [
-          "mandates"
-        ],
+        "tags": ["mandates"],
         "x-organization-scoped": true
       },
       "post": {
@@ -2124,9 +2021,7 @@
           }
         },
         "summary": "Create Mandate Draft",
-        "tags": [
-          "mandates"
-        ],
+        "tags": ["mandates"],
         "x-organization-scoped": true
       }
     },
@@ -2181,9 +2076,7 @@
           }
         },
         "summary": "Discard Mandate Draft",
-        "tags": [
-          "mandates"
-        ],
+        "tags": ["mandates"],
         "x-organization-scoped": true
       }
     },
@@ -2245,9 +2138,7 @@
           }
         },
         "summary": "Clone Mandate Draft",
-        "tags": [
-          "mandates"
-        ],
+        "tags": ["mandates"],
         "x-organization-scoped": true
       }
     },
@@ -2299,9 +2190,7 @@
           }
         },
         "summary": "List Payees",
-        "tags": [
-          "payees"
-        ],
+        "tags": ["payees"],
         "x-organization-scoped": true
       },
       "post": {
@@ -2361,9 +2250,7 @@
           }
         },
         "summary": "Propose Payee",
-        "tags": [
-          "payees"
-        ],
+        "tags": ["payees"],
         "x-organization-scoped": true
       }
     },
@@ -2425,9 +2312,7 @@
           }
         },
         "summary": "Get Payee",
-        "tags": [
-          "payees"
-        ],
+        "tags": ["payees"],
         "x-organization-scoped": true
       }
     },
@@ -2487,9 +2372,7 @@
           }
         },
         "summary": "Build Registration Tx",
-        "tags": [
-          "payees"
-        ],
+        "tags": ["payees"],
         "x-organization-scoped": true
       }
     },
@@ -2561,9 +2444,7 @@
           }
         },
         "summary": "Verify Oob",
-        "tags": [
-          "payees"
-        ],
+        "tags": ["payees"],
         "x-organization-scoped": true
       }
     },
@@ -2605,9 +2486,7 @@
           }
         },
         "summary": "List Vendors",
-        "tags": [
-          "vendors"
-        ],
+        "tags": ["vendors"],
         "x-organization-scoped": true
       },
       "post": {
@@ -2657,9 +2536,7 @@
           }
         },
         "summary": "Create Vendor",
-        "tags": [
-          "vendors"
-        ],
+        "tags": ["vendors"],
         "x-organization-scoped": true
       }
     },
@@ -2704,9 +2581,7 @@
           }
         },
         "summary": "Delete Vendor",
-        "tags": [
-          "vendors"
-        ],
+        "tags": ["vendors"],
         "x-organization-scoped": true
       },
       "get": {
@@ -2756,9 +2631,7 @@
           }
         },
         "summary": "Get Vendor",
-        "tags": [
-          "vendors"
-        ],
+        "tags": ["vendors"],
         "x-organization-scoped": true
       },
       "patch": {
@@ -2818,9 +2691,7 @@
           }
         },
         "summary": "Update Vendor",
-        "tags": [
-          "vendors"
-        ],
+        "tags": ["vendors"],
         "x-organization-scoped": true
       }
     }
