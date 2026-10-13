@@ -527,11 +527,14 @@ async def create_request(
             getattr(error.orig, "constraint_name", None),
         )
         if constraint_name == "uq_payment_requests_active_fingerprint":
+            fingerprint_value = row.fingerprint
+            if fingerprint_value is None:
+                raise error
             async with factory() as session:
                 duplicate = await find_active_duplicate(
                     session,
                     treasury_id=row.treasury_id,
-                    value=row.fingerprint,
+                    value=fingerprint_value,
                 )
             if duplicate is not None:
                 raise _duplicate_fingerprint(duplicate) from error

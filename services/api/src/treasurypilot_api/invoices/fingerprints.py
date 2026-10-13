@@ -86,9 +86,7 @@ async def find_active_duplicate(
     query = select(PaymentRequest.id).where(
         PaymentRequest.treasury_id == treasury_id,
         PaymentRequest.fingerprint == value,
-        PaymentRequest.status.not_in(
-            [status.value for status in TERMINAL_REQUEST_STATUSES]
-        ),
+        PaymentRequest.status.not_in([status.value for status in TERMINAL_REQUEST_STATUSES]),
     )
     if exclude_request_id is not None:
         query = query.where(PaymentRequest.id != exclude_request_id)
@@ -108,9 +106,7 @@ async def assert_no_active_duplicate(
     that do not use this service.
     """
     await session.scalar(
-        select(Treasury.id)
-        .where(Treasury.id == request.treasury_id)
-        .with_for_update()
+        select(Treasury.id).where(Treasury.id == request.treasury_id).with_for_update()
     )
     value = await request_fingerprint(session, request)
     existing_id = await find_active_duplicate(
