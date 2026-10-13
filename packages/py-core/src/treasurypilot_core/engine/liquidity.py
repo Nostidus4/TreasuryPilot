@@ -1,9 +1,18 @@
 """Integer-only liquidity formulas from BR-032 and financial-engine section 6."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 from treasurypilot_core.domain import (
     ApprovedRequest,
+    LiquidityDecision,
+    LiquidityPolicy,
+    LiquidityPosition,
     PolicyView,
     RefillDecision,
+    Schedule,
+    Snapshot,
     WalletState,
 )
 from treasurypilot_core.money import BaseUnits
@@ -18,6 +27,10 @@ SOURCE_INSUFFICIENT = "SOURCE_INSUFFICIENT"
 OVER_REFILL_DAILY = "OVER_REFILL_DAILY"
 OVER_REFILL_PER_REQUEST = "OVER_REFILL_PER_REQUEST"
 WRONG_REFILL_TARGET = "WRONG_REFILL_TARGET"
+RESERVE_DEFICIT = "RESERVE_DEFICIT"
+SUPPLY_AVAILABLE = "SUPPLY_AVAILABLE"
+BELOW_MIN_SUPPLY = "BELOW_MIN_SUPPLY"
+INSUFFICIENT_LIQUIDITY = "INSUFFICIENT_LIQUIDITY"
 
 
 def _require_base_units(value: BaseUnits, name: str) -> BaseUnits:
@@ -179,3 +192,146 @@ def decide_refill(
     else:
         reason = SOURCE_INSUFFICIENT
     return RefillDecision(kind="stop", amount=_ZERO, reason=reason)
+
+
+def liquidity_position(
+    snapshot: Snapshot,
+    requests: Sequence[ApprovedRequest],
+    schedule: Schedule,
+    policy: LiquidityPolicy,
+) -> LiquidityPosition:
+    """Calculate the reserves and liquidity available for one planning cycle.
+
+    ``requests`` must contain the approved, unpaid obligations for this cycle.
+    The schedule determines whether an exact early-payment amount will be used;
+    an obligation absent from the schedule is reserved at its standard amount.
+    """
+
+    if not isinstance(snapshot, Snapshot):
+        raise TypeError("snapshot must be Snapshot")
+    if not isinstance(schedule, Schedule):
+        raise TypeError("schedule must be Schedule")
+    if not isinstance(policy, LiquidityPolicy):
+        raise TypeError("policy must be LiquidityPolicy")
+    if not isinstance(snapshot.safe_usdc, BaseUnits):
+        raise TypeError("snapshot.safe_usdc must be BaseUnits")
+    if not isinstance(snapshot.a_usdc, BaseUnits):
+        raise TypeError("snapshot.a_usdc must be BaseUnits")
+    if not isinstance(snapshot.pool_available, BaseUnits):
+        raise TypeError("snapshot.pool_available must be BaseUnits")
+
+    scheduled_days: dict[str, int] = {}
+    for item in schedule.items:
+        if item.request_id in scheduled_days:
+            raise ValueError(f"schedule contains duplicate request {item.request_id!r}")
+        scheduled_days[item.request_id] = item.day
+
+    request_ids = {request.id for request in requests}
+    unknown_scheduled = set(scheduled_days) - request_ids
+    if unknown_scheduled:
+        raise ValueError("schedule contains requests absent from the approved request set")
+
+    horizon_end = snapshot.day + policy.reserve_horizon_days
+    payment_reserve = 0
+    seen_request_ids: set[str] = set()
+    for request in requests:
+        if request.id in seen_request_ids:
+            raise ValueError(f"approved request set contains duplicate id {request.id!r}")
+        seen_request_ids.add(request.id)
+        if request.terms.net_due_day > horizon_end:
+            continue
+
+        pay_day = scheduled_days.get(request.id)
+        amount = request.amount
+        if (
+            pay_day is not None
+            and request.early_amount is not None
+            and request.early_pay_by is not None
+            and pay_day <= request.early_pay_by
+        ):
+            amount = request.early_amount
+        payment_reserve += int(amount)
+
+    safe_floor = snapshot.source.buffer
+    required = (
+        payment_reserve
+        + int(safe_floor)
+        + int(policy.debt_service_reserve)
+        + int(policy.execution_holds)
+    )
+    available_for_supply = max(0, int(snapshot.safe_usdc) - required)
+    accessible_liquidity = int(snapshot.safe_usdc) + min(
+        int(snapshot.a_usdc), int(snapshot.pool_available)
+    )
+
+    return LiquidityPosition(
+        payment_reserve=BaseUnits(payment_reserve),
+        safe_floor=safe_floor,
+        debt_service_reserve=policy.debt_service_reserve,
+        execution_holds=policy.execution_holds,
+        required_safe_reserve=BaseUnits(required),
+        available_for_supply=BaseUnits(available_for_supply),
+        accessible_liquidity=BaseUnits(accessible_liquidity),
+    )
+
+
+def decide_liquidity(
+    snapshot: Snapshot,
+    requests: Sequence[ApprovedRequest],
+    schedule: Schedule,
+    policy: LiquidityPolicy,
+) -> LiquidityDecision:
+    """Choose no action, SUPPLY, or a reserve-restoring WITHDRAW.
+
+    A partial withdrawal is surfaced as ``INSUFFICIENT_LIQUIDITY`` together
+    with its remaining shortfall so callers can request an unauthorized borrow
+    proposal separately; this function never creates a borrow operation.
+    """
+
+    position = liquidity_position(snapshot, requests, schedule, policy)
+    deficit = max(
+        0,
+        int(position.required_safe_reserve) - int(snapshot.safe_usdc),
+    )
+    if deficit > 0:
+        target = (deficit * 105 + 99) // 100
+        withdrawal = min(target, int(snapshot.a_usdc), int(snapshot.pool_available))
+        shortfall = max(0, deficit - withdrawal)
+        if shortfall:
+            return LiquidityDecision(
+                kind="INSUFFICIENT_LIQUIDITY",
+                amount=BaseUnits(withdrawal),
+                shortfall=BaseUnits(shortfall),
+                reason=INSUFFICIENT_LIQUIDITY,
+                position=position,
+            )
+        return LiquidityDecision(
+            kind="WITHDRAW",
+            amount=BaseUnits(withdrawal),
+            reason=RESERVE_DEFICIT,
+            position=position,
+        )
+
+    remaining_daily = max(
+        0,
+        int(policy.supply.daily) - int(policy.supply_used_today),
+    )
+    supply_amount = min(
+        int(position.available_for_supply),
+        int(policy.supply.per_request),
+        remaining_daily,
+    )
+    if supply_amount >= int(policy.min_supply):
+        return LiquidityDecision(
+            kind="SUPPLY",
+            amount=BaseUnits(supply_amount),
+            reason=SUPPLY_AVAILABLE,
+            position=position,
+        )
+
+    return LiquidityDecision(
+        kind="NONE",
+        amount=_ZERO,
+        reason=BELOW_MIN_SUPPLY,
+        position=position,
+    )

@@ -122,6 +122,17 @@ class PolicyView(FrozenModel):
     cooling_seconds: NonNegativeInt
 
 
+class LiquidityPolicy(FrozenModel):
+    """Supply controls and non-payment reserves for one liquidity cycle."""
+
+    supply: Limits
+    min_supply: BaseUnits
+    supply_used_today: BaseUnits = BaseUnits(0)
+    debt_service_reserve: BaseUnits = BaseUnits(0)
+    execution_holds: BaseUnits = BaseUnits(0)
+    reserve_horizon_days: Annotated[int, Field(ge=1, le=30)] = 30
+
+
 class Snapshot(FrozenModel):
     day: NonNegativeInt
     source: WalletState
@@ -197,3 +208,21 @@ class Schedule(FrozenModel):
     binding: FrozenSequence[BindingConstraint]
     solver: Literal["EDF", "CPSAT", "ORACLE"]
     status: Literal["OPTIMAL", "FEASIBLE", "FALLBACK"]
+
+
+class LiquidityPosition(FrozenModel):
+    payment_reserve: BaseUnits
+    safe_floor: BaseUnits
+    debt_service_reserve: BaseUnits
+    execution_holds: BaseUnits
+    required_safe_reserve: BaseUnits
+    available_for_supply: BaseUnits
+    accessible_liquidity: BaseUnits
+
+
+class LiquidityDecision(FrozenModel):
+    kind: Literal["NONE", "SUPPLY", "WITHDRAW", "INSUFFICIENT_LIQUIDITY"]
+    amount: BaseUnits
+    shortfall: BaseUnits = BaseUnits(0)
+    reason: str
+    position: LiquidityPosition
