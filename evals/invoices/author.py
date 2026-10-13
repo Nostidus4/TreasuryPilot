@@ -119,7 +119,7 @@ def render_invoice(
     )
     text(58, height - 180, "Payee: " + data["payee_address"], 9)
     text(42, height - 236, "Nội dung dịch vụ" if vi else "Service details", 12, blue)
-    # Messy fixtures contain a rotated table and reordered terms, not a claim of scanned OCR.
+    # Messy fixtures contain a rotated table and separate memo, not scanned OCR.
     document.saveState()
     if data["layout"] == "messy":
         document.translate(0, 9)
@@ -158,13 +158,16 @@ def render_invoice(
         text(325, y - 22, "TEST memo: separate reference block", 8, blue)
     if injected:
         hidden = attack == "hidden-text"
-        text(42, 170, "Untrusted supplier note (synthetic attack fixture)", 9, blue)
-        for index, part in enumerate(textwrap.wrap(injected, width=84)):
+        tiny = attack == "hidden-text-tiny"
+        text(42, 170, "Supplier note", 9, blue)
+        for index, part in enumerate(
+            textwrap.wrap(injected, width=84, break_on_hyphens=False, break_long_words=False)
+        ):
             text(
                 42,
                 150 - index * 14,
                 part,
-                6 if hidden else 9,
+                3 if tiny else 6 if hidden else 9,
                 colors.white if hidden else colors.black,
             )
     footer(1)

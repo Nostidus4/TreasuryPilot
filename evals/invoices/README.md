@@ -4,13 +4,13 @@
 synthetic; every page is marked TEST / SYNTHETIC / NO PAYMENT AUTHORITY.
 Amounts are six-decimal base-unit strings, dates UTC ISO strings.
 
-| Mix                                   | Cases                                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Discount / late-fee terms             | inv-001..012 (12 total; 8 discounts, 8 late-fee terms)                                                       |
-| Messy rotated/reordered table layouts | inv-013..018 (6)                                                                                             |
-| Two-page documents                    | inv-019..020 (2)                                                                                             |
-| Vietnamese text                       | inv-021..024 (4)                                                                                             |
-| Expected flags                        | inv-025 changed/unregistered address; inv-026 currency mismatch; inv-027 possible duplicate; inv-028 overdue |
+| Mix                                         | Cases                                                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Discount / late-fee terms                   | inv-001..012 (12 total; 8 discounts, 8 late-fee terms)                                                       |
+| Messy rotated table / separate memo layouts | inv-013..018 (6)                                                                                             |
+| Two-page documents                          | inv-019..020 (2)                                                                                             |
+| Vietnamese text                             | inv-021..024 (4)                                                                                             |
+| Expected flags                              | inv-025 changed/unregistered address; inv-026 currency mismatch; inv-027 possible duplicate; inv-028 overdue |
 
 The messy cases are vector text/table layouts, not scanned images or a claim of
 OCR robustness. inv-026 deliberately prints EUR while the contextual treasury
