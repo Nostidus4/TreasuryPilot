@@ -5,7 +5,7 @@ Exceptions and duplicate overrides are Safe governance transactions, not typed s
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from eth_abi import encode
@@ -49,6 +49,12 @@ PLAN_ATTESTATION_TYPE = [
     {"name": "nonce", "type": "uint256"},
     {"name": "evidenceDigest", "type": "bytes32"},
 ]
+
+STEP_TYPE = "Step(uint32 seq,bytes32 stepId,uint8 action,address from,address to,address asset,uint256 amount)"
+PLAN_TYPE = "Plan(bytes32 requestId,address treasury,uint256 chainId,Step[] steps)" + STEP_TYPE
+_STEP_FIELDS = ("seq", "stepId", "action", "from", "to", "asset", "amount")
+# Module action codes (TreasuryPilotStorage.sol).
+PAY, REFILL, SWAP_IN, SUPPLY, WITHDRAW = 1, 2, 3, 4, 5
 
 # (signer, digest, signature) -> raw return data of signer.isValidSignature; the caller owns the RPC call.
 Erc1271Call = Callable[[str, bytes, bytes], bytes]
@@ -138,6 +144,72 @@ def verify_signature(
     except (ValueError, BadSignature):
         return False
     return str(recovered).lower() == signer.lower()
+
+
+def _bytes32(value: bytes | str) -> bytes:
+    return bytes.fromhex(value.removeprefix("0x")) if isinstance(value, str) else value
+
+
+def step_id(key: bytes | str, action: int, wallet: str) -> bytes:
+    """M08 §8.4 ``keccak256(abi.encode("TP_STEP_V1", key, uint8(action), wallet))``.
+
+    ``key`` is the requestId, or the liquidity cycle id for a liquidity plan (its requestId is 0x0,
+    so it cannot make the id unique). ``wallet`` is toWallet for REFILL, payingWallet for PAY and
+    Safe T for SUPPLY/WITHDRAW. Re-plans reuse the id.
+    """
+    return keccak(
+        encode(
+            ["string", "bytes32", "uint8", "address"], ["TP_STEP_V1", _bytes32(key), action, wallet]
+        )
+    )
+
+
+def plan_hash(
+    request_id: bytes | str, treasury: str, chain_id: int, steps: Sequence[Mapping[str, Any]]
+) -> bytes:
+    """M08 §8.3 planHash: the EIP-712 ``hashStruct(Plan)``, steps hashed in the given order."""
+    step_hashes = b""
+    for step in steps:
+        if set(step) != set(_STEP_FIELDS):
+            raise ValueError(
+                f"Step fields must be exactly {list(_STEP_FIELDS)}, got {sorted(step)}"
+            )
+        step_hashes += keccak(
+            encode(
+                [
+                    "bytes32",
+                    "uint32",
+                    "bytes32",
+                    "uint8",
+                    "address",
+                    "address",
+                    "address",
+                    "uint256",
+                ],
+                [
+                    keccak(STEP_TYPE.encode()),
+                    int(step["seq"]),
+                    _bytes32(step["stepId"]),
+                    int(step["action"]),
+                    step["from"],
+                    step["to"],
+                    step["asset"],
+                    int(step["amount"]),
+                ],
+            )
+        )
+    return keccak(
+        encode(
+            ["bytes32", "bytes32", "address", "uint256", "bytes32"],
+            [
+                keccak(PLAN_TYPE.encode()),
+                _bytes32(request_id),
+                treasury,
+                chain_id,
+                keccak(step_hashes),
+            ],
+        )
+    )
 
 
 def encode_approver_sig(signer: str, signature: bytes) -> bytes:

@@ -72,5 +72,43 @@ async function generate() {
     };
     fs.writeFileSync(path.join(__dirname, '../test/vectors', file), JSON.stringify(result, null, 2) + '\n');
   }
+  // planHash = hashStruct(Plan) and stepId per M08 sections 8.3 and 8.4.
+  const planTypes = {
+    Plan: [['requestId', 'bytes32'], ['treasury', 'address'], ['chainId', 'uint256'], ['steps', 'Step[]']]
+      .map(([name, type]) => ({ name, type })),
+    Step: [['seq', 'uint32'], ['stepId', 'bytes32'], ['action', 'uint8'], ['from', 'address'],
+      ['to', 'address'], ['asset', 'address'], ['amount', 'uint256']].map(([name, type]) => ({ name, type })),
+  };
+  const stepId = (key, action, wallet) =>
+    utils.keccak256(utils.defaultAbiCoder.encode(['string', 'bytes32', 'uint8', 'address'], ['TP_STEP_V1', key, action, wallet]));
+  const [PAY, REFILL, SUPPLY, WITHDRAW] = [1, 2, 4, 5];
+  const safeT = '0x4444555566667777888899990000aaaabbbbcccc';
+  const pool = '0x5555666677778888999900001111aaaabbbbcccc';
+  const cycleId = utils.id('synthetic-liquidity-cycle-1');
+  const step = (seq, key, action, wallet, from, to, amount) =>
+    ({ seq, stepIdSource: key, stepIdWallet: wallet, stepId: stepId(key, action, wallet), action, from, to, asset: base.asset, amount });
+  const plans = [
+    ['request', base.requestId, [
+      step(0, base.requestId, WITHDRAW, safeT, pool, safeT, '60000000'),
+      step(1, base.requestId, REFILL, base.payingWallet, safeT, base.payingWallet, '90000000'),
+      step(2, base.requestId, PAY, base.payingWallet, base.payingWallet, base.payee, '9007199254740993000000'),
+    ]],
+    ['liquidity', utils.hexZeroPad('0x', 32), [step(0, cycleId, SUPPLY, safeT, safeT, pool, '250000000')]],
+  ].map(([name, requestId, steps]) => {
+    const message = {
+      requestId, treasury: safeT, chainId: domain.chainId,
+      steps: steps.map(({ stepIdSource, stepIdWallet, ...s }) => s),
+    };
+    return {
+      name, ...message, steps,
+      stepHashes: message.steps.map(s => utils._TypedDataEncoder.hashStruct('Step', { Step: planTypes.Step }, s)),
+      planHash: utils._TypedDataEncoder.hashStruct('Plan', planTypes, message),
+    };
+  });
+  const planHashVectors = {
+    formatVersion: 1, generator: 'ethers@5.4.0', types: planTypes,
+    planTypeHash: utils.id(utils._TypedDataEncoder.from(planTypes).encodeType('Plan')), plans,
+  };
+  fs.writeFileSync(path.join(__dirname, '../test/vectors/plan-hash.json'), JSON.stringify(planHashVectors, null, 2) + '\n');
 }
 generate().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

@@ -1,0 +1,127 @@
+{
+  "formatVersion": 1,
+  "generator": "ethers@5.4.0",
+  "types": {
+    "Plan": [
+      {
+        "name": "requestId",
+        "type": "bytes32"
+      },
+      {
+        "name": "treasury",
+        "type": "address"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "name": "steps",
+        "type": "Step[]"
+      }
+    ],
+    "Step": [
+      {
+        "name": "seq",
+        "type": "uint32"
+      },
+      {
+        "name": "stepId",
+        "type": "bytes32"
+      },
+      {
+        "name": "action",
+        "type": "uint8"
+      },
+      {
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256"
+      }
+    ]
+  },
+  "planTypeHash": "0xa7e000158a01366698bdee8a5f3fd06e016fe5a68de6ca5b90786714c7d547f8",
+  "plans": [
+    {
+      "name": "request",
+      "requestId": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+      "treasury": "0x4444555566667777888899990000aaaabbbbcccc",
+      "chainId": 11155111,
+      "steps": [
+        {
+          "seq": 0,
+          "stepIdSource": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+          "stepIdWallet": "0x4444555566667777888899990000aaaabbbbcccc",
+          "stepId": "0x3ba860ce2f3d9910e9c20d36f676fdccd8919ee958358442583a48402b378a3c",
+          "action": 5,
+          "from": "0x5555666677778888999900001111aaaabbbbcccc",
+          "to": "0x4444555566667777888899990000aaaabbbbcccc",
+          "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+          "amount": "60000000"
+        },
+        {
+          "seq": 1,
+          "stepIdSource": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+          "stepIdWallet": "0x22223333444455556666777788889999aaaabbbb",
+          "stepId": "0x71a6d6aa406fd2e8cc32c3e8e196ceddf36e30a1322c64d88c9e74fb14e72969",
+          "action": 2,
+          "from": "0x4444555566667777888899990000aaaabbbbcccc",
+          "to": "0x22223333444455556666777788889999aaaabbbb",
+          "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+          "amount": "90000000"
+        },
+        {
+          "seq": 2,
+          "stepIdSource": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+          "stepIdWallet": "0x22223333444455556666777788889999aaaabbbb",
+          "stepId": "0x6395ec4878a20ce5ec9c37d52da10491fe95d9a2a8fa04eaf23dda38aea164ed",
+          "action": 1,
+          "from": "0x22223333444455556666777788889999aaaabbbb",
+          "to": "0x3333444455556666777788889999aaaabbbbcccc",
+          "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+          "amount": "9007199254740993000000"
+        }
+      ],
+      "stepHashes": [
+        "0x4c6bc2e65ba6878f107292ed443860b92287e33a70dbee801794e28a812170cc",
+        "0x8705b400c99d8fe184674495fadfd7d286e07eeab53e0983b153490cdaec8b8a",
+        "0x10bbc429e04e7fcd3d87d2602cc3cc32f3316da0c66a356a4e6e336f616c40c0"
+      ],
+      "planHash": "0xece5aa33b7afb5c8a1fa4554413decb2afb40522ac846e5b3eddafa2b1d783f1"
+    },
+    {
+      "name": "liquidity",
+      "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "treasury": "0x4444555566667777888899990000aaaabbbbcccc",
+      "chainId": 11155111,
+      "steps": [
+        {
+          "seq": 0,
+          "stepIdSource": "0x4c4a0ed74ad9de576120ef4a65ffd7ba0ea84fbf8c1e7f59953ceea06bc0d746",
+          "stepIdWallet": "0x4444555566667777888899990000aaaabbbbcccc",
+          "stepId": "0xacd83734ab0a37e31208a5ad23957aaae2bff602e7a43682bc78b0716e7baeab",
+          "action": 4,
+          "from": "0x4444555566667777888899990000aaaabbbbcccc",
+          "to": "0x5555666677778888999900001111aaaabbbbcccc",
+          "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+          "amount": "250000000"
+        }
+      ],
+      "stepHashes": [
+        "0x341638139c5f44f35df88ba43e21936cc4c93c111341463161160c4f2f228462"
+      ],
+      "planHash": "0x7f0d23b999a9962ffa8c3a60740afe7ed4690fdd69e79e4367ac1a223c0a3fc5"
+    }
+  ]
+}
