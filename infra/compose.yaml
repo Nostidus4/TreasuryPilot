@@ -120,6 +120,10 @@ services:
     environment:
       <<: *app-environment
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
+      # Telegram linking (optional): the API stores chat ids encrypted and verifies the webhook.
+      TP_TELEGRAM_BOT_USERNAME: ${TP_TELEGRAM_BOT_USERNAME:-}
+      TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -165,6 +169,10 @@ services:
       # Core-only credentials are deliberately not part of x-app-environment.
       TP_ATTESTATION_PRIVATE_KEY: ${TP_ATTESTATION_PRIVATE_KEY:-}
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+      # Telegram delivery (optional); the bot token belongs to this worker only.
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy

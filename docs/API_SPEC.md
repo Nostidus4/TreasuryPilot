@@ -169,8 +169,10 @@
 |---|---|---|---|---|
 | GET | `/orgs/{o}/notifications` | Inbox | ANY | `?unread=` |
 | POST | `/orgs/{o}/notifications/{id}/read` | Mark read | ANY | |
-| POST | `/me/channels/telegram/link` | Start Telegram linking | auth | → `{code, botUrl}` |
-| PATCH | `/me/channels/{id}` | Opt in to amounts/addresses | auth | `{showAmounts}` |
+| POST | `/me/channels/telegram/link-code` | Start Telegram linking | auth | → `{code, botUrl, expiresAt}`; single use, 10 min |
+| GET | `/me/channels` | List my channels | auth | never returns the chat id |
+| PATCH | `/me/channels/{id}` | Opt in to amounts/vendor names | auth | `{showAmounts}`; own channels only |
+| DELETE | `/me/channels/{id}` | Unlink | auth | |
 | POST | `/integrations/telegram/webhook` | Bot webhook | Telegram secret header | internal |
 | GET | `/platform/chains` · PUT `/platform/chains/{id}` | Chain/asset config (M1: seed-driven) | PlatformAdmin | Later UI |
 

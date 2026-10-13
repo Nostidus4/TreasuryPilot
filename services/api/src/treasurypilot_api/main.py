@@ -43,10 +43,16 @@ from treasurypilot_api.mandate.routes import (
 from treasurypilot_api.mandate.routes import (
     router as mandate_router,
 )
+from treasurypilot_api.notifications.telegram import (
+    SqlAlchemyTelegramRepository,
+    TelegramRepository,
+)
+from treasurypilot_api.notifications.telegram import router as telegram_router
 from treasurypilot_api.review.routes import ReviewRepository, SqlAlchemyReviewRepository
 from treasurypilot_api.review.routes import router as review_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher, FieldEncryptionKey
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
 # cookies. Only ever used when TP_ENVIRONMENT=local.
@@ -155,6 +161,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     mandate_repository: MandateRepository | None = None,
     review_repository: ReviewRepository | None = None,
+    telegram_repository: TelegramRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -170,6 +177,22 @@ def create_app(
     if review_repository is None and engine is not None:
         review_repository = SqlAlchemyReviewRepository(
             async_sessionmaker(engine, expire_on_commit=False)
+        )
+
+    if telegram_repository is None and engine is not None:
+        try:
+            cipher: FieldCipher | None = FieldCipher(FieldEncryptionKey.from_environment())
+        except EncryptionConfigurationError:
+            # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
+            cipher = None
+        telegram_repository = SqlAlchemyTelegramRepository(
+            async_sessionmaker(engine, expire_on_commit=False),
+            cipher=cipher,
+            hash_key=(
+                settings.session_secret.get_secret_value().encode("utf-8")
+                if settings.session_secret
+                else LOCAL_SESSION_SECRET
+            ),
         )
 
     @asynccontextmanager
@@ -213,6 +236,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.mandate_repository = mandate_repository
     app.state.review_repository = review_repository
+    app.state.telegram_repository = telegram_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -234,6 +258,7 @@ def create_app(
     app.include_router(organizations_router)
     app.include_router(mandate_router)
     app.include_router(review_router)
+    app.include_router(telegram_router)
 
     return app
 

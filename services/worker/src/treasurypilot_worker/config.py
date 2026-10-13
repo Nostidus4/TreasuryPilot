@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,10 @@ class Settings(BaseSettings):
     visibility_timeout_seconds: int = 3600
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
+    # Telegram bot token: environment only, never logged (SecretStr masks repr).
+    telegram_bot_token: SecretStr | None = None
+    # Base of the deep links sent in notifications; the app enforces login and permissions.
+    app_base_url: str = "http://localhost:5173"
 
 
 @lru_cache
