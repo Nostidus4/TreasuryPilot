@@ -5,9 +5,11 @@ from typing import cast
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from treasurypilot_api import __version__
 from treasurypilot_api.config import Settings, get_settings
@@ -23,6 +25,13 @@ from treasurypilot_api.identity.auth import (
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.organizations import (
+    OrganizationRepository,
+    SqlAlchemyOrganizationRepository,
+)
+from treasurypilot_api.identity.organizations import (
+    router as organizations_router,
+)
 from treasurypilot_api.identity.rate_limit import (
     MemoryRateLimiter,
     RateLimiter,
@@ -31,6 +40,9 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
+from treasurypilot_core.observability_asgi import CorrelationMiddleware
+from treasurypilot_core.tracing import configure_tracing
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
 # cookies. Only ever used when TP_ENVIRONMENT=local.
@@ -58,7 +70,12 @@ class _UnavailableAuthRepository:
 
 def _auth_service(
     settings: Settings,
-) -> tuple[AuthService, AsyncEngine | None, RedisRateLimiter | None]:
+) -> tuple[
+    AuthService,
+    AsyncEngine | None,
+    RedisRateLimiter | None,
+    OrganizationRepository | None,
+]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
     local = settings.environment.casefold() == "local"
@@ -85,9 +102,11 @@ def _auth_service(
         raise ValueError("TP_SESSION_SECRET must contain at least 32 bytes")
 
     engine: AsyncEngine | None = None
+    organization_repository: OrganizationRepository | None = None
     if settings.database_url:
         engine, sessions = create_session_factory(settings.database_url.get_secret_value())
         repository: AuthRepository = SqlAlchemyAuthRepository(sessions)
+        organization_repository = SqlAlchemyOrganizationRepository(sessions)
     else:
         repository = cast(AuthRepository, _UnavailableAuthRepository())
 
@@ -121,17 +140,28 @@ def _auth_service(
         ),
         engine,
         redis_limiter,
+        organization_repository,
     )
 
 
 def create_app(
-    *, settings: Settings | None = None, auth_service: AuthService | None = None
+    *,
+    settings: Settings | None = None,
+    auth_service: AuthService | None = None,
+    organization_repository: OrganizationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    configure_logging("api", settings.log_level, settings.log_format)
+    configure_tracing("api")
+    # Before any engine exists: SQLAlchemy is traced by wrapping engine creation.
+    if not SQLAlchemyInstrumentor().is_instrumented_by_opentelemetry:
+        SQLAlchemyInstrumentor().instrument()
     engine: AsyncEngine | None = None
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
-        auth_service, engine, redis_limiter = _auth_service(settings)
+        auth_service, engine, redis_limiter, default_organizations = _auth_service(settings)
+        if organization_repository is None:
+            organization_repository = default_organizations
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -148,9 +178,10 @@ def create_app(
         else:
             # Sync even an empty chain list so removed chains get disabled. The
             # engine only serves this one-time sync, so release it before serving.
-            sync_engine = create_async_engine(settings.database_url.get_secret_value())
+            sync_engine, session_factory = create_session_factory(
+                settings.database_url.get_secret_value()
+            )
             try:
-                session_factory = async_sessionmaker(sync_engine, expire_on_commit=False)
                 async with session_factory() as session:
                     await sync_platform_configuration(session, configuration)
             finally:
@@ -171,13 +202,18 @@ def create_app(
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
+    app.state.organization_repository = organization_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
+
+    app.add_middleware(CorrelationMiddleware)
+    FastAPIInstrumentor.instrument_app(app)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     @app.get("/v1/health", response_model=HealthResponse, tags=["system"])
@@ -189,6 +225,7 @@ def create_app(
         return problem_response(request, exc)
 
     app.include_router(identity_router)
+    app.include_router(organizations_router)
 
     return app
 

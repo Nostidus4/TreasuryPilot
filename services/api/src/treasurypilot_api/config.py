@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_core.observability import LogFormat
+
 # services/api/src/treasurypilot_api/config.py -> repository root
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
@@ -15,6 +17,8 @@ class Settings(BaseSettings):
 
     environment: str = "local"
     cors_origins: str = "http://localhost:5173"
+    log_level: str = "INFO"
+    log_format: LogFormat = "json"
     database_url: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("TP_DATABASE_URL", "DATABASE_URL"),

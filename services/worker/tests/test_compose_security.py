@@ -22,6 +22,7 @@ def test_ai_worker_environment_is_an_explicit_non_signing_allowlist() -> None:
         "AWS_BEARER_TOKEN_BEDROCK",
         "AWS_REGION",
         "DATABASE_URL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
         "TP_ENVIRONMENT",
         "TP_REDIS_URL",
     }

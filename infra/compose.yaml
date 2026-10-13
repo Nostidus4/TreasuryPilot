@@ -9,6 +9,8 @@ x-app-environment: &app-environment
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
   S3_ENDPOINT_URL: http://minio:9000
   S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+  # Empty: spans are created (trace_id in logs) but not exported.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
 
 services:
   postgres:
@@ -197,6 +199,7 @@ services:
       # Secondary LLM provider (AGT-017); unset means no failover.
       AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
       AWS_REGION: ${AWS_REGION:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -233,6 +236,7 @@ services:
     environment:
       TP_ENVIRONMENT: local
       CHAIN_RPC_URL: http://anvil:8545
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -249,6 +253,15 @@ services:
       retries: 20
     restart: unless-stopped
     networks: [internal]
+
+  # Local trace UI on :16686; set OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 to send spans.
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    profiles: [observability]
+    ports:
+      - '127.0.0.1:16686:16686'
+    restart: unless-stopped
+    networks: [public, internal]
 
   web:
     build:

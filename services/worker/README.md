@@ -12,8 +12,10 @@ The worker package runs as three Compose services:
 - `beat` publishes periodic jobs. Business schedules are added by their owning tickets.
 
 All tasks inherit `SafeTask`: late acknowledgement, rejection/redelivery when a worker process
-is lost, bounded exponential retry for `RetryableTaskError`, and a propagated
-`correlation_id` header. Redis dispatches work but does not own business state.
+is lost, bounded exponential retry for `RetryableTaskError`, and propagated
+log context: the `x_correlation_id` header plus an `x_log_context` dict holding `correlation_id`,
+`request_id`, `org_id`, `plan_id` and `operation_id`. A delivery binds them into structlog for its
+lifetime and child tasks inherit them; set `TP_LOG_LEVEL` / `TP_LOG_FORMAT` to tune output. Redis dispatches work but does not own business state.
 
 Use `make_idempotency_key(task_name, *durable_ids)` to derive an opaque, stable key, persist it
 with the relevant Postgres state/outbox row, and re-read that state on every delivery. The helper
