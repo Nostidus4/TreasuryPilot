@@ -93,3 +93,37 @@ CMP-001 → CMP-003 → CMP-002. Later CMP-L01…L04.
 | M14-D7 | Synchronous refresh before PAY with 5 s timeout. |
 | M14-D8 | Addresses and tx hashes are not redacted (needed for audit). |
 | M14-D9 | Encryption key from Docker secret; rotation is Later. |
+
+## 15. Retention and deletion (CMP-L03)
+
+Retention is disabled until an organization has a `retention_policies` row with
+`invite_retention_days` set. The period starts when an invitation expires. An
+organization legal hold overrides deletion, and policy changes serialize with the
+deletion worker through a row lock. Administrators must set a period that satisfies
+their applicable legal minimum; the application does not invent a jurisdictional
+default. The period is limited to 0-36500 days (database check and validation).
+A failure in one organization is logged and does not stop the others; the command
+then exits non-zero. A dry run takes no write locks. A real run also locks the
+organization's audit head, which every audit writer holds until commit, so an
+audit entry cannot reference an invitation between the check and the deletion.
+The audit reference check is a text search over the organization's audit rows; an
+indexed structured reference is a follow-up that needs an audit schema change.
+Use `configure_policy()` in the same transaction as the authorized policy
+change. A `None` period disables scheduled deletion.
+
+Run `python -m treasurypilot_api.compliance.retention` to preview a bounded batch;
+pass `--execute` to delete it. Schedule that command under an operational identity
+with database access. Each deleted invitation leaves a `deletion_receipts` row with
+only a SHA-256 digest of its random UUID, a record type and deletion timestamp.
+The digest is never computed from email, a name, or a token. The worker skips an
+invitation referenced by the immutable audit log, because deleting the source
+cannot remove personal data from that hash chain; email matches ignore case. Those records require a separate
+legal review before a broader erasure workflow is enabled. Session and magic-link
+retention are separate follow-up scopes because they are user-wide rather than
+organization-scoped; no policy here silently deletes them.
+
+The original one-day CMP-L03 estimate covers only the invitation slice (about half
+a day). Follow-up work is estimated at another 2–3 days: user-wide session and
+magic-link retention, subject-level deletion requests and holds, and a policy for
+financial records and immutable audit evidence after their storage models land.
+Until those slices are designed and implemented, CMP-L03 remains open.
