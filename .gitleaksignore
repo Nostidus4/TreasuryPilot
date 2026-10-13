@@ -1,3 +1,6 @@
 # Published Anvil account 0, restricted to the LOCAL fork in this test script.
 # Keep the exception scoped to the original commit/file/rule/line; real credentials stay gated.
 631272d06adf91ba095061e68ffc1e4d62bfa2ee:infra/scripts/check-sepolia-deploy.sh:generic-api-key:13
+# Public Sepolia aUSDC token contract address verified on chain in #264.
+# Restrict this exception to the specific manifest change; no credential is present.
+4383b89867659c16bb08ef41c9df189d953fd75f:deployments/11155111.json:generic-api-key:16
