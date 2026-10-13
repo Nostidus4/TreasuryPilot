@@ -6,7 +6,7 @@ only claim their on-chain boundaries. Foundry v1.8.5, solc 0.8.28, optimizer 200
 
 ## Local campaign (2026-10-12)
 
-`FOUNDRY_PROFILE=ci forge test -vv` passed 86 tests, including all 15 invariants:
+`FOUNDRY_PROFILE=ci forge test -vv` passed 86 tests, including all 16 invariants:
 10,000 runs, depth 32, 320,000 handler calls, zero unexpected reverts.
 Fuzz tests also ran 10,000 cases. The handler checks authority, current approval,
 payee cooling, budgets, floors, replay, exception scope, status, persistent counters,

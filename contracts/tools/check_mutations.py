@@ -26,6 +26,9 @@ def main() -> None:
             "invariant_I15_BorrowRequiresUnusedUnexpiredOwnerGrant",
         ),
     ]
+    # Each mutation recompiles the module with via-IR; cold CI runners can take
+    # several minutes, so the budget is configurable rather than fixed.
+    timeout = int(os.environ.get("MUTATION_TIMEOUT_SECONDS", "900"))
     environment = os.environ.copy()
     environment.update(
         FOUNDRY_PROFILE="ci", FOUNDRY_INVARIANT_RUNS="16", FOUNDRY_INVARIANT_DEPTH="8"
@@ -35,22 +38,27 @@ def main() -> None:
             if text.count(before) != 1:
                 raise RuntimeError(f"Mutation target drifted: {label}")
             source.write_bytes(text.replace(before, after).encode("utf-8"))
-            result = subprocess.run(
-                [
-                    "forge",
-                    "test",
-                    "--match-contract",
-                    "TreasuryInvariantTest",
-                    "--match-test",
-                    invariant,
-                    "-vv",
-                ],
-                cwd=root,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
+            try:
+                result = subprocess.run(
+                    [
+                        "forge",
+                        "test",
+                        "--match-contract",
+                        "TreasuryInvariantTest",
+                        "--match-test",
+                        invariant,
+                        "-vv",
+                    ],
+                    cwd=root,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError(
+                    f"Mutation run timed out after {timeout}s (not a detection failure): {label}"
+                ) from error
             output = result.stdout + result.stderr
             if (
                 result.returncode == 0

@@ -15,7 +15,7 @@ features are listed separately; a passing contract test does not prove them.
 | BR-014/015/016 | mandate validation/role/version tests, I8/I9 | InvalidMandate, NotOwner; counters persist |
 | BR-020/083 | six-decimal USDC fork, typed integer vectors and publisher config tests | integer base units and reviewed decimals/reserve identity |
 | BR-021/022/026 | shared O1/O2 daily test; `testDirectPreviouslySignedStepUsesExecutionDayBudget`, I3/I8 | OverDailyLimit; mined execution day, persistent prior counters |
-| BR-023 | `testDirectRefillCapsAndExactDailyBoundaryWithRollback`, I3 | OverRefillPerRequest, OverRefillDaily; separate PAY/REFILL counters |
+| BR-023 | `testDirectRefillCapsAndExactDailyBoundaryWithRollback`, I16 | OverRefillPerRequest, OverRefillDaily; separate PAY/REFILL counters |
 | BR-024 | early boundary/single-option fuzz, I14 and its prior mutation evidence | exact approved option, WrongPaymentOption |
 | BR-025 | malicious-token rollback, cap/exception rollback assertions | no balance/counter/replay/grant effects on revert |
 | BR-030 | buffer boundary, direct refill source-floor test, AT11/AT12, I4 | BufferBreach, SourceBufferBreach |

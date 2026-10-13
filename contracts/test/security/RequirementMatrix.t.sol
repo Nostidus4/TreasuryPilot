@@ -38,11 +38,15 @@ contract RequirementMatrixTest is TreasuryFixture {
         (bool arbitrary,) = address(module)
             .call(abi.encodeWithSignature("execute(address,uint256,bytes)", address(token), 0, bytes("")));
         require(!arbitrary, "generic execution accepted");
-        vm.deal(address(this), 1);
+        // Send the value as the real executor with the step _assertRejected checks, so
+        // the call can only fail because `pay` is non-payable, not on NotExecutor.
+        vm.deal(executor, 1);
         I.PaymentApproval memory ap = _approval(1, 1);
-        (bool native,) =
-            address(module).call{value: 1}(abi.encodeCall(module.pay, (ap, _sign(ap), bytes32(uint256(1)))));
-        require(!native && address(module).balance == 0 && address(this).balance == 1, "native value accepted");
+        bytes memory call = abi.encodeCall(module.pay, (ap, _sign(ap), keccak256("rejected step")));
+        vm.prank(executor);
+        (bool native, bytes memory reason) = address(module).call{value: 1}(call);
+        require(!native && reason.length == 0, "native value not rejected by the non-payable check");
+        require(address(module).balance == 0 && executor.balance == 1, "native value accepted");
         _assertRejected(ap);
     }
 

@@ -582,6 +582,23 @@ def test_sepolia_single_wallet_profile(
             publisher.verify_deployment(values, "http://mock.invalid", "42")
 
 
+def test_unset_wallets_are_published_as_null_not_zero() -> None:
+    publisher = load_script("publish_manifest")
+    published = publisher._unset_as_null(
+        {
+            "safeO1": "0x" + "ab" * 20,
+            "safeO2": "0x" + "00" * 20,
+            "safeO2CodeHash": "0x" + "00" * 32,
+            "operationalWalletCount": 1,
+        }
+    )
+
+    assert published["safeO2"] is None
+    assert published["safeO2CodeHash"] is None
+    assert published["safeO1"] == "0x" + "ab" * 20
+    assert published["operationalWalletCount"] == 1
+
+
 @pytest.mark.parametrize("status", [True, False, "0x0", 0, None])
 def test_receipt_uid_rejects_failed_or_invalid_status(status: object) -> None:
     helper = load_script("attest_receipt")

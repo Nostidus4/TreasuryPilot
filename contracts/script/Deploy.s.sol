@@ -169,7 +169,7 @@ contract Deploy is SafeTestHelper {
     }
 
     function _setup(address executor, address approver, address guardian, address vendor) internal {
-        uint256 operationalCount = block.chainid == 31337 ? 2 : 1;
+        uint256 operationalCount = _operationalWalletCount();
         address[] memory operational = new address[](operationalCount);
         operational[0] = address(op1);
         if (operationalCount == 2) operational[1] = address(op2);
@@ -267,7 +267,7 @@ contract Deploy is SafeTestHelper {
         vm.serializeAddress(key, "aToken", aToken);
         vm.serializeBytes32(key, "aTokenCodeHash", aToken.codehash);
         vm.serializeUint(key, "assetDecimals", 6);
-        vm.serializeUint(key, "operationalWalletCount", block.chainid == 31337 ? 2 : 1);
+        vm.serializeUint(key, "operationalWalletCount", _operationalWalletCount());
         vm.serializeAddress(key, "demoOwner", owner);
         vm.serializeAddress(key, "easAttester", attester);
         vm.serializeUint(key, "mandateExpiresAt", module.mandate().expiresAt);
@@ -298,6 +298,12 @@ contract Deploy is SafeTestHelper {
         vm.serializeBool(key, "easSchemaRegistered", false);
         string memory json = vm.serializeBool(key, "localEasMock", block.chainid == 31337);
         vm.writeJson(json, string.concat("../deployments/predictions/", vm.toString(block.chainid), ".json"));
+    }
+
+    /// @dev The demo topology: Anvil gets two operational Safes, Sepolia one.
+    /// `infra/scripts/publish_manifest.py` checks the same per-chain profile.
+    function _operationalWalletCount() internal view returns (uint256) {
+        return block.chainid == 31337 ? 2 : 1;
     }
 }
 

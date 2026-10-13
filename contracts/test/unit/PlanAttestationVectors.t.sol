@@ -20,19 +20,7 @@ contract PlanAttestationVectorsTest is SafeTestHelper {
     function _verify(string memory file) internal {
         string memory json = vm.readFile(file);
         bytes32[] memory stepIds = vm.parseJsonBytes32Array(json, ".message.stepIds");
-        bytes32 structHash = keccak256(
-            abi.encode(
-                TYPEHASH,
-                vm.parseJsonBytes32(json, ".message.planHash"),
-                vm.parseJsonBytes32(json, ".message.requestId"),
-                keccak256(abi.encodePacked(stepIds)),
-                vm.parseJsonBytes32(json, ".message.policyVersion"),
-                vm.parseJsonAddress(json, ".message.executor"),
-                uint64(vm.parseJsonUint(json, ".message.validUntil")),
-                vm.parseJsonUint(json, ".message.nonce"),
-                vm.parseJsonBytes32(json, ".message.evidenceDigest")
-            )
-        );
+        bytes32 structHash = _structHash(json, stepIds);
         bytes32 domainType =
             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
         uint256 chain = vm.parseJsonUint(json, ".domain.chainId");
@@ -54,9 +42,26 @@ contract PlanAttestationVectorsTest is SafeTestHelper {
             "domain separation"
         );
         if (stepIds.length > 0) {
-            bytes32 original = keccak256(abi.encodePacked(stepIds));
+            // The signature must stop verifying once a step changes, not just the hash.
             stepIds[0] = bytes32(uint256(stepIds[0]) ^ 1);
-            require(keccak256(abi.encodePacked(stepIds)) != original, "steps bound");
+            bytes32 tampered = keccak256(abi.encodePacked(hex"1901", domain, _structHash(json, stepIds)));
+            require(ECDSA.recover(tampered, signature) != signer, "steps bound");
         }
+    }
+
+    function _structHash(string memory json, bytes32[] memory stepIds) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                TYPEHASH,
+                vm.parseJsonBytes32(json, ".message.planHash"),
+                vm.parseJsonBytes32(json, ".message.requestId"),
+                keccak256(abi.encodePacked(stepIds)),
+                vm.parseJsonBytes32(json, ".message.policyVersion"),
+                vm.parseJsonAddress(json, ".message.executor"),
+                uint64(vm.parseJsonUint(json, ".message.validUntil")),
+                vm.parseJsonUint(json, ".message.nonce"),
+                vm.parseJsonBytes32(json, ".message.evidenceDigest")
+            )
+        );
     }
 }

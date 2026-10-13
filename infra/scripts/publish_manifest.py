@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from cast_helpers import read_scalar, run_cast, verify_schema
 
@@ -202,7 +202,7 @@ def publish(
     verify_schema(registry, uid, rpc_url, block)
     if not schema_only:
         verify_deployment(prediction, rpc_url, block)
-        current.update(prediction)
+        current.update(_unset_as_null(prediction))
         current["deploymentStatus"] = "deployed"
         current["verifiedAtBlock"] = int(block)
     current.update(
@@ -221,6 +221,25 @@ def publish(
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+_ZERO_ADDRESS = "0x" + "0" * 40
+_ZERO_HASH = "0x" + "0" * 64
+
+
+def _unset_as_null(prediction: dict[str, Any]) -> dict[str, Any]:
+    """Forge serializes an unset address or code hash as zeros; record it as absent.
+
+    A zero string is truthy, so leaving it in place would make consumers treat an
+    un-deployed wallet (for example Sepolia's optional second Safe) as a real one.
+    """
+
+    return {
+        key: None
+        if isinstance(value, str) and value.lower() in (_ZERO_ADDRESS, _ZERO_HASH)
+        else value
+        for key, value in prediction.items()
+    }
 
 
 def main() -> None:

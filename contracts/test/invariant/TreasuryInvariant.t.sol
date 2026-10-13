@@ -19,6 +19,8 @@ contract TreasuryHandler {
     address public immutable op1;
     address public immutable op2;
     uint256 public violations;
+    bytes32[] internal borrowPlanIds;
+    uint256 internal borrowNonce;
     uint256 public successes;
     uint256 public replayAttempts;
     uint256 public replayRejections;
@@ -160,7 +162,7 @@ contract TreasuryHandler {
             _flag(10, token.balanceOf(ap.payingWallet) > ap.amount + module.targetOf(ap.payingWallet)); // BR-036
             _flag(11, cancelled);
             _flag(
-                3, amount > m.refill.perRequest || beforeUsed > m.refill.daily || amount > m.refill.daily - beforeUsed
+                16, amount > m.refill.perRequest || beforeUsed > m.refill.daily || amount > m.refill.daily - beforeUsed
             ); // BR-023
             _observe(module.REFILL(), amount);
             successfulSteps.push(step);
@@ -217,9 +219,12 @@ contract TreasuryHandler {
         uint256 payUsed = module.usedToday(module.PAY());
         uint256 refillUsed = module.usedToday(module.REFILL());
         uint256 supplyUsed = module.usedToday(module.SUPPLY());
+        // An owner renews an expired mandate; without this a 366-day warp would
+        // leave every later action reverting for the rest of the run.
+        uint64 expiresAt = block.timestamp > beforeM.expiresAt ? uint64(block.timestamp + 30 days) : beforeM.expiresAt;
         I.MandateInit memory m = I.MandateInit(
             beforeM.validFrom,
-            beforeM.expiresAt,
+            expiresAt,
             beforeM.payeeCoolingSeconds,
             executor,
             beforeM.guardian,
@@ -281,12 +286,24 @@ contract TreasuryHandler {
         }
     }
 
-    function _borrowPlan(uint256 seed) internal pure returns (bytes32) {
-        return keccak256(abi.encode("synthetic handler borrow", seed % 8));
+    /// @dev Fresh plan ids keep borrowing reachable all run; an eight-id pool was
+    /// exhausted after a few consumed authorizations.
+    function _newBorrowPlan(uint256 seed) internal returns (bytes32 plan) {
+        // Sometimes re-target a known plan so reauthorizing a consumed one is exercised.
+        if (borrowPlanIds.length > 0 && seed % 4 == 0) return borrowPlanIds[seed % borrowPlanIds.length];
+        plan = keccak256(abi.encode("synthetic handler borrow", ++borrowNonce));
+        borrowPlanIds.push(plan);
+    }
+
+    function _knownBorrowPlan(uint256 seed) internal view returns (bytes32) {
+        if (borrowPlanIds.length == 0 || seed % 5 == 0) {
+            return keccak256(abi.encode("unauthorized handler borrow", seed));
+        }
+        return borrowPlanIds[seed % borrowPlanIds.length];
     }
 
     function authorizeBorrow(uint256 seed) external {
-        bytes32 plan = _borrowPlan(seed);
+        bytes32 plan = _newBorrowPlan(seed);
         uint256 amount = seed % 100e6 + 1e6;
         uint64 expiry = uint64(block.timestamp + (seed % 5 == 0 ? 0 : 1 days));
         bool ownerCall = seed % 3 != 0;
@@ -301,7 +318,7 @@ contract TreasuryHandler {
     }
 
     function borrow(uint256 seed) external {
-        bytes32 plan = _borrowPlan(seed);
+        bytes32 plan = _knownBorrowPlan(seed);
         I.BorrowAuthorization memory grant = expectedBorrowGrants[plan];
         bool active = _active();
         uint256 beforeCash = token.balanceOf(owner);
@@ -459,6 +476,10 @@ contract TreasuryInvariantTest is TreasuryFixture {
 
     function invariant_I14_ExactSignedPaymentOption() external view {
         _check(14); // ADR-019 V3-3
+    }
+
+    function invariant_I16_RefillPerRequestAndDailyCaps() external view {
+        _check(16); // BR-023
     }
 
     function invariant_I15_BorrowRequiresUnusedUnexpiredOwnerGrant() external view {
