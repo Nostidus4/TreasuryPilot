@@ -153,13 +153,27 @@ def _bytes32(value: bytes | str) -> bytes:
 def step_id(key: bytes | str, action: int, wallet: str) -> bytes:
     """M08 §8.4 ``keccak256(abi.encode("TP_STEP_V1", key, uint8(action), wallet))``.
 
-    ``key`` is the requestId, or the liquidity cycle id for a liquidity plan (its requestId is 0x0,
-    so it cannot make the id unique). ``wallet`` is toWallet for REFILL, payingWallet for PAY and
+    ``key`` is the requestId, or ``liquidity_cycle_id(...)`` for a liquidity plan (its requestId is
+    0x0, so it cannot make the id unique). ``wallet`` is toWallet for REFILL, payingWallet for PAY and
     Safe T for SUPPLY/WITHDRAW. Re-plans reuse the id.
     """
     return keccak(
         encode(
             ["string", "bytes32", "uint8", "address"], ["TP_STEP_V1", _bytes32(key), action, wallet]
+        )
+    )
+
+
+def liquidity_cycle_id(treasury: str, utc_day: int, seq: int) -> bytes:
+    """The stepId key of a liquidity plan: ``keccak256(abi.encode("TP_LIQ_CYCLE_V1", treasury, uint64 utcDay, uint32 seq))``.
+
+    ``utc_day`` is ``unix_seconds // 86400`` (the module's day); ``seq`` counts this treasury's
+    liquidity plans already completed that day. A retry of an unfinished cycle rebuilds the same
+    id, so ``stepUsed`` still blocks a second execution (BR-061).
+    """
+    return keccak(
+        encode(
+            ["string", "address", "uint64", "uint32"], ["TP_LIQ_CYCLE_V1", treasury, utc_day, seq]
         )
     )
 

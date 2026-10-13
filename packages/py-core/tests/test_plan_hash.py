@@ -7,13 +7,10 @@ from typing import Any
 import pytest
 from eth_hash.auto import keccak
 
-from treasurypilot_core.eip712 import PAY, PLAN_TYPE, plan_hash, step_id
+from treasurypilot_core.eip712 import PAY, PLAN_TYPE, liquidity_cycle_id, plan_hash, step_id
 
-VECTORS = json.loads(
-    (
-        Path(__file__).resolve().parents[3] / "contracts" / "test" / "vectors" / "plan-hash.json"
-    ).read_text()
-)
+VECTORS_DIR = Path(__file__).resolve().parents[3] / "contracts" / "test" / "vectors"
+VECTORS = json.loads((VECTORS_DIR / "plan-hash.json").read_text())
 PLANS = {plan["name"]: plan for plan in VECTORS["plans"]}
 
 
@@ -85,3 +82,18 @@ def test_a_re_plan_of_the_remaining_steps_keeps_the_step_ids() -> None:
     }
     assert replanned["stepId"] == pay["stepId"]
     assert _hash({**plan, "steps": [replanned]}) != plan["planHash"]
+
+
+def test_a_liquidity_step_id_is_keyed_on_a_cycle_id_that_retries_rebuild() -> None:
+    plan = PLANS["liquidity"]
+    cycle = plan["liquidityCycle"]
+    rebuilt = liquidity_cycle_id(plan["treasury"], cycle["utcDay"], cycle["seq"])
+
+    assert "0x" + rebuilt.hex() == plan["steps"][0]["stepIdSource"]
+    assert liquidity_cycle_id(plan["treasury"], cycle["utcDay"], cycle["seq"] + 1) != rebuilt
+
+
+def test_the_plan_treasury_is_the_module_clone_not_safe_t() -> None:
+    approval = json.loads((VECTORS_DIR / "payment-approval.json").read_text())
+    for plan in PLANS.values():
+        assert plan["treasury"] == approval["domain"]["verifyingContract"]

@@ -84,7 +84,11 @@ async function generate() {
   const [PAY, REFILL, SUPPLY, WITHDRAW] = [1, 2, 4, 5];
   const safeT = '0x4444555566667777888899990000aaaabbbbcccc';
   const pool = '0x5555666677778888999900001111aaaabbbbcccc';
-  const cycleId = utils.id('synthetic-liquidity-cycle-1');
+  // Treasury = the module clone (contracts README). A liquidity cycle id is rebuilt the same on retry.
+  const treasury = domain.verifyingContract;
+  const liquidityCycle = { utcDay: 20833, seq: 1 };
+  const cycleId = utils.keccak256(utils.defaultAbiCoder.encode(
+    ['string', 'address', 'uint64', 'uint32'], ['TP_LIQ_CYCLE_V1', treasury, liquidityCycle.utcDay, liquidityCycle.seq]));
   const step = (seq, key, action, wallet, from, to, amount) =>
     ({ seq, stepIdSource: key, stepIdWallet: wallet, stepId: stepId(key, action, wallet), action, from, to, asset: base.asset, amount });
   const plans = [
@@ -93,14 +97,14 @@ async function generate() {
       step(1, base.requestId, REFILL, base.payingWallet, safeT, base.payingWallet, '90000000'),
       step(2, base.requestId, PAY, base.payingWallet, base.payingWallet, base.payee, '9007199254740993000000'),
     ]],
-    ['liquidity', utils.hexZeroPad('0x', 32), [step(0, cycleId, SUPPLY, safeT, safeT, pool, '250000000')]],
-  ].map(([name, requestId, steps]) => {
+    ['liquidity', utils.hexZeroPad('0x', 32), [step(0, cycleId, SUPPLY, safeT, safeT, pool, '250000000')], { liquidityCycle }],
+  ].map(([name, requestId, steps, extra]) => {
     const message = {
-      requestId, treasury: safeT, chainId: domain.chainId,
+      requestId, treasury, chainId: domain.chainId,
       steps: steps.map(({ stepIdSource, stepIdWallet, ...s }) => s),
     };
     return {
-      name, ...message, steps,
+      name, ...extra, ...message, steps,
       stepHashes: message.steps.map(s => utils._TypedDataEncoder.hashStruct('Step', { Step: planTypes.Step }, s)),
       planHash: utils._TypedDataEncoder.hashStruct('Plan', planTypes, message),
     };

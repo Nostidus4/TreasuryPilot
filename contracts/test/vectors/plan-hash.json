@@ -56,7 +56,7 @@
     {
       "name": "request",
       "requestId": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
-      "treasury": "0x4444555566667777888899990000aaaabbbbcccc",
+      "treasury": "0x111122223333444455556666777788889999aaaa",
       "chainId": 11155111,
       "steps": [
         {
@@ -98,19 +98,23 @@
         "0x8705b400c99d8fe184674495fadfd7d286e07eeab53e0983b153490cdaec8b8a",
         "0x10bbc429e04e7fcd3d87d2602cc3cc32f3316da0c66a356a4e6e336f616c40c0"
       ],
-      "planHash": "0xece5aa33b7afb5c8a1fa4554413decb2afb40522ac846e5b3eddafa2b1d783f1"
+      "planHash": "0x18f448d3acf94263710730bb9302ea9e7d93d201e6038d86445c19c219663776"
     },
     {
       "name": "liquidity",
+      "liquidityCycle": {
+        "utcDay": 20833,
+        "seq": 1
+      },
       "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "treasury": "0x4444555566667777888899990000aaaabbbbcccc",
+      "treasury": "0x111122223333444455556666777788889999aaaa",
       "chainId": 11155111,
       "steps": [
         {
           "seq": 0,
-          "stepIdSource": "0x4c4a0ed74ad9de576120ef4a65ffd7ba0ea84fbf8c1e7f59953ceea06bc0d746",
+          "stepIdSource": "0x15274fb200968851b673cbdb38756d7e5416207bbd760459cd8b6537d16cec61",
           "stepIdWallet": "0x4444555566667777888899990000aaaabbbbcccc",
-          "stepId": "0xacd83734ab0a37e31208a5ad23957aaae2bff602e7a43682bc78b0716e7baeab",
+          "stepId": "0xcd6dd9cc28441a6089f7a86d38e80a03cccbcb2d2ec584c32e9e17b46533ff8e",
           "action": 4,
           "from": "0x4444555566667777888899990000aaaabbbbcccc",
           "to": "0x5555666677778888999900001111aaaabbbbcccc",
@@ -119,9 +123,9 @@
         }
       ],
       "stepHashes": [
-        "0x341638139c5f44f35df88ba43e21936cc4c93c111341463161160c4f2f228462"
+        "0xb20190db6550400bf2043f19782d558e500bf03eba8d1873025800bcac3ac710"
       ],
-      "planHash": "0x7f0d23b999a9962ffa8c3a60740afe7ed4690fdd69e79e4367ac1a223c0a3fc5"
+      "planHash": "0x27517bf3968a7c1ca1824cf2f4e3725e54f99696689c6fee651da623c79e8da7"
     }
   ]
 }

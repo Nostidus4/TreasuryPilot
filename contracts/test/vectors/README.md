@@ -22,5 +22,6 @@ validation. No PlanAttestation verification is added to the module.
 `hashStruct(Plan)` over `Step[]`, and each `stepId` is
 `keccak256(abi.encode("TP_STEP_V1", stepIdSource, uint8(action), stepIdWallet))`.
 The `request` plan is WITHDRAW → REFILL → PAY; the `liquidity` plan is one SUPPLY with
-`requestId = 0x0` and the liquidity cycle id as `stepIdSource`. Python checks it in
+`requestId = 0x0` and the liquidity cycle id (built from `liquidityCycle`, M08 §8.4) as
+`stepIdSource`. `treasury` is the module clone, the same address as the approval `treasury`. Python checks it in
 `packages/py-core/tests/test_plan_hash.py`.

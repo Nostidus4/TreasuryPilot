@@ -321,7 +321,7 @@ A valid exception removes `OVER_PER_REQUEST_LIMIT` from `failing` before aggrega
 
 ### 8.4 stepId
 
-`stepId = keccak256(abi.encode("TP_STEP_V1", requestId, uint8(action), wallet))`, where `action` uses the module codes (PAY 1, REFILL 2, SWAP_IN 3, SUPPLY 4, WITHDRAW 5) and `wallet` = `toWallet` for REFILL, `payingWallet` for PAY and Safe T for SUPPLY/WITHDRAW. A liquidity plan has `requestId = 0x0` in its planHash, so its stepId uses the liquidity cycle id in place of requestId; otherwise every SUPPLY would get the same id and `stepUsed` would block the second one. Retries and re-plans reuse the same id (BR-061); the contract's `stepUsed` makes a second execution impossible.
+`stepId = keccak256(abi.encode("TP_STEP_V1", requestId, uint8(action), wallet))`, where `action` uses the module codes (PAY 1, REFILL 2, SWAP_IN 3, SUPPLY 4, WITHDRAW 5) and `wallet` = `toWallet` for REFILL, `payingWallet` for PAY and Safe T for SUPPLY/WITHDRAW. A liquidity plan has `requestId = 0x0` in its planHash, so its stepId uses the liquidity cycle id in place of requestId; otherwise every SUPPLY would get the same id and `stepUsed` would block the second one. `cycleId = keccak256(abi.encode("TP_LIQ_CYCLE_V1", treasury, uint64(utcDay), uint32(seq)))`, where `treasury` is the module clone, `utcDay = unix_seconds / 86400` (the module's day) and `seq` counts the treasury's liquidity plans already completed that day. A retry of an unfinished cycle rebuilds the same id, so `stepUsed` still blocks a duplicate (BR-061). Retries and re-plans reuse the same id (BR-061); the contract's `stepUsed` makes a second execution impossible.
 
 ### 8.5 Worked examples
 
