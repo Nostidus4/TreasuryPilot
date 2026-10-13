@@ -15,6 +15,7 @@ from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.invoices import models as invoice_models  # noqa: F401
 from treasurypilot_api.mandate import models as mandate_models  # noqa: F401
 from treasurypilot_api.notifications import models as notification_models  # noqa: F401
+from treasurypilot_api.review import models as review_models  # noqa: F401
 from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 
 config = context.config

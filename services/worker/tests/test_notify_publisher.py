@@ -12,7 +12,7 @@ import pytest
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify import publisher as publisher_module
 from treasurypilot_worker.notify import routing as routing_module
-from treasurypilot_worker.notify.publisher import publish_from_pool
+from treasurypilot_worker.notify.publisher import _link, publish_from_pool
 from treasurypilot_worker.notify.routing import ROUTING_TABLE, policy_for_event
 
 
@@ -43,6 +43,11 @@ def test_routing_table_covers_documented_notification_events() -> None:
         "Discrepancy",
     } <= ROUTING_TABLE.keys()
     assert policy_for_event("NeedsReview:Finance").roles == ("Finance",)
+
+
+def test_review_notifications_link_to_the_review_item() -> None:
+    review_id = uuid.uuid4()
+    assert _link("review_item", review_id, uuid.uuid4()) == f"/review-items/{review_id}"
 
 
 class _FakeTransaction:

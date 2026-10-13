@@ -47,7 +47,12 @@ def create_celery_app() -> Celery:
                 # A run nobody picked up within 2 s is superseded by the next one; without
                 # this, a busy or stopped worker lets thousands pile up in Redis.
                 "options": {"queue": "core", "expires": 2},
-            }
+            },
+            "escalate-overdue-review-items": {
+                "task": "treasurypilot.recovery.escalate-overdue-review-items",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "core", "expires": 30},
+            },
         },
     )
     return app
