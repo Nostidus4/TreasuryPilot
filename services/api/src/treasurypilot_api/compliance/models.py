@@ -25,7 +25,7 @@ class RetentionPolicy(Base):
     __tablename__ = "retention_policies"
     __table_args__ = (
         CheckConstraint(
-            "invite_retention_days IS NULL OR invite_retention_days >= 0",
+            "invite_retention_days IS NULL OR invite_retention_days BETWEEN 0 AND 36500",
             name="ck_retention_policies_invite_days",
         ),
     )
