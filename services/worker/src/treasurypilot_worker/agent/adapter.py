@@ -111,7 +111,13 @@ class AiAdapter:
                 output_schema=schema,
                 max_output_tokens=task_config.max_output_tokens,
             )
-            response = self._complete(request, run)
+            try:
+                response = self._complete(request, run)
+            except AiUnavailable as error:
+                if error.usage is not None:
+                    price = self._config.prices[task_config.model]
+                    self._ledger.record(org_id, month, cost_usd_micros(price, error.usage))
+                raise
             cost = cost_usd_micros(self._config.prices[task_config.model], response.usage)
             self._ledger.record(org_id, month, cost)
             run.usage += response.usage

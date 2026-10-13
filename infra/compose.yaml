@@ -194,6 +194,9 @@ services:
       # Empty means no DB access; when needed, provide a URL for a least-privilege AI role.
       DATABASE_URL: ${AI_DATABASE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Secondary LLM provider (AGT-017); unset means no failover.
+      AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
+      AWS_REGION: ${AWS_REGION:-}
     depends_on:
       postgres:
         condition: service_healthy

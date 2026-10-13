@@ -19,6 +19,7 @@ from treasurypilot_worker.agent.errors import (
     AiUnavailable,
     PromptTemplateError,
 )
+from treasurypilot_worker.agent.failover import FailoverProvider
 from treasurypilot_worker.agent.fake import FakeClock, FakeProvider, fake_text, fake_tool_use
 from treasurypilot_worker.agent.instruction_detector import (
     INSTRUCTION_MATCH_WINDOW,
@@ -82,6 +83,7 @@ __all__ = [
     "AiUnavailable",
     "BudgetLedger",
     "ContentBlock",
+    "FailoverProvider",
     "FakeClock",
     "FakeProvider",
     "InMemoryBudgetLedger",

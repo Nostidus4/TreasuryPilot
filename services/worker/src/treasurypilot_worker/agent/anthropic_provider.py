@@ -26,13 +26,25 @@ _STOP_REASONS = {
     "refusal": StopReason.REFUSAL,
 }
 _RETRYABLE_STATUS = {408, 409, 429}
+# Not retryable, but the next provider has its own credentials and account.
+_FAILOVER_STATUS = {401, 403}
 
 
 class AnthropicProvider:
     """One Messages API request per call. Retries belong to the adapter, which owns the deadline."""
 
-    def __init__(self, client: anthropic.Anthropic | None = None) -> None:
+    def __init__(
+        self,
+        client: anthropic.Anthropic | anthropic.AnthropicBedrockMantle | None = None,
+        *,
+        name: str,
+        model_prefix: str = "",
+    ) -> None:
         self._client = (client or anthropic.Anthropic()).with_options(max_retries=0)
+        self.name = name
+        # shortcut: plain prefix covers "anthropic." ids; Bedrock cross-region or versioned ids
+        # would need a per-model map in config.
+        self._model_prefix = model_prefix
 
     def complete(self, request: ProviderRequest, *, timeout_s: float) -> ProviderResponse:
         tools: list[ToolParam] = [
@@ -51,7 +63,7 @@ class AnthropicProvider:
         ]
         try:
             message = self._client.with_options(timeout=timeout_s).messages.create(
-                model=request.model,
+                model=self._model_prefix + request.model,
                 max_tokens=request.max_output_tokens,
                 system=system,
                 messages=[_to_param(m) for m in request.messages],
@@ -64,15 +76,18 @@ class AnthropicProvider:
                 },
             )
         except anthropic.APITimeoutError as error:
-            raise AiTimeout(f"Anthropic request timed out after {timeout_s:.1f}s") from error
+            raise AiTimeout(f"{self.name} request timed out after {timeout_s:.1f}s") from error
         except anthropic.APIConnectionError as error:
-            raise AiUnavailable(f"Anthropic connection failed: {error}", retryable=True) from error
+            raise AiUnavailable(
+                f"{self.name} connection failed: {error}", retryable=True
+            ) from error
         except anthropic.APIStatusError as error:
             retryable = error.status_code in _RETRYABLE_STATUS or error.status_code >= 500
             raise AiUnavailable(
-                f"Anthropic returned {error.status_code} (request {error.request_id}): "
+                f"{self.name} returned {error.status_code} (request {error.request_id}): "
                 f"{error.message}",
                 retryable=retryable,
+                failover=retryable or error.status_code in _FAILOVER_STATUS,
             ) from error
         return _from_message(message)
 
@@ -101,11 +116,18 @@ def _to_param(message: Message) -> MessageParam:
 
 
 def _from_message(message: AnthropicMessage) -> ProviderResponse:
+    usage = Usage(
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+        cache_write_tokens=message.usage.cache_creation_input_tokens or 0,
+        cache_read_tokens=message.usage.cache_read_input_tokens or 0,
+    )
     stop_reason = _STOP_REASONS.get(message.stop_reason or "")
     if stop_reason is None:
         raise AiUnavailable(
             f"unsupported stop reason {message.stop_reason!r} (request {message._request_id})",
             retryable=False,
+            usage=usage,
         )
     texts = [block.text for block in message.content if block.type == "text"]
     calls = tuple(
@@ -113,16 +135,10 @@ def _from_message(message: AnthropicMessage) -> ProviderResponse:
         for block in message.content
         if block.type == "tool_use"
     )
-    usage = message.usage
     return ProviderResponse(
         stop_reason=stop_reason,
         text="".join(texts) if texts else None,
         tool_calls=calls,
-        usage=Usage(
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cache_write_tokens=usage.cache_creation_input_tokens or 0,
-            cache_read_tokens=usage.cache_read_input_tokens or 0,
-        ),
+        usage=usage,
         provider_content=list(message.content),
     )
