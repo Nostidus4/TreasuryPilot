@@ -10,20 +10,22 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import Field, ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.access import MemberContext, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
 from treasurypilot_api.invoices.anomalies import (
     InvoiceRevisionSignals,
     PaidInvoice,
     evaluate_anomalies,
 )
 from treasurypilot_api.invoices.fingerprints import (
+    DuplicateFingerprintConflict,
+    assert_no_active_duplicate,
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
@@ -50,6 +52,7 @@ from treasurypilot_core.money import BaseUnits
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
+_require_approver = require_role(OrganizationRole.APPROVER)
 
 
 class RequestCreate(ApiModel):
@@ -86,6 +89,14 @@ class RequestPatch(ApiModel):
 
 class ConfirmTermsRequest(ApiModel):
     terms: dict[str, object]
+
+
+class RequestReason(ApiModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class FlagAcknowledgment(ApiModel):
+    note: str = Field(min_length=10, max_length=2000)
 
 
 _TERMS_KEYS = {
@@ -187,6 +198,42 @@ def _not_found() -> AuthFailure:
     return _fail(
         404, "REQUEST_NOT_FOUND", "Request not found", "The request is not available to this user."
     )
+
+
+def _expected_version(if_match: str | None) -> int:
+    try:
+        version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
+    except ValueError:
+        version = None
+    if version is None:
+        raise _fail(
+            412,
+            "PRECONDITION_FAILED",
+            "Request changed",
+            "Provide the current request version in If-Match.",
+        )
+    return version
+
+
+async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequest) -> None:
+    """Reject approval signing while a HIGH flag on this revision remains open."""
+    unacknowledged = await session.scalar(
+        select(RequestFlag.id)
+        .where(
+            RequestFlag.request_id == row.id,
+            RequestFlag.revision == row.current_revision,
+            RequestFlag.severity == RequestFlagSeverity.HIGH.value,
+            RequestFlag.status == RequestFlagStatus.OPEN.value,
+        )
+        .limit(1)
+    )
+    if unacknowledged is not None:
+        raise _fail(
+            409,
+            "HIGH_FLAGS_UNACKED",
+            "High risk flags need acknowledgment",
+            "An approver must acknowledge every open HIGH flag on the current revision.",
+        )
 
 
 def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
@@ -897,3 +944,288 @@ async def confirm_request_terms(
         version = row.version
     response.headers["ETag"] = f'"{version}"'
     return {"request": result}
+
+
+@router.post("/{request_id}/submit", openapi_extra={"x-organization-scoped": True})
+async def submit_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(
+                412,
+                "PRECONDITION_FAILED",
+                "Request changed",
+                "The request changed since it was read; reload and try again.",
+            )
+        if row.status != RequestStatus.DRAFT.value:
+            raise _fail(
+                409, "NOT_EDITABLE", "Request cannot be submitted", "Only a draft can be submitted."
+            )
+        if row.terms is not None and row.terms_confirmed_by is None:
+            raise _fail(
+                409,
+                "TERMS_UNCONFIRMED",
+                "Payment terms need confirmation",
+                "Confirm the extracted payment terms before submitting this request.",
+            )
+        if row.source == RequestSource.UPLOAD.value and row.extraction_confirmed_by is None:
+            raise _fail(
+                409,
+                "EXTRACTION_UNCONFIRMED",
+                "Extracted fields need confirmation",
+                "Confirm the extracted invoice fields before submitting this request.",
+            )
+        if (
+            row.treasury_id is None
+            or row.vendor_id is None
+            or row.payee_id is None
+            or row.asset_id is None
+            or row.invoice_no is None
+            or row.issue_date is None
+            or row.due_at is None
+            or row.amount is None
+        ):
+            code = (
+                "EXTRACTION_UNCONFIRMED"
+                if row.source == RequestSource.UPLOAD.value
+                else "REQUEST_FIELDS_INCOMPLETE"
+            )
+            raise _fail(
+                409,
+                code,
+                "Request fields are incomplete",
+                "Complete and confirm all required invoice fields before submitting this request.",
+            )
+        await _bound_fields(
+            session,
+            organization_id=member.organization_id,
+            treasury_id=row.treasury_id,
+            vendor_id=row.vendor_id,
+            payee_id=row.payee_id,
+            asset_id=row.asset_id,
+            paying_wallet_id=row.paying_wallet_id,
+        )
+        try:
+            await assert_no_active_duplicate(session, row)
+        except DuplicateFingerprintConflict as error:
+            raise _duplicate_fingerprint(error.existing_request_id) from error
+        previous_status = row.status
+        row.status = RequestStatus.AWAITING_APPROVAL.value
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous_status,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=member.user_id,
+                reason="request submitted for approval",
+            )
+        )
+        await session.flush()
+        await session.refresh(row)
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.post("/{request_id}/withdraw", openapi_extra={"x-organization-scoped": True})
+async def withdraw_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    return await _return_request_to_draft(
+        organization_id=organization_id,
+        request_id=request_id,
+        request=request,
+        response=response,
+        expected_version=_expected_version(if_match),
+        actor=member,
+        reason="request withdrawn by operator",
+        require_checker=False,
+    )
+
+
+@router.post("/{request_id}/request-changes", openapi_extra={"x-organization-scoped": True})
+async def request_changes(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    return await _return_request_to_draft(
+        organization_id=organization_id,
+        request_id=request_id,
+        request=request,
+        response=response,
+        expected_version=_expected_version(if_match),
+        actor=member,
+        reason=payload.reason,
+        require_checker=True,
+    )
+
+
+async def _return_request_to_draft(
+    *,
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    expected_version: int,
+    actor: MemberContext,
+    reason: str,
+    require_checker: bool,
+) -> dict[str, object]:
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(
+                412,
+                "PRECONDITION_FAILED",
+                "Request changed",
+                "The request changed since it was read; reload and try again.",
+            )
+        if row.status != RequestStatus.AWAITING_APPROVAL.value:
+            raise _fail(
+                409,
+                "NOT_EDITABLE",
+                "Request cannot return to draft",
+                "Only a request awaiting approval can return to draft.",
+            )
+        if require_checker:
+            solo_mode = bool(
+                await session.scalar(
+                    select(Organization.solo_mode).where(Organization.id == organization_id)
+                )
+            )
+            if not solo_mode and actor.user_id in {row.created_by, row.last_edited_by}:
+                raise _fail(
+                    409,
+                    "MAKER_CHECKER",
+                    "Maker cannot request changes",
+                    "The creator or last editor cannot review this request.",
+                )
+        previous_status = row.status
+        row.status = RequestStatus.DRAFT.value
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous_status,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=actor.user_id,
+                reason=reason,
+            )
+        )
+        await session.flush()
+        await session.refresh(row)
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.post("/{request_id}/flags/{flag_id}/ack", openapi_extra={"x-organization-scoped": True})
+async def acknowledge_flag(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    flag_id: uuid.UUID,
+    payload: FlagAcknowledgment,
+    request: Request,
+    member: MemberContext = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    note = payload.note.strip()
+    if len(note) < 10:
+        raise _fail(422, "ACK_NOTE_TOO_SHORT", "Note too short", "Provide at least 10 characters.")
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        flag = await session.scalar(
+            select(RequestFlag)
+            .where(RequestFlag.id == flag_id, RequestFlag.request_id == row.id)
+            .with_for_update()
+        )
+        if flag is None:
+            raise _fail(404, "FLAG_NOT_FOUND", "Flag not found", "The flag is not available.")
+        if (
+            flag.status == RequestFlagStatus.SUPERSEDED.value
+            or flag.revision != row.current_revision
+        ):
+            raise _fail(
+                409,
+                "FLAG_SUPERSEDED",
+                "Flag superseded",
+                "Only flags on the current request revision can be acknowledged.",
+            )
+        if flag.status != RequestFlagStatus.OPEN.value:
+            raise _fail(
+                409, "FLAG_NOT_OPEN", "Flag is not open", "Only open flags can be acknowledged."
+            )
+        if member.user_id == row.created_by:
+            raise _fail(
+                409,
+                "MAKER_CHECKER",
+                "Creator cannot acknowledge flags",
+                "The creator cannot acknowledge this flag.",
+            )
+        solo_mode = bool(
+            await session.scalar(
+                select(Organization.solo_mode).where(Organization.id == organization_id)
+            )
+        )
+        if not solo_mode and member.user_id == row.last_edited_by:
+            raise _fail(
+                409,
+                "MAKER_CHECKER",
+                "Maker cannot acknowledge flags",
+                "The last editor cannot acknowledge this flag.",
+            )
+        flag.status = RequestFlagStatus.ACKNOWLEDGED.value
+        flag.acknowledged_by = member.user_id
+        flag.acknowledged_at = datetime.now(UTC)
+        flag.ack_note = note
+        await session.flush()
+        result = {
+            "id": str(flag.id),
+            "revision": flag.revision,
+            "code": flag.code,
+            "severity": flag.severity,
+            "evidence": flag.evidence,
+            "status": flag.status,
+            "acknowledgedBy": str(flag.acknowledged_by),
+            "acknowledgedAt": flag.acknowledged_at.isoformat(),
+            "ackNote": flag.ack_note,
+        }
+    return {"flag": result}

@@ -103,6 +103,8 @@ stateDiagram-v2
 | Transition | Who | Guard (error) |
 |---|---|---|
 | submit | OPR, ADM | payee exists and not Deactivated (`PAYEE_UNKNOWN`); asset = treasury stablecoin (`ASSET_NOT_PAYMENT_STABLECOIN`); no other active request with the same fingerprint (`DUPLICATE_FINGERPRINT`); extracted fields confirmed if source = UPLOAD (`EXTRACTION_UNCONFIRMED`); extracted terms confirmed or none (`TERMS_UNCONFIRMED`) |
+| acknowledge flag | APR | flag is Open on the current revision (`FLAG_SUPERSEDED`); note has at least 10 non-whitespace characters; the creator cannot acknowledge, and maker-checker applies to the last editor (`MAKER_CHECKER`) |
+| serve approval typed data | APR | request is AwaitingApproval; every HIGH flag on the current revision is acknowledged (`HIGH_FLAGS_UNACKED`) |
 | approve | APR with linked wallet | §8.6 (all errors listed there) |
 | edit bound field | OPR, ADM | status ∈ {Draft, AwaitingApproval→withdraw first, Approved} and no operation in flight (`PAYMENT_IN_FLIGHT`); `If-Match` (412) |
 | cancel | OPR (own drafts), OWN, ADM | no PAY operation NotSubmitted/Submitted/Pending/Unknown (`PAYMENT_IN_FLIGHT`, BR-060) |
@@ -131,7 +133,7 @@ the confirming operator and time. Editing bound request fields clears confirmati
 Only confirmed terms may be converted to scheduler input. A confirmed discount
 derives `earlyAmount = amount − floor(amount × discount_bps / 10000)` and
 `earlyPayBy` as 23:59:59 UTC on the discount deadline day.
-| POST | `/…/{r}/submit` | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED` |
+| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`; 412 |
 | POST | `/…/{r}/withdraw` | OPR | → Draft | |
 | POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
 | POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER` |

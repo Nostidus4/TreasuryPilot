@@ -79,6 +79,8 @@ def test_duplicate_error_exposes_existing_request_id_extension() -> None:
     assert error.status == 409
     assert error.code == "DUPLICATE_FINGERPRINT"
     assert error.extensions["existingRequestId"] == str(existing)
+
+
 def test_confirmed_discount_terms_derive_exact_integer_approval_option() -> None:
     stored, digest, early_amount, early_pay_by = _validated_terms(
         {"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990},
@@ -119,4 +121,3 @@ def test_scheduler_only_sees_confirmed_terms() -> None:
     assert confirmed_payment_terms(row) is None
     row.terms_confirmed_by = uuid.uuid4()
     assert confirmed_payment_terms(row).net_due_day == 21_000
-
