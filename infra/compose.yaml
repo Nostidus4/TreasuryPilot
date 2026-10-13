@@ -173,8 +173,11 @@ services:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
       CHAIN_RPC_URL: http://anvil:8545
       # Core-only credentials are deliberately not part of x-app-environment.
-      TP_ATTESTATION_PRIVATE_KEY: ${TP_ATTESTATION_PRIVATE_KEY:-}
+      TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
+      TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+    # Encrypted policy key (M08 §10); only the core worker mounts it.
+    secrets: [policy_keystore, policy_keystore_password]
     tmpfs: [/tmp/prometheus]
     depends_on:
       postgres:
@@ -301,6 +304,13 @@ services:
       retries: 20
     restart: unless-stopped
     networks: [public, internal]
+
+secrets:
+  # Unset paths mount /dev/null: the worker starts, but attest fails closed (no policy key).
+  policy_keystore:
+    file: ${TP_POLICY_KEYSTORE_FILE:-/dev/null}
+  policy_keystore_password:
+    file: ${TP_POLICY_KEYSTORE_PASSWORD_FILE:-/dev/null}
 
 networks:
   public:
