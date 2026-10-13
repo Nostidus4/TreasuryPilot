@@ -129,3 +129,15 @@ def test_stdlib_logs_get_context_redaction_and_json(capsys: pytest.CaptureFixtur
     assert line["service"] == "worker"
     assert line["correlation_id"] == "corr-12345"
     assert HEX64 not in json.dumps(line)
+
+
+def test_reconfigure_keeps_foreign_handlers_and_one_own_handler(
+    capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    configure_logging("api", "INFO", "json")
+    configure_logging("api", "INFO", "json")
+
+    logging.getLogger("treasurypilot_api.identity").warning("delivery failed")
+
+    assert "delivery failed" in caplog.text
+    assert len(capsys.readouterr().out.splitlines()) == 1

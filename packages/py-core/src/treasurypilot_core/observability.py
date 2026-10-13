@@ -140,7 +140,9 @@ def configure_logging(service: str, level: str = "INFO", fmt: LogFormat = "json"
         )
     )
     root = logging.getLogger()
-    root.handlers = [handler]
+    # Replace only our own handler so re-configuring is idempotent and handlers installed by
+    # others (pytest's caplog, error trackers) survive.
+    root.handlers = [h for h in root.handlers if not isinstance(h, _StdoutHandler)] + [handler]
     root.setLevel(level_no)
     # uvicorn installs its own non-propagating handlers before the app is imported.
     for name in ("uvicorn", "uvicorn.access"):
