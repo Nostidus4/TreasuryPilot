@@ -167,12 +167,21 @@ class MagicLinkSender(Protocol):
 
 
 class AuthFailure(Exception):
-    def __init__(self, *, status: int, code: str, title: str, detail: str) -> None:
+    def __init__(
+        self,
+        *,
+        status: int,
+        code: str,
+        title: str,
+        detail: str,
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
+        self.retry_after = retry_after
 
 
 class SessionTokenCodec:
@@ -282,6 +291,7 @@ class AuthService:
                 code="RATE_LIMITED",
                 title="Too many requests",
                 detail="Too many sign-in attempts. Please wait and try again.",
+                retry_after=int(RATE_LIMIT_WINDOW.total_seconds()),
             )
 
     async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:
