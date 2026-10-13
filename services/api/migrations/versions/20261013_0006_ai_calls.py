@@ -1,7 +1,7 @@
 """create append-only ai_calls decision log
 
 Revision ID: 20261013_0006
-Revises: 20261012_0002
+Revises: 20261013_0005
 Create Date: 2026-10-13 00:00:00
 
 """
@@ -13,8 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261013_0006"
-# Rechain onto the latest head if the mandate, invoice or rpc_health migrations merge first.
-down_revision: str | None = "20261012_0002"
+down_revision: str | None = "20261013_0005"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
