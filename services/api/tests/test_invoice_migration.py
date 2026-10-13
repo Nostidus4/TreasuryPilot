@@ -51,7 +51,7 @@ def test_invoice_upgrade_and_downgrade_compile_offline() -> None:
     assert "CREATE TRIGGER trg_request_status_events_append_only" in sql
     assert '"from" IS NULL OR "from" IN (' in sql
     assert '"to" IN (' in sql
-    assert "fk_exceptions_request_payment_request" in sql
+    assert "fk_exceptions_request_treasury" in sql
 
 
 async def _verify_invoice_constraints(database_url: str) -> None:
@@ -109,17 +109,17 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             await connection.execute(
                 text(
                     "INSERT INTO payees "
-                    "(id, treasury_id, vendor_id, label, address, status) VALUES "
-                    f"('{payee_id}', '{treasury_id}', '{vendor_id}', 'Main', "
+                    "(id, treasury_id, org_id, vendor_id, label, address, status) VALUES "
+                    f"('{payee_id}', '{treasury_id}', '{org_id}', '{vendor_id}', 'Main', "
                     "decode(repeat('22', 20), 'hex'), 'Active')"
                 )
             )
             await connection.execute(
                 text(
                     "INSERT INTO payment_requests "
-                    "(id, org_id, treasury_id, vendor_id, payee_id, invoice_no, issue_date, "
+                    "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, issue_date, "
                     "due_at, amount, asset_id, fingerprint) VALUES "
-                    f"('{request_id}', '{org_id}', '{treasury_id}', '{vendor_id}', '{payee_id}', "
+                    f"('{request_id}', '{org_id}', '{treasury_id}', 11155111, '{vendor_id}', '{payee_id}', "
                     f"'INV-001', '2026-10-01', '2026-10-31', 1000, '{asset_id}', "
                     f"decode('{fingerprint}', 'hex'))"
                 )
@@ -130,9 +130,9 @@ async def _verify_invoice_constraints(database_url: str) -> None:
                 await connection.execute(
                     text(
                         "INSERT INTO payment_requests "
-                        "(id, org_id, treasury_id, vendor_id, payee_id, invoice_no, issue_date, "
+                        "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, issue_date, "
                         "due_at, amount, asset_id, fingerprint) VALUES "
-                        f"('{duplicate_request_id}', '{org_id}', '{treasury_id}', '{vendor_id}', "
+                        f"('{duplicate_request_id}', '{org_id}', '{treasury_id}', 11155111, '{vendor_id}', "
                         f"'{payee_id}', 'INV-002', '2026-10-02', '2026-10-31', 1000, "
                         f"'{asset_id}', decode('{fingerprint}', 'hex'))"
                     )
@@ -145,9 +145,9 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             await connection.execute(
                 text(
                     "INSERT INTO payment_requests "
-                    "(id, org_id, treasury_id, vendor_id, payee_id, invoice_no, issue_date, "
+                    "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, issue_date, "
                     "due_at, amount, asset_id, fingerprint) VALUES "
-                    f"('{duplicate_request_id}', '{org_id}', '{treasury_id}', '{vendor_id}', "
+                    f"('{duplicate_request_id}', '{org_id}', '{treasury_id}', 11155111, '{vendor_id}', "
                     f"'{payee_id}', 'INV-002', '2026-10-02', '2026-10-31', 1000, "
                     f"'{asset_id}', decode('{fingerprint}', 'hex'))"
                 )
@@ -185,6 +185,68 @@ async def _verify_invoice_constraints(database_url: str) -> None:
                     )
                 )
 
+        with pytest.raises(DBAPIError, match="approval status cannot change"):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(f"UPDATE approvals SET status = 'Valid' WHERE id = '{approval_id}'")
+                )
+
+        # Tenant and chain isolation: another org's vendor, a vendor other than the
+        # payee's, and an asset on another chain are all rejected.
+        other_org_id = "00000000-0000-7000-8000-000000000011"
+        foreign_vendor_id = "00000000-0000-7000-8000-000000000051"
+        other_vendor_id = "00000000-0000-7000-8000-000000000052"
+        mainnet_asset_id = "00000000-0000-7000-8000-000000000031"
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(f"INSERT INTO organizations (id, name) VALUES ('{other_org_id}', 'Other')")
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO vendors (id, org_id, name, normalized_ref) VALUES "
+                    f"('{foreign_vendor_id}', '{other_org_id}', 'Foreign', 'foreign'), "
+                    f"('{other_vendor_id}', '{org_id}', 'Other', 'other')"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO chains (chain_id, name, is_testnet, confirmations, "
+                    "explorer_url, rpc_urls) VALUES "
+                    "(1, 'Ethereum', false, 12, 'https://etherscan.io', '[\"https://rpc\"]')"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO assets (id, chain_id, address, symbol, decimals, issuer_label) "
+                    f"VALUES ('{mainnet_asset_id}', 1, decode(repeat('11', 20), 'hex'), "
+                    "'USDC', 6, 'Circle')"
+                )
+            )
+
+        def request_insert(vendor: str, asset: str) -> str:
+            return (
+                "INSERT INTO payment_requests "
+                "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, "
+                "issue_date, due_at, amount, asset_id) VALUES "
+                f"('00000000-0000-7000-8000-000000000072', '{org_id}', '{treasury_id}', "
+                f"11155111, '{vendor}', '{payee_id}', 'INV-003', '2026-10-02', '2026-10-31', "
+                f"1000, '{asset}')"
+            )
+
+        for vendor, asset, constraint in (
+            # Either composite FK may report this one first; both reject it.
+            (
+                foreign_vendor_id,
+                asset_id,
+                "fk_payment_requests_(vendor_org|payee_treasury_vendor)",
+            ),
+            (other_vendor_id, asset_id, "fk_payment_requests_payee_treasury_vendor"),
+            (vendor_id, mainnet_asset_id, "fk_payment_requests_asset_chain"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with engine.begin() as connection:
+                    await connection.execute(text(request_insert(vendor, asset)))
+
         with pytest.raises(DBAPIError, match="request_revisions are append-only"):
             async with engine.begin() as connection:
                 await connection.execute(
@@ -199,13 +261,14 @@ async def _verify_invoice_constraints(database_url: str) -> None:
                     text(f"DELETE FROM request_status_events WHERE id = '{event_id}'")
                 )
 
-        with pytest.raises(IntegrityError, match="fk_exceptions_request_payment_request"):
+        with pytest.raises(IntegrityError, match="fk_exceptions_request_treasury"):
             async with engine.begin() as connection:
                 await connection.execute(
                     text(
                         "INSERT INTO exceptions "
-                        "(id, request_id, mandate_onchain_version, amount, payee, expiry, status) "
-                        "VALUES ('00000000-0000-7000-8000-000000000099', "
+                        "(id, treasury_id, request_id, mandate_onchain_version, amount, payee, "
+                        "expiry, status) "
+                        f"VALUES ('00000000-0000-7000-8000-000000000099', '{treasury_id}', "
                         "'00000000-0000-7000-8000-000000000098', 1, 1000, "
                         "decode(repeat('44', 20), 'hex'), '2027-01-01T00:00:00Z', 'Requested')"
                     )

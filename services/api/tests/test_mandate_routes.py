@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -42,9 +42,9 @@ class MemoryMandateRepository:
 
     async def list_versions(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
-    ) -> tuple[MandateVersionRecord, ...]:
+    ) -> tuple[MandateVersionRecord, ...] | None:
         if organization_id != ORG_ID or treasury_id != TREASURY_ID:
-            return ()
+            return None
         return tuple(reversed(self.rows))
 
     async def get_version(
@@ -127,9 +127,14 @@ def config_payload() -> dict[str, object]:
         "executor": "0x" + "33" * 20,
         "approvers": ["0x" + "44" * 20],
         "guardian": "0x" + "55" * 20,
-        "validFrom": "2026-10-15T00:00:00Z",
-        "expiresAt": "2026-11-15T00:00:00Z",
+        # Relative to now: drafts that are already expired are rejected.
+        "validFrom": _iso(datetime.now(UTC) + timedelta(days=1)),
+        "expiresAt": _iso(datetime.now(UTC) + timedelta(days=30)),
     }
+
+
+def _iso(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def make_client(
@@ -140,8 +145,9 @@ def make_client(
         mandate_repository=cast(object, repository),
     )
 
-    async def member_override() -> MemberContext:
-        return MemberContext(ORG_ID, OWNER_ID, roles)
+    async def member_override(organization_id: uuid.UUID) -> MemberContext:
+        # Membership is granted everywhere so the repository's tenant scoping is tested.
+        return MemberContext(organization_id, OWNER_ID, roles)
 
     app.dependency_overrides[require_member] = member_override
     return TestClient(app)

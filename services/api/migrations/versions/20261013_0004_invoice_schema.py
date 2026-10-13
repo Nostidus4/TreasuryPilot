@@ -27,14 +27,20 @@ _FLAG_SOURCES = "'DETERMINISTIC', 'AI'"
 _FLAG_STATUSES = "'Open', 'Acknowledged', 'Superseded'"
 _APPROVAL_STATUSES = "'Valid', 'Invalidated', 'Expired', 'Cancelled'"
 _EVENT_ACTOR_TYPES = "'USER', 'SYSTEM'"
+_TERMINAL_REQUEST_STATUSES = "'Rejected', 'Cancelled', 'Expired'"
 
 
 def upgrade() -> None:
+    # Lets a request pin its vendor to the payee's vendor with one composite FK.
+    op.create_unique_constraint(
+        "uq_payees_id_treasury_vendor", "payees", ["id", "treasury_id", "vendor_id"]
+    )
     op.create_table(
         "payment_requests",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("org_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("treasury_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("chain_id", sa.Integer(), nullable=False),
         sa.Column("vendor_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("payee_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("invoice_no", sa.String(length=200), nullable=False),
@@ -120,20 +126,42 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["payee_id", "treasury_id"],
-            ["payees.id", "payees.treasury_id"],
-            name="fk_payment_requests_payee_treasury",
+            ["treasury_id", "chain_id"],
+            ["treasuries.id", "treasuries.chain_id"],
+            name="fk_payment_requests_treasury_chain",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["payee_id", "treasury_id", "vendor_id"],
+            ["payees.id", "payees.treasury_id", "payees.vendor_id"],
+            name="fk_payment_requests_payee_treasury_vendor",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["vendor_id"], ["vendors.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["asset_id"], ["assets.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["paying_wallet_id"], ["treasury_wallets.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["vendor_id", "org_id"],
+            ["vendors.id", "vendors.org_id"],
+            name="fk_payment_requests_vendor_org",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["asset_id", "chain_id"],
+            ["assets.id", "assets.chain_id"],
+            name="fk_payment_requests_asset_chain",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["paying_wallet_id", "org_id"],
+            ["treasury_wallets.id", "treasury_wallets.org_id"],
+            name="fk_payment_requests_paying_wallet_org",
+            ondelete="RESTRICT",
+        ),
         sa.ForeignKeyConstraint(["terms_confirmed_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["extraction_confirmed_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["last_edited_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("id", "treasury_id", name="uq_payment_requests_id_treasury"),
     )
     op.create_index("ix_payment_requests_org_status", "payment_requests", ["org_id", "status"])
     op.create_index(
@@ -145,7 +173,7 @@ def upgrade() -> None:
         ["treasury_id", "fingerprint"],
         unique=True,
         postgresql_where=sa.text(
-            "status NOT IN ('Rejected', 'Cancelled', 'Expired') AND fingerprint IS NOT NULL"
+            f"status NOT IN ({_TERMINAL_REQUEST_STATUSES}) AND fingerprint IS NOT NULL"
         ),
     )
 
@@ -165,7 +193,8 @@ def upgrade() -> None:
             "jsonb_typeof(snapshot) = 'object'", name="ck_request_revisions_snapshot"
         ),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["edited_by"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the append-only trigger.
+        sa.ForeignKeyConstraint(["edited_by"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("request_id", "revision", name="uq_request_revisions_request_revision"),
     )
@@ -228,7 +257,8 @@ def upgrade() -> None:
             name="ck_flags_acknowledgement_actor",
         ),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="SET NULL"),
+        # ck_flags_acknowledgement_actor needs the actor, so it cannot be nulled.
+        sa.ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -267,7 +297,8 @@ def upgrade() -> None:
         sa.CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         sa.CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
+        sa.ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "request_id",
@@ -333,20 +364,45 @@ def upgrade() -> None:
             f"actor_type IN ({_EVENT_ACTOR_TYPES})", name="ck_request_status_events_actor_type"
         ),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the append-only trigger.
+        sa.ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         "ix_request_status_events_request_at", "request_status_events", ["request_id", "at"]
     )
 
+    # exceptions (0003) may already hold rows whose request_id has no payment request.
+    # Add the FK NOT VALID so the upgrade cannot fail on them while new rows are
+    # still enforced, and validate it right away whenever no such rows exist.
     op.create_foreign_key(
-        "fk_exceptions_request_payment_request",
+        "fk_exceptions_request_treasury",
         "exceptions",
         "payment_requests",
-        ["request_id"],
-        ["id"],
+        ["request_id", "treasury_id"],
+        ["id", "treasury_id"],
         ondelete="RESTRICT",
+        postgresql_not_valid=True,
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM exceptions e
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM payment_requests r
+                    WHERE r.id = e.request_id AND r.treasury_id = e.treasury_id
+                )
+            ) THEN
+                RAISE WARNING 'fk_exceptions_request_treasury left NOT VALID: exceptions '
+                    'reference missing payment requests; clean them up and VALIDATE it';
+            ELSE
+                ALTER TABLE exceptions VALIDATE CONSTRAINT fk_exceptions_request_treasury;
+            END IF;
+        END;
+        $$;
+        """
     )
 
     op.execute(
@@ -359,6 +415,13 @@ def upgrade() -> None:
             IF (to_jsonb(NEW) - ARRAY['status']) IS DISTINCT FROM
                (to_jsonb(OLD) - ARRAY['status']) THEN
                 RAISE EXCEPTION 'approvals are immutable except for status' USING ERRCODE = '55000';
+            END IF;
+            -- Only a Valid approval may end; an ended one never counts again.
+            IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+                OLD.status = 'Valid' AND NEW.status IN ('Invalidated', 'Expired', 'Cancelled')
+            ) THEN
+                RAISE EXCEPTION 'approval status cannot change from % to %', OLD.status, NEW.status
+                    USING ERRCODE = '55000';
             END IF;
             RETURN NEW;
         END;
@@ -415,7 +478,7 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS reject_request_revision_mutation()")
     op.execute("DROP TRIGGER IF EXISTS trg_approvals_immutable ON approvals")
     op.execute("DROP FUNCTION IF EXISTS reject_request_approval_mutation()")
-    op.drop_constraint("fk_exceptions_request_payment_request", "exceptions", type_="foreignkey")
+    op.drop_constraint("fk_exceptions_request_treasury", "exceptions", type_="foreignkey")
     op.drop_index("ix_request_status_events_request_at", table_name="request_status_events")
     op.drop_table("request_status_events")
     op.drop_index("ix_csv_imports_org_created", table_name="csv_imports")
@@ -432,3 +495,4 @@ def downgrade() -> None:
     op.drop_index("ix_payment_requests_treasury_due", table_name="payment_requests")
     op.drop_index("ix_payment_requests_org_status", table_name="payment_requests")
     op.drop_table("payment_requests")
+    op.drop_constraint("uq_payees_id_treasury_vendor", "payees", type_="unique")

@@ -98,6 +98,8 @@ _FLAG_SOURCES = _values(RequestFlagSource)
 _FLAG_STATUSES = _values(RequestFlagStatus)
 _APPROVAL_STATUSES = _values(ApprovalStatus)
 _EVENT_ACTOR_TYPES = _values(StatusEventActorType)
+TERMINAL_REQUEST_STATUSES = (RequestStatus.REJECTED, RequestStatus.CANCELLED, RequestStatus.EXPIRED)
+_TERMINAL_REQUEST_STATUSES = ", ".join(f"'{status.value}'" for status in TERMINAL_REQUEST_STATUSES)
 
 
 class PaymentRequest(Base):
@@ -146,19 +148,41 @@ class PaymentRequest(Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["payee_id", "treasury_id"],
-            ["payees.id", "payees.treasury_id"],
-            name="fk_payment_requests_payee_treasury",
+            ["treasury_id", "chain_id"],
+            ["treasuries.id", "treasuries.chain_id"],
+            name="fk_payment_requests_treasury_chain",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["payee_id", "treasury_id", "vendor_id"],
+            ["payees.id", "payees.treasury_id", "payees.vendor_id"],
+            name="fk_payment_requests_payee_treasury_vendor",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["vendor_id"], ["vendors.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["asset_id"], ["assets.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["paying_wallet_id"], ["treasury_wallets.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["vendor_id", "org_id"],
+            ["vendors.id", "vendors.org_id"],
+            name="fk_payment_requests_vendor_org",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["asset_id", "chain_id"],
+            ["assets.id", "assets.chain_id"],
+            name="fk_payment_requests_asset_chain",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["paying_wallet_id", "org_id"],
+            ["treasury_wallets.id", "treasury_wallets.org_id"],
+            name="fk_payment_requests_paying_wallet_org",
+            ondelete="RESTRICT",
+        ),
         ForeignKeyConstraint(["terms_confirmed_by"], ["users.id"], ondelete="SET NULL"),
         ForeignKeyConstraint(["extraction_confirmed_by"], ["users.id"], ondelete="SET NULL"),
         ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         ForeignKeyConstraint(["last_edited_by"], ["users.id"], ondelete="SET NULL"),
+        UniqueConstraint("id", "treasury_id", name="uq_payment_requests_id_treasury"),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
         Index(
@@ -167,7 +191,7 @@ class PaymentRequest(Base):
             "fingerprint",
             unique=True,
             postgresql_where=text(
-                "status NOT IN ('Rejected', 'Cancelled', 'Expired') AND fingerprint IS NOT NULL"
+                f"status NOT IN ({_TERMINAL_REQUEST_STATUSES}) AND fingerprint IS NOT NULL"
             ),
         ),
     )
@@ -175,6 +199,7 @@ class PaymentRequest(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
     vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     payee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     invoice_no: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -190,7 +215,12 @@ class PaymentRequest(Base):
     fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     invoice_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     onchain_request_id: Mapped[bytes | None] = mapped_column(LargeBinary(32))
-    source: Mapped[str] = mapped_column(String(16), nullable=False, default=RequestSource.MANUAL)
+    source: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=RequestSource.MANUAL,
+        server_default=RequestSource.MANUAL,
+    )
     extraction_confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     extraction_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
@@ -230,7 +260,8 @@ class RequestRevision(Base):
         CheckConstraint("revision > 0", name="ck_request_revisions_revision_positive"),
         CheckConstraint("jsonb_typeof(snapshot) = 'object'", name="ck_request_revisions_snapshot"),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["edited_by"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the append-only trigger.
+        ForeignKeyConstraint(["edited_by"], ["users.id"], ondelete="RESTRICT"),
         UniqueConstraint("request_id", "revision", name="uq_request_revisions_request_revision"),
         Index("ix_request_revisions_request_at", "request_id", "at"),
     )
@@ -286,7 +317,8 @@ class RequestFlag(Base):
             name="ck_flags_acknowledgement_actor",
         ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="SET NULL"),
+        # ck_flags_acknowledgement_actor needs the actor, so it cannot be nulled.
+        ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="RESTRICT"),
         Index("ix_flags_request_revision_status", "request_id", "revision", "status"),
     )
 
@@ -317,11 +349,11 @@ class PaymentApproval(Base):
         CheckConstraint("revision > 0", name="ck_approvals_revision_positive"),
         CheckConstraint("octet_length(approver_address) = 20", name="ck_approvals_address_length"),
         CheckConstraint("jsonb_typeof(typed_data) = 'object'", name="ck_approvals_typed_data"),
-        CheckConstraint("cardinality(acknowledged_flag_ids) >= 0", name="ck_approvals_ack_flags"),
         CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
+        ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="RESTRICT"),
         UniqueConstraint(
             "request_id",
             "revision",
@@ -401,7 +433,8 @@ class RequestStatusEvent(Base):
             f"actor_type IN ({_EVENT_ACTOR_TYPES})", name="ck_request_status_events_actor_type"
         ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
-        ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="SET NULL"),
+        # Users are soft-deleted; SET NULL would be rejected by the append-only trigger.
+        ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="RESTRICT"),
         Index("ix_request_status_events_request_at", "request_id", "at"),
     )
 

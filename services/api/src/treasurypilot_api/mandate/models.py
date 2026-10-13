@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -100,6 +101,10 @@ _GOVERNANCE_STATUSES = ", ".join(f"'{status.value}'" for status in GovernanceTxS
 _SCREENING_RESULTS = ", ".join(f"'{result.value}'" for result in ScreeningResult)
 _EXCEPTION_STATUSES = ", ".join(f"'{status.value}'" for status in ExceptionStatus)
 _OOB_METHODS = ", ".join(f"'{method.value}'" for method in OobMethod)
+_OPEN_EXCEPTION_STATUSES = ", ".join(
+    f"'{status.value}'"
+    for status in (ExceptionStatus.REQUESTED, ExceptionStatus.PROPOSED, ExceptionStatus.GRANTED)
+)
 _FEE_PRESETS = ", ".join(f"'{preset.value}'" for preset in FeePreset)
 _BACKEND_PAUSE_STATUSES = ", ".join(f"'{status.value}'" for status in BackendPauseStatus)
 
@@ -108,6 +113,7 @@ class Vendor(Base):
     __tablename__ = "vendors"
     __table_args__ = (
         UniqueConstraint("org_id", "normalized_ref", name="uq_vendors_org_normalized_ref"),
+        UniqueConstraint("id", "org_id", name="uq_vendors_id_org"),
         CheckConstraint("length(btrim(name)) > 0", name="ck_vendors_name"),
         CheckConstraint("length(btrim(normalized_ref)) > 0", name="ck_vendors_normalized_ref"),
         Index("ix_vendors_org_id", "org_id"),
@@ -244,7 +250,18 @@ class MandateVersion(Base):
             "expires_at IS NULL OR valid_from IS NULL OR expires_at > valid_from",
             name="ck_mandate_versions_expiry",
         ),
+        ForeignKeyConstraint(
+            ["governance_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_mandate_versions_governance_tx_treasury",
+        ),
         Index("ix_mandate_versions_treasury_status", "treasury_id", "status"),
+        Index(
+            "uq_mandate_versions_active_treasury",
+            "treasury_id",
+            unique=True,
+            postgresql_where=text(f"status = '{MandateVersionStatus.ACTIVE.value}'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -256,13 +273,12 @@ class MandateVersion(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
-    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("governance_txs.id", ondelete="SET NULL")
-    )
+    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
     created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
@@ -287,7 +303,7 @@ class MandateStatusEvent(Base):
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
     by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
     )
 
 
@@ -305,37 +321,59 @@ class Payee(Base):
             "oob_verified_by IS NULL OR oob_method IS NOT NULL",
             name="ck_payees_oob_method",
         ),
+        CheckConstraint(
+            f"oob_method IS NULL OR oob_method IN ({_OOB_METHODS})",
+            name="ck_payees_oob_method_value",
+        ),
+        ForeignKeyConstraint(
+            ["registration_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_payees_registration_tx_treasury",
+        ),
+        ForeignKeyConstraint(
+            ["treasury_id", "org_id"],
+            ["treasuries.id", "treasuries.org_id"],
+            name="fk_payees_treasury_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "org_id"],
+            ["vendors.id", "vendors.org_id"],
+            name="fk_payees_vendor_org",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("id", "treasury_id", name="uq_payees_id_treasury"),
+        UniqueConstraint("id", "treasury_id", "vendor_id", name="uq_payees_id_treasury_vendor"),
         Index("ix_payees_treasury_status", "treasury_id", "status"),
         Index(
             "uq_payees_active_treasury_address",
             "treasury_id",
             "address",
             unique=True,
-            postgresql_where=text("status != 'Deactivated'"),
+            # ScreeningFailed is terminal, so it must not block re-proposing the address.
+            postgresql_where=text(
+                f"status NOT IN ('{PayeeStatus.DEACTIVATED.value}', "
+                f"'{PayeeStatus.SCREENING_FAILED.value}')"
+            ),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
-    )
-    vendor_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="RESTRICT"), nullable=False
-    )
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     active_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ck_payees_oob_verification_actor needs the verifier, so it cannot be nulled.
     oob_verified_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
     )
     oob_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     oob_method: Mapped[str | None] = mapped_column(String(24))
     oob_note: Mapped[str | None] = mapped_column(Text())
-    registration_tx_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("governance_txs.id", ondelete="SET NULL")
-    )
+    registration_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     proposed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
@@ -349,13 +387,7 @@ class Screening(Base):
     __tablename__ = "screenings"
     __table_args__ = (
         CheckConstraint(f"result IN ({_SCREENING_RESULTS})", name="ck_screenings_result"),
-        CheckConstraint(
-            "(payee_id IS NOT NULL) OR (address IS NOT NULL)",
-            name="ck_screenings_subject",
-        ),
-        CheckConstraint(
-            "address IS NULL OR octet_length(address) = 20", name="ck_screenings_address"
-        ),
+        CheckConstraint("octet_length(address) = 20", name="ck_screenings_address"),
         Index("ix_screenings_payee_checked", "payee_id", "checked_at"),
         Index("ix_screenings_address_checked", "address", text("checked_at DESC")),
     )
@@ -364,7 +396,8 @@ class Screening(Base):
     payee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payees.id", ondelete="SET NULL")
     )
-    address: Mapped[bytes | None] = mapped_column(LargeBinary(20))
+    # Always snapshotted so the row stays meaningful after its payee is deleted.
+    address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     provider: Mapped[str] = mapped_column(String(120), nullable=False)
     result: Mapped[str] = mapped_column(String(16), nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String(300))
@@ -379,27 +412,38 @@ class ExceptionRecord(Base):
         CheckConstraint("amount > 0", name="ck_exceptions_amount_positive"),
         CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_address"),
         CheckConstraint(f"status IN ({_EXCEPTION_STATUSES})", name="ck_exceptions_status"),
+        ForeignKeyConstraint(
+            ["governance_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_exceptions_governance_tx_treasury",
+        ),
+        ForeignKeyConstraint(
+            ["request_id", "treasury_id"],
+            ["payment_requests.id", "payment_requests.treasury_id"],
+            name="fk_exceptions_request_treasury",
+            ondelete="RESTRICT",
+        ),
         Index(
             "uq_exceptions_open_request",
             "request_id",
             unique=True,
-            postgresql_where=text("status IN ('Proposed', 'Granted')"),
+            postgresql_where=text(f"status IN ({_OPEN_EXCEPTION_STATUSES})"),
         ),
         Index("ix_exceptions_status_expiry", "status", "expiry"),
+        Index("ix_exceptions_treasury_status", "treasury_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    request_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
+    treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
     )
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     mandate_onchain_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
     payee: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     expiry: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
-    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("governance_txs.id", ondelete="SET NULL")
-    )
+    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     draft_ai_call_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     reason: Mapped[str | None] = mapped_column(Text())
     created_at: Mapped[datetime] = mapped_column(
@@ -422,6 +466,11 @@ class GuardianSetup(Base):
             "status IN ('Pending', 'Active', 'Failed', 'Revoked')", name="ck_guardian_setups_status"
         ),
         UniqueConstraint("id", "treasury_id", name="uq_guardian_setups_id_treasury"),
+        ForeignKeyConstraint(
+            ["created_tx_id", "treasury_id"],
+            ["governance_txs.id", "governance_txs.treasury_id"],
+            name="fk_guardian_setups_created_tx_treasury",
+        ),
         Index(
             "uq_guardian_setups_active_treasury",
             "treasury_id",
@@ -438,9 +487,7 @@ class GuardianSetup(Base):
     human_owners: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary(20)), nullable=False)
     sentinel_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     threshold: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
-    created_tx_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("governance_txs.id", ondelete="SET NULL")
-    )
+    created_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
@@ -469,7 +516,9 @@ class TreasuryFeePolicy(Base):
             unique=True,
             postgresql_where=text("active"),
         ),
-        Index("ix_treasury_fee_policies_treasury_version", "treasury_id", "version"),
+        UniqueConstraint(
+            "treasury_id", "version", name="uq_treasury_fee_policies_treasury_version"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
