@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from typing import Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
@@ -35,6 +37,7 @@ from treasurypilot_api.identity.rate_limit import (
     RateLimiterUnavailable,
     RateLimitResult,
 )
+from treasurypilot_api.identity.rbac import require_member
 from treasurypilot_api.main import create_app
 from treasurypilot_api.treasury.config import ChainConfig, PlatformConfiguration
 from treasurypilot_api.treasury.sync import asset_id
@@ -667,6 +670,12 @@ class MemoryOrganizationRepository:
         self.treasuries: set[uuid.UUID] = set()
         self.enabled_modules: set[uuid.UUID] = set()
 
+    async def member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None:
+        roles = self.memberships.get((organization_id, user_id))
+        return None if roles is None else frozenset(roles)
+
     async def create(
         self,
         *,
@@ -837,6 +846,89 @@ def test_organization_input_is_validated_and_settings_require_authentication() -
         )
         assert created.status_code == 201
         assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
+
+
+_ORG_PARAMS = frozenset({"organization_id", "org_id", "orgId", "organizationId"})
+
+
+def _org_scoped_routes(app: FastAPI) -> list[tuple[str, str, str]]:
+    # shortcut: routes with include_in_schema=False are invisible here; walk the router if any appear.
+    return sorted(
+        (method.upper(), path, org_param)
+        for path, operations in app.openapi()["paths"].items()
+        # Select by path parameter, not prefix, so org routes mounted anywhere are covered.
+        for org_param in re.findall(r"\{(\w+)", path)[:1]
+        if org_param in _ORG_PARAMS
+        for method in operations
+    )
+
+
+def _member_guard_reached() -> None:
+    raise HTTPException(status_code=418)
+
+
+def test_every_org_scoped_route_returns_404_to_non_members() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs", json={"name": "Other org"}, headers={"X-CSRF-Token": csrf}
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+        # The org exists but belongs to someone else.
+        organizations.memberships = {(organization_id, uuid.uuid4()): {"OrgAdmin", "Owner"}}
+
+        app: FastAPI = harness.client.app  # type: ignore[assignment]
+        routes = _org_scoped_routes(app)
+        assert ("GET", "/v1/orgs/{organization_id}", "organization_id") in routes
+        assert ("PATCH", "/v1/orgs/{organization_id}/settings", "organization_id") in routes
+        for method, path, org_param in routes:
+            # Any other path parameter gets a random id; the org check must win first.
+            url = re.sub(
+                r"\{(\w+)[^}]*\}",
+                lambda m, org=org_param: str(organization_id if m[1] == org else uuid.uuid4()),
+                path,
+            )
+            response = harness.client.request(method, url, json={}, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 404, (method, path, response.text)
+            assert response.json()["code"] == "ORG_NOT_FOUND"
+
+            # A 404 alone could come from a missing row; prove require_member is wired.
+            app.dependency_overrides[require_member] = _member_guard_reached
+            try:
+                guarded = harness.client.request(
+                    method, url, json={}, headers={"X-CSRF-Token": csrf}
+                )
+            finally:
+                app.dependency_overrides.pop(require_member)
+            assert guarded.status_code == 418, (method, path, guarded.text)
+
+
+def test_member_without_required_role_gets_403_before_input_validation() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf}
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+        user_id = harness.repository.profile.user.id
+        organizations.memberships[(organization_id, user_id)] = {"Finance"}
+
+        assert harness.client.get(f"/v1/orgs/{organization_id}").status_code == 200
+        denied = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings", json={}, headers={"X-CSRF-Token": csrf}
+        )
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "FORBIDDEN"
+
+        missing_csrf = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings", json={"autoMatch": False}
+        )
+        assert missing_csrf.status_code == 403
+        assert missing_csrf.json()["code"] == "CSRF_INVALID"
 
 
 def _configured_chain(chain_id: int, *, enabled: bool) -> ChainConfig:
