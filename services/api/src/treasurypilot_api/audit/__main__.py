@@ -2,18 +2,18 @@
 
 The dump is JSON Lines of ``GET /v1/orgs/{o}/audit-log`` items in ``seq`` order, e.g.
 ``curl ... | jq -c '.items[]' >> audit.jsonl`` for every page. Exit code 0 means intact,
-1 broken, 2 an unreadable dump.
+1 broken, 2 an unreadable dump. A dump has no chain head, so records missing from its
+end go unnoticed here; ``GET /audit-log/verify`` also checks the head.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from treasurypilot_api.audit.api import AuditRecordView
+from treasurypilot_api.audit.api import AuditRecordView, AuditVerifyResponse
 from treasurypilot_api.audit.models import AuditLog
 from treasurypilot_api.audit.verify import verify_chain
 
@@ -47,11 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (UnreadableDump, OSError) as exc:
         print(exc, file=sys.stderr)
         return 2
-    print(
-        json.dumps(
-            {"status": result.status, "checked": result.checked, "brokenAt": result.broken_at}
-        )
-    )
+    print(AuditVerifyResponse.from_result(result).model_dump_json(by_alias=True))
     return 0 if result.status == "INTACT" else 1
 
 

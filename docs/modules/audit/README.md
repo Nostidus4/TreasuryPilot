@@ -44,7 +44,7 @@ Append-only. Verification status computed on demand: `INTACT | BROKEN_AT(seq)`. 
 | GET | `/orgs/{o}/audit-log/verify` → `{status, checked, brokenAt}` | Auditor, OWN |
 | GET | `/orgs/{o}/requests/{r}/evidence` → bundle (JSON) | Auditor, OWN, FIN |
 | POST | `/orgs/{o}/scenarios/{id}/evidence` (demo/benchmark runs) | OWN, ADM |
-| CLI | `python -m treasurypilot_api.audit verify --dump file.jsonl` (JSON Lines of `audit-log` items; exit 0 intact, 1 broken, 2 unreadable) | offline |
+| CLI | `python -m treasurypilot_api.audit verify --dump file.jsonl` (JSON Lines of `audit-log` items; exit 0 intact, 1 broken, 2 unreadable; a dump has no head, so a removed tail is only caught by the API) | offline |
 
 ## 7. Flows
 

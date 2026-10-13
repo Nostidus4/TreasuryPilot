@@ -19,8 +19,10 @@ class ChainVerification:
 def verify_chain(rows: Iterable[AuditLog], head: AuditHead | None = None) -> ChainVerification:
     """Check records given in ``seq`` order and report the first one that breaks its chain.
 
-    Each org's chain starts at ``ZERO_HASH``. With ``head`` (the org's stored head), the
-    chain must also end at it, which catches records appended past it or a removed tail.
+    Each org's chain starts at ``ZERO_HASH``. With ``head`` (the org's stored head), pass
+    only that org's rows: the chain must end at the head, which catches records appended
+    past it or a removed tail (then ``broken_at`` is the head's ``last_seq``). Without a
+    head, a removed tail cannot be detected.
     """
 
     last: dict[uuid.UUID, bytes] = {}
