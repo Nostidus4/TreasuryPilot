@@ -1,6 +1,74 @@
 {
   "components": {
     "schemas": {
+      "AssetView": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "decimals": {
+            "title": "Decimals",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isTest": {
+            "title": "Istest",
+            "type": "boolean"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": ["id", "symbol", "decimals", "address", "isTest"],
+        "title": "AssetView",
+        "type": "object"
+      },
+      "ChainView": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/AssetView"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "explorerUrl": {
+            "title": "Explorerurl",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["chainId", "name", "explorerUrl", "assets"],
+        "title": "ChainView",
+        "type": "object"
+      },
+      "ChainsResponse": {
+        "properties": {
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/ChainView"
+            },
+            "title": "Chains",
+            "type": "array"
+          }
+        },
+        "required": ["chains"],
+        "title": "ChainsResponse",
+        "type": "object"
+      },
       "CreateOrganizationRequest": {
         "properties": {
           "country": {
@@ -510,6 +578,25 @@
         },
         "summary": "Verify Magic Link",
         "tags": ["identity"]
+      }
+    },
+    "/v1/chains": {
+      "get": {
+        "operationId": "list_chains_v1_chains_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Chains",
+        "tags": ["treasury"]
       }
     },
     "/v1/health": {
