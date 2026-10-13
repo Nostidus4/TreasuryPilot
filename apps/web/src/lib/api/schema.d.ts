@@ -72,6 +72,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/auth/siwe/nonce': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Siwe Nonce */
+    get: operations['siwe_nonce_v1_auth_siwe_nonce_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/chains': {
     parameters: {
       query?: never;
@@ -118,6 +135,40 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Link Wallet */
+    post: operations['link_wallet_v1_me_wallets_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets/{address}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Unlink Wallet */
+    delete: operations['unlink_wallet_v1_me_wallets__address__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -327,6 +378,13 @@ export interface components {
       /** Version */
       version: string;
     };
+    /** LinkWalletRequest */
+    LinkWalletRequest: {
+      /** Message */
+      message: string;
+      /** Signature */
+      signature: string;
+    };
     /** MagicLinkRequest */
     MagicLinkRequest: {
       /** Email */
@@ -352,8 +410,14 @@ export interface components {
        * Format: uuid
        */
       orgId: string;
+      /** Ownercheckedat */
+      ownerCheckedAt: string | null;
+      /** Ownerisonchain */
+      ownerIsOnchain: boolean;
       /** Roles */
       roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
       /** Status */
       status: string;
     };
@@ -408,6 +472,22 @@ export interface components {
       name: string;
       /** Solomode */
       soloMode: boolean;
+    };
+    /** SiweNonceResponse */
+    SiweNonceResponse: {
+      /** Chainid */
+      chainId: number;
+      /** Domain */
+      domain: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Nonce */
+      nonce: string;
+      /** Scheme */
+      scheme: string;
     };
     /** UserView */
     UserView: {
@@ -572,6 +652,26 @@ export interface operations {
       };
     };
   };
+  siwe_nonce_v1_auth_siwe_nonce_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SiweNonceResponse'];
+        };
+      };
+    };
+  };
   list_chains_v1_chains_get: {
     parameters: {
       query?: never;
@@ -628,6 +728,68 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  link_wallet_v1_me_wallets_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LinkWalletRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WalletView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unlink_wallet_v1_me_wallets__address__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

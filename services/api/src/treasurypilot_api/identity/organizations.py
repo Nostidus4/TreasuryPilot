@@ -12,7 +12,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.common.repository import OrgScopedRepository
-from treasurypilot_api.identity.api import ApiModel, _authenticated
+from treasurypilot_api.identity.api import ApiModel, _authenticated, _wallet_service
 from treasurypilot_api.identity.auth import AuthFailure, SessionAccess
 from treasurypilot_api.identity.models import (
     Membership,
@@ -28,6 +28,7 @@ from treasurypilot_api.identity.rbac import (
     require_member,
     require_role,
 )
+from treasurypilot_api.identity.wallets import owner_not_onchain
 from treasurypilot_api.treasury.models import Treasury, TreasuryStatus
 
 
@@ -63,6 +64,10 @@ class OrganizationNotFound(Exception):
 
 class OrganizationPermissionDenied(Exception):
     """The member does not hold a role allowed to change the requested setting."""
+
+
+class OrganizationOwnerNotOnchain(Exception):
+    """The Owner role is inactive because no linked wallet owns Safe T on-chain."""
 
 
 class OrganizationRepository(Protocol):
@@ -234,14 +239,20 @@ class SqlAlchemyOrganizationRepository:
             if membership is None:
                 raise OrganizationNotFound
             roles = set(membership.roles)
+            owner_authorized = OrganizationRole.OWNER.value in roles and membership.owner_is_onchain
             # Owner is granted only through role assignment (#107), never at org
             # creation: it means the user's linked wallet owns Safe T (M01-D5, M01-D7).
             if solo_mode is not None and OrganizationRole.OWNER.value not in roles:
                 raise OrganizationPermissionDenied
+            if solo_mode is not None and not owner_authorized:
+                raise OrganizationOwnerNotOnchain
             if auto_match is not None and not roles.intersection(
-                {OrganizationRole.ORG_ADMIN.value, OrganizationRole.OWNER.value}
+                {OrganizationRole.ORG_ADMIN.value}
             ):
-                raise OrganizationPermissionDenied
+                if OrganizationRole.OWNER.value not in roles:
+                    raise OrganizationPermissionDenied
+                if not owner_authorized:
+                    raise OrganizationOwnerNotOnchain
             organization = await session.scalar(
                 select(Organization).where(Organization.id == organization_id).with_for_update()
             )
@@ -412,6 +423,22 @@ async def update_organization_settings(
             detail="At least one supported setting must be provided.",
         )
     try:
+        if getattr(request.app.state, "wallet_repository", None) is not None:
+            # Check on-chain only when Owner authority is what allows this change: solo
+            # mode always, auto_match only for an Owner who is not also an OrgAdmin. An
+            # admin's auto_match change must not depend on RPC availability.
+            wallet_service = _wallet_service(request)
+            user_id = member.user_id
+            roles = await wallet_service.membership_roles(
+                org_id=member.organization_id, user_id=user_id
+            )
+            needs_owner = payload.solo_mode is not None or (
+                roles is not None and OrganizationRole.ORG_ADMIN.value not in roles
+            )
+            if needs_owner:
+                await wallet_service.require_onchain_owner(
+                    org_id=member.organization_id, user_id=user_id
+                )
         organization = await _repository(request).update_settings(
             organization_id=member.organization_id,
             user_id=member.user_id,
@@ -420,6 +447,8 @@ async def update_organization_settings(
         )
     except OrganizationNotFound:
         raise organization_not_found() from None
+    except OrganizationOwnerNotOnchain:
+        raise owner_not_onchain() from None
     except OrganizationPermissionDenied:
         raise _forbidden() from None
     return OrganizationResponse(org=OrganizationView.from_record(organization))
