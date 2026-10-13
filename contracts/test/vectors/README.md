@@ -17,3 +17,11 @@ identity `8` is public and distinct from the approval signer. Policy signatures
 are raw EIP-712 signatures; they do not use the approval `(address,bytes)` envelope.
 Empty-array vectors test encoding only; an executable plan still needs policy
 validation. No PlanAttestation verification is added to the module.
+
+`plan-hash.json` covers M08 sections 8.3 and 8.4: `planHash` is the EIP-712
+`hashStruct(Plan)` over `Step[]`, and each `stepId` is
+`keccak256(abi.encode("TP_STEP_V1", stepIdSource, uint8(action), stepIdWallet))`.
+The `request` plan is WITHDRAW → REFILL → PAY; the `liquidity` plan is one SUPPLY with
+`requestId = 0x0` and the liquidity cycle id (built from `liquidityCycle`, M08 §8.4) as
+`stepIdSource`. `treasury` is the module clone, the same address as the approval `treasury`. Python checks it in
+`packages/py-core/tests/test_plan_hash.py`.

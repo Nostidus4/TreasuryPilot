@@ -10,6 +10,7 @@ abstract contract TreasuryPilotStorage is ITreasuryPilotModule {
     uint8 public constant REFILL = 2;
     uint8 public constant SWAP_IN = 3;
     uint8 public constant SUPPLY = 4;
+    uint8 public constant WITHDRAW = 5;
     address public safeT;
     address public asset;
     address public aavePool;
