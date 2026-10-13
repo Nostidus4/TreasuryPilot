@@ -1,6 +1,6 @@
 """Add configurable invitation retention and hash-only deletion receipts.
 
-Revision ID: 20261013_0010
+Revision ID: 20261013_0012
 Revises: 20261013_0008
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261013_0010"
+revision: str = "20261013_0012"
 down_revision: str | None = "20261013_0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -29,7 +29,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "invite_retention_days IS NULL OR invite_retention_days >= 0",
+            "invite_retention_days IS NULL OR invite_retention_days BETWEEN 0 AND 36500",
             name="ck_retention_policies_invite_days",
         ),
         sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="CASCADE"),
