@@ -52,6 +52,15 @@ def forbidden() -> AuthFailure:
     )
 
 
+def maker_checker_conflict() -> AuthFailure:
+    return AuthFailure(
+        status=409,
+        code="MAKER_CHECKER",
+        title="Maker-checker violation",
+        detail="The creator or last editor of a request cannot approve it.",
+    )
+
+
 def organization_repository(request: Request) -> OrganizationRepository:
     repository = getattr(request.app.state, "organization_repository", None)
     if repository is None:
