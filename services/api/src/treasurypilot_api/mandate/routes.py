@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import uuid7
+from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.mandate.configuration import (
     MandateConfig,
     MandateValidationError,
@@ -242,7 +242,7 @@ class SqlAlchemyMandateRepository:
             if row is None:
                 return None
             if row.status == MandateVersionStatus.DRAFT:
-                row.status = MandateVersionStatus.DISCARDED
+                await session.delete(row)
                 await session.flush()
             return _record(row)
 
@@ -341,7 +341,7 @@ async def list_mandates(
     organization_id: uuid.UUID,
     treasury_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> MandateListResponse:
     rows = await _repository(request).list_versions(
         organization_id=member.organization_id,
@@ -364,7 +364,7 @@ async def create_mandate_draft(
     payload: MandateConfig,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> MandateDraftResponse:
     repository = _repository(request)
     context = await repository.get_context(
@@ -412,7 +412,7 @@ async def clone_mandate_draft(
     mandate_id: uuid.UUID,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> MandateDraftResponse:
     repository = _repository(request)
     context = await repository.get_context(
@@ -475,7 +475,7 @@ async def discard_mandate_draft(
     treasury_id: uuid.UUID,
     mandate_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_role("Owner")),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> Response:
     row = await _repository(request).discard_draft(
         organization_id=member.organization_id,
@@ -484,7 +484,7 @@ async def discard_mandate_draft(
     )
     if row is None:
         raise _not_found()
-    if row.status != MandateVersionStatus.DISCARDED:
+    if row.status != MandateVersionStatus.DRAFT:
         raise AuthFailure(
             status=409,
             code="NOT_DRAFT",

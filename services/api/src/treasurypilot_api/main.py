@@ -42,12 +42,12 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
-from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.mandate.routes import (
     MandateRepository,
     SqlAlchemyMandateRepository,
 )
 from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking

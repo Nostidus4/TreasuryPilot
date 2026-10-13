@@ -9,7 +9,8 @@ from typing import cast
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.access import MemberContext, require_member
+from treasurypilot_api.identity.auth import SessionAccess, UserRecord
+from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.main import create_app
 from treasurypilot_api.mandate.routes import (
     MandateContext,
@@ -96,17 +97,7 @@ class MemoryMandateRepository:
         if row is None:
             return None
         if row.status == "Draft":
-            discarded = MandateVersionRecord(
-                id=row.id,
-                treasury_id=row.treasury_id,
-                version=row.version,
-                status="Discarded",
-                config=row.config,
-                config_hash=row.config_hash,
-                created_at=row.created_at,
-            )
-            self.rows[self.rows.index(row)] = discarded
-            return discarded
+            self.rows.remove(row)
         return row
 
 
@@ -145,9 +136,13 @@ def make_client(
         mandate_repository=cast(object, repository),
     )
 
-    async def member_override(organization_id: uuid.UUID) -> MemberContext:
+    async def member_override(organization_id: uuid.UUID) -> MemberAccess:
         # Membership is granted everywhere so the repository's tenant scoping is tested.
-        return MemberContext(organization_id, OWNER_ID, roles)
+        access = SessionAccess(
+            user=UserRecord(OWNER_ID, "owner@example.test", None, "active"),
+            session_id=uuid.UUID("00000000-0000-4000-8000-000000000444"),
+        )
+        return MemberAccess(access=access, organization_id=organization_id, roles=roles)
 
     app.dependency_overrides[require_member] = member_override
     return TestClient(app)
@@ -219,4 +214,4 @@ def test_mandate_draft_can_be_listed_cloned_and_discarded() -> None:
     assert cloned.json()["draft"]["version"] == 2
     assert [item["version"] for item in listed.json()["items"]] == [2, 1]
     assert discarded.status_code == 204
-    assert listed_after_discard.json()["items"][0]["status"] == "Discarded"
+    assert [item["version"] for item in listed_after_discard.json()["items"]] == [1]

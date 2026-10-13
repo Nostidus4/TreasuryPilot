@@ -259,10 +259,69 @@ export interface paths {
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mandates */
+    get: operations['list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get'];
+    put?: never;
+    /** Create Mandate Draft */
+    post: operations['create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Discard Mandate Draft */
+    delete: operations['discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/clone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Clone Mandate Draft */
+    post: operations['clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** ActionLimits */
+    ActionLimits: {
+      /** Daily */
+      daily: string;
+      /** Perrequest */
+      perRequest: string;
+    };
     /** AssetView */
     AssetView: {
       /** Address */
@@ -390,6 +449,101 @@ export interface components {
       /** Email */
       email: string;
     };
+    /** MandateConfig */
+    MandateConfig: {
+      /** Actions */
+      actions?: ('REFILL' | 'PAY' | 'SUPPLY' | 'SWAP')[] | null;
+      /**
+       * Approvalmaxage
+       * @default 1209600
+       */
+      approvalMaxAge: number;
+      /** Approvers */
+      approvers?: string[] | null;
+      /** Buffers */
+      buffers?: components['schemas']['WalletBuffer'][] | null;
+      /** Executor */
+      executor?: string | null;
+      /** Expiresat */
+      expiresAt?: string | null;
+      /** Gasfundingcapwei */
+      gasFundingCapWei?: string | null;
+      /** Guardian */
+      guardian?: string | null;
+      /** Limits */
+      limits?: {
+        [key: string]: components['schemas']['ActionLimits'];
+      } | null;
+      /** Minsupply */
+      minSupply?: string | null;
+      /** Payeecoolingseconds */
+      payeeCoolingSeconds?: number | null;
+      /** Refillpaths */
+      refillPaths?: components['schemas']['RefillPath'][] | null;
+      /**
+       * Reservehorizondays
+       * @default 30
+       */
+      reserveHorizonDays: number;
+      supplyLimits?: components['schemas']['ActionLimits'] | null;
+      /** Swap */
+      swap?: {
+        [key: string]: unknown;
+      } | null;
+      /** Validfrom */
+      validFrom?: string | null;
+    };
+    /** MandateDraftResponse */
+    MandateDraftResponse: {
+      /** Bundlepreview */
+      bundlePreview: {
+        [key: string]: unknown;
+      };
+      /** Diff */
+      diff: {
+        [key: string]: unknown;
+      }[];
+      draft: components['schemas']['MandateView'];
+      /** Requiresconfirmation */
+      requiresConfirmation: boolean;
+      /** Summary */
+      summary: {
+        [key: string]: string;
+      }[];
+    };
+    /** MandateListResponse */
+    MandateListResponse: {
+      /** Items */
+      items: components['schemas']['MandateView'][];
+    };
+    /** MandateView */
+    MandateView: {
+      /** Config */
+      config: {
+        [key: string]: unknown;
+      };
+      /** Confighash */
+      configHash: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Status */
+      status: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Version */
+      version: number;
+    };
     /** MeResponse */
     MeResponse: {
       /** Memberships */
@@ -473,6 +627,13 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** RefillPath */
+    RefillPath: {
+      /** From */
+      from: string;
+      /** To */
+      to: string;
+    };
     /** SiweNonceResponse */
     SiweNonceResponse: {
       /** Chainid */
@@ -526,6 +687,15 @@ export interface components {
       /** Csrftoken */
       csrfToken: string;
       user: components['schemas']['UserView'];
+    };
+    /** WalletBuffer */
+    WalletBuffer: {
+      /** Minimum */
+      minimum: string;
+      /** Target */
+      target?: string | null;
+      /** Wallet */
+      wallet: string;
     };
     /** WalletView */
     WalletView: {
@@ -950,6 +1120,138 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MandateConfig'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateDraftResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateDraftResponse'];
         };
       };
       /** @description Validation Error */
