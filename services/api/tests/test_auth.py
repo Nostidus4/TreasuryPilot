@@ -9,7 +9,7 @@ from typing import Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
@@ -37,6 +37,7 @@ from treasurypilot_api.identity.rate_limit import (
     RateLimiterUnavailable,
     RateLimitResult,
 )
+from treasurypilot_api.identity.rbac import require_member
 from treasurypilot_api.main import create_app
 from treasurypilot_api.treasury.config import ChainConfig, PlatformConfiguration
 from treasurypilot_api.treasury.sync import asset_id
@@ -847,15 +848,23 @@ def test_organization_input_is_validated_and_settings_require_authentication() -
         assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
 
 
-def _org_scoped_routes(app: FastAPI) -> list[tuple[str, str]]:
+_ORG_PARAMS = frozenset({"organization_id", "org_id", "orgId", "organizationId"})
+
+
+def _org_scoped_routes(app: FastAPI) -> list[tuple[str, str, str]]:
     # shortcut: routes with include_in_schema=False are invisible here; walk the router if any appear.
     return sorted(
-        (method.upper(), path)
+        (method.upper(), path, org_param)
         for path, operations in app.openapi()["paths"].items()
-        # Any path parameter name for the org ({organization_id}, {orgId}, ...) counts.
-        if path.startswith("/v1/orgs/{")
+        # Select by path parameter, not prefix, so org routes mounted anywhere are covered.
+        for org_param in re.findall(r"\{(\w+)", path)[:1]
+        if org_param in _ORG_PARAMS
         for method in operations
     )
+
+
+def _member_guard_reached() -> None:
+    raise HTTPException(status_code=418)
 
 
 def test_every_org_scoped_route_returns_404_to_non_members() -> None:
@@ -870,16 +879,30 @@ def test_every_org_scoped_route_returns_404_to_non_members() -> None:
         # The org exists but belongs to someone else.
         organizations.memberships = {(organization_id, uuid.uuid4()): {"OrgAdmin", "Owner"}}
 
-        routes = _org_scoped_routes(harness.client.app)  # type: ignore[arg-type]
-        assert ("GET", "/v1/orgs/{organization_id}") in routes
-        assert ("PATCH", "/v1/orgs/{organization_id}/settings") in routes
-        for method, path in routes:
+        app: FastAPI = harness.client.app  # type: ignore[assignment]
+        routes = _org_scoped_routes(app)
+        assert ("GET", "/v1/orgs/{organization_id}", "organization_id") in routes
+        assert ("PATCH", "/v1/orgs/{organization_id}/settings", "organization_id") in routes
+        for method, path, org_param in routes:
             # Any other path parameter gets a random id; the org check must win first.
-            url = re.sub(r"\{[^}]+\}", str(organization_id), path, count=1)
-            url = re.sub(r"\{[^}]+\}", str(uuid.uuid4()), url)
+            url = re.sub(
+                r"\{(\w+)[^}]*\}",
+                lambda m, org=org_param: str(organization_id if m[1] == org else uuid.uuid4()),
+                path,
+            )
             response = harness.client.request(method, url, json={}, headers={"X-CSRF-Token": csrf})
             assert response.status_code == 404, (method, path, response.text)
             assert response.json()["code"] == "ORG_NOT_FOUND"
+
+            # A 404 alone could come from a missing row; prove require_member is wired.
+            app.dependency_overrides[require_member] = _member_guard_reached
+            try:
+                guarded = harness.client.request(
+                    method, url, json={}, headers={"X-CSRF-Token": csrf}
+                )
+            finally:
+                app.dependency_overrides.pop(require_member)
+            assert guarded.status_code == 418, (method, path, guarded.text)
 
 
 def test_member_without_required_role_gets_403_before_input_validation() -> None:
