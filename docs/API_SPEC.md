@@ -27,8 +27,8 @@
 | GET | `/auth/siwe/nonce` | Get a SIWE nonce | auth | → `{nonce, expiresAt}` | |
 | POST | `/me/wallets` | Link a wallet via SIWE | auth | `{message, signature}` → `201 {address}` | 400 `SIWE_INVALID`, 409 `ADDRESS_LINKED_ELSEWHERE` |
 | DELETE | `/me/wallets/{address}` | Unlink a wallet | auth | → `204` | 409 `SIGNER_ROLE_REQUIRES_WALLET` |
-| POST | `/orgs` | Create an org (caller → OrgAdmin) | auth | `{name, legalName?, country, displayTz}` → `201 {org}` | |
-| GET | `/orgs/{orgId}` | Org details and onboarding checklist | ANY | → `{org, checklist}` | |
+| POST | `/orgs` | Create an org (caller → OrgAdmin) | auth | `{name, legalName?, country?, displayTz?}` → `201 {org}` | |
+| GET | `/orgs/{orgId}` | Org details and onboarding checklist | ANY | → `{org, checklist:{memberCount, walletLinked, treasuryCreated, moduleEnabled}}` | |
 | PATCH | `/orgs/{orgId}/settings` | Solo mode, auto-match, etc. | ADM (solo mode: OWN) | `{soloMode?, autoMatch?}` → `{org}` | 403 |
 | GET | `/orgs/{orgId}/members` | List members | ANY | → `{items}` | |
 | POST | `/orgs/{orgId}/invites` | Invite a member | ADM | `{email, roles[]}` → `201 {invite}` | 409 `ALREADY_MEMBER` |
