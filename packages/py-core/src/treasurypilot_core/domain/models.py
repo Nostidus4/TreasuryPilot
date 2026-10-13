@@ -244,3 +244,27 @@ class LiquidityDecision(FrozenModel):
         if (self.kind == "INSUFFICIENT_LIQUIDITY") != (self.shortfall > 0):
             raise ValueError("only INSUFFICIENT_LIQUIDITY carries a shortfall")
         return self
+
+
+class ForecastRefill(FrozenModel):
+    day: NonNegativeInt
+    request_id: Annotated[str, Field(min_length=1)]
+    source_wallet: Annotated[str, Field(min_length=1)]
+    target_wallet: Annotated[str, Field(min_length=1)]
+    amount: BaseUnits
+
+
+class ForecastDay(FrozenModel):
+    day: NonNegativeInt
+    balances: FrozenMapping[str, BaseUnits]
+    buffer_hit_wallets: FrozenSequence[str]
+    suggested_refills: FrozenSequence[ForecastRefill]
+    unpaid_due: BaseUnits
+
+
+class Forecast(FrozenModel):
+    days: FrozenSequence[ForecastDay]
+    buffer_hit_days: FrozenMapping[str, FrozenSequence[int]]
+    shortfall_days: FrozenSequence[int]
+    unplanned_request_ids: FrozenSequence[str]
+    deferred_request_ids: FrozenSequence[str]

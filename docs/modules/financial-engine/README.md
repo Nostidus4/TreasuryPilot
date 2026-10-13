@@ -213,6 +213,16 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 
 `normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
 
+### 8.6 Seven-day liquidity forecast
+
+`forecast(snapshot, requests, policy, days=7)` runs the deterministic EDF schedule and
+replays its payments and refills in scheduler order. It returns each wallet's end-of-day
+balance, days when a wallet is below its buffer, and the refills selected by the same
+source-buffer, refill-bound, per-request, and daily-limit rules as scheduling. The
+window can be set from 1 to 30 days. Approved obligations that remain unpaid after
+their due day are reported as `unpaid_due` and `shortfall_days`; scheduled payments
+outside the requested window are listed in `deferred_request_ids`.
+
 ## 9. Configuration and defaults
 
 | Parameter | Default | Where |
@@ -255,6 +265,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 | Determinism | identical input ⇒ identical output | ENG-007 |
 | Timeout/fallback | forced tiny limit ⇒ FALLBACK = EDF | ENG-007 |
 | Vectors | fingerprint matches Solidity | ENG-009 |
+| Forecast | hand-computed balances; refills within source buffer and refill limits | ENG-011 |
 | Coverage | ≥ 85 % lines (NFR-MAINT-03) | CI |
 
 ## 13. Tickets (order of work)
