@@ -97,6 +97,25 @@ Unit: token lifecycle, SIWE verification (EOA + ERC-1271 mock), maker-checker ma
 
 IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 → IDN-007. Later IDN-L01…L03.
 
+### IDN-L01 foundation (partial)
+
+The API exposes POST `/v1/me/mfa/totp/enrollment`, POST
+`/v1/me/mfa/totp/confirm`, and POST `/v1/me/mfa/step-up`. All three require
+an authenticated session and CSRF token. Enrollment presents the TOTP seed once,
+expires after ten minutes, and becomes active only after a valid code. Confirmation
+returns ten one-use recovery codes once; only keyed hashes are stored. TOTP seeds
+are encrypted at rest with a key derived from `TP_SESSION_SECRET`; rotating that
+secret requires an MFA seed migration or reenrollment plan. Verification permits
+one adjacent 30-second time step for clock drift and persists the last accepted
+counter to reject replay. Five attempts per 15 minutes per account are allowed;
+the limiter fails closed. A successful TOTP or recovery verification marks only
+the current session as stepped up for five minutes. `MfaService.require_fresh_step_up`
+is the guard for sensitive handlers.
+
+IDN-L01 remains open: WebAuthn enrollment and attaching that guard to approve,
+exception and mandate edit handlers are still required. Those handlers do not
+exist on `main` yet.
+
 ## 14. Decisions
 
 | ID | Decision |

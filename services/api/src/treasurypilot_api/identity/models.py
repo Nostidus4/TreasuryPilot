@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -105,6 +106,30 @@ class Session(Base):
     ip_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     ua_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    step_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MfaTotp(Base):
+    __tablename__ = "mfa_totp"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    encrypted_secret: Mapped[bytes | None] = mapped_column(LargeBinary())
+    pending_secret: Mapped[bytes | None] = mapped_column(LargeBinary())
+    pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_counter: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=-1, server_default="-1"
+    )
+
+
+class MfaRecoveryCode(Base):
+    __tablename__ = "mfa_recovery_codes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)
 
 
 class MagicLink(Base):
