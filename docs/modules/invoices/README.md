@@ -226,6 +226,7 @@ Example: h = [1,000, 1,020, 980, 1,010, 990] → med 1,000; |dev| = [0, 20, 20, 
 | `AI_UNAVAILABLE` | LOW | M09 could not run; deterministic flags only |
 
 AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same table and rules. Flags never change fields or state (F-036).
+Due dates earlier than issue dates are retained and receive `DUE_BEFORE_ISSUE` HIGH so an operator can review the anomaly.
 
 ### 8.6 Approval verification (approve endpoint)
 

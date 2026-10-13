@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass
-from datetime import date
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -14,7 +13,6 @@ from treasurypilot_api.invoices.requests import (
     _amount,
     _duplicate_fingerprint,
     _request_id,
-    _validate_dates,
 )
 
 
@@ -29,12 +27,6 @@ def test_manual_request_amount_must_be_positive() -> None:
     with pytest.raises(AuthFailure) as error:
         _amount("0", 6)
     assert error.value.code == "AMOUNT_NOT_POSITIVE"
-
-
-def test_manual_request_due_date_cannot_precede_issue_date() -> None:
-    with pytest.raises(AuthFailure) as error:
-        _validate_dates(date(2026, 10, 2), date(2026, 10, 1))
-    assert error.value.code == "DATE_INVALID"
 
 
 def test_onchain_request_id_is_stable_bytes32_for_org_and_request() -> None:

@@ -10,7 +10,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import Field
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,6 +18,11 @@ from treasurypilot_api.identity.access import MemberContext, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.invoices.anomalies import (
+    InvoiceRevisionSignals,
+    PaidInvoice,
+    evaluate_anomalies,
+)
 from treasurypilot_api.invoices.fingerprints import (
     find_active_duplicate,
 )
@@ -37,7 +42,7 @@ from treasurypilot_api.invoices.models import (
 )
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
 from treasurypilot_api.mandate.models import Payee, Vendor
-from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
+from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.fingerprint import fingerprint, normalize
 from treasurypilot_core.money import BaseUnits
 
@@ -138,13 +143,6 @@ def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
         detail="An active request already uses this invoice fingerprint.",
         extensions={"existingRequestId": str(existing_request_id)},
     )
-
-
-def _validate_dates(issue_date: date, due_date: date) -> None:
-    if due_date < issue_date:
-        raise _fail(
-            422, "DATE_INVALID", "Dates invalid", "The due date must be on or after the issue date."
-        )
 
 
 def _serialize(row: PaymentRequest) -> dict[str, object]:
@@ -322,51 +320,88 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
-    flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
     today = datetime.now(UTC).date()
-    if row.due_at < today:
-        flags.append(
-            ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
+    history_rows = await session.execute(
+        select(
+            PaymentRequest.amount, PaymentRequest.updated_at, PaymentRequest.payee_id, Payee.address
         )
-    if row.due_at > row.issue_date + timedelta(days=120):
-        flags.append(
-            (
-                "DUE_DATE_FAR",
-                RequestFlagSeverity.LOW,
-                {"dueDate": row.due_at.isoformat(), "thresholdDays": 120},
-            )
-        )
-    paid_to_payee = await session.scalar(
-        select(PaymentRequest.id)
-        .where(
-            PaymentRequest.payee_id == row.payee_id,
-            PaymentRequest.status == RequestStatus.PAID.value,
-        )
-        .limit(1)
-    )
-    if paid_to_payee is None:
-        flags.append(
-            ("FIRST_PAYMENT_TO_PAYEE", RequestFlagSeverity.LOW, {"payeeId": str(row.payee_id)})
-        )
-    paid_count = await session.scalar(
-        select(func.count())
-        .select_from(PaymentRequest)
+        .join(Payee, Payee.id == PaymentRequest.payee_id)
         .where(
             PaymentRequest.vendor_id == row.vendor_id,
             PaymentRequest.status == RequestStatus.PAID.value,
+            PaymentRequest.updated_at
+            >= datetime.combine(today - timedelta(days=365), datetime.min.time(), UTC),
         )
+        .order_by(PaymentRequest.updated_at.desc())
     )
-    if (paid_count or 0) < 5:
-        flags.append(("NO_BASELINE", RequestFlagSeverity.LOW, {"minimumHistory": 5}))
+    history = tuple(
+        PaidInvoice(int(amount), updated_at.date(), payee_id, address)
+        for amount, updated_at, payee_id, address in history_rows
+    )
+    previous_paid_row = (
+        await session.execute(
+            select(PaymentRequest.payee_id, Payee.address)
+            .join(Payee, Payee.id == PaymentRequest.payee_id)
+            .where(
+                PaymentRequest.vendor_id == row.vendor_id,
+                PaymentRequest.status == RequestStatus.PAID.value,
+            )
+            .order_by(PaymentRequest.updated_at.desc())
+            .limit(1)
+        )
+    ).first()
+    prior_paid_to_payee = (
+        await session.scalar(
+            select(PaymentRequest.id)
+            .where(
+                PaymentRequest.payee_id == row.payee_id,
+                PaymentRequest.status == RequestStatus.PAID.value,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+    payee_address = await session.scalar(
+        select(Payee.address).where(Payee.id == row.payee_id, Payee.vendor_id == row.vendor_id)
+    )
+    asset_symbol = await session.scalar(select(Asset.symbol).where(Asset.id == row.asset_id))
+    chain_name = await session.scalar(select(Chain.name).where(Chain.chain_id == row.chain_id))
+    registered_addresses = tuple(
+        await session.scalars(select(Payee.address).where(Payee.vendor_id == row.vendor_id))
+    )
+    if payee_address is None or asset_symbol is None or chain_name is None:
+        raise RuntimeError("Request anomaly inputs are incomplete")
+    previous_paid = (
+        PaidInvoice(0, today, previous_paid_row[0], previous_paid_row[1])
+        if previous_paid_row is not None
+        else None
+    )
+    anomaly_flags = evaluate_anomalies(
+        InvoiceRevisionSignals(
+            issue_date=row.issue_date,
+            due_date=row.due_at,
+            amount=int(row.amount),
+            payee_id=row.payee_id,
+            payee_address=payee_address,
+            asset_symbol=asset_symbol,
+            chain_name=chain_name,
+        ),
+        history,
+        registered_addresses=registered_addresses,
+        prior_paid_to_payee=prior_paid_to_payee,
+        previous_paid=previous_paid,
+        today=today,
+    )
     result: list[dict[str, object]] = []
-    for code, severity, evidence in flags:
+    for anomaly in anomaly_flags:
+        severity = RequestFlagSeverity(anomaly.severity)
         flag = RequestFlag(
             id=uuid7(),
             request_id=row.id,
             revision=row.current_revision,
-            code=code,
+            code=anomaly.code,
             severity=severity.value,
-            evidence=evidence,
+            evidence=anomaly.evidence,
             source=RequestFlagSource.DETERMINISTIC.value,
         )
         session.add(flag)
@@ -374,9 +409,9 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
             {
                 "id": str(flag.id),
                 "revision": row.current_revision,
-                "code": code,
+                "code": anomaly.code,
                 "severity": severity.value,
-                "evidence": evidence,
+                "evidence": anomaly.evidence,
                 "status": "Open",
             }
         )
@@ -422,7 +457,6 @@ async def create_request(
             "Idempotency key required",
             "Provide an Idempotency-Key for this create request.",
         )
-    _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
     try:
@@ -653,7 +687,6 @@ async def edit_request(
             )
             new_issue_date = fields.get("issue_date", row.issue_date)
             new_due_date = fields.get("due_date", row.due_at)
-            _validate_dates(new_issue_date, new_due_date)
             amount = (
                 _amount(fields["amount"], asset.decimals) if "amount" in fields else int(row.amount)
             )
