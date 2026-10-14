@@ -74,6 +74,12 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 | PATCH | `/me/channels/{id}` `{showAmounts}` | auth |
 | GET/PUT | `/me/notification-preferences` | auth |
 
+Outbound webhooks are organization-scoped under `/v1/orgs/{organization_id}/webhooks` and require an OrgAdmin or Owner. `POST` creates an HTTPS destination (at most 20 enabled per organization) with event-type filters, which must be known event types, and returns a generated signing secret once; `GET` lists destinations without secrets; `DELETE /{endpoint_id}` disables delivery and is idempotent. `GET /dead-letters` lists at most 100 failed deliveries, and `POST /dead-letters/{delivery_id}/replay` requeues one dead delivery after its endpoint is enabled.
+
+Webhook body bytes are compact UTF-8 JSON with sorted object keys and this envelope: `{id, organizationId, type, createdAt, treasuryId, entity: {type, id}, payload}`. The sender sets `X-TP-Event-Id` and `X-TP-Signature: t=<unix-seconds>,v1=<hex>`; `v1` is `HMAC-SHA256(secret, ASCII(timestamp) + "." + raw_body)`. Receivers should compare signatures in constant time, reject timestamps more than 300 seconds old, and deduplicate by event id. Delivery is at least once. The worker retries failed HTTP or network attempts up to eight sends with delays of 1, 5, 30, 120, 600, 1,800 and 3,600 seconds (each jittered by +-20%), then marks the delivery dead. A 4xx response other than 408 or 429 marks the delivery dead immediately. Sends happen outside any database transaction after a short lease on the batch. Redirects and non-public IP literals or DNS results are rejected.
+
+Endpoint signing secrets are encrypted with the shared `TP_FIELD_ENCRYPTION_KEY` or `TP_FIELD_ENCRYPTION_KEY_FILE`; provide the same key to the API and the `worker-webhooks` service. That dedicated worker (queue `webhooks`) is the only one with HTTPS egress, so it also runs the Telegram sender; it holds only the database URL, field key, Telegram bot token and app base URL; the core worker, which holds the policy keystore, stays on the internal network. The AI worker does not receive this key.
+
 SSE event types: `request.status`, `plan.status`, `operation.status`, `review.created`, `notification.created`, `treasury.status`.
 
 ## 7. Flows
@@ -98,7 +104,7 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 
 Publisher interval 1 s; SSE heartbeat 15 s; Telegram link code 10 min; Telegram retries 3 with backoff (5 s, then 20 s).
 
-Telegram env: API `TP_TELEGRAM_BOT_USERNAME`, `TP_TELEGRAM_WEBHOOK_SECRET`, `TP_TELEGRAM_CHAT_HASH_KEY` (fixed for the life of the data; keys the chat-uniqueness hash), `TP_FIELD_ENCRYPTION_KEY`; core worker `TP_TELEGRAM_BOT_TOKEN`, `TP_FIELD_ENCRYPTION_KEY`, `TP_APP_BASE_URL`. Without them the channel is simply off (link-code returns `TELEGRAM_UNAVAILABLE`, the delivery task is a no-op). The bot token is read from the environment only and never logged.
+Telegram env: API `TP_TELEGRAM_BOT_USERNAME`, `TP_TELEGRAM_WEBHOOK_SECRET`, `TP_TELEGRAM_CHAT_HASH_KEY` (fixed for the life of the data; keys the chat-uniqueness hash), `TP_FIELD_ENCRYPTION_KEY`; `worker-webhooks` `TP_TELEGRAM_BOT_TOKEN`, `TP_FIELD_ENCRYPTION_KEY`, `TP_APP_BASE_URL`. Without them the channel is simply off (link-code returns `TELEGRAM_UNAVAILABLE`, the delivery task is a no-op). The bot token is read from the environment only and never logged.
 
 ## 10. Security
 

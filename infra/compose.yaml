@@ -186,9 +186,6 @@ services:
       TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
-      # Telegram delivery (optional) reuses TP_TELEGRAM_BOT_TOKEN from x-app-environment.
-      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
-      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
     secrets: [policy_keystore, policy_keystore_password]
     tmpfs: [/tmp/prometheus]
@@ -229,6 +226,41 @@ services:
       TP_METRICS_PORT: '9100'
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
     tmpfs: [/tmp/prometheus]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public, internal]
+
+  # Sends signed webhooks and Telegram messages to external HTTPS endpoints, so it is the only
+  # worker besides worker-ai on the public network. Explicit allowlist: no policy keystore,
+  # signer secret or object-store credentials; the webhook sender rejects non-public addresses.
+  worker-webhooks:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'worker',
+        '--loglevel=INFO',
+        '--queues=webhooks',
+        '--hostname=webhooks@%h',
+      ]
+    environment:
+      TP_ENVIRONMENT: local
+      TP_REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Telegram delivery (optional) also needs egress, so it runs here, not on the core worker.
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
     depends_on:
       postgres:
         condition: service_healthy
