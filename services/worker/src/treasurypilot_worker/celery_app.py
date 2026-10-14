@@ -82,6 +82,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "webhooks", "expires": 2},
             },
+            "deliver-chat": {
+                "task": "treasurypilot.notifications.deliver-chat",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "webhooks", "expires": 2},
+            },
         },
     )
     return app

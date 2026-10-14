@@ -27,3 +27,7 @@ def test_telegram_upgrade_and_downgrade_compile_offline() -> None:
     assert "uq_telegram_deliveries_pair" in sql
     assert "DROP TABLE telegram_deliveries" in sql
     assert "DROP TABLE notification_channels" in sql
+    assert "CREATE TABLE chat_deliveries" in sql
+    assert "uq_chat_deliveries_pair" in sql
+    assert "kind IN ('TELEGRAM', 'SLACK', 'LARK', 'WECOM')" in sql
+    assert "DROP TABLE chat_deliveries" in sql

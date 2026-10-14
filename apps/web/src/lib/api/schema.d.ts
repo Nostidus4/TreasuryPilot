@@ -311,6 +311,23 @@ export interface paths {
     patch: operations['update_channel_v1_me_channels__channel_id__patch'];
     trace?: never;
   };
+  '/v1/me/channels/{kind}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect Chat Channel */
+    post: operations['connect_chat_channel_v1_me_channels__kind__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/notification-preferences': {
     parameters: {
       query?: never;
@@ -1677,7 +1694,7 @@ export interface components {
      * ChannelKind
      * @enum {string}
      */
-    ChannelKind: 'TELEGRAM';
+    ChannelKind: 'TELEGRAM' | 'SLACK' | 'LARK' | 'WECOM';
     /** ChannelList */
     ChannelList: {
       /** Items */
@@ -2302,7 +2319,13 @@ export interface components {
      * NotificationChannel
      * @enum {string}
      */
-    NotificationChannel: 'in_app' | 'email' | 'telegram';
+    NotificationChannel:
+      | 'in_app'
+      | 'email'
+      | 'telegram'
+      | 'slack'
+      | 'lark'
+      | 'wecom';
     /** NotificationList */
     NotificationList: {
       /** Items */
@@ -3114,6 +3137,11 @@ export interface components {
       /** Wallets */
       wallets: string[];
     };
+    /** WebhookChannelCreate */
+    WebhookChannelCreate: {
+      /** Webhookurl */
+      webhookUrl: string;
+    };
     /** WebhookDeliveryView */
     WebhookDeliveryView: {
       /** Attemptcount */
@@ -3662,6 +3690,41 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['ChannelPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  connect_chat_channel_v1_me_channels__kind__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kind: 'slack' | 'lark' | 'wecom';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebhookChannelCreate'];
       };
     };
     responses: {
