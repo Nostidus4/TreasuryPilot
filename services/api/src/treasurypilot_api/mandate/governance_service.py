@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import uuid
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from eth_abi import encode
@@ -30,11 +33,16 @@ from treasurypilot_api.mandate.governance import (
     recover_owner,
     safe_tx_hash,
 )
+from treasurypilot_api.mandate.activation import build_mandate_calls
+from treasurypilot_api.mandate.configuration import build_bundle_preview
 from treasurypilot_api.mandate.models import (
     GovernanceSignature,
     GovernanceTx,
     GovernanceTxPurpose,
     GovernanceTxStatus,
+    MandateStatusEvent,
+    MandateVersion,
+    MandateVersionStatus,
 )
 from treasurypilot_api.treasury.config import (
     PlatformConfiguration,
@@ -793,6 +801,99 @@ class GovernanceService:
             governance_tx_id=row.id,
             refresh_chain=False,
         )
+
+    async def create_mandate_activation(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        mandate_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Create a Safe transaction for a Draft and move it into PendingActivation."""
+        async with self._sessions() as session, session.begin():
+            mandate = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.id == mandate_id,
+                    MandateVersion.treasury_id == treasury_id,
+                    MandateVersion.org_id == organization_id,
+                )
+                .with_for_update()
+            )
+            if mandate is None:
+                raise GovernanceFailure("MANDATE_NOT_FOUND", 404, "Mandate version not found.")
+            if mandate.status != MandateVersionStatus.DRAFT:
+                raise GovernanceFailure(
+                    "MANDATE_NOT_DRAFT", 409, "Only a Draft mandate can be submitted for activation."
+                )
+            treasury = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            if treasury is None:
+                raise GovernanceFailure("TREASURY_NOT_FOUND", 404, "Treasury not found.")
+            if treasury.module_address is None:
+                raise GovernanceFailure(
+                    "MODULE_NOT_READY", 409, "Deploy and enable the treasury module before activation."
+                )
+            active = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.treasury_id == treasury_id,
+                    MandateVersion.status == MandateVersionStatus.ACTIVE,
+                )
+                .order_by(MandateVersion.version.desc())
+                .limit(1)
+            )
+            chain_assets = await session.scalars(
+                select(Asset).where(Asset.chain_id == treasury.chain_id)
+            )
+            asset_metadata = {
+                str(asset.id): {"address": _address(asset.address)}
+                for asset in chain_assets
+                if asset.address is not None and not asset.is_native
+            }
+            previous = dict(active.config) if active is not None else None
+            current = dict(mandate.config)
+            preview = build_bundle_preview(previous, current, asset_metadata=asset_metadata)
+            try:
+                encoded_calls = build_mandate_calls(
+                    treasury.module_address,
+                    [item for item in preview["calls"] if isinstance(item, dict)],
+                )
+            except ValueError as exc:
+                raise GovernanceFailure("MANDATE_CALL_INVALID", 422, str(exc)) from None
+            created = await self.create(
+                organization_id=organization_id,
+                treasury_id=treasury_id,
+                user_id=user_id,
+                purpose=GovernanceTxPurpose.MANDATE,
+                calls=encoded_calls,
+                entity_type="mandate_version",
+                entity_id=mandate.id,
+            )
+            tx_id = uuid.UUID(str(created["id"]))
+            mandate.status = MandateVersionStatus.PENDING_ACTIVATION
+            mandate.governance_tx_id = tx_id
+            session.add(
+                MandateStatusEvent(
+                    org_id=organization_id,
+                    mandate_version_id=mandate.id,
+                    from_status=MandateVersionStatus.DRAFT,
+                    to_status=MandateVersionStatus.PENDING_ACTIVATION,
+                    by_user_id=user_id,
+                )
+            )
+        return created | {
+            "mandate": {
+                "id": str(mandate_id),
+                "version": mandate.version,
+                "status": MandateVersionStatus.PENDING_ACTIVATION.value,
+            },
+            "bundlePreview": preview,
+        }
 
     async def _row(
         self,
