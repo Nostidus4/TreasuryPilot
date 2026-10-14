@@ -1,7 +1,7 @@
 """index near-duplicate candidate fields on payment requests
 
 Revision ID: 20261014_0023
-Revises: 20261014_0021
+Revises: 20261014_0022
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "20261014_0023"
-down_revision: str | None = "20261014_0021"
+down_revision: str | None = "20261014_0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
