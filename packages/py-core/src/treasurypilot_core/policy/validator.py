@@ -9,7 +9,7 @@ from typing import Literal
 from eth_abi import encode
 from eth_hash.auto import keccak
 
-from treasurypilot_core.policy.authorization import authorization_checks
+from treasurypilot_core.policy.authorization import GATE_NAMES, authorization_checks
 from treasurypilot_core.policy.context import Action, ExecutionPlan, PlanStep, ValidationContext
 from treasurypilot_core.policy.decision import Check, Decision, aggregate
 from treasurypilot_core.policy.reason_codes import PolicyReasonCode as C
@@ -278,13 +278,23 @@ def _timing_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]
     return checks
 
 
+def _gated(auth: list[Check], steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
+    """Authorization checks plus the limit, liquidity and timing checks (M08 §8.1).
+
+    A failed gate skips the step checks: their inputs may be untrustworthy.
+    """
+    if any(c.name in GATE_NAMES and not c.passed for c in auth):
+        skipped = Check(
+            name="policy_state", passed=False, skipped=True, code=None, expected=None, observed=None
+        )
+        return [*auth, skipped]
+    return auth + _state_checks(steps, ctx) + _timing_checks(steps, ctx)
+
+
 def validate_plan(plan: ExecutionPlan, ctx: ValidationContext) -> Decision:
     """Validate every step in order, projecting balances and counters across the plan."""
     steps = list(plan.steps)
-    checks = (
-        authorization_checks(plan, ctx) + _state_checks(steps, ctx) + _timing_checks(steps, ctx)
-    )
-    return _decide(checks, ctx, "PLAN", None)
+    return _decide(_gated(authorization_checks(plan, ctx), steps, ctx), ctx, "PLAN", None)
 
 
 def validate_step(plan: ExecutionPlan, seq: int, ctx: ValidationContext) -> Decision:
@@ -293,8 +303,6 @@ def validate_step(plan: ExecutionPlan, seq: int, ctx: ValidationContext) -> Deci
     checks = (
         [_check("step_exists", False, C.PLAN_MALFORMED)]
         if step is None
-        else authorization_checks(plan, ctx, seq=seq)
-        + _state_checks([step], ctx)
-        + _timing_checks([step], ctx)
+        else _gated(authorization_checks(plan, ctx, seq=seq), [step], ctx)
     )
     return _decide(checks, ctx, "PRE_STEP", seq)
