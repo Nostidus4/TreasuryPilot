@@ -103,9 +103,12 @@ def test_recurring_job_creates_one_unapproved_draft_per_period(database_url: str
                 assert len(request["fingerprint"]) == len(request["invoice_hash"]) == 32
                 assert await connection.fetchval("SELECT count(*) FROM approvals") == 0
                 assert await connection.fetchval("SELECT count(*) FROM request_revisions") == 1
-                assert await connection.fetchval(
-                    "SELECT count(*) FROM recurring_payment_periods WHERE status='Generated'"
-                ) == 1
+                assert (
+                    await connection.fetchval(
+                        "SELECT count(*) FROM recurring_payment_periods WHERE status='Generated'"
+                    )
+                    == 1
+                )
                 next_period = await connection.fetchval(
                     "SELECT next_period FROM recurring_payment_schedules WHERE id=$1", _SCHEDULE
                 )

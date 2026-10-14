@@ -14,9 +14,7 @@ class RecurrenceCadence(StrEnum):
     YEARLY = "YEARLY"
 
 
-def period_at(
-    start: date, cadence: RecurrenceCadence, interval: int = 1, index: int = 0
-) -> date:
+def period_at(start: date, cadence: RecurrenceCadence, interval: int = 1, index: int = 0) -> date:
     """Return a zero-based occurrence date while preserving the original calendar-day anchor."""
     if interval < 1 or index < 0:
         raise ValueError("recurrence interval must be positive and index nonnegative")

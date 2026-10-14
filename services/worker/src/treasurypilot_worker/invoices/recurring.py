@@ -62,7 +62,9 @@ async def _insert_period(
         schedule["payee_id"],
     )
     if details is None or details["treasury_asset_id"] != schedule["asset_id"]:
-        raise ValueError("recurring template no longer matches its treasury, vendor, payee, or asset")
+        raise ValueError(
+            "recurring template no longer matches its treasury, vendor, payee, or asset"
+        )
     if details["payee_status"] == "Deactivated":
         raise ValueError("recurring template payee is deactivated")
     if details["asset_address"] is None or len(details["asset_address"]) != 20:
@@ -72,7 +74,10 @@ async def _insert_period(
     due_date = period_date + timedelta(days=schedule["due_days_after_issue"])
     amount = int(schedule["amount"])
     value = fingerprint(
-        details["normalized_ref"], invoice_no, BaseUnits(amount), "0x" + details["asset_address"].hex()
+        details["normalized_ref"],
+        invoice_no,
+        BaseUnits(amount),
+        "0x" + details["asset_address"].hex(),
     )
     duplicate_id = await connection.fetchval(
         """SELECT id FROM payment_requests
@@ -102,7 +107,10 @@ async def _insert_period(
         )
     )
     onchain_id = keccak(
-        encode(["string", "bytes16", "bytes16"], ["TP_REQ_V1", schedule["org_id"].bytes, request_id.bytes])
+        encode(
+            ["string", "bytes16", "bytes16"],
+            ["TP_REQ_V1", schedule["org_id"].bytes, request_id.bytes],
+        )
     )
     terms = schedule["terms"]
     if isinstance(terms, str):
@@ -152,7 +160,9 @@ async def _insert_period(
         "dueDate": due_date.isoformat(),
         "amount": str(amount),
         "assetId": str(schedule["asset_id"]),
-        "payingWalletId": str(schedule["paying_wallet_id"]) if schedule["paying_wallet_id"] else None,
+        "payingWalletId": str(schedule["paying_wallet_id"])
+        if schedule["paying_wallet_id"]
+        else None,
         "terms": terms,
     }
     await connection.execute(
@@ -197,9 +207,16 @@ async def _insert_period(
         )
     next_index = schedule["period_index"] + 1
     next_date = period_at(
-        schedule["start_date"], RecurrenceCadence(schedule["cadence"]), schedule["interval"], next_index
+        schedule["start_date"],
+        RecurrenceCadence(schedule["cadence"]),
+        schedule["interval"],
+        next_index,
     )
-    status = "Completed" if schedule["end_date"] is not None and next_date > schedule["end_date"] else "Active"
+    status = (
+        "Completed"
+        if schedule["end_date"] is not None and next_date > schedule["end_date"]
+        else "Active"
+    )
     await connection.execute(
         """INSERT INTO recurring_payment_periods (id, schedule_id, period_date, request_id, status)
            VALUES ($1,$2,$3,$4,'Generated')""",
@@ -257,7 +274,11 @@ async def generate_due_recurring_drafts(
                         )
                     logger.warning(
                         "recurring_period_not_generated",
-                        extra={"schedule_id": str(schedule_id), "period": schedule["next_period"].isoformat(), "error": str(error)},
+                        extra={
+                            "schedule_id": str(schedule_id),
+                            "period": schedule["next_period"].isoformat(),
+                            "error": str(error),
+                        },
                     )
                     break
     return {"generated": generated, "errors": errors}

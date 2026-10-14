@@ -57,7 +57,9 @@ class RecurringScheduleCreate(ApiModel):
         period_invoice_number(self.invoice_no_template, self.start_date)
         if self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("endDate must be on or after startDate")
-        _validate_dates(self.start_date, self.start_date + timedelta(days=self.due_days_after_issue))
+        _validate_dates(
+            self.start_date, self.start_date + timedelta(days=self.due_days_after_issue)
+        )
         return self
 
 
@@ -200,20 +202,43 @@ async def edit_schedule(
     member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     if if_match is None:
-        raise AuthFailure(status=428, code="PRECONDITION_REQUIRED", title="If-Match required", detail="Provide the current schedule version.")
+        raise AuthFailure(
+            status=428,
+            code="PRECONDITION_REQUIRED",
+            title="If-Match required",
+            detail="Provide the current schedule version.",
+        )
     factory = _sessions(request)
     async with factory() as session, session.begin():
         row = await session.scalar(
             select(RecurringPaymentSchedule)
-            .where(RecurringPaymentSchedule.id == schedule_id, RecurringPaymentSchedule.org_id == member.organization_id)
+            .where(
+                RecurringPaymentSchedule.id == schedule_id,
+                RecurringPaymentSchedule.org_id == member.organization_id,
+            )
             .with_for_update()
         )
         if row is None:
-            raise AuthFailure(status=404, code="SCHEDULE_NOT_FOUND", title="Schedule not found", detail="The recurring schedule is not available to this user.")
+            raise AuthFailure(
+                status=404,
+                code="SCHEDULE_NOT_FOUND",
+                title="Schedule not found",
+                detail="The recurring schedule is not available to this user.",
+            )
         if if_match != f'"{row.version}"':
-            raise AuthFailure(status=412, code="VERSION_CONFLICT", title="Version conflict", detail="The schedule changed. Reload it and try again.")
+            raise AuthFailure(
+                status=412,
+                code="VERSION_CONFLICT",
+                title="Version conflict",
+                detail="The schedule changed. Reload it and try again.",
+            )
         if row.status == "Completed":
-            raise AuthFailure(status=409, code="SCHEDULE_COMPLETED", title="Schedule completed", detail="Completed schedules cannot be changed.")
+            raise AuthFailure(
+                status=409,
+                code="SCHEDULE_COMPLETED",
+                title="Schedule completed",
+                detail="Completed schedules cannot be changed.",
+            )
         fields = payload.model_dump(exclude_unset=True)
         if "payee_id" in fields:
             row.payee_id = fields["payee_id"]
@@ -223,15 +248,27 @@ async def edit_schedule(
             period_invoice_number(fields["invoice_no_template"], row.next_period)
             row.invoice_no_template = fields["invoice_no_template"]
         if "amount" in fields:
-            asset = await session.scalar(select(Asset).where(Asset.id == row.asset_id, Asset.chain_id == row.chain_id))
+            asset = await session.scalar(
+                select(Asset).where(Asset.id == row.asset_id, Asset.chain_id == row.chain_id)
+            )
             if asset is None:
-                raise AuthFailure(status=422, code="ASSET_NOT_PAYMENT_STABLECOIN", title="Payment asset invalid", detail="The treasury payment asset is unavailable.")
+                raise AuthFailure(
+                    status=422,
+                    code="ASSET_NOT_PAYMENT_STABLECOIN",
+                    title="Payment asset invalid",
+                    detail="The treasury payment asset is unavailable.",
+                )
             row.amount = _amount(fields["amount"], asset.decimals)
         for field in ("terms", "note", "tags", "cost_center", "end_date", "status"):
             if field in fields:
                 setattr(row, field, fields[field])
         if row.end_date is not None and row.end_date < row.next_period:
-            raise AuthFailure(status=422, code="DATE_INVALID", title="Dates invalid", detail="The end date cannot be before the next period.")
+            raise AuthFailure(
+                status=422,
+                code="DATE_INVALID",
+                title="Dates invalid",
+                detail="The end date cannot be before the next period.",
+            )
         await _bound_fields(
             session,
             organization_id=member.organization_id,
@@ -247,7 +284,11 @@ async def edit_schedule(
     return {"schedule": _view(row)}
 
 
-@router.post("/{schedule_id}/periods/{period_date}/skip", status_code=201, openapi_extra={"x-organization-scoped": True})
+@router.post(
+    "/{schedule_id}/periods/{period_date}/skip",
+    status_code=201,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def skip_period(
     organization_id: uuid.UUID,
     schedule_id: uuid.UUID,
@@ -259,18 +300,41 @@ async def skip_period(
     async with factory() as session, session.begin():
         row = await session.scalar(
             select(RecurringPaymentSchedule)
-            .where(RecurringPaymentSchedule.id == schedule_id, RecurringPaymentSchedule.org_id == member.organization_id)
+            .where(
+                RecurringPaymentSchedule.id == schedule_id,
+                RecurringPaymentSchedule.org_id == member.organization_id,
+            )
             .with_for_update()
         )
         if row is None:
-            raise AuthFailure(status=404, code="SCHEDULE_NOT_FOUND", title="Schedule not found", detail="The recurring schedule is not available to this user.")
+            raise AuthFailure(
+                status=404,
+                code="SCHEDULE_NOT_FOUND",
+                title="Schedule not found",
+                detail="The recurring schedule is not available to this user.",
+            )
         if row.status != "Active" or row.next_period != period_date:
-            raise AuthFailure(status=409, code="PERIOD_NOT_CURRENT", title="Period cannot be skipped", detail="Only the next active period can be skipped.")
+            raise AuthFailure(
+                status=409,
+                code="PERIOD_NOT_CURRENT",
+                title="Period cannot be skipped",
+                detail="Only the next active period can be skipped.",
+            )
         if row.end_date is not None and period_date > row.end_date:
-            raise AuthFailure(status=409, code="SCHEDULE_COMPLETED", title="Schedule completed", detail="This schedule has no period on or before its end date.")
+            raise AuthFailure(
+                status=409,
+                code="SCHEDULE_COMPLETED",
+                title="Schedule completed",
+                detail="This schedule has no period on or before its end date.",
+            )
         period = RecurringPaymentPeriod(
-            id=uuid7(), schedule_id=row.id, period_date=period_date, request_id=None,
-            status="Skipped", skipped_by=member.user_id, skipped_at=datetime.now(UTC),
+            id=uuid7(),
+            schedule_id=row.id,
+            period_date=period_date,
+            request_id=None,
+            status="Skipped",
+            skipped_by=member.user_id,
+            skipped_at=datetime.now(UTC),
         )
         session.add(period)
         row.period_index += 1
@@ -281,4 +345,7 @@ async def skip_period(
             row.status = "Completed"
         row.version += 1
         await session.flush()
-    return {"period": {"date": period_date.isoformat(), "status": "Skipped"}, "schedule": _view(row)}
+    return {
+        "period": {"date": period_date.isoformat(), "status": "Skipped"},
+        "schedule": _view(row),
+    }

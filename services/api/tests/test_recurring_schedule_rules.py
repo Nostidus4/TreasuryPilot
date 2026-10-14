@@ -30,9 +30,7 @@ def test_recurring_schedule_requires_a_period_invoice_token() -> None:
             {**values, "invoiceNoTemplate": "RENT-{period}-{period}"}
         )
     with pytest.raises(ValidationError, match="endDate"):
-        RecurringScheduleCreate.model_validate(
-            {**values, "endDate": "2026-01-30"}
-        )
+        RecurringScheduleCreate.model_validate({**values, "endDate": "2026-01-30"})
 
 
 def test_schedule_patch_rejects_required_nulls_and_invalid_template_tokens() -> None:
