@@ -25,13 +25,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "symbol",
-          "decimals",
-          "address",
-          "isTest"
-        ],
+        "required": ["id", "symbol", "decimals", "address", "isTest"],
         "title": "AssetView",
         "type": "object"
       },
@@ -56,10 +50,7 @@
             "title": "Nextcursor"
           }
         },
-        "required": [
-          "items",
-          "nextCursor"
-        ],
+        "required": ["items", "nextCursor"],
         "title": "AuditLogResponse",
         "type": "object"
       },
@@ -162,19 +153,12 @@
             "type": "integer"
           },
           "status": {
-            "enum": [
-              "INTACT",
-              "BROKEN"
-            ],
+            "enum": ["INTACT", "BROKEN"],
             "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "status",
-          "checked",
-          "brokenAt"
-        ],
+        "required": ["status", "checked", "brokenAt"],
         "title": "AuditVerifyResponse",
         "type": "object"
       },
@@ -224,18 +208,12 @@
             "type": "array"
           }
         },
-        "required": [
-          "chains"
-        ],
+        "required": ["chains"],
         "title": "ChainsResponse",
         "type": "object"
       },
       "Coverage": {
-        "enum": [
-          "UNKNOWN",
-          "PARTIAL",
-          "COMPLETE"
-        ],
+        "enum": ["UNKNOWN", "PARTIAL", "COMPLETE"],
         "title": "Coverage",
         "type": "string"
       },
@@ -279,9 +257,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "CreateOrganizationRequest",
         "type": "object"
       },
@@ -307,11 +283,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "chainId",
-          "assetId",
-          "wallets"
-        ],
+        "required": ["chainId", "assetId", "wallets"],
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
@@ -343,11 +315,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "status",
-          "service",
-          "version"
-        ],
+        "required": ["status", "service", "version"],
         "title": "HealthResponse",
         "type": "object"
       },
@@ -366,10 +334,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "message",
-          "signature"
-        ],
+        "required": ["message", "signature"],
         "title": "LinkWalletRequest",
         "type": "object"
       },
@@ -382,9 +347,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "email"
-        ],
+        "required": ["email"],
         "title": "MagicLinkRequest",
         "type": "object"
       },
@@ -408,11 +371,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "user",
-          "memberships",
-          "wallets"
-        ],
+        "required": ["user", "memberships", "wallets"],
         "title": "MeResponse",
         "type": "object"
       },
@@ -509,10 +468,7 @@
             "$ref": "#/components/schemas/OrganizationView"
           }
         },
-        "required": [
-          "org",
-          "checklist"
-        ],
+        "required": ["org", "checklist"],
         "title": "OrganizationDetailsResponse",
         "type": "object"
       },
@@ -522,9 +478,7 @@
             "$ref": "#/components/schemas/OrganizationView"
           }
         },
-        "required": [
-          "org"
-        ],
+        "required": ["org"],
         "title": "OrganizationResponse",
         "type": "object"
       },
@@ -643,11 +597,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "chainId",
-          "owners",
-          "threshold"
-        ],
+        "required": ["chainId", "owners", "threshold"],
         "title": "SafeDeploymentRequest",
         "type": "object"
       },
@@ -661,10 +611,7 @@
             "$ref": "#/components/schemas/SafeDeploymentTransaction"
           }
         },
-        "required": [
-          "chainId",
-          "transaction"
-        ],
+        "required": ["chainId", "transaction"],
         "title": "SafeDeploymentResponse",
         "type": "object"
       },
@@ -683,11 +630,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "to",
-          "data",
-          "value"
-        ],
+        "required": ["to", "data", "value"],
         "title": "SafeDeploymentTransaction",
         "type": "object"
       },
@@ -715,13 +658,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "nonce",
-          "domain",
-          "scheme",
-          "chainId",
-          "expiresAt"
-        ],
+        "required": ["nonce", "domain", "scheme", "chainId", "expiresAt"],
         "title": "SiweNonceResponse",
         "type": "object"
       },
@@ -745,22 +682,12 @@
             "type": "array"
           }
         },
-        "required": [
-          "treasury",
-          "wallets",
-          "warnings"
-        ],
+        "required": ["treasury", "wallets", "warnings"],
         "title": "TreasuryResponse",
         "type": "object"
       },
       "TreasuryStatus": {
-        "enum": [
-          "Draft",
-          "ModulePending",
-          "Ready",
-          "Paused",
-          "Revoked"
-        ],
+        "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
         "title": "TreasuryStatus",
         "type": "string"
       },
@@ -842,12 +769,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "email",
-          "displayName",
-          "status"
-        ],
+        "required": ["id", "email", "displayName", "status"],
         "title": "UserView",
         "type": "object"
       },
@@ -883,11 +805,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError",
         "type": "object"
       },
@@ -898,9 +816,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "token"
-        ],
+        "required": ["token"],
         "title": "VerifyMagicLinkRequest",
         "type": "object"
       },
@@ -914,10 +830,7 @@
             "$ref": "#/components/schemas/UserView"
           }
         },
-        "required": [
-          "user",
-          "csrfToken"
-        ],
+        "required": ["user", "csrfToken"],
         "title": "VerifyMagicLinkResponse",
         "type": "object"
       },
@@ -944,18 +857,12 @@
             "type": "string"
           }
         },
-        "required": [
-          "role",
-          "safeAddress"
-        ],
+        "required": ["role", "safeAddress"],
         "title": "WalletRequest",
         "type": "object"
       },
       "WalletRole": {
-        "enum": [
-          "SOURCE",
-          "OPERATIONAL"
-        ],
+        "enum": ["SOURCE", "OPERATIONAL"],
         "title": "WalletRole",
         "type": "string"
       },
@@ -977,11 +884,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "code",
-          "message",
-          "wallets"
-        ],
+        "required": ["code", "message", "wallets"],
         "title": "WarningView",
         "type": "object"
       },
@@ -1005,12 +908,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "address",
-          "chainFamily",
-          "isContract",
-          "linkedAt"
-        ],
+        "required": ["address", "chainFamily", "isContract", "linkedAt"],
         "title": "WalletView",
         "type": "object"
       },
@@ -1080,9 +978,7 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "system"
-        ]
+        "tags": ["system"]
       }
     },
     "/v1/auth/logout": {
@@ -1094,9 +990,7 @@
           }
         },
         "summary": "Logout",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/auth/magic-link": {
@@ -1128,9 +1022,7 @@
           }
         },
         "summary": "Request Magic Link",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/auth/magic-link/verify": {
@@ -1169,9 +1061,7 @@
           }
         },
         "summary": "Verify Magic Link",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/auth/siwe/nonce": {
@@ -1190,9 +1080,7 @@
           }
         },
         "summary": "Siwe Nonce",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/chains": {
@@ -1211,9 +1099,7 @@
           }
         },
         "summary": "List Chains",
-        "tags": [
-          "treasury"
-        ]
+        "tags": ["treasury"]
       }
     },
     "/v1/health": {
@@ -1232,9 +1118,7 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "system"
-        ]
+        "tags": ["system"]
       }
     },
     "/v1/me": {
@@ -1253,9 +1137,7 @@
           }
         },
         "summary": "Me",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/me/wallets": {
@@ -1294,9 +1176,7 @@
           }
         },
         "summary": "Link Wallet",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/me/wallets/{address}": {
@@ -1329,9 +1209,7 @@
           }
         },
         "summary": "Unlink Wallet",
-        "tags": [
-          "identity"
-        ]
+        "tags": ["identity"]
       }
     },
     "/v1/orgs": {
@@ -1370,9 +1248,7 @@
           }
         },
         "summary": "Create Organization",
-        "tags": [
-          "organizations"
-        ]
+        "tags": ["organizations"]
       }
     },
     "/v1/orgs/{organization_id}": {
@@ -1413,9 +1289,7 @@
           }
         },
         "summary": "Get Organization",
-        "tags": [
-          "organizations"
-        ]
+        "tags": ["organizations"]
       }
     },
     "/v1/orgs/{organization_id}/audit-log": {
@@ -1570,9 +1444,7 @@
           }
         },
         "summary": "List Audit Log",
-        "tags": [
-          "audit"
-        ]
+        "tags": ["audit"]
       }
     },
     "/v1/orgs/{organization_id}/audit-log/verify": {
@@ -1613,9 +1485,7 @@
           }
         },
         "summary": "Verify Audit Log",
-        "tags": [
-          "audit"
-        ]
+        "tags": ["audit"]
       }
     },
     "/v1/orgs/{organization_id}/safes/deploy-tx": {
@@ -1666,9 +1536,7 @@
           }
         },
         "summary": "Safe Deployment Transaction",
-        "tags": [
-          "treasury"
-        ]
+        "tags": ["treasury"]
       }
     },
     "/v1/orgs/{organization_id}/settings": {
@@ -1719,9 +1587,7 @@
           }
         },
         "summary": "Update Organization Settings",
-        "tags": [
-          "organizations"
-        ]
+        "tags": ["organizations"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries": {
@@ -1772,9 +1638,7 @@
           }
         },
         "summary": "Create Treasury",
-        "tags": [
-          "treasury"
-        ]
+        "tags": ["treasury"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}": {
@@ -1825,9 +1689,7 @@
           }
         },
         "summary": "Get Treasury",
-        "tags": [
-          "treasury"
-        ]
+        "tags": ["treasury"]
       }
     }
   }

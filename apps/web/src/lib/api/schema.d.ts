@@ -242,23 +242,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/orgs/{organization_id}/settings': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Organization Settings */
-    patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
-    trace?: never;
-  };
   '/v1/orgs/{organization_id}/safes/deploy-tx': {
     parameters: {
       query?: never;
@@ -274,6 +257,23 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Organization Settings */
+    patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries': {
