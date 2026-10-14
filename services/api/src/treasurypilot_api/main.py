@@ -53,6 +53,7 @@ from treasurypilot_api.mandate.routes import (
     SqlAlchemyMandateRepository,
 )
 from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
@@ -264,6 +265,9 @@ def create_app(
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.mandate_repository = mandate_repository
+    app.state.review_sessions = (
+        async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
+    )
     app.state.treasury_service = treasury_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
@@ -295,6 +299,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(treasury_router)
     app.include_router(mandate_router)
+    app.include_router(review_router)
 
     return app
 
