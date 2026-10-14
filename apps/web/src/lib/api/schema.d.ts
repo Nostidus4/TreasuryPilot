@@ -329,6 +329,23 @@ export interface paths {
     patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Request Evidence */
+    get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -350,6 +367,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AICallEvidence */
+    AICallEvidence: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Model */
+      model?: string | null;
+      /** Outputsummary */
+      outputSummary?: string | null;
+      /** Promptversion */
+      promptVersion?: string | null;
+      /** Purpose */
+      purpose: string;
+    };
+    /** ApprovalEvidence */
+    ApprovalEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
+    };
     /** AssetView */
     AssetView: {
       /** Address */
@@ -365,6 +409,17 @@ export interface components {
       isTest: boolean;
       /** Symbol */
       symbol: string;
+    };
+    /** AttestationEvidence */
+    AttestationEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** AuditLogResponse */
     AuditLogResponse: {
@@ -421,6 +476,24 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+    /** BundleRequest */
+    BundleRequest: {
+      /** Amount */
+      amount: string;
+      /** Currency */
+      currency: string;
+      /** Fingerprint */
+      fingerprint?: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Invoicehash */
+      invoiceHash?: string | null;
+      /** Vendordisplayname */
+      vendorDisplayName?: string | null;
+    };
     /** ChainView */
     ChainView: {
       /** Assets */
@@ -450,6 +523,85 @@ export interface components {
       legalName?: string | null;
       /** Name */
       name: string;
+    };
+    /** EvidenceBundle */
+    EvidenceBundle: {
+      /** Aicalls */
+      aiCalls?: components['schemas']['AICallEvidence'][];
+      /** Appversion */
+      appVersion: string;
+      approval?: components['schemas']['ApprovalEvidence'] | null;
+      attestation?: components['schemas']['AttestationEvidence'] | null;
+      /** Coverage */
+      coverage?: {
+        [key: string]: unknown;
+      };
+      /** Easuid */
+      easUid?: string | null;
+      /** Fixturelabels */
+      fixtureLabels?: string[];
+      /** Flags */
+      flags?: components['schemas']['FlagEvidence'][];
+      /**
+       * Generatedat
+       * Format: date-time
+       */
+      generatedAt: string;
+      /** Operations */
+      operations?: {
+        [key: string]: unknown;
+      }[];
+      /**
+       * Organizationid
+       * Format: uuid
+       */
+      organizationId: string;
+      plan?: components['schemas']['PlanEvidence'] | null;
+      /** Reconciliation */
+      reconciliation?: {
+        [key: string]: unknown;
+      } | null;
+      request: components['schemas']['BundleRequest'];
+      /**
+       * Schemaversion
+       * @default evidence-bundle.v1
+       * @constant
+       */
+      schemaVersion: 'evidence-bundle.v1';
+      /** Sha256 */
+      sha256?: string | null;
+      /**
+       * Status
+       * @default VALID
+       * @constant
+       */
+      status: 'VALID';
+      /** Transactions */
+      transactions?: components['schemas']['TransactionEvidence'][] | null;
+      /** Validations */
+      validations?: components['schemas']['ValidationEvidence'][];
+      /** Verifications */
+      verifications?: components['schemas']['VerificationEvidence'][];
+    };
+    /** FlagEvidence */
+    FlagEvidence: {
+      /** Acknote */
+      ackNote?: string | null;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Code */
+      code: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Severity */
+      severity: string;
+      /** Status */
+      status: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -666,6 +818,17 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** PlanEvidence */
+    PlanEvidence: {
+      /** Planhash */
+      planHash?: string | null;
+      /** Plannersource */
+      plannerSource: string;
+      /** Steps */
+      steps?: {
+        [key: string]: unknown;
+      }[];
+    };
     /** RoleUpdateRequest */
     RoleUpdateRequest: {
       /** Roles */
@@ -686,6 +849,17 @@ export interface components {
       nonce: string;
       /** Scheme */
       scheme: string;
+    };
+    /** TransactionEvidence */
+    TransactionEvidence: {
+      /** Blocknumber */
+      blockNumber?: number | null;
+      /** Chainid */
+      chainId: number;
+      /** Feebaseunits */
+      feeBaseUnits?: string | null;
+      /** Txhash */
+      txHash: string;
     };
     /** UserView */
     UserView: {
@@ -713,6 +887,37 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
+    };
+    /** ValidationEvidence */
+    ValidationEvidence: {
+      /** Checks */
+      checks?: {
+        [key: string]: unknown;
+      }[];
+      /** Decision */
+      decision: string;
+      /** Id */
+      id?: string | null;
+      /** Reasoncodes */
+      reasonCodes?: string[];
+      /** Stage */
+      stage: string;
+    };
+    /** VerificationEvidence */
+    VerificationEvidence: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Status */
+      status: string;
+      /** Txhash */
+      txHash: string;
     };
     /** VerifyMagicLinkRequest */
     VerifyMagicLinkRequest: {
@@ -1337,6 +1542,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceBundle'];
         };
       };
       /** @description Validation Error */
