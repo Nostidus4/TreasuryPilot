@@ -174,12 +174,27 @@ class RpcClient:
         self.providers = tuple(providers)
         self._on_health = on_health
 
-    async def call(self, method: str, params: Sequence[Any]) -> Any:
-        """Ask each provider in order (with retries) and return the first answer."""
+    async def call(
+        self,
+        method: str,
+        params: Sequence[Any],
+        *,
+        is_final: Callable[[RpcResponseError], bool] | None = None,
+    ) -> Any:
+        """Ask each provider in order (with retries) and return the first answer.
 
-        return (await self.call_with_provider(method, params))[1]
+        A JSON-RPC error for which ``is_final`` is true is raised at once, not failed over.
+        """
 
-    async def call_with_provider(self, method: str, params: Sequence[Any]) -> tuple[str, Any]:
+        return (await self.call_with_provider(method, params, is_final=is_final))[1]
+
+    async def call_with_provider(
+        self,
+        method: str,
+        params: Sequence[Any],
+        *,
+        is_final: Callable[[RpcResponseError], bool] | None = None,
+    ) -> tuple[str, Any]:
         """Like ``call``, also naming the provider that answered."""
 
         failures: list[RpcError] = []
@@ -187,6 +202,8 @@ class RpcClient:
             try:
                 return provider.name, await self._call_provider(provider, method, params)
             except RpcError as failure:
+                if is_final and isinstance(failure, RpcResponseError) and is_final(failure):
+                    raise
                 # A JSON-RPC error can be a lagging or rate-limited node, so fail over too.
                 failures.append(failure)
         if all(isinstance(failure, RpcResponseError) for failure in failures):
