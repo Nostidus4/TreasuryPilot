@@ -240,10 +240,13 @@ export function OrgsPage() {
   );
 }
 
-/** `/o/:org`: the dashboard when a treasury exists, else the checklist. */
-export function OrgIndexRedirect() {
+/** `/o/:org`: the checklist with no treasury, the dashboard with one, else the portfolio. */
+export function OrgIndexRedirect({ children }: { children: ReactNode }) {
   const scope = useOrgScope();
-  return <Navigate to={scope.tBase} replace />;
+  if (scope.org.treasuries.length <= 1) {
+    return <Navigate to={scope.tBase} replace />;
+  }
+  return children;
 }
 
 /** Onboarding checklist (WEB-002): every item and its state come from the API. */

@@ -54,6 +54,7 @@ jobs:
           test "$(curl --silent --show-error --header 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://127.0.0.1:8545 | jq --raw-output .result)" = '0x7a69'
           curl --fail --silent --show-error http://127.0.0.1:8000/v1/health
           curl --fail --silent --show-error http://127.0.0.1:5173/healthz
+          docker compose --env-file infra/env/.env.example -f infra/compose.yaml exec -T api python services/api/scripts/minio_smoke.py
       - name: Show logs on failure
         if: failure()
         run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local logs --no-color

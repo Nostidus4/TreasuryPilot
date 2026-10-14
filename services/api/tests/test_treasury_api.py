@@ -398,6 +398,27 @@ def test_domain_errors_map_to_problem_responses(
     assert (response.status_code, response.json()["code"]) == (status, code)
 
 
+def test_non_safe_verification_error_identifies_the_wallet_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeService()
+    service.error = TreasuryRequestError(
+        "NOT_A_SAFE", "No Safe contract was found at this address.", address=SAFES[1]
+    )
+    payload = _payload()
+    payload["wallets"][1]["label"] = "O1"
+    response = _client(monkeypatch, {"Owner"}, service).post(
+        f"/v1/orgs/{ORG}/treasuries", json=payload
+    )
+    assert response.status_code == 422
+    assert response.json()["errors"] == [
+        {
+            "field": "wallets.O1",
+            "message": "No Safe contract was found at this address.",
+        }
+    ]
+
+
 def test_unknown_treasury_is_404_and_bad_input_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
     service = FakeService()
     client = _client(monkeypatch, {"Owner"}, service)

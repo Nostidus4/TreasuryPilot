@@ -107,18 +107,22 @@ class SqlAlchemyNotificationRepository:
     ) -> tuple[tuple[Notification, ...], int]:
         scope = (Notification.org_id == organization_id, Notification.user_id == user_id)
         async with self._sessions() as session:
-            statement = select(Notification).where(*scope)
+            statement = select(Notification).where(*scope, Notification.deliver_at <= func.now())
             if unread:
                 statement = statement.where(Notification.read_at.is_(None))
             rows = await session.scalars(
-                statement.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(
+                statement.order_by(Notification.deliver_at.desc(), Notification.id.desc()).limit(
                     limit
                 )
             )
             unread_count = await session.scalar(
                 select(func.count())
                 .select_from(Notification)
-                .where(*scope, Notification.read_at.is_(None))
+                .where(
+                    *scope,
+                    Notification.read_at.is_(None),
+                    Notification.deliver_at <= func.now(),
+                )
             )
             return tuple(rows), int(unread_count or 0)
 
@@ -134,6 +138,8 @@ class SqlAlchemyNotificationRepository:
                     Notification.id.in_(ids),
                     Notification.org_id == organization_id,
                     Notification.user_id == user_id,
+                    # Deferred (quiet hours) rows are unseen, so they cannot be read yet.
+                    Notification.deliver_at <= func.now(),
                 )
                 # Idempotent: an already-read row keeps its first read time.
                 .values(read_at=func.coalesce(Notification.read_at, func.now()))
@@ -154,9 +160,13 @@ class SqlAlchemyNotificationRepository:
             )
             last_notification = (
                 await session.execute(
-                    select(Notification.created_at, Notification.id)
-                    .where(Notification.org_id == organization_id, Notification.user_id == user_id)
-                    .order_by(Notification.created_at.desc(), Notification.id.desc())
+                    select(Notification.deliver_at, Notification.id)
+                    .where(
+                        Notification.org_id == organization_id,
+                        Notification.user_id == user_id,
+                        Notification.deliver_at <= func.now(),
+                    )
+                    .order_by(Notification.deliver_at.desc(), Notification.id.desc())
                     .limit(1)
                 )
             ).first()
@@ -193,10 +203,11 @@ class SqlAlchemyNotificationRepository:
                     .where(
                         Notification.org_id == organization_id,
                         Notification.user_id == user_id,
-                        tuple_(Notification.created_at, Notification.id)
+                        Notification.deliver_at <= func.now(),
+                        tuple_(Notification.deliver_at, Notification.id)
                         > tuple_(cursor.notification_at, cursor.notification_id),
                     )
-                    .order_by(Notification.created_at, Notification.id)
+                    .order_by(Notification.deliver_at, Notification.id)
                     .limit(limit)
                 )
             ).all()
@@ -221,7 +232,7 @@ class SqlAlchemyNotificationRepository:
                 StreamedNotification(
                     id=row.id,
                     event_id=row.event_id,
-                    created_at=row.created_at,
+                    created_at=row.deliver_at,  # cursor position: see Notification.deliver_at
                     severity=row.severity,
                 )
                 for row in notifications

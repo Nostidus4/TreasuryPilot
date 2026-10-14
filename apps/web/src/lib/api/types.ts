@@ -125,8 +125,8 @@ export interface TreasurySummary {
   chainName: string;
   assetId: string;
   assetSymbol: string;
-  assetDecimals: number;
-  assetIsTest: boolean;
+  assetDecimals: number | null;
+  assetIsTest: boolean | null;
   status: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
   coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
   createdAt: string;

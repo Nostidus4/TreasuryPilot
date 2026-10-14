@@ -13,7 +13,12 @@ from treasurypilot_worker.runtime import (
     current_correlation_id,
     make_idempotency_key,
 )
-from treasurypilot_worker.tasks import ai_probe, core_probe, publish_domain_events
+from treasurypilot_worker.tasks import (
+    ai_probe,
+    core_probe,
+    publish_daily_audit_roots_task,
+    publish_domain_events,
+)
 
 
 def test_worker_uses_safe_delivery_settings() -> None:
@@ -48,6 +53,8 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert ai_probe.queue == "ai"
     assert isinstance(publish_domain_events, SafeTask)
     assert publish_domain_events.queue == "core"
+    assert isinstance(publish_daily_audit_roots_task, SafeTask)
+    assert publish_daily_audit_roots_task.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -56,6 +63,15 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
     assert entry["schedule"] == timedelta(seconds=1)
     assert entry["options"] == {"queue": "core", "expires": 2}
+
+
+def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
+    entry = app.conf.beat_schedule["publish-daily-audit-roots"]
+
+    assert entry["task"] == "treasurypilot.audit.publish-daily-roots"
+    assert entry["schedule"].hour == {0}
+    assert entry["schedule"].minute == {5}
+    assert entry["options"] == {"queue": "core"}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

@@ -35,10 +35,14 @@ function TreasuryRow({ item }: { item: TreasurySummary }) {
             )}
           </span>
           <span className="mt-1 block text-sm text-muted-foreground">
-            {t('Chain {{chainId}} · {{decimals}} decimals', {
-              chainId: item.chainId,
-              decimals: item.assetDecimals,
-            })}
+            {item.assetDecimals === null
+              ? t('Chain {{chainId}} · asset unavailable', {
+                  chainId: item.chainId,
+                })
+              : t('Chain {{chainId}} · {{decimals}} decimals', {
+                  chainId: item.chainId,
+                  decimals: item.assetDecimals,
+                })}
           </span>
         </span>
         <span className="flex flex-wrap gap-2">
