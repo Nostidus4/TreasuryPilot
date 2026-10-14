@@ -44,9 +44,12 @@ def assert_maker_checker(
 
     The decision is true only when solo mode actually allowed a creator or last
     editor to approve. Independent approvers are never labeled as solo approvals.
+    A request with no recorded maker (deleted user, system import) fails closed:
+    every approver is treated as the maker.
     """
 
-    is_maker = user_id in {request.created_by, request.last_edited_by}
+    makers = {request.created_by, request.last_edited_by}
+    is_maker = user_id in makers or makers == {None}
     if is_maker and not organization.solo_mode:
         raise maker_checker_conflict()
     return MakerCheckerDecision(solo_mode=is_maker)

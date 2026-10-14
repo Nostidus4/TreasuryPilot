@@ -18,8 +18,8 @@ CHECKER = uuid.uuid4()
 
 @dataclass(frozen=True)
 class Request:
-    created_by: uuid.UUID
-    last_edited_by: uuid.UUID
+    created_by: uuid.UUID | None
+    last_edited_by: uuid.UUID | None
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,17 @@ def test_independent_approver_is_never_marked_as_solo(solo_mode: bool) -> None:
 
     assert decision.solo_mode is False
     assert decision.audit_data() == {"solo_mode": False}
+
+
+def test_request_without_recorded_maker_fails_closed() -> None:
+    orphan = Request(created_by=None, last_edited_by=None)
+
+    with pytest.raises(AuthFailure) as failure:
+        assert_maker_checker(orphan, user_id=CHECKER, organization=Organization(False))
+    assert (failure.value.status, failure.value.code) == (409, "MAKER_CHECKER")
+
+    decision = assert_maker_checker(orphan, user_id=CHECKER, organization=Organization(True))
+    assert decision.solo_mode is True
 
 
 def test_maker_checker_failure_maps_to_a_409_problem_response() -> None:
