@@ -2143,6 +2143,8 @@ async def _approval_typed_data(
             "The active mandate has an invalid approvalMaxAge setting.",
         )
     approval_max_age = approval_max_age_value
+    if row.amount is None or row.due_at is None:  # unreachable: drafts cannot be in review
+        raise RuntimeError("Approval inputs are incomplete")
     terms = confirmed_payment_terms(row)
     early_amount, early_pay_by = (_early_option(terms, int(row.amount)) if terms else None) or (
         0,
