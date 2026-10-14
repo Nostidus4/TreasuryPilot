@@ -36,6 +36,8 @@ The API reads `<chainId>.json` manifests for enabled chains using this shape:
 }
 ```
 
+Safe v1.4.1 singletons (L1 and L2) that treasury creation accepts are declared as deployments named `SAFE_SINGLETON_L1` / `SAFE_SINGLETON_L2` with version `1.4.1`.
+
 The module implementation is mandatory. Every deployment address and code hash
 must be a non-zero 20-byte and 32-byte hexadecimal value, respectively. Never
 place private keys, authenticated RPC URLs, or other credentials in these files.
