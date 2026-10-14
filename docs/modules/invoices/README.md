@@ -16,7 +16,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 | Fingerprint, exact-duplicate block, near-duplicate flag | Paying, scheduling (M07, M10) |
 | Deterministic flags (address, outlier, dates, currency/chain, first payment) | Screening provider (M14) |
 | `PaymentApproval` typed data, signature verification, maker-checker | Exceptions (M03 + Owner) |
-| Request state machine and status events | Email inbox, inbound API, recurring, fiat (Later: F-033/034/040/041) |
+| Request state machine and status events | Email inbox, inbound API and fiat (Later: F-033/034/041) |
 | Cancel, including on-chain `cancelRequest` (M05-D4) | |
 
 **Who decides what:** the Operator enters data; the AI suggests fields (M09); the **Approver decides whether to pay** by signing; the engine and agent decide how and when; the contract enforces.
@@ -59,6 +59,7 @@ until one is wired in fiat requests return `503 FX_UNAVAILABLE`.
 | F-037 Fingerprint | FR-314, FR-315 | BR-071 |
 | F-038 Approval | FR-316, FR-317, FR-318 | BR-001, **BR-007 (new)**, BR-003, BR-004, BR-005, BR-006 |
 | F-039 State machine | FR-319, FR-320, **FR-324 (new)** | BR-060, **BR-077 (new)** |
+| F-040 Recurring payment schedules (Later) | FR-321 | BR-002 |
 
 ## 3. Concepts
 
@@ -79,12 +80,14 @@ until one is wired in fiat requests return `503 FX_UNAVAILABLE`.
 |---|---|---|
 | `vendors` | id, org_id, name, **normalized_ref** (unique per org), **tax_id** null, contact (encrypted), notes, created_by | M05-D2. `normalized_ref = norm(name or supplier code)` set once; renaming keeps it |
 | `payees` | + `vendor_id` NOT NULL | a payee always belongs to a vendor |
-| `payment_requests` | id, org_id, treasury_id, chain_id (= treasury's chain, ties asset_id), vendor_id (= payee's vendor, same org), payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
+| `payment_requests` | id, org_id, treasury_id, chain_id (= treasury's chain, ties asset_id), vendor_id (= payee's vendor, same org), payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV, RECURRING), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
 | `request_revisions` | id, request_id, revision, snapshot jsonb (all bound inputs), edited_by, at, reason | append-only |
 | `documents` | id, request_id, storage_key, sha256, mime, size, pages, uploaded_by | private bucket |
 | `flags` | id, request_id, **revision**, code, severity, evidence jsonb, source enum(DETERMINISTIC, AI), status enum(Open, Acknowledged, Superseded), acknowledged_by/at, ack_note | recomputed on every revision; old ones → Superseded |
 | `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, **acknowledged_flag_ids** uuid[], **solo_mode** bool, expires_at, status enum(Valid, Invalidated, Expired, Cancelled) | immutable except status, which only moves Valid → Invalidated/Expired/Cancelled |
 | `csv_imports` | id, org_id, treasury_id, file_sha256, rows_total, rows_created, errors jsonb, created_by, at | |
+| `recurring_payment_schedules` | id, org_id, treasury_id, vendor_id, payee_id, asset_id, paying_wallet_id, invoice_no_template, amount numeric(78,0), terms, note, tags, cost_center, cadence, interval, period_index, start_date, next_period, end_date, due_days_after_issue, status, created_by, last_edited_by, version | integer base-unit amount; edits apply to future periods; `period_index` preserves the original day after short months |
+| `recurring_payment_periods` | id, schedule_id, period_date, request_id, status(Generated,Skipped), skipped_by/at, created_at | unique(schedule_id, period_date) and unique(request_id) provide durable period idempotency and skip history |
 | `request_status_events` | id, request_id, from, to, actor_type, actor_id, reason, at | append-only |
 
 ## 5. State machine (F-039)
@@ -165,6 +168,9 @@ stateDiagram-v2
 | POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
 | POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
+| POST | `/orgs/{o}/recurring-payment-schedules` | OPR, ADM | template → `{schedule}` | validates treasury, vendor, registered active payee, asset precision, cadence, and dates |
+| GET/PATCH | `/orgs/{o}/recurring-payment-schedules[/{s}]` | OPR, ADM | list or `If-Match` template update → `{schedules[]}` / `{schedule}` | 404, 409 completed, 412 stale version |
+| POST | `/orgs/{o}/recurring-payment-schedules/{s}/periods/{date}/skip` | OPR, ADM | → `{period: Skipped, schedule}` | 404, 409 `PERIOD_NOT_CURRENT` |
 | POST | `/orgs/{o}/requests/bulk` 🔁 | OPR or `invoices:create` key | `{requests:[...]}` + `Idempotency-Key` → `{items, created, total}` | row-level create errors |
 | GET/POST/DELETE | `/orgs/{o}/api-keys[/{keyId}]` | ADM | Create/list/revoke scoped integration keys; secret is returned only at creation | 403 `API_KEY_SCOPE_REQUIRED` |
 
@@ -221,6 +227,31 @@ sequenceDiagram
 ### 7.2 CSV import
 
 Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. UTF-8 (BOM allowed), an exact ordered header (optional columns may be omitted), and at most 1,000 data rows / 5 MiB are accepted. Each row resolves a vendor by `normalized_ref`, requires a registered non-deactivated payee address belonging to that vendor, parses amount without rounding, validates ISO dates, and checks its fingerprint against active requests and earlier valid rows in the file. Valid rows become Draft requests with revisions, status events and deterministic flags; invalid rows stay in the report and do not prevent other valid rows from importing. `dryRun=true` returns the prospective valid rows and row errors without creating an import record or any requests. Cells containing NUL characters are rejected per row as `CSV_NUL_BYTE`. The endpoint takes no `Idempotency-Key`; a retry never creates duplicate requests (the active-fingerprint index holds) but re-reports the rows as `DUPLICATE_FINGERPRINT` under a new `importId`. A completed import with errors exposes `errorReportUrl`; its CSV download prefixes an apostrophe to cells starting with `= + - @ \t \r` (FR-307).
+
+### 7.3 Recurring payment schedules (F-040, Later)
+
+An Operator creates a schedule template with the same treasury, vendor, registered payee,
+stablecoin, optional wallet, integer base-unit amount, provisional terms and notes as a
+manual request. Cadence is weekly, monthly, quarterly or yearly, with a positive interval,
+start date, optional end date and due-day offset. `invoiceNoTemplate` must contain exactly
+one `{period}` token; it is replaced with the occurrence's ISO date so each period receives
+a distinct invoice number. Monthly dates stay anchored to the original day (for example,
+January 31 → February 28 → March 31).
+
+The core worker runs the generation task daily at 00:05 UTC and catches up overdue periods.
+It locks schedule rows with `SKIP LOCKED`; the unique schedule-period key makes retries
+idempotent. A generated request is `Draft`, `source=RECURRING`, has a revision, status event
+and deterministic intake flags, and has no approval row. Terms remain unconfirmed. The
+template creator and last editor are recorded on each request so maker-checker prevents either
+person from approving. Each generated period must pass the normal request submission and
+approval flow before scheduling or payment.
+
+Template edits (including payee changes) affect periods that have not yet been generated;
+already generated requests retain their own bound values and revision history. Operators
+can pause/resume an active schedule. A skip records the Operator and period, creates no
+payment request, and advances from the original start-date anchor. Only the next active
+period can be skipped. A duplicate or invalid template pauses generation for operator
+review; no request is auto-approved or paid.
 
 ## 8. Algorithms
 

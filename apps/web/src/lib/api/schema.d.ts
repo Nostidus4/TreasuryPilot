@@ -695,6 +695,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Schedules */
+    get: operations['list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get'];
+    put?: never;
+    /** Create Schedule */
+    post: operations['create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Edit Schedule */
+    patch: operations['edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}/periods/{period_date}/skip': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Skip Period */
+    post: operations['skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests': {
     parameters: {
       query?: never;
@@ -2513,6 +2565,93 @@ export interface components {
       steps?: {
         [key: string]: unknown;
       }[];
+    };
+    /**
+     * RecurrenceCadence
+     * @enum {string}
+     */
+    RecurrenceCadence: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+    /** RecurringScheduleCreate */
+    RecurringScheduleCreate: {
+      /** Amount */
+      amount: string;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      cadence: components['schemas']['RecurrenceCadence'];
+      /** Costcenter */
+      costCenter?: string | null;
+      /**
+       * Duedaysafterissue
+       * @default 30
+       */
+      dueDaysAfterIssue: number;
+      /** Enddate */
+      endDate?: string | null;
+      /**
+       * Interval
+       * @default 1
+       */
+      interval: number;
+      /** Invoicenotemplate */
+      invoiceNoTemplate: string;
+      /** Note */
+      note?: string | null;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /**
+       * Startdate
+       * Format: date
+       */
+      startDate: string;
+      /** Tags */
+      tags?: string[];
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** RecurringSchedulePatch */
+    RecurringSchedulePatch: {
+      /** Amount */
+      amount?: string | null;
+      /** Costcenter */
+      costCenter?: string | null;
+      /** Enddate */
+      endDate?: string | null;
+      /** Invoicenotemplate */
+      invoiceNoTemplate?: string | null;
+      /** Note */
+      note?: string | null;
+      /** Payeeid */
+      payeeId?: string | null;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Status */
+      status?: string | null;
+      /** Tags */
+      tags?: string[] | null;
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** RefillPath */
     RefillPath: {
@@ -4541,6 +4680,151 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MarkReadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecurringScheduleCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecurringSchedulePatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        schedule_id: string;
+        period_date: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
