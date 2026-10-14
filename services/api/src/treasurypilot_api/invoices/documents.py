@@ -416,25 +416,22 @@ async def create_invoice_document_draft(
         )
         try:
             async with factory() as write_session, write_session.begin():
+                write_session.add_all([row, revision, document_row])
+                # RequestFlag has a composite FK to RequestRevision. Flush these parents first;
+                # SQLAlchemy cannot infer their order without mapped ORM relationships.
+                await write_session.flush()
                 write_session.add_all(
-                    [
-                        row,
-                        revision,
-                        document_row,
-                        *(
-                            RequestFlag(
-                                id=uuid7(),
-                                request_id=request_id,
-                                revision=1,
-                                code=flag.code,
-                                severity=flag.severity.value,
-                                evidence=flag.evidence,
-                                source=flag.source.value,
-                                status=RequestFlagStatus.OPEN.value,
-                            )
-                            for flag in initial_flags
-                        ),
-                    ]
+                    RequestFlag(
+                        id=uuid7(),
+                        request_id=request_id,
+                        revision=1,
+                        code=flag.code,
+                        severity=flag.severity.value,
+                        evidence=flag.evidence,
+                        source=flag.source.value,
+                        status=RequestFlagStatus.OPEN.value,
+                    )
+                    for flag in initial_flags
                 )
         except Exception as error:
             try:

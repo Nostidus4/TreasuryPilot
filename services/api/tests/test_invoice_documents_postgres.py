@@ -161,6 +161,9 @@ async def _scenario(database_url: str) -> None:
         def put(self, object_key: str, body: bytes, content_type: str) -> None:
             stored_keys.append(object_key)
 
+        def delete(self, object_key: str) -> None:
+            stored_keys.remove(object_key)
+
     class Queue:
         def enqueue(self, request_id: uuid.UUID, document_id: uuid.UUID, job_id: str) -> str:
             enqueued.append(request_id)
