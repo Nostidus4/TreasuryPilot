@@ -64,7 +64,9 @@ test('create and submit a request, then approve it with the demo signer', async 
     .click();
   await page.getByRole('button', { name: /Demo signer/ }).click();
   await page.getByRole('button', { name: 'Sign approval' }).click();
-  await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('paragraph').filter({ hasText: /^Approved$/ }),
+  ).toBeVisible();
 });
 
 test('execute a seeded plan, verify payment, and reconcile its receipt', async ({
