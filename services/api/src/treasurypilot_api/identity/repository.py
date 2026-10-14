@@ -184,27 +184,27 @@ class SqlAlchemyAuthRepository:
             )
             if user is None:
                 return None
+            memberships_query = select(Membership).where(Membership.user_id == user_id)
+            if organization_scope_id is not None:
+                memberships_query = memberships_query.where(
+                    Membership.org_id == organization_scope_id
+                )
             memberships = (
-                await session.scalars(
-                    select(Membership)
-                    .where(Membership.user_id == user_id)
-                    .where(
-                        organization_scope_id is None or Membership.org_id == organization_scope_id
-                    )
-                    .order_by(Membership.org_id, Membership.id)
-                )
+                await session.scalars(memberships_query.order_by(Membership.org_id, Membership.id))
             ).all()
-            wallets = (
-                await session.scalars(
-                    select(WalletLink)
-                    .where(
-                        WalletLink.user_id == user_id,
-                        WalletLink.unlinked_at.is_(None),
-                        organization_scope_id is None,
+            if organization_scope_id is None:
+                wallets = (
+                    await session.scalars(
+                        select(WalletLink)
+                        .where(
+                            WalletLink.user_id == user_id,
+                            WalletLink.unlinked_at.is_(None),
+                        )
+                        .order_by(WalletLink.linked_at, WalletLink.id)
                     )
-                    .order_by(WalletLink.linked_at, WalletLink.id)
-                )
-            ).all()
+                ).all()
+            else:
+                wallets = []
             return ProfileRecord(
                 user=_user_record(user),
                 memberships=tuple(

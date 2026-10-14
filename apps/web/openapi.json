@@ -3586,6 +3586,60 @@
         "tags": ["identity"]
       }
     },
+    "/v1/auth/oidc/callback": {
+      "get": {
+        "operationId": "oidc_callback_v1_auth_oidc_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "title": "State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Oidc Callback",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/oidc/start": {
+      "get": {
+        "operationId": "oidc_start_v1_auth_oidc_start_get",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Oidc Start",
+        "tags": ["identity"]
+      }
+    },
     "/v1/auth/siwe/nonce": {
       "get": {
         "operationId": "siwe_nonce_v1_auth_siwe_nonce_get",
