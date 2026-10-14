@@ -331,6 +331,15 @@ def redteam() -> int:
                 case.context.prior_invoice_paid and "POSSIBLE_DUPLICATE" in case.expected.flags,
                 "Missing duplicate context",
             )
+        if case.attack == "homoglyph-address":
+            found = re.findall(r"0x\S{40}", case.injected_text)
+            reg = case.context.registered_payee
+            require(
+                len(found) == 1
+                and found[0] != reg
+                and sum(a != b for a, b in zip(found[0], reg, strict=True)) == 1,
+                "Homoglyph address must differ from registered payee by one character",
+            )
         if case.attack == "hidden-text":
             styles.add(case.context.hidden_style)
         pdf_matches(path.with_suffix(".pdf"), case.document_sha256)

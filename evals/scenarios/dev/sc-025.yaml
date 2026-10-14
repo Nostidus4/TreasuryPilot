@@ -41,6 +41,10 @@ assumptions:
   all_requests_human_approved: true
   review_status: pending_second_person
   authoring_exposure: AI-authored and public; not an unseen evaluation set
+  liquidity_model: Withdrawal is capped by a_usdc and pool_available, and a partial
+    withdrawal is still executed when it cannot cover the deficit (INSUFFICIENT_LIQUIDITY;
+    requests stay blocked, e.g. sc-112). Supply is capped by supply.per_request/daily;
+    pool_available is a withdrawal-side limit only and does not bound SUPPLY.
 liquidity:
   safe_usdc: '2000000000'
   a_usdc: '2000000000'

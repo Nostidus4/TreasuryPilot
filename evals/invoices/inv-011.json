@@ -2,14 +2,14 @@
   "id": "inv-011",
   "vendor_name": "SYNTH Vendor 011 Ltd",
   "invoice_no": "TEST-INV-0011",
-  "issue_date": "2026-10-01",
+  "issue_date": "2026-09-28",
   "amount": "375000000",
   "currency": "USDC",
   "decimals": 6,
   "payee_address": "0x1111111111111111111111111111111111111111",
-  "due_date": "2026-10-31",
+  "due_date": "2026-10-19",
   "terms": {
-    "net_due_date": "2026-10-31",
+    "net_due_date": "2026-10-19",
     "priority_note": "Synthetic service invoice",
     "late_fee": {
       "type": "percent_per_period",
