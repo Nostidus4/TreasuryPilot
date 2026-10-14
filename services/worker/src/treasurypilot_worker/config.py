@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.
     app_base_url: str = "http://localhost:5173"
+    # Separate publisher identity; configure only in the core worker after its
+    # address has been allowlisted by AuditRootAnchor.setPublisher.
+    audit_anchor_rpc_url: str | None = None
+    audit_anchor_chain_id: int | None = None
+    audit_anchor_contract_address: str | None = None
+    audit_anchor_private_key: SecretStr | None = Field(
+        default=None, validation_alias="TP_AUDIT_ANCHOR_PRIVATE_KEY"
+    )
 
 
 @lru_cache

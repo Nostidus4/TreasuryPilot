@@ -70,6 +70,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "core", "expires": 2},
             },
+            "publish-daily-audit-roots": {
+                "task": "treasurypilot.audit.publish-daily-roots",
+                "schedule": crontab(hour=0, minute=5),
+                "options": {"queue": "core"},
+            },
         },
     )
     return app
