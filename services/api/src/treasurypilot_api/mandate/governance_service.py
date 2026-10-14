@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import uuid
+from collections.abc import Callable, Mapping
 from typing import Any
 
+from eth_abi import encode
 from eth_hash.auto import keccak
 from eth_utils import to_checksum_address
 from sqlalchemy import func, select, text
@@ -16,7 +21,10 @@ from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     SafeTransaction,
     build_safe_transaction,
+    enable_module_data,
     exec_transaction_data,
+    module_factory_create_data,
+    module_factory_predict_data,
     pack_signatures,
     recover_owner,
     safe_tx_hash,
@@ -27,13 +35,25 @@ from treasurypilot_api.mandate.models import (
     GovernanceTxPurpose,
     GovernanceTxStatus,
 )
-from treasurypilot_api.treasury.config import PlatformConfiguration
-from treasurypilot_api.treasury.models import Treasury, TreasuryWallet, WalletRole
+from treasurypilot_api.treasury.config import (
+    PlatformConfiguration,
+    resolve_rpc_url,
+)
+from treasurypilot_api.treasury.models import (
+    Asset,
+    Treasury,
+    TreasuryStatus,
+    TreasuryWallet,
+    WalletRole,
+)
 from treasurypilot_api.treasury.safe import (
     RpcSafeVerifier,
     RpcUnavailable,
     SafeVerificationError,
+    _rpc,
 )
+
+logger = logging.getLogger(__name__)
 
 _NONCE_SELECTOR = "0xaffed0e0"  # nonce()
 _EXECUTION_EVENTS = {
@@ -64,10 +84,12 @@ class GovernanceService:
         sessions: async_sessionmaker[AsyncSession],
         verifier: RpcSafeVerifier,
         configuration: PlatformConfiguration,
+        environ: Mapping[str, str] = os.environ,
     ) -> None:
         self._sessions = sessions
         self._verifier = verifier
         self._configuration = configuration
+        self._environ = environ
 
     async def _source(
         self, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -96,11 +118,352 @@ class GovernanceService:
                 "WRONG_CHAIN", 422, "The treasury chain is not enabled."
             ) from None
 
+    async def _treasury_setup(
+        self, organization_id: uuid.UUID, treasury_id: uuid.UUID
+    ) -> tuple[Treasury, Asset, list[TreasuryWallet]]:
+        async with self._sessions() as session:
+            treasury = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            if treasury is None:
+                raise GovernanceFailure("TREASURY_NOT_FOUND", 404, "Treasury not found.")
+            asset = await session.scalar(select(Asset).where(Asset.id == treasury.asset_id))
+            wallets = list(
+                await session.scalars(
+                    select(TreasuryWallet)
+                    .where(
+                        TreasuryWallet.treasury_id == treasury_id,
+                        TreasuryWallet.org_id == organization_id,
+                    )
+                    .order_by(TreasuryWallet.role, TreasuryWallet.label)
+                )
+            )
+        if asset is None:
+            raise GovernanceFailure("ASSET_NOT_FOUND", 409, "Treasury asset is unavailable.")
+        if not any(wallet.role == WalletRole.SOURCE for wallet in wallets):
+            raise GovernanceFailure("SAFE_NOT_FOUND", 409, "Treasury source Safe is unavailable.")
+        return treasury, asset, wallets
+
     async def _nonce(self, chain_id: int, safe: bytes) -> int:
         result = await self._read(
             chain_id, "eth_call", [{"to": _address(safe), "data": _NONCE_SELECTOR}, "latest"]
         )
         return int(str(result), 16)
+
+    async def _rpc_first(
+        self,
+        chain: Any,
+        method: str,
+        params: list[Any],
+        parse: Callable[[Any], Any] = lambda result: result,
+    ) -> Any:
+        """Return the first non-None parsed answer across HTTP providers, else None."""
+        for template in chain.rpc_urls:
+            if not template.startswith(("http://", "https://")):
+                continue
+            try:
+                result = parse(
+                    await asyncio.to_thread(
+                        _rpc, resolve_rpc_url(template, self._environ), method, params
+                    )
+                )
+            except Exception:
+                continue
+            if result is not None:
+                return result
+        return None
+
+    async def predict_module_address(
+        self, *, chain_id: int, safe: bytes, factory: bytes, salt: bytes
+    ) -> bytes:
+        chain = next(
+            (
+                item
+                for item in self._configuration.chains
+                if item.chain_id == chain_id and item.enabled
+            ),
+            None,
+        )
+        if chain is None:
+            raise GovernanceFailure("WRONG_CHAIN", 422, "The treasury chain is not enabled.")
+        data = module_factory_predict_data(safe_t=safe, salt=salt)
+
+        def parse_address(result: Any) -> bytes | None:
+            predicted = bytes.fromhex(str(result).removeprefix("0x"))
+            return predicted[-20:] if len(predicted) == 32 and any(predicted[-20:]) else None
+
+        address: bytes | None = await self._rpc_first(
+            chain,
+            "eth_call",
+            [{"to": _address(factory), "data": _hex(data)}, "latest"],
+            parse_address,
+        )
+        if address is not None:
+            code = await self._rpc_first(chain, "eth_getCode", [_address(address), "latest"], str)
+            if code is not None:
+                if code != "0x":
+                    raise GovernanceFailure(
+                        "MODULE_ALREADY_DEPLOYED",
+                        409,
+                        "The deterministic module address already has code.",
+                    )
+                return address
+        raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
+
+    async def _verified_deployment(self, chain_id: int, name: str, version: str) -> Any:
+        manifest = next(
+            (item for item in self._configuration.manifests if item.chain_id == chain_id), None
+        )
+        deployment = next(
+            (
+                item
+                for item in (manifest.deployments if manifest else ())
+                if item.name == name and item.version == version
+            ),
+            None,
+        )
+        if deployment is None:
+            raise GovernanceFailure(
+                "MODULE_DEPLOYMENT_UNAVAILABLE",
+                503,
+                f"The verified {name} deployment is not configured for this chain.",
+            )
+        chain = next(
+            (
+                item
+                for item in self._configuration.chains
+                if item.chain_id == chain_id and item.enabled
+            ),
+            None,
+        )
+        if chain is None:
+            raise GovernanceFailure("WRONG_CHAIN", 422, "The treasury chain is not enabled.")
+        verified = await self._rpc_first(
+            chain,
+            "eth_getCode",
+            [_address(deployment.address_bytes), "latest"],
+            lambda code: (
+                True
+                if (raw := bytes.fromhex(str(code).removeprefix("0x")))
+                and keccak(raw) == deployment.code_hash_bytes
+                else None
+            ),
+        )
+        if verified:
+            return deployment
+        raise RpcUnavailable(f"configured {name} code could not be verified on chain {chain_id}")
+
+    async def create_module_setup(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        user_id: uuid.UUID,
+        setup: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        # Serialize per treasury so the open-setup check and the row creation are atomic.
+        async with self._sessions() as lock_session, lock_session.begin():
+            await lock_session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"module-setup:{treasury_id}"},
+            )
+            return await self._create_module_setup(
+                organization_id=organization_id,
+                treasury_id=treasury_id,
+                user_id=user_id,
+                setup=setup,
+            )
+
+    async def _create_module_setup(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        user_id: uuid.UUID,
+        setup: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        treasury, asset, wallets = await self._treasury_setup(organization_id, treasury_id)
+        if treasury.module_address is not None or treasury.status.value not in (
+            "Draft",
+            "ModulePending",
+        ):
+            raise GovernanceFailure(
+                "MODULE_ALREADY_CONFIGURED",
+                409,
+                "This treasury already has a module setup in progress.",
+            )
+        async with self._sessions() as session:
+            existing = await session.scalar(
+                select(GovernanceTx.id)
+                .where(
+                    GovernanceTx.org_id == organization_id,
+                    GovernanceTx.treasury_id == treasury_id,
+                    GovernanceTx.purpose == GovernanceTxPurpose.MODULE_SETUP,
+                    GovernanceTx.status.in_(
+                        [
+                            GovernanceTxStatus.COLLECTING,
+                            GovernanceTxStatus.READY,
+                            GovernanceTxStatus.SUBMITTED,
+                        ]
+                    ),
+                )
+                .limit(1)
+            )
+        if existing is not None:
+            raise GovernanceFailure(
+                "MODULE_SETUP_IN_PROGRESS", 409, "A module setup transaction is already open."
+            )
+        source = next(wallet for wallet in wallets if wallet.role == WalletRole.SOURCE)
+        operational = [wallet for wallet in wallets if wallet.role == WalletRole.OPERATIONAL]
+        if not 1 <= len(operational) <= 2:
+            raise GovernanceFailure(
+                "INVALID_WALLET_SET", 409, "Treasury needs one or two operational Safes."
+            )
+
+        factory = await self._verified_deployment(
+            treasury.chain_id, "TREASURY_MODULE_FACTORY", "1.0.0"
+        )
+        await self._verified_deployment(
+            treasury.chain_id, "TREASURY_MODULE_IMPLEMENTATION", "1.0.0"
+        )
+        await self._verified_deployment(treasury.chain_id, "SAFE_MULTISEND_CALL_ONLY", "1.4.1")
+        safe_addresses = [wallet.safe_address for wallet in [source, *operational]]
+        try:
+            safe_info = await self._verifier.verify(
+                treasury.chain_id, [_address(address) for address in safe_addresses]
+            )
+        except RpcUnavailable:
+            raise
+        except SafeVerificationError as exc:
+            raise GovernanceFailure(
+                exc.code, 422, "A treasury Safe could not be verified."
+            ) from None
+
+        mandate = setup["mandate"]
+
+        def limit(name: str) -> tuple[int, int]:
+            return int(mandate[name]["perRequest"]), int(mandate[name]["daily"])
+
+        def safe_address_text(value: str) -> bytes:
+            return bytes.fromhex(value.removeprefix("0x"))
+
+        tuple_mandate = (
+            int(mandate["validFrom"]),
+            int(mandate["expiresAt"]),
+            int(mandate["payeeCoolingSeconds"]),
+            safe_address_text(mandate["executor"]),
+            safe_address_text(mandate["guardian"] or "0x" + "00" * 20),
+            limit("pay"),
+            limit("refill"),
+            int(mandate["approvalMaxAge"]),
+            limit("supply"),
+        )
+        approvers = [safe_address_text(item) for item in mandate["approvers"]]
+        buffers_by_address = {item["wallet"].lower(): item for item in setup["buffers"]}
+        expected_wallets = {"0x" + item.hex() for item in safe_addresses}
+        if set(buffers_by_address) != expected_wallets:
+            raise GovernanceFailure(
+                "BUFFER_SET_INVALID",
+                422,
+                "Supply one buffer entry for T and each operational Safe.",
+            )
+        if asset.address is None:
+            raise GovernanceFailure(
+                "ASSET_UNSUPPORTED", 422, "A native asset cannot initialize the module."
+            )
+        buffers = [
+            (
+                wallet.safe_address,
+                int(buffers_by_address[_address(wallet.safe_address).lower()]["minimum"]),
+                int(buffers_by_address[_address(wallet.safe_address).lower()]["target"]),
+            )
+            for wallet in [source, *operational]
+        ]
+        for buffer_wallet, minimum, target in buffers:
+            if buffer_wallet != source.safe_address and target < minimum:
+                raise GovernanceFailure(
+                    "BUFFER_TARGET_BELOW_MINIMUM",
+                    422,
+                    "An operational Safe buffer target must not be below its minimum.",
+                )
+        supply_per_request, supply_daily = limit("supply")
+        aave = None
+        manifest = next(
+            item for item in self._configuration.manifests if item.chain_id == treasury.chain_id
+        )
+        if supply_per_request or supply_daily:
+            aave = next((item for item in manifest.deployments if item.name == "AAVE_POOL"), None)
+            if aave is None:
+                raise GovernanceFailure(
+                    "AAVE_POOL_UNAVAILABLE", 503, "Aave pool is not configured."
+                )
+            await self._verified_deployment(treasury.chain_id, "AAVE_POOL", aave.version)
+        aave_address = aave.address_bytes if aave else bytes(20)
+        salt = keccak(b"TreasuryPilot.module.v1:" + treasury.id.bytes)
+        predicted = await self.predict_module_address(
+            chain_id=treasury.chain_id,
+            safe=source.safe_address,
+            factory=factory.address_bytes,
+            salt=salt,
+        )
+        create_data = module_factory_create_data(
+            asset=asset.address,
+            operational=[item.safe_address for item in operational],
+            mandate=tuple_mandate,
+            approvers=approvers,
+            buffers=buffers,
+            aave_pool=aave_address,
+            salt=salt,
+        )
+        source_calls = [
+            GovernanceCall(factory.address_bytes, 0, create_data),
+            GovernanceCall(source.safe_address, 0, enable_module_data(predicted)),
+        ]
+        created = []
+        try:
+            for wallet, _info in zip([source, *operational], safe_info, strict=True):
+                calls = (
+                    source_calls
+                    if wallet.role == WalletRole.SOURCE
+                    else [GovernanceCall(wallet.safe_address, 0, enable_module_data(predicted))]
+                )
+                created.append(
+                    await self.create(
+                        organization_id=organization_id,
+                        treasury_id=treasury_id,
+                        user_id=user_id,
+                        purpose=GovernanceTxPurpose.MODULE_SETUP,
+                        calls=calls,
+                        safe_address=wallet.safe_address,
+                    )
+                )
+        except Exception:
+            for created_tx in created:
+                # A failed cleanup must not mask the original error or skip the other rows.
+                try:
+                    async with self._sessions() as session, session.begin():
+                        row = await self._row(session, organization_id, created_tx["id"], lock=True)
+                        if row.status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
+                            row.status = GovernanceTxStatus.CANCELLED
+                except Exception:
+                    logger.exception("module setup rollback failed for %s", created_tx["id"])
+            raise
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            if row is not None:
+                row.status = row.status.__class__.MODULE_PENDING
+        return {
+            "governanceTx": created[0],
+            "operationalGovernanceTxs": created[1:],
+            "predictedModuleAddress": _address(predicted),
+            "status": "ModulePending",
+        }
 
     async def _receipt_status(
         self, chain_id: int, transaction_hash: bytes, safe: bytes, safe_tx_hash: bytes
@@ -124,6 +487,151 @@ class GovernanceService:
                 return _EXECUTION_EVENTS[event]
         return None
 
+    async def _record_module_event(self, *, organization_id: uuid.UUID, tx_id: uuid.UUID) -> None:
+        async with self._sessions() as session:
+            row = await self._row(session, organization_id, tx_id)
+            treasury = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == row.treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            asset = (
+                await session.scalar(select(Asset).where(Asset.id == treasury.asset_id))
+                if treasury is not None
+                else None
+            )
+            wallets = list(
+                await session.scalars(
+                    select(TreasuryWallet).where(
+                        TreasuryWallet.treasury_id == row.treasury_id,
+                        TreasuryWallet.org_id == organization_id,
+                    )
+                )
+            )
+        if (
+            row.purpose != GovernanceTxPurpose.MODULE_SETUP
+            or row.status != GovernanceTxStatus.EXECUTED
+            or treasury is None
+            or treasury.status == TreasuryStatus.READY
+            or asset is None
+            or asset.address is None
+            or row.exec_tx_hash is None
+        ):
+            return
+        source = next((item for item in wallets if item.role == WalletRole.SOURCE), None)
+        if source is None:
+            return
+        manifest = next(
+            (item for item in self._configuration.manifests if item.chain_id == row.chain_id), None
+        )
+        factory = next(
+            (
+                item
+                for item in (manifest.deployments if manifest else ())
+                if item.name == "TREASURY_MODULE_FACTORY" and item.version == "1.0.0"
+            ),
+            None,
+        )
+        implementation = next(
+            (
+                item
+                for item in (manifest.deployments if manifest else ())
+                if item.name == "TREASURY_MODULE_IMPLEMENTATION" and item.version == "1.0.0"
+            ),
+            None,
+        )
+        if factory is None or implementation is None:
+            return
+        chain = next(
+            (
+                item
+                for item in self._configuration.chains
+                if item.chain_id == row.chain_id and item.enabled
+            ),
+            None,
+        )
+        if chain is None:
+            return
+        module = treasury.module_address
+        if module is None and row.safe_address == source.safe_address:
+            expected_topic = _hex(keccak(b"TreasuryModuleCreated(address,address,address)"))
+            asset_address = asset.address
+
+            def parse_module(receipt: Any) -> bytes | None:
+                for log in (receipt or {}).get("logs", []):
+                    topics = [str(item).lower() for item in log.get("topics", [])]
+                    if (
+                        str(log.get("address", "")).lower()
+                        == _address(factory.address_bytes).lower()
+                        and len(topics) == 3
+                        and topics[0] == expected_topic.lower()
+                        and topics[1] == "0x" + source.safe_address.hex().rjust(64, "0")
+                        and topics[2] != "0x" + "0" * 64
+                        and str(log.get("data", "")).lower()
+                        == "0x" + "0" * 24 + asset_address.hex()
+                    ):
+                        return bytes.fromhex(topics[2][2:])[-20:]
+                return None
+
+            module = await self._rpc_first(
+                chain, "eth_getTransactionReceipt", [_hex(row.exec_tx_hash)], parse_module
+            )
+            if module is None:
+                return
+            expected_runtime = (
+                bytes.fromhex("363d3d373d3d3d363d73")
+                + implementation.address_bytes
+                + bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
+            )
+            valid_clone = await self._rpc_first(
+                chain,
+                "eth_getCode",
+                [_address(module), "latest"],
+                lambda code: (
+                    True
+                    if bytes.fromhex(str(code).removeprefix("0x")) == expected_runtime
+                    else None
+                ),
+            )
+            if not valid_clone:
+                return
+            async with self._sessions() as session, session.begin():
+                current = await session.scalar(
+                    select(Treasury)
+                    .where(Treasury.id == row.treasury_id, Treasury.org_id == organization_id)
+                    .with_for_update()
+                )
+                if current is not None and current.module_address in (None, module):
+                    current.module_address = module
+                    current.status = TreasuryStatus.MODULE_PENDING
+        if module is None:
+            return
+        enabled_selector = keccak(b"isModuleEnabled(address)")[:4]
+        all_enabled = True
+        for wallet in wallets:
+            enabled = await self._rpc_first(
+                chain,
+                "eth_call",
+                [
+                    {
+                        "to": _address(wallet.safe_address),
+                        "data": _hex(enabled_selector + encode(["address"], [module])),
+                    },
+                    "latest",
+                ],
+                lambda result: int(str(result), 16) == 1,
+            )
+            all_enabled = all_enabled and bool(enabled)
+        if all_enabled:
+            async with self._sessions() as session, session.begin():
+                current = await session.scalar(
+                    select(Treasury)
+                    .where(Treasury.id == row.treasury_id, Treasury.org_id == organization_id)
+                    .with_for_update()
+                )
+                if current is not None and current.module_address == module:
+                    current.status = TreasuryStatus.READY
+
     async def create(
         self,
         *,
@@ -132,8 +640,26 @@ class GovernanceService:
         user_id: uuid.UUID,
         purpose: GovernanceTxPurpose,
         calls: list[GovernanceCall],
+        safe_address: bytes | None = None,
     ) -> dict[str, Any]:
-        treasury, wallet = await self._source(organization_id, treasury_id)
+        if safe_address is None:
+            treasury, wallet = await self._source(organization_id, treasury_id)
+        else:
+            async with self._sessions() as session:
+                wallet_row = await session.execute(
+                    select(Treasury, TreasuryWallet)
+                    .join(TreasuryWallet, TreasuryWallet.treasury_id == Treasury.id)
+                    .where(
+                        Treasury.id == treasury_id,
+                        Treasury.org_id == organization_id,
+                        TreasuryWallet.org_id == organization_id,
+                        TreasuryWallet.safe_address == safe_address,
+                    )
+                )
+                item = wallet_row.one_or_none()
+            if item is None:
+                raise GovernanceFailure("SAFE_NOT_FOUND", 404, "Treasury Safe not found.")
+            treasury, wallet = item
         safe = "0x" + wallet.safe_address.hex()
         try:
             info = (await self._verifier.verify(treasury.chain_id, [safe]))[0]
@@ -357,7 +883,7 @@ class GovernanceService:
         async with self._sessions() as session:
             row = await self._row(session, organization_id, governance_tx_id)
             chain_id, safe = row.chain_id, row.safe_address
-            nonce, status = row.safe_nonce, row.status
+            nonce, status, purpose = row.safe_nonce, row.status, row.purpose
             submitted_hash, signed_hash = row.exec_tx_hash, row.safe_tx_hash
         next_status: GovernanceTxStatus | None = None
         if status == GovernanceTxStatus.SUBMITTED and submitted_hash is not None:
@@ -372,6 +898,9 @@ class GovernanceService:
         elif status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
             if await self._nonce(chain_id, safe) > nonce:
                 next_status = GovernanceTxStatus.SUPERSEDED
+        elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MODULE_SETUP:
+            # Retry the module reconciliation if a transient RPC failure skipped it earlier.
+            await self._record_module_event(organization_id=organization_id, tx_id=governance_tx_id)
         if next_status is not None:
             async with self._sessions() as session, session.begin():
                 row = await self._row(session, organization_id, governance_tx_id)
@@ -388,6 +917,10 @@ class GovernanceService:
                     row.status = next_status
                     if next_status == GovernanceTxStatus.READY:
                         row.exec_tx_hash = None
+            if next_status == GovernanceTxStatus.EXECUTED:
+                await self._record_module_event(
+                    organization_id=organization_id, tx_id=governance_tx_id
+                )
 
     async def sign(
         self,

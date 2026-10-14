@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
@@ -43,6 +44,106 @@ class SignatureRequest(ApiModel):
 
 class SubmittedRequest(ApiModel):
     transaction_hash: str = Field(pattern=r"^0x[0-9a-fA-F]{64}$")
+
+
+class ModuleLimitInput(ApiModel):
+    per_request: str = Field(alias="perRequest", pattern=r"^(0|[1-9][0-9]*)$", max_length=78)
+    daily: str = Field(pattern=r"^(0|[1-9][0-9]*)$", max_length=78)
+
+    @model_validator(mode="after")
+    def valid_limit(self) -> ModuleLimitInput:
+        if int(self.per_request) > int(self.daily):
+            raise ValueError("perRequest must not exceed daily")
+        if int(self.daily) > (1 << 128) - 1:
+            raise ValueError("limits must fit uint128")
+        return self
+
+
+class ModuleMandateInput(ApiModel):
+    valid_from: datetime = Field(alias="validFrom")
+    expires_at: datetime = Field(alias="expiresAt")
+    payee_cooling_seconds: int = Field(alias="payeeCoolingSeconds", ge=1, le=2**32 - 1)
+    executor: str = Field(pattern=r"^0x[0-9a-fA-F]{40}$")
+    guardian: str | None = Field(default=None, pattern=r"^0x[0-9a-fA-F]{40}$")
+    pay: ModuleLimitInput
+    refill: ModuleLimitInput
+    supply: ModuleLimitInput
+    approval_max_age: int = Field(alias="approvalMaxAge", ge=1, le=2**32 - 1)
+    approvers: list[Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]] = Field(
+        min_length=1, max_length=32
+    )
+
+    @field_validator("executor", "guardian")
+    @classmethod
+    def normalize_address(cls, value: str | None) -> str | None:
+        return value.lower() if value else value
+
+    @field_validator("executor")
+    @classmethod
+    def executor_nonzero(cls, value: str) -> str:
+        if int(value[2:], 16) == 0:
+            raise ValueError("executor must be nonzero")
+        return value
+
+    @field_validator("approvers")
+    @classmethod
+    def normalize_approvers(cls, values: list[str]) -> list[str]:
+        normalized = [item.lower() for item in values]
+        if len(set(normalized)) != len(normalized) or "0x" + "00" * 20 in normalized:
+            raise ValueError("approvers must be unique and nonzero")
+        return normalized
+
+    @model_validator(mode="after")
+    def valid_window(self) -> ModuleMandateInput:
+        start = (
+            self.valid_from.replace(tzinfo=UTC)
+            if self.valid_from.tzinfo is None
+            else self.valid_from
+        )
+        end = (
+            self.expires_at.replace(tzinfo=UTC)
+            if self.expires_at.tzinfo is None
+            else self.expires_at
+        )
+        if end <= start:
+            raise ValueError("expiresAt must be after validFrom")
+        if start.timestamp() < 0 or end.timestamp() > (1 << 64) - 1:
+            raise ValueError("mandate timestamps must fit uint64")
+        if int(self.supply.per_request) == 0 and int(self.supply.daily) != 0:
+            raise ValueError("supply perRequest and daily must both be zero or nonzero")
+        if int(self.supply.daily) == 0 and int(self.supply.per_request) != 0:
+            raise ValueError("supply perRequest and daily must both be zero or nonzero")
+        return self
+
+
+class ModuleBufferInput(ApiModel):
+    wallet: str = Field(pattern=r"^0x[0-9a-fA-F]{40}$")
+    minimum: str = Field(pattern=r"^(0|[1-9][0-9]*)$", max_length=78)
+    target: str = Field(pattern=r"^(0|[1-9][0-9]*)$", max_length=78)
+
+    @field_validator("wallet")
+    @classmethod
+    def normalize_address(cls, value: str) -> str:
+        return value.lower()
+
+    @model_validator(mode="after")
+    def valid_buffer_amounts(self) -> ModuleBufferInput:
+        maximum = (1 << 256) - 1
+        if int(self.minimum) > maximum or int(self.target) > maximum:
+            raise ValueError("buffer amounts must fit uint256")
+        return self
+
+
+class CreateModuleSetupRequest(ApiModel):
+    mandate: ModuleMandateInput
+    buffers: list[ModuleBufferInput] = Field(min_length=2, max_length=3)
+
+    @field_validator("buffers")
+    @classmethod
+    def unique_wallets(cls, values: list[ModuleBufferInput]) -> list[ModuleBufferInput]:
+        if len({item.wallet for item in values}) != len(values):
+            raise ValueError("buffers must list each wallet once")
+        return values
 
 
 def _service(request: Request) -> GovernanceService:
@@ -100,6 +201,47 @@ async def create_governance_tx(
             user_id=member.user_id,
             purpose=payload.purpose,
             calls=calls,
+        )
+    except GovernanceFailure as exc:
+        raise _failure(exc) from None
+    except RpcUnavailable:
+        raise _rpc_failure() from None
+
+
+@router.post("/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx", status_code=201)
+async def create_module_setup(
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    payload: CreateModuleSetupRequest,
+    request: Request,
+    member: Annotated[MemberAccess, Depends(require_role(OrganizationRole.OWNER))],
+) -> dict[str, Any]:
+    mandate = payload.mandate
+
+    def utc_timestamp(value: datetime) -> int:
+        return int((value.replace(tzinfo=UTC) if value.tzinfo is None else value).timestamp())
+
+    setup = {
+        "mandate": {
+            "validFrom": utc_timestamp(mandate.valid_from),
+            "expiresAt": utc_timestamp(mandate.expires_at),
+            "payeeCoolingSeconds": mandate.payee_cooling_seconds,
+            "executor": mandate.executor,
+            "guardian": mandate.guardian,
+            "pay": mandate.pay.model_dump(by_alias=True),
+            "refill": mandate.refill.model_dump(by_alias=True),
+            "supply": mandate.supply.model_dump(by_alias=True),
+            "approvalMaxAge": mandate.approval_max_age,
+            "approvers": mandate.approvers,
+        },
+        "buffers": [item.model_dump() for item in payload.buffers],
+    }
+    try:
+        return await _service(request).create_module_setup(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            user_id=member.user_id,
+            setup=setup,
         )
     except GovernanceFailure as exc:
         raise _failure(exc) from None

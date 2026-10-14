@@ -9,18 +9,22 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
 
+from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     build_borrow_authorization_call,
     build_repay_authorization_call,
     build_safe_transaction,
     decode_multisend_calls,
+    enable_module_data,
     exec_transaction_data,
+    module_factory_create_data,
     pack_signatures,
     safe_tx_hash,
 )
-from treasurypilot_api.mandate.governance_service import GovernanceService
+from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
 from treasurypilot_api.mandate.models import GovernanceTx, GovernanceTxPurpose, GovernanceTxStatus
+from treasurypilot_api.treasury.config import PlatformConfiguration
 
 SAFE = bytes.fromhex("11" * 20)
 MULTISEND = bytes.fromhex("22" * 20)
@@ -152,6 +156,82 @@ def test_multisend_requires_configured_call_only_and_nonempty_calls() -> None:
         )
 
 
+def test_module_factory_create_calldata_encodes_initializer_and_salt() -> None:
+    asset = bytes.fromhex("55" * 20)
+    operational = [bytes.fromhex("66" * 20)]
+    executor = bytes.fromhex("77" * 20)
+    guardian = bytes.fromhex("88" * 20)
+    approver = bytes.fromhex("99" * 20)
+    pool = bytes.fromhex("aa" * 20)
+    salt = bytes.fromhex("bb" * 32)
+    mandate = (1, 2, 3, executor, guardian, (4, 5), (6, 7), 8, (0, 0))
+    buffers = [(SAFE, 10, 10), (operational[0], 20, 30)]
+
+    data = module_factory_create_data(
+        asset=asset,
+        operational=operational,
+        mandate=mandate,
+        approvers=[approver],
+        buffers=buffers,
+        aave_pool=pool,
+        salt=salt,
+    )
+
+    assert len(data) > 4
+    assert (
+        data[:4]
+        == keccak(
+            b"createDeterministic(address,address[],(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)"
+        )[:4]
+    )
+    decoded = decode(
+        [
+            "address",
+            "address[]",
+            "(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128))",
+            "address[]",
+            "(address,uint256,uint256)[]",
+            "address",
+            "bytes32",
+        ],
+        data[4:],
+    )
+
+    def as_bytes(address: str) -> bytes:
+        return bytes.fromhex(address[2:])
+
+    assert as_bytes(decoded[0]) == asset
+    assert [as_bytes(address) for address in decoded[1]] == operational
+    assert decoded[2] == (
+        1,
+        2,
+        3,
+        "0x" + executor.hex(),
+        "0x" + guardian.hex(),
+        (4, 5),
+        (6, 7),
+        8,
+        (0, 0),
+    )
+    assert [as_bytes(address) for address in decoded[3]] == [approver]
+    assert [
+        (as_bytes(wallet), minimum, target) for wallet, minimum, target in decoded[4]
+    ] == buffers
+    assert as_bytes(decoded[5]) == pool
+    assert decoded[6] == salt
+    assert enable_module_data(SAFE)[:4] == keccak(b"enableModule(address)")[:4]
+
+
+def test_module_setup_fails_closed_when_factory_manifest_is_missing() -> None:
+    service = GovernanceService(None, None, PlatformConfiguration(chains=(), manifests=()))
+
+    with pytest.raises(GovernanceFailure, match="verified TREASURY_MODULE_FACTORY") as error:
+        asyncio.run(service._verified_deployment(11155111, "TREASURY_MODULE_FACTORY", "1.0.0"))
+
+    assert error.value.status == 503
+    assert error.value.code == "MODULE_DEPLOYMENT_UNAVAILABLE"
+
+
 def test_safe_tx_typed_data_hashes_and_packs_owner_signatures_in_address_order() -> None:
     account_a = Account.from_key(bytes.fromhex("01" * 32))
     account_b = Account.from_key(bytes.fromhex("02" * 32))
@@ -229,6 +309,56 @@ def test_signature_from_non_owner_is_rejected() -> None:
             [bytes.fromhex(owner.address[2:])],
             1,
         )
+
+
+def _setup_payload(buffers: list[dict[str, str]], approvers: list[str] | None = None) -> dict:
+    limit = {"perRequest": "1", "daily": "2"}
+    return {
+        "mandate": {
+            "validFrom": "2030-01-01T00:00:00Z",
+            "expiresAt": "2031-01-01T00:00:00Z",
+            "payeeCoolingSeconds": 60,
+            "executor": "0x" + "77" * 20,
+            "pay": limit,
+            "refill": limit,
+            "supply": {"perRequest": "0", "daily": "0"},
+            "approvalMaxAge": 60,
+            "approvers": approvers or ["0x" + "99" * 20],
+        },
+        "buffers": buffers,
+    }
+
+
+def test_module_setup_request_rejects_duplicate_buffer_wallets_and_bad_approvers() -> None:
+    wallet = {"wallet": "0x" + "AA" * 20, "minimum": "1", "target": "2"}
+    other = {"wallet": "0x" + "bb" * 20, "minimum": "1", "target": "2"}
+
+    CreateModuleSetupRequest.model_validate(_setup_payload([wallet, other]))
+    with pytest.raises(ValueError, match="each wallet once"):
+        CreateModuleSetupRequest.model_validate(
+            _setup_payload([wallet, {**wallet, "wallet": wallet["wallet"].lower()}, other])
+        )
+    with pytest.raises(ValueError, match="String should match pattern"):
+        CreateModuleSetupRequest.model_validate(_setup_payload([wallet, other], ["0x12"]))
+
+
+def test_rpc_first_skips_failing_providers_and_unparseable_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = {"http://a": RuntimeError("down"), "http://b": None, "http://c": "0x01"}
+
+    def fake_rpc(url: str, method: str, params: list) -> object:
+        answer = answers[url]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr("treasurypilot_api.mandate.governance_service._rpc", fake_rpc)
+    service = GovernanceService(None, None, PlatformConfiguration(chains=(), manifests=()))
+    chain = type("Chain", (), {"rpc_urls": ("ws://x", "http://a", "http://b", "http://c")})()
+
+    assert asyncio.run(service._rpc_first(chain, "eth_call", [])) == "0x01"
+    assert asyncio.run(service._rpc_first(chain, "eth_call", [], lambda _: None)) is None
 
 
 class _FakeVerifier:

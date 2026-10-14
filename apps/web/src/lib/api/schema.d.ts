@@ -653,6 +653,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Module Setup */
+    post: operations['create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -836,6 +853,12 @@ export interface components {
       /** Calls */
       calls: components['schemas']['CallInput'][];
       purpose: components['schemas']['GovernanceTxPurpose'];
+    };
+    /** CreateModuleSetupRequest */
+    CreateModuleSetupRequest: {
+      /** Buffers */
+      buffers: components['schemas']['ModuleBufferInput'][];
+      mandate: components['schemas']['ModuleMandateInput'];
     };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
@@ -1203,6 +1226,48 @@ export interface components {
       signerRolesActive: boolean;
       /** Status */
       status: string;
+    };
+    /** ModuleBufferInput */
+    ModuleBufferInput: {
+      /** Minimum */
+      minimum: string;
+      /** Target */
+      target: string;
+      /** Wallet */
+      wallet: string;
+    };
+    /** ModuleLimitInput */
+    ModuleLimitInput: {
+      /** Daily */
+      daily: string;
+      /** Perrequest */
+      perRequest: string;
+    };
+    /** ModuleMandateInput */
+    ModuleMandateInput: {
+      /** Approvalmaxage */
+      approvalMaxAge: number;
+      /** Approvers */
+      approvers: string[];
+      /** Executor */
+      executor: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Guardian */
+      guardian?: string | null;
+      pay: components['schemas']['ModuleLimitInput'];
+      /** Payeecoolingseconds */
+      payeeCoolingSeconds: number;
+      refill: components['schemas']['ModuleLimitInput'];
+      supply: components['schemas']['ModuleLimitInput'];
+      /**
+       * Validfrom
+       * Format: date-time
+       */
+      validFrom: string;
     };
     /** OrganizationChecklist */
     OrganizationChecklist: {
@@ -2875,6 +2940,44 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MandateDraftResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateModuleSetupRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
