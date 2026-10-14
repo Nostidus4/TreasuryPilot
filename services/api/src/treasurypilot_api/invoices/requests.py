@@ -480,8 +480,8 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     today = datetime.now(UTC).date()
-    if row.due_at is None or row.issue_date is None:  # unconfirmed upload draft
-        return []
+    if row.due_at is None or row.issue_date is None or row.amount is None or row.payee_id is None:
+        return []  # unconfirmed upload draft
     # shortcut: updated_at stands in for the paid date (any later write to a Paid row shifts it),
     # and every Paid row in the window is loaded for the median; revisit when paid_at exists.
     history_rows = await session.execute(
@@ -502,6 +502,7 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
     history = tuple(
         PaidInvoice(int(amount), updated_at.date(), payee_id, address)
         for amount, updated_at, payee_id, address in history_rows
+        if amount is not None and payee_id is not None  # Paid rows always have both
     )
     previous_paid_row = (
         await session.execute(
@@ -543,7 +544,7 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
     # Only payee id and address are read; the amount and date are placeholders (not windowed).
     previous_paid = (
         PaidInvoice(0, today, previous_paid_row[0], previous_paid_row[1])
-        if previous_paid_row is not None
+        if previous_paid_row is not None and previous_paid_row[0] is not None
         else None
     )
     anomaly_flags = evaluate_anomalies(
