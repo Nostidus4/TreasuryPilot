@@ -10,6 +10,7 @@ from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.notifications import category_for_event
 from treasurypilot_worker.notify.routing import NotificationPolicy, policy_for_event
 
 logger = logging.getLogger(__name__)
@@ -26,18 +27,40 @@ FOR UPDATE SKIP LOCKED
 # One statement per event: resolve recipients and insert their notifications together.
 _INSERT_NOTIFICATIONS = """
 INSERT INTO notifications
-    (id, org_id, user_id, event_id, type, title, body, link, severity)
-SELECT gen_random_uuid(), $1, recipients.user_id, $2, $3, $4, $5, $6, $7
-FROM (
-    SELECT DISTINCT m.user_id
-    FROM memberships AS m
-    JOIN users AS u ON u.id = m.user_id
-    WHERE m.org_id = $1
-      AND m.status = 'active'
-      AND u.status = 'active'
-      AND (m.roles && $8::text[] OR m.user_id = ANY($9::uuid[]) OR m.user_id = $10)
-      AND NOT (m.user_id = ANY($11::uuid[]))
-) AS recipients
+    (id, org_id, user_id, event_id, type, title, body, link, severity, created_at)
+SELECT gen_random_uuid(), $1, m.user_id, $2, $3, $4, $5, $6, $7,
+       CASE
+           WHEN $12 <> 'mandatory'
+            AND p.quiet_hours_start IS NOT NULL
+            AND (
+                (p.quiet_hours_start < p.quiet_hours_end
+                    AND local_time.now_time >= p.quiet_hours_start
+                    AND local_time.now_time < p.quiet_hours_end)
+                OR (p.quiet_hours_start > p.quiet_hours_end
+                    AND (local_time.now_time >= p.quiet_hours_start
+                         OR local_time.now_time < p.quiet_hours_end))
+            )
+           THEN ((local_time.now_local::date + p.quiet_hours_end
+                  + CASE WHEN p.quiet_hours_start > p.quiet_hours_end
+                              AND local_time.now_time >= p.quiet_hours_start
+                         THEN interval '1 day' ELSE interval '0 day' END)
+                 AT TIME ZONE p.timezone)
+           ELSE now()
+       END
+FROM memberships AS m
+JOIN users AS u ON u.id = m.user_id
+LEFT JOIN notification_preferences AS p ON p.user_id = m.user_id
+CROSS JOIN LATERAL (
+    SELECT timezone(COALESCE(p.timezone, 'UTC'), now()) AS now_local,
+           timezone(COALESCE(p.timezone, 'UTC'), now())::time AS now_time
+) AS local_time
+WHERE m.org_id = $1
+  AND m.status = 'active'
+  AND u.status = 'active'
+  AND (m.roles && $8::text[] OR m.user_id = ANY($9::uuid[]) OR m.user_id = $10)
+  AND NOT (m.user_id = ANY($11::uuid[]))
+  AND ($12 = 'mandatory' OR COALESCE((p.channels ->> 'in_app')::boolean, true))
+  AND ($12 = 'mandatory' OR COALESCE((p.categories ->> $12)::boolean, true))
 ON CONFLICT (user_id, event_id) DO NOTHING
 """
 
@@ -120,6 +143,7 @@ async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
         _creator_id(policy, payload),
         # Maker-checker: people who cannot act on the event (e.g. the request's creator)
         list(_user_ids(payload, "excludeUserIds")),
+        category_for_event(event["type"]).value,
     )
     if status.endswith(" 0"):
         logger.warning(

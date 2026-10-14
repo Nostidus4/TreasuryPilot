@@ -79,6 +79,7 @@ class _FakeConnection:
             {"user_id": self.other_owner_id, "roles": ["Owner"]},
         )
         self.notifications: dict[tuple[uuid.UUID, uuid.UUID], tuple[Any, ...]] = {}
+        self.preferences: dict[uuid.UUID, tuple[dict[str, bool], dict[str, bool]]] = {}
         self.claim_query = ""
         self.insert_query = ""
 
@@ -94,16 +95,22 @@ class _FakeConnection:
         if "ON CONFLICT (user_id, event_id) DO NOTHING" in query:
             self.insert_query = query
             org_id, event_id = args[0], args[1]
-            roles, user_ids, creator_id, excluded = (
+            roles, user_ids, creator_id, excluded, category = (
                 set(args[7]),
                 set(args[8]),
                 args[9],
                 set(args[10]),
+                args[11],
             )
             inserted = 0
             for membership in self.memberships:
                 user_id = membership["user_id"]
                 if user_id in excluded:
+                    continue
+                channels, categories = self.preferences.get(user_id, ({}, {}))
+                if category != "mandatory" and (
+                    channels.get("in_app", True) is False or categories.get(category, True) is False
+                ):
                     continue
                 if (
                     roles.intersection(membership["roles"])
@@ -177,6 +184,39 @@ def test_governance_signature_routes_only_to_safe_owner_user_ids() -> None:
     assert recipients == {connection.owner_id}
 
 
+def test_preferences_filter_regular_events_but_never_mandatory_events() -> None:
+    connection = _FakeConnection()
+    connection.preferences[connection.approver_id] = ({"in_app": False}, {})
+    connection.preferences[connection.owner_id] = ({}, {"mandatory": False})
+    connection.preferences[connection.finance_id] = ({}, {"approvals": False})
+
+    async def exercise() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+    assert set(connection.notifications) == set()
+
+    connection.events = [dict(connection.event_data)]
+    event = connection.events[0]
+    event.update(
+        id=uuid.uuid4(),
+        type="Discrepancy",
+        payload="{}",
+        published=False,
+        failed=False,
+    )
+
+    async def publish_mandatory() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(publish_mandatory())
+    assert {user for user, _ in connection.notifications} == {
+        connection.owner_id,
+        connection.other_owner_id,
+        connection.finance_id,
+    }
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -188,6 +228,7 @@ def test_postgres_publisher_routes_and_deduplicates_notifications() -> None:
     approver_id = uuid.uuid4()
     finance_id = uuid.uuid4()
     event_id = uuid.uuid4()
+    quiet_event_id = uuid.uuid4()
     entity_id = uuid.uuid4()
 
     async def exercise() -> None:
@@ -243,7 +284,57 @@ def test_postgres_publisher_routes_and_deduplicates_notifications() -> None:
                     "SELECT count(*) FROM notifications WHERE event_id = $1", event_id
                 )
                 assert count == 1
+
+                # A muted channel/category cannot suppress a mandatory event.
+                await connection.execute(
+                    "INSERT INTO notification_preferences "
+                    "(user_id, channels, categories, timezone) "
+                    "VALUES ($1, '{\"in_app\": false}'::jsonb, "
+                    "'{\"approvals\": false, \"mandatory\": false}'::jsonb, 'UTC')",
+                    finance_id,
+                )
+                await connection.execute(
+                    "UPDATE domain_events SET type = 'Discrepancy', published_at = NULL "
+                    "WHERE id = $1",
+                    event_id,
+                )
+            assert await publish_from_pool(pool) == 1
+            async with pool.acquire() as connection:
+                mandatory_count = await connection.fetchval(
+                    "SELECT count(*) FROM notifications WHERE event_id = $1 AND user_id = $2",
+                    event_id,
+                    finance_id,
+                )
+                assert mandatory_count == 1
+
+                # Quiet hours hold an ordinary in-app notification until the
+                # user's next local quiet-hours end.
+                await connection.execute(
+                    "UPDATE notification_preferences SET channels = '{\"in_app\": true}'::jsonb, "
+                    "categories = '{}'::jsonb, quiet_hours_start = '00:00', "
+                    "quiet_hours_end = '23:59:59', timezone = 'UTC' WHERE user_id = $1",
+                    finance_id,
+                )
+                await connection.execute(
+                    "INSERT INTO domain_events "
+                    "(id, org_id, type, entity_type, entity_id, payload) "
+                    "VALUES ($1, $2, 'PaymentDone', 'payment_request', $3, '{}'::jsonb)",
+                    quiet_event_id,
+                    organization_id,
+                    entity_id,
+                )
+            assert await publish_from_pool(pool) == 1
+            async with pool.acquire() as connection:
+                deferred_at = await connection.fetchval(
+                    "SELECT created_at FROM notifications WHERE event_id = $1 AND user_id = $2",
+                    quiet_event_id,
+                    finance_id,
+                )
+                assert deferred_at is not None and await connection.fetchval(
+                    "SELECT $1::timestamptz > now()", deferred_at
+                )
                 await connection.execute("DELETE FROM domain_events WHERE id = $1", event_id)
+                await connection.execute("DELETE FROM domain_events WHERE id = $1", quiet_event_id)
                 await connection.execute("DELETE FROM organizations WHERE id = $1", organization_id)
                 await connection.execute(
                     "DELETE FROM users WHERE id = ANY($1::uuid[])", [approver_id, finance_id]
