@@ -1,0 +1,81 @@
+id: sc-017
+family: over-cap-exception
+as_of: '2026-10-14'
+treasury:
+  stablecoin_decimals: 6
+  balances:
+    T: '10000000000'
+    O1: '20000000'
+  buffers:
+    T: '1000000000'
+    O1: '10000000'
+  targets:
+    O1: '150000000'
+  limits:
+    pay:
+      per_request: '2000000000'
+      daily: '10000000000'
+    refill:
+      per_request: '2500000000'
+      daily: '12000000000'
+  used_today:
+    pay: '0'
+    refill: '0'
+rates:
+  supply_rate_bps: 0
+  borrow_rate_bps: 800
+payees:
+- id: vendor-a
+  address: '0x1111111111111111111111111111111111111111'
+  active_from: '2026-10-04'
+- id: vendor-b
+  address: '0x2222222222222222222222222222222222222222'
+  active_from: '2026-10-04'
+requests:
+- id: r1
+  payee: vendor-a
+  wallet: O1
+  amount: '2100000000'
+  due: '2026-10-16'
+  approved_seq: 1
+  terms: {}
+assumptions:
+  synthetic: true
+  horizon_days: 30
+  future_inflows: []
+  estimated_execution_fee: '0'
+  other_holds: '0'
+  all_requests_human_approved: true
+  review_status: pending_second_person
+  authoring_exposure: AI-authored and public; not an unseen evaluation set
+expected:
+  value: '0'
+  transaction_count: 0
+  missed_deadlines: 1
+  refills: []
+  balances_after:
+    T: '10000000000'
+    O1: '20000000'
+  schedule: {}
+  violations: 0
+  infeasible:
+  - id: r1
+    reason: NEEDS_EXCEPTION
+  explanation: Independent enumeration of ordered feasible 30-day schedules. Maximize
+    completion, then minimize missed deadlines, maximize modeled value, minimize transactions;
+    ties use day/approval sequence/request ID. No future inflows or AI priority weight.
+expected_b0:
+  value: '0'
+  transaction_count: 0
+  missed_deadlines: 1
+  refills: []
+  balances_after:
+    T: '10000000000'
+    O1: '20000000'
+  schedule: {}
+  violations: 0
+  infeasible:
+  - id: r1
+    reason: NEEDS_EXCEPTION
+  liquidity_action: NONE
+  explanation: Independent EDF reference; idle cash and no lending actions.

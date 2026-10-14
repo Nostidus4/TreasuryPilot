@@ -310,6 +310,23 @@
         "title": "AuditVerifyResponse",
         "type": "object"
       },
+      "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "treasury_id": {
+            "format": "uuid",
+            "title": "Treasury Id",
+            "type": "string"
+          }
+        },
+        "required": ["treasury_id", "file"],
+        "title": "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "type": "object"
+      },
       "BundleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -654,6 +671,22 @@
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
+      "DocumentUrlResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "expiresAt"],
+        "title": "DocumentUrlResponse",
+        "type": "object"
+      },
       "EvidenceBundle": {
         "additionalProperties": false,
         "properties": {
@@ -817,17 +850,56 @@
         "title": "EvidenceBundle",
         "type": "object"
       },
-      "FlagAcknowledgment": {
+      "ExtractionConfirmation": {
         "properties": {
-          "note": {
-            "maxLength": 2000,
-            "minLength": 10,
-            "title": "Note",
+          "amount": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Amount",
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "title": "Duedate",
+            "type": "string"
+          },
+          "invoiceCountInDocument": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Invoicecountindocument",
+            "type": "integer"
+          },
+          "invoiceNo": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Invoiceno",
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "title": "Issuedate",
+            "type": "string"
+          },
+          "payeeId": {
+            "format": "uuid",
+            "title": "Payeeid",
+            "type": "string"
+          },
+          "vendorId": {
+            "format": "uuid",
+            "title": "Vendorid",
             "type": "string"
           }
         },
-        "required": ["note"],
-        "title": "FlagAcknowledgment",
+        "required": [
+          "vendorId",
+          "payeeId",
+          "invoiceNo",
+          "issueDate",
+          "dueDate",
+          "amount"
+        ],
+        "title": "ExtractionConfirmation",
         "type": "object"
       },
       "FlagEvidence": {
@@ -2440,19 +2512,6 @@
         "title": "RequestPatch",
         "type": "object"
       },
-      "RequestReason": {
-        "properties": {
-          "reason": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": ["reason"],
-        "title": "RequestReason",
-        "type": "object"
-      },
       "ReviewAction": {
         "enum": [
           "RETRY",
@@ -2899,6 +2958,27 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "properties": {
+          "documentId": {
+            "format": "uuid",
+            "title": "Documentid",
+            "type": "string"
+          },
+          "extractionJobId": {
+            "title": "Extractionjobid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "title": "Requestid",
+            "type": "string"
+          }
+        },
+        "required": ["requestId", "documentId", "extractionJobId"],
+        "title": "UploadResponse",
         "type": "object"
       },
       "UserView": {
@@ -4887,6 +4967,76 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/upload": {
+      "post": {
+        "operationId": "upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Invoice Document",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}": {
       "patch": {
         "operationId": "edit_request_v1_orgs__organization_id__requests__request_id__patch",
@@ -4967,6 +5117,68 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/{request_id}/documents/{document_id}/url": {
+      "get": {
+        "operationId": "document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Read Url",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}/evidence": {
       "get": {
         "operationId": "get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get",
@@ -5018,9 +5230,10 @@
         "tags": ["audit"]
       }
     },
-    "/v1/orgs/{organization_id}/requests/{request_id}/flags/{flag_id}/ack": {
+    "/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm": {
       "post": {
-        "operationId": "acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post",
+        "description": "Apply operator-reviewed extraction fields to the current upload draft.",
+        "operationId": "confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post",
         "parameters": [
           {
             "in": "path",
@@ -5041,23 +5254,13 @@
               "title": "Request Id",
               "type": "string"
             }
-          },
-          {
-            "in": "path",
-            "name": "flag_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Flag Id",
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FlagAcknowledgment"
+                "$ref": "#/components/schemas/ExtractionConfirmation"
               }
             }
           },
@@ -5069,7 +5272,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Acknowledge Flag V1 Orgs  Organization Id  Requests  Request Id  Flags  Flag Id  Ack Post",
+                  "title": "Response Confirm Extraction V1 Orgs  Organization Id  Requests  Request Id  Extraction Confirm Post",
                   "type": "object"
                 }
               }
@@ -5087,158 +5290,8 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Acknowledge Flag",
-        "tags": ["requests"],
-        "x-organization-scoped": true
-      }
-    },
-    "/v1/orgs/{organization_id}/requests/{request_id}/request-changes": {
-      "post": {
-        "operationId": "request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Request Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RequestReason"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Request Changes V1 Orgs  Organization Id  Requests  Request Id  Request Changes Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Request Changes",
-        "tags": ["requests"],
-        "x-organization-scoped": true
-      }
-    },
-    "/v1/orgs/{organization_id}/requests/{request_id}/submit": {
-      "post": {
-        "operationId": "submit_request_v1_orgs__organization_id__requests__request_id__submit_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Request Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Submit Request V1 Orgs  Organization Id  Requests  Request Id  Submit Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Submit Request",
-        "tags": ["requests"],
+        "summary": "Confirm Extraction",
+        "tags": ["invoice documents"],
         "x-organization-scoped": true
       }
     },
@@ -5318,76 +5371,6 @@
           }
         },
         "summary": "Confirm Request Terms",
-        "tags": ["requests"],
-        "x-organization-scoped": true
-      }
-    },
-    "/v1/orgs/{organization_id}/requests/{request_id}/withdraw": {
-      "post": {
-        "operationId": "withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Request Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Withdraw Request V1 Orgs  Organization Id  Requests  Request Id  Withdraw Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Withdraw Request",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
