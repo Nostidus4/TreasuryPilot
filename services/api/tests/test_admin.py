@@ -336,10 +336,10 @@ def test_expired_or_missing_support_grant_denies_staff_access() -> None:
 def test_admin_route_surface_cannot_sign_or_move_funds() -> None:
     client, _ = _admin_client(_org())
     admin_routes = {
-        (route.path, method)
-        for route in client.app.routes
-        if getattr(route, "path", "").startswith("/admin/")
-        for method in getattr(route, "methods", set())
+        (path, method.upper())
+        for path, operations in client.app.openapi()["paths"].items()
+        if path.startswith("/admin/")
+        for method in operations
     }
 
     assert admin_routes == {
