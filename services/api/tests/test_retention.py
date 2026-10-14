@@ -410,6 +410,11 @@ async def _subject_deletion_case(database_url: str) -> None:
                 [
                     User(id=subject_id, email=subject_email, display_name="Delete me"),
                     User(id=held_id, email=held_email, display_name="Do not delete yet"),
+                ]
+            )
+            await session.flush()
+            session.add_all(
+                [
                     Session(
                         id=subject_session_id,
                         user_id=subject_id,
