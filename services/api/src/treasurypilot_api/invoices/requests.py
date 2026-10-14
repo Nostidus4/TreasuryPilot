@@ -231,7 +231,11 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         terms = confirmed_payment_terms(row)
     except ValidationError:  # stored terms no longer match the model; do not break reads
         terms = None
-    early = _early_option(terms, int(row.amount)) if terms is not None else None
+    early = (
+        _early_option(terms, int(row.amount))
+        if terms is not None and row.amount is not None
+        else None
+    )
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
@@ -940,6 +944,13 @@ async def confirm_request_terms(
         if row.status != RequestStatus.DRAFT.value:
             raise _fail(
                 409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
+            )
+        if row.amount is None:
+            raise _fail(
+                409,
+                "EXTRACTION_UNCONFIRMED",
+                "Extraction not confirmed",
+                "Confirm the extracted invoice fields before confirming terms.",
             )
         stored, digest, _ = _validated_terms(payload.terms, int(row.amount))
         # Provisional terms are stored raw; compare in canonical form so an equivalent
