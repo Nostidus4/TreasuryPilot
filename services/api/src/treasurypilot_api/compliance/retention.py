@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 # 100 years. Also enforced by a database check so ``now - timedelta`` cannot overflow.
 MAX_INVITE_RETENTION_DAYS = 36500
 MAX_AUTH_RETENTION_DAYS = 36500
+SIWE_NONCE_EXPIRY_GRACE = timedelta(minutes=2)
 
 
 def invite_receipt_hash(record_id: uuid.UUID) -> bytes:
@@ -69,6 +70,14 @@ def auth_receipt_hash(record_type: str, record_id: uuid.UUID) -> bytes:
     if record_type not in {"session", "magic_link"}:
         raise ValueError("record_type must be 'session' or 'magic_link'")
     return hashlib.sha256(f"treasurypilot:{record_type}:v1:".encode() + record_id.bytes).digest()
+
+
+def siwe_nonce_receipt_hash(nonce: str) -> bytes:
+    """Hash a generated SIWE challenge, never its associated user id."""
+
+    if not nonce:
+        raise ValueError("nonce must not be empty")
+    return hashlib.sha256(b"treasurypilot:siwe_nonce:v1:" + nonce.encode("utf-8")).digest()
 
 
 def subject_receipt_hash(user_id: uuid.UUID) -> bytes:
@@ -112,6 +121,7 @@ async def configure_auth_policy(
     *,
     session_retention_days: int | None,
     magic_link_retention_days: int | None,
+    siwe_nonce_retention_days: int | None,
     legal_hold: bool,
 ) -> None:
     """Set explicit deployment-wide auth retention; ``None`` disables a record type."""
@@ -119,6 +129,7 @@ async def configure_auth_policy(
     for name, days in (
         ("session_retention_days", session_retention_days),
         ("magic_link_retention_days", magic_link_retention_days),
+        ("siwe_nonce_retention_days", siwe_nonce_retention_days),
     ):
         if days is not None and not 0 <= days <= MAX_AUTH_RETENTION_DAYS:
             raise ValueError(f"{name} must be between 0 and {MAX_AUTH_RETENTION_DAYS}")
@@ -126,6 +137,7 @@ async def configure_auth_policy(
         id=1,
         session_retention_days=session_retention_days,
         magic_link_retention_days=magic_link_retention_days,
+        siwe_nonce_retention_days=siwe_nonce_retention_days,
         legal_hold=legal_hold,
     )
     await session.execute(
@@ -134,6 +146,7 @@ async def configure_auth_policy(
             set_={
                 "session_retention_days": statement.excluded.session_retention_days,
                 "magic_link_retention_days": statement.excluded.magic_link_retention_days,
+                "siwe_nonce_retention_days": statement.excluded.siwe_nonce_retention_days,
                 "legal_hold": statement.excluded.legal_hold,
                 "updated_at": datetime.now(UTC),
             },
@@ -429,6 +442,42 @@ async def _run_auth(
             )
             await session.execute(delete(model).where(model.id.in_(record_ids)))
             deleted += len(record_ids)
+
+        if policy.siwe_nonce_retention_days is not None:
+            # An unused SIWE nonce remains valid through the verifier's two-minute
+            # clock-skew window. Count that grace before applying the operator period.
+            cutoff = now - timedelta(days=policy.siwe_nonce_retention_days)
+            eligible_before = cutoff - SIWE_NONCE_EXPIRY_GRACE
+            terminal_at = func.coalesce(SiweNonce.used_at, SiweNonce.expires_at)
+            nonce_query = (
+                select(SiweNonce.nonce)
+                # The verifier still accepts a nonce at exactly the expiry plus
+                # clock-skew boundary, so retain it until that instant has passed.
+                .where(terminal_at < eligible_before)
+                .order_by(terminal_at, SiweNonce.nonce)
+                .limit(batch_size)
+            )
+            if not dry_run:
+                nonce_query = nonce_query.with_for_update(skip_locked=True)
+            nonces = list(await session.scalars(nonce_query))
+            examined += len(nonces)
+            if not dry_run and nonces:
+                await session.execute(
+                    pg_insert(DeletionReceipt)
+                    .values(
+                        [
+                            {
+                                "record_hash": siwe_nonce_receipt_hash(nonce),
+                                "record_type": "siwe_nonce",
+                                "deleted_at": now,
+                            }
+                            for nonce in nonces
+                        ]
+                    )
+                    .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+                )
+                await session.execute(delete(SiweNonce).where(SiweNonce.nonce.in_(nonces)))
+                deleted += len(nonces)
     return examined, deleted
 
 
@@ -513,6 +562,9 @@ async def _run_subject_request(
         session_ids = list(
             await session.scalars(select(AuthSession.id).where(AuthSession.user_id == user_id))
         )
+        siwe_nonces = list(
+            await session.scalars(select(SiweNonce.nonce).where(SiweNonce.user_id == user_id))
+        )
         magic_link_ids = list(
             await session.scalars(select(MagicLink.id).where(MagicLink.email == email))
         )
@@ -537,6 +589,14 @@ async def _run_subject_request(
                     "deleted_at": now,
                 }
                 for record_id in magic_link_ids
+            ],
+            *[
+                {
+                    "record_hash": siwe_nonce_receipt_hash(nonce),
+                    "record_type": "siwe_nonce",
+                    "deleted_at": now,
+                }
+                for nonce in siwe_nonces
             ],
         ]
         await session.execute(

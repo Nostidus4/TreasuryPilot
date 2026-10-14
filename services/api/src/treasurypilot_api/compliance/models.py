@@ -63,11 +63,16 @@ class AuthRetentionPolicy(Base):
             "magic_link_retention_days IS NULL OR magic_link_retention_days BETWEEN 0 AND 36500",
             name="ck_auth_retention_policies_magic_link_days",
         ),
+        CheckConstraint(
+            "siwe_nonce_retention_days IS NULL OR siwe_nonce_retention_days BETWEEN 0 AND 36500",
+            name="ck_auth_retention_policies_siwe_nonce_days",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
     session_retention_days: Mapped[int | None] = mapped_column(Integer)
     magic_link_retention_days: Mapped[int | None] = mapped_column(Integer)
+    siwe_nonce_retention_days: Mapped[int | None] = mapped_column(Integer)
     legal_hold: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -103,7 +108,7 @@ class DeletionReceipt(Base):
     __table_args__ = (
         CheckConstraint("octet_length(record_hash) = 32", name="ck_deletion_receipts_hash_length"),
         CheckConstraint(
-            "record_type IN ('invite', 'session', 'magic_link', 'subject')",
+            "record_type IN ('invite', 'session', 'magic_link', 'siwe_nonce', 'subject')",
             name="ck_deletion_receipts_record_type",
         ),
     )
