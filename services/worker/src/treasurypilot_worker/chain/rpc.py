@@ -177,10 +177,15 @@ class RpcClient:
     async def call(self, method: str, params: Sequence[Any]) -> Any:
         """Ask each provider in order (with retries) and return the first answer."""
 
+        return (await self.call_with_provider(method, params))[1]
+
+    async def call_with_provider(self, method: str, params: Sequence[Any]) -> tuple[str, Any]:
+        """Like ``call``, also naming the provider that answered."""
+
         failures: list[RpcError] = []
         for provider in self.providers:
             try:
-                return await self._call_provider(provider, method, params)
+                return provider.name, await self._call_provider(provider, method, params)
             except RpcError as failure:
                 # A JSON-RPC error can be a lagging or rate-limited node, so fail over too.
                 failures.append(failure)

@@ -118,6 +118,8 @@ sequenceDiagram
 
 Per treasury: `asset.balanceOf(T, O1, O2)`; `asset.decimals()` (cached, verified once); module `mandate()`, `status()`, `usedToday(PAY)`, `usedToday(REFILL)`, `bufferOf/targetOf` for T/O1/O2, `isApprover` for known approvers; for the requests in scope: `payeeStatus(payee)`, `requestPaid`, `requestCancelled`, `stepUsed` (their step ids), `fingerprintPaid`, `refilledFor`, `exceptions(requestId)`, `duplicateAllowedFor`; Safe `getModulesPaginated`, `getGuard` (slot read), `getOwners`, `getThreshold`, `nonce` for T/O1/O2. Block B = `head` at call time; the call uses `blockTag = B`; the result stores `block_hash` and `timestamp` of B. Any failed sub-call → field in `missing`, coverage computed by TRS-007 rules; the snapshot is still stored (M08 blocks with `DATA_MISSING`).
 
+Implementation (`chain/snapshot.py`): every Multicall3 call is pinned by block **hash** (EIP-1898) so a failover or reorg cannot mix blocks. Because the Aave pool and aToken addresses are module state, they are read first at the same block and the Aave reads follow in a second pinned call. `missing` holds dotted paths into `data` (for example `module.mandate`); a sub-call that fails or returns undecodable data is listed, never defaulted. A missing Safe read degrades the stored `coverage` to `UNKNOWN`. Amounts in `data` are decimal strings of base units. `is_fresh(snapshot, now, head)` measures age from the block timestamp. The beat task `treasurypilot.chain.snapshot_dashboards` writes DASHBOARD snapshots every 60 s and prunes those older than 7 days.
+
 ### 8.2 Tracker rules
 
 - Poll every 6 s (half a block). Confirmed at 3 confirmations **and** secondary cross-check Match (M06-D1). Unavailable secondary → retry until 10 min, then Unknown.
