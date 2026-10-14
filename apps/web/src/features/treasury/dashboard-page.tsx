@@ -293,6 +293,44 @@ function LiquidityHeader({ state }: { state: TreasuryState }) {
   );
 }
 
+/** The engine's numbers as-is: reserve parts add up to the total, and the API supplies AvailableForSupply. */
+function PositionBreakdown({
+  position,
+}: {
+  position: TreasuryState['position'];
+}) {
+  const { requiredReserve: reserve } = position;
+  const row = (label: string, value: string, strong?: boolean) => (
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+      <dt className={strong ? 'font-medium' : 'text-muted-foreground'}>
+        {label}
+      </dt>
+      <dd>
+        <Amount value={value} size="sm" context="column" />
+      </dd>
+    </div>
+  );
+  return (
+    <div
+      role="group"
+      aria-label={t('Position breakdown')}
+      className="grid gap-x-10 text-sm md:grid-cols-2"
+    >
+      <dl className="divide-y">
+        {row(t('Safe USDC'), position.safeUsdc)}
+        {row(t('aUSDC (Aave)'), position.aUsdc)}
+        {row(t('Available for supply'), position.availableForSupply, true)}
+      </dl>
+      <dl className="divide-y">
+        {row(t('Payment reserve'), reserve.paymentReserve)}
+        {row(t('Floor'), reserve.floor)}
+        {row(t('Holds'), reserve.holds)}
+        {row(t('Required safe reserve'), reserve.total, true)}
+      </dl>
+    </div>
+  );
+}
+
 /** Charts first: where the money is, how long it lasts, and what is left today. */
 function Overview({ state }: { state: TreasuryState }) {
   const scope = useTreasuryScope();
@@ -312,6 +350,13 @@ function Overview({ state }: { state: TreasuryState }) {
         <CardHeader title={t('Liquidity')} />
         <CardContent className="grid gap-5">
           <LiquidityHeader state={state} />
+          <PositionBreakdown position={state.position} />
+          {state.position.lastAction.kind !== 'NONE' && (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{t('Why')}:</span>{' '}
+              {state.position.lastAction.explanation}
+            </p>
+          )}
           <LiquidityIcicle branches={branches} units={units} />
         </CardContent>
       </Card>
