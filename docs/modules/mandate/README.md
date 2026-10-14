@@ -147,12 +147,22 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET | `/…/governance-txs?status=` | ANY | → `{items}` | |
+| POST | `/orgs/{o}/treasuries/{t}/governance-txs` 🔁 | OWN | `{purpose, calls[]}` → `{governanceTx, decodedCalls[], humanSummary, typedData}` | 503 `MULTISEND_UNAVAILABLE` when a bundle has no configured Safe MultiSendCallOnly v1.4.1 deployment |
 | GET | `/…/governance-txs/{g}` | ANY | → `{governanceTx, decodedCalls[], humanSummary, typedData (SafeTx EIP-712), signatures[], threshold, owners[]}` | |
 | POST | `/…/governance-txs/{g}/signatures` 🔁 | OWN (an owner of that Safe) | `{signature}` → `{signatures[], status}` | 400 `SIGNATURE_INVALID`, 403 `NOT_SAFE_OWNER`, 409 `ALREADY_SIGNED`, `SUPERSEDED` |
 | GET | `/…/governance-txs/{g}/exec-call` | OWN | → `{to: safe, data: execTransaction(..., packedSignatures)}` for the owner's wallet | 409 `NOT_READY` |
-| POST | `/…/governance-txs/{g}/submitted` | OWN | `{txHash}` → `{status: Submitted}` | |
+| POST | `/…/governance-txs/{g}/submitted` | OWN | `{transactionHash}` → `{status: Submitted}` | |
 | POST | `/…/governance-txs/{g}/cancel` | creator, OWN | → `{status: Cancelled}` | 409 `ALREADY_SUBMITTED` |
 | GET | `/…/governance-txs/{g}/safe-wallet-link` | OWN | → `{url}` (optional: propose to Safe Transaction Service, open in Safe{Wallet}) | 503 if the service is unavailable |
+
+Borrow and repay calldata builders encode the module's `authorizeBorrow` and
+`authorizeRepay` calls from integer arguments. Amounts, expiry, minimum health
+factor and maximum rate are carried without display-unit conversion or rounding.
+The proposal read model currently has no API-backed `planId`, expiry, minimum
+health-factor authorization, or max-rate authorization fields, so proposal-backed
+creation and the WEB-027 owner action are not wired yet. Until that integration
+exists, the general governance endpoint persists and tracks calls supplied by an
+Owner but does not independently prove they match a validated borrow proposal.
 
 ### 6.4 Fee policy (FEE-1 … FEE-3)
 
@@ -215,7 +225,7 @@ Human summary template (one line per rule, display units and base units), e.g. *
 
 ### 8.3 Bundle building
 
-Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` (delegatecall to the canonical MultiSendCallOnly v1.4.1, operation = 1). `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
+Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` v1.4.1 (the Safe uses delegatecall, operation = 1; each bundled operation is CALL). Its address must be configured in the chain deployment manifest as `SAFE_MULTISEND_CALL_ONLY`. `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
 
 ### 8.4 Read-back
 

@@ -51,14 +51,16 @@ The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and 
 | GET | `/chains` | auth | |
 | POST | `/orgs/{o}/treasuries` | OWN, ADM | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET`, `SAFE_VERSION_UNSUPPORTED`, `OWNER_SETS_DIFFER` (warning) |
 | GET | `/orgs/{o}/treasuries/{t}` | ANY | |
-| POST | `/orgs/{o}/treasuries/{t}/module/governance-tx` | OWN | → `{governanceTx}` (factory.create + enableModule ×3 via MultiSend on T; enableModule on O1/O2 as separate Safe txs) |
+| POST | `/orgs/{o}/treasuries/{t}/module/deploy-tx` | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}`; T calls factory.createDeterministic + enableModule in one MultiSend, O1/O2 each receive their own enableModule Safe transaction |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/refresh` | OWN, ADM | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/acknowledge` | OWN | `{reason}`; 409 `COVERAGE_COMPLETE` |
 | POST | `/orgs/{o}/safes/deploy-tx` (P2) | OWN, ADM | `{chainId, owners, threshold}` → `{chainId, transaction:{to,data,value}}`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE` until verified Safe deployment entries are configured |
 
 ## 7. Flows
 
-Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → module governance tx on T (factory.create; enable on T) → enable on O1 and O2 (each Safe signs its own `enableModule` — same owners, PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010) → mandate (M03).
+Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → configure initial mandate and buffers (M03) → T signs the module deploy-and-enable Safe transaction → O1/O2 each sign their own `enableModule` transaction (PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010).
+
+Module setup requires explicit initializer values: mandate validity, executor, guardian, pay/refill/supply limits, approval age, approvers, and one buffer entry for T and each operational Safe. The API resolves the ERC-20 asset and operational Safes from the treasury record. It refuses to build transactions unless factory, implementation, and Safe MultiSendCallOnly addresses and code hashes are configured and match chain code. It predicts the Safe-scoped deterministic clone address, stores one governance transaction for T and one for each operational Safe, and records the clone only after a successful Safe execution receipt contains a matching `TreasuryModuleCreated` event and the clone runtime matches the configured implementation. The treasury becomes Ready after the module is enabled on every treasury Safe.
 
 ## 8. Algorithms
 
