@@ -70,7 +70,7 @@ M03 is the **Owner's control room**. It turns what the Owner wants (limits, buff
 stateDiagram-v2
   [*] --> Draft
   Draft --> PendingActivation: bundle Executed on-chain
-  PendingActivation --> Active: read-back equals config_hash
+  PendingActivation --> Active: confirmed on-chain projection matches
   PendingActivation --> Discrepancy: read-back differs
   Active --> Superseded: newer version Active
   Active --> Expired: now > expiresAt
@@ -122,7 +122,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | GET | `/…/treasuries/{t}/mandates` | ANY | → `{items}` | |
 | POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
 | POST | `/…/mandates/{v}/clone` | OWN | → `201 {draft}` | |
-| POST | `/…/mandates/{v}/governance-tx` | OWN | → `{governanceTx}` (§6.3) | 409 `NOT_DRAFT`, `NO_CHANGES` |
+| POST | `/…/mandates/{v}/governance-tx` | OWN + step-up | → governance transaction fields plus `{mandate, bundlePreview}` (§6.3) | 409 `MANDATE_NOT_DRAFT`, `MODULE_NOT_READY`, `NO_CHANGES`, `AAVE_POOL_REQUIRED`; 422 `MANDATE_CALL_INVALID` |
 | DELETE | `/…/mandates/{v}` | OWN | discard a Draft | 409 `NOT_DRAFT` |
 
 ### 6.2 Payees, exceptions, duplicates, pause
@@ -196,7 +196,7 @@ sequenceDiagram
   O2->>API: submitted {txHash}
   C-->>API: ExecutionSuccess + MandateConfigured (M06)
   API->>C: read back mandate(), bufferOf, approvers
-  API-->>API: equal config_hash → Active (else Discrepancy)
+  API-->>API: matching on-chain projection → Active (else Discrepancy)
 ```
 
 ### 7.2 Emergency pause
@@ -232,7 +232,7 @@ Compute the on-chain diff: mandate fields changed → `configureMandate`; approv
 
 ### 8.4 Read-back
 
-After Executed + confirmations: read `mandate()`, `isApprover` for all relevant addresses, `bufferOf/targetOf` for all wallets; build the same canonical config and hash; equal → Active, otherwise Discrepancy (review item, Owner alerted, old version remains Active on our side and execution is blocked by M08 `DATA_MISSING` until resolved).
+After Executed + the chain's configured confirmations: read `mandate()`, `isApprover` for current and removed addresses, primary and secondary asset buffers/targets and allowlists, and the secondary PAY/REFILL caps from `AssetPolicySet` logs in the confirmed execution receipt. Also verify `aavePool()`/`aToken()` and the reserve's underlying/pool identity. Compare a canonical hash of the on-chain projection; off-chain-only settings remain covered by the immutable full `config_hash`. Equal projection → Active and the previous version becomes Superseded. A mismatch → Discrepancy plus an Owner/Finance review item; the previous version remains Active and execution is blocked by M08 `DATA_MISSING` until resolved. SUPPLY limits require a module initialized with an Aave pool; activation rejects a draft that enables SUPPLY when the module has none.
 
 ### 8.5 Exception pre-check
 

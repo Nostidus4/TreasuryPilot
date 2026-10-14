@@ -7,7 +7,7 @@ Revises: 20261015_0049
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261015_0050"
@@ -65,20 +65,34 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    has_mandate_items = (
-        op.get_bind()
-        .execute(
-            sa.text(
-                "SELECT EXISTS (SELECT 1 FROM review_items WHERE mandate_version_id IS NOT NULL)"
+    if context.is_offline_mode():
+        op.execute(
+            """
+            DO $$ BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM review_items WHERE mandate_version_id IS NOT NULL
+                ) THEN
+                    RAISE EXCEPTION 'Cannot downgrade mandate review support while '
+                        'mandate-linked review items exist; archive or remove them first.';
+                END IF;
+            END $$;
+            """
+        )
+    else:
+        has_mandate_items = (
+            op.get_bind()
+            .execute(
+                sa.text(
+                    "SELECT EXISTS (SELECT 1 FROM review_items WHERE mandate_version_id IS NOT NULL)"
+                )
             )
+            .scalar_one()
         )
-        .scalar_one()
-    )
-    if has_mandate_items:
-        raise RuntimeError(
-            "Cannot downgrade mandate review support while mandate-linked review items exist; "
-            "archive or remove them first."
-        )
+        if has_mandate_items:
+            raise RuntimeError(
+                "Cannot downgrade mandate review support while mandate-linked review items exist; "
+                "archive or remove them first."
+            )
 
     op.drop_index("uq_review_items_open_mandate_type", table_name="review_items")
     op.drop_constraint("ck_review_items_subject", "review_items", type_="check")

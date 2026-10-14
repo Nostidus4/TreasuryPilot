@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from typing import cast
+
 from eth_abi import decode
 from eth_hash.auto import keccak
 
 from treasurypilot_api.mandate.activation import build_mandate_calls
 from treasurypilot_api.mandate.configuration import build_bundle_preview
-
 
 SAFE = "0x" + "11" * 20
 OPERATIONAL = "0x" + "22" * 20
@@ -48,7 +49,7 @@ def test_buffer_only_mandate_change_does_not_encode_configure_mandate() -> None:
     }
     preview = build_bundle_preview(previous, current)
 
-    encoded = build_mandate_calls(MODULE, preview["calls"])
+    encoded = build_mandate_calls(MODULE, cast(list[dict[str, object]], preview["calls"]))
 
     assert len(encoded) == 1
     assert encoded[0].to == MODULE
@@ -58,7 +59,7 @@ def test_buffer_only_mandate_change_does_not_encode_configure_mandate() -> None:
 def test_configure_mandate_encoding_includes_supply_limits() -> None:
     preview = build_bundle_preview(None, config())
 
-    encoded = build_mandate_calls(MODULE, preview["calls"])
+    encoded = build_mandate_calls(MODULE, cast(list[dict[str, object]], preview["calls"]))
     selector = keccak(
         b"configureMandate((uint64,uint64,uint32,address,address,"
         b"(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)))"
@@ -75,6 +76,21 @@ def test_configure_mandate_encoding_includes_supply_limits() -> None:
     assert argument[5] == (200, 1000)
     assert argument[6] == (250, 1200)
     assert argument[8] == (500, 2000)
+
+
+def test_missing_guardian_encodes_as_the_zero_address() -> None:
+    preview = build_bundle_preview(None, config() | {"guardian": None})
+
+    encoded = build_mandate_calls(MODULE, cast(list[dict[str, object]], preview["calls"]))
+    argument = decode(
+        [
+            "(uint64,uint64,uint32,address,address,(uint128,uint128),"
+            "(uint128,uint128),uint32,(uint128,uint128))"
+        ],
+        encoded[0].data[4:],
+    )[0]
+
+    assert argument[4].lower() == "0x" + "00" * 20
 
 
 def test_empty_mandate_diff_is_rejected() -> None:

@@ -106,6 +106,19 @@ class MemoryMandateRepository:
         return row
 
 
+class FakeMandateActivationService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def create_mandate_activation(self, **fields: object) -> dict[str, object]:
+        self.calls.append(fields)
+        return {
+            "id": "governance-tx",
+            "status": "Collecting",
+            "mandate": {"status": "PendingActivation"},
+        }
+
+
 def config_payload() -> dict[str, object]:
     return {
         "actions": ["PAY", "REFILL", "SUPPLY"],
@@ -138,10 +151,12 @@ def make_client(
     *,
     roles: frozenset[str] = frozenset({"Owner"}),
     step_up_at: datetime | None = None,
+    governance_service: object | None = None,
 ) -> TestClient:
     app = create_app(
         settings=Settings(environment="local"),
         mandate_repository=cast(object, repository),
+        governance_service=cast(object, governance_service) if governance_service else None,
     )
 
     async def member_override(organization_id: uuid.UUID) -> MemberAccess:
@@ -205,6 +220,27 @@ def test_mandate_routes_require_owner_and_hide_other_tenants() -> None:
     assert denied.json()["code"] == "FORBIDDEN"
     assert hidden.status_code == 404
     assert repository.rows == []
+
+
+def test_mandate_activation_endpoint_requires_owner_and_builds_governance_tx() -> None:
+    repository = MemoryMandateRepository()
+    service = FakeMandateActivationService()
+    mandate_id = uuid.uuid4()
+    with make_client(repository, governance_service=service) as client:
+        response = client.post(
+            f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates/{mandate_id}/governance-tx"
+        )
+
+    assert response.status_code == 201
+    assert response.json()["mandate"]["status"] == "PendingActivation"
+    assert service.calls == [
+        {
+            "organization_id": ORG_ID,
+            "treasury_id": TREASURY_ID,
+            "mandate_id": mandate_id,
+            "user_id": OWNER_ID,
+        }
+    ]
 
 
 def test_mandate_draft_can_be_listed_cloned_and_discarded() -> None:
