@@ -346,6 +346,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/review-items': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Review Items */
+    get: operations['list_review_items_v1_orgs__organization_id__review_items_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Review Item */
+    get: operations['get_review_item_v1_orgs__organization_id__review_items__item_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}/actions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Act On Review Item */
+    post: operations['act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/safes/deploy-tx': {
     parameters: {
       query?: never;
@@ -1060,6 +1111,46 @@ export interface components {
       /** To */
       to: string;
     };
+    /**
+     * ReviewAction
+     * @enum {string}
+     */
+    ReviewAction:
+      | 'RETRY'
+      | 'REPLAN'
+      | 'CANCEL'
+      | 'EDIT_REQUEST'
+      | 'GRANT_EXCEPTION'
+      | 'ACCEPT_FEE'
+      | 'DEFER'
+      | 'ACKNOWLEDGE'
+      | 'MARK_MATCHED';
+    /** ReviewActionRequest */
+    ReviewActionRequest: {
+      action: components['schemas']['ReviewAction'];
+      /** Note */
+      note?: string | null;
+      /** Version */
+      version: number;
+    };
+    /**
+     * ReviewStatus
+     * @enum {string}
+     */
+    ReviewStatus: 'Open' | 'Resolved' | 'Dismissed';
+    /**
+     * ReviewType
+     * @enum {string}
+     */
+    ReviewType:
+      | 'POLICY_BLOCK'
+      | 'NEEDS_AUTHORITY'
+      | 'FEE_APPROVAL'
+      | 'UNCERTAIN_TX'
+      | 'DISCREPANCY'
+      | 'AI_REJECTED'
+      | 'INFRA'
+      | 'UNEXPECTED_OUTFLOW';
     /** RoleUpdateRequest */
     RoleUpdateRequest: {
       /** Roles */
@@ -1914,6 +2005,115 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_review_items_v1_orgs__organization_id__review_items_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['ReviewStatus'] | null;
+        type?: components['schemas']['ReviewType'] | null;
+        role?: components['schemas']['OrganizationRole'] | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_review_item_v1_orgs__organization_id__review_items__item_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        item_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        item_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewActionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
