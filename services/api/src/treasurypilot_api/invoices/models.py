@@ -143,6 +143,15 @@ class PaymentRequest(Base):
             f"cancel_onchain IN ({_CANCEL_STATUSES})", name="ck_payment_requests_cancel_status"
         ),
         CheckConstraint("amount > 0", name="ck_payment_requests_amount_positive"),
+        CheckConstraint(
+            "(fiat_amount_minor_units IS NULL AND fiat_currency IS NULL AND "
+            "fx_reference_quote IS NULL AND fx_tolerance_bps IS NULL) OR "
+            "(fiat_amount_minor_units IS NOT NULL AND fiat_amount_minor_units > 0 AND "
+            "fiat_currency IS NOT NULL AND fiat_currency ~ '^[A-Z]{3}$' AND "
+            "fx_reference_quote IS NOT NULL AND jsonb_typeof(fx_reference_quote) = 'object' AND "
+            "fx_tolerance_bps IS NOT NULL AND fx_tolerance_bps BETWEEN 0 AND 10000)",
+            name="ck_payment_requests_fiat_fx_pair",
+        ),
         CheckConstraint("due_at >= issue_date", name="ck_payment_requests_due_after_issue"),
         CheckConstraint(
             f"fingerprint IS NOT NULL OR status IN ('Draft', {_TERMINAL_REQUEST_STATUSES})",
@@ -261,6 +270,11 @@ class PaymentRequest(Base):
     due_at: Mapped[date | None] = mapped_column(Date)
     amount: Mapped[int | None] = mapped_column(Numeric(78, 0))
     asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # For fiat requests, amount is the approved maximum in stablecoin base units.
+    fiat_amount_minor_units: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    fiat_currency: Mapped[str | None] = mapped_column(String(3))
+    fx_reference_quote: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    fx_tolerance_bps: Mapped[int | None] = mapped_column(SmallInteger)
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     terms_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))

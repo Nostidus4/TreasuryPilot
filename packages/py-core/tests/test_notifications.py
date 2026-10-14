@@ -4,6 +4,7 @@ from treasurypilot_core.notifications import (
     NotificationCategory,
     NotificationChannel,
     category_for_event,
+    is_known_event_type,
     preference_allows,
 )
 
@@ -58,3 +59,20 @@ def test_regular_events_obey_channel_and_category_preferences(
         channels={},
         categories={category.value: False},
     )
+
+
+@pytest.mark.parametrize(
+    ("event_type", "known"),
+    [
+        ("ApprovalNeeded", True),
+        ("PaymentDone", True),
+        ("UnknownOperation", True),
+        ("LowGas", True),
+        ("NeedsReview:Finance", True),
+        ("NeedsReview:Nobody", False),
+        ("NewSecurityEvent", False),
+        ("", False),
+    ],
+)
+def test_known_event_types(event_type: str, known: bool) -> None:
+    assert is_known_event_type(event_type) is known

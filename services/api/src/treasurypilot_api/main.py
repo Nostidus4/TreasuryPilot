@@ -59,6 +59,7 @@ from treasurypilot_api.invoices.documents import (
     build_extraction_queue,
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
+from treasurypilot_api.invoices.fx import FxQuoteProvider
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
@@ -85,15 +86,24 @@ from treasurypilot_api.notifications.routes import (
     SqlAlchemyNotificationRepository,
 )
 from treasurypilot_api.notifications.routes import router as notifications_router
+from treasurypilot_api.notifications.telegram import (
+    SqlAlchemyTelegramRepository,
+    TelegramRepository,
+)
+from treasurypilot_api.notifications.telegram import router as telegram_router
+from treasurypilot_api.notifications.webhook_api import router as webhook_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
 from treasurypilot_api.treasury.service import TreasuryService
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.domain import FxPolicy
 from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
 from treasurypilot_core.observability_asgi import CorrelationMiddleware
+from treasurypilot_core.privacy import EncryptionConfigurationError, FieldEncryptionKey
+from treasurypilot_core.privacy import FieldCipher as CoreFieldCipher
 from treasurypilot_core.tracing import configure_tracing
 
 # Fixed so every local process (``--workers``, ``--reload``) verifies the same
@@ -226,6 +236,8 @@ def create_app(
     notification_preferences_repository: NotificationPreferencesRepository | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
+    fx_quote_provider: FxQuoteProvider | None = None,
+    telegram_repository: TelegramRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -278,6 +290,20 @@ def create_app(
     if notification_repository is None and engine is not None:
         notification_repository = SqlAlchemyNotificationRepository(
             async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if telegram_repository is None and engine is not None:
+        try:
+            cipher: CoreFieldCipher | None = CoreFieldCipher(FieldEncryptionKey.from_environment())
+        except EncryptionConfigurationError:
+            # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
+            cipher = None
+        chat_hash_key = settings.telegram_chat_hash_key
+        telegram_repository = SqlAlchemyTelegramRepository(
+            async_sessionmaker(engine, expire_on_commit=False),
+            cipher=cipher,
+            # A dedicated, rotation-independent key: changing it would let one chat
+            # link to a second account (see the uniqueness hash in telegram.py).
+            hash_key=chat_hash_key.get_secret_value().encode() if chat_hash_key else None,
         )
     if vendor_repository is None and sessions is not None:
         vendor_repository = SqlAlchemyVendorRepository(sessions)
@@ -361,6 +387,20 @@ def create_app(
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
+    # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
+    # three they respond 503 FX_UNAVAILABLE.
+    app.state.fx_quote_provider = fx_quote_provider
+    app.state.fx_tolerance_bps = settings.fx_tolerance_bps
+    app.state.fx_policy = (
+        FxPolicy(
+            source_id=settings.fx_source_id,
+            max_quote_age_seconds=settings.fx_max_quote_age_seconds,
+            depeg_threshold_bps=settings.fx_depeg_threshold_bps,
+        )
+        if settings.fx_source_id
+        else None
+    )
+    app.state.telegram_repository = telegram_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -396,10 +436,12 @@ def create_app(
     app.include_router(payees_router)
     app.include_router(review_router)
     app.include_router(notifications_router)
+    app.include_router(webhook_router)
     app.include_router(requests_router)
     app.include_router(invoice_api_keys_router)
     app.include_router(notification_preferences_router)
     app.include_router(invoice_documents_router)
+    app.include_router(telegram_router)
 
     return app
 

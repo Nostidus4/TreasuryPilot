@@ -259,6 +259,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/channels': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Channels */
+    get: operations['list_channels_v1_me_channels_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/channels/telegram/link-code': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Link Code */
+    post: operations['create_link_code_v1_me_channels_telegram_link_code_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/channels/{channel_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Channel */
+    delete: operations['delete_channel_v1_me_channels__channel_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Channel */
+    patch: operations['update_channel_v1_me_channels__channel_id__patch'];
+    trace?: never;
+  };
   '/v1/me/notification-preferences': {
     parameters: {
       query?: never;
@@ -1350,6 +1402,76 @@ export interface paths {
     patch: operations['update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/webhooks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Endpoints */
+    get: operations['list_endpoints_v1_orgs__organization_id__webhooks_get'];
+    put?: never;
+    /** Create Endpoint */
+    post: operations['create_endpoint_v1_orgs__organization_id__webhooks_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/webhooks/dead-letters': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Dead Letters */
+    get: operations['list_dead_letters_v1_orgs__organization_id__webhooks_dead_letters_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/webhooks/dead-letters/{delivery_id}/replay': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Replay Dead Letter */
+    post: operations['replay_dead_letter_v1_orgs__organization_id__webhooks_dead_letters__delivery_id__replay_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/webhooks/{endpoint_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Disable Endpoint */
+    delete: operations['disable_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Endpoint */
+    patch: operations['update_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__patch'];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1551,6 +1673,39 @@ export interface components {
       /** Chains */
       chains: components['schemas']['ChainView'][];
     };
+    /**
+     * ChannelKind
+     * @enum {string}
+     */
+    ChannelKind: 'TELEGRAM';
+    /** ChannelList */
+    ChannelList: {
+      /** Items */
+      items: components['schemas']['ChannelView'][];
+    };
+    /** ChannelPatch */
+    ChannelPatch: {
+      /** Showamounts */
+      showAmounts: boolean;
+    };
+    /** ChannelView */
+    ChannelView: {
+      /** Active */
+      active: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      kind: components['schemas']['ChannelKind'];
+      /** Showamounts */
+      showAmounts: boolean;
+      /**
+       * Verifiedat
+       * Format: date-time
+       */
+      verifiedAt: string;
+    };
     /** ConfirmTermsRequest */
     ConfirmTermsRequest: {
       /** Terms */
@@ -1625,6 +1780,13 @@ export interface components {
       chainId: number;
       /** Wallets */
       wallets: components['schemas']['WalletRequest'][];
+    };
+    /** CreateWebhookRequest */
+    CreateWebhookRequest: {
+      /** Eventtypes */
+      eventTypes: string[];
+      /** Url */
+      url: string;
     };
     /** CsvImportCreated */
     CsvImportCreated: {
@@ -1887,6 +2049,18 @@ export interface components {
     InvitesResponse: {
       /** Invites */
       invites: components['schemas']['InviteView'][];
+    };
+    /** LinkCodeIssued */
+    LinkCodeIssued: {
+      /** Boturl */
+      botUrl: string;
+      /** Code */
+      code: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
     };
     /** LinkWalletRequest */
     LinkWalletRequest: {
@@ -2366,6 +2540,10 @@ export interface components {
        * Format: date
        */
       dueDate: string;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo: string;
       /**
@@ -2409,6 +2587,10 @@ export interface components {
       costCenter?: string | null;
       /** Duedate */
       dueDate?: string | null;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo?: string | null;
       /** Issuedate */
@@ -2756,6 +2938,11 @@ export interface components {
        */
       timezone: string;
     };
+    /** UpdateWebhookRequest */
+    UpdateWebhookRequest: {
+      /** Enabled */
+      enabled: boolean;
+    };
     /** UploadResponse */
     UploadResponse: {
       /**
@@ -2926,6 +3113,58 @@ export interface components {
       message: string;
       /** Wallets */
       wallets: string[];
+    };
+    /** WebhookDeliveryView */
+    WebhookDeliveryView: {
+      /** Attemptcount */
+      attemptCount: number;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Endpointid
+       * Format: uuid
+       */
+      endpointId: string;
+      /**
+       * Eventid
+       * Format: uuid
+       */
+      eventId: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Lasterror */
+      lastError: string | null;
+      /** Laststatuscode */
+      lastStatusCode: number | null;
+      /** Status */
+      status: string;
+    };
+    /** WebhookEndpointView */
+    WebhookEndpointView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Eventtypes */
+      eventTypes: string[];
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Secret */
+      secret?: string | null;
+      /** Url */
+      url: string;
     };
     /** WalletView */
     treasurypilot_api__identity__api__WalletView: {
@@ -3338,6 +3577,110 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  list_channels_v1_me_channels_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelList'];
+        };
+      };
+    };
+  };
+  create_link_code_v1_me_channels_telegram_link_code_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LinkCodeIssued'];
+        };
+      };
+    };
+  };
+  delete_channel_v1_me_channels__channel_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        channel_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_channel_v1_me_channels__channel_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        channel_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChannelPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -5897,6 +6240,201 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['VendorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_endpoints_v1_orgs__organization_id__webhooks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookEndpointView'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_endpoint_v1_orgs__organization_id__webhooks_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateWebhookRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookEndpointView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_dead_letters_v1_orgs__organization_id__webhooks_dead_letters_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookDeliveryView'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  replay_dead_letter_v1_orgs__organization_id__webhooks_dead_letters__delivery_id__replay_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        delivery_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookDeliveryView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  disable_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        endpoint_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        endpoint_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateWebhookRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WebhookEndpointView'];
         };
       };
       /** @description Validation Error */
