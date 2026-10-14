@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Self
+from typing import Any, Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -84,6 +84,7 @@ class StoredSession:
     last_seen_at: datetime
     ip_hash: bytes
     ua_hash: bytes
+    organization_scope_id: uuid.UUID | None = None
     revoked_at: datetime | None = None
 
 
@@ -150,6 +151,7 @@ class MemoryAuthRepository:
         expires_at: datetime,
         ip_hash: bytes,
         ua_hash: bytes,
+        organization_scope_id: uuid.UUID | None = None,
     ) -> None:
         self.sessions[session_id] = StoredSession(
             user_id=user_id,
@@ -159,6 +161,7 @@ class MemoryAuthRepository:
             last_seen_at=created_at,
             ip_hash=ip_hash,
             ua_hash=ua_hash,
+            organization_scope_id=organization_scope_id,
         )
 
     async def access_session(
@@ -176,15 +179,29 @@ class MemoryAuthRepository:
             session.revoked_at = now
             return None
         session.last_seen_at = now
-        return SessionAccess(self.profile.user, session_id)
+        return SessionAccess(self.profile.user, session_id, session.organization_scope_id)
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None:
         session = self.sessions.get(session_id)
         if session is not None and session.revoked_at is None:
             session.revoked_at = now
 
-    async def get_profile(self, user_id: uuid.UUID) -> ProfileRecord | None:
-        return self.profile if self.profile.user.id == user_id else None
+    async def get_profile(
+        self, user_id: uuid.UUID, organization_scope_id: uuid.UUID | None = None
+    ) -> ProfileRecord | None:
+        if self.profile.user.id != user_id:
+            return None
+        if organization_scope_id is None:
+            return self.profile
+        return replace(
+            self.profile,
+            memberships=tuple(
+                member
+                for member in self.profile.memberships
+                if member.org_id == organization_scope_id
+            ),
+            wallets=(),
+        )
 
 
 class CaptureSender:
@@ -241,6 +258,7 @@ def make_harness(
     organization_repository: object | None = None,
     wallet_repository: object | None = None,
     audit_repository: object | None = None,
+    **settings_kwargs: Any,
 ) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
@@ -262,7 +280,9 @@ def make_harness(
         rate_limiter=limiter,  # type: ignore[arg-type]
         clock=clock,
     )
-    settings = Settings(environment="test", session_secret=secret.decode())
+    settings = Settings(
+        **{"environment": "test", "session_secret": secret.decode(), **settings_kwargs}
+    )
     app = create_app(
         settings=settings,
         auth_service=service,
@@ -1066,6 +1086,82 @@ def test_every_org_scoped_route_returns_404_to_non_members() -> None:
             finally:
                 app.dependency_overrides.pop(require_member)
             assert guarded.status_code == 418, (method, path, guarded.text)
+
+
+def test_oidc_scoped_session_cannot_use_matching_email_membership_in_another_org(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from treasurypilot_api.identity import rbac
+
+    user = UserRecord(uuid.uuid4(), "person@example.com", "Person", "active")
+    configured_org = uuid.uuid4()
+    unrelated_org = uuid.uuid4()
+    # The existing account has a real membership in another organization.
+    access = SessionAccess(user, uuid.uuid4(), configured_org)
+    lookup = MemoryOrganizationRepository()
+    lookup.memberships = {(unrelated_org, user.id): {"OrgAdmin"}}
+    request = SimpleNamespace(
+        method="GET", app=SimpleNamespace(state=SimpleNamespace(organization_repository=lookup))
+    )
+
+    async def authenticated(
+        _request: object, *, require_csrf: bool = False, allow_scoped: bool = False
+    ) -> SessionAccess:
+        return access
+
+    monkeypatch.setattr(rbac, "_authenticated", authenticated)
+    with pytest.raises(AuthFailure) as error:
+        asyncio.run(rbac.require_member(unrelated_org, request))  # type: ignore[arg-type]
+    assert error.value.code == "ORG_NOT_FOUND"
+    assert lookup.memberships[(unrelated_org, user.id)] == {"OrgAdmin"}
+
+
+def test_scoped_sessions_are_denied_unless_the_route_opts_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from treasurypilot_api.identity import api as identity_api
+
+    user = UserRecord(uuid.uuid4(), "person@example.com", "Person", "active")
+    access = SessionAccess(user, uuid.uuid4(), uuid.uuid4())
+
+    class Service:
+        async def authenticate(self, **_kwargs: object) -> SessionAccess:
+            return access
+
+    request = SimpleNamespace(
+        cookies={},
+        headers={},
+        app=SimpleNamespace(state=SimpleNamespace(settings=Settings(environment="test"))),
+    )
+    monkeypatch.setattr(identity_api, "_service", lambda _request: Service())
+    with pytest.raises(AuthFailure) as error:
+        asyncio.run(identity_api._authenticated(request))  # type: ignore[arg-type]
+    assert error.value.status == 403
+    allowed = asyncio.run(identity_api._authenticated(request, allow_scoped=True))  # type: ignore[arg-type]
+    assert allowed is access
+
+
+def test_oidc_callback_provider_error_returns_401_and_clears_state_cookie() -> None:
+    oidc_settings = {
+        "oidc_issuer": "https://id.example",
+        "oidc_client_id": "client",
+        "oidc_client_secret": "secret",
+        "oidc_redirect_uri": "https://app.example.test/v1/auth/oidc/callback",
+        "oidc_organization_id": str(uuid.uuid4()),
+    }
+    with make_harness(**oidc_settings) as harness:
+        harness.client.cookies.set("tp_oidc_state", "stale", path="/v1/auth/oidc/callback")
+        response = harness.client.get(
+            "/v1/auth/oidc/callback?error=access_denied", follow_redirects=False
+        )
+    assert response.status_code == 401
+    assert response.json()["code"] == "OIDC_AUTHENTICATION_FAILED"
+    assert "tp_oidc_state=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
 
 
 def test_member_without_required_role_gets_403_before_input_validation() -> None:
