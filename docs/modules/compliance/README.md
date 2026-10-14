@@ -186,6 +186,7 @@ a day). This follow-up adds user-wide session and magic-link retention. Subject-
 deletion requests and holds, and a policy for financial records and immutable audit
 evidence after their storage models land, remain out of scope. CMP-L03 remains open
 until those slices are designed and implemented.
+
 ## 16. Travel Rule exchange (CMP-L02)
 
 `travel_rule_exchanges` stores one durable case per organization and payment request. It keeps
