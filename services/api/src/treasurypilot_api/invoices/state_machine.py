@@ -68,8 +68,11 @@ class RequestVersionConflict(RequestTransitionError):
     code = "PRECONDITION_FAILED"
 
 
-class RequestNotFound(Exception):
+class RequestNotFound(RequestTransitionError):
     """The request does not exist or is outside the requested organization."""
+
+    status_code = 404
+    code = "REQUEST_NOT_FOUND"
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,7 +390,12 @@ class RequestStateMachine:
         expected_version: int | None = None,
         reason: str | None = None,
     ) -> RequestTransitionResult:
-        """Apply ``target``; user actors must pass the version they saw (``If-Match``)."""
+        """Apply ``target``; user actors must pass the version they saw (``If-Match``).
+
+        The request row stays locked for the whole transaction, including the PAY
+        in-flight check. M07 must take the same row lock (or re-check under it)
+        before advancing a PAY operation.
+        """
         async with self._sessions() as session, session.begin():
             request = await session.scalar(
                 select(PaymentRequest)
@@ -398,7 +406,7 @@ class RequestStateMachine:
                 .with_for_update()
             )
             if request is None:
-                raise RequestNotFound
+                raise RequestNotFound("Payment request not found.")
             if actor.actor_type == StatusEventActorType.USER and expected_version is None:
                 raise RequestVersionConflict("If-Match with the request version is required.")
             if expected_version is not None and expected_version != request.version:
@@ -407,6 +415,7 @@ class RequestStateMachine:
                 )
 
             source = _coerce_status(request.status)
+            version_before = request.version
             solo_mode = False
             if actor.action in _CHECKER_ACTIONS:
                 solo_mode = bool(
@@ -472,8 +481,10 @@ class RequestStateMachine:
                         "from": source.value,
                         "to": rule.target.value,
                         "reason": reason,
-                        "soloMode": solo_mode,
+                        # Only evaluated for checker actions; None means "not evaluated".
+                        "soloMode": solo_mode if actor.action in _CHECKER_ACTIONS else None,
                         "cancelOnchain": request.cancel_onchain,
+                        "fromVersion": version_before,
                         "version": request.version,
                     },
                 ),
