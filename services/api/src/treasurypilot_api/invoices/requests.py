@@ -21,8 +21,12 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.invoices.fingerprints import (
+    DuplicateFingerprintConflict,
+    compute_fingerprint,
+    find_active_duplicate,
+)
 from treasurypilot_api.invoices.models import (
-    TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
     PaymentApproval,
     PaymentRequest,
@@ -41,7 +45,7 @@ from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.engine import InvalidTerms, validate_terms
-from treasurypilot_core.fingerprint import fingerprint, normalize
+from treasurypilot_core.fingerprint import normalize
 from treasurypilot_core.money import BaseUnits
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
@@ -289,7 +293,9 @@ async def _bound_fields(
     require_active_payee: bool = True,
 ) -> tuple[Treasury, Vendor, Payee, Asset]:
     treasury = await session.scalar(
-        select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        select(Treasury)
+        .where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        .with_for_update()
     )
     if treasury is None:
         raise _fail(
@@ -397,19 +403,29 @@ def _is_fingerprint_conflict(error: IntegrityError) -> bool:
     return _FINGERPRINT_INDEX in str(error.orig)
 
 
-def _duplicate_fingerprint() -> AuthFailure:
-    return _fail(
-        409,
-        "DUPLICATE_FINGERPRINT",
-        "Duplicate invoice",
-        "An active request already uses this vendor, invoice number, amount and asset.",
-    )
+async def _raise_if_fingerprint_race(
+    factory: async_sessionmaker[AsyncSession],
+    error: IntegrityError,
+    scope: tuple[uuid.UUID, bytes] | None,
+    exclude_request_id: uuid.UUID | None = None,
+) -> None:
+    """Turn a lost unique-index race into the 409 that names the winning request."""
+    if scope is None or not _is_fingerprint_conflict(error):
+        return
+    async with factory() as session:
+        existing = await find_active_duplicate(
+            session,
+            treasury_id=scope[0],
+            value=scope[1],
+            exclude_request_id=exclude_request_id,
+        )
+    if existing is not None:
+        raise DuplicateFingerprintConflict(existing) from error
 
 
-def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
-    row.fingerprint = fingerprint(
-        vendor_ref, row.invoice_no, BaseUnits(int(row.amount)), "0x" + asset_address.hex()
-    )
+def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes:
+    value = compute_fingerprint(vendor_ref, row.invoice_no, int(row.amount), asset_address)
+    row.fingerprint = value
     row.invoice_hash = keccak(
         encode(
             ["string", "string", "uint256", "address", "string", "string", "bytes32"],
@@ -424,6 +440,7 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
             ],
         )
     )
+    return value
 
 
 def _request_id(org_id: uuid.UUID, request_id: uuid.UUID) -> bytes:
@@ -542,6 +559,7 @@ async def create_request(
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
+    scope: tuple[uuid.UUID, bytes] | None = None
     try:
         async with factory() as session, session.begin():
             previous = await session.scalar(
@@ -598,20 +616,12 @@ async def create_request(
                     idempotency_key=idempotency_key,
                     idempotency_payload_hash=payload_hash,
                 )
-                _hashes(row, vendor.normalized_ref, asset.address or b"")
-                duplicate = await session.scalar(
-                    select(PaymentRequest.id)
-                    .where(
-                        PaymentRequest.treasury_id == row.treasury_id,
-                        PaymentRequest.fingerprint == row.fingerprint,
-                        PaymentRequest.status.not_in(
-                            [status.value for status in TERMINAL_REQUEST_STATUSES]
-                        ),
-                    )
-                    .limit(1)
+                scope = (row.treasury_id, _hashes(row, vendor.normalized_ref, asset.address or b""))
+                duplicate = await find_active_duplicate(
+                    session, treasury_id=scope[0], value=scope[1]
                 )
                 if duplicate is not None:
-                    raise _duplicate_fingerprint()
+                    raise DuplicateFingerprintConflict(duplicate)
                 row.onchain_request_id = _request_id(member.organization_id, row.id)
                 row.terms_hash = None
                 session.add(row)
@@ -647,8 +657,7 @@ async def create_request(
                 )
             )
             if existing is None:
-                if _is_fingerprint_conflict(error):
-                    raise _duplicate_fingerprint() from error
+                await _raise_if_fingerprint_race(factory, error, scope)
                 raise
             if existing.idempotency_payload_hash != payload_hash:
                 raise _fail(
@@ -685,8 +694,10 @@ async def edit_request(
             "Provide the current request version in If-Match.",
         )
     fields = payload.model_dump(exclude_unset=True)
+    factory = _sessions(request)
+    scope: tuple[uuid.UUID, bytes] | None = None
     try:
-        async with _sessions(request)() as session, session.begin():
+        async with factory() as session, session.begin():
             row = await session.scalar(
                 select(PaymentRequest)
                 .where(
@@ -763,24 +774,15 @@ async def edit_request(
                     row.terms = fields["terms"]
                 row.current_revision += 1
                 row.last_edited_by = member.user_id
-                _hashes(row, vendor.normalized_ref, asset.address or b"")
+                scope = (row.treasury_id, _hashes(row, vendor.normalized_ref, asset.address or b""))
                 row.terms_hash = None
                 row.terms_confirmed_by = None
                 row.terms_confirmed_at = None
-                duplicate = await session.scalar(
-                    select(PaymentRequest.id)
-                    .where(
-                        PaymentRequest.treasury_id == row.treasury_id,
-                        PaymentRequest.id != row.id,
-                        PaymentRequest.fingerprint == row.fingerprint,
-                        PaymentRequest.status.not_in(
-                            [status.value for status in TERMINAL_REQUEST_STATUSES]
-                        ),
-                    )
-                    .limit(1)
+                duplicate = await find_active_duplicate(
+                    session, treasury_id=scope[0], value=scope[1], exclude_request_id=row.id
                 )
                 if duplicate is not None:
-                    raise _duplicate_fingerprint()
+                    raise DuplicateFingerprintConflict(duplicate)
                 previous_status = row.status
                 approval_invalidated = previous_status == RequestStatus.APPROVED.value
                 await session.execute(
@@ -847,8 +849,7 @@ async def edit_request(
             version = row.version
             revision = row.current_revision
     except IntegrityError as error:
-        if _is_fingerprint_conflict(error):
-            raise _duplicate_fingerprint() from error
+        await _raise_if_fingerprint_race(factory, error, scope, request_id)
         raise
     response.headers["ETag"] = f'"{version}"'
     return {
