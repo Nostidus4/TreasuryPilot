@@ -108,9 +108,7 @@ _TERMS_KEYS = {
 }
 
 
-def _validated_terms(
-    raw: dict[str, object], amount: int
-) -> tuple[dict[str, object], bytes, int, int]:
+def _normalized_terms(raw: dict[str, object]) -> dict[str, object]:
     normalized = {_TERMS_KEYS.get(key, key): value for key, value in raw.items()}
     if isinstance(normalized.get("late_fee"), dict):
         late_fee = cast(dict[str, object], normalized["late_fee"])
@@ -118,25 +116,37 @@ def _validated_terms(
             {"rateBps": "rate_bps", "periodDays": "period_days"}.get(key, key): value
             for key, value in late_fee.items()
         }
+    return normalized
+
+
+def _early_payment(terms: PaymentTerms, amount: int) -> tuple[int, int]:
+    """Pure discount derivation; no validation, so it is safe on read paths."""
+    if terms.discount_deadline_day is None:
+        return 0, 0
+    return (
+        amount - amount * terms.discount_bps // 10_000,
+        terms.discount_deadline_day * 86_400 + 86_399,
+    )
+
+
+def _validated_terms(
+    raw: dict[str, object], amount: int
+) -> tuple[dict[str, object], bytes, int, int]:
     try:
-        terms = PaymentTerms.model_validate(normalized)
+        terms = PaymentTerms.model_validate(_normalized_terms(raw))
         validate_terms(terms)
     except (ValidationError, InvalidTerms) as error:
         raise _fail(422, "TERMS_INVALID", "Payment terms invalid", str(error)) from None
     stored = terms.model_dump(mode="json", exclude_none=True)
     digest = keccak(json.dumps(stored, sort_keys=True, separators=(",", ":")).encode())
-    early_amount = 0
-    early_pay_by = 0
-    if terms.discount_deadline_day is not None:
-        early_amount = amount - amount * terms.discount_bps // 10_000
-        if early_amount <= 0:
-            raise _fail(
-                422,
-                "TERMS_INVALID",
-                "Payment terms invalid",
-                "A discount must leave a positive early payment amount.",
-            )
-        early_pay_by = terms.discount_deadline_day * 86_400 + 86_399
+    early_amount, early_pay_by = _early_payment(terms, amount)
+    if terms.discount_deadline_day is not None and early_amount <= 0:
+        raise _fail(
+            422,
+            "TERMS_INVALID",
+            "Payment terms invalid",
+            "A discount must leave a positive early payment amount.",
+        )
     return stored, digest, early_amount, early_pay_by
 
 
@@ -249,8 +259,9 @@ def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
 def _serialize(row: PaymentRequest) -> dict[str, object]:
     early_amount = 0
     early_pay_by = 0
-    if confirmed_payment_terms(row) is not None:
-        _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
+    confirmed = confirmed_payment_terms(row)
+    if confirmed is not None:
+        early_amount, early_pay_by = _early_payment(confirmed, int(row.amount))
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
@@ -895,8 +906,10 @@ async def confirm_request_terms(
     payload: ConfirmTermsRequest,
     request: Request,
     response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     member: MemberContext = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
             select(PaymentRequest)
@@ -905,12 +918,27 @@ async def confirm_request_terms(
         )
         if row is None:
             raise _not_found()
+        if row.version != expected_version:
+            raise _fail(
+                412,
+                "PRECONDITION_FAILED",
+                "Request changed",
+                "The request changed since it was read; reload and try again.",
+            )
         if row.status != RequestStatus.DRAFT.value:
             raise _fail(
                 409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
             )
         stored, digest, _, _ = _validated_terms(payload.terms, int(row.amount))
-        if row.terms != stored:
+        try:  # extraction may store camelCase terms; compare in canonical form
+            current = PaymentTerms.model_validate(_normalized_terms(row.terms or {})).model_dump(
+                mode="json", exclude_none=True
+            )
+        except ValidationError:
+            current = None
+        changed = row.terms is None or current != stored
+        row.terms = stored  # canonical form even when the revision is unchanged
+        if changed:
             await session.execute(
                 update(RequestFlag)
                 .where(
@@ -921,7 +949,6 @@ async def confirm_request_terms(
                 )
                 .values(status=RequestFlagStatus.SUPERSEDED.value)
             )
-            row.terms = stored
             row.current_revision += 1
             row.last_edited_by = member.user_id
             session.add(
@@ -1172,6 +1199,13 @@ async def acknowledge_flag(
         )
         if row is None:
             raise _not_found()
+        if row.status != RequestStatus.AWAITING_APPROVAL.value:
+            raise _fail(
+                409,
+                "NOT_AWAITING_APPROVAL",
+                "Request is not awaiting approval",
+                "Flags can only be acknowledged while the request awaits approval.",
+            )
         flag = await session.scalar(
             select(RequestFlag)
             .where(RequestFlag.id == flag_id, RequestFlag.request_id == row.id)

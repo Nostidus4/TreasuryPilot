@@ -90,15 +90,16 @@ async def _confirm_in_postgres(database_url: str) -> None:
         request = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
         response = Response()
         member = MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))
+        terms = ConfirmTermsRequest(
+            terms={"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990}
+        )
+        with pytest.raises(AuthFailure) as error:
+            await confirm_request_terms(
+                ORG_ID, REQUEST_ID, terms, request, response, '"99"', member
+            )
+        assert error.value.code == "PRECONDITION_FAILED"
         result = await confirm_request_terms(
-            ORG_ID,
-            REQUEST_ID,
-            ConfirmTermsRequest(
-                terms={"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990}
-            ),
-            request,
-            response,
-            member,
+            ORG_ID, REQUEST_ID, terms, request, response, '"1"', member
         )
         assert result["request"]["earlyAmount"] == "976"
         assert result["request"]["termsConfirmedBy"] == str(USER_ID)
@@ -110,6 +111,29 @@ async def _confirm_in_postgres(database_url: str) -> None:
             assert row.terms_confirmed_by == USER_ID
             assert row.terms_hash is not None and len(row.terms_hash) == 32
             assert row.current_revision == 2
+        # Unchanged terms stored in camelCase by extraction must not add a revision.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "UPDATE payment_requests SET terms_confirmed_by = NULL, terms = "
+                    '\'{"netDueDay": 21000, "discountBps": 250, "discountDeadlineDay": 20990}\''
+                    " WHERE id = :id"
+                ),
+                {"id": REQUEST_ID},
+            )
+        async with sessions() as session:
+            version = await session.scalar(
+                select(PaymentRequest.version).where(PaymentRequest.id == REQUEST_ID)
+            )
+        await confirm_request_terms(
+            ORG_ID, REQUEST_ID, terms, request, Response(), f'"{version}"', member
+        )
+        async with sessions() as session:
+            row = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert row is not None and row.current_revision == 2
+            assert row.terms is not None and "net_due_day" in row.terms
     finally:
         await engine.dispose()
 
@@ -256,6 +280,24 @@ async def _submit_and_ack_in_postgres(database_url: str) -> None:
             operator,
         )
         assert withdrawn["request"]["status"] == "Draft"
+        with pytest.raises(AuthFailure) as error:
+            await acknowledge_flag(
+                ORG_ID,
+                SUBMIT_REQUEST_ID,
+                FLAG_ID,
+                FlagAcknowledgment(note="Reviewed high risk flag"),
+                request,
+                approver,
+            )
+        assert error.value.code == "NOT_AWAITING_APPROVAL"
+        await submit_request(
+            ORG_ID,
+            SUBMIT_REQUEST_ID,
+            request,
+            Response(),
+            f'"{withdrawn["request"]["version"]}"',
+            operator,
+        )
         async with engine.begin() as connection:
             await connection.execute(
                 text("UPDATE flags SET status = 'Superseded' WHERE id = :id"),

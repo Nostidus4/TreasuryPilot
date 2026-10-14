@@ -125,7 +125,17 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
-| POST | `/…/{r}/terms/confirm` | OPR | `{terms}` → `{request}` | 422 `TERMS_INVALID` |
+| POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`; 412; 422 `TERMS_INVALID` |
+| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`; 412 |
+| POST | `/…/{r}/withdraw` | OPR | → Draft | |
+| POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
+| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER`, `NOT_AWAITING_APPROVAL` |
+| GET | `/…/{r}/approval-typed-data` | APR | → `{domain, types, primaryType, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED`, `NOT_AWAITING_APPROVAL` |
+| POST | `/…/{r}/approve` 🔁 | APR | `{signature, revision}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
+| POST | `/…/{r}/reject` | APR | `{reason}` → Rejected | |
+| POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
+| GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
+| POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
 
 Terms submitted with a draft are provisional. The confirmation endpoint validates the
 ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
@@ -133,16 +143,6 @@ the confirming operator and time. Editing bound request fields clears confirmati
 Only confirmed terms may be converted to scheduler input. A confirmed discount
 derives `earlyAmount = amount − floor(amount × discount_bps / 10000)` and
 `earlyPayBy` as 23:59:59 UTC on the discount deadline day.
-| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`; 412 |
-| POST | `/…/{r}/withdraw` | OPR | → Draft | |
-| POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
-| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER` |
-| GET | `/…/{r}/approval-typed-data` | APR | → `{domain, types, primaryType, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED`, `NOT_AWAITING_APPROVAL` |
-| POST | `/…/{r}/approve` 🔁 | APR | `{signature, revision}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
-| POST | `/…/{r}/reject` | APR | `{reason}` → Rejected | |
-| POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
-| GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
-| POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
 
 **`PaymentApproval` typed data (corrected: 11 fields, no `overrideDuplicate`, M04-D3)**
 
