@@ -376,6 +376,11 @@ class PaymentApproval(Base):
             "request_id", "idempotency_key_hash", name="uq_approvals_request_idempotency_key"
         ),
         Index("ix_approvals_request_revision", "request_id", "revision"),
+        Index(
+            "ix_approvals_valid_expiry",
+            "expires_at",
+            postgresql_where=text("status = 'Valid'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)

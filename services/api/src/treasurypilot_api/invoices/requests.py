@@ -66,6 +66,7 @@ _require_approver = require_role(OrganizationRole.APPROVER)
 _require_canceller = require_role(
     OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER
 )
+_require_renewer = require_role(OrganizationRole.OPERATOR)
 _require_cancel_tx_actor = require_role(OrganizationRole.APPROVER, OrganizationRole.OWNER)
 
 
@@ -1156,20 +1157,11 @@ async def _lifecycle_transition(
             raise _fail(
                 error.status_code, error.code, "Request transition refused", error.detail
             ) from error
-        if target == RequestStatus.CANCELLED:
-            approved_before = (
-                row.status == RequestStatus.APPROVED.value
-                or await session.scalar(
-                    select(RequestStatusEvent.id)
-                    .where(
-                        RequestStatusEvent.request_id == row.id,
-                        RequestStatusEvent.to_status == RequestStatus.APPROVED.value,
-                    )
-                    .limit(1)
-                )
-                is not None
-            )
-            if approved_before:
+        if target in (RequestStatus.CANCELLED, RequestStatus.REJECTED):
+            # BR-077: any approval row was Valid at some point, so an on-chain cancel is owed.
+            if target == RequestStatus.CANCELLED and await session.scalar(
+                select(PaymentApproval.id).where(PaymentApproval.request_id == row.id).limit(1)
+            ):
                 row.cancel_onchain = "Pending"
             await session.execute(
                 update(PaymentApproval)
@@ -1177,16 +1169,13 @@ async def _lifecycle_transition(
                     PaymentApproval.request_id == row.id,
                     PaymentApproval.status == ApprovalStatus.VALID.value,
                 )
-                .values(status=ApprovalStatus.CANCELLED.value)
-            )
-        if target == RequestStatus.REJECTED:
-            await session.execute(
-                update(PaymentApproval)
-                .where(
-                    PaymentApproval.request_id == row.id,
-                    PaymentApproval.status == ApprovalStatus.VALID.value,
+                .values(
+                    status=(
+                        ApprovalStatus.CANCELLED
+                        if target == RequestStatus.CANCELLED
+                        else ApprovalStatus.INVALIDATED
+                    ).value
                 )
-                .values(status=ApprovalStatus.CANCELLED.value)
             )
         previous = row.status
         row.status = rule.target.value
@@ -1202,6 +1191,7 @@ async def _lifecycle_transition(
             )
         )
         await session.flush()
+        await session.refresh(row)
         result, version = _serialize(row), row.version
     response.headers["ETag"] = f'"{version}"'
     return {"request": result}
@@ -1261,7 +1251,7 @@ async def renew_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberContext = Depends(_require_renewer),  # noqa: B008
 ) -> dict[str, object]:
     expected_version = _expected_version(if_match)
     async with _sessions(request)() as session, session.begin():
@@ -1291,12 +1281,32 @@ async def renew_request(
             raise _fail(
                 error.status_code, error.code, "Request cannot be renewed", error.detail
             ) from error
+        today = datetime.now(UTC).date()
+        if payload.due_date is not None and payload.due_date < today:
+            raise _fail(
+                422,
+                "DUE_DATE_IN_PAST",
+                "Due date invalid",
+                "The renewed due date cannot be in the past.",
+            )
+        row.current_revision += 1
+        row.due_at = payload.due_date or max(row.due_at, today + timedelta(days=1))
+        vendor_ref, asset_address = (
+            await session.execute(
+                select(Vendor.normalized_ref, Asset.address)
+                .join(Asset, Asset.id == row.asset_id)
+                .where(Vendor.id == row.vendor_id)
+            )
+        ).one()
+        # due_at is part of invoice_hash; the active-duplicate check also revives the fingerprint.
+        _hashes(row, vendor_ref, asset_address or b"")
+        try:
+            await assert_no_active_duplicate(session, row)
+        except DuplicateFingerprintConflict as error:
+            raise _duplicate_fingerprint(error.existing_request_id) from error
+        # Flip the status only after the check: Draft is active, so autoflush would hit the index.
         previous = row.status
         row.status = rule.target.value
-        row.current_revision += 1
-        row.due_at = payload.due_date or max(
-            row.due_at, datetime.now(UTC).date() + timedelta(days=1)
-        )
         row.last_edited_by = member.user_id
         row.terms_confirmed_by = None
         row.terms_confirmed_at = None
@@ -1322,6 +1332,7 @@ async def renew_request(
             )
         )
         await session.flush()
+        await session.refresh(row)
         result, version = _serialize(row), row.version
     response.headers["ETag"] = f'"{version}"'
     return {"request": result}
