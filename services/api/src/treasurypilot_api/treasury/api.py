@@ -239,8 +239,9 @@ class TreasurySummaryView(ApiModel):
     chain_name: str
     asset_id: uuid.UUID
     asset_symbol: str
-    asset_decimals: int
-    asset_is_test: bool
+    # Null when the asset is no longer in the startup configuration.
+    asset_decimals: int | None
+    asset_is_test: bool | None
     status: TreasuryStatus
     coverage: Coverage
     created_at: datetime
@@ -356,21 +357,14 @@ async def list_treasuries(
     rows = await _service(request).list_for_org(organization_id=member.organization_id)
     configuration: PlatformConfiguration = request.app.state.platform_configuration
     chains = {chain.chain_id: chain for chain in configuration.chains}
+    assets_by_chain = {
+        chain.chain_id: {asset_id(chain.chain_id, item.address): item for item in chain.assets}
+        for chain in configuration.chains
+    }
     items: list[TreasurySummaryView] = []
     for row in rows:
         chain = chains.get(row.chain_id)
-        asset = (
-            next(
-                (
-                    item
-                    for item in chain.assets
-                    if asset_id(row.chain_id, item.address) == row.asset_id
-                ),
-                None,
-            )
-            if chain is not None
-            else None
-        )
+        asset = assets_by_chain.get(row.chain_id, {}).get(row.asset_id)
         # Persisted assets are validated against this startup configuration. If an
         # operator removes a config entry after deployment, keep the row visible by
         # id without inventing a cross-chain symbol or valuation.
@@ -381,8 +375,8 @@ async def list_treasuries(
                 chain_name=chain.name if chain is not None else f"Chain {row.chain_id}",
                 asset_id=row.asset_id,
                 asset_symbol=asset.symbol if asset is not None else "Unknown asset",
-                asset_decimals=asset.decimals if asset is not None else 0,
-                asset_is_test=asset.is_test if asset is not None else False,
+                asset_decimals=asset.decimals if asset is not None else None,
+                asset_is_test=asset.is_test if asset is not None else None,
                 status=row.status,
                 coverage=row.coverage,
                 created_at=row.created_at,

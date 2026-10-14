@@ -3108,8 +3108,15 @@
       "TreasurySummaryView": {
         "properties": {
           "assetDecimals": {
-            "title": "Assetdecimals",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetdecimals"
           },
           "assetId": {
             "format": "uuid",
@@ -3117,8 +3124,15 @@
             "type": "string"
           },
           "assetIsTest": {
-            "title": "Assetistest",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetistest"
           },
           "assetSymbol": {
             "title": "Assetsymbol",

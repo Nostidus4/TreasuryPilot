@@ -10,6 +10,8 @@ import type {
   MandateVersion,
   Payee,
   TreasuryState,
+  TreasuryStatus,
+  TreasurySummary,
   WalletRole,
 } from '@/lib/api/types';
 import {
@@ -17,9 +19,11 @@ import {
   applyMandate,
   CHAINS,
   createGovernanceTx,
+  DAY,
   db,
   emit,
   h32,
+  iso,
   logActivity,
   markGovernanceSubmitted,
   refreshQueues,
@@ -160,12 +164,13 @@ export const treasuryHandlers = [
       items: org.treasuries.flatMap(({ id }) => {
         const state = db.treasuries[id];
         if (!state) return [];
-        const status = {
+        const statuses: Record<TreasuryStatus, TreasurySummary['status']> = {
           Setup: 'Draft',
           Active: 'Ready',
           PauseRequested: 'Paused',
           Paused: 'Paused',
-        }[state.treasury.status];
+        };
+        const status = statuses[state.treasury.status];
         return [
           {
             id,
@@ -177,7 +182,7 @@ export const treasuryHandlers = [
             assetIsTest: state.treasury.asset.isTest,
             status,
             coverage: state.coverage.status,
-            createdAt: state.staleness.observedAt,
+            createdAt: iso(-30 * DAY),
           },
         ];
       }),

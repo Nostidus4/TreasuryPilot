@@ -11,7 +11,11 @@ import {
   VerifyPage,
 } from '@/features/auth/auth-pages';
 import { OrgLayout } from '@/features/orgs/org-scope';
-import { OnboardingPage, OrgsPage } from '@/features/orgs/orgs-pages';
+import {
+  OnboardingPage,
+  OrgIndexRedirect,
+  OrgsPage,
+} from '@/features/orgs/orgs-pages';
 
 /** Each screen is its own chunk; the shell stays in the entry bundle. */
 function page<
@@ -145,7 +149,14 @@ export function App() {
             <Route path="/dev/components" element={<ComponentsPage />} />
           )}
           <Route path="/o/:org" element={<OrgLayout />}>
-            <Route index element={<TreasuryPortfolioPage />} />
+            <Route
+              index
+              element={
+                <OrgIndexRedirect>
+                  <TreasuryPortfolioPage />
+                </OrgIndexRedirect>
+              }
+            />
             <Route path="onboarding" element={<OnboardingPage />} />
             <Route path="t/:t" element={<DashboardPage />} />
             <Route path="treasuries/new" element={<SetupWizardPage />} />

@@ -2407,14 +2407,14 @@ export interface components {
     /** TreasurySummaryView */
     TreasurySummaryView: {
       /** Assetdecimals */
-      assetDecimals: number;
+      assetDecimals: number | null;
       /**
        * Assetid
        * Format: uuid
        */
       assetId: string;
       /** Assetistest */
-      assetIsTest: boolean;
+      assetIsTest: boolean | null;
       /** Assetsymbol */
       assetSymbol: string;
       /** Chainid */

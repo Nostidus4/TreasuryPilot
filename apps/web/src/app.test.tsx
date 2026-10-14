@@ -184,6 +184,18 @@ test('the organization view lists cross-chain treasuries separately without a co
   ).not.toBeInTheDocument();
 });
 
+test('an organization without treasuries opens the setup checklist', async () => {
+  renderApp(BASE, {
+    beforeRender: () => {
+      db.orgs[0].treasuries = [];
+    },
+  });
+
+  expect(
+    await screen.findByRole('heading', { name: /set up northwind/i }),
+  ).toBeInTheDocument();
+});
+
 test('selecting a Safe in one chart zooms the liquidity chart into it', async () => {
   const user = userEvent.setup();
   renderApp(T);
