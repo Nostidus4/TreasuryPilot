@@ -28,6 +28,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TP_DATABASE_URL", "DATABASE_URL"),
     )
     session_secret: SecretStr | None = None
+    # Signs notification-email unsubscribe links; shared with the egress worker, never the session key.
+    email_unsubscribe_key: SecretStr | None = None
     redis_url: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,

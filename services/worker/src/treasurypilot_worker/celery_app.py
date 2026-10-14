@@ -82,6 +82,16 @@ def create_celery_app() -> Celery:
                 "schedule": crontab(hour=0, minute=5),
                 "options": {"queue": "core"},
             },
+            "send-notification-emails": {
+                "task": "treasurypilot.notifications.send-emails",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "webhooks", "expires": 55},
+            },
+            "send-daily-notification-digests": {
+                "task": "treasurypilot.notifications.send-daily-digests",
+                "schedule": crontab(minute=0, hour=8),
+                "options": {"queue": "webhooks", "expires": 3600},
+            },
             "deliver-webhooks": {
                 "task": "treasurypilot.notifications.deliver-webhooks",
                 "schedule": timedelta(seconds=1),

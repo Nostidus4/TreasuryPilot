@@ -346,6 +346,44 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/notifications/email': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Email Preference */
+    get: operations['get_email_preference_v1_me_notifications_email_get'];
+    /** Set Email Preference */
+    put: operations['set_email_preference_v1_me_notifications_email_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/notifications/email/unsubscribe': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Unsubscribe Email
+     * @description Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory.
+     */
+    post: operations['unsubscribe_email_v1_me_notifications_email_unsubscribe_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/wallets': {
     parameters: {
       query?: never;
@@ -1903,6 +1941,19 @@ export interface components {
       expiresAt: string;
       /** Url */
       url: string;
+    };
+    /**
+     * EmailDeliveryMode
+     * @enum {string}
+     */
+    EmailDeliveryMode: 'immediate' | 'daily' | 'off';
+    /** EmailPreferenceRequest */
+    EmailPreferenceRequest: {
+      deliveryMode: components['schemas']['EmailDeliveryMode'];
+    };
+    /** EmailPreferenceView */
+    EmailPreferenceView: {
+      deliveryMode: components['schemas']['EmailDeliveryMode'];
     };
     /** EvidenceBundle */
     EvidenceBundle: {
@@ -3928,6 +3979,89 @@ export interface operations {
         content: {
           'application/json': components['schemas']['NotificationPreferencesView'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_email_preference_v1_me_notifications_email_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EmailPreferenceView'];
+        };
+      };
+    };
+  };
+  set_email_preference_v1_me_notifications_email_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EmailPreferenceRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EmailPreferenceView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unsubscribe_email_v1_me_notifications_email_unsubscribe_post: {
+    parameters: {
+      query: {
+        user_id: string;
+        signature: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {

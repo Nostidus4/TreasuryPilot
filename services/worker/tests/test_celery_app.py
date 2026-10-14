@@ -243,3 +243,19 @@ def test_real_delivery_preserves_parent_correlation_id_header() -> None:
             broker_url=original_broker_url,
             result_backend=original_result_backend,
         )
+
+
+def test_notification_email_runs_on_the_egress_queue_not_core() -> None:
+    from treasurypilot_worker.tasks import send_daily_notification_digests, send_notification_emails
+
+    immediate = app.conf.beat_schedule["send-notification-emails"]
+    daily = app.conf.beat_schedule["send-daily-notification-digests"]
+
+    assert immediate["task"] == "treasurypilot.notifications.send-emails"
+    assert immediate["schedule"] == timedelta(seconds=60)
+    assert immediate["options"] == {"queue": "webhooks", "expires": 55}
+    assert daily["task"] == "treasurypilot.notifications.send-daily-digests"
+    assert daily["schedule"].hour == {8} and daily["schedule"].minute == {0}
+    assert daily["options"]["queue"] == "webhooks"
+    assert send_notification_emails.queue == "webhooks"
+    assert send_daily_notification_digests.queue == "webhooks"

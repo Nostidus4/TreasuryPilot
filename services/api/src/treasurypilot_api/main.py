@@ -86,6 +86,7 @@ from treasurypilot_api.notifications.routes import (
     NotificationRepository,
     SqlAlchemyNotificationRepository,
 )
+from treasurypilot_api.notifications.routes import email_router as notification_email_router
 from treasurypilot_api.notifications.routes import router as notifications_router
 from treasurypilot_api.notifications.telegram import (
     SqlAlchemyTelegramRepository,
@@ -438,6 +439,7 @@ def create_app(
     app.include_router(review_router)
     app.include_router(notifications_router)
     app.include_router(webhook_router)
+    app.include_router(notification_email_router)
     app.include_router(requests_router)
     app.include_router(recurring_schedules_router)
     app.include_router(invoice_api_keys_router)

@@ -939,6 +939,31 @@
         "title": "DocumentUrlResponse",
         "type": "object"
       },
+      "EmailDeliveryMode": {
+        "enum": ["immediate", "daily", "off"],
+        "title": "EmailDeliveryMode",
+        "type": "string"
+      },
+      "EmailPreferenceRequest": {
+        "properties": {
+          "deliveryMode": {
+            "$ref": "#/components/schemas/EmailDeliveryMode"
+          }
+        },
+        "required": ["deliveryMode"],
+        "title": "EmailPreferenceRequest",
+        "type": "object"
+      },
+      "EmailPreferenceView": {
+        "properties": {
+          "deliveryMode": {
+            "$ref": "#/components/schemas/EmailDeliveryMode"
+          }
+        },
+        "required": ["deliveryMode"],
+        "title": "EmailPreferenceView",
+        "type": "object"
+      },
       "EvidenceBundle": {
         "additionalProperties": false,
         "properties": {
@@ -5308,6 +5333,106 @@
           }
         },
         "summary": "Put Notification Preferences",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notifications/email": {
+      "get": {
+        "operationId": "get_email_preference_v1_me_notifications_email_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPreferenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Email Preference",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "set_email_preference_v1_me_notifications_email_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailPreferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPreferenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Email Preference",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notifications/email/unsubscribe": {
+      "post": {
+        "description": "Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory.",
+        "operationId": "unsubscribe_email_v1_me_notifications_email_unsubscribe_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "signature",
+            "required": true,
+            "schema": {
+              "title": "Signature",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Email",
         "tags": ["notifications"]
       }
     },

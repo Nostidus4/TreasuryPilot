@@ -109,13 +109,15 @@ Publisher interval 1 s; SSE heartbeat 15 s; Telegram link code 10 min; Telegram 
 
 Telegram env: API `TP_TELEGRAM_BOT_USERNAME`, `TP_TELEGRAM_WEBHOOK_SECRET`, `TP_TELEGRAM_CHAT_HASH_KEY` (fixed for the life of the data; keys the chat-uniqueness hash), `TP_FIELD_ENCRYPTION_KEY`; `worker-webhooks` `TP_TELEGRAM_BOT_TOKEN`, `TP_FIELD_ENCRYPTION_KEY`, `TP_APP_BASE_URL`. Without them the channel is simply off (link-code returns `TELEGRAM_UNAVAILABLE`, the delivery task is a no-op). The bot token is read from the environment only and never logged. Chat webhooks use the encrypted per-user target and require `TP_FIELD_ENCRYPTION_KEY` in the worker (`worker-webhooks`, which has the egress); without it the chat delivery task is a no-op. Provider webhook URLs are never logged.
 
+Email cadence is per user (`immediate`, `daily` or `off`, default `immediate`). Mandatory events (`CRITICAL` or a mandatory category) are always emailed immediately, whatever the cadence or unsubscribe state. `GET`/`PUT /v1/me/notifications/email` read or update the cadence. The signed `POST /v1/me/notifications/email/unsubscribe?user_id=…&signature=…` endpoint powers List-Unsubscribe; it only disables non-critical mail. Immediate mail polls each 60 s, daily digests run at 08:00 UTC, both on the `webhooks` queue (Resend needs egress). `worker-webhooks` env: `TP_RESEND_API_KEY`, `TP_RESEND_FROM_EMAIL`, `TP_EMAIL_UNSUBSCRIBE_KEY` (a dedicated key of at least 32 bytes shared with the API; signs unsubscribe links, never the session secret), `TP_PUBLIC_API_BASE_URL`, `TP_APP_BASE_URL`. Without a Resend key or unsubscribe key the email tasks are no-ops (the latter is logged); the unsubscribe endpoint answers 503 when the API has no valid `TP_EMAIL_UNSUBSCRIBE_KEY`.
+
 ## 10. Security
 
-Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from a notification channel; chat ids and provider webhook URLs encrypted (Confidential); chat webhook destinations constrained to provider HTTPS endpoints to prevent SSRF.
+Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from a notification channel; chat ids and provider webhook URLs encrypted (Confidential); chat webhook destinations constrained to provider HTTPS endpoints to prevent SSRF. Email uses only the notification title, body and internal link (no payload, amount or address); unsubscribe signatures are HMAC-SHA256 under `TP_EMAIL_UNSUBSCRIBE_KEY`.
 
 ## 11. Failure scenarios
 
-Telegram or chat provider down → in-app still delivered and outbound retries run independently; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates).
+Telegram or chat provider down → in-app still delivered and outbound retries run independently; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates). Email failures retry with backoff (1, 2, 4, 8 min, 5 attempts; a 4xx from Resend is permanent); sends carry an `Idempotency-Key`, so a crash after provider acceptance is deduplicated by Resend when the 10 min claim lease expires.
 
 ## 12. Test plan
 

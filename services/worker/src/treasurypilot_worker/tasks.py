@@ -18,6 +18,7 @@ from treasurypilot_worker.invoices.recurring import generate_due_recurring_draft
 from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
 from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
+from treasurypilot_worker.notify.delivery import deliver_pending_emails
 from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
@@ -173,7 +174,10 @@ class _PublisherRuntime:
             # A broken connection must not poison later runs: rebuild the pool next time.
             if self._pool is not None:
                 pool, self._pool = self._pool, None
-                loop.run_until_complete(pool.close())
+                try:
+                    loop.run_until_complete(pool.close())
+                except Exception:  # a dead pool must not mask the original error
+                    logger.warning("worker_pool_close_failed", exc_info=True)
             raise
 
 
@@ -181,6 +185,7 @@ _publisher = _PublisherRuntime()
 _telegram = _PublisherRuntime()
 _chat = _PublisherRuntime()
 _webhooks = _PublisherRuntime()
+_emails = _PublisherRuntime()
 logger = logging.getLogger(__name__)
 
 
@@ -282,3 +287,35 @@ def deliver_chat() -> dict[str, int]:
         )
 
     return {"sent": _chat.run(database_url, work)}
+
+
+def _deliver_emails(cadence: str) -> dict[str, int]:
+    settings = get_settings()
+    key = settings.resend_api_key
+    if key is None or not key.get_secret_value().strip() or not settings.resend_from_email:
+        return {"sent": 0}  # email is optional: no provider configured, no channel
+    unsubscribe_key = settings.email_unsubscribe_key
+    if unsubscribe_key is None or len(unsubscribe_key.get_secret_value().encode()) < 32:
+        logger.error("email_delivery_disabled_no_unsubscribe_key")
+        return {"sent": 0}
+    database_url = settings.database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for notification email delivery")
+
+    async def work(pool: Any) -> int:
+        return (await deliver_pending_emails(pool, settings=settings, cadence=cadence))["sent"]
+
+    return {"sent": _emails.run(database_url, work)}
+
+
+# Resend is an external HTTPS API, so email runs on the egress-capable "webhooks" queue.
+@app.task(name="treasurypilot.notifications.send-emails", queue="webhooks")
+def send_notification_emails() -> dict[str, int]:
+    """Deliver immediate and mandatory notification mail."""
+    return _deliver_emails("immediate")
+
+
+@app.task(name="treasurypilot.notifications.send-daily-digests", queue="webhooks")
+def send_daily_notification_digests() -> dict[str, int]:
+    """Deliver 08:00 UTC digests to users who selected daily email."""
+    return _deliver_emails("daily")

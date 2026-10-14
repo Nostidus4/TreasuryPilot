@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import uuid
 from collections.abc import Mapping
 from enum import StrEnum
 from urllib.parse import urlsplit, urlunsplit
@@ -142,3 +145,15 @@ def canonical_chat_webhook_url(kind: str, value: str) -> str:
     if not valid:
         raise ValueError("invalid webhook URL")
     return urlunsplit(("https", host, path, parsed.query, ""))
+
+
+MIN_UNSUBSCRIBE_SECRET_BYTES = 32
+
+
+def unsubscribe_signature(user_id: uuid.UUID, secret: str | bytes) -> str:
+    """HMAC for the email unsubscribe link, shared by the signing worker and the API."""
+
+    key = secret.encode() if isinstance(secret, str) else secret
+    if len(key) < MIN_UNSUBSCRIBE_SECRET_BYTES:
+        raise ValueError("notification email signing secret must contain at least 32 bytes")
+    return hmac.new(key, f"notification-unsubscribe:{user_id}".encode(), hashlib.sha256).hexdigest()

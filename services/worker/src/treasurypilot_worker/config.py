@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     ai_config_path: Path = Path("config/ai.yaml")
     # Compose sets DATABASE_URL unprefixed; empty means this process has no DB access.
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    # Environment-only credentials for notification email, held by the egress worker.
+    environment: str = "local"
+    resend_api_key: SecretStr | None = None
+    resend_from_email: str | None = None
+    # Shared with the API: signs List-Unsubscribe links (at least 32 bytes).
+    email_unsubscribe_key: SecretStr | None = None
+    public_api_base_url: str = "http://localhost:8000"
     log_level: str = "INFO"
     log_format: LogFormat = "json"
     # Unset keeps the Prometheus endpoint off (tests, beat); compose serves it on the internal net.
