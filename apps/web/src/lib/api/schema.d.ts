@@ -1522,6 +1522,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/governance-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Mandate Activation Tx */
+    post: operations['create_mandate_activation_tx_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__governance_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx': {
     parameters: {
       query?: never;
@@ -1574,6 +1591,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/deactivation-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Build Deactivation Tx */
+    post: operations['build_deactivation_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__deactivation_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/registration-tx': {
     parameters: {
       query?: never;
@@ -1585,6 +1619,23 @@ export interface paths {
     put?: never;
     /** Build Registration Tx */
     post: operations['build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/replace-address': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Replace Payee Address */
+    post: operations['replace_payee_address_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__replace_address_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2088,6 +2139,11 @@ export interface components {
       row: number;
       /** Value */
       value: string;
+    };
+    /** DeactivationRequest */
+    DeactivationRequest: {
+      /** Reason */
+      reason: string;
     };
     /** DocumentUrlResponse */
     DocumentUrlResponse: {
@@ -2923,6 +2979,13 @@ export interface components {
     RenewRequest: {
       /** Duedate */
       dueDate?: string | null;
+    };
+    /** ReplacePayeeAddressRequest */
+    ReplacePayeeAddressRequest: {
+      /** Address */
+      address: string;
+      /** Reason */
+      reason: string;
     };
     /** RequestBulkCreate */
     RequestBulkCreate: {
@@ -6832,6 +6895,41 @@ export interface operations {
       };
     };
   };
+  create_mandate_activation_tx_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__governance_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post: {
     parameters: {
       query?: never;
@@ -6971,6 +7069,45 @@ export interface operations {
       };
     };
   };
+  build_deactivation_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__deactivation_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeactivationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post: {
     parameters: {
       query?: never;
@@ -6985,12 +7122,53 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
-      200: {
+      201: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  replace_payee_address_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__replace_address_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReplacePayeeAddressRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
