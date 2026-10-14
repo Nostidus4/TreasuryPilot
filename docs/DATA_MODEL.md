@@ -115,7 +115,7 @@ erDiagram
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `snapshots` | id, treasury_id, block_number, block_hash, observed_at, data jsonb (balances, counters, payees, mandate), coverage, missing jsonb | referenced by plans |
+| `snapshots` | id, org_id, treasury_id, purpose (PLAN, PRE_STEP, DASHBOARD, READBACK), block_number, block_hash, block_timestamp, observed_at, provider, data jsonb (balances, counters, payees, mandate, safes, aave), coverage, missing jsonb | referenced by plans; immutable, only DASHBOARD rows older than 7 days are deleted |
 | `plans` | id, treasury_id, snapshot_id, planner_source enum(AI,RULE_BASED,DETERMINISTIC), chosen_reason, objective_score jsonb, status enum(Proposed,Validated,Rejected,Attested,Executing,Completed,PartiallyCompleted,Aborted), plan_hash | idx(treasury_id, created_at desc) |
 | `plan_steps` | id, plan_id, seq, step_id (bytes32, deterministic), request_id, action enum(REFILL,PAY,SWAP), from_wallet, to_address, amount, params jsonb, status | unique(step_id) |
 | `validations` | id, plan_id, step_id null, decision enum(ALLOW,NEEDS_APPROVAL,BLOCK), reason_codes text[], checks jsonb, policy_version | append-only |
