@@ -49,6 +49,15 @@ def test_domain_event_is_signed_delivered_and_persisted(monkeypatch: Any) -> Non
         # This test uses a local loopback receiver; production keeps the resolver
         # that permits only public destinations.
         monkeypatch.setattr(webhook_module, "_PublicResolver", aiohttp.resolver.DefaultResolver)
+        monkeypatch.setattr(webhook_module, "_reject_non_public_literal", lambda url: None)
+        # The table only stores https URLs and the receiver is plain HTTP: downgrade on read.
+        monkeypatch.setattr(
+            webhook_module,
+            "_CLAIM",
+            webhook_module._CLAIM.replace(
+                "e.url,", "replace(e.url, 'https://', 'http://') AS url,"
+            ),
+        )
         pool = await create_worker_pool(database_url, min_size=1, max_size=1)
         try:
             async with pool.acquire() as connection, connection.transaction():
@@ -63,7 +72,7 @@ def test_domain_event_is_signed_delivered_and_persisted(monkeypatch: Any) -> Non
                     "VALUES ($1, $2, $3, $4, $5)",
                     endpoint_id,
                     organization_id,
-                    f"{server.make_url('/events')}",
+                    f"{server.make_url('/events')}".replace("http://", "https://"),
                     encrypted.encode(),
                     ["ApprovalNeeded"],
                 )

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
@@ -19,6 +19,7 @@ from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.notifications.models import WebhookDelivery, WebhookEndpoint
+from treasurypilot_core.notifications import is_known_event_type
 from treasurypilot_core.privacy import (
     EncryptionConfigurationError,
     FieldCipher,
@@ -28,6 +29,7 @@ from treasurypilot_core.privacy import (
 router = APIRouter(prefix="/v1/orgs/{organization_id}/webhooks", tags=["webhooks"])
 _ADMIN = require_role(OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER)
 _SECRET_CONTEXT = "webhook_endpoints:{}:secret"
+MAX_ENABLED_ENDPOINTS = 20
 
 
 class CreateWebhookRequest(ApiModel):
@@ -56,6 +58,9 @@ class CreateWebhookRequest(ApiModel):
         result = list(dict.fromkeys(value.strip() for value in values))
         if any(not value or len(value) > 80 for value in result):
             raise ValueError("event types must be non-empty names of at most 80 characters")
+        unknown = [value for value in result if not is_known_event_type(value)]
+        if unknown:
+            raise ValueError(f"unknown event types: {', '.join(unknown)}")
         return result
 
 
@@ -84,7 +89,7 @@ class WebhookDeliveryView(ApiModel):
 
 
 def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
-    sessions = getattr(request.app.state, "review_sessions", None)
+    sessions = getattr(request.app.state, "request_sessions", None)
     if sessions is None:
         raise AuthFailure(
             status=503,
@@ -101,15 +106,34 @@ def _cipher(request: Request) -> FieldCipher:
         try:
             cipher = FieldCipher(FieldEncryptionKey.from_environment())
         except EncryptionConfigurationError:
-            cipher = None
-    if cipher is None:
-        raise AuthFailure(
-            status=503,
-            code="WEBHOOK_ENCRYPTION_UNAVAILABLE",
-            title="Webhooks unavailable",
-            detail="Encrypted webhook secret storage is not configured.",
-        )
+            raise AuthFailure(
+                status=503,
+                code="WEBHOOK_ENCRYPTION_UNAVAILABLE",
+                title="Webhooks unavailable",
+                detail="Encrypted webhook secret storage is not configured.",
+            ) from None
+        request.app.state.webhook_cipher = cipher  # built once, not per request
     return cast(FieldCipher, cipher)
+
+
+async def _require_capacity(session: AsyncSession, organization_id: uuid.UUID) -> None:
+    """Cap enabled endpoints per org; the advisory lock serializes concurrent creates."""
+
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(f"webhooks:{organization_id}", 0)))
+    )
+    enabled = await session.scalar(
+        select(func.count())
+        .select_from(WebhookEndpoint)
+        .where(WebhookEndpoint.org_id == organization_id, WebhookEndpoint.enabled.is_(True))
+    )
+    if (enabled or 0) >= MAX_ENABLED_ENDPOINTS:
+        raise AuthFailure(
+            status=409,
+            code="WEBHOOK_LIMIT_REACHED",
+            title="Webhook limit reached",
+            detail=f"An organization can have at most {MAX_ENABLED_ENDPOINTS} enabled webhooks.",
+        )
 
 
 @router.post(
@@ -136,6 +160,7 @@ async def create_endpoint(
         event_types=payload.event_types,
     )
     async with _sessions(request)() as session, session.begin():
+        await _require_capacity(session, member.organization_id)
         session.add(endpoint)
         await session.flush()
     return WebhookEndpointView(
@@ -190,7 +215,11 @@ async def disable_endpoint(
             .values(enabled=False)
             .returning(WebhookEndpoint.id)
         )
-        if disabled_id is None:
+        if disabled_id is None and not await session.scalar(
+            select(WebhookEndpoint.id).where(
+                WebhookEndpoint.id == endpoint_id, WebhookEndpoint.org_id == member.organization_id
+            )
+        ):  # already disabled is success (idempotent); only an unknown id is 404
             raise AuthFailure(
                 status=404,
                 code="WEBHOOK_NOT_FOUND",
@@ -227,6 +256,8 @@ async def update_endpoint(
                 title="Not found",
                 detail="Webhook endpoint not found.",
             )
+        if payload.enabled and not endpoint.enabled:
+            await _require_capacity(session, member.organization_id)
         endpoint.enabled = payload.enabled
         await session.flush()
         return WebhookEndpointView(

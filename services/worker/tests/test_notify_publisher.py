@@ -84,6 +84,7 @@ class _FakeConnection:
         self.quiet_hours: dict[uuid.UUID, tuple[time, time, str]] = {}
         self.deliver_at: dict[uuid.UUID, datetime] = {}
         self.claim_query = ""
+        self.webhook_event_ids: list[uuid.UUID] = []
         self.insert_query = ""
 
     def transaction(self) -> _FakeTransaction:
@@ -125,6 +126,7 @@ class _FakeConnection:
 
     async def execute(self, query: str, *args: object) -> str:
         if "INSERT INTO webhook_deliveries" in query:
+            self.webhook_event_ids.append(args[1])  # type: ignore[arg-type]
             return "INSERT 0 0"
         if "ON CONFLICT (user_id, event_id) DO NOTHING" in query:
             self.insert_query = query
@@ -387,6 +389,17 @@ def test_a_poison_event_is_dead_lettered_and_does_not_block_the_next() -> None:
     assert {user_id for user_id, _ in connection.notifications} == {connection.approver_id}
     # The parked event is not claimed again.
     assert asyncio.run(publish_from_pool(_FakePool(connection))) == 0  # type: ignore[arg-type]
+
+
+def test_webhooks_are_enqueued_even_when_routing_dead_letters_the_event() -> None:
+    connection = _FakeConnection()
+    poison = _event(connection, "PaymentDone", {"creatorId": "not-a-uuid"})
+    connection.events = [poison]
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    assert poison["failed"]
+    assert connection.webhook_event_ids == [poison["id"]]
 
 
 def test_missing_owner_user_ids_falls_back_to_owners(monkeypatch: pytest.MonkeyPatch) -> None:

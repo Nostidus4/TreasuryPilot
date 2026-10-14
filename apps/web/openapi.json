@@ -694,6 +694,28 @@
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
+      "CreateWebhookRequest": {
+        "properties": {
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 9,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "eventTypes"],
+        "title": "CreateWebhookRequest",
+        "type": "object"
+      },
       "CsvImportCreated": {
         "properties": {
           "flags": {
@@ -3462,6 +3484,17 @@
         "title": "UpdateNotificationPreferences",
         "type": "object"
       },
+      "UpdateWebhookRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "title": "UpdateWebhookRequest",
+        "type": "object"
+      },
       "UploadResponse": {
         "properties": {
           "documentId": {
@@ -3915,6 +3948,115 @@
         },
         "required": ["code", "message", "wallets"],
         "title": "WarningView",
+        "type": "object"
+      },
+      "WebhookDeliveryView": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "endpointId": {
+            "format": "uuid",
+            "title": "Endpointid",
+            "type": "string"
+          },
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasterror"
+          },
+          "lastStatusCode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laststatuscode"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "endpointId",
+          "status",
+          "attemptCount",
+          "lastStatusCode",
+          "lastError",
+          "createdAt"
+        ],
+        "title": "WebhookDeliveryView",
+        "type": "object"
+      },
+      "WebhookEndpointView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["id", "url", "eventTypes", "enabled", "createdAt"],
+        "title": "WebhookEndpointView",
         "type": "object"
       },
       "treasurypilot_api__identity__api__WalletView": {
@@ -8447,6 +8589,305 @@
         },
         "summary": "Update Vendor",
         "tags": ["vendors"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks": {
+      "get": {
+        "operationId": "list_endpoints_v1_orgs__organization_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEndpointView"
+                  },
+                  "title": "Response List Endpoints V1 Orgs  Organization Id  Webhooks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Endpoints",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_endpoint_v1_orgs__organization_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters": {
+      "get": {
+        "operationId": "list_dead_letters_v1_orgs__organization_id__webhooks_dead_letters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryView"
+                  },
+                  "title": "Response List Dead Letters V1 Orgs  Organization Id  Webhooks Dead Letters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dead Letters",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters/{delivery_id}/replay": {
+      "post": {
+        "operationId": "replay_dead_letter_v1_orgs__organization_id__webhooks_dead_letters__delivery_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Dead Letter",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/{endpoint_id}": {
+      "delete": {
+        "operationId": "disable_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "patch": {
+        "operationId": "update_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Endpoint",
+        "tags": ["webhooks"],
         "x-organization-scoped": true
       }
     }

@@ -212,9 +212,6 @@ async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
             "notification_all_recipients_opted_out",
             extra={"event_id": str(event["id"]), "type": event_type},
         )
-    await connection.execute(
-        _ENQUEUE_WEBHOOK_DELIVERIES, event["org_id"], event["id"], event["type"]
-    )
     await connection.execute(_MARK_PUBLISHED, event["id"])
 
 
@@ -233,6 +230,12 @@ async def publish_pending_events(connection: asyncpg.Connection, *, batch_size: 
         events = await connection.fetch(_CLAIM_EVENTS, batch_size)
         for event in events:
             try:
+                # Webhooks need no recipients or routing policy, so a routing failure
+                # must not drop them: enqueue in its own savepoint first.
+                async with connection.transaction():
+                    await connection.execute(
+                        _ENQUEUE_WEBHOOK_DELIVERIES, event["org_id"], event["id"], event["type"]
+                    )
                 async with connection.transaction():
                     await _route(connection, event)
             except (ValueError, asyncpg.PostgresError) as error:

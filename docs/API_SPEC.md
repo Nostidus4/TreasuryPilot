@@ -176,6 +176,10 @@
 | POST | `/me/channels/telegram/link` | Start Telegram linking | auth | → `{code, botUrl}` |
 | PATCH | `/me/channels/{id}` | Opt in to amounts/addresses | auth | `{showAmounts}` |
 | POST | `/integrations/telegram/webhook` | Bot webhook | Telegram secret header | internal |
+| POST | `/orgs/{o}/webhooks` | Create HTTPS destination, event filters and one-time signing secret | OWN, ADM | `{url, eventTypes}` → destination with one-time `secret` |
+| GET | `/orgs/{o}/webhooks` | List destinations without secrets | OWN, ADM | → destination array |
+| PATCH · DELETE | `/orgs/{o}/webhooks/{id}` | Enable/disable destination | OWN, ADM | PATCH `{enabled}` |
+| GET | `/orgs/{o}/webhooks/dead-letters` · POST `/orgs/{o}/webhooks/dead-letters/{id}/replay` | Review and replay a failed delivery | OWN, ADM | Dead-letter array; replay returns updated delivery |
 | GET | `/platform/chains` · PUT `/platform/chains/{id}` | Chain/asset config (M1: seed-driven) | PlatformAdmin | Later UI |
 | GET | `/admin/tenants` | Tenant metadata and active member/treasury counts | staff bearer + source IP allowlist | Platform admin router; requires `TP_ADMIN_STAFF_TOKEN` (≥32 bytes), `TP_ADMIN_STAFF_ID`, and `TP_ADMIN_IP_ALLOWLIST`; missing or invalid configuration fails closed |
 | GET | `/admin/tenants/{tenantId}/health` | Tenant status and basic health counts | staff bearer + source IP allowlist | Metadata only |

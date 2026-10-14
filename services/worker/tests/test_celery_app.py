@@ -25,11 +25,12 @@ def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.task_acks_late is True
     assert app.conf.task_reject_on_worker_lost is True
     queues = {queue.name: queue for queue in app.conf.task_queues}
-    assert set(queues) == {"ai", "core"}
+    assert set(queues) == {"ai", "core", "webhooks"}
     assert queues["core"].exchange.name == "core"
     assert queues["core"].routing_key == "core"
     assert queues["ai"].exchange.name == "ai"
     assert queues["ai"].routing_key == "ai"
+    assert queues["webhooks"].routing_key == "webhooks"
     assert app.conf.task_default_queue == "core"
     assert app.conf.worker_prefetch_multiplier == 1
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
@@ -63,6 +64,15 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
     assert entry["schedule"] == timedelta(seconds=1)
     assert entry["options"] == {"queue": "core", "expires": 2}
+
+
+def test_webhook_delivery_runs_on_its_own_queue_not_core() -> None:
+    from treasurypilot_worker.tasks import deliver_webhooks
+
+    entry = app.conf.beat_schedule["deliver-webhooks"]
+
+    assert entry["options"] == {"queue": "webhooks", "expires": 2}
+    assert deliver_webhooks.queue == "webhooks"
 
 
 def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
