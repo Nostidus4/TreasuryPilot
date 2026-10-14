@@ -11,7 +11,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Final, Protocol, cast
+from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -248,9 +248,7 @@ class RpcClient:
         data = Web3.keccak(text=signature)[:4] + encode(list(input_types), list(args))
         raw = await self.call("eth_call", [{"to": safe, "data": "0x" + data.hex()}, block])
         try:
-            return cast(
-                tuple[Any, ...], decode(output_types, bytes.fromhex(str(raw).removeprefix("0x")))
-            )
+            return decode(output_types, bytes.fromhex(str(raw).removeprefix("0x")))
         except (DecodingError, ValueError):
             raise RpcError(f"{safe} is not a Safe: {signature} returned {raw!r}") from None
 
