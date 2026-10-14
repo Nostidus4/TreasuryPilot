@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import re
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -23,14 +25,17 @@ from typing import Any, Protocol
 
 from eth_abi import decode as abi_decode
 from eth_abi import encode as abi_encode
-from eth_utils import keccak, to_checksum_address
+from eth_utils import is_checksum_address, keccak, to_checksum_address
 
 from treasurypilot_api.treasury.config import (
     ChainConfig,
+    DeploymentConfig,
     PlatformConfiguration,
     PlatformConfigurationError,
     resolve_rpc_url,
 )
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_SAFE_VERSION = "1.4.1"
 # Deployment names in the chain manifest (L1 and L2 singletons of Safe v1.4.1).
@@ -65,19 +70,69 @@ class SafeDeploymentUnavailable(Exception):
     """Safe deployment cannot be offered from the configured chain manifest."""
 
 
-def safe_deployment_available(configuration: PlatformConfiguration, chain_id: int) -> bool:
+class SafeDeploymentCodeMismatch(SafeDeploymentUnavailable):
+    """A configured Safe deployment's live runtime code does not match its manifest hash."""
+
+
+class UnsupportedChain(ValueError):
+    """The chain is unknown or disabled."""
+
+    def __init__(self) -> None:
+        super().__init__("chain is not enabled")
+
+
+# Chains where the cheaper L1 singleton is the right one; every other chain gets the L2
+# singleton (it emits the events indexers need) when it is configured.
+_SAFE_L1_CHAIN_IDS = frozenset({1, 11155111})
+
+
+def _resolve_safe_deployments(
+    configuration: PlatformConfiguration, chain_id: int
+) -> tuple[ChainConfig, list[DeploymentConfig], DeploymentConfig, DeploymentConfig]:
+    """Return (chain, [singleton, factory, handler] to verify, factory, handler)."""
+    chain = next(
+        (item for item in configuration.chains if item.chain_id == chain_id and item.enabled),
+        None,
+    )
+    if chain is None:
+        raise UnsupportedChain
     manifest = next((item for item in configuration.manifests if item.chain_id == chain_id), None)
     if manifest is None:
-        return False
+        raise SafeDeploymentUnavailable
     deployments = {item.name: item for item in manifest.deployments}
-    singleton_configured = any(
-        name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
-        for name in sorted(SAFE_SINGLETON_DEPLOYMENTS)
+    order = ("SAFE_SINGLETON_L1", "SAFE_SINGLETON_L2")
+    if chain_id not in _SAFE_L1_CHAIN_IDS:
+        order = order[::-1]
+    singleton = next(
+        (
+            deployments[name]
+            for name in order
+            if name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
+        ),
+        None,
     )
-    return singleton_configured and all(
-        name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
-        for name in (SAFE_DEPLOYMENT_NAMES["factory"], SAFE_DEPLOYMENT_NAMES["fallback_handler"])
-    )
+    factory = deployments.get(SAFE_DEPLOYMENT_NAMES["factory"])
+    handler = deployments.get(SAFE_DEPLOYMENT_NAMES["fallback_handler"])
+    if singleton is None or factory is None or handler is None:
+        raise SafeDeploymentUnavailable
+    if any(item.version != SUPPORTED_SAFE_VERSION for item in (factory, handler)):
+        raise SafeDeploymentUnavailable
+    return chain, [singleton, factory, handler], factory, handler
+
+
+def _is_strict_address(value: str) -> bool:
+    """0x-prefixed 20-byte hex; mixed-case input must carry a valid EIP-55 checksum."""
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
+        return False
+    return value.islower() or value[2:].isupper() or is_checksum_address(value)
+
+
+def safe_deployment_available(configuration: PlatformConfiguration, chain_id: int) -> bool:
+    try:
+        _resolve_safe_deployments(configuration, chain_id)
+    except (SafeDeploymentUnavailable, UnsupportedChain):
+        return False
+    return True
 
 
 async def verify_safe_deployment_code(
@@ -86,32 +141,8 @@ async def verify_safe_deployment_code(
     environ: Mapping[str, str] = os.environ,
 ) -> None:
     """Require live runtime code hashes for the factory, singleton and handler."""
-    chain = next(
-        (item for item in configuration.chains if item.chain_id == chain_id and item.enabled),
-        None,
-    )
-    manifest = next((item for item in configuration.manifests if item.chain_id == chain_id), None)
-    if chain is None or manifest is None:
-        raise SafeDeploymentUnavailable
-    deployments = {item.name: item for item in manifest.deployments}
-    singleton = next(
-        (
-            deployments[name]
-            for name in sorted(SAFE_SINGLETON_DEPLOYMENTS)
-            if name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
-        ),
-        None,
-    )
-    required = [
-        singleton,
-        deployments.get(SAFE_DEPLOYMENT_NAMES["factory"]),
-        deployments.get(SAFE_DEPLOYMENT_NAMES["fallback_handler"]),
-    ]
-    if any(item is None for item in required):
-        raise SafeDeploymentUnavailable
-    if any(item.version != SUPPORTED_SAFE_VERSION for item in required if item is not None):
-        raise SafeDeploymentUnavailable
-    checked = [item for item in required if item is not None]
+    chain, checked, _, _ = _resolve_safe_deployments(configuration, chain_id)
+    mismatched: list[str] = []
 
     def check(url: str) -> bool:
         if int(str(_rpc(url, "eth_chainId", [])), 16) != chain_id:
@@ -121,6 +152,7 @@ async def verify_safe_deployment_code(
                 str(_rpc(url, "eth_getCode", [deployment.address, "latest"])).removeprefix("0x")
             )
             if not code or keccak(code) != deployment.code_hash_bytes:
+                mismatched.append(deployment.name)
                 return False
         return True
 
@@ -136,7 +168,8 @@ async def verify_safe_deployment_code(
         except (_ProviderError, PlatformConfigurationError, OSError, ValueError):
             continue
     if answered:
-        raise SafeDeploymentUnavailable
+        logger.error("Safe deployment code hash mismatch on chain %s: %s", chain_id, mismatched)
+        raise SafeDeploymentCodeMismatch
     raise RpcUnavailable(f"no RPC provider answered for Safe deployments on chain {chain_id}")
 
 
@@ -152,37 +185,14 @@ def build_safe_deployment_transaction(
     The factory, singleton and fallback handler must all be named deployments;
     legacy scalar manifest fields are deliberately not accepted here.
     """
-    chain = next(
-        (item for item in configuration.chains if item.chain_id == chain_id and item.enabled),
-        None,
+    _, (singleton, _, _), factory, fallback_handler = _resolve_safe_deployments(
+        configuration, chain_id
     )
-    manifest = next((item for item in configuration.manifests if item.chain_id == chain_id), None)
-    if chain is None or manifest is None:
-        raise SafeDeploymentUnavailable
-    deployments = {item.name: item for item in manifest.deployments}
-    singleton = next(
-        (
-            deployments[name]
-            for name in sorted(SAFE_SINGLETON_DEPLOYMENTS)
-            if name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
-        ),
-        None,
-    )
-    required = [
-        singleton,
-        deployments.get(SAFE_DEPLOYMENT_NAMES["factory"]),
-        deployments.get(SAFE_DEPLOYMENT_NAMES["fallback_handler"]),
-    ]
-    if any(item is None for item in required):
-        raise SafeDeploymentUnavailable
-    if any(item.version != SUPPORTED_SAFE_VERSION for item in required if item is not None):
-        raise SafeDeploymentUnavailable
     if not owners or not 1 <= threshold <= len(owners) or not 0 <= salt_nonce < 2**256:
         raise ValueError("invalid Safe owners, threshold, or salt nonce")
-    try:
-        normalized = [to_checksum_address(owner) for owner in owners]
-    except ValueError:
-        raise ValueError("owner addresses must be valid Ethereum addresses") from None
+    if not all(_is_strict_address(owner) for owner in owners):
+        raise ValueError("owner addresses must be valid Ethereum addresses")
+    normalized = [to_checksum_address(owner) for owner in owners]
     if len({owner.lower() for owner in normalized}) != len(normalized):
         raise ValueError("owner addresses must be unique")
     if any(int(owner, 16) == 0 for owner in normalized):
@@ -190,9 +200,6 @@ def build_safe_deployment_transaction(
 
     # Safe.setup(owners, threshold, 0, empty bytes, fallback handler, no payment).
     setup_signature = "setup(address[],uint256,address,bytes,address,address,uint256,address)"
-    assert singleton is not None
-    factory = deployments[SAFE_DEPLOYMENT_NAMES["factory"]]
-    fallback_handler = deployments[SAFE_DEPLOYMENT_NAMES["fallback_handler"]]
     setup_data = keccak(text=setup_signature)[:4] + abi_encode(
         ["address[]", "uint256", "address", "bytes", "address", "address", "uint256", "address"],
         [

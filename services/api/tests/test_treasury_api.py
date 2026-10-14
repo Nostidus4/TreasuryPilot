@@ -36,9 +36,10 @@ from treasurypilot_api.treasury.config import (
 from treasurypilot_api.treasury.models import Asset, Chain, Coverage, TreasuryStatus, WalletRole
 from treasurypilot_api.treasury.safe import (
     RpcUnavailable,
-    SafeDeploymentUnavailable,
+    SafeDeploymentCodeMismatch,
     SafeInfo,
     SafeVerificationError,
+    UnsupportedChain,
     build_safe_deployment_transaction,
     verify_safe_deployment_code,
 )
@@ -275,8 +276,42 @@ def test_safe_deployment_manifest_hashes_must_match_live_runtime_code(
 
     monkeypatch.setattr(safe_module, "_rpc", rpc)
     asyncio.run(verify_safe_deployment_code(configuration(runtime_hash), CHAIN_ID, {}))
-    with pytest.raises(SafeDeploymentUnavailable):
+    with pytest.raises(SafeDeploymentCodeMismatch):
         asyncio.run(verify_safe_deployment_code(configuration("0x" + "ff" * 32), CHAIN_ID, {}))
+    with pytest.raises(UnsupportedChain):
+        asyncio.run(verify_safe_deployment_code(configuration(runtime_hash), 999, {}))
+
+
+def test_safe_deployment_prefers_l2_singleton_off_l1_chains_and_checks_owner_format() -> None:
+    base = _configuration()
+    entries = (
+        *base.manifests[0].deployments,
+        *(
+            DeploymentConfig(
+                name=name,
+                address="0x" + f"{index:040x}",
+                code_hash="0x" + f"{index:064x}",
+                version="1.4.1",
+            )
+            for name, index in (
+                ("SAFE_SINGLETON_L1", 0x601),
+                ("SAFE_SINGLETON_L2", 0x604),
+                ("SAFE_PROXY_FACTORY", 0x602),
+                ("SAFE_FALLBACK_HANDLER", 0x603),
+            )
+        ),
+    )
+    configuration = PlatformConfiguration(
+        chains=base.chains,
+        manifests=(DeploymentManifest(chain_id=CHAIN_ID, deployments=entries),),
+    )
+    data = bytes.fromhex(
+        build_safe_deployment_transaction(configuration, CHAIN_ID, OWNERS[:1], 1, 1)["data"][2:]
+    )
+    assert abi_decode(["address", "bytes", "uint256"], data[4:])[0] == "0x" + f"{0x604:040x}"
+    for bad in (OWNERS[0][2:], "0x" + "aB" * 20):
+        with pytest.raises(ValueError, match="valid Ethereum addresses"):
+            build_safe_deployment_transaction(configuration, CHAIN_ID, [bad], 1, 1)
 
 
 @pytest.mark.parametrize(

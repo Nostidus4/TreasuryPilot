@@ -246,18 +246,23 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
     if (
       owners.length === 0 ||
       owners.some((owner) => !/^0x[0-9a-fA-F]{40}$/.test(owner)) ||
-      new Set(owners.map((owner) => owner.toLowerCase())).size !== owners.length ||
+      new Set(owners.map((owner) => owner.toLowerCase())).size !==
+        owners.length ||
       !Number.isInteger(threshold) ||
       threshold < 1 ||
       threshold > owners.length
     ) {
       setDeployError(
-        t('Enter distinct owner addresses and a threshold from 1 to the owner count.'),
+        t(
+          'Enter distinct owner addresses and a threshold from 1 to the owner count.',
+        ),
       );
       return;
     }
     if (!wallet.address) {
-      setDeployError(t('Connect a wallet to submit the Safe deployment transaction.'));
+      setDeployError(
+        t('Connect a wallet to submit the Safe deployment transaction.'),
+      );
       return;
     }
     try {
@@ -266,19 +271,33 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
         owners,
         threshold,
       });
-      if (wallet.chainId !== draft.chainId) await wallet.switchChain(draft.chainId);
+      if (wallet.chainId !== draft.chainId)
+        await wallet.switchChain(draft.chainId);
       const hash = await wallet.sendTransaction({
         to: result.transaction.to,
         data: result.transaction.data,
         value: result.transaction.value,
+        chainId: draft.chainId,
       });
-      if (!publicClient) throw new Error(t('No RPC client is available for this chain.'));
+      if (!publicClient)
+        throw new Error(t('No RPC client is available for this chain.'));
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') {
+        throw new Error(
+          t('The Safe deployment transaction reverted. Transaction: {{hash}}', {
+            hash,
+          }),
+        );
+      }
       const factory = result.transaction.to.toLowerCase();
       const event = receipt.logs.find((log) => {
         if (log.address.toLowerCase() !== factory) return false;
         try {
-          decodeEventLog({ abi: safeFactoryAbi, data: log.data, topics: log.topics });
+          decodeEventLog({
+            abi: safeFactoryAbi,
+            data: log.data,
+            topics: log.topics,
+          });
           return true;
         } catch {
           return false;
@@ -286,9 +305,12 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
       });
       if (!event) {
         throw new Error(
-          t('The transaction was mined, but no Safe address was returned. Transaction: {{hash}}', {
-            hash,
-          }),
+          t(
+            'The transaction was mined, but no Safe address was returned. Transaction: {{hash}}',
+            {
+              hash,
+            },
+          ),
         );
       }
       const decoded = decodeEventLog({
@@ -296,9 +318,15 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
         data: event.data,
         topics: event.topics,
       });
-      setDraft({ ...draft, safes: { ...draft.safes, [role]: decoded.args.proxy } });
+      // Functional update: the draft may have been edited while the wallet prompt and receipt wait ran.
+      setDraft((current) => ({
+        ...current,
+        safes: { ...current.safes, [role]: decoded.args.proxy },
+      }));
     } catch (error) {
-      setDeployError(error instanceof Error ? error.message : t('Safe deployment failed.'));
+      setDeployError(
+        error instanceof Error ? error.message : t('Safe deployment failed.'),
+      );
     }
   };
 
@@ -439,7 +467,10 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
               />
               <CardContent className="grid gap-4">
                 {chain && !chain.safeDeploymentAvailable && (
-                  <Alert tone="warning" title={t('Safe deployment unavailable')}>
+                  <Alert
+                    tone="warning"
+                    title={t('Safe deployment unavailable')}
+                  >
                     {t(
                       'Creating a Safe from this screen is unavailable on {{chain}} because its verified Safe factory, v1.4.1 singleton, and fallback handler are not configured. You can continue with Safes that already exist on this chain.',
                       { chain: chain.name },
@@ -451,10 +482,16 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                     <div>
                       <h3 className="font-medium">{t('Create a Safe')}</h3>
                       <p className="text-sm text-muted-foreground">
-                        {t('The transaction is sent by your connected wallet. TreasuryPilot never receives keys or signs for you.')}
+                        {t(
+                          'The transaction is sent by your connected wallet. TreasuryPilot never receives keys or signs for you.',
+                        )}
                       </p>
                     </div>
-                    <Field htmlFor="safe-owners" label={t('Safe owners')} hint={t('Enter one 0x address per line.')}>
+                    <Field
+                      htmlFor="safe-owners"
+                      label={t('Safe owners')}
+                      hint={t('Enter one 0x address per line.')}
+                    >
                       <Textarea
                         id="safe-owners"
                         value={safeOwners}
@@ -463,17 +500,25 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                       />
                     </Field>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field htmlFor="safe-threshold" label={t('Signing threshold')}>
+                      <Field
+                        htmlFor="safe-threshold"
+                        label={t('Signing threshold')}
+                      >
                         <Input
                           id="safe-threshold"
                           inputMode="numeric"
                           type="number"
                           min={1}
                           value={safeThreshold}
-                          onChange={(event) => setSafeThreshold(event.target.value)}
+                          onChange={(event) =>
+                            setSafeThreshold(event.target.value)
+                          }
                         />
                       </Field>
-                      <Field htmlFor="safe-target-role" label={t('Use this Safe for')}>
+                      <Field
+                        htmlFor="safe-target-role"
+                        label={t('Use this Safe for')}
+                      >
                         <Select
                           id="safe-target-role"
                           value={safeTargetRole}

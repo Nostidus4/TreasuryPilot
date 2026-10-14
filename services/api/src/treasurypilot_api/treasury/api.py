@@ -16,6 +16,7 @@ from treasurypilot_api.treasury.config import PlatformConfiguration
 from treasurypilot_api.treasury.models import Coverage, TreasuryStatus, WalletRole
 from treasurypilot_api.treasury.safe import (
     RpcUnavailable,
+    SafeDeploymentCodeMismatch,
     SafeDeploymentUnavailable,
     build_safe_deployment_transaction,
     safe_deployment_available,
@@ -133,6 +134,16 @@ async def safe_deployment_transaction(
             payload.threshold,
             secrets.randbits(256),
         )
+    except SafeDeploymentCodeMismatch:
+        raise AuthFailure(
+            status=503,
+            code="SAFE_DEPLOYMENT_VERIFICATION_FAILED",
+            title="Safe deployment verification failed",
+            detail=(
+                "The configured Safe deployments do not match their recorded runtime code "
+                "hashes on this chain. Contact an operator."
+            ),
+        ) from None
     except SafeDeploymentUnavailable:
         raise AuthFailure(
             status=503,
