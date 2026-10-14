@@ -123,6 +123,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/invites/{token}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Invite */
+    post: operations['accept_invite_v1_invites__token__accept_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me': {
     parameters: {
       query?: never;
@@ -242,41 +259,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/orgs/{organization_id}/review-items': {
+  '/v1/orgs/{organization_id}/invites': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** List Review Items */
-    get: operations['list_review_items_v1_orgs__organization_id__review_items_get'];
+    /** List Invites */
+    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
     put?: never;
-    post?: never;
+    /** Create Invite */
+    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/v1/orgs/{organization_id}/review-items/{item_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Review Item */
-    get: operations['get_review_item_v1_orgs__organization_id__review_items__item_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/v1/orgs/{organization_id}/review-items/{item_id}/actions': {
+  '/v1/orgs/{organization_id}/invites/{invite_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -285,8 +286,77 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Act On Review Item */
-    post: operations['act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post'];
+    post?: never;
+    /** Revoke Invite */
+    delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Members */
+    get: operations['list_members_v1_orgs__organization_id__members_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members/{user_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Member */
+    delete: operations['remove_member_v1_orgs__organization_id__members__user_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Member */
+    patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Request Evidence */
+    get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/safes/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safe Deployment Transaction */
+    post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -308,6 +378,40 @@ export interface paths {
     head?: never;
     /** Update Organization Settings */
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Treasury */
+    post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Treasury */
+    get: operations['get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
@@ -366,12 +470,39 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AICallEvidence */
+    AICallEvidence: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Model */
+      model?: string | null;
+      /** Outputsummary */
+      outputSummary?: string | null;
+      /** Promptversion */
+      promptVersion?: string | null;
+      /** Purpose */
+      purpose: string;
+    };
     /** ActionLimits */
     ActionLimits: {
       /** Daily */
       daily: string;
       /** Perrequest */
       perRequest: string;
+    };
+    /** ApprovalEvidence */
+    ApprovalEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** AssetView */
     AssetView: {
@@ -388,6 +519,17 @@ export interface components {
       isTest: boolean;
       /** Symbol */
       symbol: string;
+    };
+    /** AttestationEvidence */
+    AttestationEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** AuditLogResponse */
     AuditLogResponse: {
@@ -444,6 +586,24 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+    /** BundleRequest */
+    BundleRequest: {
+      /** Amount */
+      amount: string;
+      /** Currency */
+      currency: string;
+      /** Fingerprint */
+      fingerprint?: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Invoicehash */
+      invoiceHash?: string | null;
+      /** Vendordisplayname */
+      vendorDisplayName?: string | null;
+    };
     /** ChainView */
     ChainView: {
       /** Assets */
@@ -454,12 +614,19 @@ export interface components {
       explorerUrl: string;
       /** Name */
       name: string;
+      /** Safedeploymentavailable */
+      safeDeploymentAvailable: boolean;
     };
     /** ChainsResponse */
     ChainsResponse: {
       /** Chains */
       chains: components['schemas']['ChainView'][];
     };
+    /**
+     * Coverage
+     * @enum {string}
+     */
+    Coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
       /** Country */
@@ -474,6 +641,97 @@ export interface components {
       /** Name */
       name: string;
     };
+    /** CreateTreasuryRequest */
+    CreateTreasuryRequest: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      /** Wallets */
+      wallets: components['schemas']['WalletRequest'][];
+    };
+    /** EvidenceBundle */
+    EvidenceBundle: {
+      /** Aicalls */
+      aiCalls?: components['schemas']['AICallEvidence'][];
+      /** Appversion */
+      appVersion: string;
+      approval?: components['schemas']['ApprovalEvidence'] | null;
+      attestation?: components['schemas']['AttestationEvidence'] | null;
+      /** Coverage */
+      coverage?: {
+        [key: string]: unknown;
+      };
+      /** Easuid */
+      easUid?: string | null;
+      /** Fixturelabels */
+      fixtureLabels?: string[];
+      /** Flags */
+      flags?: components['schemas']['FlagEvidence'][];
+      /**
+       * Generatedat
+       * Format: date-time
+       */
+      generatedAt: string;
+      /** Operations */
+      operations?: {
+        [key: string]: unknown;
+      }[];
+      /**
+       * Organizationid
+       * Format: uuid
+       */
+      organizationId: string;
+      plan?: components['schemas']['PlanEvidence'] | null;
+      /** Reconciliation */
+      reconciliation?: {
+        [key: string]: unknown;
+      } | null;
+      request: components['schemas']['BundleRequest'];
+      /**
+       * Schemaversion
+       * @default evidence-bundle.v1
+       * @constant
+       */
+      schemaVersion: 'evidence-bundle.v1';
+      /** Sha256 */
+      sha256?: string | null;
+      /**
+       * Status
+       * @default VALID
+       * @constant
+       */
+      status: 'VALID';
+      /** Transactions */
+      transactions?: components['schemas']['TransactionEvidence'][] | null;
+      /** Validations */
+      validations?: components['schemas']['ValidationEvidence'][];
+      /** Verifications */
+      verifications?: components['schemas']['VerificationEvidence'][];
+    };
+    /** FlagEvidence */
+    FlagEvidence: {
+      /** Acknote */
+      ackNote?: string | null;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Code */
+      code: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Severity */
+      severity: string;
+      /** Status */
+      status: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -487,6 +745,74 @@ export interface components {
       status: string;
       /** Version */
       version: string;
+    };
+    /** InviteCreateRequest */
+    InviteCreateRequest: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** InviteCreatedResponse */
+    InviteCreatedResponse: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+      /** Token */
+      token: string;
+    };
+    /** InviteView */
+    InviteView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+    };
+    /** InvitesResponse */
+    InvitesResponse: {
+      /** Invites */
+      invites: components['schemas']['InviteView'][];
     };
     /** LinkWalletRequest */
     LinkWalletRequest: {
@@ -601,7 +927,32 @@ export interface components {
       memberships: components['schemas']['MembershipView'][];
       user: components['schemas']['UserView'];
       /** Wallets */
-      wallets: components['schemas']['WalletView'][];
+      wallets: components['schemas']['treasurypilot_api__identity__api__WalletView'][];
+    };
+    /** MemberResponse */
+    MemberResponse: {
+      member: components['schemas']['MemberView'];
+    };
+    /** MemberView */
+    MemberView: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
+      /** Status */
+      status: string;
+      /**
+       * Userid
+       * Format: uuid
+       */
+      userId: string;
+    };
+    /** MembersResponse */
+    MembersResponse: {
+      /** Members */
+      members: components['schemas']['MemberView'][];
     };
     /** MembershipView */
     MembershipView: {
@@ -691,6 +1042,17 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** PlanEvidence */
+    PlanEvidence: {
+      /** Planhash */
+      planHash?: string | null;
+      /** Plannersource */
+      plannerSource: string;
+      /** Steps */
+      steps?: {
+        [key: string]: unknown;
+      }[];
+    };
     /** RefillPath */
     RefillPath: {
       /** From */
@@ -698,46 +1060,35 @@ export interface components {
       /** To */
       to: string;
     };
-    /**
-     * ReviewAction
-     * @enum {string}
-     */
-    ReviewAction:
-      | 'RETRY'
-      | 'REPLAN'
-      | 'CANCEL'
-      | 'EDIT_REQUEST'
-      | 'GRANT_EXCEPTION'
-      | 'ACCEPT_FEE'
-      | 'DEFER'
-      | 'ACKNOWLEDGE'
-      | 'MARK_MATCHED';
-    /** ReviewActionRequest */
-    ReviewActionRequest: {
-      action: components['schemas']['ReviewAction'];
-      /** Note */
-      note?: string | null;
-      /** Version */
-      version: number;
+    /** RoleUpdateRequest */
+    RoleUpdateRequest: {
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
     };
-    /**
-     * ReviewStatus
-     * @enum {string}
-     */
-    ReviewStatus: 'Open' | 'Resolved' | 'Dismissed';
-    /**
-     * ReviewType
-     * @enum {string}
-     */
-    ReviewType:
-      | 'POLICY_BLOCK'
-      | 'NEEDS_AUTHORITY'
-      | 'FEE_APPROVAL'
-      | 'UNCERTAIN_TX'
-      | 'DISCREPANCY'
-      | 'AI_REJECTED'
-      | 'INFRA'
-      | 'UNEXPECTED_OUTFLOW';
+    /** SafeDeploymentRequest */
+    SafeDeploymentRequest: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Threshold */
+      threshold: number;
+    };
+    /** SafeDeploymentResponse */
+    SafeDeploymentResponse: {
+      /** Chainid */
+      chainId: number;
+      transaction: components['schemas']['SafeDeploymentTransaction'];
+    };
+    /** SafeDeploymentTransaction */
+    SafeDeploymentTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
+    };
     /** SiweNonceResponse */
     SiweNonceResponse: {
       /** Chainid */
@@ -753,6 +1104,54 @@ export interface components {
       nonce: string;
       /** Scheme */
       scheme: string;
+    };
+    /** TransactionEvidence */
+    TransactionEvidence: {
+      /** Blocknumber */
+      blockNumber?: number | null;
+      /** Chainid */
+      chainId: number;
+      /** Feebaseunits */
+      feeBaseUnits?: string | null;
+      /** Txhash */
+      txHash: string;
+    };
+    /** TreasuryResponse */
+    TreasuryResponse: {
+      treasury: components['schemas']['TreasuryView'];
+      /** Wallets */
+      wallets: components['schemas']['treasurypilot_api__treasury__api__WalletView'][];
+      /** Warnings */
+      warnings: components['schemas']['WarningView'][];
+    };
+    /**
+     * TreasuryStatus
+     * @enum {string}
+     */
+    TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasuryView */
+    TreasuryView: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Moduleaddress */
+      moduleAddress: string | null;
+      status: components['schemas']['TreasuryStatus'];
     };
     /** UserView */
     UserView: {
@@ -781,6 +1180,37 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** ValidationEvidence */
+    ValidationEvidence: {
+      /** Checks */
+      checks?: {
+        [key: string]: unknown;
+      }[];
+      /** Decision */
+      decision: string;
+      /** Id */
+      id?: string | null;
+      /** Reasoncodes */
+      reasonCodes?: string[];
+      /** Stage */
+      stage: string;
+    };
+    /** VerificationEvidence */
+    VerificationEvidence: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Status */
+      status: string;
+      /** Txhash */
+      txHash: string;
+    };
     /** VerifyMagicLinkRequest */
     VerifyMagicLinkRequest: {
       /** Token */
@@ -801,8 +1231,30 @@ export interface components {
       /** Wallet */
       wallet: string;
     };
+    /** WalletRequest */
+    WalletRequest: {
+      /** Label */
+      label?: string | null;
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+    };
+    /**
+     * WalletRole
+     * @enum {string}
+     */
+    WalletRole: 'SOURCE' | 'OPERATIONAL';
+    /** WarningView */
+    WarningView: {
+      /** Code */
+      code: string;
+      /** Message */
+      message: string;
+      /** Wallets */
+      wallets: string[];
+    };
     /** WalletView */
-    WalletView: {
+    treasurypilot_api__identity__api__WalletView: {
       /** Address */
       address: string;
       /** Chainfamily */
@@ -814,6 +1266,23 @@ export interface components {
        * Format: date-time
        */
       linkedAt: string;
+    };
+    /** WalletView */
+    treasurypilot_api__treasury__api__WalletView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Label */
+      label: string;
+      /** Owners */
+      owners: string[];
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+      /** Threshold */
+      threshold: number;
     };
   };
   responses: never;
@@ -986,6 +1455,37 @@ export interface operations {
       };
     };
   };
+  accept_invite_v1_invites__token__accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   me_v1_me_get: {
     parameters: {
       query?: never;
@@ -1025,7 +1525,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['WalletView'];
+          'application/json': components['schemas']['treasurypilot_api__identity__api__WalletView'];
         };
       };
       /** @description Validation Error */
@@ -1202,13 +1702,9 @@ export interface operations {
       };
     };
   };
-  list_review_items_v1_orgs__organization_id__review_items_get: {
+  list_invites_v1_orgs__organization_id__invites_get: {
     parameters: {
-      query?: {
-        status?: components['schemas']['ReviewStatus'] | null;
-        type?: components['schemas']['ReviewType'] | null;
-        role?: components['schemas']['OrganizationRole'] | null;
-      };
+      query?: never;
       header?: never;
       path: {
         organization_id: string;
@@ -1223,9 +1719,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['InvitesResponse'];
         };
       };
       /** @description Validation Error */
@@ -1239,53 +1733,145 @@ export interface operations {
       };
     };
   };
-  get_review_item_v1_orgs__organization_id__review_items__item_id__get: {
+  create_invite_v1_orgs__organization_id__invites_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
         organization_id: string;
-        item_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        item_id: string;
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['ReviewActionRequest'];
+        'application/json': components['schemas']['InviteCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteCreatedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_invite_v1_orgs__organization_id__invites__invite_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        invite_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_members_v1_orgs__organization_id__members_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MembersResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  remove_member_v1_orgs__organization_id__members__user_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_member_v1_orgs__organization_id__members__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RoleUpdateRequest'];
       };
     };
     responses: {
@@ -1295,9 +1881,74 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SafeDeploymentRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SafeDeploymentResponse'];
         };
       };
       /** @description Validation Error */
@@ -1333,6 +1984,73 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_treasury_v1_orgs__organization_id__treasuries_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTreasuryRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
         };
       };
       /** @description Validation Error */

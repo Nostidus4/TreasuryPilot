@@ -23,6 +23,7 @@ from treasurypilot_api.invoices.state_machine import (
     AuditEntry,
     MakerCheckerViolation,
     PayOperationInFlight,
+    RequestNotFound,
     RequestStateMachine,
     RequestTransitionError,
     RequestVersionConflict,
@@ -505,6 +506,35 @@ def test_solo_mode_lets_the_creator_approve_and_is_audited() -> None:
     _approve(_machine(_FakeSession(request, solo_mode=True), audit), expected_version=1)
     assert request.status == RequestStatus.APPROVED.value
     assert audit.entries[-1].data["soloMode"] is True
+
+
+def test_audit_marks_solo_mode_not_evaluated_and_records_the_version_read() -> None:
+    request = _FakeRequest(status=RequestStatus.DRAFT.value, version=4, created_by=_OTHER_USER_ID)
+    audit = _FakeAudit()
+    actor = TransitionActor(
+        actor_type=StatusEventActorType.USER,
+        action=TransitionAction.SUBMIT,
+        actor_id=_USER_ID,
+        roles=frozenset({OrganizationRole.OPERATOR}),
+    )
+
+    asyncio.run(
+        _machine(_FakeSession(request), audit).transition(
+            organization_id=_ORG_ID,
+            request_id=_REQUEST_ID,
+            target=RequestStatus.AWAITING_APPROVAL,
+            actor=actor,
+            expected_version=4,
+        )
+    )
+
+    assert audit.entries[-1].data["soloMode"] is None
+    assert audit.entries[-1].data["fromVersion"] == 4
+
+
+def test_request_not_found_maps_to_404_like_other_transition_errors() -> None:
+    assert issubclass(RequestNotFound, RequestTransitionError)
+    assert RequestNotFound("missing").status_code == 404
 
 
 async def _guard_reports(database_url: str, rows: list[tuple[str, str]]) -> bool | None:

@@ -102,8 +102,10 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
 | `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
-| `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
-| `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
+| `score(plan, requests, snapshot, policy) → (violations, missed_deadlines, −value, tx_count)` | lexicographic tuple, lower is better; values are recomputed from confirmed terms | shared by deterministic schedules and AI proposals (AGT-009) |
+| `compare_plans(left, right, …) → -1, 0, or 1` | deterministic comparison using `score` | choose between proposals |
+| `binding_constraints(plan, …) → BindingConstraintDetail[]` | constraint name, request, day, observed value and limit | shown in the "Why" panel |
+| `exception_values(requests, snapshot, policy) → ExceptionValue[]` | potential request value when the Owner grants the required per-request exception | M07-D9 exception drafts |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
 | `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
@@ -207,6 +209,8 @@ Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-
 4. Tie-break: earlier `approved_seq` first (deterministic secondary key).
 
 Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a share of the time limit (default 5 s total). **Determinism:** `num_workers = 1`, fixed `random_seed`, inputs sorted by id (M07-D7). **Fallback:** status `UNKNOWN`/error/no solution in time ⇒ return EDF with `status = FALLBACK` and log it.
+
+**Implementation notes (ENG-007, `engine/cpsat.py`):** payments are ordered into slots (days non-decreasing, order inside a day free) so wallet balances, the daily pay/refill counters and the source drawdown are exact. `ref[r]` is restricted to the two BR-032 outcomes, the shortage or the bounded top-up to target when the refill caps allow it, which is the oracle's search space, so objectives match it exactly. Inputs whose magnitudes could overflow 64 bits, solver errors, an exhausted `time_limit_seconds` (budget for the whole call, split evenly over the four stages), or a result worse than EDF return the EDF schedule with `FALLBACK`; a stage that stops with a solution that is not proven optimal yields `FEASIBLE`. Optional `fee_in_asset` / `fee_hold_today` implement the fee term of section 8.2. The approval-order tie-break uses exact lexicographic weights and degrades to a linear rank when they would not fit in 64 bits (approval-order dominance is then no longer strict). The slot model has O(N^2) booleans and constraints, so large batches are expected to exhaust the time limit and return the EDF fallback.
 
 **Oracle (tests and benchmarks):** search, with memoized dynamic programming, every assignment of at most 8 requests to a day through the latest due or payee activation day (maximum 5 days) or to the unscheduled set, every same-day payment order, and for each payment both BR-032 refill outcomes (`preferred` top-up or `shortage` only). Refill amounts between those two (for example pre-funding a later request) are not searched. Inputs outside either bound are rejected. The oracle shares EDF's payment feasibility transition and BR-052 scoring helper. Reusable bounded Hypothesis inputs for the oracle and ENG-007 equivalence tests live in `packages/py-core/tests/strategies/financial_engine.py`; the oracle is never called from production paths.
 

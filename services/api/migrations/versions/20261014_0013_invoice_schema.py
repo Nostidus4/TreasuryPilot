@@ -35,6 +35,11 @@ def upgrade() -> None:
     op.create_unique_constraint(
         "uq_payees_id_treasury_vendor", "payees", ["id", "treasury_id", "vendor_id"]
     )
+    op.create_index("ix_payees_treasury_status", "payees", ["treasury_id", "status"])
+    # Pins a request's paying wallet to the request's own treasury.
+    op.create_unique_constraint(
+        "uq_treasury_wallets_id_treasury", "treasury_wallets", ["id", "treasury_id"]
+    )
     op.create_table(
         "payment_requests",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -89,6 +94,11 @@ def upgrade() -> None:
             f"cancel_onchain IN ({_CANCEL_STATUSES})", name="ck_payment_requests_cancel_status"
         ),
         sa.CheckConstraint("amount > 0", name="ck_payment_requests_amount_positive"),
+        sa.CheckConstraint("due_at >= issue_date", name="ck_payment_requests_due_after_issue"),
+        sa.CheckConstraint(
+            f"fingerprint IS NOT NULL OR status IN ('Draft', {_TERMINAL_REQUEST_STATUSES})",
+            name="ck_payment_requests_fingerprint_set",
+        ),
         sa.CheckConstraint("current_revision > 0", name="ck_payment_requests_revision_positive"),
         sa.CheckConstraint("version > 0", name="ck_payment_requests_version"),
         sa.CheckConstraint(
@@ -151,9 +161,9 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["paying_wallet_id", "org_id"],
-            ["treasury_wallets.id", "treasury_wallets.org_id"],
-            name="fk_payment_requests_paying_wallet_org",
+            ["paying_wallet_id", "treasury_id"],
+            ["treasury_wallets.id", "treasury_wallets.treasury_id"],
+            name="fk_payment_requests_paying_wallet_treasury",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(["terms_confirmed_by"], ["users.id"], ondelete="SET NULL"),
@@ -253,10 +263,17 @@ def upgrade() -> None:
         sa.CheckConstraint("revision > 0", name="ck_flags_revision_positive"),
         sa.CheckConstraint("jsonb_typeof(evidence) = 'object'", name="ck_flags_evidence_object"),
         sa.CheckConstraint(
-            "status != 'Acknowledged' OR (acknowledged_by IS NOT NULL AND acknowledged_at IS NOT NULL)",
+            "status != 'Acknowledged' "
+            "OR (acknowledged_by IS NOT NULL AND acknowledged_at IS NOT NULL)",
             name="ck_flags_acknowledgement_actor",
         ),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["request_id", "revision"],
+            ["request_revisions.request_id", "request_revisions.revision"],
+            name="fk_flags_request_revision",
+            ondelete="RESTRICT",
+        ),
         # ck_flags_acknowledgement_actor needs the actor, so it cannot be nulled.
         sa.ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
@@ -297,15 +314,24 @@ def upgrade() -> None:
         sa.CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         sa.CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
         sa.ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["request_id", "revision"],
+            ["request_revisions.request_id", "request_revisions.revision"],
+            name="fk_approvals_request_revision",
+            ondelete="RESTRICT",
+        ),
         # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
         sa.ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "request_id",
-            "revision",
-            "approver_address",
-            name="uq_approvals_request_revision_address",
-        ),
+    )
+    # Only one Valid approval per approver and revision; an ended one never revives,
+    # so the approver signs again as a new row.
+    op.create_index(
+        "uq_approvals_valid_request_revision_address",
+        "approvals",
+        ["request_id", "revision", "approver_address"],
+        unique=True,
+        postgresql_where=sa.text("status = 'Valid'"),
     )
     op.create_index("ix_approvals_request_revision", "approvals", ["request_id", "revision"])
 
@@ -360,6 +386,7 @@ def upgrade() -> None:
             f'"from" IS NULL OR "from" IN ({_REQUEST_STATUSES})',
             name="ck_request_status_events_from",
         ),
+        sa.CheckConstraint('"from" <> "to"', name="ck_request_status_events_changed"),
         sa.CheckConstraint(
             f"actor_type IN ({_EVENT_ACTOR_TYPES})", name="ck_request_status_events_actor_type"
         ),
@@ -495,4 +522,6 @@ def downgrade() -> None:
     op.drop_index("ix_payment_requests_treasury_due", table_name="payment_requests")
     op.drop_index("ix_payment_requests_org_status", table_name="payment_requests")
     op.drop_table("payment_requests")
+    op.drop_constraint("uq_treasury_wallets_id_treasury", "treasury_wallets", type_="unique")
+    op.drop_index("ix_payees_treasury_status", table_name="payees")
     op.drop_constraint("uq_payees_id_treasury_vendor", "payees", type_="unique")
