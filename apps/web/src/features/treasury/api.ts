@@ -110,10 +110,10 @@ function normalizeTreasurySetup(
   };
 }
 
-/** The treasury API returns verified Safes and coverage, not dashboard projections. */
+/** Verified Safes and coverage only: balances, module and staleness are placeholders, so keep this key apart from useTreasury. */
 export const useTreasurySetup = (orgId: string, treasuryId: string | undefined) => {
   return useQuery<TreasuryState>({
-    queryKey: ['org', orgId, 'treasury', treasuryId, null],
+    queryKey: ['org', orgId, 'treasury', treasuryId, 'setup'],
     enabled: Boolean(treasuryId),
     queryFn: async () => {
       const [data, chainResponse] = await Promise.all([

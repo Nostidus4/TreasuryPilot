@@ -316,22 +316,15 @@ async def create_treasury(
     except TreasuryRequestError as exc:
         extensions: dict[str, object] = {}
         if exc.address is not None:
-            invalid_wallet = next(
-                (
-                    item
-                    for item in payload.wallets
-                    if item.safe_address.lower() == exc.address.lower()
-                ),
-                None,
-            )
-            if invalid_wallet is not None:
-                label = invalid_wallet.label
-                field = (
-                    f"wallets.{label}"
-                    if label in {"T", "O1", "O2"}
-                    else f"wallets.{invalid_wallet.role.value}"
-                )
-                extensions["errors"] = [{"field": field, "message": exc.detail}]
+            # Attribute by role and position, never by the client-supplied label.
+            slots = {WalletRole.SOURCE: ["T"], WalletRole.OPERATIONAL: ["O1", "O2"]}
+            seen = {WalletRole.SOURCE: 0, WalletRole.OPERATIONAL: 0}
+            for item in payload.wallets:
+                slot = slots[item.role][min(seen[item.role], len(slots[item.role]) - 1)]
+                seen[item.role] += 1
+                if item.safe_address.lower() == exc.address.lower():
+                    extensions["errors"] = [{"field": f"wallets.{slot}", "message": exc.detail}]
+                    break
         raise AuthFailure(
             status=422,
             code=exc.code,

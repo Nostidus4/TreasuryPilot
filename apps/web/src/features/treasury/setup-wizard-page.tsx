@@ -296,7 +296,9 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
       .split(/[\s,]+/)
       .map((owner) => owner.trim())
       .filter(Boolean);
-    const threshold = Number(safeThreshold);
+    const threshold = /^\d+$/.test(safeThreshold.trim())
+      ? Number(safeThreshold)
+      : NaN;
     if (
       owners.length === 0 ||
       owners.some((owner) => !/^0x[0-9a-fA-F]{40}$/.test(owner)) ||
@@ -673,6 +675,16 @@ function ModuleStep({
     buffers: { ...initialDraft.buffers, ...persistedDraft.buffers },
   }));
   const [formError, setFormError] = useState('');
+  // An empty persisted value means the wallet was not connected yet, so fill it once it is.
+  useEffect(() => {
+    const connected = wallet.address;
+    if (!connected) return;
+    setDraft((current) => ({
+      ...current,
+      executor: current.executor || connected,
+      approvers: current.approvers || connected,
+    }));
+  }, [wallet.address]);
   useEffect(() => {
     try {
       window.sessionStorage.setItem(
@@ -692,7 +704,10 @@ function ModuleStep({
       (item) => item.safeAddress.toLowerCase() === safe.safeAddress.toLowerCase(),
     ),
   );
-  const hasPreparedTransactions = txsBySafe.some(Boolean);
+  const hasPreparedTransactions =
+    txsBySafe.length > 0 && txsBySafe.every(Boolean);
+  const hasPartialTransactions =
+    !hasPreparedTransactions && txsBySafe.some(Boolean);
   const executed =
     txsBySafe.length > 0 &&
     txsBySafe.every((item) => item?.status === 'Executed');
@@ -769,9 +784,11 @@ function ModuleStep({
         }
         return { wallet: safe.safeAddress, minimum, target };
       });
-      const cooling = Number(draft.payeeCoolingSeconds);
-      const approvalAgeDays = Number(draft.approvalMaxAgeDays);
-      const expiresInDays = Number(draft.expiresInDays);
+      const whole = (value: string) =>
+        /^\d+$/.test(value.trim()) ? Number(value) : NaN;
+      const cooling = whole(draft.payeeCoolingSeconds);
+      const approvalAgeDays = whole(draft.approvalMaxAgeDays);
+      const expiresInDays = whole(draft.expiresInDays);
       if (
         !Number.isInteger(cooling) ||
         cooling < 1 ||
@@ -786,8 +803,9 @@ function ModuleStep({
         throw new Error(t('Enter valid cooling and mandate durations.'));
       }
       const validFrom = new Date();
+      // A day of slack so signing delays do not eat into the chosen duration; the API caps a mandate at 365 days.
       const expiresAt = new Date(
-        validFrom.getTime() + expiresInDays * 86_400_000,
+        validFrom.getTime() + Math.min(expiresInDays + 1, 365) * 86_400_000,
       );
       const setup: ModuleSetupInput = {
         mandate: {
@@ -834,6 +852,13 @@ function ModuleStep({
         )}
         {!governance.isPending && !hasPreparedTransactions && (
           <div className="grid gap-4">
+            {hasPartialTransactions && (
+              <Alert tone="warning">
+                {t(
+                  'Transactions were prepared for only some Safes. Prepare them again to cover every Safe.',
+                )}
+              </Alert>
+            )}
             <Alert tone="neutral" title={t('Initial module settings')}>
               {t(
                 'Amounts are entered in {{asset}} and sent to the API as integer base units. Use the executor address configured for this organization.',
@@ -1137,19 +1162,26 @@ function CoverageStep({
 function GuardianStep({ state }: { state: TreasuryState }) {
   const scope = useOrgScope();
   const navigate = useNavigate();
-  const address = readModuleDraft(state.treasury.id).guardian ?? '';
+  const [address, setAddress] = useState(
+    () => readModuleDraft(state.treasury.id).guardian ?? '',
+  );
   return (
     <Card>
       <CardHeader
         title={t('Guardian Safe')}
         description={t(
-          'This Safe was included as the Guardian when the module setup transactions were prepared. The Guardian can pause the treasury but cannot move funds or resume.',
+          'Confirm the Safe that was included as the Guardian when the module setup transactions were prepared. The Guardian can pause the treasury but cannot move funds or resume.',
         )}
       />
       <CardContent>
         <div className="grid gap-4">
           <Field htmlFor="guardian-address" label={t('Guardian Safe address')}>
-            <Input id="guardian-address" className="num" value={address} readOnly />
+            <Input
+              id="guardian-address"
+              className="num"
+              value={address}
+              onChange={(event) => setAddress(event.target.value.trim())}
+            />
           </Field>
           <p className="text-sm text-muted-foreground">
             {t('Next you will define the mandate: limits, buffers and approvers.')}
