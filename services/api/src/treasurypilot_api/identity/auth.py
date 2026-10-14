@@ -428,6 +428,29 @@ class AuthService:
             csrf_token=self._token_codec.csrf_token(session_id),
         )
 
+    async def create_oidc_session(
+        self, *, user: UserRecord, client_ip: str, user_agent: str
+    ) -> VerifiedSession:
+        """Issue a short session so provider group changes take effect within five minutes."""
+        now = self._now()
+        session_id = uuid.uuid4()
+        session_token = self._token_codec.session_token(session_id)
+        await self._repository.create_session(
+            session_id=session_id,
+            user_id=user.id,
+            token_hash=hash_token(session_token),
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+            ip_hash=hash_client_value(client_ip, self._client_hash_secret),
+            ua_hash=hash_client_value(user_agent, self._client_hash_secret),
+        )
+        return VerifiedSession(
+            user=user,
+            session_id=session_id,
+            session_token=session_token,
+            csrf_token=self._token_codec.csrf_token(session_id),
+        )
+
     async def authenticate(
         self,
         *,

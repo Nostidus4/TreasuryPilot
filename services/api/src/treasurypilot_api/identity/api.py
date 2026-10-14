@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from datetime import datetime
+from typing import cast
 
 from fastapi import APIRouter, BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from treasurypilot_api.identity.auth import (
@@ -17,6 +20,14 @@ from treasurypilot_api.identity.auth import (
     auth_unavailable,
     normalize_email,
 )
+from treasurypilot_api.identity.oidc import (
+    OIDCClient,
+    OIDCFailure,
+    decode_state,
+    encode_state,
+    new_state,
+)
+from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.wallets import SIWE_CHAIN_ID, WalletLinkService, WalletRepository
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -241,6 +252,135 @@ async def unlink_wallet(address: str, request: Request) -> Response:
     access = await _authenticated(request, require_csrf=True)
     await _wallet_service(request).unlink_wallet(user_id=access.user.id, address=address)
     return Response(status_code=204)
+
+
+@router.get("/auth/oidc/start", response_class=RedirectResponse)
+async def oidc_start(request: Request) -> RedirectResponse:
+    settings = request.app.state.settings
+    if not settings.oidc_configured:
+        raise AuthFailure(
+            status=404,
+            code="OIDC_NOT_CONFIGURED",
+            title="SSO unavailable",
+            detail="Enterprise sign-in is not configured.",
+        )
+    client = OIDCClient(
+        issuer=settings.oidc_issuer or "",
+        client_id=settings.oidc_client_id or "",
+        client_secret=settings.oidc_client_secret.get_secret_value(),
+        redirect_uri=settings.oidc_redirect_uri or "",
+    )
+    state = new_state()
+    try:
+        location = await client.authorization_url(state=state)
+    except OIDCFailure:
+        raise auth_unavailable("Enterprise sign-in is temporarily unavailable.") from None
+    response = RedirectResponse(location, status_code=302)
+    secret = _oidc_state_secret(settings)
+    response.set_cookie(
+        "tp_oidc_state",
+        encode_state(state, secret),
+        max_age=600,
+        path="/v1/auth/oidc/callback",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@router.get("/auth/oidc/callback", response_class=RedirectResponse)
+async def oidc_callback(request: Request, code: str, state: str) -> RedirectResponse:
+    settings = request.app.state.settings
+    if not settings.oidc_configured:
+        raise AuthFailure(
+            status=404,
+            code="OIDC_NOT_CONFIGURED",
+            title="SSO unavailable",
+            detail="Enterprise sign-in is not configured.",
+        )
+    try:
+        oidc_state = decode_state(
+            request.cookies.get("tp_oidc_state"), state, _oidc_state_secret(settings)
+        )
+        client = OIDCClient(
+            issuer=settings.oidc_issuer or "",
+            client_id=settings.oidc_client_id or "",
+            client_secret=settings.oidc_client_secret.get_secret_value(),
+            redirect_uri=settings.oidc_redirect_uri or "",
+        )
+        claims = await client.exchange(code=code, state=oidc_state)
+        group_map = json.loads(settings.oidc_group_role_map)
+        if not isinstance(group_map, dict) or any(
+            not isinstance(group, str)
+            or not isinstance(roles, list)
+            or any(not isinstance(role, str) for role in roles)
+            for group, roles in group_map.items()
+        ):
+            raise ValueError("invalid configured group role mapping")
+        repository = getattr(request.app.state, "oidc_repository", None)
+        if not isinstance(repository, OIDCIdentityRepository):
+            raise OIDCFailure("OIDC provisioning is not configured")
+        user = await repository.provision(
+            issuer=settings.oidc_issuer or "",
+            subject=claims.subject,
+            email=claims.email,
+            display_name=claims.display_name,
+            organization_id=uuid.UUID(settings.oidc_organization_id or ""),
+            groups=claims.groups,
+            group_role_map={group: tuple(roles) for group, roles in group_map.items()},
+        )
+        verified = await _service(request).create_oidc_session(
+            user=user,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", "unknown"),
+        )
+    except (OIDCFailure, ValueError):
+        raise AuthFailure(
+            status=401,
+            code="OIDC_AUTHENTICATION_FAILED",
+            title="Sign-in failed",
+            detail="The identity provider could not authenticate this account.",
+        ) from None
+    settings = request.app.state.settings
+    destination = settings.cors_origin_list[0] if settings.cors_origin_list else "/"
+    response = RedirectResponse(destination, status_code=303)
+    response.set_cookie(
+        settings.session_cookie_name,
+        verified.session_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    response.set_cookie(
+        settings.csrf_cookie_name,
+        verified.csrf_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=False,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        "tp_oidc_state",
+        path="/v1/auth/oidc/callback",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+def _oidc_state_secret(settings: object) -> bytes:
+    configured = getattr(settings, "session_secret", None)
+    if configured is not None:
+        return cast(str, configured.get_secret_value()).encode("utf-8")
+    secret = getattr(settings, "oidc_client_secret", None)
+    if secret is None:
+        raise ValueError("OIDC state secret is not configured")
+    return hashlib.sha256(cast(str, secret.get_secret_value()).encode("utf-8")).digest()
 
 
 @router.post("/auth/magic-link", status_code=202, response_class=Response)

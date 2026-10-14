@@ -338,3 +338,22 @@ class Invite(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OIDCIdentity(Base):
+    __tablename__ = "oidc_identities"
+    __table_args__ = (
+        UniqueConstraint("user_id", "issuer", name="uq_oidc_identities_user_issuer"),
+        CheckConstraint(
+            "length(subject) BETWEEN 1 AND 255", name="ck_oidc_identity_subject_length"
+        ),
+    )
+
+    issuer: Mapped[str] = mapped_column(String(500), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
