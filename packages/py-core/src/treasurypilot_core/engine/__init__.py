@@ -16,6 +16,7 @@ from .liquidity import (
     shortage,
     source_capacity,
 )
+from .multi_asset import AssetScheduleInput, schedule_cpsat_multi_asset
 from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, validate_terms
 from .scheduler import schedule_edf, schedule_oracle
 from .scoring import binding_constraints, compare_plans, exception_values, score
@@ -47,6 +48,8 @@ __all__ = [
     "shortage",
     "get_solver",
     "schedule_cpsat",
+    "AssetScheduleInput",
+    "schedule_cpsat_multi_asset",
     "schedule_edf",
     "schedule_oracle",
     "score",

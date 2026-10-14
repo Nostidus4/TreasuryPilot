@@ -1,0 +1,22 @@
+# Opt-in Ethereum Sepolia (11155111) override. Usage:
+#   docker compose -f infra/compose.yaml -f infra/compose.sepolia.yaml up -d
+# Do not enable the local/ci profiles: anvil is not needed (and no service depends on it).
+# Backend RPC (worker/signer CHAIN_RPC_URL) comes from SEPOLIA_RPC_URL; Alchemy/Infura keys go there.
+# Web build RPC (VITE_RPC_URL) comes from SEPOLIA_WEB_RPC_URL: it is inlined into public JS, so use a
+# public RPC or a domain-restricted key only. Never commit keyed URLs.
+services:
+  worker:
+    networks: [public] # egress to the Sepolia RPC; `internal` has none
+    environment:
+      CHAIN_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+
+  signer:
+    networks: [public] # egress to the Sepolia RPC; `internal` has none
+    environment:
+      CHAIN_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+
+  web:
+    build:
+      args:
+        VITE_CHAIN_ID: '11155111'
+        VITE_RPC_URL: ${SEPOLIA_WEB_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
