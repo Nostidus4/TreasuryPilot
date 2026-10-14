@@ -212,11 +212,18 @@ def test_safe_deployment_endpoint_requires_owner_role(monkeypatch: pytest.Monkey
     assert (response.status_code, response.json()["code"]) == (403, "FORBIDDEN")
 
 
+def _without_fallback_handler(
+    deployments: tuple[DeploymentConfig, ...],
+) -> tuple[DeploymentConfig, ...]:
+    # The base config already pins a fallback handler; Safe deploy tests supply their own.
+    return tuple(d for d in deployments if d.name != "SAFE_FALLBACK_HANDLER")
+
+
 def test_safe_deployment_transaction_uses_manifest_factory_and_safe_setup() -> None:
     base = _configuration()
     current = base.manifests[0]
     deployments = (
-        *current.deployments,
+        *_without_fallback_handler(current.deployments),
         *(
             DeploymentConfig(
                 name=name,
@@ -271,7 +278,7 @@ def test_safe_deployment_manifest_hashes_must_match_live_runtime_code(
 
     def configuration(code_hash: str) -> PlatformConfiguration:
         entries = (
-            *base.manifests[0].deployments,
+            *_without_fallback_handler(base.manifests[0].deployments),
             *(
                 DeploymentConfig(
                     name=name,
@@ -304,7 +311,7 @@ def test_safe_deployment_manifest_hashes_must_match_live_runtime_code(
 def test_safe_deployment_prefers_l2_singleton_off_l1_chains_and_checks_owner_format() -> None:
     base = _configuration()
     entries = (
-        *base.manifests[0].deployments,
+        *_without_fallback_handler(base.manifests[0].deployments),
         *(
             DeploymentConfig(
                 name=name,
