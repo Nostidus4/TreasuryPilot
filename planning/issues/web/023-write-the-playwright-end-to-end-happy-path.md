@@ -47,6 +47,8 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] The test passes in CI on Anvil
 
+**Current coverage boundary:** the browser tests exercise request submission/approval and a separate seeded-plan execution/reconciliation path through the web MSW fixtures. CI starts Anvil and checks its RPC chain ID, but mock-mode transaction sends do not broadcast to Anvil. The requested single request-to-match production flow cannot yet be tested because the API server has no request, plans/execution, or reconciliation routers. See [the web module's integration boundary](../../../docs/modules/web/README.md#11-failure-scenarios).
+
 ## Testing requirements
 
 - E2E

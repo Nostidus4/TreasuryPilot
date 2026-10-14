@@ -58,3 +58,14 @@ jobs:
           pnpm --dir apps/web test
       - name: Build
         run: pnpm --dir apps/web build
+      - name: Start local Anvil
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local up --detach --wait anvil
+      - name: Install Playwright browser
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+      - name: Run browser flow
+        env:
+          E2E_ANVIL_RPC_URL: http://127.0.0.1:8545
+        run: pnpm --dir apps/web e2e
+      - name: Stop local Anvil
+        if: always()
+        run: docker compose --env-file infra/env/.env.example -f infra/compose.yaml --profile local down --volumes --remove-orphans
