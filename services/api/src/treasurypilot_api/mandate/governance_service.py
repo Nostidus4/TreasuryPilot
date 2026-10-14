@@ -192,7 +192,22 @@ class GovernanceService:
                 predicted = bytes.fromhex(str(result).removeprefix("0x"))
                 if len(predicted) != 32 or not any(predicted[-20:]):
                     continue
-                return predicted[-20:]
+                address = predicted[-20:]
+                code = await asyncio.to_thread(
+                    _rpc,
+                    resolve_rpc_url(template, self._environ),
+                    "eth_getCode",
+                    [_address(address), "latest"],
+                )
+                if str(code) != "0x":
+                    raise GovernanceFailure(
+                        "MODULE_ALREADY_DEPLOYED",
+                        409,
+                        "The deterministic module address already has code.",
+                    )
+                return address
+            except GovernanceFailure:
+                raise
             except Exception:
                 continue
         raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
