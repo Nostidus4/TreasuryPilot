@@ -57,6 +57,8 @@ def test_mandate_upgrade_and_downgrade_compile_offline() -> None:
         assert f"DROP TABLE {table_name}" in sql
     for trigger in ("mandate_versions_immutable", "mandate_status_events_append_only"):
         assert f"CREATE TRIGGER {trigger}" in sql
+    assert "RAISE EXCEPTION" in sql
+    assert "mandate_version_id IS NOT NULL" in sql
 
 
 _SEED_SQL = f"""

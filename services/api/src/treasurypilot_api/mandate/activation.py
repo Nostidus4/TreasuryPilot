@@ -23,6 +23,10 @@ def _address(value: object) -> bytes:
     return result
 
 
+def _optional_address(value: object) -> bytes:
+    return bytes(20) if value is None else _address(value)
+
+
 def _integer(value: object, name: str) -> int:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be an integer")
@@ -51,6 +55,8 @@ def _timestamp(value: object, name: str) -> int:
 
 
 def _limits(value: object, name: str) -> tuple[int, int]:
+    if value is None:
+        return (0, 0)
     if not isinstance(value, dict):
         raise ValueError(f"{name} limits are missing")
     return (
@@ -76,8 +82,8 @@ def build_mandate_calls(
         if not isinstance(method, str) or not isinstance(args, dict):
             raise ValueError("mandate call preview is malformed")
         if method == "configureMandate":
-            pay = _limits(args.get("limits", {}).get("PAY"), "PAY")  # type: ignore[union-attr]
-            refill = _limits(args.get("limits", {}).get("REFILL"), "REFILL")  # type: ignore[union-attr]
+            pay = _limits(args.get("limits", {}).get("PAY"), "PAY")
+            refill = _limits(args.get("limits", {}).get("REFILL"), "REFILL")
             supply = (
                 _limits(args.get("supplyLimits"), "SUPPLY")
                 if args.get("supplyLimits") is not None
@@ -88,7 +94,7 @@ def build_mandate_calls(
                 _timestamp(args.get("expiresAt"), "expiresAt"),
                 _integer(args.get("payeeCoolingSeconds"), "payeeCoolingSeconds"),
                 "0x" + _address(args.get("executor")).hex(),
-                "0x" + _address(args.get("guardian")).hex(),
+                "0x" + _optional_address(args.get("guardian")).hex(),
                 pay,
                 refill,
                 _integer(args.get("approvalMaxAge"), "approvalMaxAge"),
@@ -99,8 +105,10 @@ def build_mandate_calls(
                 "(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)))"
             )
             data = _selector(signature) + encode(
-                ["(uint64,uint64,uint32,address,address,(uint128,uint128),"
-                 "(uint128,uint128),uint32,(uint128,uint128))"],
+                [
+                    "(uint64,uint64,uint32,address,address,(uint128,uint128),"
+                    "(uint128,uint128),uint32,(uint128,uint128))"
+                ],
                 [values],
             )
         elif method == "setApprovers":
@@ -109,8 +117,10 @@ def build_mandate_calls(
                 raise ValueError("approver diff is malformed")
             data = _selector("setApprovers(address[],address[])") + encode(
                 ["address[]", "address[]"],
-                [["0x" + _address(value).hex() for value in added],
-                 ["0x" + _address(value).hex() for value in removed]],
+                [
+                    ["0x" + _address(value).hex() for value in added],
+                    ["0x" + _address(value).hex() for value in removed],
+                ],
             )
         elif method == "setBuffer":
             data = _selector("setBuffer(address,uint256,uint256)") + encode(

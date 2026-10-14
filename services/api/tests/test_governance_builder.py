@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Mapping
 
 import pytest
-from eth_abi import decode
+from eth_abi import decode, encode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
@@ -23,7 +23,12 @@ from treasurypilot_api.mandate.governance import (
     pack_signatures,
     safe_tx_hash,
 )
-from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
+from treasurypilot_api.mandate.governance_service import (
+    GovernanceFailure,
+    GovernanceService,
+    _address_bytes,
+    _asset_policy_events,
+)
 from treasurypilot_api.mandate.models import GovernanceTx, GovernanceTxPurpose, GovernanceTxStatus
 from treasurypilot_api.treasury.config import PlatformConfiguration
 
@@ -241,6 +246,34 @@ def test_module_setup_fails_closed_when_factory_manifest_is_missing() -> None:
 
     assert error.value.status == 503
     assert error.value.code == "MODULE_DEPLOYMENT_UNAVAILABLE"
+
+
+def test_asset_policy_readback_decodes_the_execution_receipt_values() -> None:
+    module = bytes.fromhex("66" * 20)
+    asset = bytes.fromhex("77" * 20)
+    topic = "0x" + keccak(b"AssetPolicySet(address,bool,uint128,uint128,uint128,uint128)").hex()
+    receipt = {
+        "logs": [
+            {
+                "address": "0x" + module.hex(),
+                "topics": [topic, "0x" + "00" * 12 + asset.hex()],
+                "data": "0x"
+                + encode(
+                    ["bool", "uint128", "uint128", "uint128", "uint128"],
+                    [True, 100, 500, 20, 80],
+                ).hex(),
+            }
+        ]
+    }
+
+    assert _asset_policy_events(receipt, module) == {"0x" + asset.hex(): (True, 100, 500, 20, 80)}
+
+
+def test_chain_address_normalization_accepts_abi_address_strings() -> None:
+    address = bytes.fromhex("ab" * 20)
+
+    assert _address_bytes("0x" + address.hex()) == address
+    assert _address_bytes(address) == address
 
 
 def test_safe_tx_typed_data_hashes_and_packs_owner_signatures_in_address_order() -> None:
