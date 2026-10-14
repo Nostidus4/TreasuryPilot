@@ -21,6 +21,21 @@ class Settings(BaseSettings):
     )
     session_secret: SecretStr | None = None
     redis_url: SecretStr | None = None
+    s3_endpoint_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),
+    )
+    s3_bucket: str | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_BUCKET", "S3_BUCKET")
+    )
+    s3_access_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_ACCESS_KEY", "S3_ACCESS_KEY", "MINIO_ROOT_USER"),
+    )
+    s3_secret_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_SECRET_KEY", "S3_SECRET_KEY", "MINIO_ROOT_PASSWORD"),
+    )
     magic_link_base_url: str = "http://localhost:5173/auth/verify"
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None

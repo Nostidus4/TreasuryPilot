@@ -37,6 +37,13 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.invoices.documents import (
+    ExtractionQueue,
+    ObjectStorage,
+    build_document_storage,
+    build_extraction_queue,
+)
+from treasurypilot_api.invoices.documents import router as invoice_documents_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -166,6 +173,8 @@ def create_app(
     vendor_repository: VendorRepository | None = None,
     payee_repository: PayeeRepository | None = None,
     field_cipher: FieldCipher | None = None,
+    document_storage: ObjectStorage | None = None,
+    extraction_queue: ExtractionQueue | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     engine: AsyncEngine | None = None
@@ -230,6 +239,8 @@ def create_app(
     app.state.vendor_repository = vendor_repository
     app.state.payee_repository = payee_repository
     app.state.field_cipher = field_cipher
+    app.state.document_storage = document_storage or build_document_storage(settings)
+    app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -253,6 +264,7 @@ def create_app(
     app.include_router(vendors_router)
     app.include_router(payees_router)
     app.include_router(requests_router)
+    app.include_router(invoice_documents_router)
 
     return app
 

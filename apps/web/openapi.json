@@ -17,6 +17,23 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "treasury_id": {
+            "format": "uuid",
+            "title": "Treasury Id",
+            "type": "string"
+          }
+        },
+        "required": ["treasury_id", "file"],
+        "title": "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "type": "object"
+      },
       "CreateOrganizationRequest": {
         "properties": {
           "country": {
@@ -59,6 +76,74 @@
         },
         "required": ["name"],
         "title": "CreateOrganizationRequest",
+        "type": "object"
+      },
+      "DocumentUrlResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "expiresAt"],
+        "title": "DocumentUrlResponse",
+        "type": "object"
+      },
+      "ExtractionConfirmation": {
+        "properties": {
+          "amount": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Amount",
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "title": "Duedate",
+            "type": "string"
+          },
+          "invoiceCountInDocument": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Invoicecountindocument",
+            "type": "integer"
+          },
+          "invoiceNo": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Invoiceno",
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "title": "Issuedate",
+            "type": "string"
+          },
+          "payeeId": {
+            "format": "uuid",
+            "title": "Payeeid",
+            "type": "string"
+          },
+          "vendorId": {
+            "format": "uuid",
+            "title": "Vendorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendorId",
+          "payeeId",
+          "invoiceNo",
+          "issueDate",
+          "dueDate",
+          "amount"
+        ],
+        "title": "ExtractionConfirmation",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1144,6 +1229,27 @@
         "title": "ScreeningView",
         "type": "object"
       },
+      "UploadResponse": {
+        "properties": {
+          "documentId": {
+            "format": "uuid",
+            "title": "Documentid",
+            "type": "string"
+          },
+          "extractionJobId": {
+            "title": "Extractionjobid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "title": "Requestid",
+            "type": "string"
+          }
+        },
+        "required": ["requestId", "documentId", "extractionJobId"],
+        "title": "UploadResponse",
+        "type": "object"
+      },
       "UserView": {
         "properties": {
           "displayName": {
@@ -1781,6 +1887,76 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/upload": {
+      "post": {
+        "operationId": "upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Invoice Document",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}": {
       "patch": {
         "operationId": "edit_request_v1_orgs__organization_id__requests__request_id__patch",
@@ -1858,6 +2034,133 @@
         },
         "summary": "Edit Request",
         "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/documents/{document_id}/url": {
+      "get": {
+        "operationId": "document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Read Url",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm": {
+      "post": {
+        "description": "Apply operator-reviewed extraction fields to the current upload draft.",
+        "operationId": "confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractionConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Extraction V1 Orgs  Organization Id  Requests  Request Id  Extraction Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Extraction",
+        "tags": ["invoice documents"],
         "x-organization-scoped": true
       }
     },

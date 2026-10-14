@@ -140,12 +140,12 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "id": str(row.id),
         "orgId": str(row.org_id),
         "treasuryId": str(row.treasury_id),
-        "vendorId": str(row.vendor_id),
-        "payeeId": str(row.payee_id),
+        "vendorId": str(row.vendor_id) if row.vendor_id else None,
+        "payeeId": str(row.payee_id) if row.payee_id else None,
         "invoiceNo": row.invoice_no,
-        "issueDate": row.issue_date.isoformat(),
-        "dueDate": row.due_at.isoformat(),
-        "amount": str(row.amount),
+        "issueDate": row.issue_date.isoformat() if row.issue_date else None,
+        "dueDate": row.due_at.isoformat() if row.due_at else None,
+        "amount": str(row.amount) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
@@ -170,12 +170,12 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
 def _snapshot(row: PaymentRequest) -> dict[str, object]:
     return {
         "treasuryId": str(row.treasury_id),
-        "vendorId": str(row.vendor_id),
-        "payeeId": str(row.payee_id),
+        "vendorId": str(row.vendor_id) if row.vendor_id else None,
+        "payeeId": str(row.payee_id) if row.payee_id else None,
         "invoiceNo": row.invoice_no,
-        "issueDate": row.issue_date.isoformat(),
-        "dueDate": row.due_at.isoformat(),
-        "amount": str(row.amount),
+        "issueDate": row.issue_date.isoformat() if row.issue_date else None,
+        "dueDate": row.due_at.isoformat() if row.due_at else None,
+        "amount": str(row.amount) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
@@ -275,7 +275,19 @@ async def _bound_fields(
     return treasury, vendor, payee, asset
 
 
-def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
+def _hashes(
+    row: PaymentRequest,
+    vendor_ref: str,
+    asset_address: bytes,
+    document_sha256: bytes = bytes(32),
+) -> None:
+    if row.invoice_no is None or row.amount is None or row.issue_date is None or row.due_at is None:
+        raise _fail(
+            409,
+            "EXTRACTION_UNCONFIRMED",
+            "Extraction not confirmed",
+            "Complete and confirm all invoice fields before hashing a request.",
+        )
     row.fingerprint = fingerprint(
         vendor_ref, row.invoice_no, BaseUnits(int(row.amount)), "0x" + asset_address.hex()
     )
@@ -289,7 +301,7 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
                 asset_address,
                 row.issue_date.isoformat(),
                 row.due_at.isoformat(),
-                bytes(32),
+                document_sha256,
             ],
         )
     )
@@ -310,6 +322,15 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
     today = datetime.now(UTC).date()
+    if (
+        row.vendor_id is None
+        or row.payee_id is None
+        or row.issue_date is None
+        or row.due_at is None
+        or row.amount is None
+        or row.invoice_no is None
+    ):
+        return []
     if row.due_at < today:
         flags.append(
             ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
@@ -609,6 +630,20 @@ async def edit_request(
             if key in {"note", "tags", "cost_center"}:
                 setattr(row, key, value)
         if bound_changed:
+            if row.source == RequestSource.UPLOAD.value and (
+                row.vendor_id is None
+                or row.payee_id is None
+                or row.invoice_no is None
+                or row.issue_date is None
+                or row.due_at is None
+                or row.amount is None
+            ):
+                raise _fail(
+                    409,
+                    "EXTRACTION_UNCONFIRMED",
+                    "Extraction not confirmed",
+                    "Use the extraction confirmation endpoint to complete uploaded invoice fields.",
+                )
             if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
                 session=session, request_id=row.id
             ):
@@ -623,6 +658,24 @@ async def edit_request(
             payee_id = fields.get("payee_id", row.payee_id)
             asset_id = fields.get("asset_id", row.asset_id)
             wallet_id = fields.get("paying_wallet_id", row.paying_wallet_id)
+            new_issue_date = fields.get("issue_date", row.issue_date)
+            new_due_date = fields.get("due_date", row.due_at)
+            invoice_no = fields.get("invoice_no", row.invoice_no)
+            existing_amount = row.amount
+            if (
+                vendor_id is None
+                or payee_id is None
+                or new_issue_date is None
+                or new_due_date is None
+                or invoice_no is None
+                or ("amount" not in fields and existing_amount is None)
+            ):
+                raise _fail(
+                    409,
+                    "EXTRACTION_UNCONFIRMED",
+                    "Extraction not confirmed",
+                    "Complete all invoice fields before editing this request.",
+                )
             treasury, vendor, _payee, asset = await _bound_fields(
                 session,
                 organization_id=member.organization_id,
@@ -632,11 +685,11 @@ async def edit_request(
                 asset_id=asset_id,
                 paying_wallet_id=wallet_id,
             )
-            new_issue_date = fields.get("issue_date", row.issue_date)
-            new_due_date = fields.get("due_date", row.due_at)
             _validate_dates(new_issue_date, new_due_date)
             amount = (
-                _amount(fields["amount"], asset.decimals) if "amount" in fields else int(row.amount)
+                _amount(fields["amount"], asset.decimals)
+                if "amount" in fields
+                else int(cast(int, existing_amount))
             )
             row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
                 treasury.id,
