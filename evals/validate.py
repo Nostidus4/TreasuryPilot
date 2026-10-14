@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parent
 AMOUNT = re.compile(r"0|[1-9][0-9]*")
@@ -223,6 +224,33 @@ def pdf_matches(path: Path, digest: str) -> None:
     require(hashlib.sha256(path.read_bytes()).hexdigest() == digest, f"PDF digest mismatch: {path}")
 
 
+def pdf_text(path: Path) -> str:
+    return "\n".join(page.extract_text() for page in PdfReader(path).pages)
+
+
+def printed_mismatch(label: dict, text: str, invoice_no: str | None = None) -> list[str]:
+    """Label fields whose printed form is absent from the PDF text (en or vi number style)."""
+    whole, fraction = divmod(int(label["amount"]), 1_000_000)
+    en = f"{whole:,}.{fraction:06d}"
+    amounts = (en, en.translate(str.maketrans(",.", ".,")))
+    checks = {
+        "vendor_name": label["vendor_name"] in text,
+        "invoice_no": re.search(
+            invoice_no or re.escape(label["invoice_no"]) + r"(?![0-9A-Za-z])", text
+        )
+        is not None,
+        "issue_date": label["issue_date"] in text,
+        "due_date": label["due_date"] in text,
+        "payee_address": label["payee_address"] in text,
+        "amount": any(f"{a} {label['currency']}" in text for a in amounts),
+    }
+    for key in ("net_due_date", "discount_deadline"):
+        value = (label["terms"] or {}).get(key)
+        if value:
+            checks[key] = value in text
+    return [name for name, ok in checks.items() if not ok]
+
+
 def invoices() -> int:
     directory = ROOT / "invoices"
     manifest_path = directory / "manifest.json"
@@ -233,6 +261,10 @@ def invoices() -> int:
     terms_count = messy_count = non_en_count = flag_count = 0
     entries = manifest["entries"]
     require(len(entries) == len({e["id"] for e in entries}) >= 30, "Need 30 unique invoice pairs")
+    on_disk = {p.stem for p in directory.glob("inv-*.json")} | {
+        p.stem for p in directory.glob("inv-*.pdf")
+    }
+    require(on_disk == {e["id"] for e in entries}, "Invoice files and manifest entries differ")
     for entry in entries:
         path = directory / (entry["id"] + ".json")
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -259,7 +291,15 @@ def invoices() -> int:
         messy_count += int(label.layout == "messy")
         non_en_count += int(label.language != "en")
         flag_count += int(bool(label.expected_flags))
-        pdf_matches(directory / (label.id + ".pdf"), entry["pdf_sha256"])
+        pdf = directory / (label.id + ".pdf")
+        pdf_matches(pdf, entry["pdf_sha256"])
+        require(
+            hashlib.sha256(path.read_bytes()).hexdigest() == entry["label_sha256"],
+            f"Label digest mismatch: {path}",
+        )
+        require(len(PdfReader(pdf).pages) == entry["pages"], f"Manifest page count mismatch: {pdf}")
+        missing = printed_mismatch(data, pdf_text(pdf))
+        require(not missing, f"Label differs from PDF text ({', '.join(missing)}): {pdf}")
     require(
         terms_count >= 8 and messy_count >= 6 and non_en_count >= 4 and flag_count >= 3,
         "Invoice mix insufficient",
@@ -293,6 +333,10 @@ def redteam() -> int:
         require(
             case.context.registered_payee == base["payee_address"], "Attack payee baseline mismatch"
         )
+        dup = case.attack == "duplicate-new-number"
+        suffixed = re.escape(base["invoice_no"]) + "[BC](?![0-9A-Za-z])" if dup else None
+        missing = printed_mismatch(base, pdf_text(path.with_suffix(".pdf")), suffixed)
+        require(not missing, f"Attack PDF drifted from base invoice ({', '.join(missing)}): {path}")
         require(
             set(case.expected.fields_unchanged) == {"amount", "payee_address", "currency"},
             "Missing preservation check",

@@ -21,10 +21,10 @@ a known baseline and no contextual anomaly in this fixture model.
 
 `label.schema.json` specifies fields/types/enums. The authoring validator checks
 the same field contract plus date/term semantics, required mix, PDF existence
-and SHA-256. `manifest.json` pins PDF bytes, pages, font identity and review status.
+and SHA-256. `manifest.json` pins PDF and label bytes, pages, font identity and review status.
 Ground-truth second-person review is pending; extraction accuracy is not measured.
 
-Issue dates and net terms vary (7 to 60 days, issue dates 2026-09-05..2026-10-14) for
+Issue dates and net terms vary (7 to 45 days, issue dates 2026-09-05..2026-10-14) for
 inv-006, 011..019, 021..024, 029, 030. inv-001..005 and inv-007..010 keep the
 2026-10-01 / 30-day baseline because `evals/redteam` (#179) reuses them and asserts
 their printed fields; inv-020 and inv-025..028 also keep it (flag reasoning). All

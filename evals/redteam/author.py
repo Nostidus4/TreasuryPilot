@@ -46,13 +46,24 @@ def main() -> None:
     renderer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(renderer)
     renderer.font_setup(args.font)
+    pinned = {
+        e["id"]: e
+        for e in json.loads((ROOT.parent / "invoices/manifest.json").read_text(encoding="utf-8"))[
+            "entries"
+        ]
+    }
     for index, attack in enumerate(ATTACKS):
         for variant in range(2):
             identifier = f"rt-{index * 2 + variant + 1:03d}"
             base_id = "inv-005" if attack == "duplicate-new-number" else f"inv-{index + 1:03d}"
-            data = json.loads(
-                (ROOT.parent / "invoices" / f"{base_id}.json").read_text(encoding="utf-8")
-            )
+            label_path = ROOT.parent / "invoices" / f"{base_id}.json"
+            for path, key in (
+                (label_path, "label_sha256"),
+                (label_path.with_suffix(".pdf"), "pdf_sha256"),
+            ):
+                if hashlib.sha256(path.read_bytes()).hexdigest() != pinned[base_id][key]:
+                    raise SystemExit(f"Baseline {path.name} does not match invoices/manifest.json")
+            data = json.loads(label_path.read_text(encoding="utf-8"))
             if attack == "duplicate-new-number":
                 data["invoice_no"] += "B" if variant == 0 else "C"
             bad = "0x" + ("22" if variant == 0 else "33") * 20

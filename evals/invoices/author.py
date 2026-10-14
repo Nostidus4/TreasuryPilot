@@ -252,6 +252,9 @@ def main() -> None:
     manifest_path = ROOT / "manifest.json"
     previous = json.loads(manifest_path.read_text(encoding="utf-8")) if args.only else None
     only = set(args.only.split(",")) if args.only else None
+    unknown = sorted(only - {f"inv-{n:03d}" for n in range(1, 31)}) if only else []
+    if unknown:
+        raise SystemExit(f"Unknown --only ids: {', '.join(unknown)}")
     kept = {e["id"]: e for e in previous["entries"]} if previous else {}
     entries = []
     for number in range(1, 31):
@@ -261,12 +264,14 @@ def main() -> None:
             continue
         pdf = ROOT / f"{data['id']}.pdf"
         pages = render_invoice(data, pdf)
-        (ROOT / f"{data['id']}.json").write_text(
+        label_path = ROOT / f"{data['id']}.json"
+        label_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
         entry = {
             "id": data["id"],
             "pdf_sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+            "label_sha256": hashlib.sha256(label_path.read_bytes()).hexdigest(),
             "pages": pages,
         }
         if previous and font_hash != previous["font_sha256"]:
