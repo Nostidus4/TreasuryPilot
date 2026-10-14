@@ -50,6 +50,7 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.invoices.documents import (
     ExtractionQueue,
     ObjectStorage,
@@ -123,6 +124,7 @@ def _auth_service(
     WalletRepository | None,
     AuditRepository | None,
     async_sessionmaker[AsyncSession] | None,
+    RateLimiter,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -197,6 +199,7 @@ def _auth_service(
         wallet_repository,
         audit_repository,
         sessions,
+        rate_limiter,
     )
 
 
@@ -204,6 +207,7 @@ def create_app(
     *,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
+    rate_limiter: RateLimiter | None = None,
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
@@ -246,6 +250,7 @@ def create_app(
             default_wallets,
             default_audit,
             sessions,
+            rate_limiter,
         ) = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
@@ -253,6 +258,8 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if rate_limiter is None:
+        raise ValueError("rate_limiter is required when auth_service is injected")
     if screening_service is None and engine is not None:
         screening_service = build_screening_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
@@ -327,6 +334,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
+    app.state.api_key_rate_limiter = rate_limiter
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
@@ -383,6 +391,7 @@ def create_app(
     app.include_router(review_router)
     app.include_router(notifications_router)
     app.include_router(requests_router)
+    app.include_router(invoice_api_keys_router)
     app.include_router(notification_preferences_router)
     app.include_router(invoice_documents_router)
 
