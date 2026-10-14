@@ -15,9 +15,9 @@ from treasurypilot_api.invoices.fingerprints import (
 )
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
-    _active_mandate_config_stmt,
     RequestCreate,
     RequestPatch,
+    _active_mandate_config_stmt,
     _amount,
     _asset_pay_limit,
     _request_id,
