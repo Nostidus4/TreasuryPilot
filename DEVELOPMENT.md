@@ -71,6 +71,33 @@ Alembic lives in `services/api/migrations`. Use one migration per PR when the sc
 
 `make dev` runs a one-shot `migrate` service (`alembic upgrade head`) before the API starts, because the API syncs platform chain configuration into the database at startup. Outside Compose, run `DATABASE_URL=... uv run alembic -c services/api/alembic.ini upgrade head`; Alembic refuses to run without a `DATABASE_URL`.
 
+## Using Supabase Postgres
+
+Supabase is used only as managed Postgres 16 (ADR-004); auth stays in-house (ADR-009), so there is no Supabase Auth or `supabase-js`.
+
+1. In the Supabase dashboard (project `flbztxutuqtbxjoflxsi`), click **Connect** and pick **Session pooler** (port 5432, host `aws-0-<region>.pooler.supabase.com`, user `postgres.flbztxutuqtbxjoflxsi`). The direct connection also works. Do not use the transaction pooler (port 6543): it breaks asyncpg prepared statements.
+2. Put the string in the gitignored `infra/env/.env` as `SUPABASE_DATABASE_URL`, using the `postgresql+asyncpg://` scheme and `?ssl=require` (see `infra/env/.env.example`). URL-encode special characters in the password.
+3. Run migrations, then start the stack, with the override file (Docker Compose >= 2.24):
+
+```sh
+docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml run --rm migrate
+docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml up
+```
+
+The override points `api`, `worker`, `beat` and `migrate` at Supabase and drops their dependency on the local `postgres` container, which is then only started under the `local-postgres` profile. `worker-ai` still reads `AI_DATABASE_URL`; give it a dedicated least-privilege role, never the core credential.
+
+## Running against Ethereum Sepolia
+
+```sh
+docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.sepolia.yaml up -d --build
+```
+
+Do not enable the `local` or `ci` profiles; anvil is not needed. Combine with `-f infra/compose.supabase.yaml` if wanted.
+
+- `SEPOLIA_RPC_URL` feeds `CHAIN_RPC_URL` for worker/signer (Alchemy URL goes here). `SEPOLIA_WEB_RPC_URL` feeds the web build arg `VITE_RPC_URL` (public RPC or domain-restricted key only, since it ships in the JS bundle). Both default to `https://ethereum-sepolia-rpc.publicnode.com`. `VITE_CHAIN_ID` becomes `11155111`. Rebuild the web image after changing either. Never commit keyed URLs.
+- Current limitation: only the web wallet uses Sepolia today. No backend code reads `CHAIN_RPC_URL` yet, and `deployments/chains.json` stays empty until the treasury module is deployed to Sepolia and the manifest format gap in `deployments/README.md` is reconciled (the API config requires >= 2 distinct RPC URLs and a deployed `TREASURY_MODULE_IMPLEMENTATION`).
+- Gas: the deployer, policy/signer and operational wallets need Sepolia ETH from a faucet ([Google Cloud Web3 faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) or [pk910](https://sepolia-faucet.pk910.de)). Test USDC for Aave comes from the [Aave faucet](https://app.aave.com/faucet/). Check `infra/scripts/check-sepolia-deploy.sh` and `deployments/11155111.json` for supply-cap caveats.
+
 ## Money
 
 Amounts are integers in base units everywhere (ADR-014). Never use floats for money.

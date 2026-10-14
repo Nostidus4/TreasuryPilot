@@ -1,0 +1,34 @@
+# Opt-in override: run the backend against hosted Supabase Postgres (managed Postgres only;
+# auth stays in-house, ADR-009). Usage, with SUPABASE_DATABASE_URL set in infra/env/.env:
+#   docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml up
+# Needs Docker Compose >= 2.24 for the !reset tag. See DEVELOPMENT.md "Using Supabase Postgres".
+x-supabase-environment: &supabase-environment
+  DATABASE_URL: ${SUPABASE_DATABASE_URL:?set SUPABASE_DATABASE_URL}
+
+services:
+  # The local container is not needed; start it explicitly only if you want it anyway.
+  postgres:
+    profiles: [local-postgres]
+
+  migrate:
+    environment: *supabase-environment
+    depends_on: !reset {}
+
+  api:
+    environment: *supabase-environment
+    depends_on:
+      postgres: !reset null
+
+  worker:
+    environment: *supabase-environment
+    depends_on:
+      postgres: !reset null
+
+  beat:
+    environment: *supabase-environment
+
+  # worker-ai keeps AI_DATABASE_URL on purpose: it must use a least-privilege role, never the
+  # core credential. Set AI_DATABASE_URL to a dedicated Supabase role if it needs DB access.
+  worker-ai:
+    depends_on:
+      postgres: !reset null
