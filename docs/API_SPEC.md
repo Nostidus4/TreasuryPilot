@@ -43,7 +43,9 @@
 | GET | `/chains` | Supported chains and assets | auth | → `{chains[{chainId, assets[]}]}` | |
 | POST | `/orgs/{orgId}/treasuries` | Create a treasury | OWN, ADM | `{chainId, assetId, wallets[{role, safeAddress, label}]}` → `201 {treasury}` | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET` |
 | GET | `/orgs/{orgId}/treasuries/{tId}` | Treasury state (balances, coverage, mandate, today's budget) | ANY | → `{treasury, wallets[], coverage, mandate, budgets, staleness}` | |
-| POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build the Safe tx to deploy and enable the module | OWN | → `{safeTx}` (to sign in the wallet) | |
+| POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build module deployment and enablement Safe transactions | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}` | 503 `MODULE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE`; 409 if setup is already open |
+
+`mandate` supplies `validFrom`, `expiresAt`, `payeeCoolingSeconds`, `executor`, optional `guardian`, `pay`, `refill`, and `supply` limits (`perRequest` and `daily` as integer base-unit strings), `approvalMaxAge`, and `approvers`. `buffers` must contain exactly one `{wallet, minimum, target}` entry for T and every operational Safe. The endpoint returns separate Safe transactions because each Safe must authorize its own `enableModule` call.
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/refresh` | Re-read Safe configs | OWN, ADM | → `{coverage, details}` | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/acknowledge` | Accept PARTIAL coverage | OWN | `{reason}` → `{coverage}` | 409 `COVERAGE_COMPLETE` |
 

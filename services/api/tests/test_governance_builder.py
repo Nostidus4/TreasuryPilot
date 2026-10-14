@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from eth_abi import decode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from eth_hash.auto import keccak
 
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     build_safe_transaction,
     decode_multisend_calls,
+    enable_module_data,
     exec_transaction_data,
+    module_factory_create_data,
     pack_signatures,
     safe_tx_hash,
 )
+from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
+from treasurypilot_api.treasury.config import PlatformConfiguration
 
 SAFE = bytes.fromhex("11" * 20)
 MULTISEND = bytes.fromhex("22" * 20)
@@ -50,6 +57,82 @@ def test_multisend_requires_configured_call_only_and_nonempty_calls() -> None:
         build_safe_transaction(
             [GovernanceCall(TARGET_A, 0, b"1"), GovernanceCall(TARGET_B, 0, b"2")]
         )
+
+
+def test_module_factory_create_calldata_encodes_initializer_and_salt() -> None:
+    asset = bytes.fromhex("55" * 20)
+    operational = [bytes.fromhex("66" * 20)]
+    executor = bytes.fromhex("77" * 20)
+    guardian = bytes.fromhex("88" * 20)
+    approver = bytes.fromhex("99" * 20)
+    pool = bytes.fromhex("aa" * 20)
+    salt = bytes.fromhex("bb" * 32)
+    mandate = (1, 2, 3, executor, guardian, (4, 5), (6, 7), 8, (0, 0))
+    buffers = [(SAFE, 10, 10), (operational[0], 20, 30)]
+
+    data = module_factory_create_data(
+        asset=asset,
+        operational=operational,
+        mandate=mandate,
+        approvers=[approver],
+        buffers=buffers,
+        aave_pool=pool,
+        salt=salt,
+    )
+
+    assert len(data) > 4
+    assert (
+        data[:4]
+        == keccak(
+            b"createDeterministic(address,address[],(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)"
+        )[:4]
+    )
+    decoded = decode(
+        [
+            "address",
+            "address[]",
+            "(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128))",
+            "address[]",
+            "(address,uint256,uint256)[]",
+            "address",
+            "bytes32",
+        ],
+        data[4:],
+    )
+
+    def as_bytes(address: str) -> bytes:
+        return bytes.fromhex(address[2:])
+
+    assert as_bytes(decoded[0]) == asset
+    assert [as_bytes(address) for address in decoded[1]] == operational
+    assert decoded[2] == (
+        1,
+        2,
+        3,
+        "0x" + executor.hex(),
+        "0x" + guardian.hex(),
+        (4, 5),
+        (6, 7),
+        8,
+        (0, 0),
+    )
+    assert [as_bytes(address) for address in decoded[3]] == [approver]
+    assert [
+        (as_bytes(wallet), minimum, target) for wallet, minimum, target in decoded[4]
+    ] == buffers
+    assert as_bytes(decoded[5]) == pool
+    assert decoded[6] == salt
+    assert enable_module_data(SAFE)[:4] == keccak(b"enableModule(address)")[:4]
+
+
+def test_module_setup_fails_closed_when_factory_manifest_is_missing() -> None:
+    service = GovernanceService(None, None, PlatformConfiguration(chains=(), manifests=()))
+
+    with pytest.raises(GovernanceFailure, match="verified TREASURY_MODULE_FACTORY") as error:
+        asyncio.run(service._verified_deployment(11155111, "TREASURY_MODULE_FACTORY", "1.0.0"))
+
+    assert error.value.status == 503
+    assert error.value.code == "MODULE_DEPLOYMENT_UNAVAILABLE"
 
 
 def test_safe_tx_typed_data_hashes_and_packs_owner_signatures_in_address_order() -> None:

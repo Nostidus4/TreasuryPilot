@@ -34,6 +34,11 @@ _MULTISEND_SELECTOR = keccak(b"multiSend(bytes)")[:4]
 _EXEC_SELECTOR = keccak(
     b"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)"
 )[:4]
+_ENABLE_MODULE_SELECTOR = keccak(b"enableModule(address)")[:4]
+_FACTORY_CREATE_SELECTOR = keccak(
+    b"createDeterministic(address,address[],(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)"
+)[:4]
+_FACTORY_PREDICT_SELECTOR = keccak(b"predictDeterministicAddress(address,bytes32)")[:4]
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,3 +227,46 @@ def decode_multisend_calls(data: bytes) -> tuple[GovernanceCall, ...]:
     if not calls:
         raise ValueError("empty MultiSendCallOnly payload")
     return tuple(calls)
+
+
+def module_factory_create_data(
+    *,
+    asset: bytes,
+    operational: Sequence[bytes],
+    mandate: tuple[Any, ...],
+    approvers: Sequence[bytes],
+    buffers: Sequence[tuple[bytes, int, int]],
+    aave_pool: bytes,
+    salt: bytes,
+) -> bytes:
+    """Encode the factory's deterministic initializer call using its Solidity ABI."""
+    if len(salt) != 32 or len(asset) != 20 or len(aave_pool) != 20:
+        raise ValueError("module factory address or salt is invalid")
+    if any(len(address) != 20 for address in (*operational, *approvers)):
+        raise ValueError("module factory address is invalid")
+    if any(len(wallet) != 20 for wallet, _, _ in buffers):
+        raise ValueError("buffer wallet address is invalid")
+    return _FACTORY_CREATE_SELECTOR + encode(
+        [
+            "address",
+            "address[]",
+            "(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128))",
+            "address[]",
+            "(address,uint256,uint256)[]",
+            "address",
+            "bytes32",
+        ],
+        [asset, operational, mandate, approvers, buffers, aave_pool, salt],
+    )
+
+
+def module_factory_predict_data(*, safe_t: bytes, salt: bytes) -> bytes:
+    if len(safe_t) != 20 or len(salt) != 32:
+        raise ValueError("Safe address or salt is invalid")
+    return _FACTORY_PREDICT_SELECTOR + encode(["address", "bytes32"], [safe_t, salt])
+
+
+def enable_module_data(module: bytes) -> bytes:
+    if len(module) != 20:
+        raise ValueError("module address is invalid")
+    return _ENABLE_MODULE_SELECTOR + encode(["address"], [module])
