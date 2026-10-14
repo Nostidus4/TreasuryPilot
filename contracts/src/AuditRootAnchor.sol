@@ -16,6 +16,7 @@ contract AuditRootAnchor is Ownable2Step {
 
     mapping(bytes32 orgId => address publisher) public publisherOf;
     mapping(bytes32 orgId => mapping(uint64 utcDay => bytes32 root)) public rootAt;
+    mapping(bytes32 orgId => mapping(uint64 utcDay => bool anchored)) public isAnchored;
 
     event PublisherSet(bytes32 indexed orgId, address indexed publisher);
     event RootAnchored(bytes32 indexed orgId, uint64 indexed utcDay, bytes32 root);
@@ -35,11 +36,12 @@ contract AuditRootAnchor is Ownable2Step {
         if (msg.sender != publisherOf[orgId] || msg.sender == address(0)) {
             revert UnauthorizedPublisher();
         }
-        if (orgId == bytes32(0) || root == bytes32(0)) revert InvalidOrganization();
+        if (orgId == bytes32(0)) revert InvalidOrganization();
         if (utcDay > block.timestamp / 1 days) revert FutureDay();
-        if (rootAt[orgId][utcDay] != bytes32(0)) revert AlreadyAnchored();
+        if (isAnchored[orgId][utcDay]) revert AlreadyAnchored();
 
         rootAt[orgId][utcDay] = root;
+        isAnchored[orgId][utcDay] = true;
         emit RootAnchored(orgId, utcDay, root);
     }
 }

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from treasurypilot_core.observability import LogFormat
@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     # Docker secrets in the core worker only; unset means no attestation can be issued.
     policy_keystore_path: Path | None = None
     policy_keystore_password_file: Path | None = None
+    # Separate publisher identity; configure only in the core worker after its
+    # address has been allowlisted by AuditRootAnchor.setPublisher.
+    audit_anchor_rpc_url: str | None = None
+    audit_anchor_chain_id: int | None = None
+    audit_anchor_contract_address: str | None = None
+    audit_anchor_private_key: SecretStr | None = Field(
+        default=None, validation_alias="TP_AUDIT_ANCHOR_PRIVATE_KEY"
+    )
 
 
 @lru_cache

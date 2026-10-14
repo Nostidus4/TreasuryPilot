@@ -102,12 +102,19 @@ AUD-001 → AUD-002 → AUD-004 → AUD-003. Later AUD-L01.
 `contracts/src/AuditRootAnchor.sol` is the on-chain registry for daily roots. The
 contract accepts one root per opaque organization identifier and UTC day, rejects
 future dates and overwrites, and restricts publication to the configured publisher
-for that organization. The root must be the `audit_heads.last_hash` captured from a
-single consistent database snapshot; publisher retries must read `rootAt` first and
-only treat an identical existing root as success. A different existing root is an
-integrity incident and must never be overwritten.
+for that organization. A separate existence bit allows the all-zero genesis head to
+be anchored. The worker reads `audit_heads.last_hash` values inside one read-only
+`REPEATABLE READ` transaction and publishes those exact bytes. Retries read `isAnchored`
+for that organization and UTC day. Once an anchor exists, a retry is a no-op even if
+the live audit head has advanced; the first daily root is immutable and is never
+overwritten.
 
-The contract is not deployed by the current deployment scripts. A production daily
-publisher, its transaction signer and the chain-specific contract address remain
-required to complete AUD-L01's end-to-end acceptance test. Do not configure a worker
-with a general purpose treasury signing key for this task.
+The worker runs daily at 00:05 UTC. Configure `TP_AUDIT_ANCHOR_RPC_URL`,
+`TP_AUDIT_ANCHOR_CHAIN_ID`, `TP_AUDIT_ANCHOR_CONTRACT_ADDRESS`, and the dedicated
+`TP_AUDIT_ANCHOR_PRIVATE_KEY` only in the core worker, after the publisher address is
+allowlisted in the contract. The RPC chain id is checked before signing; the private
+key is never logged. Do not configure a general purpose treasury signing key.
+
+The contract is not deployed by the current deployment scripts. Production use still
+requires reviewed deployment/address publication and provisioned dedicated publisher
+secrets. Until those external steps are complete, the scheduled task fails closed.

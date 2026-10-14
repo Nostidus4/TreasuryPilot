@@ -49,9 +49,10 @@ contract AuditRootAnchorTest {
         anchor.anchorRoot(ORG, uint64(block.timestamp / 1 days + 1), keccak256("root"));
     }
 
-    function testCannotAnchorZeroRoot() public {
+    function testCanAnchorEmptyChainGenesisRoot() public {
         vm.prank(PUBLISHER);
-        vm.expectRevert(AuditRootAnchor.InvalidOrganization.selector);
         anchor.anchorRoot(ORG, uint64(block.timestamp / 1 days), bytes32(0));
+        require(anchor.isAnchored(ORG, uint64(block.timestamp / 1 days)), "not marked anchored");
+        require(anchor.rootAt(ORG, uint64(block.timestamp / 1 days)) == bytes32(0), "root mismatch");
     }
 }
