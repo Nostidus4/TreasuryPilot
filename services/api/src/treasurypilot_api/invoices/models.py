@@ -285,7 +285,7 @@ class PaymentRequest(Base):
     # For fiat requests, amount is the approved maximum in stablecoin base units.
     fiat_amount_minor_units: Mapped[int | None] = mapped_column(Numeric(78, 0))
     fiat_currency: Mapped[str | None] = mapped_column(String(3))
-    fx_reference_quote: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    fx_reference_quote: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     fx_tolerance_bps: Mapped[int | None] = mapped_column(SmallInteger)
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)
