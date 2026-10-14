@@ -521,9 +521,8 @@ def schedule_oracle(
         if active_day is None:
             reason = PolicyReasonCode.PAYEE_UNKNOWN
             detail = "Payee is not in the snapshot, so its activation day was never read."
-        elif all(
-            _needs_exception(request, day, policy)
-            for day in range(max(snapshot.day, active_day), snapshot.day + horizon_days)
+        elif (days := range(max(snapshot.day, active_day), snapshot.day + horizon_days)) and all(
+            _needs_exception(request, day, policy) for day in days
         ):
             reason = NEEDS_EXCEPTION
             detail = "Approved request exceeds the per-request pay cap; Owner exception required."

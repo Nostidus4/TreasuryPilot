@@ -150,7 +150,8 @@ def _record(treasury: Treasury, wallets: Sequence[TreasuryWallet]) -> TreasuryRe
 
 
 def _default_label(role: WalletRole, index: int) -> str:
-    return "T" if role == WalletRole.SOURCE else f"O{index}"
+    prefix = "T" if role == WalletRole.SOURCE else "O"
+    return "T" if role == WalletRole.SOURCE and index == 1 else f"{prefix}{index}"
 
 
 class TreasuryService:
@@ -187,6 +188,7 @@ class TreasuryService:
         seen: set[str] = set()
         labels: set[str] = set()
         counters = {WalletRole.SOURCE: 0, WalletRole.OPERATIONAL: 0}
+        explicit = {(w.label or "").strip().casefold() for w in wallets} - {""}
         for wallet in [*sources, *operational]:
             address = "0x" + wallet.safe_address.removeprefix("0x").lower()
             if address in seen:
@@ -195,9 +197,15 @@ class TreasuryService:
                 )
             seen.add(address)
             counters[wallet.role] += 1
-            label = (wallet.label or "").strip() or _default_label(
-                wallet.role, counters[wallet.role]
-            )
+            label = (wallet.label or "").strip()
+            index = counters[wallet.role]
+            while not label:
+                # A generated default must not collide with a label the user supplied.
+                candidate = _default_label(wallet.role, index)
+                if candidate.casefold() in explicit or candidate.casefold() in labels:
+                    index += 1
+                else:
+                    label = candidate
             if label.casefold() in labels:
                 raise TreasuryRequestError("INVALID_WALLET_SET", f"Label {label!r} is repeated.")
             labels.add(label.casefold())
