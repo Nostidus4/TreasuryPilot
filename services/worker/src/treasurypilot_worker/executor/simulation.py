@@ -46,6 +46,8 @@ class SimulationContext:
     # Required for PAY and REFILL; the PaymentApproval message and its wire-format signature.
     approval: Mapping[str, Any] | None = None
     approver_signature: bytes = b""
+    # Must be set only after the current transfer passes Travel Rule preflight.
+    travel_rule_clear: bool = False
 
 
 def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -99,6 +101,29 @@ def _revert_data(error: RpcResponseError) -> bytes | None:
 
 async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> Decision:
     """`eth_call` the step from the executor at `latest`; revert or RPC failure is BLOCK."""
+
+    if step.action is Action.PAY and not ctx.travel_rule_clear:
+        code = PolicyReasonCode.DATA_MISSING
+        outcome, primary = aggregate((code,))
+        return Decision(
+            decision=outcome,
+            primary=primary,
+            codes=[code],
+            warnings=[],
+            checks=[
+                Check(
+                    name="travel_rule_clear",
+                    passed=False,
+                    code=code,
+                    expected="completed or non-qualifying Travel Rule preflight",
+                    observed="missing or pending",
+                )
+            ],
+            stage="SIMULATION",
+            step_seq=step.seq,
+            policy_version=ctx.policy_version,
+            snapshot_block=ctx.snapshot_block,
+        )
 
     call = {"from": ctx.executor, "to": ctx.target, "data": "0x" + build_calldata(step, ctx).hex()}
     codes: tuple[PolicyReasonCode, ...] = ()

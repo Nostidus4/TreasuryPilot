@@ -222,6 +222,13 @@ header, and `GET /v1/exchanges/{providerRef}` for status. Replies use `kind` plu
 statuses fail closed. The API sends an exchange only after an approver's signature and current
 on-chain approver membership have been verified.
 
+The approval route holds new approvals until the exchange completes. The worker's last
+pre-signing PAY simulation also requires a `travel_rule_clear` result from preflight, even
+when an approval signature is already present. Missing clearance blocks before any RPC
+simulation. The M10 planning/operation producer (EXE-004/007) is not implemented here yet,
+so no production PAY task currently calls `travel_rule_before_pay` and propagates that result;
+that integration is required before the full execution gate is covered.
+
 Invoice approval builds the exchange data from the organization's legal name and country,
 vendor name and country, the active payee address, and the request's fiat amount/currency.
 Vendor country is optional at entry, but is required to evaluate jurisdiction thresholds.

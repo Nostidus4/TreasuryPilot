@@ -27,6 +27,7 @@ from treasurypilot_api.compliance.travel_rule import (
     TravelRuleStatus,
     TravelRuleThreshold,
     TravelRuleTransfer,
+    build_travel_rule_service,
     travel_rule_before_pay,
 )
 from treasurypilot_api.config import Settings
@@ -290,6 +291,21 @@ def test_configured_http_provider_holds_then_releases_only_after_completion() ->
     ]
     assert calls[1][2]
     assert calls[1][3] == transfer().payload()
+
+
+def test_production_service_uses_the_configured_http_provider() -> None:
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    configured = build_travel_rule_service(
+        "production",
+        async_sessionmaker(),
+        thresholds_json="{}",
+        cipher=None,
+        provider_url="https://gateway.example",
+        provider_api_key="test-secret",
+    )
+
+    assert isinstance(configured._provider, HttpTravelRuleProvider)
 
 
 def test_below_threshold_does_not_require_party_data_but_qualifying_transfer_does() -> None:
