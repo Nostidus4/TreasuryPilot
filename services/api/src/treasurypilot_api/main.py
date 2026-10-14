@@ -12,9 +12,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
+from treasurypilot_api.admin.api import create_admin_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
+from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -48,6 +50,12 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.mandate.routes import (
+    MandateRepository,
+    SqlAlchemyMandateRepository,
+)
+from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
@@ -171,6 +179,9 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    admin_sessions: async_sessionmaker[AsyncSession] | None = None,
+    screening_service: ScreeningService | None = None,
+    mandate_repository: MandateRepository | None = None,
     treasury_service: TreasuryService | None = None,
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
@@ -183,6 +194,11 @@ def create_app(
         SQLAlchemyInstrumentor().instrument()
     configure_error_tracking("api")
     engine: AsyncEngine | None = None
+    admin_engine: AsyncEngine | None = None
+    if admin_sessions is None and settings.admin_configured and settings.database_url is not None:
+        admin_engine, admin_sessions = create_session_factory(
+            settings.database_url.get_secret_value()
+        )
     redis_limiter: RedisRateLimiter | None = None
     sessions: async_sessionmaker[AsyncSession] | None = None
     if auth_service is None:
@@ -201,6 +217,15 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if screening_service is None and engine is not None:
+        screening_service = build_screening_service(
+            settings.environment, async_sessionmaker(engine, expire_on_commit=False)
+        )
+
+    if mandate_repository is None and engine is not None:
+        mandate_repository = SqlAlchemyMandateRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     if membership_repository is None and engine is not None:
         membership_repository = SqlAlchemyMembershipRepository(
@@ -237,6 +262,8 @@ def create_app(
         yield
         if engine is not None:
             await engine.dispose()
+        if admin_engine is not None:
+            await admin_engine.dispose()
         if redis_limiter is not None:
             await redis_limiter.aclose()
 
@@ -253,6 +280,11 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.screening_service = screening_service
+    app.state.mandate_repository = mandate_repository
+    app.state.review_sessions = (
+        async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
+    )
     app.state.treasury_service = treasury_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
@@ -283,6 +315,9 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(mandate_router)
+    app.include_router(review_router)
 
     return app
 

@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  '/admin/tenants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenants */
+    get: operations['tenants_admin_tenants_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenant Health */
+    get: operations['tenant_health_admin_tenants__tenant_id__health_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suspend Tenant */
+    post: operations['suspend_tenant_admin_tenants__tenant_id__suspend_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/health': {
     parameters: {
       query?: never;
@@ -346,6 +397,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/review-items': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Review Items */
+    get: operations['list_review_items_v1_orgs__organization_id__review_items_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Review Item */
+    get: operations['get_review_item_v1_orgs__organization_id__review_items__item_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}/actions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Act On Review Item */
+    post: operations['act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/safes/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safe Deployment Transaction */
+    post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -397,6 +516,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mandates */
+    get: operations['list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get'];
+    put?: never;
+    /** Create Mandate Draft */
+    post: operations['create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Discard Mandate Draft */
+    delete: operations['discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/clone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Clone Mandate Draft */
+    post: operations['clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -416,6 +587,13 @@ export interface components {
       promptVersion?: string | null;
       /** Purpose */
       purpose: string;
+    };
+    /** ActionLimits */
+    ActionLimits: {
+      /** Daily */
+      daily: string;
+      /** Perrequest */
+      perRequest: string;
     };
     /** ApprovalEvidence */
     ApprovalEvidence: {
@@ -538,6 +716,8 @@ export interface components {
       explorerUrl: string;
       /** Name */
       name: string;
+      /** Safedeploymentavailable */
+      safeDeploymentAvailable: boolean;
     };
     /** ChainsResponse */
     ChainsResponse: {
@@ -748,6 +928,101 @@ export interface components {
       /** Email */
       email: string;
     };
+    /** MandateConfig */
+    MandateConfig: {
+      /** Actions */
+      actions?: ('REFILL' | 'PAY' | 'SUPPLY' | 'SWAP')[] | null;
+      /**
+       * Approvalmaxage
+       * @default 1209600
+       */
+      approvalMaxAge: number;
+      /** Approvers */
+      approvers?: string[] | null;
+      /** Buffers */
+      buffers?: components['schemas']['WalletBuffer'][] | null;
+      /** Executor */
+      executor?: string | null;
+      /** Expiresat */
+      expiresAt?: string | null;
+      /** Gasfundingcapwei */
+      gasFundingCapWei?: string | null;
+      /** Guardian */
+      guardian?: string | null;
+      /** Limits */
+      limits?: {
+        [key: string]: components['schemas']['ActionLimits'];
+      } | null;
+      /** Minsupply */
+      minSupply?: string | null;
+      /** Payeecoolingseconds */
+      payeeCoolingSeconds?: number | null;
+      /** Refillpaths */
+      refillPaths?: components['schemas']['RefillPath'][] | null;
+      /**
+       * Reservehorizondays
+       * @default 30
+       */
+      reserveHorizonDays: number;
+      supplyLimits?: components['schemas']['ActionLimits'] | null;
+      /** Swap */
+      swap?: {
+        [key: string]: unknown;
+      } | null;
+      /** Validfrom */
+      validFrom?: string | null;
+    };
+    /** MandateDraftResponse */
+    MandateDraftResponse: {
+      /** Bundlepreview */
+      bundlePreview: {
+        [key: string]: unknown;
+      };
+      /** Diff */
+      diff: {
+        [key: string]: unknown;
+      }[];
+      draft: components['schemas']['MandateView'];
+      /** Requiresconfirmation */
+      requiresConfirmation: boolean;
+      /** Summary */
+      summary: {
+        [key: string]: string;
+      }[];
+    };
+    /** MandateListResponse */
+    MandateListResponse: {
+      /** Items */
+      items: components['schemas']['MandateView'][];
+    };
+    /** MandateView */
+    MandateView: {
+      /** Config */
+      config: {
+        [key: string]: unknown;
+      };
+      /** Confighash */
+      configHash: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Status */
+      status: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Version */
+      version: number;
+    };
     /** MeResponse */
     MeResponse: {
       /** Memberships */
@@ -880,10 +1155,81 @@ export interface components {
         [key: string]: unknown;
       }[];
     };
+    /** RefillPath */
+    RefillPath: {
+      /** From */
+      from: string;
+      /** To */
+      to: string;
+    };
+    /**
+     * ReviewAction
+     * @enum {string}
+     */
+    ReviewAction:
+      | 'RETRY'
+      | 'REPLAN'
+      | 'CANCEL'
+      | 'EDIT_REQUEST'
+      | 'GRANT_EXCEPTION'
+      | 'ACCEPT_FEE'
+      | 'DEFER'
+      | 'ACKNOWLEDGE'
+      | 'MARK_MATCHED';
+    /** ReviewActionRequest */
+    ReviewActionRequest: {
+      action: components['schemas']['ReviewAction'];
+      /** Note */
+      note?: string | null;
+      /** Version */
+      version: number;
+    };
+    /**
+     * ReviewStatus
+     * @enum {string}
+     */
+    ReviewStatus: 'Open' | 'Resolved' | 'Dismissed';
+    /**
+     * ReviewType
+     * @enum {string}
+     */
+    ReviewType:
+      | 'POLICY_BLOCK'
+      | 'NEEDS_AUTHORITY'
+      | 'FEE_APPROVAL'
+      | 'UNCERTAIN_TX'
+      | 'DISCREPANCY'
+      | 'AI_REJECTED'
+      | 'INFRA'
+      | 'UNEXPECTED_OUTFLOW';
     /** RoleUpdateRequest */
     RoleUpdateRequest: {
       /** Roles */
       roles: components['schemas']['OrganizationRole'][];
+    };
+    /** SafeDeploymentRequest */
+    SafeDeploymentRequest: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Threshold */
+      threshold: number;
+    };
+    /** SafeDeploymentResponse */
+    SafeDeploymentResponse: {
+      /** Chainid */
+      chainId: number;
+      transaction: components['schemas']['SafeDeploymentTransaction'];
+    };
+    /** SafeDeploymentTransaction */
+    SafeDeploymentTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
     };
     /** SiweNonceResponse */
     SiweNonceResponse: {
@@ -900,6 +1246,48 @@ export interface components {
       nonce: string;
       /** Scheme */
       scheme: string;
+    };
+    /** TenantHealth */
+    TenantHealth: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Status */
+      status: string;
+      /**
+       * Tenantid
+       * Format: uuid
+       */
+      tenantId: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TenantList */
+    TenantList: {
+      /** Items */
+      items: components['schemas']['TenantView'][];
+    };
+    /** TenantView */
+    TenantView: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Country */
+      country: string | null;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Treasuries */
+      treasuries: number;
     };
     /** TransactionEvidence */
     TransactionEvidence: {
@@ -1018,6 +1406,15 @@ export interface components {
       csrfToken: string;
       user: components['schemas']['UserView'];
     };
+    /** WalletBuffer */
+    WalletBuffer: {
+      /** Minimum */
+      minimum: string;
+      /** Target */
+      target?: string | null;
+      /** Wallet */
+      wallet: string;
+    };
     /** WalletRequest */
     WalletRequest: {
       /** Label */
@@ -1080,6 +1477,88 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  tenants_admin_tenants_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantList'];
+        };
+      };
+    };
+  };
+  tenant_health_admin_tenants__tenant_id__health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantHealth'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  suspend_tenant_admin_tenants__tenant_id__suspend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_health_get: {
     parameters: {
       query?: never;
@@ -1714,6 +2193,150 @@ export interface operations {
       };
     };
   };
+  list_review_items_v1_orgs__organization_id__review_items_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['ReviewStatus'] | null;
+        type?: components['schemas']['ReviewType'] | null;
+        role?: components['schemas']['OrganizationRole'] | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_review_item_v1_orgs__organization_id__review_items__item_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        item_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        item_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewActionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SafeDeploymentRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SafeDeploymentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   update_organization_settings_v1_orgs__organization_id__settings_patch: {
     parameters: {
       query?: never;
@@ -1803,6 +2426,138 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MandateConfig'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateDraftResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateDraftResponse'];
         };
       };
       /** @description Validation Error */
