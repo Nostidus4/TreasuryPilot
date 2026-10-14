@@ -159,6 +159,32 @@ async def _import_scenario(database_url: str) -> tuple[float, int, int, int]:
         duplicate_errors = cast(list[dict[str, object]], duplicate_result["errors"])
         assert len(duplicate_created) == 1
         assert duplicate_errors[0]["code"] == "DUPLICATE_FINGERPRINT"
+        base = {
+            "vendor_ref": "acme",
+            "payee_address": "0x" + "22" * 20,
+            "issue_date": "2026-10-01",
+            "due_date": "2026-10-15",
+            "amount": "12.50",
+        }
+        mixed_result = await _import_csv_rows(
+            organization_id=ORG_ID,
+            treasury_id=TREASURY_ID,
+            user_id=USER_ID,
+            rows=[
+                (2, {**base, "invoice_no": "INV-0"}),  # fingerprint already active in the DB
+                (3, {**base, "invoice_no": "NUL", "note": "a\x00b"}),
+                (4, {**base, "invoice_no": "FRESH"}),
+            ],
+            file_sha256=bytes.fromhex("01" * 32),
+            dry_run=True,
+            factory=sessions,
+        )
+        mixed_errors = cast(list[dict[str, object]], mixed_result["errors"])
+        assert [(e["row"], e["code"]) for e in mixed_errors] == [
+            (2, "DUPLICATE_FINGERPRINT"),
+            (3, "CSV_NUL_BYTE"),
+        ]
+        assert [c["row"] for c in cast(list[dict[str, object]], mixed_result["created"])] == [4]
         async with sessions() as session:
             count = await session.scalar(text("SELECT count(*) FROM payment_requests"))
             imports = await session.scalar(text("SELECT count(*) FROM csv_imports"))

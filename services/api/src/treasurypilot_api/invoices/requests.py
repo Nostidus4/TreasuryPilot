@@ -367,20 +367,6 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
-    flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
-    today = datetime.now(UTC).date()
-    if row.due_at < today:
-        flags.append(
-            ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
-        )
-    if row.due_at > row.issue_date + timedelta(days=120):
-        flags.append(
-            (
-                "DUE_DATE_FAR",
-                RequestFlagSeverity.LOW,
-                {"dueDate": row.due_at.isoformat(), "thresholdDays": 120},
-            )
-        )
     paid_to_payee = await session.scalar(
         select(PaymentRequest.id)
         .where(
@@ -389,10 +375,6 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
         )
         .limit(1)
     )
-    if paid_to_payee is None:
-        flags.append(
-            ("FIRST_PAYMENT_TO_PAYEE", RequestFlagSeverity.LOW, {"payeeId": str(row.payee_id)})
-        )
     paid_count = await session.scalar(
         select(func.count())
         .select_from(PaymentRequest)
@@ -401,8 +383,11 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
             PaymentRequest.status == RequestStatus.PAID.value,
         )
     )
-    if (paid_count or 0) < 5:
-        flags.append(("NO_BASELINE", RequestFlagSeverity.LOW, {"minimumHistory": 5}))
+    flags = _bulk_flag_codes(
+        row,
+        paid_payees={row.payee_id} if paid_to_payee is not None else set(),
+        paid_by_vendor={row.vendor_id: paid_count or 0},
+    )
     result: list[dict[str, object]] = []
     for code, severity, evidence in flags:
         flag = RequestFlag(
@@ -508,7 +493,6 @@ def _csv_rows(file_bytes: bytes) -> tuple[list[str], list[tuple[int, dict[str, s
         if (
             header is None
             or header[: len(CSV_REQUIRED_COLUMNS)] != list(CSV_REQUIRED_COLUMNS)
-            or len(header) < len(CSV_REQUIRED_COLUMNS)
             or any(name not in CSV_OPTIONAL_COLUMNS for name in optional)
             or optional != [name for name in CSV_OPTIONAL_COLUMNS if name in optional]
             or len(set(header)) != len(header)
@@ -520,7 +504,11 @@ def _csv_rows(file_bytes: bytes) -> tuple[list[str], list[tuple[int, dict[str, s
                 "Use the documented CSV template columns in order.",
             )
         rows: list[tuple[int, dict[str, str]]] = []
-        for number, values in enumerate(reader, start=2):
+        while True:
+            number = reader.line_num + 1  # physical line where this record starts
+            values = next(reader, None)
+            if values is None:
+                break
             if not values or (len(values) == 1 and not values[0].strip()):
                 continue
             if len(rows) >= CSV_MAX_ROWS:
@@ -633,6 +621,14 @@ async def download_csv_import_errors(
     )
 
 
+def _constraint_name(error: IntegrityError) -> object:
+    return getattr(
+        getattr(error.orig, "diag", None),
+        "constraint_name",
+        getattr(error.orig, "constraint_name", None),
+    )
+
+
 def _bulk_flag_codes(
     row: PaymentRequest, *, paid_payees: set[uuid.UUID], paid_by_vendor: dict[uuid.UUID, int]
 ) -> list[tuple[str, RequestFlagSeverity, dict[str, object]]]:
@@ -708,17 +704,6 @@ async def _import_csv_rows(
         deactivated_payee_addresses = {
             (payee.vendor_id, payee.address) for payee in payees if payee.status == "Deactivated"
         }
-        existing_values = await session.scalars(
-            select(PaymentRequest.fingerprint).where(
-                PaymentRequest.treasury_id == treasury_id,
-                PaymentRequest.status.not_in(
-                    [status.value for status in TERMINAL_REQUEST_STATUSES]
-                ),
-                PaymentRequest.fingerprint.is_not(None),
-            )
-        )
-        existing = {value for value in existing_values if value is not None}
-
         for line, cells in rows:
             if cells.get("__csv_error__"):
                 errors.append(
@@ -735,6 +720,17 @@ async def _import_csv_rows(
                 name: cells.get(name, "").strip()
                 for name in (*CSV_REQUIRED_COLUMNS, *CSV_OPTIONAL_COLUMNS)
             }
+            nul_field = next((name for name, value in values.items() if "\x00" in value), None)
+            if nul_field is not None:  # Postgres rejects NUL in text/JSONB; never echo it back
+                errors.append(
+                    _csv_error(
+                        line,
+                        nul_field,
+                        "CSV_NUL_BYTE",
+                        "Cells must not contain NUL characters.",
+                    )
+                )
+                continue
             vendor_ref = normalize_vendor_ref(values["vendor_ref"])
             vendor = vendors.get(vendor_ref)
             if not vendor:
@@ -883,7 +879,7 @@ async def _import_csv_rows(
             )
             _hashes(request_row, vendor.normalized_ref, asset.address)
             assert request_row.fingerprint is not None
-            if request_row.fingerprint in seen or request_row.fingerprint in existing:
+            if request_row.fingerprint in seen:
                 errors.append(
                     _csv_error(
                         line,
@@ -905,6 +901,34 @@ async def _import_csv_rows(
                 else None
             )
             candidates.append((line, request_row, invoice_no))
+
+        if candidates:
+            taken = set(
+                await session.scalars(
+                    select(PaymentRequest.fingerprint).where(
+                        PaymentRequest.treasury_id == treasury_id,
+                        PaymentRequest.status.not_in(
+                            [status.value for status in TERMINAL_REQUEST_STATUSES]
+                        ),
+                        PaymentRequest.fingerprint.in_(
+                            [row.fingerprint for _, row, _ in candidates]
+                        ),
+                    )
+                )
+            )
+            for line, row, invoice_no in candidates:
+                if row.fingerprint in taken:
+                    errors.append(
+                        _csv_error(
+                            line,
+                            "invoice_no",
+                            "DUPLICATE_FINGERPRINT",
+                            "An active request already uses this vendor, invoice number, amount and asset.",
+                            invoice_no,
+                        )
+                    )
+            candidates = [item for item in candidates if item[1].fingerprint not in taken]
+        errors.sort(key=lambda error: cast(int, error["row"]))
 
         paid_payees: set[uuid.UUID] = set()
         paid_by_vendor: dict[uuid.UUID, int] = {}
@@ -1009,17 +1033,8 @@ async def _import_csv_rows(
                         )
                     session.add_all(flag_rows)
                     await session.flush()
-            except IntegrityError:
-                duplicate_now = await session.scalar(
-                    select(PaymentRequest.id).where(
-                        PaymentRequest.treasury_id == treasury_id,
-                        PaymentRequest.fingerprint == row.fingerprint,
-                        PaymentRequest.status.not_in(
-                            [status.value for status in TERMINAL_REQUEST_STATUSES]
-                        ),
-                    )
-                )
-                if duplicate_now is None:
+            except IntegrityError as error:
+                if _constraint_name(error) != "uq_payment_requests_active_fingerprint":
                     raise
                 errors.append(
                     _csv_error(
@@ -1039,6 +1054,7 @@ async def _import_csv_rows(
                     "flags": flag_codes,
                 }
             )
+        errors.sort(key=lambda error: cast(int, error["row"]))  # insert-time duplicates arrive late
         record.rows_created = len(created)
         record.errors = errors
         await session.flush()
@@ -1172,11 +1188,7 @@ async def create_request(
                 flags = await _recompute_flags(session, row)
                 await session.flush()
     except IntegrityError as error:
-        constraint_name = getattr(
-            getattr(error.orig, "diag", None),
-            "constraint_name",
-            getattr(error.orig, "constraint_name", None),
-        )
+        constraint_name = _constraint_name(error)
         if constraint_name == "uq_payment_requests_active_fingerprint":
             fingerprint_value = row.fingerprint
             if fingerprint_value is None:

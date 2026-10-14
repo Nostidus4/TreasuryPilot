@@ -127,3 +127,13 @@ def test_csv_row_limit_is_enforced() -> None:
         _csv_rows((header + "\n" + (row + "\n") * (CSV_MAX_ROWS + 1)).encode())
 
     assert error.value.code == "CSV_ROW_LIMIT"
+
+
+def test_csv_row_numbers_are_physical_lines_after_multiline_fields() -> None:
+    header = ",".join(CSV_REQUIRED_COLUMNS) + ",note"
+    prefix = f"acme,0x{'11' * 20},INV-{{n}},2026-10-01,2026-10-15,12.50"
+    content = f'{header}\n{prefix.format(n=1)},"two\nlines"\n{prefix.format(n=2)},ok\n'
+
+    _, rows = _csv_rows(content.encode())
+
+    assert [number for number, _ in rows] == [2, 4]
