@@ -138,7 +138,9 @@ class MeResponse(ApiModel):
 
 def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
     headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+    # Extensions first so they cannot overwrite the standard problem fields.
     content: dict[str, object] = {
+        **exc.extensions,
         "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
         "title": exc.title,
         "status": exc.status,
@@ -146,7 +148,6 @@ def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
         "detail": exc.detail,
         "instance": request.url.path,
     }
-    content.update(exc.extensions)
     return JSONResponse(
         status_code=exc.status,
         media_type="application/problem+json",
