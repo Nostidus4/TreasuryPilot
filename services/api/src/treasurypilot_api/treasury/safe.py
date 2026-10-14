@@ -25,6 +25,7 @@ from typing import Any, Protocol
 
 from eth_abi import decode as abi_decode
 from eth_abi import encode as abi_encode
+from eth_abi.exceptions import DecodingError
 from eth_utils import is_checksum_address, keccak, to_checksum_address
 
 from treasurypilot_api.treasury.config import (
@@ -267,14 +268,21 @@ def _rpc(url: str, method: str, params: list[object]) -> Any:
     request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            payload: dict[str, Any] = json.load(response)
+            payload = json.load(response)
     except (OSError, ValueError):
         # The URL can embed an API key, so the transport error is not echoed.
         raise _ProviderError(method) from None
+    if not isinstance(payload, dict):
+        raise _ProviderError(method)
     error = payload.get("error")
     if error is not None:
-        message = str(error.get("message", "")).lower()
-        if method == "eth_call" and (error.get("code") == 3 or "revert" in message):
+        message = str(error.get("message", "")).lower() if isinstance(error, dict) else ""
+        # Only a definitive revert skips failover; code 3 is the geth/Erigon revert code.
+        if (
+            method == "eth_call"
+            and isinstance(error, dict)
+            and (error.get("code") == 3 or "execution reverted" in message)
+        ):
             raise _Reverted
         raise _ProviderError(method)
     if "result" not in payload:
@@ -309,7 +317,7 @@ def _verify_address(
         version = abi_decode(["string"], _call(url, address, _VERSION, block))[0]
         owners = abi_decode(["address[]"], _call(url, address, _GET_OWNERS, block))[0]
         threshold = abi_decode(["uint256"], _call(url, address, _GET_THRESHOLD, block))[0]
-    except (_Reverted, ValueError, OverflowError):
+    except (_Reverted, DecodingError, ValueError, OverflowError):
         raise not_a_safe from None
     if not owners or not 1 <= threshold <= len(owners):
         raise not_a_safe

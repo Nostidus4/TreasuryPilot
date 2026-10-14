@@ -352,6 +352,20 @@ def _wallet(label: str, owners: Sequence[str], threshold: int) -> WalletRecord:
     )
 
 
+def test_generated_labels_skip_user_supplied_ones() -> None:
+    service = TreasuryService(None, None, _configuration())  # type: ignore[arg-type]
+    wallets = [
+        WalletInput(WalletRole.SOURCE, SAFES[0], "O1"),
+        WalletInput(WalletRole.OPERATIONAL, SAFES[1], None),
+        WalletInput(WalletRole.OPERATIONAL, SAFES[2], "t"),
+    ]
+    labels = [label for _, _, label in service._validate(CHAIN_ID, ASSET, wallets)]
+    assert labels == ["O1", "O2", "t"]
+    wallets[0] = WalletInput(WalletRole.SOURCE, SAFES[0], None)
+    labels = [label for _, _, label in service._validate(CHAIN_ID, ASSET, wallets)]
+    assert labels == ["T2", "O1", "t"]
+
+
 def test_differing_owner_sets_or_thresholds_warn() -> None:
     same = [
         _wallet("T", OWNERS, 2),
