@@ -75,6 +75,15 @@ def test_webhook_delivery_runs_on_its_own_queue_not_core() -> None:
     assert deliver_webhooks.queue == "webhooks"
 
 
+def test_telegram_delivery_runs_on_the_egress_worker_queue() -> None:
+    from treasurypilot_worker.tasks import deliver_telegram
+
+    entry = app.conf.beat_schedule["deliver-telegram"]
+
+    assert entry["options"] == {"queue": "webhooks", "expires": 2}
+    assert deliver_telegram.queue == "webhooks"
+
+
 def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
     entry = app.conf.beat_schedule["publish-daily-audit-roots"]
 

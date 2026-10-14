@@ -131,8 +131,11 @@ services:
       <<: *app-environment
       SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
-      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
-    secrets: [field_key]
+      # Telegram linking (optional): the API stores chat ids encrypted and verifies the webhook.
+      TP_TELEGRAM_BOT_USERNAME: ${TP_TELEGRAM_BOT_USERNAME:-}
+      TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
+      TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -231,9 +234,9 @@ services:
     restart: unless-stopped
     networks: [public, internal]
 
-  # Sends signed webhooks to customer HTTPS endpoints, so it is the only worker besides
-  # worker-ai on the public network. Explicit allowlist: no policy keystore, signer secret
-  # or object-store credentials; the sender rejects non-public addresses and redirects.
+  # Sends signed webhooks and Telegram messages to external HTTPS endpoints, so it is the only
+  # worker besides worker-ai on the public network. Explicit allowlist: no policy keystore,
+  # signer secret or object-store credentials; the webhook sender rejects non-public addresses.
   worker-webhooks:
     build:
       <<: *python-build
@@ -252,10 +255,12 @@ services:
       TP_ENVIRONMENT: local
       TP_REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
-      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Telegram delivery (optional) also needs egress, so it runs here, not on the core worker.
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
-    secrets: [field_key]
     depends_on:
       postgres:
         condition: service_healthy
@@ -346,8 +351,6 @@ services:
     networks: [public, internal]
 
 secrets:
-  field_key:
-    file: ${TP_FIELD_ENCRYPTION_KEY_FILE:-/dev/null}
   # Unset paths mount /dev/null: the worker starts, but attest fails closed (no policy key).
   policy_keystore:
     file: ${TP_POLICY_KEYSTORE_FILE:-/dev/null}

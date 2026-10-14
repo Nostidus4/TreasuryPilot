@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -8,13 +9,15 @@ from typing import Any
 import asyncpg  # type: ignore[import-untyped]
 from celery import Task
 
-from treasurypilot_core.privacy import FieldEncryptionKey
+from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher, FieldEncryptionKey
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
+from treasurypilot_worker.notify.telegram import HttpTelegramClient
+from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 
@@ -135,18 +138,21 @@ def publish_daily_audit_roots_task(self: Task, utc_day: int | None = None) -> di
     return {"roots_published": count}
 
 
-class _PoolRuntime:
+class _PublisherRuntime:
     """One event loop and connection pool per worker process, reused across runs.
 
-    The publish and webhook tasks fire every second; opening a pool (TCP + Postgres
-    session) on every run would cost ~86k connections a day for a usually empty SELECT.
-    A forked child (prefork pool) builds its own loop and pool on first use.
+    The publish task fires every second; opening a pool (TCP + Postgres session) on
+    every run would cost ~86k connections a day for a usually empty SELECT. A forked
+    child (prefork pool) builds its own loop and pool on first use.
     """
 
     def __init__(self) -> None:
         self._pid: int | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pool: Any = None
+
+    def publish(self, database_url: str) -> int:
+        return self.run(database_url, publish_from_pool)
 
     def run(self, database_url: str, work: Callable[[Any], Awaitable[int]]) -> int:
         if self._pid != os.getpid() or self._loop is None:
@@ -168,8 +174,10 @@ class _PoolRuntime:
             raise
 
 
-_publisher = _PoolRuntime()
-_webhooks = _PoolRuntime()
+_publisher = _PublisherRuntime()
+_telegram = _PublisherRuntime()
+_webhooks = _PublisherRuntime()
+logger = logging.getLogger(__name__)
 
 
 @app.task(name="treasurypilot.notifications.publish-domain-events", queue="core")
@@ -179,7 +187,35 @@ def publish_domain_events() -> dict[str, int]:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for domain-event publishing")
-    return {"published": _publisher.run(database_url, publish_from_pool)}
+    return {"published": _publisher.publish(database_url)}
+
+
+# Outbound-egress tasks run on the "webhooks" queue: its worker is the only one with public
+# egress and holds the field key and bot token but not the policy keystore.
+@app.task(name="treasurypilot.notifications.deliver-telegram", queue="webhooks")
+def deliver_telegram() -> dict[str, int]:
+    """Send ACTION/CRITICAL notifications to linked Telegram chats (NTF-003)."""
+
+    settings = get_settings()
+    token = settings.telegram_bot_token
+    if token is None or not token.get_secret_value().strip():
+        return {"sent": 0}  # Telegram is optional: no token, no channel
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for Telegram delivery")
+    try:
+        cipher = FieldCipher(FieldEncryptionKey.from_environment())
+    except EncryptionConfigurationError:
+        logger.error("telegram_delivery_disabled_no_field_key")
+        return {"sent": 0}
+    client = HttpTelegramClient(token.get_secret_value())
+
+    async def work(pool: Any) -> int:
+        return await deliver_pending(
+            pool, client=client, cipher=cipher, base_url=settings.app_base_url
+        )
+
+    return {"sent": _telegram.run(database_url, work)}
 
 
 @cache
@@ -192,8 +228,6 @@ async def _deliver_webhooks(pool: Any) -> int:
         return await deliver_pending_webhooks(connection, encryption_key=_webhook_encryption_key())
 
 
-# Runs on the dedicated "webhooks" queue: the only worker with public egress holds the
-# field key but not the policy keystore.
 @app.task(name="treasurypilot.notifications.deliver-webhooks", queue="webhooks")
 def deliver_webhooks() -> dict[str, int]:
     """Deliver due webhook attempts; endpoints and payloads stay org-scoped in SQL."""
