@@ -68,9 +68,9 @@ T("INV-011","Implement reject, cancel, invalidation and expiry","M1","P0","S","F
 T("INV-L01","Add the email-forwarding invoice inbox","Later","-","L","F-033","FR-308","INV-004 AGT-004",
   "Create drafts from forwarded emails.", "Per-org inbound address;SPF/DKIM checks;attachment extraction into the upload pipeline", "", "",
   "A spoofed sender is flagged;No draft is auto-approved", "Integration")
-T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","M","F-034","FR-309","INV-003",
-  "Let other systems create drafts.", "API keys with scopes;idempotent create and bulk endpoints", "", "",
-  "A key without invoices:create is refused;Keys cannot approve", "Integration")
+T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","L","F-034","FR-309","INV-003",
+  "Let other systems create drafts.", "Issue, list and revoke organization-scoped API keys with invoices:create only;hash secrets and enforce expiry and per-key rate limits;Add key-authenticated idempotent single and bulk draft creation with per-row results", "", "Re-estimate L (~1.5–2 days). Before scheduling, split into key lifecycle and authorization (S), then inbound create and bulk ingestion (M).",
+  "A key without invoices:create is refused;Keys cannot approve;Retries with identical idempotency keys return the original row;One invalid or conflicting bulk row does not prevent later rows from receiving a result", "Integration")
 T("INV-L03","Add recurring payment schedules","Later","-","M","F-040","FR-321, BR-002","INV-003",
   "Generate periodic drafts.", "Schedule templates;draft generation job;skip a period", "", "",
   "Generated drafts require approval every period", "Integration")

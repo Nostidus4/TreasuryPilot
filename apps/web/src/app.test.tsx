@@ -126,6 +126,76 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
 });
 
+test('the organization view lists cross-chain treasuries separately without a combined balance', async () => {
+  const user = userEvent.setup();
+  renderApp(BASE, {
+    beforeRender: () => {
+      const second = structuredClone(db.treasuries.trs_main);
+      second.treasury.id = 'trs_base';
+      second.treasury.name = 'Base treasury';
+      second.treasury.chainId = 84532;
+      second.treasury.chainName = 'Base Sepolia';
+      second.treasury.status = 'Active';
+      second.treasury.asset = {
+        ...second.treasury.asset,
+        id: 'usdc-base-sepolia',
+        address: `0x${'22'.repeat(20)}`,
+      };
+      second.mandate = {
+        version: 7,
+        status: 'Active',
+        expiresAt: '2030-03-01T00:00:00.000Z',
+      };
+      second.budgets = [
+        {
+          action: 'PAY',
+          usedToday: '42000000',
+          dailyLimit: '100000000',
+          perRequest: '20000000',
+        },
+      ];
+      db.treasuries.trs_base = second;
+      db.orgs[0].treasuries.push({ id: 'trs_base', name: 'Base treasury' });
+    },
+  });
+
+  expect(await screen.findByText('2 treasuries')).toBeInTheDocument();
+  expect(screen.getByText('Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.getByText('Base Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.queryByText('163,000.00')).not.toBeInTheDocument();
+  const secondTreasuryLink = screen.getByRole('link', {
+    name: /Base Sepolia · USDC/i,
+  });
+  expect(secondTreasuryLink).toHaveAttribute('href', `${BASE}/t/trs_base`);
+
+  await user.click(secondTreasuryLink);
+  expect(
+    await screen.findByRole('heading', { name: 'Base treasury' }),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByRole('heading', { name: 'Liquidity' }),
+  ).toBeInTheDocument();
+  expect(screen.getByText('v7')).toBeInTheDocument();
+  expect(
+    await screen.findByRole('meter', { name: 'Payments today' }),
+  ).toHaveAttribute('aria-valuenow', '42');
+  expect(
+    screen.queryByRole('meter', { name: 'Refills today' }),
+  ).not.toBeInTheDocument();
+});
+
+test('an organization without treasuries opens the setup checklist', async () => {
+  renderApp(BASE, {
+    beforeRender: () => {
+      db.orgs[0].treasuries = [];
+    },
+  });
+
+  expect(
+    await screen.findByRole('heading', { name: /set up northwind/i }),
+  ).toBeInTheDocument();
+});
+
 test('selecting a Safe in one chart zooms the liquidity chart into it', async () => {
   const user = userEvent.setup();
   renderApp(T);

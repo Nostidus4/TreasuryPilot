@@ -43,6 +43,7 @@
 | GET | `/chains` | Supported chains and assets | auth | → `{chains[{chainId, assets[]}]}` | |
 | POST | `/orgs/{orgId}/treasuries` | Create a treasury | OWN, ADM | `{chainId, assetId, wallets[{role, safeAddress, label}]}` → `201 {treasury}` | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET` |
 | POST | `/orgs/{orgId}/safes/deploy-tx` | Build a Safe deployment transaction | OWN, ADM | `{chainId, owners[], threshold}` → `{chainId, transaction:{to,data,value}}`; submitted by the connected wallet | 422 `INVALID_SAFE_CONFIGURATION`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE` |
+| GET | `/orgs/{orgId}/treasuries` | List the organization's treasuries for the consolidated view | ANY | → `{items[{id, chainId, chainName, assetId, assetSymbol, assetDecimals, assetIsTest, status, coverage, createdAt}]}` | One row per treasury; no amount or counter aggregation across assets; `assetDecimals`/`assetIsTest` are null when the asset is missing from the startup configuration |
 | GET | `/orgs/{orgId}/treasuries/{tId}` | Treasury state (balances, coverage, mandate, today's budget) | ANY | → `{treasury, wallets[], coverage, mandate, budgets, staleness}` | |
 | POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build module deployment and enablement Safe transactions | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}` | 503 `MODULE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE`; 409 if setup is already open |
 
@@ -172,9 +173,15 @@
 |---|---|---|---|---|
 | GET | `/orgs/{o}/notifications` | Inbox | ANY | `?unread=` |
 | POST | `/orgs/{o}/notifications/{id}/read` | Mark read | ANY | |
-| POST | `/me/channels/telegram/link` | Start Telegram linking | auth | → `{code, botUrl}` |
-| PATCH | `/me/channels/{id}` | Opt in to amounts/addresses | auth | `{showAmounts}` |
+| POST | `/me/channels/telegram/link-code` | Start Telegram linking | auth | → `{code, botUrl, expiresAt}`; single use, 10 min |
+| GET | `/me/channels` | List my channels | auth | never returns the chat id |
+| PATCH | `/me/channels/{id}` | Opt in to amounts/vendor names | auth | `{showAmounts}`; own channels only |
+| DELETE | `/me/channels/{id}` | Unlink | auth | |
 | POST | `/integrations/telegram/webhook` | Bot webhook | Telegram secret header | internal |
+| POST | `/orgs/{o}/webhooks` | Create HTTPS destination, event filters and one-time signing secret | OWN, ADM | `{url, eventTypes}` → destination with one-time `secret` |
+| GET | `/orgs/{o}/webhooks` | List destinations without secrets | OWN, ADM | → destination array |
+| PATCH · DELETE | `/orgs/{o}/webhooks/{id}` | Enable/disable destination | OWN, ADM | PATCH `{enabled}` |
+| GET | `/orgs/{o}/webhooks/dead-letters` · POST `/orgs/{o}/webhooks/dead-letters/{id}/replay` | Review and replay a failed delivery | OWN, ADM | Dead-letter array; replay returns updated delivery |
 | GET | `/platform/chains` · PUT `/platform/chains/{id}` | Chain/asset config (M1: seed-driven) | PlatformAdmin | Later UI |
 | GET | `/admin/tenants` | Tenant metadata and active member/treasury counts | staff bearer + source IP allowlist | Platform admin router; requires `TP_ADMIN_STAFF_TOKEN` (≥32 bytes), `TP_ADMIN_STAFF_ID`, and `TP_ADMIN_IP_ALLOWLIST`; missing or invalid configuration fails closed |
 | GET | `/admin/tenants/{tenantId}/health` | Tenant status and basic health counts | staff bearer + source IP allowlist | Metadata only |

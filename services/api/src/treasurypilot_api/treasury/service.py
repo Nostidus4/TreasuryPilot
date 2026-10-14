@@ -89,6 +89,16 @@ class TreasuryRecord:
     coverage_details: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class TreasurySummaryRecord:
+    id: uuid.UUID
+    chain_id: int
+    asset_id: uuid.UUID
+    status: TreasuryStatus
+    coverage: Coverage
+    created_at: datetime
+
+
 class _TreasuryRepository(OrgScopedRepository[Treasury]):
     model = Treasury
 
@@ -342,6 +352,29 @@ class TreasuryService:
                 coverage_details=("Coverage is UNKNOWN: no recent Safe configuration snapshot.",),
             )
         return record
+
+    async def list_for_org(
+        self, *, organization_id: uuid.UUID
+    ) -> tuple[TreasurySummaryRecord, ...]:
+        """List this organization's treasuries without combining their balances or counters."""
+
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                _TreasuryRepository(session, organization_id)
+                .select()
+                .order_by(Treasury.created_at, Treasury.id)
+            )
+            return tuple(
+                TreasurySummaryRecord(
+                    id=row.id,
+                    chain_id=row.chain_id,
+                    asset_id=row.asset_id,
+                    status=row.status,
+                    coverage=row.coverage,
+                    created_at=row.created_at,
+                )
+                for row in rows
+            )
 
     async def refresh_coverage(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID

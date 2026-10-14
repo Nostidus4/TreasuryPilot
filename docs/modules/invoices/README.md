@@ -165,6 +165,8 @@ stateDiagram-v2
 | POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
 | POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
+| POST | `/orgs/{o}/requests/bulk` 🔁 | OPR or `invoices:create` key | `{requests:[...]}` + `Idempotency-Key` → `{items, created, total}` | row-level create errors |
+| GET/POST/DELETE | `/orgs/{o}/api-keys[/{keyId}]` | ADM | Create/list/revoke scoped integration keys; secret is returned only at creation | 403 `API_KEY_SCOPE_REQUIRED` |
 
 Terms submitted with a draft are provisional. The confirmation endpoint validates the
 ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
@@ -302,6 +304,14 @@ M1 needs **one** valid Approver signature (M05-D1, BR-007).
 | Expiry sweep | every 5 minutes |
 
 ## 10. Security
+
+Inbound integration keys are organization-scoped, stored only as SHA-256 token hashes,
+and shown once when created. OrgAdmins can issue and revoke keys; the only grantable
+scope is `invoices:create`, with a 90-day default expiry and a maximum 365-day lifetime.
+The key authorizes draft creation only. It cannot satisfy membership role checks for
+approval or other request state transitions. Key-authenticated create calls are rate
+limited per key to 60 requests per minute and require an `Idempotency-Key`; bulk calls
+derive a stable per-row idempotency key from the supplied bulk key and row index.
 
 | Threat | Control | Test |
 |---|---|---|

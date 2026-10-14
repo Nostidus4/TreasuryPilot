@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Docker secrets in the core worker only; unset means no attestation can be issued.
     policy_keystore_path: Path | None = None
     policy_keystore_password_file: Path | None = None
+    # Telegram bot token: environment only, never logged (SecretStr masks repr).
+    telegram_bot_token: SecretStr | None = None
+    # Base of the deep links sent in notifications; the app enforces login and permissions.
+    app_base_url: str = "http://localhost:5173"
     # Separate publisher identity; configure only in the core worker after its
     # address has been allowlisted by AuditRootAnchor.setPublisher.
     audit_anchor_rpc_url: str | None = None

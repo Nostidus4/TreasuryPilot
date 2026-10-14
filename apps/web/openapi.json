@@ -67,6 +67,40 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "ApiKeyCreate": {
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": ["name", "scopes"],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
       "ApprovalEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -486,6 +520,64 @@
         "title": "ChainsResponse",
         "type": "object"
       },
+      "ChannelKind": {
+        "enum": ["TELEGRAM"],
+        "title": "ChannelKind",
+        "type": "string"
+      },
+      "ChannelList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "ChannelList",
+        "type": "object"
+      },
+      "ChannelPatch": {
+        "properties": {
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          }
+        },
+        "required": ["showAmounts"],
+        "title": "ChannelPatch",
+        "type": "object"
+      },
+      "ChannelView": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChannelKind"
+          },
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "title": "Verifiedat",
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "active", "showAmounts", "verifiedAt"],
+        "title": "ChannelView",
+        "type": "object"
+      },
       "ConfirmTermsRequest": {
         "properties": {
           "terms": {
@@ -692,6 +784,28 @@
         },
         "required": ["chainId", "assetId", "wallets"],
         "title": "CreateTreasuryRequest",
+        "type": "object"
+      },
+      "CreateWebhookRequest": {
+        "properties": {
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 9,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "eventTypes"],
+        "title": "CreateWebhookRequest",
         "type": "object"
       },
       "CsvImportCreated": {
@@ -1284,6 +1398,26 @@
         },
         "required": ["invites"],
         "title": "InvitesResponse",
+        "type": "object"
+      },
+      "LinkCodeIssued": {
+        "properties": {
+          "botUrl": {
+            "title": "Boturl",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": ["code", "botUrl", "expiresAt"],
+        "title": "LinkCodeIssued",
         "type": "object"
       },
       "LinkWalletRequest": {
@@ -1896,6 +2030,16 @@
         "title": "ModuleMandateInput",
         "type": "object"
       },
+      "NotificationCategory": {
+        "enum": ["mandatory", "approvals", "payments", "operations"],
+        "title": "NotificationCategory",
+        "type": "string"
+      },
+      "NotificationChannel": {
+        "enum": ["in_app", "email", "telegram"],
+        "title": "NotificationChannel",
+        "type": "string"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -1912,6 +2056,67 @@
         },
         "required": ["items", "unreadCount"],
         "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationPreferencesView": {
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channels",
+          "categories",
+          "quietHoursStart",
+          "quietHoursEnd",
+          "timezone"
+        ],
+        "title": "NotificationPreferencesView",
         "type": "object"
       },
       "NotificationView": {
@@ -2400,6 +2605,22 @@
           }
         },
         "title": "RenewRequest",
+        "type": "object"
+      },
+      "RequestBulkCreate": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestCreate"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": ["requests"],
+        "title": "RequestBulkCreate",
         "type": "object"
       },
       "RequestCreate": {
@@ -3218,6 +3439,20 @@
         "title": "TransactionEvidence",
         "type": "object"
       },
+      "TreasuriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TreasurySummaryView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TreasuriesResponse",
+        "type": "object"
+      },
       "TreasuryResponse": {
         "properties": {
           "treasury": {
@@ -3246,6 +3481,79 @@
         "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
         "title": "TreasuryStatus",
         "type": "string"
+      },
+      "TreasurySummaryView": {
+        "properties": {
+          "assetDecimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetdecimals"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "assetIsTest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetistest"
+          },
+          "assetSymbol": {
+            "title": "Assetsymbol",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "chainName": {
+            "title": "Chainname",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "chainName",
+          "assetId",
+          "assetSymbol",
+          "assetDecimals",
+          "assetIsTest",
+          "status",
+          "coverage",
+          "createdAt"
+        ],
+        "title": "TreasurySummaryView",
+        "type": "object"
       },
       "TreasuryView": {
         "properties": {
@@ -3296,6 +3604,75 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UpdateNotificationPreferences": {
+        "description": "PUT body. Omitted fields keep their stored value (the defaults below only\ndescribe the schema); send ``null`` quiet hours to clear them.",
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "UpdateNotificationPreferences",
+        "type": "object"
+      },
+      "UpdateWebhookRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "title": "UpdateWebhookRequest",
         "type": "object"
       },
       "UploadResponse": {
@@ -3753,6 +4130,115 @@
         "title": "WarningView",
         "type": "object"
       },
+      "WebhookDeliveryView": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "endpointId": {
+            "format": "uuid",
+            "title": "Endpointid",
+            "type": "string"
+          },
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasterror"
+          },
+          "lastStatusCode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laststatuscode"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "endpointId",
+          "status",
+          "attemptCount",
+          "lastStatusCode",
+          "lastError",
+          "createdAt"
+        ],
+        "title": "WebhookDeliveryView",
+        "type": "object"
+      },
+      "WebhookEndpointView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["id", "url", "eventTypes", "enabled", "createdAt"],
+        "title": "WebhookEndpointView",
+        "type": "object"
+      },
       "treasurypilot_api__identity__api__WalletView": {
         "properties": {
           "address": {
@@ -4071,6 +4557,90 @@
         "tags": ["identity"]
       }
     },
+    "/v1/auth/oidc/callback": {
+      "get": {
+        "operationId": "oidc_callback_v1_auth_oidc_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Oidc Callback",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/oidc/start": {
+      "get": {
+        "operationId": "oidc_start_v1_auth_oidc_start_get",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Oidc Start",
+        "tags": ["identity"]
+      }
+    },
     "/v1/auth/siwe/nonce": {
       "get": {
         "operationId": "siwe_nonce_v1_auth_siwe_nonce_get",
@@ -4185,6 +4755,183 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/v1/me/channels": {
+      "get": {
+        "operationId": "list_channels_v1_me_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Channels",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/telegram/link-code": {
+      "post": {
+        "operationId": "create_link_code_v1_me_channels_telegram_link_code_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCodeIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Link Code",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/{channel_id}": {
+      "delete": {
+        "operationId": "delete_channel_v1_me_channels__channel_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Channel",
+        "tags": ["notifications"]
+      },
+      "patch": {
+        "operationId": "update_channel_v1_me_channels__channel_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Channel",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "get_notification_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Notification Preferences",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "put_notification_preferences_v1_me_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Notification Preferences",
+        "tags": ["notifications"]
       }
     },
     "/v1/me/wallets": {
@@ -4337,6 +5084,156 @@
         },
         "summary": "Get Organization",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys": {
+      "get": {
+        "operationId": "list_api_keys_v1_orgs__organization_id__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Api Keys V1 Orgs  Organization Id  Api Keys Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Api Keys",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_api_key_v1_orgs__organization_id__api_keys_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Api Key V1 Orgs  Organization Id  Api Keys Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys/{key_id}": {
+      "delete": {
+        "operationId": "revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Api Key V1 Orgs  Organization Id  Api Keys  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/audit-log": {
@@ -5305,6 +6202,22 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "requestBody": {
@@ -5342,6 +6255,94 @@
           }
         },
         "summary": "Create Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/bulk": {
+      "post": {
+        "operationId": "create_requests_bulk_v1_orgs__organization_id__requests_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestBulkCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Requests Bulk V1 Orgs  Organization Id  Requests Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Requests Bulk",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
@@ -7070,6 +8071,45 @@
       }
     },
     "/v1/orgs/{organization_id}/treasuries": {
+      "get": {
+        "operationId": "list_treasuries_v1_orgs__organization_id__treasuries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Treasuries",
+        "tags": ["treasury"]
+      },
       "post": {
         "operationId": "create_treasury_v1_orgs__organization_id__treasuries_post",
         "parameters": [
@@ -8188,6 +9228,305 @@
         },
         "summary": "Update Vendor",
         "tags": ["vendors"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks": {
+      "get": {
+        "operationId": "list_endpoints_v1_orgs__organization_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEndpointView"
+                  },
+                  "title": "Response List Endpoints V1 Orgs  Organization Id  Webhooks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Endpoints",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_endpoint_v1_orgs__organization_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters": {
+      "get": {
+        "operationId": "list_dead_letters_v1_orgs__organization_id__webhooks_dead_letters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryView"
+                  },
+                  "title": "Response List Dead Letters V1 Orgs  Organization Id  Webhooks Dead Letters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dead Letters",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters/{delivery_id}/replay": {
+      "post": {
+        "operationId": "replay_dead_letter_v1_orgs__organization_id__webhooks_dead_letters__delivery_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Dead Letter",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/{endpoint_id}": {
+      "delete": {
+        "operationId": "disable_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "patch": {
+        "operationId": "update_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Endpoint",
+        "tags": ["webhooks"],
         "x-organization-scoped": true
       }
     }

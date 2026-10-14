@@ -230,8 +230,8 @@ T("TRS-008","Build a Safe deployment transaction from the UI","M1","P2","S","F-0
   "Create a new Safe without leaving the app.",
   "Endpoint returning the Safe factory transaction for the Owner to sign;record the new address",
   "", "", "A Safe deployed through the flow is usable in treasury creation", "Integration on Anvil")
-T("TRS-L01","Support multiple treasuries with a consolidated view","Later","-","M","F-014","FR-110","TRS-004",
-  "Operate treasuries on several chains from one org.", "Per-chain treasuries;consolidated dashboard without cross-asset sums", "", "",
+T("TRS-L01","Support multiple treasuries with a consolidated view","Later","-","L","F-014","FR-110","TRS-004",
+  "Operate treasuries on several chains from one org.", "TRS-L01A (M): per-chain treasury registry;TRS-L01B (M): isolate controls and counters per treasury;TRS-L01C (S): consolidated view without cross-asset sums", "", "",
   "Counters and mandates are isolated per treasury", "Integration")
 T("TRS-L02","Support multiple stablecoins per treasury","Later","-","M","F-015","FR-111","TRS-L01 SC-L05",
   "Hold and pay in more than one stablecoin.", "Asset list per treasury;per-asset limits in the mandate UI and API", "", "",

@@ -252,6 +252,7 @@ class _Inbox(_Source):
             link="/requests/1",
             severity="ACTION",
             created_at=now,
+            deliver_at=now,
             read_at=None,
         )
         return (row,), 3

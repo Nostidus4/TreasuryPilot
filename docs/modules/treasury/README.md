@@ -13,7 +13,7 @@ M02 registers **what a treasury is**: one chain, one payment stablecoin, one sou
 |---|---|
 | Platform chain config and deployments manifest | Mandate content (M03) |
 | Asset registry with on-chain decimals and test labels | Reading balances for planning (M06) |
-| Treasury creation with Safe verification | Multiple treasuries/assets (Later) |
+| Treasury creation with Safe verification; multiple per-chain treasuries and organization list view | Multiple assets per treasury (Later) |
 | Safe config snapshots and change detection | |
 | Module deploy (factory) + enable on T/O1/O2 (via MDT-009) | |
 | Coverage computation and Owner acknowledgment | |
