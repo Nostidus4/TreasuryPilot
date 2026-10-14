@@ -1805,6 +1805,20 @@ export interface components {
       /** Email */
       email: string;
     };
+    /** MandateAssetPolicy */
+    MandateAssetPolicy: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Buffers */
+      buffers: components['schemas']['WalletBuffer'][];
+      /** Limits */
+      limits: {
+        [key: string]: components['schemas']['ActionLimits'];
+      };
+    };
     /** MandateConfig */
     MandateConfig: {
       /** Actions */
@@ -1816,6 +1830,8 @@ export interface components {
       approvalMaxAge: number;
       /** Approvers */
       approvers?: string[] | null;
+      /** Assetpolicies */
+      assetPolicies?: components['schemas']['MandateAssetPolicy'][] | null;
       /** Buffers */
       buffers?: components['schemas']['WalletBuffer'][] | null;
       /** Executor */

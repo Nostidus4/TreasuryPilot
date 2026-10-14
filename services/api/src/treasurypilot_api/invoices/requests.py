@@ -16,7 +16,7 @@ from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import Field, ValidationError, model_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -322,6 +322,13 @@ def _asset_pay_limit(config: object, asset_id: uuid.UUID) -> int | None:
     """Return the active mandate PAY per-request limit for this asset, if present."""
     if not isinstance(config, dict):
         return None
+    try:
+        starts = datetime.fromisoformat(str(config["validFrom"]))
+        expires = datetime.fromisoformat(str(config["expiresAt"]))
+    except (KeyError, ValueError):
+        return None
+    if not starts <= datetime.now(UTC) <= expires:
+        return None
     policies = config.get("assetPolicies")
     if not isinstance(policies, list):
         return None
@@ -344,7 +351,7 @@ def _asset_pay_limit(config: object, asset_id: uuid.UUID) -> int | None:
     return limit if 0 <= limit < 1 << 128 else None
 
 
-def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> object:
+def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> Select[tuple[dict[str, object]]]:
     return (
         select(MandateVersion.config)
         .where(
@@ -1982,6 +1989,7 @@ async def _assert_submittable(session: AsyncSession, row: PaymentRequest) -> Non
         payee_id=row.payee_id,
         asset_id=row.asset_id,
         paying_wallet_id=row.paying_wallet_id,
+        amount=int(row.amount),
     )
 
 

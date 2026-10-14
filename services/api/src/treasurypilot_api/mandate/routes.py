@@ -121,9 +121,10 @@ async def _load_context(
         str(item.id): {
             "symbol": item.symbol,
             "decimals": item.decimals,
-            "address": "0x" + item.address.hex() if item.address is not None else "",
+            "address": "0x" + item.address.hex(),
         }
         for item in chain_assets
+        if item.address is not None and not item.is_native
     }
     wallets = await session.scalars(
         select(TreasuryWallet).where(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -41,23 +41,30 @@ def test_manual_request_amount_must_be_positive() -> None:
 def test_secondary_asset_requires_its_own_active_pay_policy_and_limit() -> None:
     asset_id = uuid.uuid4()
     other_asset_id = uuid.uuid4()
+    window = {
+        "validFrom": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        "expiresAt": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
     config = {
+        **window,
         "assetPolicies": [
             {
                 "assetId": str(asset_id),
                 "limits": {"PAY": {"perRequest": "5000", "daily": "10000"}},
             }
-        ]
+        ],
     }
     assert _asset_pay_limit(config, asset_id) == 5000
     assert _asset_pay_limit(config, other_asset_id) is None
+    assert _asset_pay_limit({**config, "expiresAt": window["validFrom"]}, asset_id) is None
     assert _asset_pay_limit({"assetPolicies": []}, asset_id) is None
     assert (
         _asset_pay_limit(
             {
+                **window,
                 "assetPolicies": [
                     {"assetId": str(asset_id), "limits": {"PAY": {"perRequest": "NaN"}}}
-                ]
+                ],
             },
             asset_id,
         )

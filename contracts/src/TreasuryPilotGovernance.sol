@@ -89,6 +89,10 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         if (m.refill.perRequest > m.refill.daily) revert E.InvalidMandate("refill");
         if (m.supply.perRequest > m.supply.daily) revert E.InvalidMandate("supply");
         if (m.approvalMaxAge == 0) revert E.InvalidMandate("approvalMaxAge");
+        // A new mandate version invalidates secondary-asset policies; the owner must re-enable them under it.
+        for (uint256 i = _allowedAssetList.length; i > 0; --i) {
+            if (_allowedAssetList[i - 1] != asset) _clearAsset(_allowedAssetList[i - 1]);
+        }
         if (!_assetPolicies[asset].enabled) _allowedAssetList.push(asset);
         _assetPolicies[asset] = AssetPolicy(true, m.pay, m.refill);
         _mandate = Mandate(
@@ -153,17 +157,33 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
             asset_ == address(0) || asset_.code.length == 0 || asset_ == asset
                 || pay.perRequest > pay.daily || refill.perRequest > refill.daily
         ) revert E.InvalidConfiguration();
+        if (!enabled) {
+            _clearAsset(asset_);
+            return;
+        }
         AssetPolicy storage policy = _assetPolicies[asset_];
-        if (enabled && !policy.enabled) {
-            if (!_assetBufferConfigured[asset_][safeT]) revert E.AssetBufferNotConfigured();
+        if (!policy.enabled) {
+            // A floor must be positive and every operational wallet needs a refill target, not just a touched flag.
+            if (!_assetBufferConfigured[asset_][safeT] || _bufferOf[asset_][safeT] == 0) {
+                revert E.AssetBufferNotConfigured();
+            }
             for (uint256 i; i < _operationalList.length; ++i) {
-                if (!_assetBufferConfigured[asset_][_operationalList[i]]) {
+                address wallet = _operationalList[i];
+                if (!_assetBufferConfigured[asset_][wallet] || _targetOf[asset_][wallet] == 0) {
                     revert E.AssetBufferNotConfigured();
                 }
             }
             _allowedAssetList.push(asset_);
         }
-        if (!enabled && policy.enabled) {
+        policy.enabled = true;
+        policy.pay = pay;
+        policy.refill = refill;
+        emit AssetPolicySet(asset_, true, pay.perRequest, pay.daily, refill.perRequest, refill.daily);
+    }
+
+    /// @dev Disabling drops the policy and its buffers so re-enabling must reconfigure them explicitly.
+    function _clearAsset(address asset_) internal {
+        if (_assetPolicies[asset_].enabled) {
             for (uint256 i; i < _allowedAssetList.length; ++i) {
                 if (_allowedAssetList[i] == asset_) {
                     _allowedAssetList[i] = _allowedAssetList[_allowedAssetList.length - 1];
@@ -171,11 +191,19 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
                     break;
                 }
             }
+            emit AssetPolicySet(asset_, false, 0, 0, 0, 0);
         }
-        policy.enabled = enabled;
-        policy.pay = pay;
-        policy.refill = refill;
-        emit AssetPolicySet(asset_, enabled, pay.perRequest, pay.daily, refill.perRequest, refill.daily);
+        delete _assetPolicies[asset_];
+        _clearBuffer(asset_, safeT);
+        for (uint256 i; i < _operationalList.length; ++i) {
+            _clearBuffer(asset_, _operationalList[i]);
+        }
+    }
+
+    function _clearBuffer(address asset_, address wallet) internal {
+        delete _bufferOf[asset_][wallet];
+        delete _targetOf[asset_][wallet];
+        delete _assetBufferConfigured[asset_][wallet];
     }
 
     function _setBuffer(address asset_, address wallet, uint256 buffer, uint256 target) internal {

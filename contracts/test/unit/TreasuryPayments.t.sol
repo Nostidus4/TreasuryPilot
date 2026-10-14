@@ -61,6 +61,50 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
     }
 
+    function _setSecondaryBuffers(TestUSDC second, uint256 floor, uint256 target) internal {
+        vm.startPrank(address(treasury));
+        module.setBuffer(address(second), address(treasury), floor, 0);
+        module.setBuffer(address(second), address(op1), floor, target);
+        module.setBuffer(address(second), address(op2), floor, target);
+        vm.stopPrank();
+    }
+
+    function testSecondaryAssetRejectsZeroBuffers() external {
+        TestUSDC second = new TestUSDC();
+        _setSecondaryBuffers(second, 0, 0);
+        vm.expectRevert(E.AssetBufferNotConfigured.selector);
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+    }
+
+    function testDisablingSecondaryAssetClearsBuffersAndReenableNeedsNewOnes() external {
+        TestUSDC second = new TestUSDC();
+        _setSecondaryBuffers(second, 10e6, 150e6);
+        vm.startPrank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+        module.setAssetPolicy(address(second), false, I.Limits(0, 0), I.Limits(0, 0));
+        vm.stopPrank();
+        require(!module.isAssetAllowed(address(second)), "disabled");
+        require(module.bufferOf(address(second), address(treasury)) == 0, "T buffer cleared");
+        require(module.targetOf(address(second), address(op1)) == 0, "target cleared");
+        vm.expectRevert(E.AssetBufferNotConfigured.selector);
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+    }
+
+    function testNewMandateVersionInvalidatesSecondaryAssetPolicies() external {
+        TestUSDC second = new TestUSDC();
+        _setSecondaryBuffers(second, 10e6, 150e6);
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+        require(module.isAssetAllowed(address(second)), "enabled");
+        _owner(abi.encodeCall(module.configureMandate, (config)));
+        require(!module.isAssetAllowed(address(second)), "secondary reset");
+        require(module.isAssetAllowed(address(token)), "primary kept");
+        require(module.allowedAssets().length == 1, "allowlist");
+        require(module.bufferOf(address(second), address(op1)) == 0, "buffer cleared");
+    }
+
     function testPaymentApprovalRejectsAssetOutsideAllowlist() external {
         TestUSDC second = new TestUSDC();
         I.PaymentApproval memory ap = _approval(504, 1e6);
