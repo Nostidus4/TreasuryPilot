@@ -13,10 +13,13 @@ from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
     find_active_duplicate,
 )
+from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
     _amount,
     _request_id,
     _validate_dates,
+    _validated_terms,
+    confirmed_payment_terms,
 )
 
 
@@ -86,3 +89,56 @@ def test_duplicate_error_exposes_existing_request_id_extension() -> None:
     assert error.status == 409
     assert error.code == "DUPLICATE_FINGERPRINT"
     assert error.extensions["existingRequestId"] == str(existing)
+
+
+def test_confirmed_discount_terms_derive_exact_integer_approval_option() -> None:
+    stored, digest, early = _validated_terms(
+        {"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990},
+        1_001,
+    )
+    assert early is not None
+    early_amount, early_pay_by = early
+    assert stored["net_due_day"] == 21_000
+    assert len(digest) == 32
+    assert early_amount == 976  # 1001 - floor(1001 * 250 / 10000)
+    assert early_pay_by == 20_990 * 86_400 + 86_399
+
+
+def test_invalid_terms_return_domain_error() -> None:
+    with pytest.raises(AuthFailure) as error:
+        _validated_terms({"netDueDay": 21_000, "discountBps": 250}, 1_000)
+    assert error.value.code == "TERMS_INVALID"
+    with pytest.raises(AuthFailure) as error:
+        _validated_terms(
+            {"netDueDay": 21_000, "discountBps": 10_000, "discountDeadlineDay": 20_990},
+            1_000,
+        )
+    assert error.value.code == "TERMS_INVALID"
+
+
+def test_camel_case_late_fee_is_validated_by_engine_model() -> None:
+    stored, _, early = _validated_terms(
+        {
+            "netDueDay": 21_000,
+            "lateFee": {"kind": "percent_per_period", "rateBps": 100, "periodDays": 7},
+        },
+        1_000,
+    )
+    assert stored["late_fee"]["period_days"] == 7
+    assert early is None
+
+
+def test_late_fee_amount_accepts_decimal_string() -> None:
+    stored, _, _ = _validated_terms(
+        {"netDueDay": 21_000, "lateFee": {"kind": "fixed", "amount": "12345678901234567890"}},
+        1_000,
+    )
+    # BaseUnits accepts canonical integer strings and stores them as strings (JS-safe).
+    assert stored["late_fee"]["amount"] == "12345678901234567890"
+
+
+def test_scheduler_only_sees_confirmed_terms() -> None:
+    row = PaymentRequest(terms={"net_due_day": 21_000})
+    assert confirmed_payment_terms(row) is None
+    row.terms_confirmed_by = uuid.uuid4()
+    assert confirmed_payment_terms(row).net_due_day == 21_000
