@@ -13,7 +13,10 @@
 | **Blocks** | — |
 | **Submission cut** | After submission |
 
-> **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
+> **Phase: Later.** Re-estimated as L (2 days) and split before scheduling:
+>
+> - Slice A — tenant operations and staff audit (M, ~1 day)
+> - Slice B — consented read support and audit (M, ~1 day; depends on A)
 
 ## Context
 
@@ -27,12 +30,13 @@ Problem behind this work (from `docs/FEATURES.md`):
 
 ## Objective
 
-Operate tenants.
+Operate tenants and provide bounded, consented support access.
 
 ## Scope
 
-- Tenant list, suspend, health
-- read-only support access with consent and audit
+- Slice A (M, ~1 day): tenant list, health and suspend endpoints with append-only staff events
+- Slice B (M, ~1 day, after A): tenant-admin consent and revocation for time-limited read scope
+- staff support summary requires a matching live grant and writes an access event
 
 ## Out of scope
 
@@ -40,7 +44,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Platform admin access stays on a separate staff credential and socket-peer IP allowlist;support reads expose tenant metadata and health counts only;customer fund movement and signing remain unavailable
 
 ## Dependencies
 
@@ -49,10 +53,14 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] No admin endpoint can move funds or sign
+- [ ] No support read succeeds without tenant consent
+- [ ] Expired or revoked grants deny access
+- [ ] Grant and support-read actions are auditable
 
 ## Testing requirements
 
-- Security review
+- Security tests for route surface and grant expiry
+- API tests for consent and support access
 
 ## Definition of Done
 
