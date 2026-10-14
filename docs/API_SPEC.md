@@ -13,7 +13,7 @@
 | Addresses | 0x-checksummed strings. |
 | Idempotency | `Idempotency-Key` header **required** on POSTs marked 🔁. Repeating a call with the same key returns the original response. |
 | Pagination | `?cursor=&limit=` → `{items, nextCursor}`. |
-| Errors | RFC 9457 `application/problem+json`: `{type, title, status, code, detail, instance, errors?}`. `code` values are stable (see §9). |
+| Errors | RFC 9457 `application/problem+json`: `{type, title, status, code, detail, instance, errors?, fields?}`. `code` values are stable (see §9). |
 | Concurrency | Mutable resources return `ETag`/`version`. Updates need `If-Match`, otherwise `412`. |
 
 ## 1. Identity & organizations (M01)
@@ -42,6 +42,7 @@
 |---|---|---|---|---|---|
 | GET | `/chains` | Supported chains and assets | auth | → `{chains[{chainId, assets[]}]}` | |
 | POST | `/orgs/{orgId}/treasuries` | Create a treasury | OWN, ADM | `{chainId, assetId, wallets[{role, safeAddress, label}]}` → `201 {treasury}` | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET` |
+| POST | `/orgs/{orgId}/safes/deploy-tx` | Build a Safe deployment transaction | OWN, ADM | `{chainId, owners[], threshold}` → `{chainId, transaction:{to,data,value}}`; submitted by the connected wallet | 422 `INVALID_SAFE_CONFIGURATION`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE` |
 | GET | `/orgs/{orgId}/treasuries/{tId}` | Treasury state (balances, coverage, mandate, today's budget) | ANY | → `{treasury, wallets[], coverage, mandate, budgets, staleness}` | |
 | POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build the Safe tx to deploy and enable the module | OWN | → `{safeTx}` (to sign in the wallet) | |
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/refresh` | Re-read Safe configs | OWN, ADM | → `{coverage, details}` | 503 `RPC_UNAVAILABLE` |
@@ -52,7 +53,9 @@
 | Method | Endpoint | Purpose | Perm | Request → Response | Errors |
 |---|---|---|---|---|---|
 | GET | `/orgs/{o}/treasuries/{t}/mandates` | Version history | ANY | → `{items}` | |
-| POST | `/orgs/{o}/treasuries/{t}/mandates` | Create a draft | OWN | `MandateConfig` → `201 {draft, summary, diff}` | 422 `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, … |
+| POST | `/orgs/{o}/treasuries/{t}/mandates` | Create a draft and preview its Safe bundle | OWN | `MandateConfig` → `201 {draft, summary, diff, requiresConfirmation, bundlePreview}` | 422 `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, `MIN_SUPPLY_ABOVE_LIMIT`, … |
+| POST | `/orgs/{o}/treasuries/{t}/mandates/{v}/clone` | Clone a compatible version into a new draft | OWN | → `201 {draft, summary, diff, requiresConfirmation, bundlePreview}` | 404, 409 `MANDATE_CONFIG_UNSUPPORTED` |
+| DELETE | `/orgs/{o}/treasuries/{t}/mandates/{v}` | Discard a draft version | OWN | → `204` | 404, 409 `NOT_DRAFT` |
 | POST | `/orgs/{o}/treasuries/{t}/mandates/{v}/activation-tx` | Build the Safe tx for `configureMandate` | OWN | → `{safeTx}` | 409 `NOT_DRAFT` |
 | POST | `/orgs/{o}/treasuries/{t}/mandates/{v}/activation` 🔁 | Report the submitted tx hash; the system tracks it until Active | OWN | `{txHash}` → `202 {status: PendingActivation}` | |
 | GET | `/orgs/{o}/treasuries/{t}/payees` | List payees | ANY | → `{items[{status, activeFrom, screening}]}` | |
@@ -69,13 +72,19 @@
 **`MandateConfig` (request body)**
 ```json
 {
-  "actions": ["REFILL", "PAY"],
+  "actions": ["REFILL", "PAY", "SUPPLY"],
   "refillPaths": [{"from": "<T>", "to": "<O1>"}, {"from": "<T>", "to": "<O2>"}],
   "limits": {
     "PAY":    {"perRequest": "2000000000", "daily": "10000000000"},
     "REFILL": {"perRequest": "2500000000", "daily": "12000000000"}
   },
-  "buffers": [{"wallet": "<O1>", "minimum": "10000000", "target": "150000000"}],
+  "supplyLimits": {"perRequest": "5000000000", "daily": "20000000000"},
+  "buffers": [
+    {"wallet": "<T>", "minimum": "1000000000"},
+    {"wallet": "<O1>", "minimum": "10000000", "target": "150000000"}
+  ],
+  "minSupply": "500000000",
+  "reserveHorizonDays": 30,
   "gasFundingCapWei": "50000000000000000",
   "swap": null,
   "executor": "0xExecutor…",
