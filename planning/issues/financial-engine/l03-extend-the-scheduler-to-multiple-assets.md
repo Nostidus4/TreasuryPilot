@@ -51,5 +51,6 @@ Cross-asset conversion, FX/depeg pricing, and cross-asset refills.
 ## Definition of Done
 
 - [ ] Code completed and merged through a reviewed PR.
-- [ ] Tests pass in CI.
+- [ ] Tests listed above pass in CI.
 - [ ] Docs updated if behavior or design changed.
+- [ ] Money handled as integer base units; no business-critical rule depends on an LLM alone.

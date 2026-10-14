@@ -63,6 +63,14 @@ def schedule_cpsat_multi_asset(assets: Mapping[str, AssetScheduleInput]) -> Sche
         )
 
     request_ids: set[str] = set()
+    for asset_id in assets:
+        if not asset_id or asset_id != asset_id.strip():
+            raise ValueError("asset ids must be non-empty with no surrounding whitespace")
+        ids = [request.id for request in assets[asset_id].requests]
+        if len(ids) != len(set(ids)) or request_ids.intersection(ids):
+            raise ValueError("request ids must be unique across all assets")
+        request_ids.update(ids)
+
     items: list[ScheduledItem] = []
     infeasible: list[Infeasible] = []
     objective = [0, 0, 0, 0]
@@ -72,13 +80,7 @@ def schedule_cpsat_multi_asset(assets: Mapping[str, AssetScheduleInput]) -> Sche
     sequence_by_id: dict[str, int] = {}
 
     for asset_id in sorted(assets):
-        if not asset_id.strip():
-            raise ValueError("asset ids must not be empty")
         asset = assets[asset_id]
-        ids = [request.id for request in asset.requests]
-        if len(ids) != len(set(ids)) or request_ids.intersection(ids):
-            raise ValueError("request ids must be unique across all assets")
-        request_ids.update(ids)
         sequence_by_id.update({request.id: request.approved_seq for request in asset.requests})
 
         result = schedule_cpsat(asset.requests, asset.snapshot, asset.policy)
@@ -98,12 +100,13 @@ def schedule_cpsat_multi_asset(assets: Mapping[str, AssetScheduleInput]) -> Sche
     items.sort(
         key=lambda item: (item.day, sequence_by_id[item.request_id], item.request_id, item.asset_id)
     )
-    infeasible.sort(key=lambda item: item.request_id)
+    infeasible.sort(key=lambda item: (item.request_id, item.asset_id))
     return Schedule(
         items=tuple(items),
         infeasible=tuple(infeasible),
         objective=(objective[0], objective[1], objective[2], objective[3]),
         binding=tuple(sorted(binding)),
-        solver="EDF" if solvers == {"EDF"} else "CPSAT",
+        # Any EDF fallback means the plan is not purely CP-SAT; report the weaker solver.
+        solver="EDF" if "EDF" in solvers else "CPSAT",
         status=status,
     )
