@@ -182,6 +182,6 @@ def test_migration_makes_platform_admin_events_append_only() -> None:
     config.set_main_option("sqlalchemy.url", "postgresql+asyncpg://offline/offline")
     config.output_buffer = output
 
-    command.upgrade(config, "20261013_0012:20261014_0013", sql=True)
+    command.upgrade(config, "20261014_0016:20261014_0017", sql=True)
 
     assert "platform_admin_events_append_only" in output.getvalue()
