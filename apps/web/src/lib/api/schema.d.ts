@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  '/admin/tenants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenants */
+    get: operations['tenants_admin_tenants_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenant Health */
+    get: operations['tenant_health_admin_tenants__tenant_id__health_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suspend Tenant */
+    post: operations['suspend_tenant_admin_tenants__tenant_id__suspend_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/health': {
     parameters: {
       query?: never;
@@ -489,6 +540,48 @@ export interface components {
       /** Scheme */
       scheme: string;
     };
+    /** TenantHealth */
+    TenantHealth: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Status */
+      status: string;
+      /**
+       * Tenantid
+       * Format: uuid
+       */
+      tenantId: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TenantList */
+    TenantList: {
+      /** Items */
+      items: components['schemas']['TenantView'][];
+    };
+    /** TenantView */
+    TenantView: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Country */
+      country: string | null;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Treasuries */
+      treasuries: number;
+    };
     /** UserView */
     UserView: {
       /** Displayname */
@@ -550,6 +643,88 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  tenants_admin_tenants_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantList'];
+        };
+      };
+    };
+  };
+  tenant_health_admin_tenants__tenant_id__health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantHealth'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  suspend_tenant_admin_tenants__tenant_id__suspend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_health_get: {
     parameters: {
       query?: never;

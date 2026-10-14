@@ -4,7 +4,7 @@ import hmac
 import ipaddress
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Annotated, cast
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AwareDatetime
@@ -89,10 +89,13 @@ def create_admin_router(
             raise HTTPException(status_code=503, detail="Platform admin storage is unavailable")
         return sessions
 
+    staff_dependency = Depends(staff)
+    sessions_dependency = Depends(require_sessions)
+
     @router.get("/tenants", response_model=TenantList)
     async def tenants(
-        _: Annotated[str, Depends(staff)],
-        db_sessions: Annotated[async_sessionmaker[AsyncSession], Depends(require_sessions)],
+        _: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> TenantList:
         async with db_sessions() as session:
             result = await session.execute(
@@ -117,8 +120,8 @@ def create_admin_router(
     @router.get("/tenants/{tenant_id}/health", response_model=TenantHealth)
     async def tenant_health(
         tenant_id: uuid.UUID,
-        _: Annotated[str, Depends(staff)],
-        db_sessions: Annotated[async_sessionmaker[AsyncSession], Depends(require_sessions)],
+        _: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> TenantHealth:
         async with db_sessions() as session:
             org = await session.get(Organization, tenant_id)
@@ -139,8 +142,8 @@ def create_admin_router(
     async def suspend_tenant(
         tenant_id: uuid.UUID,
         request: Request,
-        actor: Annotated[str, Depends(staff)],
-        db_sessions: Annotated[async_sessionmaker[AsyncSession], Depends(require_sessions)],
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> TenantView:
         async with db_sessions() as session, session.begin():
             org = await session.get(Organization, tenant_id, with_for_update=True)
