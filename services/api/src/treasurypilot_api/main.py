@@ -50,8 +50,8 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
-from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
+from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository

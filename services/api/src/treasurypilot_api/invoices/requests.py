@@ -717,6 +717,16 @@ async def create_requests_bulk(
                     "status": error.status,
                     "code": error.code,
                     "detail": error.detail,
+                    **error.extensions,
+                }
+            )
+        except IntegrityError:
+            items.append(
+                {
+                    "index": index,
+                    "status": 409,
+                    "code": "REQUEST_CONFLICT",
+                    "detail": "The row conflicts with an existing request or database constraint.",
                 }
             )
         else:

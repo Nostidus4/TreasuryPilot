@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
-from treasurypilot_api.identity.rate_limit import RateLimiterUnavailable
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.models import InvoiceApiKey
 
@@ -97,26 +96,34 @@ async def require_invoice_create(
                 "The key lacks invoices:create.",
             )
         limiter = getattr(request.app.state, "api_key_rate_limiter", None)
-        if limiter is not None:
-            try:
-                result = await limiter.hit(
-                    f"invoice-api-key:{key.id}", limit=60, window=timedelta(minutes=1)
-                )
-            except RateLimiterUnavailable:
-                raise _fail(
-                    503,
-                    "RATE_LIMITER_UNAVAILABLE",
-                    "Service unavailable",
-                    "Request rate limiting is unavailable.",
-                ) from None
-            if not result.allowed:
-                raise AuthFailure(
-                    status=429,
-                    code="RATE_LIMITED",
-                    title="Too many requests",
-                    detail="This API key exceeded its request rate limit.",
-                    retry_after=result.retry_after,
-                )
+        if limiter is None:
+            raise _fail(
+                503,
+                "RATE_LIMITER_UNAVAILABLE",
+                "Service unavailable",
+                "Request rate limiting is unavailable.",
+            )
+        try:
+            result = await limiter.hit(
+                f"invoice-api-key:{key.id}", limit=60, window=timedelta(minutes=1)
+            )
+        except Exception:
+            # Do not allow an integration key to bypass its rate limit when the
+            # configured limiter fails for any reason.
+            raise _fail(
+                503,
+                "RATE_LIMITER_UNAVAILABLE",
+                "Service unavailable",
+                "Request rate limiting is unavailable.",
+            ) from None
+        if not result.allowed:
+            raise AuthFailure(
+                status=429,
+                code="RATE_LIMITED",
+                title="Too many requests",
+                detail="This API key exceeded its request rate limit.",
+                retry_after=result.retry_after,
+            )
         key.last_used_at = now
         access = InvoiceCreateAccess(key.org_id, key.created_by, key.id)
         await session.commit()
@@ -194,9 +201,14 @@ async def create_api_key(
         )
     raw = "tp_live_" + secrets.token_urlsafe(32)
     key = InvoiceApiKey(
-        id=uuid7(), org_id=member.organization_id, name=name,
-        prefix=raw[:16], token_hash=hashlib.sha256(raw.encode()).digest(),
-        scopes=[CREATE_SCOPE], created_by=member.user_id, expires_at=expiry,
+        id=uuid7(),
+        org_id=member.organization_id,
+        name=name,
+        prefix=raw[:16],
+        token_hash=hashlib.sha256(raw.encode()).digest(),
+        scopes=[CREATE_SCOPE],
+        created_by=member.user_id,
+        expires_at=expiry,
     )
     async with _sessions(request)() as session, session.begin():
         session.add(key)
