@@ -38,6 +38,6 @@ def test_recurring_schedule_requires_a_period_invoice_token() -> None:
 def test_schedule_patch_rejects_required_nulls_and_invalid_template_tokens() -> None:
     with pytest.raises(ValidationError, match="payee_id cannot be null"):
         RecurringSchedulePatch.model_validate({"payeeId": None})
-    with pytest.raises(ValidationError, match="exactly one"):
+    with pytest.raises(ValidationError, match="unsupported placeholders"):
         RecurringSchedulePatch.model_validate({"invoiceNoTemplate": "RENT-{period}-{extra}"})
     assert RecurringSchedulePatch.model_validate({"terms": None, "note": None}).note is None
