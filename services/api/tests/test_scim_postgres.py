@@ -36,6 +36,31 @@ def _alembic_config(database_url: str) -> Config:
     return config
 
 
+def _downgrade_test_schema(config: Config, database_url: str) -> None:
+    async def _restore_memberships_for_downgrade() -> None:
+        engine = create_async_engine(database_url)
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "UPDATE memberships SET "
+                        "roles = CASE WHEN cardinality(roles) = 0 "
+                        "THEN ARRAY['Owner']::text[] ELSE roles END, "
+                        "manual_roles = CASE WHEN cardinality(roles) = 0 "
+                        "THEN ARRAY['Owner']::text[] ELSE roles END, "
+                        "oidc_roles = ARRAY[]::text[], scim_roles = ARRAY[]::text[], "
+                        "status = 'active'"
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+    # These tests use a disposable PostgreSQL schema and the downgrade guard
+    # correctly rejects fixtures that leave grants suspended or SCIM-managed.
+    asyncio.run(_restore_memberships_for_downgrade())
+    command.downgrade(config, "base")
+
+
 async def _scenario(database_url: str) -> None:
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -178,7 +203,7 @@ def test_scim_deprovision_is_tenant_scoped_and_audited_on_postgres() -> None:
     try:
         asyncio.run(_scenario(database_url))
     finally:
-        command.downgrade(config, "base")
+        _downgrade_test_schema(config, database_url)
 
 
 async def _group_scenario(database_url: str) -> None:
@@ -580,7 +605,7 @@ def test_scim_groups_keep_role_sources_separate_and_suspend_on_last_role_loss() 
     try:
         asyncio.run(_group_scenario(database_url))
     finally:
-        command.downgrade(config, "base")
+        _downgrade_test_schema(config, database_url)
 
 
 async def _insert_pre_source_roles(database_url: str) -> None:
@@ -759,54 +784,47 @@ def test_migration_and_oidc_role_initialization_are_organization_scoped() -> Non
         command.upgrade(config, "head")
         asyncio.run(_assert_legacy_role_sources_are_scoped(database_url))
     finally:
-        command.downgrade(config, "base")
+        _downgrade_test_schema(config, database_url)
 
 
 def test_migration_downgrade_refuses_active_scim_role_grants() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
     config = _alembic_config(database_url)
     command.upgrade(config, "head")
-    engine = create_async_engine(database_url)
     organization_id, user_id = uuid.uuid4(), uuid.uuid4()
     try:
 
         async def _seed_active_scim_role() -> None:
-            async with engine.begin() as connection:
-                await connection.execute(
-                    text(
-                        "INSERT INTO organizations (id, name) VALUES (:id, 'SCIM downgrade guard')"
-                    ),
-                    {"id": organization_id},
-                )
-                await connection.execute(
-                    text("INSERT INTO users (id, email) VALUES (:id, 'scim-guard@example.com')"),
-                    {"id": user_id},
-                )
-                await connection.execute(
-                    text(
-                        "INSERT INTO memberships "
-                        "(id, org_id, user_id, roles, scim_roles, role_sources_initialized) "
-                        "VALUES (:id, :org, :user, ARRAY['Operator']::text[], "
-                        "ARRAY['Operator']::text[], true)"
-                    ),
-                    {"id": uuid.uuid4(), "org": organization_id, "user": user_id},
-                )
+            engine = create_async_engine(database_url)
+            try:
+                async with engine.begin() as connection:
+                    await connection.execute(
+                        text(
+                            "INSERT INTO organizations (id, name) "
+                            "VALUES (:id, 'SCIM downgrade guard')"
+                        ),
+                        {"id": organization_id},
+                    )
+                    await connection.execute(
+                        text(
+                            "INSERT INTO users (id, email) VALUES (:id, 'scim-guard@example.com')"
+                        ),
+                        {"id": user_id},
+                    )
+                    await connection.execute(
+                        text(
+                            "INSERT INTO memberships "
+                            "(id, org_id, user_id, roles, scim_roles, role_sources_initialized) "
+                            "VALUES (:id, :org, :user, ARRAY['Operator']::text[], "
+                            "ARRAY['Operator']::text[], true)"
+                        ),
+                        {"id": uuid.uuid4(), "org": organization_id, "user": user_id},
+                    )
+            finally:
+                await engine.dispose()
 
         asyncio.run(_seed_active_scim_role())
         with pytest.raises(DBAPIError, match="clear all SCIM role grants"):
             command.downgrade(config, "20261015_0054")
     finally:
-
-        async def _clear_role_sources() -> None:
-            async with engine.begin() as connection:
-                await connection.execute(
-                    text(
-                        "UPDATE memberships SET manual_roles = roles, scim_roles = ARRAY[]::text[] "
-                        "WHERE org_id = :org"
-                    ),
-                    {"org": organization_id},
-                )
-
-        asyncio.run(_clear_role_sources())
-        asyncio.run(engine.dispose())
-        command.downgrade(config, "base")
+        _downgrade_test_schema(config, database_url)
