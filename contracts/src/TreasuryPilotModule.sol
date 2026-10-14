@@ -34,7 +34,8 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
         uint256 amount = early ? ap.earlyAmount : ap.amount;
         bool usedException = false;
-        if (amount > _mandate.pay.perRequest) {
+        Limits memory limits = _assetPolicies[ap.asset].pay;
+        if (amount > limits.perRequest) {
             Exception storage ex = exceptions[ap.requestId];
             if (ex.amount == 0) revert E.OverPerRequestLimit();
             if (
@@ -45,15 +46,17 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
             usedException = true;
         }
         uint256 day = block.timestamp / 1 days;
-        bytes32 key = _counterKey(PAY, day);
-        if (_exceedsDaily(usedOn[key], amount, _mandate.pay.daily)) revert E.OverDailyLimit();
-        _requireFloor(ap.payingWallet, amount, false);
+        bytes32 key = _counterKey(PAY, ap.asset, day);
+        if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverDailyLimit();
+        _requireFloor(ap.asset, ap.payingWallet, amount, false);
         requestPaid[ap.requestId] = true;
         stepUsed[stepId] = true;
         fingerprintPaid[ap.fingerprint] = true;
         usedOn[key] += amount;
-        _transfer(ap.payingWallet, ap.payee, amount);
-        if (_balance(ap.payingWallet) < bufferOf[ap.payingWallet]) revert E.BufferBreach();
+        _transfer(ap.asset, ap.payingWallet, ap.payee, amount);
+        if (_balance(ap.asset, ap.payingWallet) < bufferOf(ap.asset, ap.payingWallet)) {
+            revert E.BufferBreach();
+        }
         emit PaymentExecuted(
             ap.requestId, stepId, ap.fingerprint, ap.payingWallet, ap.payee, amount, day, usedException, early
         );
@@ -73,22 +76,24 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (toWallet != ap.payingWallet || !isOperational[toWallet]) revert E.WrongRefillTarget();
         if (refilledFor[ap.requestId][toWallet]) revert E.AlreadyRefilledForRequest();
         if (amount == 0) revert E.InvalidAmount();
-        if (amount > _mandate.refill.perRequest) revert E.OverRefillPerRequest();
+        Limits memory limits = _assetPolicies[ap.asset].refill;
+        if (amount > limits.perRequest) revert E.OverRefillPerRequest();
         uint256 day = block.timestamp / 1 days;
-        bytes32 key = _counterKey(REFILL, day);
-        if (_exceedsDaily(usedOn[key], amount, _mandate.refill.daily)) revert E.OverRefillDaily();
-        _requireFloor(safeT, amount, true);
-        uint256 beforeTo = _balance(toWallet);
+        bytes32 key = _counterKey(REFILL, ap.asset, day);
+        if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverRefillDaily();
+        _requireFloor(ap.asset, safeT, amount, true);
+        uint256 beforeTo = _balance(ap.asset, toWallet);
         // Bound without adding two attacker-controlled uint256 values.
-        if (ap.amount > type(uint256).max - targetOf[toWallet]) revert E.RefillExceedsNeed();
-        uint256 bound = ap.amount + targetOf[toWallet];
+        uint256 target = targetOf(ap.asset, toWallet);
+        if (ap.amount > type(uint256).max - target) revert E.RefillExceedsNeed();
+        uint256 bound = ap.amount + target;
         if (beforeTo > bound || amount > bound - beforeTo) revert E.RefillExceedsNeed();
         stepUsed[stepId] = true;
         refilledFor[ap.requestId][toWallet] = true;
         usedOn[key] += amount;
-        _transfer(safeT, toWallet, amount);
-        if (_balance(safeT) < bufferOf[safeT]) revert E.SourceBufferBreach();
-        if (_balance(toWallet) > bound) revert E.RefillExceedsNeed();
+        _transfer(ap.asset, safeT, toWallet, amount);
+        if (_balance(ap.asset, safeT) < bufferOf(ap.asset, safeT)) revert E.SourceBufferBreach();
+        if (_balance(ap.asset, toWallet) > bound) revert E.RefillExceedsNeed();
         emit RefillExecuted(ap.requestId, stepId, toWallet, amount, day);
     }
 
@@ -99,10 +104,10 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (amount == 0) revert E.InvalidAmount();
         if (amount > _mandate.supply.perRequest) revert E.OverSupplyPerTx();
         uint256 day = block.timestamp / 1 days;
-        bytes32 key = _counterKey(SUPPLY, day);
+        bytes32 key = _counterKey(SUPPLY, asset, day);
         if (_exceedsDaily(usedOn[key], amount, _mandate.supply.daily)) revert E.OverSupplyDaily();
         uint256 beforeCash = _balance(safeT);
-        if (beforeCash < amount || beforeCash - amount < bufferOf[safeT]) revert E.SupplyFloorBreach();
+        if (beforeCash < amount || beforeCash - amount < bufferOf(safeT)) revert E.SupplyFloorBreach();
         uint256 scaledBefore = IAaveToken(aToken).scaledBalanceOf(safeT);
         uint256 normalizedIncome = IAavePool(aavePool).getReserveNormalizedIncome(asset);
         if (normalizedIncome == 0) revert E.BalanceDeltaMismatch();
@@ -121,7 +126,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
             afterCash > beforeCash || beforeCash - afterCash != amount || scaledAfter <= scaledBefore
                 || scaledAfter - scaledBefore < floorScaled || scaledAfter - scaledBefore > expectedScaled
         ) revert E.BalanceDeltaMismatch();
-        if (afterCash < bufferOf[safeT]) revert E.SupplyFloorBreach();
+        if (afterCash < bufferOf(safeT)) revert E.SupplyFloorBreach();
         emit Supplied(stepId, amount, day);
     }
 
@@ -208,7 +213,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (paid == 0 || paid > auth.amount || afterCash > beforeCash || beforeCash - afterCash != paid) {
             revert E.BalanceDeltaMismatch();
         }
-        if (afterCash < bufferOf[safeT]) revert E.SourceBufferBreach();
+        if (afterCash < bufferOf(safeT)) revert E.SourceBufferBreach();
         if (_healthFactor() < beforeHF) revert E.HealthFactorTooLow();
         emit Repaid(planId, paid);
     }
@@ -233,7 +238,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (amountIn == 0 || minOut == 0) revert E.InvalidAmount();
         if (amountIn > _swapLimits.perRequest) revert E.OverSwapPerTx();
         uint256 day = block.timestamp / 1 days;
-        bytes32 key = _counterKey(SWAP_IN, day);
+        bytes32 key = _counterKey(SWAP_IN, asset, day);
         if (_exceedsDaily(usedOn[key], amountIn, _swapLimits.daily)) revert E.OverSwapDaily();
         _requireFloor(safeT, amountIn, true);
         uint256 beforeCash = _balance(safeT);
@@ -250,28 +255,38 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         }
         uint256 amountOut = afterOut - beforeOut;
         if (amountOut < minOut) revert E.InsufficientOutput();
-        if (afterCash < bufferOf[safeT]) revert E.SourceBufferBreach();
+        if (afterCash < bufferOf(safeT)) revert E.SourceBufferBreach();
         emit SwappedForGas(stepId, amountIn, amountOut, day);
     }
 
     /// @inheritdoc ITreasuryPilotModule
     function usedToday(uint8 action) public view returns (uint256) {
-        return usedOn[_counterKey(action, block.timestamp / 1 days)];
+        return usedToday(action, asset);
+    }
+
+    /// @inheritdoc ITreasuryPilotModule
+    function usedToday(uint8 action, address asset_) public view returns (uint256) {
+        return usedOn[_counterKey(action, asset_, block.timestamp / 1 days)];
     }
 
     /// @inheritdoc ITreasuryPilotModule
     function remainingToday(uint8 action) external view returns (uint256) {
+        return remainingToday(action, asset);
+    }
+
+    /// @inheritdoc ITreasuryPilotModule
+    function remainingToday(uint8 action, address asset_) public view returns (uint256) {
         uint256 cap = 0;
-        if (action == PAY) cap = _mandate.pay.daily;
-        else if (action == REFILL) cap = _mandate.refill.daily;
-        else if (action == SUPPLY) cap = _mandate.supply.daily;
-        else if (action == SWAP_IN) cap = _swapLimits.daily;
-        uint256 used = usedToday(action);
+        if (action == PAY) cap = _assetPolicies[asset_].pay.daily;
+        else if (action == REFILL) cap = _assetPolicies[asset_].refill.daily;
+        else if (action == SUPPLY && asset_ == asset) cap = _mandate.supply.daily;
+        else if (action == SWAP_IN && asset_ == asset) cap = _swapLimits.daily;
+        uint256 used = usedToday(action, asset_);
         return used >= cap ? 0 : cap - used;
     }
 
-    function _counterKey(uint8 action, uint256 day) internal pure returns (bytes32) {
-        return keccak256(abi.encode(action, day));
+    function _counterKey(uint8 action, address asset_, uint256 day) internal pure returns (bytes32) {
+        return keccak256(abi.encode(action, asset_, day));
     }
 
     function _exceedsDaily(uint256 used, uint256 amount, uint256 limit) internal pure returns (bool) {
@@ -295,23 +310,35 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
     }
 
     function _requireFloor(address wallet, uint256 amount, bool source) internal view {
-        uint256 balance = _balance(wallet);
-        if (balance < amount || balance - amount < bufferOf[wallet]) {
+        _requireFloor(asset, wallet, amount, source);
+    }
+
+    function _requireFloor(address asset_, address wallet, uint256 amount, bool source) internal view {
+        uint256 balance = _balance(asset_, wallet);
+        if (balance < amount || balance - amount < bufferOf(asset_, wallet)) {
             if (source) revert E.SourceBufferBreach();
             revert E.BufferBreach();
         }
     }
 
     function _balance(address wallet) internal view returns (uint256) {
-        return IERC20(asset).balanceOf(wallet);
+        return _balance(asset, wallet);
+    }
+
+    function _balance(address asset_, address wallet) internal view returns (uint256) {
+        return IERC20(asset_).balanceOf(wallet);
     }
 
     function _transfer(address from, address to, uint256 amount) internal {
-        uint256 beforeFrom = _balance(from);
-        uint256 beforeTo = _balance(to);
-        _safeTokenCall(from, abi.encodeCall(IERC20.transfer, (to, amount)));
-        uint256 afterFrom = _balance(from);
-        uint256 afterTo = _balance(to);
+        _transfer(asset, from, to, amount);
+    }
+
+    function _transfer(address asset_, address from, address to, uint256 amount) internal {
+        uint256 beforeFrom = _balance(asset_, from);
+        uint256 beforeTo = _balance(asset_, to);
+        _safeTokenCall(asset_, from, abi.encodeCall(IERC20.transfer, (to, amount)));
+        uint256 afterFrom = _balance(asset_, from);
+        uint256 afterTo = _balance(asset_, to);
         if (
             afterFrom > beforeFrom || beforeFrom - afterFrom != amount || afterTo < beforeTo
                 || afterTo - beforeTo != amount
@@ -331,7 +358,11 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
     }
 
     function _safeTokenCall(address wallet, bytes memory data) internal {
-        bytes memory result = _safeCall(wallet, asset, data);
+        _safeTokenCall(asset, wallet, data);
+    }
+
+    function _safeTokenCall(address asset_, address wallet, bytes memory data) internal {
+        bytes memory result = _safeCall(wallet, asset_, data);
         if (result.length == 0) return;
         if (result.length != 32) revert E.TransferFailed();
         uint256 returnValue;

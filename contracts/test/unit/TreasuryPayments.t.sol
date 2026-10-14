@@ -4,6 +4,7 @@ import {TreasuryFixture} from "../helpers/TreasuryFixture.sol";
 import {TreasuryPilotErrors as E} from "../../src/libraries/TreasuryPilotErrors.sol";
 import {ITreasuryPilotModule as I} from "../../src/interfaces/ITreasuryPilotModule.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import {TestUSDC} from "../../src/test-assets/TestUSDC.sol";
 
 contract ContractApprover is IERC1271 {
     bytes32 public digest;
@@ -18,6 +19,42 @@ contract ContractApprover is IERC1271 {
 }
 
 contract TreasuryPaymentsTest is TreasuryFixture {
+    function testAssetAllowlistAndDailyCountersAreIndependent() external {
+        TestUSDC second = new TestUSDC();
+        second.mint(address(op1), 1000e6);
+        I.MandateInit memory m = config;
+        m.pay = I.Limits(100e6, 100e6);
+        _owner(abi.encodeCall(module.configureMandate, (m)));
+        _owner(abi.encodeWithSignature("setAssetPolicy(address,bool,(uint128,uint128),(uint128,uint128))", address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0)));
+        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(op1), 20e6, 150e6));
+
+        I.PaymentApproval memory primaryFirst = _approval(501, 60e6);
+        _pay(primaryFirst, bytes32(uint256(501)));
+
+        I.PaymentApproval memory secondary = _approval(502, 60e6);
+        secondary.asset = address(second);
+        _pay(secondary, bytes32(uint256(502)));
+
+        I.PaymentApproval memory primaryLast = _approval(503, 40e6);
+        _pay(primaryLast, bytes32(uint256(503)));
+
+        require(module.usedToday(module.PAY(), address(token)) == 100e6, "primary counter");
+        require(module.usedToday(module.PAY(), address(second)) == 60e6, "secondary counter");
+        require(module.remainingToday(module.PAY(), address(token)) == 0, "primary remainder");
+        require(module.remainingToday(module.PAY(), address(second)) == 40e6, "secondary remainder");
+        require(token.balanceOf(vendor) == 100e6 && second.balanceOf(vendor) == 60e6, "asset transfers");
+        require(module.bufferOf(address(token), address(op1)) == 10e6, "primary buffer unchanged");
+        require(module.bufferOf(address(second), address(op1)) == 20e6, "secondary buffer");
+    }
+
+    function testPaymentApprovalRejectsAssetOutsideAllowlist() external {
+        TestUSDC second = new TestUSDC();
+        I.PaymentApproval memory ap = _approval(504, 1e6);
+        ap.asset = address(second);
+        bytes memory sig = _sign(ap);
+        vm.expectRevert(E.ApprovalInvalid.selector);
+        module.verifyApproval(ap, sig);
+    }
     function testPayTransfersExactApprovedAmountAndSetsReplayState() external {
         I.PaymentApproval memory ap = _approval(1, 100e6);
         uint256 beforeBalance = token.balanceOf(address(op1));

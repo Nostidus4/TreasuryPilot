@@ -10,15 +10,15 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 38 |
-| **All** | | | | **244** |
+| Later | – | – | – | 40 |
+| **All** | | | | **246** |
 
 ## Epics
 
 | Epic | Module | Tickets (M1) | Tickets (Later) | Folder |
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 12 | 0 | [`issues/devex/`](issues/devex/) |
-| M04 · Smart Contracts | `contracts` | 26 | 6 | [`issues/contracts/`](issues/contracts/) |
+| M04 · Smart Contracts | `contracts` | 26 | 8 | [`issues/contracts/`](issues/contracts/) |
 | M07 · Financial Engine (py-core) | `financial-engine` | 14 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
@@ -77,7 +77,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | SC-L02 | contracts | M04 | [Enforce n-of-m approval thresholds by amount band](issues/contracts/l02-enforce-n-of-m-approval-thresholds-by-amount-band.md) | F-029 | Later | - | L | After submission | SC-005 | Accepted |
 | SC-L03 | contracts | M04 | [Add a production swap adapter with signed quotes](issues/contracts/l03-add-a-production-swap-adapter-with-signed-quotes.md) | F-065 | Later | - | L | After submission | SC-018 | Accepted |
 | SC-L04 | contracts | M04 | [Verify plan attestations on-chain](issues/contracts/l04-verify-plan-attestations-on-chain.md) | F-056 | Later | - | M | After submission | SC-017 | Accepted |
-| SC-L05 | contracts | M04 | [Support multiple stablecoins with per-asset limits](issues/contracts/l05-support-multiple-stablecoins-with-per-asset-limits.md) | F-015 | Later | - | M | After submission | SC-007 | Accepted |
+| SC-L05 | contracts | M04 | [Support multiple stablecoins with per-asset limits](issues/contracts/l05-support-multiple-stablecoins-with-per-asset-limits.md) | F-015 | Later | - | L | After submission | SC-007 | Accepted |
+| SC-L07 | contracts | M04 | [Add asset allowlist and independent payment limits](issues/contracts/l07-add-asset-allowlist-and-independent-payment-limits.md) | F-015 | Later | - | M | After submission | SC-007 | Accepted |
+| SC-L08 | contracts | M04 | [Add per-asset wallet floors and refill targets](issues/contracts/l08-add-per-asset-wallet-floors-and-refill-targets.md) | F-015 | Later | - | M | After submission | SC-L07 | Accepted |
 | SC-L06 | contracts | M04 | [Allow refill paths between operational wallets](issues/contracts/l06-allow-refill-paths-between-operational-wallets.md) | F-059 | Later | - | M | After submission | SC-009 | Accepted |
 | ENG-001 | financial-engine | M07 | [Create py-core money types and domain models](issues/financial-engine/001-create-py-core-money-types-and-domain-models.md) | F-013, F-051 | M1 | P0 | M | A | DEV-001 | Ready for Assignment |
 | ENG-002 | financial-engine | M07 | [Implement the liquidity calculator](issues/financial-engine/002-implement-the-liquidity-calculator.md) | F-051 | M1 | P0 | M | A | ENG-001 | Ready for Assignment |

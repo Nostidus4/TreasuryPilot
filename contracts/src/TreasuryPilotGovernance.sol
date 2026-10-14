@@ -57,7 +57,7 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
             for (uint256 j; j < i; ++j) {
                 if (buffers[i].wallet == buffers[j].wallet) revert E.InvalidConfiguration();
             }
-            _setBuffer(buffers[i].wallet, buffers[i].buffer, buffers[i].target);
+            _setBuffer(asset_, buffers[i].wallet, buffers[i].buffer, buffers[i].target);
         }
         if (aavePool_ != address(0)) {
             if (aavePool_.code.length == 0) revert E.InvalidConfiguration();
@@ -89,6 +89,8 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         if (m.refill.perRequest > m.refill.daily) revert E.InvalidMandate("refill");
         if (m.supply.perRequest > m.supply.daily) revert E.InvalidMandate("supply");
         if (m.approvalMaxAge == 0) revert E.InvalidMandate("approvalMaxAge");
+        if (!_assetPolicies[asset].enabled) _allowedAssetList.push(asset);
+        _assetPolicies[asset] = AssetPolicy(true, m.pay, m.refill);
         _mandate = Mandate(
             _mandate.version + 1,
             m.validFrom,
@@ -129,15 +131,81 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
 
     /// @inheritdoc ITreasuryPilotModule
     function setBuffer(address wallet, uint256 buffer, uint256 target) external onlyOwner nonReentrant {
-        _setBuffer(wallet, buffer, target);
+        _setBuffer(asset, wallet, buffer, target);
     }
 
-    function _setBuffer(address wallet, uint256 buffer, uint256 target) internal {
+    /// @inheritdoc ITreasuryPilotModule
+    function setBuffer(address asset_, address wallet, uint256 buffer, uint256 target)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        _setBuffer(asset_, wallet, buffer, target);
+    }
+
+    /// @inheritdoc ITreasuryPilotModule
+    function setAssetPolicy(address asset_, bool enabled, Limits calldata pay, Limits calldata refill)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        if (
+            asset_ == address(0) || asset_.code.length == 0 || asset_ == asset
+                || pay.perRequest > pay.daily || refill.perRequest > refill.daily
+        ) revert E.InvalidConfiguration();
+        AssetPolicy storage policy = _assetPolicies[asset_];
+        if (enabled && !policy.enabled) _allowedAssetList.push(asset_);
+        if (!enabled && policy.enabled) {
+            for (uint256 i; i < _allowedAssetList.length; ++i) {
+                if (_allowedAssetList[i] == asset_) {
+                    _allowedAssetList[i] = _allowedAssetList[_allowedAssetList.length - 1];
+                    _allowedAssetList.pop();
+                    break;
+                }
+            }
+        }
+        policy.enabled = enabled;
+        policy.pay = pay;
+        policy.refill = refill;
+        emit AssetPolicySet(asset_, enabled, pay.perRequest, pay.daily, refill.perRequest, refill.daily);
+    }
+
+    function _setBuffer(address asset_, address wallet, uint256 buffer, uint256 target) internal {
+        if (!isAssetAllowed(asset_)) revert E.AssetNotAllowed();
         if (wallet != safeT && !isOperational[wallet]) revert E.UnknownWallet();
         if (isOperational[wallet] && target < buffer) revert E.TargetBelowBuffer();
-        bufferOf[wallet] = buffer;
-        targetOf[wallet] = target;
-        emit BufferSet(wallet, buffer, target);
+        _bufferOf[asset_][wallet] = buffer;
+        _targetOf[asset_][wallet] = target;
+        if (asset_ == asset) emit BufferSet(wallet, buffer, target);
+        emit AssetBufferSet(asset_, wallet, buffer, target);
+    }
+
+    function isAssetAllowed(address asset_) public view returns (bool) {
+        return asset_ != address(0) && _assetPolicies[asset_].enabled;
+    }
+
+    function allowedAssets() external view returns (address[] memory) {
+        return _allowedAssetList;
+    }
+
+    function assetPolicyOf(address asset_) external view returns (AssetPolicy memory) {
+        return _assetPolicies[asset_];
+    }
+
+    function bufferOf(address wallet) public view returns (uint256) {
+        return _bufferOf[asset][wallet];
+    }
+
+    function bufferOf(address asset_, address wallet) public view returns (uint256) {
+        return _bufferOf[asset_][wallet];
+    }
+
+    function targetOf(address wallet) public view returns (uint256) {
+        return _targetOf[asset][wallet];
+    }
+
+    function targetOf(address asset_, address wallet) public view returns (uint256) {
+        return _targetOf[asset_][wallet];
     }
 
     /// @inheritdoc ITreasuryPilotModule
@@ -253,7 +321,7 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         returns (address signer)
     {
         if (
-            ap.treasury != address(this) || ap.asset != asset || ap.requestId == bytes32(0)
+            ap.treasury != address(this) || !isAssetAllowed(ap.asset) || ap.requestId == bytes32(0)
                 || ap.fingerprint == bytes32(0) || ap.amount == 0
         ) revert E.ApprovalInvalid();
         if (block.timestamp > ap.expiry) revert E.ApprovalExpired();

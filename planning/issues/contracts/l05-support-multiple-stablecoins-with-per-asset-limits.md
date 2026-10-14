@@ -6,7 +6,7 @@
 | **Epic** | M04 · Smart Contracts |
 | **Module** | `contracts` ([spec](../../../docs/modules/contracts/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | M (~1 day) |
+| **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | contracts |
 | **Status** | Accepted |
 | **Traces to** | FR-111 |
@@ -31,8 +31,9 @@ Allow more than one payment asset in a treasury.
 
 ## Scope
 
-- Per-asset limits and buffers
-- asset allowlist in the mandate
+- Owner-managed asset allowlist
+- independent PAY and REFILL caps and daily counters
+- per-wallet floors and refill targets per asset
 
 ## Out of scope
 
@@ -40,7 +41,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Re-estimated L; split into SC-L07 (allowlist and caps/counters) and SC-L08 (per-asset floors and refill targets).
 
 ## Dependencies
 
@@ -48,7 +49,8 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] Limits are enforced independently per asset
+- [ ] Unlisted assets are rejected
+- [ ] caps, counters, floors and refill targets are independent per asset
 
 ## Testing requirements
 
