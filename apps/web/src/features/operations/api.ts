@@ -23,12 +23,18 @@ export const usePlans = (orgId: string, treasuryId: string) =>
     `/treasuries/${treasuryId}/plans`,
   );
 
-export const usePlan = (orgId: string, planId: string) =>
+export const usePlan = (orgId: string, planId: string, live = true) =>
   useOrgQuery<PlanDetail>(
     orgId,
     'plans',
     ['detail', planId],
     `/plans/${planId}`,
+    {
+      // The org-wide stream normally refreshes this query immediately. Keep
+      // the active timeline within WEB-012's two-second target whenever SSE is
+      // not connected (initial connect, drop, or no EventSource support).
+      refetchInterval: live ? false : 2_000,
+    },
   );
 
 export const useRunNow = (orgId: string, treasuryId: string) =>
