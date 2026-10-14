@@ -148,7 +148,7 @@ Estimates use the ticket sizes (S = 0.5, M = 1, L = 2 dev-days) at a conventiona
 | WEB-010 | Build the treasury dashboard | P0 | M |
 | WEB-011 | Build plan cards and the Why panel | P0 | M |
 | WEB-012 | Build the live execution timeline | P0 | M |
-| DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Phúc) | P0 | S |
+| DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | P0 | S |
 | DOM-002 | Set up tUSDC and the Circle USDC evidence run (owner: Phúc) | P0 | S |
 | DOM-003 | Document execution evidence requirements and the Sepolia assumption | P1 | S |
 | DOM-005 | Author planner scenarios with ground truth (≥30) | P0 | L |

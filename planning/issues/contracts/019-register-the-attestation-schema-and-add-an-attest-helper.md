@@ -44,7 +44,7 @@ ADR-018. Only hashes and addresses — no personal data.
 
 ## Dependencies
 
-- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Nostidus4)
 
 ## Acceptance criteria
 

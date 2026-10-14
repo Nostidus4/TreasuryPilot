@@ -33,7 +33,7 @@ Lý do: luồng A là đường đi của tiền, phải đúng trước (contra
 ### Luồng C
 | Issue | ID | Ticket | Prio | Size | Cut |
 |---|---|---|---|---|---|
-| #70 | DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Phúc) | P0 | S | A |
+| #70 | DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | P0 | S | A |
 | #177 | DOM-005 | Author planner scenarios with ground truth (≥30) | P0 | L | A |
 | #179 | DOM-006 | Author the red-team invoice set (20) | P0 | M | A |
 | #232 | DOM-008 | Review business rules and demo limits from a finance view | P0 | S | A |
@@ -71,3 +71,4 @@ Sau đó đi theo thứ tự ở mục 13 của từng module và các đợt tr
 
 Cập nhật 12/10/2026: chuyển khoảng 30 % backend (lõi thực thi: EXE, POL, CHR) cho Tú; Tân giữ phần backend phục vụ web. Đã gán trên GitHub: assignee của issue, trường **Owner** và Status **Assigned** trên Project (182 ticket code M1 còn mở). Người review mặc định nằm trong `.github/CODEOWNERS`, GitHub tự mời review khi mở PR. Chạy lại `python3 planning/tools/assign.py` sau khi thêm ticket mới.
 
+Bàn giao 14/10/2026: **DOM-001 (#70) → @Nostidus4 (Tân)**, chủ repo giữ quyền truy cập hạ tầng. Tân phụ trách kiểm RPC/API/dịch vụ Sepolia và bằng chứng giao dịch Safe; @longhuynh55 hỗ trợ tích hợp contract. Phân công các mảng khác và DOM-002 giữ nguyên.

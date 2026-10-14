@@ -22,10 +22,10 @@ The project lead assigns names in the GitHub Project **Owner** field. Suggested 
 | Role | Focus | Tickets |
 |---|---|---|
 | **Finance advisor** | Invoices, payment terms, scheduling scenarios, business-rule review, demo company profile | DOM-004, DOM-005, DOM-007, DOM-008 |
-| **Blockchain / security advisor** | Chain and token verification (with anh Phúc), red-team invoices, threat model, known risks, security self-assessment | DOM-001*, DOM-002*, DOM-006, DOM-009, DOM-011 |
+| **Blockchain / security advisor** | Chain verification (DOM-001, with @Nostidus4) and token verification (DOM-002, with anh Phúc), red-team invoices, threat model, known risks, security self-assessment | DOM-001*, DOM-002*, DOM-006, DOM-009, DOM-011 |
 | **Research / communication advisor** | Evidence-requirement review, optional organizer clarification, interviews, compliance note, licenses, technical documentation assembly, deck, video, FigJam | DOM-003, DOM-010, DOM-012, DOM-013, DOM-014, DOM-015, DOM-016, DOM-017 |
 
-\* DOM-001 and DOM-002 are owned by **anh Phúc**. The decisions were taken on 2026-10-11 (Ethereum Sepolia; tUSDC + one Circle USDC run, PH-1/PH-2); the tickets now verify infrastructure and prepare tokens.
+\* DOM-001 (#70) is owned by **@Nostidus4 (Tân)** from 2026-10-14, following anh Phúc's infrastructure handoff. The repository owner handles RPC/API/service access, infrastructure verification and the Safe transaction evidence; **@longhuynh55 (anh Phúc)** supports contract integration. DOM-002 remains owned by anh Phúc. The decisions were taken on 2026-10-11 (Ethereum Sepolia; tUSDC + one Circle USDC run, PH-1/PH-2); the tickets now verify infrastructure and prepare tokens.
 
 ## 3. Features and tickets
 
