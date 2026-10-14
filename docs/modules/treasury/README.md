@@ -59,6 +59,7 @@ Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter 
 ## 8. Algorithms
 
 - **Safe verification:** `getCode` non-empty; proxy `masterCopy` (storage slot 0) ∈ allowlisted Safe v1.4.1 singletons (L1/L2); `VERSION() == "1.4.1"`; chain id matches. EOAs → `NOT_A_SAFE`.
+- **Implementation (TRS-004):** `treasury/safe.py` reads the chain through the configured HTTP RPC providers (failover, all reads pinned to one block) with the Safe ABI instead of safe-eth-py, whose web3 8 / eth-account 0.13 pins cannot resolve in this workspace. The singleton allowlist is the manifest deployments `SAFE_SINGLETON_L1` and `SAFE_SINGLETON_L2` with version `1.4.1`; none configured fails closed with `SAFE_VERSION_UNSUPPORTED`. A Safe belongs to one treasury across all tenants (`DUPLICATE_WALLET`). Creation is audited as `treasury.created`. Request: `{chainId, assetId, wallets[{role, safeAddress, label?}]}` with one SOURCE and one or two OPERATIONAL wallets; `OWNER_SETS_DIFFER` is returned in `warnings`; no RPC answer gives 503 `RPC_UNAVAILABLE`.
 - **Owner sets:** T, O1, O2 should share owners and threshold (PH-9); differences produce a warning, not an error.
 - **Coverage:** for each Safe: `modules = getModulesPaginated(SENTINEL, 10)`; expect exactly `[clone]` with `clone`'s EIP-1167 target = implementation; `getStorageAt(GUARD_SLOT) == 0`; fallback handler ∈ allowlist. Result per wallet + overall (worst of three).
 - **Decimals:** `decimals()` on-chain must equal config; mismatch refuses the asset.

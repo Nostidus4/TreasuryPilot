@@ -363,6 +363,40 @@ export interface paths {
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Treasury */
+    post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Treasury */
+    get: operations['get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -510,6 +544,11 @@ export interface components {
       /** Chains */
       chains: components['schemas']['ChainView'][];
     };
+    /**
+     * Coverage
+     * @enum {string}
+     */
+    Coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
       /** Country */
@@ -523,6 +562,18 @@ export interface components {
       legalName?: string | null;
       /** Name */
       name: string;
+    };
+    /** CreateTreasuryRequest */
+    CreateTreasuryRequest: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      /** Wallets */
+      wallets: components['schemas']['WalletRequest'][];
     };
     /** EvidenceBundle */
     EvidenceBundle: {
@@ -703,7 +754,7 @@ export interface components {
       memberships: components['schemas']['MembershipView'][];
       user: components['schemas']['UserView'];
       /** Wallets */
-      wallets: components['schemas']['WalletView'][];
+      wallets: components['schemas']['treasurypilot_api__identity__api__WalletView'][];
     };
     /** MemberResponse */
     MemberResponse: {
@@ -861,6 +912,43 @@ export interface components {
       /** Txhash */
       txHash: string;
     };
+    /** TreasuryResponse */
+    TreasuryResponse: {
+      treasury: components['schemas']['TreasuryView'];
+      /** Wallets */
+      wallets: components['schemas']['treasurypilot_api__treasury__api__WalletView'][];
+      /** Warnings */
+      warnings: components['schemas']['WarningView'][];
+    };
+    /**
+     * TreasuryStatus
+     * @enum {string}
+     */
+    TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasuryView */
+    TreasuryView: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Moduleaddress */
+      moduleAddress: string | null;
+      status: components['schemas']['TreasuryStatus'];
+    };
     /** UserView */
     UserView: {
       /** Displayname */
@@ -930,8 +1018,30 @@ export interface components {
       csrfToken: string;
       user: components['schemas']['UserView'];
     };
+    /** WalletRequest */
+    WalletRequest: {
+      /** Label */
+      label?: string | null;
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+    };
+    /**
+     * WalletRole
+     * @enum {string}
+     */
+    WalletRole: 'SOURCE' | 'OPERATIONAL';
+    /** WarningView */
+    WarningView: {
+      /** Code */
+      code: string;
+      /** Message */
+      message: string;
+      /** Wallets */
+      wallets: string[];
+    };
     /** WalletView */
-    WalletView: {
+    treasurypilot_api__identity__api__WalletView: {
       /** Address */
       address: string;
       /** Chainfamily */
@@ -943,6 +1053,23 @@ export interface components {
        * Format: date-time
        */
       linkedAt: string;
+    };
+    /** WalletView */
+    treasurypilot_api__treasury__api__WalletView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Label */
+      label: string;
+      /** Owners */
+      owners: string[];
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+      /** Threshold */
+      threshold: number;
     };
   };
   responses: never;
@@ -1185,7 +1312,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['WalletView'];
+          'application/json': components['schemas']['treasurypilot_api__identity__api__WalletView'];
         };
       };
       /** @description Validation Error */
@@ -1609,6 +1736,73 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_treasury_v1_orgs__organization_id__treasuries_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTreasuryRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
         };
       };
       /** @description Validation Error */
