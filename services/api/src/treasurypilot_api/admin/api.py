@@ -103,19 +103,29 @@ def create_admin_router(
                     Organization,
                     select(func.count(Membership.user_id))
                     .where(Membership.org_id == Organization.id, Membership.status == "active")
-                    .correlate(Organization).scalar_subquery(),
+                    .correlate(Organization)
+                    .scalar_subquery(),
                     select(func.count(Treasury.id))
                     .where(Treasury.org_id == Organization.id)
-                    .correlate(Organization).scalar_subquery(),
+                    .correlate(Organization)
+                    .scalar_subquery(),
                 ).order_by(Organization.created_at.desc(), Organization.id)
             )
             rows = cast(list[tuple[Organization, int, int]], result.all())
-        return TenantList(items=[
-            TenantView(
-                id=org.id, name=org.name, country=org.country, created_at=org.created_at,
-                status=org.platform_status, active_members=members, treasuries=treasuries,
-            ) for org, members, treasuries in rows
-        ])
+        return TenantList(
+            items=[
+                TenantView(
+                    id=org.id,
+                    name=org.name,
+                    country=org.country,
+                    created_at=org.created_at,
+                    status=org.platform_status,
+                    active_members=members,
+                    treasuries=treasuries,
+                )
+                for org, members, treasuries in rows
+            ]
+        )
 
     @router.get("/tenants/{tenant_id}/health", response_model=TenantHealth)
     async def tenant_health(
@@ -127,15 +137,25 @@ def create_admin_router(
             org = await session.get(Organization, tenant_id)
             if org is None:
                 raise HTTPException(status_code=404, detail="Tenant not found")
-            members = await session.scalar(select(func.count(Membership.user_id)).where(
-                Membership.org_id == tenant_id, Membership.status == "active"
-            )) or 0
-            treasuries = await session.scalar(select(func.count(Treasury.id)).where(
-                Treasury.org_id == tenant_id
-            )) or 0
+            members = (
+                await session.scalar(
+                    select(func.count(Membership.user_id)).where(
+                        Membership.org_id == tenant_id, Membership.status == "active"
+                    )
+                )
+                or 0
+            )
+            treasuries = (
+                await session.scalar(
+                    select(func.count(Treasury.id)).where(Treasury.org_id == tenant_id)
+                )
+                or 0
+            )
         return TenantHealth(
-            tenant_id=tenant_id, status=org.platform_status,
-            active_members=members, treasuries=treasuries,
+            tenant_id=tenant_id,
+            status=org.platform_status,
+            active_members=members,
+            treasuries=treasuries,
         )
 
     @router.post("/tenants/{tenant_id}/suspend", response_model=TenantView)
@@ -150,21 +170,36 @@ def create_admin_router(
             if org is None:
                 raise HTTPException(status_code=404, detail="Tenant not found")
             org.platform_status = "suspended"
-            members = await session.scalar(select(func.count(Membership.user_id)).where(
-                Membership.org_id == tenant_id, Membership.status == "active"
-            )) or 0
-            treasuries = await session.scalar(select(func.count(Treasury.id)).where(
-                Treasury.org_id == tenant_id
-            )) or 0
-            session.add(PlatformAdminEvent(
-                org_id=tenant_id,
-                actor_id=actor,
-                action="tenant.suspended",
-                data={"source_ip": request.client.host if request.client else None},
-            ))
+            members = (
+                await session.scalar(
+                    select(func.count(Membership.user_id)).where(
+                        Membership.org_id == tenant_id, Membership.status == "active"
+                    )
+                )
+                or 0
+            )
+            treasuries = (
+                await session.scalar(
+                    select(func.count(Treasury.id)).where(Treasury.org_id == tenant_id)
+                )
+                or 0
+            )
+            session.add(
+                PlatformAdminEvent(
+                    org_id=tenant_id,
+                    actor_id=actor,
+                    action="tenant.suspended",
+                    data={"source_ip": request.client.host if request.client else None},
+                )
+            )
             response = TenantView(
-                id=org.id, name=org.name, country=org.country, created_at=org.created_at,
-                status=org.platform_status, active_members=members, treasuries=treasuries,
+                id=org.id,
+                name=org.name,
+                country=org.country,
+                created_at=org.created_at,
+                status=org.platform_status,
+                active_members=members,
+                treasuries=treasuries,
             )
         return response
 

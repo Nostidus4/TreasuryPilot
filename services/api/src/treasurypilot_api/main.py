@@ -173,7 +173,9 @@ def create_app(
     engine: AsyncEngine | None = None
     admin_engine: AsyncEngine | None = None
     if admin_sessions is None and settings.database_url is not None:
-        admin_engine, admin_sessions = create_session_factory(settings.database_url.get_secret_value())
+        admin_engine, admin_sessions = create_session_factory(
+            settings.database_url.get_secret_value()
+        )
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
         (

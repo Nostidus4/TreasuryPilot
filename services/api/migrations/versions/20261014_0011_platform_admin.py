@@ -34,7 +34,12 @@ def upgrade() -> None:
         sa.Column("actor_id", sa.String(length=200), nullable=False),
         sa.Column("action", sa.String(length=64), nullable=False),
         sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )

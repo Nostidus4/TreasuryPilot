@@ -196,7 +196,9 @@ class Organization(Base):
             "country IS NULL OR country ~ '^[A-Z]{2}$'", name="ck_organizations_country"
         ),
         CheckConstraint("length(btrim(display_tz)) > 0", name="ck_organizations_display_tz"),
-        CheckConstraint("platform_status IN ('active', 'suspended')", name="ck_organizations_platform_status"),
+        CheckConstraint(
+            "platform_status IN ('active', 'suspended')", name="ck_organizations_platform_status"
+        ),
         CheckConstraint("version > 0", name="ck_organizations_version"),
     )
 
