@@ -343,6 +343,53 @@ class Membership(Base):
     __mapper_args__ = {"version_id_col": version}
 
 
+class ScimUser(Base):
+    __tablename__ = "scim_users"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "user_id"],
+            ["memberships.org_id", "memberships.user_id"],
+            ondelete="CASCADE",
+            name="fk_scim_users_membership_org_user",
+        ),
+        UniqueConstraint("org_id", "external_id", name="uq_scim_users_org_external_id"),
+        CheckConstraint(
+            "external_id IS NULL OR length(external_id) BETWEEN 1 AND 100",
+            name="ck_scim_users_external_id_length",
+        ),
+        CheckConstraint(
+            "display_name IS NULL OR length(display_name) BETWEEN 1 AND 200",
+            name="ck_scim_users_display_name_length",
+        ),
+        Index("ix_scim_users_org_active", "org_id", "active"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    external_id: Mapped[str | None] = mapped_column(String(100))
+    display_name: Mapped[str | None] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_membership: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    initial_activation_pending: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    deactivated_membership: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ScimGroup(Base):
     __tablename__ = "scim_groups"
     __table_args__ = (
@@ -457,6 +504,80 @@ class OIDCIdentity(Base):
     linked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class SAMLIdentity(Base):
+    __tablename__ = "saml_identities"
+    __table_args__ = (
+        UniqueConstraint("org_id", "issuer", "user_id", name="uq_saml_identities_org_issuer_user"),
+        CheckConstraint("length(issuer) BETWEEN 1 AND 500", name="ck_saml_identity_issuer_length"),
+        CheckConstraint(
+            "length(subject) BETWEEN 1 AND 255", name="ck_saml_identity_subject_length"
+        ),
+        ForeignKeyConstraint(
+            ["org_id", "user_id"],
+            ["memberships.org_id", "memberships.user_id"],
+            ondelete="CASCADE",
+            name="fk_saml_identity_membership_org_user",
+        ),
+        Index("ix_saml_identities_user_id", "user_id"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    issuer: Mapped[str] = mapped_column(String(500), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SAMLLoginRequest(Base):
+    __tablename__ = "saml_login_requests"
+    __table_args__ = (
+        CheckConstraint("length(request_id) BETWEEN 1 AND 255", name="ck_saml_request_id_length"),
+        CheckConstraint("octet_length(relay_state_hash) = 32", name="ck_saml_relay_hash_length"),
+        CheckConstraint(
+            "octet_length(browser_nonce_hash) = 32", name="ck_saml_browser_nonce_hash_length"
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_saml_login_request_expiry"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at", name="ck_saml_request_consumed_at"
+        ),
+        Index("ix_saml_login_requests_expiry", "expires_at"),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    relay_state_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    browser_nonce_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SAMLReplayID(Base):
+    __tablename__ = "saml_replay_ids"
+    __table_args__ = (
+        CheckConstraint("length(identifier) BETWEEN 1 AND 520", name="ck_saml_replay_id_length"),
+        CheckConstraint("expires_at > created_at", name="ck_saml_replay_expiry"),
+        Index("ix_saml_replay_ids_expiry", "expires_at"),
+    )
+
+    identifier: Mapped[str] = mapped_column(String(520), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MfaFactor(Base):

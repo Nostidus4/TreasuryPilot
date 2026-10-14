@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     oidc_redirect_uri: str | None = None
     oidc_organization_id: str | None = None
     oidc_group_role_map: str = "{}"
+    # SAML uses a local, operator-managed IdP metadata file; no metadata URL is fetched.
+    saml_sp_entity_id: str | None = None
+    saml_acs_url: str | None = None
+    saml_idp_metadata_path: Path | None = None
+    saml_idp_entity_id: str | None = None
+    saml_organization_id: uuid.UUID | None = None
+    saml_email_attribute: str = "email"
     # SCIM is a single-tenant, bearer-authenticated deprovisioning integration.
     scim_bearer_token: SecretStr | None = None
     scim_organization_id: uuid.UUID | None = None
@@ -144,6 +151,48 @@ class Settings(BaseSettings):
                 for group, roles in role_map.items()
             ):
                 raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_saml_configuration(self) -> "Settings":
+        saml_values = (
+            self.saml_sp_entity_id,
+            self.saml_acs_url,
+            self.saml_idp_metadata_path,
+            self.saml_idp_entity_id,
+            self.saml_organization_id,
+        )
+        if any(saml_values) and not all(saml_values):
+            raise ValueError(
+                "SAML requires SP entity ID, ACS URL, IdP metadata file, IdP entity ID "
+                "and organization ID"
+            )
+        if all(saml_values):
+            if len(self.saml_sp_entity_id or "") > 500 or len(self.saml_idp_entity_id or "") > 500:
+                raise ValueError("SAML entity IDs must not exceed 500 characters")
+            if (
+                not (self.saml_sp_entity_id or "").strip()
+                or not (self.saml_idp_entity_id or "").strip()
+            ):
+                raise ValueError("SAML entity IDs cannot be blank")
+            parsed = urlparse(self.saml_acs_url or "")
+            is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            if parsed.scheme != "https" and not (
+                self.environment.casefold() == "local" and parsed.scheme == "http" and is_loopback
+            ):
+                raise ValueError("SAML ACS URL must use HTTPS")
+            if (
+                not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "SAML ACS URL must be an absolute URL without credentials or query"
+                )
+            if not self.saml_email_attribute.strip() or len(self.saml_email_attribute) > 500:
+                raise ValueError("SAML email attribute must contain 1 to 500 characters")
         return self
 
     @model_validator(mode="after")
@@ -282,6 +331,18 @@ class Settings(BaseSettings):
                 self.oidc_client_secret,
                 self.oidc_redirect_uri,
                 self.oidc_organization_id,
+            )
+        )
+
+    @property
+    def saml_configured(self) -> bool:
+        return all(
+            (
+                self.saml_sp_entity_id,
+                self.saml_acs_url,
+                self.saml_idp_metadata_path,
+                self.saml_idp_entity_id,
+                self.saml_organization_id,
             )
         )
 

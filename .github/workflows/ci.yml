@@ -24,6 +24,10 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.5
+      - name: Install SAML XML signature verifier
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xmlsec1
       - name: Install Python workspace
         run: uv sync --frozen
       - name: Ruff

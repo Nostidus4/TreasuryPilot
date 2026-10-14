@@ -58,6 +58,7 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.identity.saml_repository import SAMLIdentityRepository
 from treasurypilot_api.identity.scim import (
     ScimIdentityRepository,
     SqlAlchemyScimIdentityRepository,
@@ -488,6 +489,11 @@ def create_app(
     app.state.telegram_repository = telegram_repository
     app.state.mfa_service = mfa_service
     app.state.scim_repository = scim_repository
+    app.state.saml_repository = (
+        SAMLIdentityRepository(sessions)
+        if settings.saml_configured and sessions is not None
+        else None
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

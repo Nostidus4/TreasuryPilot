@@ -5486,6 +5486,21 @@
         },
         "summary": "List Users",
         "tags": ["scim"]
+      },
+      "post": {
+        "operationId": "create_user_scim_v2_Users_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create User",
+        "tags": ["scim"]
       }
     },
     "/scim/v2/Users/{user_id}": {
@@ -5726,6 +5741,47 @@
           }
         },
         "summary": "Oidc Start",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/acs": {
+      "post": {
+        "operationId": "saml_acs_v1_auth_saml_acs_post",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Acs",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/metadata": {
+      "get": {
+        "operationId": "saml_metadata_v1_auth_saml_metadata_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Metadata",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/start": {
+      "get": {
+        "operationId": "saml_start_v1_auth_saml_start_get",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Start",
         "tags": ["identity"]
       }
     },

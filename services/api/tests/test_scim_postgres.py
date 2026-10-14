@@ -19,7 +19,11 @@ from treasurypilot_api.identity.memberships import (
     SqlAlchemyMembershipRepository,
 )
 from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
-from treasurypilot_api.identity.scim import SqlAlchemyScimIdentityRepository
+from treasurypilot_api.identity.scim import (
+    ScimUserConflict,
+    ScimUserNotProvisionable,
+    SqlAlchemyScimIdentityRepository,
+)
 
 pytestmark = pytest.mark.skipif(
     "TP_TEST_DATABASE_URL" not in os.environ,
@@ -129,8 +133,15 @@ async def _scenario(database_url: str) -> None:
         repository = SqlAlchemyScimIdentityRepository(sessions)
         # Keep revocation timestamps after the database's transaction-timestamp defaults.
         now += timedelta(seconds=1)
-        user = await repository.deactivate_user(
-            organization_id=organization_id, user_id=operator_id, now=now
+        user = await repository.patch_user(
+            organization_id=organization_id,
+            user_id=operator_id,
+            active=False,
+            display_name=None,
+            display_name_set=False,
+            external_id=None,
+            external_id_set=False,
+            now=now,
         )
         assert user is not None and not user.active
         other_org_user = await repository.get_user(
@@ -172,8 +183,15 @@ async def _scenario(database_url: str) -> None:
 
         for protected_id, guard in ((admin_id, LastAdministrator), (owner_id, LastOwner)):
             with pytest.raises(guard):
-                await repository.deactivate_user(
-                    organization_id=organization_id, user_id=protected_id, now=now
+                await repository.patch_user(
+                    organization_id=organization_id,
+                    user_id=protected_id,
+                    active=False,
+                    display_name=None,
+                    display_name_set=False,
+                    external_id=None,
+                    external_id_set=False,
+                    now=now,
                 )
         async with sessions() as session:
             protected_statuses = (
@@ -604,6 +622,328 @@ def test_scim_groups_keep_role_sources_separate_and_suspend_on_last_role_loss() 
     command.upgrade(config, "head")
     try:
         asyncio.run(_group_scenario(database_url))
+    finally:
+        _downgrade_test_schema(config, database_url)
+
+
+async def _provision_user_scenario(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    organization_id = uuid.uuid4()
+    verified_user_id, provisioned_user_id, manually_suspended_id, owner_id, unverified_user_id = (
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+    now = datetime.now(UTC)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("INSERT INTO organizations (id, name) VALUES (:org, 'SCIM provisioning')"),
+                {"org": organization_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO users (id, email) VALUES "
+                    "(:verified, 'verified-scim@example.com'), "
+                    "(:provisioned, 'provisioned-scim@example.com'), "
+                    "(:suspended, 'suspended-scim@example.com'), "
+                    "(:owner, 'scim-provisioning-owner@example.com'), "
+                    "(:unverified, 'unlinked-scim@example.com')"
+                ),
+                {
+                    "verified": verified_user_id,
+                    "provisioned": provisioned_user_id,
+                    "suspended": manually_suspended_id,
+                    "owner": owner_id,
+                    "unverified": unverified_user_id,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO oidc_identities (issuer, subject, user_id) VALUES "
+                    "('https://id.example', 'verified-scim-subject', :verified), "
+                    "('https://id.example', 'provisioned-scim-subject', :provisioned), "
+                    "('https://id.example', 'suspended-scim-subject', :suspended)"
+                ),
+                {
+                    "verified": verified_user_id,
+                    "provisioned": provisioned_user_id,
+                    "suspended": manually_suspended_id,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO memberships "
+                    "(id, org_id, user_id, roles, manual_roles, role_sources_initialized, status) "
+                    "VALUES (:owner_id, :org, :owner, ARRAY['Owner']::text[], "
+                    "ARRAY['Owner']::text[], true, 'active'), "
+                    "(:member_id, :org, :verified, ARRAY['Finance']::text[], "
+                    "ARRAY['Finance']::text[], true, 'active'), "
+                    "(:suspended_id, :org, :suspended, ARRAY['Auditor']::text[], "
+                    "ARRAY['Auditor']::text[], true, 'suspended')"
+                ),
+                {
+                    "owner_id": uuid.uuid4(),
+                    "member_id": uuid.uuid4(),
+                    "suspended_id": uuid.uuid4(),
+                    "org": organization_id,
+                    "owner": owner_id,
+                    "verified": verified_user_id,
+                    "suspended": manually_suspended_id,
+                },
+            )
+
+        repository = SqlAlchemyScimIdentityRepository(sessions)
+        with pytest.raises(ScimUserNotProvisionable):
+            await repository.create_user(
+                organization_id=organization_id,
+                user_name="unlinked-scim@example.com",
+                display_name=None,
+                external_id=None,
+                active=True,
+                now=now,
+            )
+        record = await repository.create_user(
+            organization_id=organization_id,
+            user_name="verified-scim@example.com",
+            display_name="Verified SCIM User",
+            external_id="directory-user-7",
+            active=True,
+            now=now,
+        )
+        assert record.id == verified_user_id
+        assert record.active is True
+        assert record.external_id == "directory-user-7"
+        async with sessions() as session:
+            preserved_roles = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, status FROM memberships "
+                        "WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": organization_id, "user": verified_user_id},
+                )
+            ).one()
+        assert (
+            list(preserved_roles.roles),
+            list(preserved_roles.manual_roles),
+            preserved_roles.status,
+        ) == (["Finance"], [], "active")
+        with pytest.raises(ScimUserConflict):
+            await repository.create_user(
+                organization_id=organization_id,
+                user_name="verified-scim@example.com",
+                display_name=None,
+                external_id="duplicate",
+                active=True,
+                now=now,
+            )
+
+        new_record = await repository.create_user(
+            organization_id=organization_id,
+            user_name="provisioned-scim@example.com",
+            display_name="New SCIM Member",
+            external_id="directory-user-9",
+            active=True,
+            now=now,
+        )
+        assert new_record.id == provisioned_user_id and new_record.active is True
+        async with sessions() as session:
+            pending_membership = (
+                await session.execute(
+                    text(
+                        "SELECT roles, status FROM memberships "
+                        "WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": organization_id, "user": provisioned_user_id},
+                )
+            ).one()
+        assert (list(pending_membership.roles), pending_membership.status) == ([], "suspended")
+
+        role_map = {"Operators": ("Operator",)}
+        group = await repository.create_group(
+            organization_id=organization_id,
+            display_name="Operators",
+            member_ids=(),
+            role_map=role_map,
+            now=now,
+        )
+        await repository.patch_group_members(
+            organization_id=organization_id,
+            group_id=group.id,
+            add_member_ids=(verified_user_id, provisioned_user_id),
+            remove_member_ids=(),
+            role_map=role_map,
+            now=now,
+        )
+        async with sessions() as session:
+            after_group_assignment = (
+                await session.execute(
+                    text(
+                        "SELECT roles, scim_roles, status FROM memberships "
+                        "WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": organization_id, "user": provisioned_user_id},
+                )
+            ).one()
+        assert tuple(list(roles) for roles in after_group_assignment[:2]) == (
+            ["Operator"],
+            ["Operator"],
+        )
+        assert after_group_assignment.status == "active"
+        async with sessions() as session:
+            initial_activation_cleared = await session.scalar(
+                text(
+                    "SELECT initial_activation_pending FROM scim_users "
+                    "WHERE org_id = :org AND user_id = :user"
+                ),
+                {"org": organization_id, "user": provisioned_user_id},
+            )
+        assert initial_activation_cleared is False
+
+        # Once the first SCIM group grant has activated the membership, a later manual
+        # suspension must not be undone by removing and re-adding that group.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "UPDATE memberships SET status = 'suspended' "
+                    "WHERE org_id = :org AND user_id = :user"
+                ),
+                {"org": organization_id, "user": provisioned_user_id},
+            )
+        await repository.patch_group_members(
+            organization_id=organization_id,
+            group_id=group.id,
+            add_member_ids=(),
+            remove_member_ids=(provisioned_user_id,),
+            role_map=role_map,
+            now=now + timedelta(seconds=1),
+        )
+        await repository.patch_group_members(
+            organization_id=organization_id,
+            group_id=group.id,
+            add_member_ids=(provisioned_user_id,),
+            remove_member_ids=(),
+            role_map=role_map,
+            now=now + timedelta(seconds=2),
+        )
+        async with sessions() as session:
+            after_manual_suspend_readd = await session.execute(
+                text(
+                    "SELECT memberships.status, memberships.scim_roles, "
+                    "scim_users.initial_activation_pending, scim_users.deactivated_membership "
+                    "FROM memberships JOIN scim_users USING (org_id, user_id) "
+                    "WHERE memberships.org_id = :org AND memberships.user_id = :user"
+                ),
+                {"org": organization_id, "user": provisioned_user_id},
+            )
+            after_manual_suspend_readd = after_manual_suspend_readd.one()
+        assert (
+            after_manual_suspend_readd.status,
+            list(after_manual_suspend_readd.scim_roles),
+            after_manual_suspend_readd.initial_activation_pending,
+            after_manual_suspend_readd.deactivated_membership,
+        ) == ("suspended", ["Operator"], False, False)
+
+        async with sessions() as session:
+            existing_member_roles = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, scim_roles, status FROM memberships "
+                        "WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": organization_id, "user": verified_user_id},
+                )
+            ).one()
+        assert (
+            list(existing_member_roles.roles),
+            list(existing_member_roles.manual_roles),
+            list(existing_member_roles.scim_roles),
+            existing_member_roles.status,
+        ) == (["Finance", "Operator"], ["Finance"], ["Operator"], "active")
+
+        manually_suspended_record = await repository.create_user(
+            organization_id=organization_id,
+            user_name="suspended-scim@example.com",
+            display_name=None,
+            external_id=None,
+            active=True,
+            now=now,
+        )
+        assert manually_suspended_record.active is False
+        await repository.patch_user(
+            organization_id=organization_id,
+            user_id=manually_suspended_id,
+            active=False,
+            display_name=None,
+            display_name_set=False,
+            external_id=None,
+            external_id_set=False,
+            now=now + timedelta(seconds=1),
+        )
+        manually_suspended_after_true = await repository.patch_user(
+            organization_id=organization_id,
+            user_id=manually_suspended_id,
+            active=True,
+            display_name=None,
+            display_name_set=False,
+            external_id=None,
+            external_id_set=False,
+            now=now + timedelta(seconds=2),
+        )
+        assert manually_suspended_after_true is not None
+        assert manually_suspended_after_true.active is False
+        async with sessions() as session:
+            still_suspended = await session.scalar(
+                text("SELECT status FROM memberships WHERE org_id = :org AND user_id = :user"),
+                {"org": organization_id, "user": manually_suspended_id},
+            )
+        assert still_suspended == "suspended"
+
+        deactivated = await repository.patch_user(
+            organization_id=organization_id,
+            user_id=verified_user_id,
+            active=False,
+            display_name=None,
+            display_name_set=False,
+            external_id=None,
+            external_id_set=False,
+            now=now + timedelta(seconds=1),
+        )
+        assert deactivated is not None and deactivated.active is False
+        reactivated = await repository.patch_user(
+            organization_id=organization_id,
+            user_id=verified_user_id,
+            active=True,
+            display_name="Renamed SCIM User",
+            display_name_set=True,
+            external_id="directory-user-8",
+            external_id_set=True,
+            now=now + timedelta(seconds=2),
+        )
+        assert reactivated is not None
+        assert reactivated.active is True
+        assert reactivated.display_name == "Renamed SCIM User"
+        assert reactivated.external_id == "directory-user-8"
+        async with sessions() as session:
+            membership_status = await session.scalar(
+                text("SELECT status FROM memberships WHERE org_id = :org AND user_id = :user"),
+                {"org": organization_id, "user": verified_user_id},
+            )
+        assert membership_status == "active"
+    finally:
+        await engine.dispose()
+
+
+def test_scim_provisions_verified_users_and_reactivates_only_scim_deprovisioned_members() -> None:
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    config = _alembic_config(database_url)
+    command.upgrade(config, "head")
+    try:
+        asyncio.run(_provision_user_scenario(database_url))
     finally:
         _downgrade_test_schema(config, database_url)
 

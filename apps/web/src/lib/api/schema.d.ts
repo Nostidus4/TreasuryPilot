@@ -136,7 +136,8 @@ export interface paths {
     /** List Users */
     get: operations['list_users_scim_v2_Users_get'];
     put?: never;
-    post?: never;
+    /** Create User */
+    post: operations['create_user_scim_v2_Users_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -238,6 +239,57 @@ export interface paths {
     };
     /** Oidc Start */
     get: operations['oidc_start_v1_auth_oidc_start_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/saml/acs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Saml Acs */
+    post: operations['saml_acs_v1_auth_saml_acs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/saml/metadata': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Saml Metadata */
+    get: operations['saml_metadata_v1_auth_saml_metadata_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/saml/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Saml Start */
+    get: operations['saml_start_v1_auth_saml_start_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -4190,6 +4242,26 @@ export interface operations {
       };
     };
   };
+  create_user_scim_v2_Users_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
   get_user_scim_v2_Users__user_id__get: {
     parameters: {
       query?: never;
@@ -4366,6 +4438,62 @@ export interface operations {
     };
   };
   oidc_start_v1_auth_oidc_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  saml_acs_v1_auth_saml_acs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  saml_metadata_v1_auth_saml_metadata_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  saml_start_v1_auth_saml_start_get: {
     parameters: {
       query?: never;
       header?: never;
