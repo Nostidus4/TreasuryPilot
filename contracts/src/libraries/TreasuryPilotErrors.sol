@@ -64,4 +64,7 @@ library TreasuryPilotErrors {
     error InsufficientOutput();
     error AssetNotAllowed();
     error AssetBufferNotConfigured();
+    error AttestationInvalid();
+    error AttestationExpired();
+    error NonceReused();
 }

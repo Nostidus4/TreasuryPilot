@@ -455,3 +455,17 @@ isolated step/borrow-used-guard mutations must fail I5/I15. The C-rule mapping i
 maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-mapping.md).
 
 **Tickets:** SC-023 payment options, SC-024 supply/withdraw, SC-025 Aave fork tests, SC-026 borrow/repay (P2); SC-002/005/006/014/017/021 revised.
+
+## 16. On-chain plan attestations (SC-L04, opt-in)
+
+`PlanAttestedExecutor(module, operator, policySigner)` moves attestation checking from the signer service into a contract. Safe T opts in by setting it as `mandate.executor` with `configureMandate`; from then on it is the module's only executor, so a plan step cannot run without a valid attestation. The module is unchanged: it is about 100 bytes under EIP-170, so the checks live in this separate contract, which also holds the nonce storage and leaves the module's storage layout untouched.
+
+| Function (operator only) | Behaviour |
+|---|---|
+| `pay`, `refill` | Verify the attestation for `ap.requestId` and `stepId`, then call the module's `pay` / `refill`. |
+| `supply`, `withdraw` | Same check with an explicit `requestId` (`0x0` for a liquidity plan), then forward. |
+| `borrow`, `repay`, `swapForGas` | Plain pass-through; they are not plan steps and keep their owner authorizations and limits. |
+
+Verification matches `PlanAttestation` of M08 section 6.3 and the golden vectors: domain `TreasuryPilot Policy` v1 with `chainId` and the module clone as `verifyingContract`; a signature from `policySigner` (raw ECDSA or ERC-1271); `executor == msg.sender`; `requestId` matches; `stepId` is in `stepIds`; `block.timestamp <= validUntil`. The nonce binds to its `planHash` on first use and every step of that plan shares it. A different plan with a used nonce reverts. Errors: `AttestationInvalid`, `AttestationExpired`, `NonceReused`, `NotExecutor`.
+
+Limits: the contract trusts the signed `planHash` (one step cannot recompute it), and the policy key and operator are immutable, so rotating either means deploying a new executor and calling `configureMandate`. Deployment scripts are not changed by this ticket.

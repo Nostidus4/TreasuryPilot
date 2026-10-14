@@ -16,7 +16,7 @@ empty array, a large decimal-string nonce, hashes and ECDSA recovery. Fixture
 identity `8` is public and distinct from the approval signer. Policy signatures
 are raw EIP-712 signatures; they do not use the approval `(address,bytes)` envelope.
 Empty-array vectors test encoding only; an executable plan still needs policy
-validation. No PlanAttestation verification is added to the module.
+validation. `PlanAttestedExecutor` verifies the same encoding on-chain (SC-L04); the Foundry vector test checks its library against these files.
 
 `plan-hash.json` covers M08 sections 8.3 and 8.4: `planHash` is the EIP-712
 `hashStruct(Plan)` over `Step[]`, and each `stepId` is
