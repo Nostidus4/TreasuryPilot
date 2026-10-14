@@ -92,7 +92,9 @@ Typed data displayed = object passed to the wallet (unit-tested); no secrets in 
 
 ## 11. Failure scenarios
 
-API down → error state with retry; SSE drop → auto-reconnect with Last-Event-ID, then 10 s polling; wallet rejection → no change; stale ETag → "Someone changed this, reload".
+API down → error state with retry; SSE drop → auto-reconnect with Last-Event-ID and 10 s org-wide polling; an open execution detail refreshes every 2 s to meet WEB-012's status-change target; wallet rejection → no change; stale ETag → "Someone changed this, reload".
+
+**Execution API dependency:** the plan screen calls `GET /v1/orgs/{orgId}/plans/{planId}` and `GET /v1/orgs/{orgId}/treasuries/{treasuryId}/plans`; run-now calls `POST /v1/orgs/{orgId}/treasuries/{treasuryId}/run-now`. In this repository revision these routes exist only in the web MSW handlers: `services/api` has no plans/operations router or execution read model. The notifications SSE endpoint is implemented, and its `plan` / `operation` events can invalidate the detail query, but they do not supply plan-step state. The live screen therefore needs those API routes and durable `plan` / `operation` domain events from the execution backend before it can show real Anvil execution data.
 
 ## 12. Test plan
 

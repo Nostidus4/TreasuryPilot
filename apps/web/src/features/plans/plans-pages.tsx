@@ -211,7 +211,11 @@ function StepMarker({ step }: { step: PlanStep }) {
 function StepTimeline({ plan }: { plan: PlanDetail }) {
   const scope = useTreasuryScope();
   return (
-    <ol className="relative grid gap-0" aria-live="polite">
+    <ol
+      className="relative grid gap-0"
+      aria-label={t('Execution steps')}
+      aria-live="polite"
+    >
       {plan.steps.map((step, index) => {
         const kind = kindMeta[step.kind];
         const KindIcon = kind.icon;
@@ -263,10 +267,17 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                 />
                 {step.txHash && <TxHash hash={step.txHash} />}
                 {step.verification && (
-                  <span className="text-xs text-muted-foreground">
+                  <span
+                    className={cn(
+                      'text-xs',
+                      step.verification === 'VERIFIED'
+                        ? 'text-success-foreground'
+                        : 'text-danger-foreground',
+                    )}
+                  >
                     {step.verification === 'VERIFIED'
-                      ? t('Amount and recipient match the plan')
-                      : t('On-chain result differs from the plan')}
+                      ? t('Verification passed: amount and recipient match the plan')
+                      : t('Verification mismatch: on-chain result differs from the plan')}
                   </span>
                 )}
                 {step.status !== 'Planned' && (
@@ -299,7 +310,7 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
 export function PlanDetailPage() {
   const scope = useTreasuryScope();
   const { p: planId = '' } = useParams();
-  const query = usePlan(scope.orgId, planId);
+  const query = usePlan(scope.orgId, planId, scope.live);
   const runNow = useRunNow(scope.orgId, scope.treasuryId);
   const plan = query.data;
   const done = plan?.steps.filter(
@@ -326,7 +337,7 @@ export function PlanDetailPage() {
         plan &&
         t('Proposed {{when}} · live updates {{state}}', {
           when: formatRelative(plan.createdAt),
-          state: scope.live ? t('on') : t('off, refreshing every 10 seconds'),
+          state: scope.live ? t('on') : t('reconnecting; refreshing every 2 seconds'),
         })
       }
       actions={
