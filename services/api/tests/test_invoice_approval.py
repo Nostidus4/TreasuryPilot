@@ -36,7 +36,7 @@ def test_builds_exact_contract_typed_data_and_caps_expiry() -> None:
         chain_id=84532,
         module_address=MODULE,
         now=1_800_000_100,
-        approval_max_age=10_000_000,
+        approval_max_age=5_000_000,
         asset=ASSET,
     )
 
@@ -73,11 +73,11 @@ def test_expiry_is_capped_by_mandate_max_age() -> None:
         chain_id=84532,
         module_address=MODULE,
         now=1_800_000_100,
-        approval_max_age=300,
+        approval_max_age=86_400,
         asset=ASSET,
     )
 
-    assert typed["message"]["expiry"] == 1_800_000_400  # type: ignore[index]
+    assert typed["message"]["expiry"] == 1_800_086_500  # type: ignore[index]
 
 
 @pytest.mark.parametrize(
@@ -85,7 +85,17 @@ def test_expiry_is_capped_by_mandate_max_age() -> None:
     [
         ({"status": "Draft"}, {}, "AwaitingApproval"),
         ({}, {"approval_max_age": 0}, "approval_max_age"),
-        ({"deadline": 1_700_000_000}, {}, "deadline has passed"),
+        ({"deadline": 1_700_000_000}, {}, "approval window has closed"),
+        ({"deadline": 0}, {}, "deadline must be positive"),
+        ({"early_amount": 100_001}, {}, "early_amount"),
+        ({"deadline": 2**64}, {}, "uint64"),
+        ({"early_pay_by": 2**64}, {}, "uint64"),
+        ({}, {"approval_max_age": 86_399}, "approval_max_age"),
+        ({}, {"approval_max_age": 60 * 86_400 + 1}, "approval_max_age"),
+        ({}, {"now": -1}, "now must"),
+        ({}, {"chain_id": 0}, "chain_id"),
+        ({}, {"module_address": "0x1234"}, "String should match"),
+        ({}, {"asset": "not-an-address"}, "String should match"),
     ],
 )
 def test_refuses_invalid_approval_inputs(
@@ -95,12 +105,25 @@ def test_refuses_invalid_approval_inputs(
         "chain_id": 84532,
         "module_address": MODULE,
         "now": 1_800_000_100,
-        "approval_max_age": 10_000,
+        "approval_max_age": 86_400,
         "asset": ASSET,
     }
     args.update(kwargs)
     with pytest.raises(ValueError, match=error):
         build_approval_typed_data(_request(**overrides), **args)  # type: ignore[arg-type]
+
+
+def test_grace_window_boundary() -> None:
+    args: dict[str, object] = {
+        "chain_id": 84532,
+        "module_address": MODULE,
+        "approval_max_age": 86_400,
+        "asset": ASSET,
+    }
+    deadline_end = 1_800_100_000 + 14 * 86_400
+    build_approval_typed_data(_request(), now=deadline_end - 1, **args)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="approval window has closed"):
+        build_approval_typed_data(_request(), now=deadline_end, **args)  # type: ignore[arg-type]
 
 
 def _build_pinned(expiry: int, now: int = 1_800_000_100) -> dict[str, object]:
@@ -109,17 +132,17 @@ def _build_pinned(expiry: int, now: int = 1_800_000_100) -> dict[str, object]:
         chain_id=84532,
         module_address=MODULE,
         now=now,
-        approval_max_age=300,
+        approval_max_age=86_400,
         asset=ASSET,
         expiry=expiry,
     )
 
 
 def test_pinned_expiry_is_signed_as_issued_even_after_now_moves() -> None:
-    assert _build_pinned(1_800_000_400) == _build_pinned(1_800_000_400, now=1_800_000_200)
+    assert _build_pinned(1_800_086_500) == _build_pinned(1_800_086_500, now=1_800_000_200)
 
 
-@pytest.mark.parametrize("expiry", [1_800_000_100, 1_800_000_401, 0, True])
+@pytest.mark.parametrize("expiry", [1_800_000_100, 1_800_086_501, 0, True])
 def test_pinned_expiry_outside_window_is_rejected(expiry: int) -> None:
     with pytest.raises(ApprovalExpiryError):
         _build_pinned(expiry)

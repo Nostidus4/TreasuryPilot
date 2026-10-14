@@ -30,7 +30,7 @@ Repeatable deployment to Anvil and the chosen testnet, with addresses recorded.
 ## Scope
 
 - forge script deploying tUSDC (local and Sepolia), the module implementation and the factory with CREATE2 and a fixed salt (PH-10)
-- demo setup script (Safe T calls factory.create, enable module on T/O1/O2 via MultiSend)
+- demo setup script (Safe T calls factory.create, enable module via MultiSend: T/O1/O2 locally, T/O1 in the Sepolia demo per ADR-019 V3-6)
 - write deployments/<chainId>.json with implementation, factory, token(s), EAS schema UID and code hashes
 - verify on Etherscan for Sepolia
 
@@ -54,6 +54,8 @@ Local deployment must not depend on DOM-001; testnet deployment does.
 - [ ] Sepolia deployment produces the same implementation and factory addresses as a second dry run (CREATE2)
 - [ ] Contracts are verified on Etherscan
 - [ ] The manifest contains token, module, factory and Safe addresses plus code hashes
+- [ ] Publisher rejects reviewed chain, decimals, infrastructure and pinned aToken mismatches before modifying the manifest
+- [ ] Sepolia demo operational list contains only O1; local tests keep O1/O2
 
 ## Testing requirements
 

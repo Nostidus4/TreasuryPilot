@@ -5,6 +5,7 @@ import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -15,8 +16,8 @@ from fastapi import FastAPI, Request, Response
 from sqlalchemy import text
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.access import MemberContext
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices.requests import (
     ApproveRequest,
     approve_request,
@@ -34,6 +35,14 @@ ASSET = uuid.UUID("00000000-0000-7000-8000-000000000130")
 VENDOR = uuid.UUID("00000000-0000-7000-8000-000000000150")
 PAYEE = uuid.UUID("00000000-0000-7000-8000-000000000160")
 WALLET = uuid.UUID("00000000-0000-7000-8000-000000000180")
+
+
+def _member(user_id: uuid.UUID) -> MemberAccess:
+    return MemberAccess(
+        access=SimpleNamespace(user=SimpleNamespace(id=user_id)),  # type: ignore[arg-type]
+        organization_id=ORG,
+        roles=frozenset({"Approver"}),
+    )
 
 
 class _Chain:
@@ -74,12 +83,15 @@ async def _seed(connection, account: Account) -> None:  # type: ignore[no-untype
         f"'[\"0x{'55' * 20}\"]', 1)",
         "INSERT INTO vendors (id, org_id, name, normalized_ref) "
         "VALUES (:vendor, :org, 'Vendor', 'vendor')",
-        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) "
+        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, "
+        "oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) "
         "VALUES (:payee, :treasury, :org, :vendor, 'Main', decode(repeat('22', 20), 'hex'), "
-        "'Active')",
-        "INSERT INTO mandate_versions (id, treasury_id, version, status, config, config_hash) "
-        "VALUES ('00000000-0000-7000-8000-000000000190', :treasury, 1, 'Active', "
-        "'{\"approvalMaxAge\": 86400}', decode(repeat('66', 32), 'hex'))",
+        f"'Active', '{APPROVER}', now(), 'PHONE', 'verified', now())",
+        "INSERT INTO mandate_versions (id, org_id, treasury_id, version, onchain_version, "
+        "status, config, config_hash, valid_from, expires_at, created_by, activated_at) "
+        "VALUES ('00000000-0000-7000-8000-000000000190', :org, :treasury, 1, 1, 'Active', "
+        "'{\"approvalMaxAge\": 86400}', decode(repeat('66', 32), 'hex'), now(), "
+        "now() + interval '365 days', '00000000-0000-7000-8000-000000000102', now())",
     ]
     for statement in statements:
         await connection.execute(text(statement), params)
@@ -117,6 +129,13 @@ async def _seed(connection, account: Account) -> None:  # type: ignore[no-untype
                 "oid": bytes.fromhex("88" * 32),
             },
         )
+        await connection.execute(
+            text(
+                "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+                "VALUES (gen_random_uuid(), :id, 1, '{}')"
+            ),
+            {"id": request_id},
+        )
 
 
 async def _approve_in_postgres(database_url: str) -> None:
@@ -130,8 +149,8 @@ async def _approve_in_postgres(database_url: str) -> None:
         app.state.request_sessions = sessions
         app.state.approval_chain_reader = _Chain()
         request = Request({"type": "http", "app": app, "method": "GET", "path": "/"})
-        approver = MemberContext(ORG, APPROVER, frozenset({"Approver"}))
-        maker = MemberContext(ORG, MAKER, frozenset({"Approver"}))
+        approver = _member(APPROVER)
+        maker = _member(MAKER)
 
         # Maker-checker applies to the GET too, before anything is signed.
         with pytest.raises(AuthFailure) as error:

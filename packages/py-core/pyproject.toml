@@ -8,7 +8,12 @@ dependencies = [
     "eth-abi>=5.2,<6",
     "eth-account>=0.14,<0.15",
     "eth-hash[pycryptodome]>=0.7,<1",
+    "opentelemetry-api>=1.45,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45,<2",
+    "opentelemetry-sdk>=1.45,<2",
+    "ortools==9.14.6206",
     "pydantic>=2.10,<3",
+    "sentry-sdk>=2,<3",
     "structlog>=25,<26",
 ]
 

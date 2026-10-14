@@ -13,10 +13,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.events import AuditEvent, AuditWriter, log_audit_event
-from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.mandate.models import Payee, Vendor
 
 
@@ -108,8 +108,8 @@ def _record(row: Vendor) -> VendorRecord:
         org_id=row.org_id,
         name=row.name,
         normalized_ref=row.normalized_ref,
-        has_tax_id=row.tax_id is not None,
-        has_contact=row.contact is not None,
+        has_tax_id=row.tax_id_encrypted is not None,
+        has_contact=row.contact_encrypted is not None,
         notes=row.notes,
         created_at=row.created_at,
     )
@@ -166,8 +166,8 @@ class SqlAlchemyVendorRepository:
                     org_id=organization_id,
                     name=name,
                     normalized_ref=normalized_ref,
-                    tax_id=tax_id,
-                    contact=contact,
+                    tax_id_encrypted=tax_id,
+                    contact_encrypted=contact,
                     notes=notes,
                     created_by=user_id,
                 )
@@ -212,13 +212,13 @@ class SqlAlchemyVendorRepository:
             if update.notes is not None:
                 row.notes = update.notes
             if update.tax_id is not None:
-                row.tax_id = update.tax_id
+                row.tax_id_encrypted = update.tax_id
             elif update.clear_tax_id:
-                row.tax_id = None
+                row.tax_id_encrypted = None
             if update.contact is not None:
-                row.contact = update.contact
+                row.contact_encrypted = update.contact
             elif update.clear_contact:
-                row.contact = None
+                row.contact_encrypted = None
             await session.flush()
             await self._audit(
                 session,
@@ -371,7 +371,7 @@ _require_admin = require_role(OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER
 async def list_vendors(
     organization_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> VendorListResponse:
     rows = await _repository(request).list_vendors(organization_id=member.organization_id)
     return VendorListResponse(items=[VendorView.from_record(row) for row in rows])
@@ -388,7 +388,7 @@ async def create_vendor(
     payload: VendorCreate,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(_require_editor),  # noqa: B008
+    member: MemberAccess = Depends(_require_editor),  # noqa: B008
 ) -> VendorResponse:
     normalized_ref = normalize_vendor_ref(payload.supplier_code or payload.name)
     if not normalized_ref:
@@ -428,7 +428,7 @@ async def get_vendor(
     organization_id: uuid.UUID,
     vendor_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> VendorResponse:
     row = await _repository(request).get_vendor(
         organization_id=member.organization_id, vendor_id=vendor_id
@@ -446,7 +446,7 @@ async def update_vendor(
     vendor_id: uuid.UUID,
     payload: VendorPatch,
     request: Request,
-    member: MemberContext = Depends(_require_editor),  # noqa: B008
+    member: MemberAccess = Depends(_require_editor),  # noqa: B008
 ) -> VendorResponse:
     sent = payload.model_fields_set
     update = VendorUpdate(
@@ -480,7 +480,7 @@ async def delete_vendor(
     organization_id: uuid.UUID,
     vendor_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(_require_admin),  # noqa: B008
+    member: MemberAccess = Depends(_require_admin),  # noqa: B008
 ) -> Response:
     try:
         deleted = await _repository(request).delete_vendor(

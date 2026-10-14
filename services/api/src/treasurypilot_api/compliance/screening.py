@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.compliance.models import ScreeningListEntry
 from treasurypilot_api.mandate.models import Screening, ScreeningResult, uuid7
+
+if TYPE_CHECKING:
+    from treasurypilot_core.policy.context import ExecutionPlan, ValidationContext
 
 SCREENING_TTL = timedelta(hours=24)
 # M14-D7: a refresh before PAY waits at most this long, then fails closed.
@@ -35,6 +38,7 @@ class ProviderResult:
 @dataclass(frozen=True, slots=True)
 class ScreeningRecord:
     id: uuid.UUID
+    organization_id: uuid.UUID
     payee_id: uuid.UUID | None
     address: bytes
     chain_id: int | None
@@ -59,12 +63,13 @@ class ScreeningProvider(Protocol):
 
 class ScreeningRepository(Protocol):
     async def latest(
-        self, *, address: bytes, chain_id: int, provider: str
+        self, *, organization_id: uuid.UUID, address: bytes, chain_id: int, provider: str
     ) -> ScreeningRecord | None: ...
 
     async def record(
         self,
         *,
+        organization_id: uuid.UUID,
         payee_id: uuid.UUID | None,
         address: bytes,
         chain_id: int,
@@ -81,13 +86,14 @@ class SqlAlchemyScreeningRepository:
         self._sessions = sessions
 
     async def latest(
-        self, *, address: bytes, chain_id: int, provider: str
+        self, *, organization_id: uuid.UUID, address: bytes, chain_id: int, provider: str
     ) -> ScreeningRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(Screening)
                 .where(
                     Screening.address == address,
+                    Screening.org_id == organization_id,
                     Screening.chain_id == chain_id,
                     Screening.provider == provider,
                 )
@@ -99,6 +105,7 @@ class SqlAlchemyScreeningRepository:
     async def record(
         self,
         *,
+        organization_id: uuid.UUID,
         payee_id: uuid.UUID | None,
         address: bytes,
         chain_id: int,
@@ -111,6 +118,7 @@ class SqlAlchemyScreeningRepository:
         async with self._sessions() as session, session.begin():
             row = Screening(
                 id=uuid7(),
+                org_id=organization_id,
                 payee_id=payee_id,
                 address=address,
                 chain_id=chain_id,
@@ -199,6 +207,7 @@ class ScreeningService:
     async def screen(
         self,
         *,
+        organization_id: uuid.UUID,
         address: str | bytes,
         chain_id: int,
         payee_id: uuid.UUID | None = None,
@@ -213,7 +222,10 @@ class ScreeningService:
 
         provider = self._provider.name
         cached = await self._repository.latest(
-            address=normalized, chain_id=chain_id, provider=provider
+            organization_id=organization_id,
+            address=normalized,
+            chain_id=chain_id,
+            provider=provider,
         )
         if (
             cached is not None
@@ -224,7 +236,13 @@ class ScreeningService:
             if payee_id is None or cached.payee_id == payee_id:
                 return cached
             # Record the reused result against this payee so its history shows the check.
+            # checked_at/ttl_until are deliberately copied from the original check: they
+            # describe when the provider answered, not when this payee relied on it (see
+            # the row's created time via its uuid7 id).
+            # shortcut: a CLEAR is served for the full TTL with no force-refresh; add a
+            # force_refresh option if the pre-PAY path needs to bypass the cache.
             return await self._repository.record(
+                organization_id=organization_id,
                 payee_id=payee_id,
                 address=normalized,
                 chain_id=chain_id,
@@ -235,12 +253,15 @@ class ScreeningService:
                 ttl_until=cached.ttl_until,
             )
 
+        # shortcut: concurrent calls that both miss the cache each call the provider and
+        # insert a row; latest() is stable by (checked_at, id), so duplicates are harmless.
         try:
             async with asyncio.timeout(self._timeout.total_seconds()):
                 outcome = await self._provider.screen(address=normalized, chain_id=chain_id)
             result = ScreeningResult(outcome.result)
             source_ref = outcome.source_ref
-        except (ScreeningProviderError, TimeoutError, OSError) as error:
+        except Exception as error:
+            # Any provider failure fails closed with an ERROR row; CancelledError still propagates.
             # Fail closed (BR-085), but leave a trace: ops must see why payments block.
             logger.warning(
                 "screening_provider_failed",
@@ -251,6 +272,7 @@ class ScreeningService:
             source_ref = None
         ttl_until = now + SCREENING_TTL if result != ScreeningResult.ERROR else None
         return await self._repository.record(
+            organization_id=organization_id,
             payee_id=payee_id,
             address=normalized,
             chain_id=chain_id,
@@ -264,16 +286,60 @@ class ScreeningService:
     async def require_clear(
         self,
         *,
+        organization_id: uuid.UUID,
         address: str | bytes,
         chain_id: int,
         payee_id: uuid.UUID | None = None,
     ) -> ScreeningRecord:
-        record = await self.screen(address=address, chain_id=chain_id, payee_id=payee_id)
+        record = await self.screen(
+            organization_id=organization_id,
+            address=address,
+            chain_id=chain_id,
+            payee_id=payee_id,
+        )
         if record.result == ScreeningResult.HIT:
             raise ScreeningBlocked(code="SCREENING_HIT", record=record)
         if record.result != ScreeningResult.CLEAR:
             raise ScreeningBlocked(code="DATA_MISSING", record=record)
         return record
+
+
+async def screen_plan_before_pay(
+    plan: ExecutionPlan,
+    context: ValidationContext,
+    *,
+    service: ScreeningService,
+    organization_id: uuid.UUID,
+) -> ValidationContext:
+    """Refresh every PAY destination before policy validation and encode failures in context.
+
+    ``ScreeningService.require_clear`` reuses only the latest unexpired CLEAR/HIT result;
+    stale results are synchronously refreshed under its five-second provider timeout.
+    The policy validator then turns HIT into SCREENING_HIT and unavailable/error outcomes
+    into DATA_MISSING. Plans without a PAY step are returned unchanged; the validator rejects
+    them as PLAN_MALFORMED, so ``screening_clear`` is never relied on there.
+    """
+    pay_steps = [step for step in plan.steps if step.action == "PAY"]
+    if not pay_steps:
+        return context
+
+    hit = False
+    clear = True
+    for step in pay_steps:
+        try:
+            await service.require_clear(
+                organization_id=organization_id,
+                address=step.to,
+                chain_id=plan.chain_id,
+            )
+        except ScreeningBlocked as blocked:
+            hit = hit or blocked.code == "SCREENING_HIT"
+            clear = False
+        except Exception:
+            # Repository/configuration failures are also an unavailable screening result.
+            logger.exception("screening_validation_failed")
+            clear = False
+    return context.model_copy(update={"screening_hit": hit, "screening_clear": clear})
 
 
 def build_screening_service(
@@ -306,6 +372,7 @@ def normalize_address(address: str | bytes) -> bytes:
 def _record(row: Screening) -> ScreeningRecord:
     return ScreeningRecord(
         id=row.id,
+        organization_id=row.org_id,
         payee_id=row.payee_id,
         address=row.address,
         chain_id=row.chain_id,
