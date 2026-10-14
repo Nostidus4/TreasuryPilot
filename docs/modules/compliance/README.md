@@ -11,13 +11,13 @@ M14 keeps TreasuryPilot from **paying the wrong party** (sanctions/blocklist scr
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Screening adapter + fixture provider (TEST DATA) | KYB, Travel Rule, retention/deletion, region pinning (Later) |
+| Screening adapter + fixture provider (TEST DATA) | Real KYB vendor, Travel Rule, retention/deletion, region pinning (Later) |
 | Screening at payee registration and before each PAY (TTL) | Legal opinions (DOM tickets) |
 | Data classification, field encryption, log redaction | |
 
 ## 2. Features, requirements and rules
 
-F-110 (FR-906, BR-085, NFR-CMP-04), F-113 (FR-909, BR-074, NFR-PRIV-01–04); Later F-111, F-112, F-114.
+F-110 (FR-906, BR-085, NFR-CMP-04), F-113 (FR-909, BR-074, NFR-PRIV-01–04); F-111 (FR-907, CMP-L01); Later F-112, F-114.
 
 ## 3. Concepts
 
@@ -96,6 +96,23 @@ where available, tenant id) as encryption context so ciphertext cannot be moved 
 different field. Missing/invalid keys, unknown envelope versions, wrong context and
 authentication failures all fail closed. Key material must never be stored in the DB
 or logged.
+
+### KYB (CMP-L01)
+
+`compliance/kyb.py` is a provider adapter like screening: `KybProvider.verify()` returns
+`PENDING | APPROVED | REJECTED`, and each verdict is stored in `kyb_verifications` (newest
+row per organization and provider wins; a result from another provider is ignored). The
+fixture provider (TEST DATA, only when `TP_ENVIRONMENT` is `local`, `test` or `demo`)
+approves every business unless its legal name is listed; elsewhere
+`UnconfiguredKybProvider` raises, so no verdict can be recorded (fail closed). No real
+vendor is integrated and no API route starts a verification yet; callers use
+`app.state.kyb_service.verify()`.
+
+Gate: `GovernanceService._require_kyb()` rejects a `MODULE_SETUP` governance transaction
+with `409 KYB_REQUIRED` unless the treasury chain is a configured testnet or the
+organization's latest KYB result is `APPROVED`, and refuses to move a mainnet treasury to
+`Ready` (it stays `ModulePending`) without approval. Chains not known to be testnets count
+as mainnet, and a missing KYB service blocks (fail closed).
 
 ## 10. Security
 
