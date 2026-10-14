@@ -8,10 +8,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
+    Text,
     UniqueConstraint,
+    desc,
     func,
     text,
 )
@@ -78,3 +81,23 @@ class ScreeningListEntry(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
+
+
+class KybVerification(Base):
+    """One provider verdict for an organization; the newest row per provider is its KYB status."""
+
+    __tablename__ = "kyb_verifications"
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING', 'APPROVED', 'REJECTED')", name="ck_kyb_status"),
+        CheckConstraint("length(btrim(provider)) > 0", name="ck_kyb_provider"),
+        Index("ix_kyb_lookup", "org_id", "provider", desc("checked_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

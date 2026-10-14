@@ -16,6 +16,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.compliance.kyb import KybRequired, KybService
 from treasurypilot_api.identity.models import WalletLink
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
@@ -85,7 +86,9 @@ class GovernanceService:
         verifier: RpcSafeVerifier,
         configuration: PlatformConfiguration,
         environ: Mapping[str, str] = os.environ,
+        kyb_service: KybService | None = None,
     ) -> None:
+        self._kyb = kyb_service
         self._sessions = sessions
         self._verifier = verifier
         self._configuration = configuration
@@ -109,6 +112,20 @@ class GovernanceService:
         if item is None:
             raise GovernanceFailure("TREASURY_NOT_FOUND", 404, "Treasury not found.")
         return item
+
+    async def _require_kyb(self, organization_id: uuid.UUID, chain_id: int) -> None:
+        """Mainnet activation needs KYB approval (F-111); a chain not known to be a testnet counts as mainnet."""
+        chains = self._configuration.chains if self._configuration is not None else ()
+        if any(c.chain_id == chain_id and c.is_testnet for c in chains):
+            return
+        try:
+            if self._kyb is None:
+                raise KybRequired(None)
+            await self._kyb.require_approved(organization_id)
+        except KybRequired:
+            raise GovernanceFailure(
+                "KYB_REQUIRED", 409, "KYB approval is required to activate a mainnet treasury."
+            ) from None
 
     async def _read(self, chain_id: int, method: str, params: list[object]) -> Any:
         try:
@@ -623,6 +640,10 @@ class GovernanceService:
             )
             all_enabled = all_enabled and bool(enabled)
         if all_enabled:
+            try:
+                await self._require_kyb(organization_id, row.chain_id)
+            except GovernanceFailure:
+                return  # stays ModulePending until KYB is approved
             async with self._sessions() as session, session.begin():
                 current = await session.scalar(
                     select(Treasury)
@@ -660,6 +681,8 @@ class GovernanceService:
             if item is None:
                 raise GovernanceFailure("SAFE_NOT_FOUND", 404, "Treasury Safe not found.")
             treasury, wallet = item
+        if purpose == GovernanceTxPurpose.MODULE_SETUP:
+            await self._require_kyb(organization_id, treasury.chain_id)
         safe = "0x" + wallet.safe_address.hex()
         try:
             info = (await self._verifier.verify(treasury.chain_id, [safe]))[0]

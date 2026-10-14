@@ -16,6 +16,7 @@ from treasurypilot_api.admin.api import create_admin_router, create_support_gran
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
+from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
@@ -229,6 +230,7 @@ def create_app(
     audit_repository: AuditRepository | None = None,
     admin_sessions: async_sessionmaker[AsyncSession] | None = None,
     screening_service: ScreeningService | None = None,
+    kyb_service: KybService | None = None,
     vendor_repository: VendorRepository | None = None,
     payee_repository: PayeeRepository | None = None,
     field_cipher: FieldCipher | None = None,
@@ -281,6 +283,10 @@ def create_app(
         raise ValueError("rate_limiter is required when auth_service is injected")
     if screening_service is None and engine is not None:
         screening_service = build_screening_service(
+            settings.environment, async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if kyb_service is None and engine is not None:
+        kyb_service = build_kyb_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
         )
 
@@ -348,7 +354,10 @@ def create_app(
             )
         if application.state.governance_service is None and sessions is not None:
             application.state.governance_service = GovernanceService(
-                sessions, RpcSafeVerifier(configuration), configuration
+                sessions,
+                RpcSafeVerifier(configuration),
+                configuration,
+                kyb_service=application.state.kyb_service,
             )
         if settings.database_url is None:
             if configuration.chains:
@@ -394,6 +403,7 @@ def create_app(
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
+    app.state.kyb_service = kyb_service
     app.state.vendor_repository = vendor_repository
     app.state.payee_repository = payee_repository
     app.state.field_cipher = field_cipher
