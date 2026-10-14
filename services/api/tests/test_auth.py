@@ -1266,6 +1266,7 @@ def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
                     "chainId": 11155111,
                     "name": "Chain 11155111",
                     "explorerUrl": "https://explorer.example/",
+                    "safeDeploymentAvailable": False,
                     "assets": [
                         {
                             "id": str(asset_id(11155111, "0x" + "ab" * 20)),
