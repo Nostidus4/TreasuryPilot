@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import shutil
@@ -27,7 +28,12 @@ from treasurypilot_api.treasury.safe import (
     RpcSafeVerifier,
     RpcUnavailable,
     SafeVerificationError,
+    _ProviderError,
+    _Reverted,
     safe_singletons,
+)
+from treasurypilot_api.treasury.safe import (
+    _rpc as safe_rpc,
 )
 
 SINGLETON_L1 = "0x41675c099f32341bf84bfc5382af534df5c7461a"
@@ -236,6 +242,35 @@ def test_contracts_that_are_not_safe_proxies_are_rejected(
         with pytest.raises(SafeVerificationError) as raised:
             verify(_urls(url), [address])
         assert raised.value.code == "NOT_A_SAFE", address
+
+
+def test_garbage_abi_answers_are_not_a_safe_rather_than_a_crash(
+    chain: tuple[FakeChain, str],
+) -> None:
+    fake, url = chain
+    fake.add_contract(SAFES[0], slot0=SINGLETON_L1)
+    fake.accounts[SAFES[0].lower()]["answers"] = {VERSION: b"\x01"}  # too short to decode
+    with pytest.raises(SafeVerificationError) as raised:
+        verify(_urls(url), [SAFES[0]])
+    assert raised.value.code == "NOT_A_SAFE"
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (b"[]", _ProviderError),
+        (b'{"error": "rate limited"}', _ProviderError),
+        (b'{"error": {"code": -32000, "message": "revert quota exceeded"}}', _ProviderError),
+        (b'{"error": {"code": 3, "message": "boom"}}', _Reverted),
+        (b'{"error": {"code": -32000, "message": "execution reverted"}}', _Reverted),
+    ],
+)
+def test_malformed_or_non_revert_errors_fail_over(
+    monkeypatch: pytest.MonkeyPatch, body: bytes, expected: type[Exception]
+) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: io.BytesIO(body))
+    with pytest.raises(expected):
+        safe_rpc("http://rpc.test", "eth_call", [])
 
 
 def test_other_safe_versions_are_rejected(chain: tuple[FakeChain, str]) -> None:

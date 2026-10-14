@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import uuid
 from collections.abc import Mapping
@@ -471,6 +472,7 @@ def test_console_sender_outputs_usable_local_link_without_recipient() -> None:
 def test_email_failure_invalidates_issued_token_without_revealing_the_account(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.WARNING, logger="treasurypilot_api.identity.auth")
     with make_harness(sender_fails=True) as harness:
         known = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
         unknown = harness.client.post("/v1/auth/magic-link", json={"email": "nobody@example.com"})
@@ -1280,6 +1282,7 @@ def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
                     "chainId": 11155111,
                     "name": "Chain 11155111",
                     "explorerUrl": "https://explorer.example/",
+                    "safeDeploymentAvailable": False,
                     "assets": [
                         {
                             "id": str(asset_id(11155111, "0x" + "ab" * 20)),

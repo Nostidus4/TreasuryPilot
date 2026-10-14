@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 
 import pytest
 from eth_abi import decode
@@ -20,6 +21,7 @@ from treasurypilot_api.mandate.governance import (
     safe_tx_hash,
 )
 from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
+from treasurypilot_api.mandate.models import GovernanceTx, GovernanceTxPurpose, GovernanceTxStatus
 from treasurypilot_api.treasury.config import PlatformConfiguration
 
 SAFE = bytes.fromhex("11" * 20)
@@ -263,3 +265,38 @@ def test_rpc_first_skips_failing_providers_and_unparseable_answers(
 
     assert asyncio.run(service._rpc_first(chain, "eth_call", [])) == "0x01"
     assert asyncio.run(service._rpc_first(chain, "eth_call", [], lambda _: None)) is None
+
+class _FakeVerifier:
+    def __init__(self, receipt: Mapping[str, object] | None) -> None:
+        self._receipt = receipt
+
+    async def call(self, chain_id: int, method: str, params: list[object]) -> object:
+        return self._receipt
+
+
+def _receipt_status(receipt: Mapping[str, object] | None) -> GovernanceTxStatus | None:
+    service = GovernanceService(None, _FakeVerifier(receipt), None)
+    return asyncio.run(service._receipt_status(1, b"\x01" * 32, SAFE, b"\x02" * 32))
+
+
+def _execution_log(event: str) -> dict[str, object]:
+    topic = "0x" + keccak(event.encode()).hex()
+    return {"address": "0x" + SAFE.hex(), "topics": [topic, "0x" + "02" * 32]}
+
+
+def test_receipt_status_distinguishes_outer_revert_from_safe_outcome() -> None:
+    assert _receipt_status(None) is None
+    # Outer tx reverted: the Safe nonce is unconsumed, so the row can be reopened.
+    assert _receipt_status({"status": "0x0", "logs": []}) == GovernanceTxStatus.READY
+    assert _receipt_status({"status": "0x1", "logs": []}) is None
+    ok = {"status": "0x1", "logs": [_execution_log("ExecutionSuccess(bytes32,uint256)")]}
+    assert _receipt_status(ok) == GovernanceTxStatus.EXECUTED
+    failed = {"status": "0x1", "logs": [_execution_log("ExecutionFailure(bytes32,uint256)")]}
+    assert _receipt_status(failed) == GovernanceTxStatus.FAILED
+
+
+def test_summary_flags_delegatecall() -> None:
+    call = GovernanceCall(TARGET_A, 0, b"\x12\x34\x56\x78", 1)
+    row = GovernanceTx(purpose=GovernanceTxPurpose.PAUSE, calls=[call.as_json()])
+
+    assert "DELEGATECALL call 1" in GovernanceService._summary(row)
