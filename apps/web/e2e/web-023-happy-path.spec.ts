@@ -182,7 +182,7 @@ test('an unknown execution outcome stays in chain-checking state', async ({
   page,
 }) => {
   await signIn(page, requesterEmail);
-  await page.goto('/o/org_northwind/t/trs_main/plans/pln_0421');
+  await page.goto('/o/org_northwind/t/trs_main/plans/pln_0419');
 
   const timeline = page.getByRole('list', { name: 'Execution steps' });
   const checking = timeline.getByText(
