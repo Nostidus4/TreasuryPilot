@@ -151,9 +151,7 @@ def test_pay_calldata_carries_the_fresh_plan_amount_separately_from_the_approval
     calldata = build_calldata(_step(Action.PAY), CTX)
     approval = "(" + ",".join(field["type"] for field in PAYMENT_APPROVAL_TYPE) + ")"
     attestation = "(" + ",".join(field["type"] for field in PLAN_ATTESTATION_TYPE) + ")"
-    decoded = decode(
-        [approval, "bytes", "bytes32", "uint256", attestation, "bytes"], calldata[4:]
-    )
+    decoded = decode([approval, "bytes", "bytes32", "uint256", attestation, "bytes"], calldata[4:])
 
     assert decoded[0][7] == 100  # signed approver maximum
     assert decoded[3] == 90  # amount proposed by the fresh quote

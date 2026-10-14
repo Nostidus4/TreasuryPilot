@@ -37,12 +37,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         _pay(ap, approverSig, stepId, paymentAmount);
     }
 
-    function _pay(
-        PaymentApproval calldata ap,
-        bytes calldata approverSig,
-        bytes32 stepId,
-        uint256 amount
-    ) internal {
+    function _pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 amount) internal {
         verifyApproval(ap, approverSig);
         if (!isOperational[ap.payingWallet]) revert E.NotOperationalWallet();
         _requireActivePayee(ap.payee);
