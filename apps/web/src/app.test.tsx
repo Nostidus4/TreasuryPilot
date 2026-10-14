@@ -126,6 +126,33 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
 });
 
+test('the organization view lists cross-chain treasuries separately without a combined balance', async () => {
+  renderApp(BASE, {
+    beforeRender: () => {
+      const second = structuredClone(db.treasuries.trs_main);
+      second.treasury.id = 'trs_base';
+      second.treasury.name = 'Base treasury';
+      second.treasury.chainId = 84532;
+      second.treasury.chainName = 'Base Sepolia';
+      second.treasury.asset = {
+        ...second.treasury.asset,
+        id: 'usdc-base-sepolia',
+        address: `0x${'22'.repeat(20)}`,
+      };
+      db.treasuries.trs_base = second;
+      db.orgs[0].treasuries.push({ id: 'trs_base', name: 'Base treasury' });
+    },
+  });
+
+  expect(await screen.findByText('2 treasuries')).toBeInTheDocument();
+  expect(screen.getByText('Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.getByText('Base Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.queryByText('163,000.00')).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('link', { name: /Base Sepolia · USDC/i }),
+  ).toHaveAttribute('href', `${BASE}/t/trs_base`);
+});
+
 test('selecting a Safe in one chart zooms the liquidity chart into it', async () => {
   const user = userEvent.setup();
   renderApp(T);

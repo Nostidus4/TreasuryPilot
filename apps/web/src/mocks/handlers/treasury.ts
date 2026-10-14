@@ -154,6 +154,35 @@ const governanceView = (tx: (typeof db.governance)[number]) => {
 };
 
 export const treasuryHandlers = [
+  route('get', '/orgs/:orgId/treasuries', ({ params }) => {
+    const org = requireOrg(params.orgId);
+    return {
+      items: org.treasuries.flatMap(({ id }) => {
+        const state = db.treasuries[id];
+        if (!state) return [];
+        const status = {
+          Setup: 'Draft',
+          Active: 'Ready',
+          PauseRequested: 'Paused',
+          Paused: 'Paused',
+        }[state.treasury.status];
+        return [
+          {
+            id,
+            chainId: state.treasury.chainId,
+            chainName: state.treasury.chainName,
+            assetId: state.treasury.asset.id,
+            assetSymbol: state.treasury.asset.symbol,
+            assetDecimals: state.treasury.asset.decimals,
+            assetIsTest: state.treasury.asset.isTest,
+            status,
+            coverage: state.coverage.status,
+            createdAt: state.staleness.observedAt,
+          },
+        ];
+      }),
+    };
+  }),
   route<{ chainId: number; owners: string[]; threshold: number }>(
     'post',
     '/orgs/:orgId/safes/deploy-tx',

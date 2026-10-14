@@ -9,6 +9,7 @@ import type {
   GovernanceTx,
   Hex,
   Treasury,
+  TreasurySummary,
   TreasuryState,
   WalletRole,
 } from '@/lib/api/types';
@@ -23,6 +24,14 @@ export const useTreasury = (orgId: string, treasuryId: string | undefined) =>
     [treasuryId],
     `/treasuries/${treasuryId}`,
     { enabled: Boolean(treasuryId) },
+  );
+
+export const useTreasuries = (orgId: string) =>
+  useOrgQuery<{ items: TreasurySummary[] }>(
+    orgId,
+    'treasuries',
+    [],
+    '/treasuries',
   );
 
 export const useForecast = (orgId: string, treasuryId: string) =>

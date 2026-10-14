@@ -11,11 +11,7 @@ import {
   VerifyPage,
 } from '@/features/auth/auth-pages';
 import { OrgLayout } from '@/features/orgs/org-scope';
-import {
-  OnboardingPage,
-  OrgIndexRedirect,
-  OrgsPage,
-} from '@/features/orgs/orgs-pages';
+import { OnboardingPage, OrgsPage } from '@/features/orgs/orgs-pages';
 
 /** Each screen is its own chunk; the shell stays in the entry bundle. */
 function page<
@@ -95,6 +91,10 @@ const DashboardPage = page(
   () => import('@/features/treasury/dashboard-page'),
   'DashboardPage',
 );
+const TreasuryPortfolioPage = page(
+  () => import('@/features/treasury/portfolio-page'),
+  'TreasuryPortfolioPage',
+);
 const BorrowProposalPage = page(
   () => import('@/features/treasury/fees-borrow-pages'),
   'BorrowProposalPage',
@@ -145,7 +145,7 @@ export function App() {
             <Route path="/dev/components" element={<ComponentsPage />} />
           )}
           <Route path="/o/:org" element={<OrgLayout />}>
-            <Route index element={<OrgIndexRedirect />} />
+            <Route index element={<TreasuryPortfolioPage />} />
             <Route path="onboarding" element={<OnboardingPage />} />
             <Route path="t/:t" element={<DashboardPage />} />
             <Route path="treasuries/new" element={<SetupWizardPage />} />
