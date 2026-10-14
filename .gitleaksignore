@@ -1,0 +1,3 @@
+# Published Anvil account 0, restricted to the LOCAL fork in this test script.
+# Keep the exception scoped to the original commit/file/rule/line; real credentials stay gated.
+631272d06adf91ba095061e68ffc1e4d62bfa2ee:infra/scripts/check-sepolia-deploy.sh:generic-api-key:13

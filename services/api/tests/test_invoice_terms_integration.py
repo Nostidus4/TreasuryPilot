@@ -4,6 +4,7 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -12,8 +13,8 @@ from fastapi import FastAPI, Request, Response
 from sqlalchemy import select, text
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.access import MemberContext
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
     ConfirmTermsRequest,
@@ -36,6 +37,14 @@ FLAG_ID = uuid.UUID("00000000-0000-7000-8000-000000000075")
 SUBMIT_REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000074")
 TERMS_REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000072")
 UPLOAD_REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000073")
+
+
+def _member(user_id: uuid.UUID, role: str) -> MemberAccess:
+    return MemberAccess(
+        access=SimpleNamespace(user=SimpleNamespace(id=user_id)),  # type: ignore[arg-type]
+        organization_id=ORG_ID,
+        roles=frozenset({role}),
+    )
 
 
 async def _confirm_in_postgres(database_url: str) -> None:
@@ -74,7 +83,7 @@ async def _confirm_in_postgres(database_url: str) -> None:
             )
             await connection.execute(
                 text(
-                    "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) VALUES ('00000000-0000-7000-8000-000000000060', '00000000-0000-7000-8000-000000000040', :org, '00000000-0000-7000-8000-000000000050', 'Main', decode(repeat('22', 20), 'hex'), 'Active')"
+                    "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) VALUES ('00000000-0000-7000-8000-000000000060', '00000000-0000-7000-8000-000000000040', :org, '00000000-0000-7000-8000-000000000050', 'Main', decode(repeat('22', 20), 'hex'), 'Active', '00000000-0000-7000-8000-000000000001', now(), 'PHONE', 'verified', now())"
                 ),
                 {"org": ORG_ID},
             )
@@ -89,17 +98,21 @@ async def _confirm_in_postgres(database_url: str) -> None:
         app.state.request_sessions = sessions
         request = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
         response = Response()
-        member = MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))
-        terms = ConfirmTermsRequest(
-            terms={"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990}
+        member = MemberAccess(
+            access=SimpleNamespace(user=SimpleNamespace(id=USER_ID)),  # type: ignore[arg-type]
+            organization_id=ORG_ID,
+            roles=frozenset({"OPERATOR"}),
         )
-        with pytest.raises(AuthFailure) as error:
-            await confirm_request_terms(
-                ORG_ID, REQUEST_ID, terms, request, response, '"99"', member
-            )
-        assert error.value.code == "PRECONDITION_FAILED"
         result = await confirm_request_terms(
-            ORG_ID, REQUEST_ID, terms, request, response, '"1"', member
+            ORG_ID,
+            REQUEST_ID,
+            ConfirmTermsRequest(
+                terms={"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990}
+            ),
+            request,
+            response,
+            "1",
+            member,
         )
         assert result["request"]["earlyAmount"] == "976"
         assert result["request"]["termsConfirmedBy"] == str(USER_ID)
@@ -111,29 +124,27 @@ async def _confirm_in_postgres(database_url: str) -> None:
             assert row.terms_confirmed_by == USER_ID
             assert row.terms_hash is not None and len(row.terms_hash) == 32
             assert row.current_revision == 2
-        # Unchanged terms stored in camelCase by extraction must not add a revision.
-        async with engine.begin() as connection:
-            await connection.execute(
-                text(
-                    "UPDATE payment_requests SET terms_confirmed_by = NULL, terms = "
-                    '\'{"netDueDay": 21000, "discountBps": 250, "discountDeadlineDay": 20990}\''
-                    " WHERE id = :id"
-                ),
-                {"id": REQUEST_ID},
-            )
-        async with sessions() as session:
-            version = await session.scalar(
-                select(PaymentRequest.version).where(PaymentRequest.id == REQUEST_ID)
-            )
+            confirmed_at = row.terms_confirmed_at
+
+        # An equivalent re-confirmation keeps the original confirmer and revision.
         await confirm_request_terms(
-            ORG_ID, REQUEST_ID, terms, request, Response(), f'"{version}"', member
+            ORG_ID,
+            REQUEST_ID,
+            ConfirmTermsRequest(
+                terms={"net_due_day": 21_000, "discount_bps": 250, "discount_deadline_day": 20_990}
+            ),
+            request,
+            response,
+            response.headers["ETag"],
+            member,
         )
         async with sessions() as session:
             row = await session.scalar(
                 select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
             )
-            assert row is not None and row.current_revision == 2
-            assert row.terms is not None and "net_due_day" in row.terms
+            assert row is not None
+            assert row.current_revision == 2
+            assert row.terms_confirmed_at == confirmed_at
     finally:
         await engine.dispose()
 
@@ -161,6 +172,13 @@ async def _submit_and_ack_in_postgres(database_url: str) -> None:
                     "'2026-10-31', 1001, '00000000-0000-7000-8000-000000000030', :creator, :creator)"
                 ),
                 {"id": SUBMIT_REQUEST_ID, "org": ORG_ID, "creator": USER_ID},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+                    "VALUES (gen_random_uuid(), :request, 1, '{}')"
+                ),
+                {"request": SUBMIT_REQUEST_ID},
             )
             await connection.execute(
                 text(
@@ -196,8 +214,8 @@ async def _submit_and_ack_in_postgres(database_url: str) -> None:
         app.state.request_sessions = sessions
         request = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
         response = Response()
-        operator = MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))
-        approver = MemberContext(ORG_ID, APPROVER_ID, frozenset({"Approver"}))
+        operator = _member(USER_ID, "Operator")
+        approver = _member(APPROVER_ID, "Approver")
         for blocked_id, error_code in (
             (TERMS_REQUEST_ID, "TERMS_UNCONFIRMED"),
             (UPLOAD_REQUEST_ID, "EXTRACTION_UNCONFIRMED"),

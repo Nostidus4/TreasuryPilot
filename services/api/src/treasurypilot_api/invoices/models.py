@@ -111,6 +111,11 @@ class PaymentRequest(Base):
             f"cancel_onchain IN ({_CANCEL_STATUSES})", name="ck_payment_requests_cancel_status"
         ),
         CheckConstraint("amount > 0", name="ck_payment_requests_amount_positive"),
+        CheckConstraint("due_at >= issue_date", name="ck_payment_requests_due_after_issue"),
+        CheckConstraint(
+            f"fingerprint IS NOT NULL OR status IN ('Draft', {_TERMINAL_REQUEST_STATUSES})",
+            name="ck_payment_requests_fingerprint_set",
+        ),
         CheckConstraint("current_revision > 0", name="ck_payment_requests_revision_positive"),
         CheckConstraint("version > 0", name="ck_payment_requests_version"),
         CheckConstraint(
@@ -173,9 +178,9 @@ class PaymentRequest(Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["paying_wallet_id", "org_id"],
-            ["treasury_wallets.id", "treasury_wallets.org_id"],
-            name="fk_payment_requests_paying_wallet_org",
+            ["paying_wallet_id", "treasury_id"],
+            ["treasury_wallets.id", "treasury_wallets.treasury_id"],
+            name="fk_payment_requests_paying_wallet_treasury",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(["terms_confirmed_by"], ["users.id"], ondelete="SET NULL"),
@@ -255,9 +260,9 @@ class PaymentRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     idempotency_payload_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
     __mapper_args__ = {"version_id_col": version}
 
@@ -321,10 +326,17 @@ class RequestFlag(Base):
         CheckConstraint("revision > 0", name="ck_flags_revision_positive"),
         CheckConstraint("jsonb_typeof(evidence) = 'object'", name="ck_flags_evidence_object"),
         CheckConstraint(
-            "status != 'Acknowledged' OR (acknowledged_by IS NOT NULL AND acknowledged_at IS NOT NULL)",
+            "status != 'Acknowledged' "
+            "OR (acknowledged_by IS NOT NULL AND acknowledged_at IS NOT NULL)",
             name="ck_flags_acknowledgement_actor",
         ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["request_id", "revision"],
+            ["request_revisions.request_id", "request_revisions.revision"],
+            name="fk_flags_request_revision",
+            ondelete="RESTRICT",
+        ),
         # ck_flags_acknowledgement_actor needs the actor, so it cannot be nulled.
         ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="RESTRICT"),
         Index("ix_flags_request_revision_status", "request_id", "revision", "status"),
@@ -360,13 +372,23 @@ class PaymentApproval(Base):
         CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["request_id", "revision"],
+            ["request_revisions.request_id", "request_revisions.revision"],
+            name="fk_approvals_request_revision",
+            ondelete="RESTRICT",
+        ),
         # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
         ForeignKeyConstraint(["approver_user_id"], ["users.id"], ondelete="RESTRICT"),
-        UniqueConstraint(
+        # Only one Valid approval per approver and revision; an ended one never revives,
+        # so the approver signs again as a new row.
+        Index(
+            "uq_approvals_valid_request_revision_address",
             "request_id",
             "revision",
             "approver_address",
-            name="uq_approvals_request_revision_address",
+            unique=True,
+            postgresql_where=text("status = 'Valid'"),
         ),
         Index("ix_approvals_request_revision", "request_id", "revision"),
     )
@@ -437,6 +459,7 @@ class RequestStatusEvent(Base):
             f'"from" IS NULL OR "from" IN ({_REQUEST_STATUSES})',
             name="ck_request_status_events_from",
         ),
+        CheckConstraint('"from" <> "to"', name="ck_request_status_events_changed"),
         CheckConstraint(
             f"actor_type IN ({_EVENT_ACTOR_TYPES})", name="ck_request_status_events_actor_type"
         ),

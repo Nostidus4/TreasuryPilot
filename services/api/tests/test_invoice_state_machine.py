@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from treasurypilot_api.events.models import DomainEvent
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateAllowance,
@@ -27,6 +28,7 @@ from treasurypilot_api.invoices.state_machine import (
     AuditEntry,
     MakerCheckerViolation,
     PayOperationInFlight,
+    RequestNotFound,
     RequestStateMachine,
     RequestTransitionError,
     RequestVersionConflict,
@@ -409,11 +411,20 @@ def test_transition_writes_status_event_and_audit_entry() -> None:
 
     assert result.status == RequestStatus.AWAITING_APPROVAL
     assert session.request.status == RequestStatus.AWAITING_APPROVAL.value
-    assert len(session.events) == 1
-    event = session.events[0]
-    assert isinstance(event, RequestStatusEvent)
-    assert event.from_status == RequestStatus.DRAFT.value
-    assert event.to_status == RequestStatus.AWAITING_APPROVAL.value
+    assert len(session.events) == 2
+    status_event = next(item for item in session.events if isinstance(item, RequestStatusEvent))
+    assert status_event.from_status == RequestStatus.DRAFT.value
+    assert status_event.to_status == RequestStatus.AWAITING_APPROVAL.value
+    domain_event = next(item for item in session.events if isinstance(item, DomainEvent))
+    assert domain_event.event_type == "ApprovalNeeded"
+    assert domain_event.org_id == _ORG_ID
+    assert domain_event.treasury_id == _TREASURY_ID
+    assert domain_event.entity_id == _REQUEST_ID
+    # Maker-checker: the creator (no solo mode) is excluded from the approval notice.
+    assert domain_event.payload == {
+        "requestId": str(_REQUEST_ID),
+        "excludeUserIds": [str(_USER_ID)],
+    }
     assert len(audit.entries) == 1
     assert audit.session is session
     assert audit.entries[0].action == TransitionAction.SUBMIT.value
@@ -489,6 +500,31 @@ def test_submit_honors_an_allow_duplicate_grant_for_this_request() -> None:
     assert len(allowance.calls) == 1
     assert allowance.calls[0][0] == _REQUEST_ID
     assert len(allowance.calls[0][1]) == 32
+
+
+def test_payment_done_event_includes_only_request_and_creator_ids() -> None:
+    session = _FakeSession(_FakeRequest(status=RequestStatus.PAYING.value))
+    actor = TransitionActor(
+        actor_type=StatusEventActorType.SYSTEM,
+        action=TransitionAction.PAY_CONFIRMED,
+    )
+
+    result = asyncio.run(
+        _machine(session, _FakeAudit()).transition(
+            organization_id=_ORG_ID,
+            request_id=_REQUEST_ID,
+            target=RequestStatus.PAID,
+            actor=actor,
+        )
+    )
+
+    assert result.status == RequestStatus.PAID
+    domain_event = next(item for item in session.events if isinstance(item, DomainEvent))
+    assert domain_event.event_type == "PaymentDone"
+    assert domain_event.payload == {
+        "requestId": str(_REQUEST_ID),
+        "creatorId": str(_USER_ID),
+    }
 
 
 def test_audit_failure_rolls_back_request_and_status_event() -> None:
@@ -610,6 +646,35 @@ def test_solo_mode_lets_the_creator_approve_and_is_audited() -> None:
     _approve(_machine(_FakeSession(request, solo_mode=True), audit), expected_version=1)
     assert request.status == RequestStatus.APPROVED.value
     assert audit.entries[-1].data["soloMode"] is True
+
+
+def test_audit_marks_solo_mode_not_evaluated_and_records_the_version_read() -> None:
+    request = _FakeRequest(status=RequestStatus.DRAFT.value, version=4, created_by=_OTHER_USER_ID)
+    audit = _FakeAudit()
+    actor = TransitionActor(
+        actor_type=StatusEventActorType.USER,
+        action=TransitionAction.SUBMIT,
+        actor_id=_USER_ID,
+        roles=frozenset({OrganizationRole.OPERATOR}),
+    )
+
+    asyncio.run(
+        _machine(_FakeSession(request), audit).transition(
+            organization_id=_ORG_ID,
+            request_id=_REQUEST_ID,
+            target=RequestStatus.AWAITING_APPROVAL,
+            actor=actor,
+            expected_version=4,
+        )
+    )
+
+    assert audit.entries[-1].data["soloMode"] is None
+    assert audit.entries[-1].data["fromVersion"] == 4
+
+
+def test_request_not_found_maps_to_404_like_other_transition_errors() -> None:
+    assert issubclass(RequestNotFound, RequestTransitionError)
+    assert RequestNotFound("missing").status_code == 404
 
 
 async def _guard_reports(database_url: str, rows: list[tuple[str, str]]) -> bool | None:

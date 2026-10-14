@@ -31,7 +31,7 @@ Python and TypeScript sign and hash exactly what the contract verifies.
 
 ## Scope
 
-- contracts/test/vectors/*.json: sample PaymentApproval, OneTimeException and PlanAttestation with domain, struct hash, digest and signature
+- contracts/test/vectors/*.json: PaymentApproval and signer-side PlanAttestation with canonical domains, struct hash, digest and signature
 - Foundry test that checks them
 - golden vectors for the 13-field PaymentApproval
 
@@ -41,7 +41,7 @@ Python and TS consumers (ENG-010, WEB-009).
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+M04-D3 removes OneTimeException typed signatures (governance only). PlanAttestation remains signer-side in M1 under the TreasuryPilot Policy domain (M08 section 6.3). No module PlanAttestation verifier is added.
 
 ## Dependencies
 
@@ -51,6 +51,8 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] Vectors verified by a Foundry test
 - [ ] File format documented for the Python and TS tests
+- [ ] PlanAttestation vectors cover a dynamic stepIds array and a nonce above JavaScript's safe-integer range
+- [ ] Policy and approval domains cannot be interchanged
 
 ## Testing requirements
 

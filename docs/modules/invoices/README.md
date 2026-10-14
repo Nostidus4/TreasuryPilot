@@ -40,7 +40,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|
 | **Vendor** | A company we pay (name, tax id, normalized reference). Has 1..n payee addresses (M03). History (amounts, addresses) is kept **per vendor** (M05-D2). |
 | **Payment request** | One invoice to be paid once, in full, from one paying wallet to one payee (M05-D9). |
-| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
+| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
 | **Free fields** | Internal note, tags, cost center, attachments other than the invoice document. Editable at any time before Paid without invalidation. |
 | **requestId (on-chain)** | `keccak256(abi.encode("TP_REQ_V1", orgId, request uuid))`. Stable across revisions so `requestPaid` blocks a second payment of any revision. |
 | **invoiceHash** | `keccak256(abi.encode(normVendorRef, normInvoiceNo, amount, asset, issueDate, dueDate, documentSha256 or 0x0))` (M05-D3). |
@@ -103,8 +103,7 @@ stateDiagram-v2
 | Transition | Who | Guard (error) |
 |---|---|---|
 | submit | OPR, ADM | payee exists and not Deactivated (`PAYEE_UNKNOWN`); asset = treasury stablecoin (`ASSET_NOT_PAYMENT_STABLECOIN`); no other active request with the same fingerprint (`DUPLICATE_FINGERPRINT`); extracted fields confirmed if source = UPLOAD (`EXTRACTION_UNCONFIRMED`); extracted terms confirmed or none (`TERMS_UNCONFIRMED`) |
-| acknowledge flag | APR | flag is Open on the current revision (`FLAG_SUPERSEDED`); note has at least 10 non-whitespace characters; the creator cannot acknowledge, and maker-checker applies to the last editor (`MAKER_CHECKER`) |
-| serve approval typed data | APR | request is AwaitingApproval; every HIGH flag on the current revision is acknowledged (`HIGH_FLAGS_UNACKED`) |
+| acknowledge flag | APR | request is AwaitingApproval (`NOT_AWAITING_APPROVAL`); flag is Open on the current revision (`FLAG_SUPERSEDED`); note has at least 10 non-whitespace characters; the creator cannot acknowledge, and maker-checker applies to the last editor unless solo mode is on (`MAKER_CHECKER`) |
 | approve | APR with linked wallet | §8.6 (all errors listed there) |
 | edit bound field | OPR, ADM | status ∈ {Draft, AwaitingApproval→withdraw first, Approved} and no operation in flight (`PAYMENT_IN_FLIGHT`); `If-Match` (412) |
 | cancel | OPR (own drafts), OWN, ADM | no PAY operation NotSubmitted/Submitted/Pending/Unknown (`PAYMENT_IN_FLIGHT`, BR-060) |
@@ -125,10 +124,10 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
-| POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`; 412; 422 `TERMS_INVALID` |
-| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`; 412 |
-| POST | `/…/{r}/withdraw` | OPR | → Draft | |
-| POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
+| POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`, 412, 422 `TERMS_INVALID` |
+| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`, `REQUEST_FIELDS_INCOMPLETE`; 412 |
+| POST | `/…/{r}/withdraw` | OPR | `If-Match` → Draft | 409 `INVALID_REQUEST_TRANSITION`; 412 |
+| POST | `/…/{r}/request-changes` | APR | `If-Match` + `{reason}` → Draft | 409 `INVALID_REQUEST_TRANSITION`, `MAKER_CHECKER`; 412 |
 | POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER`, `NOT_AWAITING_APPROVAL` |
 | GET | `/…/{r}/approval-typed-data` | APR | → `{domain, types, primaryType, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED`, `NOT_AWAITING_APPROVAL` |
 | POST | `/…/{r}/approve` 🔁 | APR | `{signature, revision}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
@@ -139,10 +138,12 @@ stateDiagram-v2
 
 Terms submitted with a draft are provisional. The confirmation endpoint validates the
 ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
-the confirming operator and time. Editing bound request fields clears confirmation.
-Only confirmed terms may be converted to scheduler input. A confirmed discount
-derives `earlyAmount = amount − floor(amount × discount_bps / 10000)` and
-`earlyPayBy` as 23:59:59 UTC on the discount deadline day.
+the confirming operator and time (re-confirming identical terms keeps the original
+confirmer). Late-fee `amount`/`cap` may be sent as integers or canonical integer strings (stored as strings). Editing
+bound request fields clears confirmation. Only confirmed terms may be converted to
+scheduler input. A confirmed discount derives
+`earlyAmount = amount − floor(amount × discount_bps / 10000)` and `earlyPayBy` as
+23:59:59 UTC on the discount deadline day; both are `null` without a discount.
 
 **`PaymentApproval` typed data (corrected: 11 fields, no `overrideDuplicate`, M04-D3)**
 
@@ -235,7 +236,6 @@ Example: h = [1,000, 1,020, 980, 1,010, 990] → med 1,000; |dev| = [0, 20, 20, 
 | `AI_UNAVAILABLE` | LOW | M09 could not run; deterministic flags only |
 
 AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same table and rules. Flags never change fields or state (F-036).
-Due dates earlier than issue dates are retained and receive `DUE_BEFORE_ISSUE` HIGH so an operator can review the anomaly.
 
 ### 8.6 Approval verification (approve endpoint)
 
@@ -247,6 +247,8 @@ Due dates earlier than issue dates are retained and receive `DUE_BEFORE_ISSUE` H
 6. Recover the signer (ECDSA) or call `isValidSignature` (ERC-1271) on the caller's linked contract wallet (`SIGNATURE_INVALID`).
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
+
+`services/api/src/treasurypilot_api/invoices/approval.py` is the server-side typed-data builder for INV-010. It accepts the current normalized request view and on-chain module context, derives expiry from the due deadline and mandate `approvalMaxAge`, and delegates the exact 13-field EIP-712/domain encoding to `treasurypilot_core.eip712`. The INV-010 API routes must call it after loading the latest request revision; route, persistence, linked-wallet authorization, and signature submission wiring remain part of the invoice approval endpoint implementation.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

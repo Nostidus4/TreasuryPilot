@@ -22,11 +22,16 @@ from treasurypilot_api.compliance.screening import (
     UnconfiguredScreeningProvider,
     build_screening_service,
     normalize_address,
+    screen_plan_before_pay,
 )
+from treasurypilot_api.identity.models import Organization
 from treasurypilot_api.mandate.models import ScreeningResult
+from treasurypilot_core.money import BaseUnits
+from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep, ValidationContext
 
 API_ROOT = Path(__file__).parents[1]
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
+ORG_ID = uuid.UUID("00000000-0000-7000-8000-000000000010")
 CLEAN = "0x" + "ab" * 20
 LISTED = "0x000000000000000000000000000000000000dEaD"
 
@@ -36,12 +41,13 @@ class MemoryRepository:
         self.rows: list[ScreeningRecord] = []
 
     async def latest(
-        self, *, address: bytes, chain_id: int, provider: str
+        self, *, organization_id: uuid.UUID, address: bytes, chain_id: int, provider: str
     ) -> ScreeningRecord | None:
         matches = [
             row
             for row in self.rows
-            if (row.address, row.chain_id, row.provider) == (address, chain_id, provider)
+            if (row.organization_id, row.address, row.chain_id, row.provider)
+            == (organization_id, address, chain_id, provider)
         ]
         return matches[-1] if matches else None
 
@@ -70,6 +76,13 @@ class HangingProvider:
         raise AssertionError("unreachable")
 
 
+class BrokenProvider:
+    name = "broken"
+
+    async def screen(self, *, address: bytes, chain_id: int) -> ProviderResult:
+        raise ValueError("malformed provider response")
+
+
 def service(
     provider: object, repo: MemoryRepository | None = None, **kw: object
 ) -> ScreeningService:
@@ -78,10 +91,16 @@ def service(
 
 def test_hit_maps_to_screening_hit_and_error_to_data_missing() -> None:
     with pytest.raises(ScreeningBlocked, match="SCREENING_HIT"):
-        asyncio.run(service(CountingProvider()).require_clear(address=LISTED, chain_id=1))
+        asyncio.run(
+            service(CountingProvider()).require_clear(
+                organization_id=ORG_ID, address=LISTED, chain_id=1
+            )
+        )
     with pytest.raises(ScreeningBlocked, match="DATA_MISSING") as blocked:
         asyncio.run(
-            service(UnconfiguredScreeningProvider()).require_clear(address=CLEAN, chain_id=1)
+            service(UnconfiguredScreeningProvider()).require_clear(
+                organization_id=ORG_ID, address=CLEAN, chain_id=1
+            )
         )
     assert blocked.value.record.ttl_until is None  # an ERROR is never cached
 
@@ -89,19 +108,34 @@ def test_hit_maps_to_screening_hit_and_error_to_data_missing() -> None:
 def test_provider_timeout_fails_closed() -> None:
     slow = service(HangingProvider(), timeout=timedelta(milliseconds=20))
     with pytest.raises(ScreeningBlocked, match="DATA_MISSING"):
-        asyncio.run(slow.require_clear(address=CLEAN, chain_id=1))
+        asyncio.run(slow.require_clear(organization_id=ORG_ID, address=CLEAN, chain_id=1))
+
+
+def test_unexpected_provider_failure_persists_an_error_row() -> None:
+    repo = MemoryRepository()
+    with pytest.raises(ScreeningBlocked, match="DATA_MISSING") as blocked:
+        asyncio.run(
+            service(BrokenProvider(), repo).require_clear(
+                organization_id=ORG_ID, address=CLEAN, chain_id=1
+            )
+        )
+    assert blocked.value.record.result == ScreeningResult.ERROR
+    assert len(repo.rows) == 1
 
 
 def test_cache_is_scoped_to_chain_and_provider() -> None:
     repo = MemoryRepository()
     fixture = CountingProvider()
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1))
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1))
+    asyncio.run(service(fixture, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
+    asyncio.run(service(fixture, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
     assert fixture.calls == 1
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=137))
+    asyncio.run(service(fixture, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=137))
     assert fixture.calls == 2
+    other_org = uuid.uuid4()
+    asyncio.run(service(fixture, repo).screen(organization_id=other_org, address=CLEAN, chain_id=1))
+    assert fixture.calls == 3  # one tenant's result is never reused by another
     commercial = CountingProvider(name="commercial")
-    asyncio.run(service(commercial, repo).screen(address=CLEAN, chain_id=1))
+    asyncio.run(service(commercial, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
     assert commercial.calls == 1  # fixture CLEAR rows never clear for another provider
 
 
@@ -109,19 +143,110 @@ def test_cached_result_is_recorded_for_the_requesting_payee() -> None:
     repo = MemoryRepository()
     fixture = CountingProvider()
     payee_a, payee_b = uuid.uuid4(), uuid.uuid4()
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1, payee_id=payee_a))
-    reused = asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1, payee_id=payee_b))
+    asyncio.run(
+        service(fixture, repo).screen(
+            organization_id=ORG_ID, address=CLEAN, chain_id=1, payee_id=payee_a
+        )
+    )
+    reused = asyncio.run(
+        service(fixture, repo).screen(
+            organization_id=ORG_ID, address=CLEAN, chain_id=1, payee_id=payee_b
+        )
+    )
     assert fixture.calls == 1
     assert reused.payee_id == payee_b
     assert reused.checked_at == repo.rows[0].checked_at
 
 
+def _plan(*payees: str) -> ExecutionPlan:
+    return ExecutionPlan(
+        request_id=b"\x01" * 32,
+        treasury="0x" + "11" * 20,
+        chain_id=1,
+        steps=[
+            PlanStep(
+                seq=i,
+                step_id=bytes([i + 1]) * 32,
+                action=Action.PAY,
+                from_wallet="0x" + "22" * 20,
+                to=payee,
+                asset="0x" + "55" * 20,
+                amount=BaseUnits(1),
+            )
+            for i, payee in enumerate(payees)
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+
+
+def _screen_plan(plan: ExecutionPlan, screening: ScreeningService) -> ValidationContext:
+    # Real frozen model; only the screening fields matter here, so skip validating the rest.
+    context = ValidationContext.model_construct(screening_hit=False)
+    return asyncio.run(
+        screen_plan_before_pay(plan, context, service=screening, organization_id=ORG_ID)
+    )
+
+
+def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
+    repository = MemoryRepository()
+    old = NOW - timedelta(hours=25)
+    repository.rows.append(
+        ScreeningRecord(
+            id=uuid.uuid4(),
+            organization_id=ORG_ID,
+            payee_id=None,
+            address=normalize_address(LISTED),
+            chain_id=1,
+            provider="fixture-test",
+            result=ScreeningResult.CLEAR,
+            source_ref=None,
+            checked_at=old,
+            ttl_until=old + timedelta(hours=24),
+        )
+    )
+    provider = CountingProvider()
+
+    context = _screen_plan(_plan(LISTED), service(provider, repository))
+
+    assert provider.calls == 1
+    assert context.screening_hit is True
+    assert context.screening_clear is False
+
+
+def test_plan_screening_marks_provider_failure_as_not_clear() -> None:
+    context = _screen_plan(_plan(CLEAN), service(UnconfiguredScreeningProvider()))
+
+    assert context.screening_hit is False
+    assert context.screening_clear is False
+
+
+def test_plan_screening_is_clear_only_after_a_valid_clear() -> None:
+    context = _screen_plan(_plan(CLEAN), service(CountingProvider()))
+
+    assert context.screening_hit is False
+    assert context.screening_clear is True
+
+
+def test_plan_screening_reports_a_hit_even_when_another_payee_errors() -> None:
+    class HitOrError(CountingProvider):
+        async def screen(self, *, address: bytes, chain_id: int) -> ProviderResult:
+            if address == normalize_address(LISTED):
+                return await super().screen(address=address, chain_id=chain_id)
+            raise RuntimeError("provider down")
+
+    context = _screen_plan(_plan(CLEAN, LISTED), service(HitOrError()))
+
+    assert context.screening_hit is True
+    assert context.screening_clear is False
+
+
 def test_expired_cache_is_refreshed() -> None:
     repo = MemoryRepository()
     fixture = CountingProvider()
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1))
+    asyncio.run(service(fixture, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
     repo.rows[0] = replace(repo.rows[0], ttl_until=NOW - timedelta(seconds=1))
-    asyncio.run(service(fixture, repo).screen(address=CLEAN, chain_id=1))
+    asyncio.run(service(fixture, repo).screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
     assert fixture.calls == 2
 
 
@@ -129,7 +254,11 @@ def test_expired_cache_is_refreshed() -> None:
 def test_caller_mistakes_raise_instead_of_recording_an_error(address: str, chain_id: int) -> None:
     repo = MemoryRepository()
     with pytest.raises(ValueError):
-        asyncio.run(service(CountingProvider(), repo).screen(address=address, chain_id=chain_id))
+        asyncio.run(
+            service(CountingProvider(), repo).screen(
+                organization_id=ORG_ID, address=address, chain_id=chain_id
+            )
+        )
     assert repo.rows == []
 
 
@@ -138,7 +267,7 @@ def test_naive_clock_is_rejected() -> None:
         MemoryRepository(), CountingProvider(), clock=lambda: datetime(2026, 1, 1)
     )
     with pytest.raises(ValueError, match="timezone"):
-        asyncio.run(naive.screen(address=CLEAN, chain_id=1))
+        asyncio.run(naive.screen(organization_id=ORG_ID, address=CLEAN, chain_id=1))
 
 
 def test_addresses_match_regardless_of_case_or_prefix() -> None:
@@ -174,20 +303,22 @@ def test_database_fixture_list_and_chain_scoped_cache_on_postgres() -> None:
     async def run() -> None:
         engine = create_async_engine(database_url)
         try:
-            screening = build_screening_service("test", async_sessionmaker(engine))
-            hit = await screening.screen(address=LISTED, chain_id=11155111)
+            sessions = async_sessionmaker(engine)
+            async with sessions.begin() as session:
+                session.add(Organization(id=ORG_ID, name="Screening test"))
+            screening = build_screening_service("test", sessions)
+            hit = await screening.screen(organization_id=ORG_ID, address=LISTED, chain_id=11155111)
             assert hit.result == ScreeningResult.HIT
             assert hit.source_ref is not None and "TEST DATA" in hit.source_ref
-            first = await screening.screen(address=CLEAN, chain_id=11155111)
-            again = await screening.screen(address=CLEAN, chain_id=11155111)
-            other_chain = await screening.screen(address=CLEAN, chain_id=1)
+            first = await screening.screen(organization_id=ORG_ID, address=CLEAN, chain_id=11155111)
+            again = await screening.screen(organization_id=ORG_ID, address=CLEAN, chain_id=11155111)
+            other_chain = await screening.screen(organization_id=ORG_ID, address=CLEAN, chain_id=1)
             assert again.id == first.id
             assert other_chain.id != first.id and other_chain.chain_id == 1
         finally:
             await engine.dispose()
 
     try:
-        command.check(config)
         asyncio.run(run())
     finally:
         command.downgrade(config, "base")
