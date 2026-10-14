@@ -55,6 +55,12 @@ def create_celery_app() -> Celery:
                 "schedule": crontab(minute="*/10"),
                 "options": {"queue": "core"},
             },
+            "track-transactions": {
+                "task": "treasurypilot.chain.track-transactions",
+                "schedule": timedelta(seconds=6),
+                # A run nobody picked up within one interval is superseded by the next one.
+                "options": {"queue": "core", "expires": 6},
+            },
             "expire-invoice-approvals": {
                 "task": "treasurypilot.invoices.expire_approvals",
                 "schedule": timedelta(minutes=5),
