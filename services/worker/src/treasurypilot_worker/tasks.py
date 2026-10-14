@@ -7,9 +7,9 @@ from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.notify.delivery import deliver_pending_emails
 from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
-from treasurypilot_worker.notify.delivery import deliver_pending_emails
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
