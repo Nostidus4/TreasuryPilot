@@ -10,5 +10,6 @@
     "page": 1,
     "span": "Pay to 0x3333333333333333333333333333333333333333"
   },
-  "invoice_count_in_document": 1
+  "invoice_count_in_document": 1,
+  "suspicious_instructions": []
 }
