@@ -3642,7 +3642,7 @@
           "code": {
             "anyOf": [
               {
-                "pattern": "^\\d{6}$",
+                "pattern": "^[0-9]{6}$",
                 "type": "string"
               },
               {
@@ -3888,7 +3888,7 @@
           "code": {
             "maxLength": 6,
             "minLength": 6,
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           }
