@@ -47,6 +47,53 @@ test('an expired sign-in link explains itself', async () => {
   ).toBeInTheDocument();
 });
 
+test('plan timeline shows partial completion, verification evidence and unknown safely', async () => {
+  renderApp(`${T}/plans/pln_0421`);
+
+  // renderApp resets the mock database, so set up execution evidence after it.
+  const plan = db.plans.find((item) => item.id === 'pln_0421')!;
+  plan.status = 'PartiallyCompleted';
+  Object.assign(plan.steps[0], {
+    status: 'Verified',
+    confirmations: 3,
+    verification: 'VERIFIED',
+    txHash: `0x${'a'.repeat(64)}`,
+  });
+  Object.assign(plan.steps[1], {
+    status: 'Unknown',
+    txHash: `0x${'b'.repeat(64)}`,
+  });
+  plan.steps[2].status = 'Dropped';
+
+  expect(
+    await screen.findByText(/steps are verified on-chain/),
+  ).toBeInTheDocument();
+  expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
+  const timeline = screen.getByRole('list', { name: /execution steps/i });
+  expect(
+    within(timeline).getByText('Paid · 3 confirmations'),
+  ).toBeInTheDocument();
+  expect(
+    within(timeline).getByText(
+      'Verification passed: amount and recipient match the plan',
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(timeline).getByText(
+      'Checking the chain — no new payment will be sent',
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(timeline).getByText('Dropped by the network'),
+  ).toBeInTheDocument();
+  const explorerLinks = await within(timeline).findAllByRole('link', {
+    name: 'Open transaction in the block explorer',
+  });
+  expect(explorerLinks.map((link) => link.getAttribute('href'))).toContain(
+    `https://sepolia.etherscan.io/tx/0x${'b'.repeat(64)}`,
+  );
+});
+
 test('a new user creates an organization and lands on the checklist', async () => {
   const user = userEvent.setup();
   renderApp('/verify?token=mock.new.person%40example.com', { signedIn: false });
@@ -83,9 +130,9 @@ test('selecting a Safe in one chart zooms the liquidity chart into it', async ()
   const user = userEvent.setup();
   renderApp(T);
 
-  const safes = (
-    await screen.findByRole('heading', { name: 'Safes' })
-  ).closest('section')!;
+  const safes = (await screen.findByRole('heading', { name: 'Safes' })).closest(
+    'section',
+  )!;
   const payroll = await within(safes).findByRole('button', {
     name: /payroll safe/i,
   });

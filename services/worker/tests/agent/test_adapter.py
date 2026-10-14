@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import pytest
+from prometheus_client import REGISTRY
 from pydantic import BaseModel, ConfigDict
 
 from treasurypilot_worker.agent import (
@@ -15,6 +16,7 @@ from treasurypilot_worker.agent import (
     AiUnavailable,
     FakeClock,
     FakeProvider,
+    InMemoryAiCallLog,
     InMemoryBudgetLedger,
     PromptTemplate,
     ProviderRequest,
@@ -75,6 +77,7 @@ def _adapter(
         provider=provider,
         config=config,
         ledger=ledger or InMemoryBudgetLedger(),
+        call_log=InMemoryAiCallLog(),
         clock=clock,
         sleep=clock.sleep,
         now=lambda: now,
@@ -119,6 +122,25 @@ def test_routes_task_to_configured_model_and_returns_validated_output(
     # 120 * 0.10 + 30 * 0.50 USD/MTok = 12 + 15 = 27 micros
     assert result.cost_usd_micros == 27
     assert ledger.spent("org-1", "2026-10") == 27
+
+
+def test_cost_and_latency_reach_the_prometheus_series(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    def answer(request: ProviderRequest, timeout_s: float) -> ProviderResponse:
+        clock.advance(2)
+        return fake_text('{"answer": "ok"}', Usage(120, 30))
+
+    labels = {"task": AiTask.EXPLAIN.value}
+    cost_before = REGISTRY.get_sample_value("tp_llm_cost_usd_total", labels) or 0
+    latency_before = REGISTRY.get_sample_value("tp_llm_latency_seconds_sum", labels) or 0
+
+    _run(_adapter(FakeProvider([answer]), repo_config, clock, october))
+
+    cost = REGISTRY.get_sample_value("tp_llm_cost_usd_total", labels)
+    latency = REGISTRY.get_sample_value("tp_llm_latency_seconds_sum", labels)
+    assert cost == pytest.approx(cost_before + 27 / 1_000_000)
+    assert latency == pytest.approx(latency_before + 2)
 
 
 def test_timeout_raises_ai_timeout_within_configured_limit(
@@ -455,6 +477,7 @@ def test_injected_scanner_checks_known_secret_values(
         provider=FakeProvider([]),
         config=repo_config,
         ledger=InMemoryBudgetLedger(),
+        call_log=InMemoryAiCallLog(),
         clock=clock,
         sleep=clock.sleep,
         now=lambda: october,

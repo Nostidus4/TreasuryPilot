@@ -87,10 +87,10 @@ erDiagram
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `mandate_versions` | id, treasury_id, version, status enum(Draft,PendingActivation,Active,Paused,Expired,Revoked,Superseded), config jsonb (full mandate), config_hash, activation_tx_hash, valid_from, expires_at, created_by | **Immutable rows**; status transitions recorded in `mandate_status_events`. unique(treasury_id,version) |
+| `mandate_versions` | id, treasury_id, version, onchain_version, status enum(Draft,PendingActivation,Active,Superseded,Expired,Revoked,Discrepancy), config jsonb (full mandate), config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | **Immutable rows** except status/onchain_version/activated_at (and governance_tx_id while Draft); only a Draft can be deleted; a trigger enforces this. Status transitions recorded in `mandate_status_events`. unique(treasury_id,version). Paused is a treasury status (docs/modules/mandate §5.1) |
 | `mandate_status_events` | id, mandate_version_id, from, to, tx_hash, at, by | append-only |
-| `vendors` | id, org_id, name, normalized_ref, tax_id null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
-| `payees` | id, treasury_id, vendor_id, label, address, status enum(Screening,Cooling,Active,Deactivated), active_from, registration_tx_hash, deactivated_at | unique(treasury_id,address) where status≠Deactivated |
+| `vendors` | id, org_id, name, normalized_ref, tax_id (encrypted) null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
+| `payees` | id, treasury_id, vendor_id, label, address, status enum(Proposed,Screening,ScreeningFailed,AwaitingOwner,Cooling,Active,Deactivated), active_from, oob_verified_by/at, oob_method, oob_note, registration_tx_id, deactivated_at | unique(treasury_id,address) where status≠Deactivated; see docs/modules/mandate §4 |
 | `screenings` | id, payee_id or address, provider, result enum(CLEAR,HIT,ERROR), source_ref, checked_at, ttl_until | idx(address, checked_at desc) |
 | `exceptions` | id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested,Proposed,Granted,Consumed,Expired,Invalidated,Rejected,Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status in (Proposed, Granted) |
 | `governance_txs` / `governance_signatures` | Safe transactions built by the app and owner signatures (M03-D1) | see docs/modules/mandate §4 |
@@ -118,7 +118,7 @@ erDiagram
 | `plan_steps` | id, plan_id, seq, step_id (bytes32, deterministic), request_id, action enum(REFILL,PAY,SWAP), from_wallet, to_address, amount, params jsonb, status | unique(step_id) |
 | `validations` | id, plan_id, step_id null, decision enum(ALLOW,NEEDS_APPROVAL,BLOCK), reason_codes text[], checks jsonb, policy_version | append-only |
 | `attestations` | id, plan_id, typed_data jsonb, signature, nonce, valid_until | unique(nonce) |
-| `ai_calls` | id, org_id, purpose enum(EXTRACT,TERMS,ANOMALY,PLAN,EXCEPTION_DRAFT,COPILOT,EVAL), model, prompt_version, input_refs jsonb, tool_calls jsonb, output jsonb, validation_result, latency_ms, input_tokens, output_tokens, cost_usd_micros, error | **AI decision history**, append-only |
+| `ai_calls` | id, org_id, purpose enum(EXTRACT,TERMS,ANOMALY,PLAN,EXPLAIN,EXCEPTION_DRAFT,COPILOT,EVAL), model, prompt_version, input_refs jsonb (untrusted-input sources, no text), tool_calls jsonb (result previews), output jsonb, validation_result enum(OK,SCHEMA_ERROR,POSTCHECK_FAILED,REJECTED)?, latency_ms, input_tokens, output_tokens, cost_usd_micros, error? (preview), created_at | **AI decision history**, append-only; validation_result or error is set |
 | `copilot_threads` / `copilot_messages` | id, org_id, user_id / thread_id, role, content, ai_call_id | |
 
 ### 2.6 Execution & chain (M06, M10)

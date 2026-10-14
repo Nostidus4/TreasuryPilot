@@ -20,7 +20,8 @@ FakeStep = ProviderResponse | AiError | Callable[[ProviderRequest, float], Provi
 class FakeProvider:
     """Replays scripted steps in order and records every request with its timeout."""
 
-    def __init__(self, steps: Iterable[FakeStep]) -> None:
+    def __init__(self, steps: Iterable[FakeStep], *, name: str = "fake") -> None:
+        self.name = name
         self._steps = deque(steps)
         self.calls: list[tuple[ProviderRequest, float]] = []
 

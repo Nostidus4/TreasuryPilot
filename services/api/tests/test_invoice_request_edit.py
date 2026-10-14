@@ -17,8 +17,8 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from treasurypilot_api.identity.access import MemberContext
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices.requests import (
     RequestCreate,
     RequestPatch,
@@ -35,7 +35,11 @@ _TREASURY = uuid.UUID("00000000-0000-7000-8000-000000000040")
 _VENDOR = uuid.UUID("00000000-0000-7000-8000-000000000050")
 _PAYEE = uuid.UUID("00000000-0000-7000-8000-000000000060")
 _OTHER_PAYEE = uuid.UUID("00000000-0000-7000-8000-000000000061")
-_MEMBER = MemberContext(_ORG, _USER, frozenset({"OPERATOR"}))
+_MEMBER = MemberAccess(
+    access=SimpleNamespace(user=SimpleNamespace(id=_USER)),  # type: ignore[arg-type]
+    organization_id=_ORG,
+    roles=frozenset({"OPERATOR"}),
+)
 
 
 def test_patch_rejects_explicit_null_for_required_fields() -> None:
@@ -58,11 +62,12 @@ async def _seed(database_url: str) -> None:
         f"VALUES ('{_TREASURY}', '{_ORG}', 11155111, '{_ASSET}')",
         "INSERT INTO vendors (id, org_id, name, normalized_ref) "
         f"VALUES ('{_VENDOR}', '{_ORG}', 'Vendor', 'vendor')",
-        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) VALUES "
+        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, "
+        "oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) VALUES "
         f"('{_PAYEE}', '{_TREASURY}', '{_ORG}', '{_VENDOR}', 'Main', "
-        "decode(repeat('22', 20), 'hex'), 'Active'), "
+        f"decode(repeat('22', 20), 'hex'), 'Active', '{_USER}', now(), 'PHONE', 'verified', now()), "
         f"('{_OTHER_PAYEE}', '{_TREASURY}', '{_ORG}', '{_VENDOR}', 'Other', "
-        "decode(repeat('23', 20), 'hex'), 'Active')",
+        f"decode(repeat('23', 20), 'hex'), 'Active', '{_USER}', now(), 'PHONE', 'verified', now())",
     ]
     try:
         async with engine.begin() as connection:
@@ -224,7 +229,9 @@ def test_deactivated_payee_does_not_block_correcting_other_bound_fields(database
         request = await _create(sessions, "DEACTIVATED")
         async with sessions() as session, session.begin():
             await session.execute(
-                text("UPDATE payees SET status = 'Deactivated' WHERE id = :id"),
+                text(
+                    "UPDATE payees SET status = 'Deactivated', deactivated_at = now() WHERE id = :id"
+                ),
                 {"id": str(_PAYEE)},
             )
         try:

@@ -50,7 +50,19 @@ jobs:
           FOUNDRY_FUZZ_RUNS: ${{ github.ref == 'refs/heads/main' && '10000' || '1000' }}
           FOUNDRY_INVARIANT_RUNS: ${{ github.ref == 'refs/heads/main' && '750' || '192' }}
           FOUNDRY_INVARIANT_DEPTH: '50'
-        run: forge test -vv
+        run: |
+          set -o pipefail
+          {
+            echo "Revision: $GITHUB_SHA"
+            # Record the effective settings instead of hardcoding them.
+            forge config --json | jq -c '{solc, optimizer, optimizer_runs, via_ir, fuzz_runs: .fuzz.runs, invariant_runs: .invariant.runs, invariant_depth: .invariant.depth}'
+            forge --version
+            forge test --gas-report -vv
+          } | tee gas-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contracts-gas-report
+          path: contracts/gas-report.txt
 
   slither:
     runs-on: ubuntu-latest

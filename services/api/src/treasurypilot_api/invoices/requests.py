@@ -14,11 +14,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.audit.events import AuditEvent, log_audit_event
-from treasurypilot_api.identity.access import MemberContext, require_role
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices.models import (
     TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
@@ -35,7 +37,7 @@ from treasurypilot_api.invoices.models import (
     StatusEventActorType,
 )
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
-from treasurypilot_api.mandate.models import Payee, Vendor
+from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 from treasurypilot_core.fingerprint import fingerprint, normalize
 from treasurypilot_core.money import BaseUnits
@@ -281,7 +283,7 @@ async def _bound_fields(
         raise _fail(
             422, "PAYEE_UNKNOWN", "Payee invalid", "The payee does not exist in this treasury."
         )
-    if require_active_payee and payee.status == "Deactivated":
+    if require_active_payee and payee.status == PayeeStatus.DEACTIVATED:
         raise _fail(
             422,
             "PAYEE_UNKNOWN",
@@ -460,7 +462,7 @@ async def create_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -605,7 +607,7 @@ async def edit_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     try:
         expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
@@ -750,16 +752,13 @@ async def edit_request(
                             reason="bound fields edited; approvals invalidated",
                         )
                     )
-                    await log_audit_event(
+                    await write_audit(
                         session,
-                        AuditEvent(
-                            org_id=member.organization_id,
-                            actor_id=member.user_id,
-                            action=TransitionAction.EDIT_BOUND_FIELDS.value,
-                            entity_type="payment_request",
-                            entity_id=row.id,
-                            data={"from": previous_status, "to": RequestStatus.DRAFT.value},
-                        ),
+                        org_id=member.organization_id,
+                        actor=AuditActor(AuditActorType.USER, member.user_id),
+                        action=TransitionAction.EDIT_BOUND_FIELDS.value,
+                        entity=AuditEntity("payment_request", row.id),
+                        data={"from": previous_status, "to": RequestStatus.DRAFT.value},
                     )
                 session.add(
                     RequestRevision(
