@@ -82,7 +82,8 @@ class _EmailDeliveryRuntime:
 
     def deliver(self, cadence: str) -> dict[str, int]:
         settings = get_settings()
-        if not settings.database_url:
+        database_url = settings.database_url
+        if not database_url:
             raise RuntimeError("DATABASE_URL is required for notification email delivery")
         if self._pid != os.getpid() or self._loop is None:
             self._pid, self._loop, self._pool = os.getpid(), asyncio.new_event_loop(), None
@@ -90,7 +91,7 @@ class _EmailDeliveryRuntime:
 
         async def run() -> dict[str, int]:
             if self._pool is None:
-                self._pool = await create_worker_pool(settings.database_url, min_size=1, max_size=2)
+                self._pool = await create_worker_pool(database_url, min_size=1, max_size=2)
             return await deliver_pending_emails(self._pool, settings=settings, cadence=cadence)
 
         try:
