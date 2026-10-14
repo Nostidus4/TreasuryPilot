@@ -114,7 +114,7 @@ export interface Db {
   members: Member[];
   /** Members and creator of orgs created during the session. */
   orgMembers: Record<string, Member[]>;
-  moduleEnabled: Record<string, boolean>;
+  moduleEnabled: Record<string, string[]>;
   treasuries: Record<string, TreasuryState>;
   mandates: Record<string, MandateVersion[]>;
   payees: Payee[];
@@ -1091,7 +1091,7 @@ export function seed(): Db {
       },
     ],
     orgMembers: {},
-    moduleEnabled: { trs_main: true },
+    moduleEnabled: { trs_main: ['T', 'O1', 'O2'] },
     members: [
       {
         userId: ME.id,
@@ -1703,10 +1703,13 @@ export function createGovernanceTx(
   > & {
     diff?: DiffEntry[];
     effect?: () => void;
+    safeRole?: 'T' | 'O1' | 'O2';
   },
 ) {
   const state = db.treasuries[input.treasuryId];
-  const safe = state.wallets.find((wallet) => wallet.role === 'T')!;
+  const safe = state.wallets.find(
+    (wallet) => wallet.role === (input.safeRole ?? 'T'),
+  )!;
   const nonce =
     Math.max(
       0,
@@ -1720,7 +1723,7 @@ export function createGovernanceTx(
     id,
     status: 'AwaitingSignatures',
     safeAddress: safe.safeAddress,
-    safeLabel: `${safe.label} (T)`,
+    safeLabel: `${safe.label} (${safe.role})`,
     nonce,
     threshold: safe.threshold,
     owners: safe.owners.map((address) => ({
