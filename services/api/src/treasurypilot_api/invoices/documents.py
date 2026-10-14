@@ -16,7 +16,7 @@ from minio import Minio
 from PIL import Image
 from pydantic import Field
 from pypdf import PdfReader
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
@@ -51,6 +51,7 @@ from treasurypilot_api.invoices.requests import (
     _request_id,
     _sessions,
     _validate_dates,
+    supersede_open_flags,
 )
 from treasurypilot_api.treasury.models import Asset, Treasury
 
@@ -551,17 +552,6 @@ async def confirm_extraction(
                 )
                 if duplicate is not None:
                     raise DuplicateFingerprintConflict(duplicate)
-                await session.execute(
-                    update(RequestFlag)
-                    .where(
-                        RequestFlag.request_id == row.id,
-                        RequestFlag.code != "MULTI_INVOICE_DOCUMENT",
-                        RequestFlag.status.in_(
-                            [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
-                        ),
-                    )
-                    .values(status=RequestFlagStatus.SUPERSEDED.value)
-                )
                 session.add(
                     RequestRevision(
                         id=uuid7(),
@@ -581,6 +571,7 @@ async def confirm_extraction(
                         reason="operator confirmed extracted invoice fields",
                     )
                 )
+                await supersede_open_flags(session, row, keep=("MULTI_INVOICE_DOCUMENT",))
                 flags = await _recompute_flags(session, row)
                 return {
                     "requestId": str(row.id),

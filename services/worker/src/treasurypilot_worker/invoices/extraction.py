@@ -1,4 +1,6 @@
 """Invoice extraction task body (AGT-004): attached document -> `extractions` row + draft prefill.
+Instruction-like text (AGT-006) becomes a HIGH flag: the model's `suspicious_instructions`, or a
+keyword scan of the PDF text when the LLM is down.
 
 The model's answer is advisory. Only invoice number, dates and amount are prefilled, each
 after a deterministic check, and only where the draft is still empty. The vendor, the payee
@@ -14,10 +16,12 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from io import BytesIO
 from typing import Any, Protocol
 
 import asyncpg  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
+from pypdf import PdfReader
 
 from treasurypilot_core.ids import uuid7
 from treasurypilot_core.money import BaseUnits
@@ -29,12 +33,19 @@ from treasurypilot_worker.agent import (
     SourceKind,
     UntrustedSource,
 )
+from treasurypilot_worker.agent.instruction_detector import (
+    INSTRUCTION_REASON_CODE,
+    INSTRUCTION_SEVERITY,
+    MAX_QUOTE_CHARS,
+    detect_instructions,
+)
 from treasurypilot_worker.agent.prompts.extract import EXTRACT_TEMPLATE
 from treasurypilot_worker.locks import _asyncpg_database_url
 
 logger = logging.getLogger(__name__)
 
 MAX_INVOICE_NO_CHARS = 200
+MAX_FLAGGED_QUOTES = 10  # bounds the flag evidence, whatever the model returns
 
 
 class _Strict(BaseModel):
@@ -49,6 +60,13 @@ class Located(_Strict):
     span: str
 
 
+class SuspiciousInstruction(_Strict):
+    """Instruction-like text found in the document (AGT-006); reported, never acted on."""
+
+    quote: str
+    page: int = Field(ge=1)
+
+
 class InvoiceExtraction(_Strict):
     vendor_name: Located | None
     invoice_no: Located | None
@@ -58,6 +76,7 @@ class InvoiceExtraction(_Strict):
     currency: Located | None
     payee_address_as_found: Located | None
     invoice_count_in_document: int = Field(ge=1)
+    suspicious_instructions: list[SuspiciousInstruction]
 
 
 class DocumentReader(Protocol):
@@ -105,6 +124,47 @@ def _iso_date(value: str | None) -> date | None:
         return None
 
 
+def llm_flag_evidence(extraction: InvoiceExtraction) -> dict[str, Any] | None:
+    """Evidence for the AI-sourced flag, or None when the model reported nothing."""
+
+    found = extraction.suspicious_instructions[:MAX_FLAGGED_QUOTES]
+    if not found:
+        return None
+    return {
+        "detector": "llm",
+        "reducedCoverage": False,
+        "matches": [{"quote": f.quote[:MAX_QUOTE_CHARS], "page": f.page} for f in found],
+    }
+
+
+def fallback_flag_evidence(
+    mime: str, body: bytes, known_addresses: list[str]
+) -> dict[str, Any] | None:
+    """Keyword scan of the PDF text layer for when the LLM is down (reduced coverage).
+
+    shortcut: images and scanned PDFs have no text layer, so they are not scanned; upgrade
+    when OCR exists.
+    """
+
+    pages: list[str] = []
+    if mime == "application/pdf":
+        try:
+            pages = [page.extract_text() or "" for page in PdfReader(BytesIO(body)).pages]
+        except Exception:  # a malformed PDF is already on the manual-entry path
+            logger.warning("instruction_fallback_unreadable_pdf")
+    scan = detect_instructions(pages, known_addresses=known_addresses)
+    if not scan.matches:
+        return None
+    return {
+        "detector": scan.detector,
+        "reducedCoverage": scan.reduced_coverage,
+        "matches": [
+            {"quote": m.quote, "page": m.page, "rules": list(m.rules)}
+            for m in scan.matches[:MAX_FLAGGED_QUOTES]
+        ],
+    }
+
+
 @dataclass(frozen=True)
 class _Job:
     org_id: uuid.UUID
@@ -113,10 +173,11 @@ class _Job:
     pages: int | None
     asset_symbol: str
     decimals: int
+    treasury_id: uuid.UUID
 
 
 _LOAD = """
-SELECT r.org_id, d.storage_key, d.mime, d.pages, a.symbol, a.decimals
+SELECT r.org_id, d.storage_key, d.mime, d.pages, a.symbol, a.decimals, r.treasury_id
 FROM payment_requests r
 JOIN documents d ON d.request_id = r.id AND d.id = $2
 JOIN assets a ON a.id = r.asset_id AND a.chain_id = r.chain_id
@@ -128,6 +189,13 @@ _MANUAL_ENTRY = """
 UPDATE payment_requests SET extraction_status = 'ManualEntry', updated_at = now()
 WHERE id = $1 AND extraction_status = 'Extracting'
 """
+_INSERT_FLAG = f"""
+INSERT INTO flags (id, request_id, revision, code, severity, evidence, source)
+SELECT $1, id, current_revision, '{INSTRUCTION_REASON_CODE}', '{INSTRUCTION_SEVERITY}',
+  $3::jsonb, $4
+FROM payment_requests WHERE id = $2
+"""
+_PAYEE_ADDRESSES = "SELECT '0x' || encode(address, 'hex') FROM payees WHERE treasury_id = $1"
 _EXTRACTED = """
 UPDATE payment_requests SET extraction_status = 'Extracted',
   invoice_no = COALESCE(invoice_no, $2), issue_date = COALESCE(issue_date, $3),
@@ -146,6 +214,14 @@ async def _with_connection(database_url: str, work: Any) -> Any:
         return await work(connection)
     finally:
         await connection.close()
+
+
+async def _add_flag(
+    connection: asyncpg.Connection, request_id: uuid.UUID, evidence: dict[str, Any], source: str
+) -> None:
+    """HIGH flag on the request's current revision. It informs the approver; nothing else changes."""
+
+    await connection.execute(_INSERT_FLAG, uuid7(), request_id, json.dumps(evidence), source)
 
 
 def extract_invoice_document(
@@ -170,19 +246,16 @@ def extract_invoice_document(
     if job is None:
         return "skipped"
 
-    async def manual_entry(connection: asyncpg.Connection) -> None:
-        await connection.execute(_MANUAL_ENTRY, request_id)
-
+    body = reader.read(job.storage_key)
     try:
-        document = DocumentBlock(
-            str(UntrustedSource(SourceKind.DOCUMENT, str(document_id))),
-            job.mime,
-            reader.read(job.storage_key),
-        )
         result = adapter.run(
             AiTask.EXTRACT,
             org_id=str(job.org_id),
-            prompt=EXTRACT_TEMPLATE.render(invoice=document),
+            prompt=EXTRACT_TEMPLATE.render(
+                invoice=DocumentBlock(
+                    str(UntrustedSource(SourceKind.DOCUMENT, str(document_id))), job.mime, body
+                )
+            ),
             output=InvoiceExtraction,
         )
     except AiError as error:
@@ -190,6 +263,15 @@ def extract_invoice_document(
             "invoice_extraction_manual_entry",
             extra={"request_id": str(request_id), "error": type(error).__name__},
         )
+
+        async def manual_entry(connection: asyncpg.Connection) -> None:
+            known = [r[0] for r in await connection.fetch(_PAYEE_ADDRESSES, job.treasury_id)]
+            evidence = fallback_flag_evidence(job.mime, body, known)
+            async with connection.transaction():
+                updated = await connection.execute(_MANUAL_ENTRY, request_id)
+                if evidence is not None and updated == "UPDATE 1":
+                    await _add_flag(connection, request_id, evidence, "DETERMINISTIC")
+
         asyncio.run(_with_connection(database_url, manual_entry))
         return "ManualEntry"
 
@@ -216,6 +298,8 @@ def extract_invoice_document(
                 uuid.UUID(result.ai_call_id),
                 json.dumps(result.output.model_dump(mode="json")),
             )
+            if (evidence := llm_flag_evidence(result.output)) is not None:
+                await _add_flag(connection, request_id, evidence, "AI")
         return "Extracted"
 
     return str(asyncio.run(_with_connection(database_url, save)))
