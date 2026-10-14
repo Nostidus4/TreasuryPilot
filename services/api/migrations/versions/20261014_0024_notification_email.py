@@ -1,7 +1,7 @@
 """add user email cadence and delivery claims for notification mail
 
 Revision ID: 20261014_0024
-Revises: 20261014_0021
+Revises: 20261014_0023
 Create Date: 2026-10-14 00:00:00
 """
 
