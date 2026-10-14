@@ -2,10 +2,12 @@ import asyncio
 import os
 from typing import Any
 
+import asyncpg  # type: ignore[import-untyped]
+
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
-from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
 
 
@@ -14,6 +16,52 @@ def core_probe() -> dict[str, str]:
     """Infrastructure probe; business tasks are added by execution tickets."""
 
     return {"status": "ok", "queue": "core"}
+
+
+# Mirrors the EXPIRE rules in treasurypilot_api.invoices.state_machine (checked by a test);
+# the worker cannot import the API package, so the sweep stays in SQL.
+EXPIRABLE_REQUEST_STATUSES = ["Approved", "Scheduled", "AwaitingAuthority", "NeedsReview"]
+
+
+async def _expire_invoice_approvals(database_url: str) -> int:
+    conn = await asyncpg.connect(_asyncpg_database_url(database_url))
+    try:
+        async with conn.transaction():
+            # Only expire signatures of requests the sweep may expire; Paying/Paid keep theirs.
+            await conn.execute(
+                "UPDATE approvals a SET status = 'Expired' FROM payment_requests r "
+                "WHERE a.request_id = r.id AND a.status = 'Valid' AND a.expires_at <= now() "
+                "AND r.status = ANY($1::text[])",
+                EXPIRABLE_REQUEST_STATUSES,
+            )
+            rows = await conn.fetch(
+                "WITH expired AS (SELECT r.id, r.status AS previous_status "
+                "FROM payment_requests r WHERE r.status = ANY($1::text[]) "
+                "AND EXISTS (SELECT 1 FROM approvals a WHERE a.request_id = r.id "
+                "AND a.revision = r.current_revision AND a.status = 'Expired') "
+                "AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.request_id = r.id "
+                "AND a.revision = r.current_revision AND a.status = 'Valid') "
+                "FOR UPDATE OF r), changed AS (UPDATE payment_requests r SET status = 'Expired', "
+                "version = r.version + 1, updated_at = now() "
+                "FROM expired e WHERE r.id = e.id RETURNING r.id, e.previous_status) "
+                'INSERT INTO request_status_events (id, request_id, "from", "to", '
+                "actor_type, actor_id, reason) "
+                "SELECT gen_random_uuid(), id, previous_status, 'Expired', 'SYSTEM', NULL, "
+                "'approval expired' FROM changed RETURNING request_id",
+                EXPIRABLE_REQUEST_STATUSES,
+            )
+            return len(rows)
+    finally:
+        await conn.close()
+
+
+@app.task(name="treasurypilot.invoices.expire_approvals", queue="core")
+def expire_invoice_approvals() -> dict[str, int]:
+    """Expire approval signatures and their still-payable requests atomically."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for invoice expiry")
+    return {"requests_expired": asyncio.run(_expire_invoice_approvals(database_url))}
 
 
 @app.task(name="treasurypilot.system.ai_probe", queue="ai")
