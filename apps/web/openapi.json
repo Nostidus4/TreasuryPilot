@@ -19,6 +19,11 @@
       },
       "ApproveRequest": {
         "properties": {
+          "expiry": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expiry",
+            "type": "integer"
+          },
           "revision": {
             "exclusiveMinimum": 0.0,
             "title": "Revision",
@@ -31,7 +36,7 @@
             "type": "string"
           }
         },
-        "required": ["signature", "revision"],
+        "required": ["signature", "revision", "expiry"],
         "title": "ApproveRequest",
         "type": "object"
       },

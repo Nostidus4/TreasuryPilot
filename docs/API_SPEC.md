@@ -108,7 +108,7 @@
 | POST | `/orgs/{o}/requests/{rId}/submit` | Draft → AwaitingApproval | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT`, `TERMS_UNCONFIRMED` |
 | POST | `/orgs/{o}/requests/{rId}/flags/{fId}/ack` | Acknowledge a flag | APR | `{note}` → `{flag}` | |
 | GET | `/orgs/{o}/requests/{rId}/approval-typed-data` | EIP-712 `PaymentApproval` to sign | APR | → `{domain, types, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED` |
-| POST | `/orgs/{o}/requests/{rId}/approve` 🔁 | Submit the approval signature | APR | `{signature}` → `{request: Approved}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, 409 `MAKER_CHECKER`, `REVISION_CHANGED` |
+| POST | `/orgs/{o}/requests/{rId}/approve` 🔁 | Submit the approval signature | APR | `{signature, revision, expiry}` (`expiry` = `message.expiry` that was signed; `revision` = `X-Request-Revision` of the typed-data response) → `{request: Approved}` | 400 `SIGNATURE_INVALID`, `APPROVAL_EXPIRY_INVALID`, 403 `NOT_IN_APPROVER_SET`, 409 `MAKER_CHECKER`, `REVISION_CHANGED` |
 | POST | `/orgs/{o}/requests/{rId}/reject` | Reject | APR | `{reason}` → `{request: Rejected}` | |
 | POST | `/orgs/{o}/requests/{rId}/cancel` | Cancel | OPR, OWN | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/orgs/{o}/requests/{rId}/cancel-tx` | On-chain `cancelRequest` tx (approver wallet or Safe tx) | APR, OWN | → `{to, data}` / `{safeTx}` | 409 `CANCEL_NOT_NEEDED` |

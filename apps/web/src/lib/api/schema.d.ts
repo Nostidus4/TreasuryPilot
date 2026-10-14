@@ -481,6 +481,8 @@ export interface components {
     };
     /** ApproveRequest */
     ApproveRequest: {
+      /** Expiry */
+      expiry: number;
       /** Revision */
       revision: number;
       /** Signature */

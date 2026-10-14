@@ -10,6 +10,10 @@ from treasurypilot_core.policy.context import RequestView
 _MAX_DEADLINE_GRACE_SECONDS = 14 * 24 * 60 * 60
 
 
+class ApprovalExpiryError(ValueError):
+    """The client-pinned approval expiry is outside the allowed window."""
+
+
 class ApprovalChainReader(Protocol):
     """Read current module approval state and ERC-1271 signatures from the chain."""
 
@@ -28,12 +32,15 @@ def build_approval_typed_data(
     now: int,
     approval_max_age: int,
     asset: str,
+    expiry: int | None = None,
 ) -> dict[str, object]:
     """Build exactly the contract's 13-field PaymentApproval for a current request.
 
     ``request_id`` must be the stable on-chain ID, not the database UUID. Early
     payment fields are already normalized and bound to the confirmed request
-    terms by the invoice request service.
+    terms by the invoice request service. ``expiry`` pins the signed expiry to the
+    value issued by the typed-data endpoint; it must be in ``(now, cap]`` where
+    ``cap = min(deadline + 14d, now + approval_max_age)``. Without it the cap is used.
     """
     if request.status != "AwaitingApproval":
         raise ValueError("request must be AwaitingApproval")
@@ -46,9 +53,13 @@ def build_approval_typed_data(
     if request.deadline <= 0:
         raise ValueError("request deadline must be positive")
 
-    expiry = min(request.deadline + _MAX_DEADLINE_GRACE_SECONDS, now + approval_max_age)
-    if expiry <= now:
+    cap = min(request.deadline + _MAX_DEADLINE_GRACE_SECONDS, now + approval_max_age)
+    if cap <= now:
         raise ValueError("request deadline has passed")
+    if expiry is None:
+        expiry = cap
+    elif isinstance(expiry, bool) or not now < expiry <= cap:
+        raise ApprovalExpiryError("expiry is outside the allowed approval window")
 
     message = {
         "requestId": "0x" + request.request_id.hex(),

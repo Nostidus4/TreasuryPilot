@@ -23,7 +23,11 @@ from treasurypilot_api.invoices.anomalies import (
     PaidInvoice,
     evaluate_anomalies,
 )
-from treasurypilot_api.invoices.approval import ApprovalChainReader, build_approval_typed_data
+from treasurypilot_api.invoices.approval import (
+    ApprovalChainReader,
+    ApprovalExpiryError,
+    build_approval_typed_data,
+)
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
     assert_no_active_duplicate,
@@ -45,7 +49,7 @@ from treasurypilot_api.invoices.models import (
 )
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
 from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus, Payee, Vendor
-from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet, WalletRole
+from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.eip712 import digest as eip712_digest
 from treasurypilot_core.eip712 import verify_signature
@@ -54,6 +58,7 @@ from treasurypilot_core.fingerprint import fingerprint, normalize
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy.context import RequestView
 
+_APPROVAL_MAX_AGE_RANGE = (86_400, 60 * 86_400)  # mandate bounds: 1-60 days
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
 _require_approver = require_role(OrganizationRole.APPROVER)
@@ -106,6 +111,8 @@ class FlagAcknowledgment(ApiModel):
 class ApproveRequest(ApiModel):
     signature: str = Field(min_length=2, max_length=8192)
     revision: int = Field(gt=0)
+    # The expiry from the typed data the approver signed; the server cannot re-derive it.
+    expiry: int = Field(gt=0)
 
 
 _TERMS_KEYS = {
@@ -1253,22 +1260,17 @@ def _approval_chain(request: Request) -> ApprovalChainReader:
 
 
 def _approval_signature(raw: str) -> bytes:
-    value = raw.removeprefix("0x")
-    if not value or len(value) % 2:
-        raise _fail(400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature.")
     try:
-        signature = bytes.fromhex(value)
+        signature = bytes.fromhex(raw.removeprefix("0x"))
     except ValueError:
-        raise _fail(
-            400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature."
-        ) from None
+        signature = b""
     if not signature:
         raise _fail(400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature.")
     return signature
 
 
 async def _approval_typed_data(
-    session: AsyncSession, row: PaymentRequest
+    session: AsyncSession, row: PaymentRequest, expiry: int | None = None
 ) -> tuple[dict[str, object], int, int]:
     treasury = await session.scalar(select(Treasury).where(Treasury.id == row.treasury_id))
     asset = await session.scalar(select(Asset).where(Asset.id == row.asset_id))
@@ -1300,18 +1302,23 @@ async def _approval_typed_data(
             "The request is missing signed fields.",
         )
 
-    wallet_query = select(TreasuryWallet).where(TreasuryWallet.treasury_id == row.treasury_id)
-    if row.paying_wallet_id is not None:
-        wallet_query = wallet_query.where(TreasuryWallet.id == row.paying_wallet_id)
-    else:
-        wallet_query = wallet_query.where(TreasuryWallet.role == WalletRole.OPERATIONAL.value)
-    wallet = await session.scalar(wallet_query.order_by(TreasuryWallet.id).limit(1))
+    # The signed payingWallet must be the requester's explicit choice, never a server default.
+    wallet = (
+        await session.scalar(
+            select(TreasuryWallet).where(
+                TreasuryWallet.treasury_id == row.treasury_id,
+                TreasuryWallet.id == row.paying_wallet_id,
+            )
+        )
+        if row.paying_wallet_id is not None
+        else None
+    )
     if wallet is None:
         raise _fail(
             409,
             "PAYING_WALLET_UNKNOWN",
             "Paying wallet invalid",
-            "Select an operational paying wallet.",
+            "Select an operational paying wallet on the request.",
         )
 
     mandate = await session.scalar(
@@ -1333,7 +1340,11 @@ async def _approval_typed_data(
     approval_max_age_value = mandate.config.get(
         "approvalMaxAge", mandate.config.get("approval_max_age", 14 * 86_400)
     )
-    if isinstance(approval_max_age_value, bool) or not isinstance(approval_max_age_value, int):
+    if (
+        isinstance(approval_max_age_value, bool)
+        or not isinstance(approval_max_age_value, int)
+        or not _APPROVAL_MAX_AGE_RANGE[0] <= approval_max_age_value <= _APPROVAL_MAX_AGE_RANGE[1]
+    ):
         raise _fail(
             409,
             "APPROVAL_UNAVAILABLE",
@@ -1344,6 +1355,7 @@ async def _approval_typed_data(
     early_amount, early_pay_by = 0, 0
     if confirmed_payment_terms(row) is not None:
         _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
+    # End of the due day UTC, matching the 23:59:59 UTC earlyPayBy convention (invoices README).
     deadline = int(datetime.combine(row.due_at, datetime.max.time(), tzinfo=UTC).timestamp())
     view = RequestView.model_validate(
         {
@@ -1369,11 +1381,42 @@ async def _approval_typed_data(
             now=now,
             approval_max_age=approval_max_age,
             asset="0x" + asset.address.hex(),
+            expiry=expiry,
         )
+    except ApprovalExpiryError as error:
+        raise _fail(
+            400,
+            "APPROVAL_EXPIRY_INVALID",
+            "Approval expiry invalid",
+            "Request fresh typed data and sign it before it expires.",
+        ) from error
     except ValueError as error:
-        raise _fail(409, "APPROVAL_UNAVAILABLE", "Approval unavailable", str(error)) from error
-    expiry = cast(int, cast(dict[str, object], typed["message"])["expiry"])
-    return typed, expiry, row.chain_id
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The request cannot be approved in its current state.",
+        ) from error
+    signed_expiry = cast(int, cast(dict[str, object], typed["message"])["expiry"])
+    return typed, signed_expiry, row.chain_id
+
+
+async def _enforce_maker_checker(
+    session: AsyncSession, organization_id: uuid.UUID, member: MemberContext, row: PaymentRequest
+) -> bool:
+    """Reject makers unless the org is in solo mode; return the org's solo-mode flag."""
+    organization = await session.scalar(
+        select(Organization).where(Organization.id == organization_id)
+    )
+    solo_mode = bool(organization and organization.solo_mode)
+    if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
+        raise _fail(
+            409,
+            "MAKER_CHECKER",
+            "Maker cannot approve request",
+            "The creator or last editor cannot approve this request.",
+        )
+    return solo_mode
 
 
 def _approval_view(row: PaymentApproval) -> dict[str, object]:
@@ -1395,6 +1438,7 @@ async def get_approval_typed_data(
     organization_id: uuid.UUID,
     request_id: uuid.UUID,
     request: Request,
+    response: Response,
     member: MemberContext = Depends(_require_approver),  # noqa: B008
 ) -> dict[str, object]:
     async with _sessions(request)() as session:
@@ -1424,8 +1468,11 @@ async def get_approval_typed_data(
                 "Wallet not linked",
                 "Link an EVM wallet before approving a payment request.",
             )
+        await _enforce_maker_checker(session, organization_id, member, row)
         await assert_high_flags_acknowledged(session, row)
         typed, _expiry, _chain_id = await _approval_typed_data(session, row)
+        # The POST must echo this revision and the signed message.expiry.
+        response.headers["X-Request-Revision"] = str(row.current_revision)
         return typed
 
 
@@ -1449,6 +1496,7 @@ async def approve_request(
             "Provide an Idempotency-Key.",
         )
     signature = _approval_signature(payload.signature)
+    chain_reader = _approval_chain(request)
     key_hash = keccak(idempotency_key.encode("utf-8"))
     factory = _sessions(request)
     result: dict[str, object]
@@ -1520,27 +1568,17 @@ async def approve_request(
                     "Wallet not linked",
                     "Link an EVM wallet before approving a payment request.",
                 )
-            organization = await session.scalar(
-                select(Organization).where(Organization.id == organization_id)
-            )
-            solo_mode = bool(organization and organization.solo_mode)
-            if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
-                raise _fail(
-                    409,
-                    "MAKER_CHECKER",
-                    "Maker cannot approve request",
-                    "The creator or last editor cannot approve this request.",
-                )
+            solo_mode = await _enforce_maker_checker(session, organization_id, member, row)
             await assert_high_flags_acknowledged(session, row)
-            typed, expiry, chain_id = await _approval_typed_data(session, row)
+            typed, expiry, chain_id = await _approval_typed_data(session, row, payload.expiry)
             module_address = cast(
                 str, cast(dict[str, object], typed["domain"])["verifyingContract"]
             )
-            chain_reader = _approval_chain(request)
             signer_address: str | None = None
             signer_wallet: WalletLink | None = None
             approval_digest = eip712_digest(typed)
-            for wallet in linked_wallets:
+            # EOA wallets first: they need no RPC, so a failing ERC-1271 call cannot mask them.
+            for wallet in sorted(linked_wallets, key=lambda item: item.is_contract):
                 address = "0x" + wallet.address.hex()
                 if wallet.is_contract:
                     try:
@@ -1635,6 +1673,16 @@ async def approve_request(
             }
             version = row.version
     except IntegrityError as error:
+        constraint_name = getattr(
+            getattr(error.orig, "diag", None),
+            "constraint_name",
+            getattr(error.orig, "constraint_name", None),
+        )
+        if constraint_name not in {
+            "uq_approvals_request_revision_address",
+            "uq_approvals_request_idempotency_key",
+        }:
+            raise
         raise _fail(
             409,
             "APPROVAL_EXISTS",
