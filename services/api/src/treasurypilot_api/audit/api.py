@@ -289,13 +289,24 @@ async def get_request_evidence(
             request_id=request_id,
         )
     except EvidenceNotFound:
-        raise organization_not_found() from None
+        raise AuthFailure(
+            status=404,
+            code="REQUEST_NOT_FOUND",
+            title="Request not found",
+            detail="The request does not exist or is not available in this organization.",
+        ) from None
     except EvidenceForbidden:
-        raise _forbidden() from None
+        raise AuthFailure(
+            status=403,
+            code="FORBIDDEN",
+            title="Forbidden",
+            detail="An organization role with access to financial evidence is required.",
+        ) from None
     except EvidenceBundleInvalid as exc:
         raise AuthFailure(
             status=409,
             code="EVIDENCE_INVALID",
             title="Evidence bundle is invalid",
-            detail="At least one transaction hash did not resolve; the bundle was withheld.",
+            detail="The bundle failed an integrity check (e.g. an unresolved transaction hash); "
+            "it was withheld.",
         ) from exc

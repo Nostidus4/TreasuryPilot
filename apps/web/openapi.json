@@ -1006,6 +1006,7 @@
           "blockNumber": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1015,6 +1016,7 @@
             "title": "Blocknumber"
           },
           "chainId": {
+            "minimum": 1.0,
             "title": "Chainid",
             "type": "integer"
           },

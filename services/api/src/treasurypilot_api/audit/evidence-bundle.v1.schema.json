@@ -34,7 +34,7 @@
       "properties": {
         "id": {"type": "string", "format": "uuid"},
         "vendorDisplayName": {"type": ["string", "null"]},
-        "amount": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$"},
+        "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
         "currency": {"type": "string"},
         "fingerprint": {"type": ["string", "null"]},
         "invoiceHash": {"type": ["string", "null"]}
@@ -77,7 +77,7 @@
     "transaction": {
       "type": "object", "additionalProperties": false,
       "required": ["txHash", "chainId"],
-      "properties": {"txHash": {"type": "string", "pattern": "^0x[0-9a-f]{64}$"}, "chainId": {"type": "integer", "minimum": 1}, "blockNumber": {"type": ["integer", "null"], "minimum": 0}, "feeBaseUnits": {"type": ["string", "null"], "pattern": "^-?(0|[1-9][0-9]*)$"}}
+      "properties": {"txHash": {"type": "string", "pattern": "^0x[0-9a-f]{64}$"}, "chainId": {"type": "integer", "minimum": 1}, "blockNumber": {"type": ["integer", "null"], "minimum": 0}, "feeBaseUnits": {"type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$"}}
     },
     "verification": {
       "type": "object", "additionalProperties": false,

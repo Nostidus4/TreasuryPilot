@@ -7,11 +7,12 @@ the API fails closed when no repository is configured.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
@@ -20,20 +21,13 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from treasurypilot_api.identity.api import ApiModel
 
 _HEX32 = re.compile(r"^0x[0-9a-fA-F]{64}$")
-_FORBIDDEN_KEYS = frozenset(
-    {
-        "email",
-        "phone",
-        "telephone",
-        "contact",
-        "contact_name",
-        "contact_email",
-        "raw_signature",
-        "signature",
-        "signature_bytes",
-        "sig",
-    }
-)
+_SIGNATURE_HASH = re.compile(r"^(0x)?[0-9a-fA-F]{64}$")
+_BASE_UNITS = re.compile(r"0|[1-9][0-9]*")
+# Keys are compared with "_"/"-" stripped and casefolded; "signaturehash" is the one
+# permitted signature field and its value is format-checked on the models.
+_FORBIDDEN_KEY_PARTS = ("email", "phone", "contact", "signature")
+_FORBIDDEN_EXACT_KEYS = frozenset({"sig"})
+_ALLOWED_KEYS = frozenset({"signaturehash"})
 
 
 class StrictModel(ApiModel):
@@ -51,15 +45,29 @@ class BundleRequest(StrictModel):
     @field_validator("amount")
     @classmethod
     def integer_base_units(cls, value: str) -> str:
-        if not re.fullmatch(r"-?(0|[1-9][0-9]*)", value):
+        if not _BASE_UNITS.fullmatch(value):
             raise ValueError("amount must be an integer base-unit string")
         return value
+
+
+def _signature_hash(value: str | None) -> str | None:
+    """Only a 32-byte digest may stand in for a signature; raw signatures are longer."""
+    if value is None:
+        return None
+    if not _SIGNATURE_HASH.fullmatch(value):
+        raise ValueError("signature_hash must be a 32-byte hex digest")
+    return value.lower()
 
 
 class ApprovalEvidence(StrictModel):
     typed_data: dict[str, Any] | None = None
     signer_address: str | None = None
     signature_hash: str | None = None
+
+    @field_validator("signature_hash")
+    @classmethod
+    def hash_only(cls, value: str | None) -> str | None:
+        return _signature_hash(value)
 
 
 class FlagEvidence(StrictModel):
@@ -99,19 +107,35 @@ class AttestationEvidence(StrictModel):
     signer_address: str | None = None
     signature_hash: str | None = None
 
+    @field_validator("signature_hash")
+    @classmethod
+    def hash_only(cls, value: str | None) -> str | None:
+        return _signature_hash(value)
+
+
+def _tx_hash(value: str) -> str:
+    if not _HEX32.fullmatch(value):
+        raise ValueError("transaction hash must be 32-byte hex")
+    return value.lower()
+
 
 class TransactionEvidence(StrictModel):
     tx_hash: str
-    chain_id: int
-    block_number: int | None = None
+    chain_id: int = Field(ge=1)
+    block_number: int | None = Field(default=None, ge=0)
     fee_base_units: str | None = None
 
     @field_validator("tx_hash")
     @classmethod
     def valid_hash(cls, value: str) -> str:
-        if not _HEX32.fullmatch(value):
-            raise ValueError("transaction hash must be 32-byte hex")
-        return value.lower()
+        return _tx_hash(value)
+
+    @field_validator("fee_base_units")
+    @classmethod
+    def integer_fee(cls, value: str | None) -> str | None:
+        if value is not None and not _BASE_UNITS.fullmatch(value):
+            raise ValueError("fee_base_units must be a non-negative integer string")
+        return value
 
 
 class VerificationEvidence(StrictModel):
@@ -119,6 +143,11 @@ class VerificationEvidence(StrictModel):
     status: str
     checked_at: datetime
     details: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("tx_hash")
+    @classmethod
+    def valid_hash(cls, value: str) -> str:
+        return _tx_hash(value)
 
 
 class EvidenceBundle(StrictModel):
@@ -147,6 +176,10 @@ class EvidenceBundle(StrictModel):
     def valid_tx_section(self) -> EvidenceBundle:
         if self.transactions == []:
             raise ValueError("transactions must be omitted when there are no transactions")
+        resolved = {tx.tx_hash for tx in self.transactions or []}
+        for verification in self.verifications:
+            if verification.tx_hash not in resolved:
+                raise ValueError(f"verification {verification.tx_hash} has no matching transaction")
         return self
 
 
@@ -159,10 +192,12 @@ class EvidenceForbidden(Exception):
 
 
 class EvidenceBundleInvalid(Exception):
-    """One or more transaction hashes did not resolve; the bundle is withheld."""
+    """The bundle failed an integrity check (e.g. unresolved tx hash); it is withheld."""
 
 
 class EvidenceRepository(Protocol):
+    """Implementations must produce bundles via ``build_evidence_bundle`` (privacy, tx, seal)."""
+
     async def export_request(
         self, *, organization_id: uuid.UUID, request_id: uuid.UUID
     ) -> EvidenceBundle: ...
@@ -171,8 +206,11 @@ class EvidenceRepository(Protocol):
 def _reject_sensitive_keys(value: Any, path: str = "bundle") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
-            normalized = re.sub(r"(?<!^)(?=[A-Z])", "_", str(key)).replace("-", "_").casefold()
-            if normalized in _FORBIDDEN_KEYS:
+            normalized = re.sub(r"[_-]", "", str(key)).casefold()
+            if normalized not in _ALLOWED_KEYS and (
+                normalized in _FORBIDDEN_EXACT_KEYS
+                or any(part in normalized for part in _FORBIDDEN_KEY_PARTS)
+            ):
                 raise ValueError(f"sensitive field is not allowed at {path}.{key}")
             _reject_sensitive_keys(child, f"{path}.{key}")
     elif isinstance(value, list | tuple):
@@ -185,25 +223,29 @@ async def build_evidence_bundle(
     organization_id: uuid.UUID,
     request_id: uuid.UUID,
     source: Mapping[str, Any],
-    transaction_resolves: Any,
+    transaction_resolves: Callable[[TransactionEvidence], Awaitable[bool]],
 ) -> EvidenceBundle:
     """Validate, privacy-check, resolve chain references, and seal one bundle."""
-    from collections.abc import Awaitable, Callable
-
-    resolver: Callable[[TransactionEvidence], Awaitable[bool]] = transaction_resolves
     payload = dict(source)
     payload["organization_id"] = organization_id
     payload.setdefault("schema_version", "evidence-bundle.v1")
     payload.setdefault("generated_at", datetime.now(UTC))
-    payload.setdefault("request", {"id": request_id})
-    payload["request"]["id"] = request_id
+    request = dict(payload.get("request") or {})
+    if request.setdefault("id", request_id) != request_id:
+        raise EvidenceBundleInvalid("bundle request id does not match the requested id")
+    payload["request"] = request
     if payload.get("transactions") == []:
         payload.pop("transactions")
     _reject_sensitive_keys(payload)
     bundle = EvidenceBundle.model_validate(payload)
-    for tx in bundle.transactions or []:
-        if not await resolver(tx):
-            raise EvidenceBundleInvalid(f"transaction hash {tx.tx_hash} did not resolve")
+    transactions = bundle.transactions or []
+    results = await asyncio.gather(
+        *(transaction_resolves(tx) for tx in transactions), return_exceptions=True
+    )
+    for tx, resolved in zip(transactions, results, strict=True):
+        if resolved is not True:
+            cause = resolved if isinstance(resolved, BaseException) else None
+            raise EvidenceBundleInvalid(f"transaction hash {tx.tx_hash} did not resolve") from cause
     unsigned = bundle.model_dump(mode="json", by_alias=True, exclude={"sha256"}, exclude_none=True)
     digest = hashlib.sha256(
         json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()

@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from treasurypilot_api.audit.evidence import (
+    ApprovalEvidence,
+    AttestationEvidence,
+    EvidenceBundle,
     EvidenceBundleInvalid,
     build_evidence_bundle,
 )
@@ -95,7 +98,21 @@ def test_unresolved_transaction_withholds_bundle() -> None:
         asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("sensitive", ["email", "phone", "contact_name", "signature"])
+@pytest.mark.parametrize(
+    "sensitive",
+    [
+        "email",
+        "phone",
+        "contact_name",
+        "signature",
+        "emailAddress",
+        "phoneNumber",
+        "contactPhone",
+        "EMAIL",
+        "PHONE",
+        "SIG",
+    ],
+)
 def test_sensitive_fields_are_rejected(sensitive: str) -> None:
     request_id, organization_id = uuid.uuid4(), uuid.uuid4()
 
@@ -118,6 +135,133 @@ def test_schema_is_valid_json_and_fixes_bundle_version() -> None:
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["properties"]["schemaVersion"]["const"] == "evidence-bundle.v1"
     assert "transactions" not in schema["required"]
+
+
+@pytest.mark.parametrize("model", [ApprovalEvidence, AttestationEvidence])
+@pytest.mark.parametrize("value", ["0x" + "ab" * 65, "raw", "0x" + "g" * 64, ""])
+def test_raw_signatures_are_rejected_as_signature_hash(model: type, value: str) -> None:
+    with pytest.raises(ValueError, match="32-byte hex digest"):
+        model(signature_hash=value)
+
+
+def test_signature_hash_is_normalized_to_lowercase() -> None:
+    assert ApprovalEvidence(signature_hash="0x" + "AB" * 32).signature_hash == "0x" + "ab" * 32
+
+
+def _build(request_id: uuid.UUID, source: dict[str, object], ok: bool = True) -> EvidenceBundle:
+    return asyncio.run(
+        build_evidence_bundle(
+            organization_id=uuid.uuid4(),
+            request_id=request_id,
+            source=source,
+            transaction_resolves=lambda _tx: _resolved(ok),
+        )
+    )
+
+
+def test_request_id_mismatch_is_rejected_and_source_is_not_mutated() -> None:
+    request_id = uuid.uuid4()
+    source = _source(request_id)
+    snapshot = json.dumps(source, default=str)
+    _build(request_id, source)
+    assert json.dumps(source, default=str) == snapshot
+    with pytest.raises(EvidenceBundleInvalid, match="request id"):
+        _build(uuid.uuid4(), source)
+
+
+def test_resolver_failure_withholds_bundle() -> None:
+    request_id = uuid.uuid4()
+
+    async def boom(_tx: object) -> bool:
+        raise RuntimeError("rpc down")
+
+    with pytest.raises(EvidenceBundleInvalid):
+        asyncio.run(
+            build_evidence_bundle(
+                organization_id=uuid.uuid4(),
+                request_id=request_id,
+                source=_source(
+                    request_id, transactions=[{"tx_hash": "0x" + "c" * 64, "chain_id": 1}]
+                ),
+                transaction_resolves=boom,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "tx",
+    [
+        {"tx_hash": "0x" + "c" * 64, "chain_id": 0},
+        {"tx_hash": "0x" + "c" * 64, "chain_id": 1, "block_number": -1},
+        {"tx_hash": "0x" + "c" * 64, "chain_id": 1, "fee_base_units": "-1"},
+        {"tx_hash": "0x" + "c" * 64, "chain_id": 1, "fee_base_units": "abc"},
+    ],
+)
+def test_transaction_fields_match_schema(tx: dict[str, object]) -> None:
+    request_id = uuid.uuid4()
+    with pytest.raises(ValueError):
+        _build(request_id, _source(request_id, transactions=[tx]))
+
+
+def test_negative_amount_is_rejected() -> None:
+    request_id = uuid.uuid4()
+    source = _source(request_id)
+    source["request"] = {"id": request_id, "amount": "-5", "currency": "USDC"}
+    with pytest.raises(ValueError):
+        _build(request_id, source)
+
+
+def test_verifications_are_normalized_and_tied_to_transactions() -> None:
+    request_id = uuid.uuid4()
+    tx_hash = "0x" + "c" * 64
+    verification = {
+        "tx_hash": tx_hash.upper().replace("0X", "0x"),
+        "status": "OK",
+        "checked_at": datetime.now(UTC),
+    }
+    bundle = _build(
+        request_id,
+        _source(
+            request_id,
+            transactions=[{"tx_hash": tx_hash, "chain_id": 1}],
+            verifications=[verification],
+        ),
+    )
+    assert bundle.verifications[0].tx_hash == tx_hash
+    with pytest.raises(ValueError, match="no matching transaction"):
+        _build(request_id, _source(request_id, verifications=[verification]))
+
+
+def test_schema_properties_match_model_fields() -> None:
+    schema = json.loads(_SCHEMA.read_text())
+
+    def aliases(model: type) -> set[str]:
+        return {f.alias or n for n, f in model.model_fields.items()}  # type: ignore[attr-defined]
+
+    assert set(schema["properties"]) == aliases(EvidenceBundle)
+    defs = schema["$defs"]
+    for name, field in (
+        ("approval", "approval"),
+        ("request", "request"),
+        ("plan", "plan"),
+        ("transaction", "transactions"),
+        ("verification", "verifications"),
+        ("flag", "flags"),
+        ("validation", "validations"),
+        ("aiCall", "ai_calls"),
+    ):
+        annotation = EvidenceBundle.model_fields[field].annotation
+        model = next(a for a in _models(annotation))
+        assert set(defs[name]["properties"]) == aliases(model), name
+
+
+def _models(annotation: object) -> list[type]:
+    from typing import get_args
+
+    found = [a for a in get_args(annotation) if hasattr(a, "model_fields")]
+    for a in get_args(annotation):
+        found += _models(a)
+    return found or ([annotation] if hasattr(annotation, "model_fields") else [])
 
 
 async def _resolved(value: bool) -> bool:
