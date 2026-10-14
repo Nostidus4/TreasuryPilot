@@ -95,14 +95,18 @@ def _step(action: Action) -> PlanStep:
 
 
 class FakeNode:
-    def __init__(self, *, error: dict[str, Any] | None = None, down: bool = False) -> None:
-        self.error, self.down = error, down
+    def __init__(
+        self, *, error: dict[str, Any] | None = None, down: bool = False, code: str = "0x00"
+    ) -> None:
+        self.error, self.down, self.code = error, down, code
         self.requests: list[tuple[str, Any]] = []
 
     async def make_request(self, method: str, params: Any) -> dict[str, Any]:
         self.requests.append((method, params))
         if self.down:
             raise ConnectionError("refused")
+        if method == "eth_getCode":
+            return {"jsonrpc": "2.0", "id": 1, "result": self.code}
         return {
             "jsonrpc": "2.0",
             "id": 1,
@@ -150,7 +154,7 @@ def test_a_clean_call_is_allowed_and_runs_from_the_executor_at_latest() -> None:
         "SIMULATION",
         1,
     )
-    (method, (call, block)) = node.requests[0]
+    (method, (call, block)) = node.requests[1]
     assert (method, block, call["from"], call["to"]) == ("eth_call", "latest", EXECUTOR, TARGET)
     assert call["data"] == "0x" + build_calldata(_step(Action.REFILL), CTX).hex()
 
@@ -171,6 +175,27 @@ def test_an_unknown_or_empty_revert_is_still_simulation_reverted() -> None:
     ):
         decision = asyncio.run(simulate(_client(FakeNode(error=error)), _step(Action.PAY), CTX))
         assert (decision.decision, decision.codes) == ("BLOCK", [C.SIMULATION_REVERTED])
+
+
+def test_a_revert_on_the_first_provider_is_not_failed_over_into_allow() -> None:
+    reverting = FakeNode(error={"code": 3, "message": "execution reverted", "data": NOT_APPROVER})
+    succeeding = FakeNode()
+    client = RpcClient([RpcProvider("a", reverting), RpcProvider("b", succeeding)])
+    decision = asyncio.run(simulate(client, _step(Action.PAY), CTX))
+    assert decision.decision == "BLOCK"
+    assert C.SIMULATION_REVERTED in decision.codes
+    assert "eth_call" not in [m for m, _ in succeeding.requests]
+
+
+def test_non_hex_revert_data_blocks_instead_of_crashing() -> None:
+    node = FakeNode(error={"code": 3, "message": "execution reverted", "data": "0xzz"})
+    decision = asyncio.run(simulate(_client(node), _step(Action.PAY), CTX))
+    assert (decision.decision, decision.codes) == ("BLOCK", [C.SIMULATION_REVERTED])
+
+
+def test_a_target_without_code_blocks_as_unavailable() -> None:
+    decision = asyncio.run(simulate(_client(FakeNode(code="0x")), _step(Action.PAY), CTX))
+    assert (decision.decision, decision.codes) == ("BLOCK", [C.SIMULATION_UNAVAILABLE])
 
 
 def test_an_unreachable_rpc_blocks_as_simulation_unavailable() -> None:

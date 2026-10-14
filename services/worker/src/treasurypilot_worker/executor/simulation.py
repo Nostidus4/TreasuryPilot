@@ -90,7 +90,10 @@ def _revert_data(error: RpcResponseError) -> bytes | None:
     """Revert data when the node reports a revert; None for any other JSON-RPC error."""
 
     if isinstance(error.data, str):
-        return bytes.fromhex(error.data.removeprefix("0x"))
+        try:
+            return bytes.fromhex(error.data.removeprefix("0x"))
+        except ValueError:
+            return b""  # a revert whose data the node mangled is still a revert
     return b"" if "revert" in str(error).lower() else None
 
 
@@ -101,7 +104,15 @@ async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> De
     codes: tuple[PolicyReasonCode, ...] = ()
     observed = None
     try:
-        await rpc.call("eth_call", [call, "latest"])
+        # An eth_call to an address without code succeeds with 0x, which must not read as ALLOW.
+        if await rpc.call("eth_getCode", [ctx.target, "latest"]) in (None, "", "0x"):
+            raise RpcError("no code at target")
+        # A revert is authoritative: another provider must not turn it into ALLOW.
+        await rpc.call(
+            "eth_call",
+            [call, "latest"],
+            is_final=lambda error: _revert_data(error) is not None,
+        )
     except RpcResponseError as error:
         revert = _revert_data(error)
         if revert is None:
