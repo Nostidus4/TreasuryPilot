@@ -208,5 +208,8 @@ class ValidationContext(FrozenModel):
     circuit_open: bool
     screening_hit: bool
     screening_clear: bool = False
+    # A PAY remains blocked until the Travel Rule service marks it non-qualifying,
+    # self-hosted, or completed. Missing caller integration therefore fails closed.
+    travel_rule_clear: bool = False
     policy_state: PolicyState | None = None
     config: PolicyConfig = PolicyConfig()

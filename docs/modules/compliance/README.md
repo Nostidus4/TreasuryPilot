@@ -186,3 +186,27 @@ a day). This follow-up adds user-wide session and magic-link retention. Subject-
 deletion requests and holds, and a policy for financial records and immutable audit
 evidence after their storage models land, remain out of scope. CMP-L03 remains open
 until those slices are designed and implemented.
+## 16. Travel Rule exchange (CMP-L02)
+
+`travel_rule_exchanges` stores one durable case per organization and payment request. It keeps
+the currency and integer minor-unit amount, jurisdictions, destination address, provider
+reference and state; originator/beneficiary details are stored only as an AES-GCM envelope
+bound to the organization and case id. The provider receives party data only after threshold
+qualification and a durable case has been created. Data changes for an existing request fail
+closed so a completed exchange cannot be reused for different payment terms.
+
+`TP_TRAVEL_RULE_THRESHOLDS` is a JSON object of jurisdiction to currency to nonnegative integer
+minor-unit threshold, for example `{"US":{"USD":30000},"GB":{"USD":30000}}`. Values are
+deployment policy inputs; the application supplies no legal defaults and performs no FX
+conversion. The route must have a rule for both jurisdictions in the transfer currency. A
+missing jurisdiction/currency rule or missing amount valuation blocks with `DATA_MISSING`.
+The amount qualifies only when it is strictly greater than the lower of the two configured
+jurisdiction thresholds.
+
+The swappable provider interface classifies the beneficiary as VASP, self-hosted or unknown,
+starts an idempotent exchange and reads its status. Unknown classification, provider outage,
+timeout, or exchange status other than `COMPLETED` leaves the durable case held. A self-hosted
+classification is accepted only when the provider also verifies its attestation. `fixture-test`
+is TEST DATA only in `local`, `test` and `demo`; it classifies unknown addresses as unknown and
+does not auto-complete exchanges. Other environments use `UnconfiguredTravelRuleProvider`, so
+qualifying payments fail closed until a commercial adapter is configured.

@@ -18,6 +18,7 @@ from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
+from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -231,6 +232,7 @@ def create_app(
     admin_sessions: async_sessionmaker[AsyncSession] | None = None,
     screening_service: ScreeningService | None = None,
     kyb_service: KybService | None = None,
+    travel_rule_service: TravelRuleService | None = None,
     vendor_repository: VendorRepository | None = None,
     payee_repository: PayeeRepository | None = None,
     field_cipher: FieldCipher | None = None,
@@ -288,6 +290,20 @@ def create_app(
     if kyb_service is None and engine is not None:
         kyb_service = build_kyb_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if travel_rule_service is None and engine is not None:
+        try:
+            travel_rule_cipher: CoreFieldCipher | None = CoreFieldCipher(
+                FieldEncryptionKey.from_environment()
+            )
+        except EncryptionConfigurationError:
+            # Qualifying transfers fail closed if encrypted party data cannot be persisted.
+            travel_rule_cipher = None
+        travel_rule_service = build_travel_rule_service(
+            settings.environment,
+            async_sessionmaker(engine, expire_on_commit=False),
+            thresholds_json=settings.travel_rule_thresholds,
+            cipher=travel_rule_cipher,
         )
 
     if mandate_repository is None and engine is not None:
@@ -404,6 +420,7 @@ def create_app(
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
     app.state.kyb_service = kyb_service
+    app.state.travel_rule_service = travel_rule_service
     app.state.vendor_repository = vendor_repository
     app.state.payee_repository = payee_repository
     app.state.field_cipher = field_cipher
