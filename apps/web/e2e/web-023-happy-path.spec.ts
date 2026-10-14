@@ -3,7 +3,11 @@ import { expect, test, type Page } from '@playwright/test';
 const anvilRpcUrl = process.env.E2E_ANVIL_RPC_URL ?? 'http://127.0.0.1:8545';
 
 async function signIn(page: Page, email: string) {
-  await page.goto('/login');
+  // Keep the in-browser mock database alive when signing in again after a
+  // sign-out. The sign-out flow already returns to /login in the SPA.
+  if (!new URL(page.url()).pathname.endsWith('/login')) {
+    await page.goto('/login');
+  }
   await page.getByLabel('Work email').fill(email);
   await page.getByRole('button', { name: 'Send sign-in link' }).click();
   await page.getByRole('link', { name: 'Open the sign-in link' }).click();
@@ -24,7 +28,8 @@ test('create and submit a request, then approve it with the demo signer', async 
   page,
 }) => {
   await signIn(page, 'linh@northwind.test');
-  await page.goto('/o/org_northwind/requests/new');
+  await page.getByRole('link', { name: 'Requests' }).click();
+  await page.getByRole('link', { name: 'New request' }).click();
 
   await page.getByLabel('Vendor').click();
   await page.getByRole('option', { name: 'Acurast Cloud' }).click();
@@ -48,7 +53,8 @@ test('create and submit a request, then approve it with the demo signer', async 
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await signIn(page, 'an@northwind.test');
 
-  await page.goto(`/o/org_northwind/approvals/${requestId!}`);
+  await page.getByRole('link', { name: 'Approvals' }).click();
+  await page.getByRole('row', { name: `Open request E2E-WEB-023-001` }).click();
   await page
     .getByRole('button', { name: 'Connect wallet to continue' })
     .click();
@@ -61,13 +67,14 @@ test('execute a seeded plan, verify payment, and reconcile its receipt', async (
   page,
 }) => {
   await signIn(page, 'linh@northwind.test');
-  await page.goto('/o/org_northwind/t/trs_main/plans/pln_0421');
+  await page.getByRole('link', { name: 'Plans' }).click();
+  await page.getByRole('row', { name: 'Open plan pln_0421' }).click();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByText('All steps verified')).toBeVisible({
     timeout: 35_000,
   });
 
-  await page.goto('/o/org_northwind/reconciliation');
+  await page.getByRole('link', { name: 'Reconciliation' }).click();
   await page.getByRole('button', { name: 'Open payment BP-2026-219' }).click();
   await expect(page.getByText('Evidence is incomplete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as matched' }).click();
