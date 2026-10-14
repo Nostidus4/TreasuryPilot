@@ -35,6 +35,7 @@ from treasurypilot_api.invoices.models import (
     ApprovalStatus,
     PaymentApproval,
     PaymentRequest,
+    RequestDocument,
     RequestFlag,
     RequestFlagSeverity,
     RequestFlagSource,
@@ -45,6 +46,7 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
+from treasurypilot_api.invoices.near_duplicates import find_near_duplicates
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
 from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
@@ -235,17 +237,21 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         terms = confirmed_payment_terms(row)
     except ValidationError:  # stored terms no longer match the model; do not break reads
         terms = None
-    early = _early_option(terms, int(row.amount)) if terms is not None else None
+    early = (
+        _early_option(terms, int(row.amount))
+        if terms is not None and row.amount is not None
+        else None
+    )
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
         "treasuryId": str(row.treasury_id),
-        "vendorId": str(row.vendor_id),
-        "payeeId": str(row.payee_id),
+        "vendorId": str(row.vendor_id) if row.vendor_id else None,
+        "payeeId": str(row.payee_id) if row.payee_id else None,
         "invoiceNo": row.invoice_no,
-        "issueDate": row.issue_date.isoformat(),
-        "dueDate": row.due_at.isoformat(),
-        "amount": str(row.amount),
+        "issueDate": row.issue_date.isoformat() if row.issue_date else None,
+        "dueDate": row.due_at.isoformat() if row.due_at else None,
+        "amount": str(row.amount) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
@@ -274,12 +280,12 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
 def _snapshot(row: PaymentRequest) -> dict[str, object]:
     return {
         "treasuryId": str(row.treasury_id),
-        "vendorId": str(row.vendor_id),
-        "payeeId": str(row.payee_id),
+        "vendorId": str(row.vendor_id) if row.vendor_id else None,
+        "payeeId": str(row.payee_id) if row.payee_id else None,
         "invoiceNo": row.invoice_no,
-        "issueDate": row.issue_date.isoformat(),
-        "dueDate": row.due_at.isoformat(),
-        "amount": str(row.amount),
+        "issueDate": row.issue_date.isoformat() if row.issue_date else None,
+        "dueDate": row.due_at.isoformat() if row.due_at else None,
+        "amount": str(row.amount) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
@@ -400,7 +406,7 @@ async def _bound_changed(
     current = {key: getattr(row, key) for key in values if key != "due_date"}
     current["due_date"] = row.due_at
     if "amount" in current:
-        current["amount"] = int(row.amount)
+        current["amount"] = None if row.amount is None else int(row.amount)
     return any(current[key] != value for key, value in values.items())
 
 
@@ -428,7 +434,19 @@ async def _raise_if_fingerprint_race(
         raise DuplicateFingerprintConflict(existing) from error
 
 
-def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes:
+def _hashes(
+    row: PaymentRequest,
+    vendor_ref: str,
+    asset_address: bytes,
+    document_sha256: bytes = bytes(32),
+) -> bytes:
+    if row.invoice_no is None or row.amount is None or row.issue_date is None or row.due_at is None:
+        raise _fail(
+            409,
+            "EXTRACTION_UNCONFIRMED",
+            "Extraction not confirmed",
+            "Complete and confirm all invoice fields before hashing a request.",
+        )
     value = compute_fingerprint(vendor_ref, row.invoice_no, int(row.amount), asset_address)
     row.fingerprint = value
     row.invoice_hash = keccak(
@@ -441,7 +459,7 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes
                 asset_address,
                 row.issue_date.isoformat(),
                 row.due_at.isoformat(),
-                bytes(32),
+                document_sha256,
             ],
         )
     )
@@ -462,6 +480,8 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     today = datetime.now(UTC).date()
+    if row.due_at is None or row.issue_date is None:  # unconfirmed upload draft
+        return []
     # shortcut: updated_at stands in for the paid date (any later write to a Paid row shifts it),
     # and every Paid row in the window is loaded for the median; revisit when paid_at exists.
     history_rows = await session.execute(
@@ -542,16 +562,21 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
         previous_paid=previous_paid,
         today=today,
     )
+    flags = [(anomaly.code, anomaly.severity, anomaly.evidence) for anomaly in anomaly_flags]
+    for duplicate in await find_near_duplicates(session, row):
+        flags.append(
+            ("POSSIBLE_DUPLICATE", duplicate.severity, duplicate.evidence(row.invoice_no or ""))
+        )
     result: list[dict[str, object]] = []
-    for anomaly in anomaly_flags:
-        severity = RequestFlagSeverity(anomaly.severity)
+    for code, raw_severity, evidence in flags:
+        severity = RequestFlagSeverity(raw_severity)
         flag = RequestFlag(
             id=uuid7(),
             request_id=row.id,
             revision=row.current_revision,
-            code=anomaly.code,
+            code=code,
             severity=severity.value,
-            evidence=anomaly.evidence,
+            evidence=evidence,
             source=RequestFlagSource.DETERMINISTIC.value,
         )
         session.add(flag)
@@ -559,9 +584,9 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
             {
                 "id": str(flag.id),
                 "revision": row.current_revision,
-                "code": anomaly.code,
+                "code": code,
                 "severity": severity.value,
-                "evidence": anomaly.evidence,
+                "evidence": evidence,
                 "status": "Open",
             }
         )
@@ -777,6 +802,20 @@ async def edit_request(
                 if key in {"note", "tags", "cost_center"}:
                     setattr(row, key, value)
             if bound_changed:
+                if (  # unconfirmed upload draft
+                    row.vendor_id is None
+                    or row.payee_id is None
+                    or row.invoice_no is None
+                    or row.issue_date is None
+                    or row.due_at is None
+                    or row.amount is None
+                ):
+                    raise _fail(
+                        409,
+                        "EXTRACTION_UNCONFIRMED",
+                        "Extraction not confirmed",
+                        "Use the extraction confirmation endpoint to complete uploaded invoice fields.",
+                    )
                 if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
                     session=session, request_id=row.id
                 ):
@@ -825,7 +864,19 @@ async def edit_request(
                     row.terms = fields["terms"]
                 row.current_revision += 1
                 row.last_edited_by = member.user_id
-                scope = (row.treasury_id, _hashes(row, vendor.normalized_ref, asset.address or b""))
+                # Upload drafts must keep committing to the uploaded file in invoice_hash.
+                document_sha256 = await session.scalar(
+                    select(RequestDocument.sha256).where(RequestDocument.request_id == row.id)
+                )
+                scope = (
+                    row.treasury_id,
+                    _hashes(
+                        row,
+                        vendor.normalized_ref,
+                        asset.address or b"",
+                        document_sha256 or bytes(32),
+                    ),
+                )
                 row.terms_hash = None
                 row.terms_confirmed_by = None
                 row.terms_confirmed_at = None
@@ -950,6 +1001,13 @@ async def confirm_request_terms(
         if row.status != RequestStatus.DRAFT.value:
             raise _fail(
                 409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
+            )
+        if row.amount is None:
+            raise _fail(
+                409,
+                "EXTRACTION_UNCONFIRMED",
+                "Extraction not confirmed",
+                "Confirm the extracted invoice fields before confirming terms.",
             )
         stored, digest, _ = _validated_terms(payload.terms, int(row.amount))
         # Provisional terms are stored raw; compare in canonical form so an equivalent
