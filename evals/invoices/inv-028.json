@@ -1,0 +1,18 @@
+{
+  "id": "inv-028",
+  "vendor_name": "SYNTH Vendor 028 Ltd",
+  "invoice_no": "TEST-INV-0028",
+  "issue_date": "2026-10-01",
+  "amount": "800000000",
+  "currency": "USDC",
+  "decimals": 6,
+  "payee_address": "0x1111111111111111111111111111111111111111",
+  "due_date": "2026-10-13",
+  "terms": null,
+  "expected_flags": [
+    "DUE_DATE_PAST"
+  ],
+  "layout": "clean",
+  "language": "en",
+  "notes": "Synthetic evaluation fixture; no real company or payment authority."
+}

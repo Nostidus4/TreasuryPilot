@@ -35,10 +35,11 @@ OWNER_SETS_DIFFER = "OWNER_SETS_DIFFER"
 class TreasuryRequestError(Exception):
     """A treasury request that fails validation; ``code`` is the API error code."""
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(self, code: str, detail: str, *, address: str | None = None) -> None:
         super().__init__(code)
         self.code = code
         self.detail = detail
+        self.address = address
 
 
 class TreasuryNotFound(Exception):
@@ -86,6 +87,16 @@ class TreasuryRecord:
     coverage_acknowledged_by: uuid.UUID | None = None
     coverage_ack_reason: str | None = None
     coverage_details: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TreasurySummaryRecord:
+    id: uuid.UUID
+    chain_id: int
+    asset_id: uuid.UUID
+    status: TreasuryStatus
+    coverage: Coverage
+    created_at: datetime
 
 
 class _TreasuryRepository(OrgScopedRepository[Treasury]):
@@ -240,7 +251,7 @@ class TreasuryService:
         try:
             verified: list[SafeInfo] = await self._verifier.verify(chain_id, addresses)
         except SafeVerificationError as exc:
-            raise TreasuryRequestError(exc.code, exc.detail) from None
+            raise TreasuryRequestError(exc.code, exc.detail, address=exc.address) from None
 
         treasury = Treasury(
             id=uuid.uuid4(),
@@ -341,6 +352,29 @@ class TreasuryService:
                 coverage_details=("Coverage is UNKNOWN: no recent Safe configuration snapshot.",),
             )
         return record
+
+    async def list_for_org(
+        self, *, organization_id: uuid.UUID
+    ) -> tuple[TreasurySummaryRecord, ...]:
+        """List this organization's treasuries without combining their balances or counters."""
+
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                _TreasuryRepository(session, organization_id)
+                .select()
+                .order_by(Treasury.created_at, Treasury.id)
+            )
+            return tuple(
+                TreasurySummaryRecord(
+                    id=row.id,
+                    chain_id=row.chain_id,
+                    asset_id=row.asset_id,
+                    status=row.status,
+                    coverage=row.coverage,
+                    created_at=row.created_at,
+                )
+                for row in rows
+            )
 
     async def refresh_coverage(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID

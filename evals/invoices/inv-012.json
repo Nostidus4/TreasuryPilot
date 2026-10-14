@@ -1,0 +1,24 @@
+{
+  "id": "inv-012",
+  "vendor_name": "SYNTH Vendor 012 Ltd",
+  "invoice_no": "TEST-INV-0012",
+  "issue_date": "2026-10-08",
+  "amount": "400000000",
+  "currency": "USDC",
+  "decimals": 6,
+  "payee_address": "0x1111111111111111111111111111111111111111",
+  "due_date": "2026-10-22",
+  "terms": {
+    "net_due_date": "2026-10-22",
+    "priority_note": "Synthetic service invoice",
+    "late_fee": {
+      "type": "percent_per_period",
+      "rate_bps": 150,
+      "period_days": 7
+    }
+  },
+  "expected_flags": [],
+  "layout": "clean",
+  "language": "en",
+  "notes": "Synthetic evaluation fixture; no real company or payment authority."
+}

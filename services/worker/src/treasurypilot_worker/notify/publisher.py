@@ -6,11 +6,18 @@ import json
 import logging
 import uuid
 from collections.abc import Mapping
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import asyncpg  # type: ignore[import-untyped]
 
-from treasurypilot_core.notifications import category_for_event
+from treasurypilot_core.notifications import (
+    NotificationCategory,
+    NotificationChannel,
+    category_for_event,
+    preference_allows,
+)
 from treasurypilot_worker.notify.routing import NotificationPolicy, policy_for_event
 
 logger = logging.getLogger(__name__)
@@ -24,43 +31,25 @@ LIMIT $1
 FOR UPDATE SKIP LOCKED
 """
 
-# One statement per event: resolve recipients and insert their notifications together.
-_INSERT_NOTIFICATIONS = """
-INSERT INTO notifications
-    (id, org_id, user_id, event_id, type, title, body, link, severity, created_at)
-SELECT gen_random_uuid(), $1, m.user_id, $2, $3, $4, $5, $6, $7,
-       CASE
-           WHEN $12 <> 'mandatory'
-            AND p.quiet_hours_start IS NOT NULL
-            AND (
-                (p.quiet_hours_start < p.quiet_hours_end
-                    AND local_time.now_time >= p.quiet_hours_start
-                    AND local_time.now_time < p.quiet_hours_end)
-                OR (p.quiet_hours_start > p.quiet_hours_end
-                    AND (local_time.now_time >= p.quiet_hours_start
-                         OR local_time.now_time < p.quiet_hours_end))
-            )
-           THEN ((local_time.now_local::date + p.quiet_hours_end
-                  + CASE WHEN p.quiet_hours_start > p.quiet_hours_end
-                              AND local_time.now_time >= p.quiet_hours_start
-                         THEN interval '1 day' ELSE interval '0 day' END)
-                 AT TIME ZONE p.timezone)
-           ELSE now()
-       END
+# Everyone the routing policy targets, with their preferences; filtering and quiet hours
+# are applied in Python (preference_allows) so one bad stored value cannot fail the batch.
+_RECIPIENTS = """
+SELECT m.user_id, p.channels, p.categories, p.quiet_hours_start, p.quiet_hours_end, p.timezone
 FROM memberships AS m
 JOIN users AS u ON u.id = m.user_id
 LEFT JOIN notification_preferences AS p ON p.user_id = m.user_id
-CROSS JOIN LATERAL (
-    SELECT timezone(COALESCE(p.timezone, 'UTC'), now()) AS now_local,
-           timezone(COALESCE(p.timezone, 'UTC'), now())::time AS now_time
-) AS local_time
 WHERE m.org_id = $1
   AND m.status = 'active'
   AND u.status = 'active'
-  AND (m.roles && $8::text[] OR m.user_id = ANY($9::uuid[]) OR m.user_id = $10)
-  AND NOT (m.user_id = ANY($11::uuid[]))
-  AND ($12 = 'mandatory' OR COALESCE((p.channels ->> 'in_app')::boolean, true))
-  AND ($12 = 'mandatory' OR COALESCE((p.categories ->> $12)::boolean, true))
+  AND (m.roles && $2::text[] OR m.user_id = ANY($3::uuid[]) OR m.user_id = $4)
+  AND NOT (m.user_id = ANY($5::uuid[]))
+"""
+
+_INSERT_NOTIFICATIONS = """
+INSERT INTO notifications
+    (id, org_id, user_id, event_id, type, title, body, link, severity, deliver_at)
+SELECT gen_random_uuid(), $1, d.user_id, $2, $3, $4, $5, $6, $7, d.deliver_at
+FROM unnest($8::uuid[], $9::timestamptz[]) AS d(user_id, deliver_at)
 ON CONFLICT (user_id, event_id) DO NOTHING
 """
 
@@ -125,6 +114,36 @@ def _link(entity_type: str, entity_id: uuid.UUID, treasury_id: uuid.UUID | None)
     return "/"
 
 
+def _json_object(value: Any) -> dict[str, bool]:
+    if isinstance(value, str):
+        value = json.loads(value)
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def deliver_at(
+    now: datetime, start: time | None, end: time | None, timezone: str | None
+) -> datetime:
+    """``now``, or the end of the user's quiet hours when ``now`` falls inside them."""
+
+    if start is None or end is None:
+        return now
+    try:
+        zone = ZoneInfo(timezone or "UTC")
+    except (ValueError, KeyError, OSError):  # unknown/malformed zone: fall back to UTC
+        zone = ZoneInfo("UTC")
+    local = now.astimezone(zone)
+    clock = local.time()
+    if start < end:
+        quiet = start <= clock < end
+        end_day = local.date()
+    else:
+        quiet = clock >= start or clock < end
+        end_day = local.date() + timedelta(days=1 if clock >= start else 0)
+    if not quiet:
+        return now
+    return datetime.combine(end_day, end, tzinfo=zone).astimezone(UTC)
+
+
 async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
     policy = policy_for_event(event["type"])
     payload = _event_payload(event["payload"])
@@ -137,26 +156,61 @@ async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
             extra={"event_id": str(event["id"]), "type": event["type"]},
         )
         roles = list(policy.fallback_roles)
-    status = await connection.execute(
-        _INSERT_NOTIFICATIONS,
+    event_type = event["type"]
+    recipients = await connection.fetch(
+        _RECIPIENTS,
         event["org_id"],
-        event["id"],
-        event["type"],
-        policy.title,
-        policy.body,
-        _link(event["entity_type"], event["entity_id"], event["treasury_id"]),
-        policy.severity,
         roles,
         list(specific_user_ids),
         _creator_id(policy, payload),
         # Maker-checker: people who cannot act on the event (e.g. the request's creator)
         list(_user_ids(payload, "excludeUserIds")),
-        category_for_event(event["type"]).value,
     )
-    if status.endswith(" 0"):
+    now = datetime.now(UTC)
+    mandatory = category_for_event(event_type) is NotificationCategory.MANDATORY
+    user_ids: list[uuid.UUID] = []
+    deliver_ats: list[datetime] = []
+    for recipient in recipients:
+        if not preference_allows(
+            event_type,
+            NotificationChannel.IN_APP,
+            channels=_json_object(recipient["channels"]),
+            categories=_json_object(recipient["categories"]),
+        ):
+            continue
+        user_ids.append(recipient["user_id"])
+        deliver_ats.append(
+            now
+            if mandatory
+            else deliver_at(
+                now,
+                recipient["quiet_hours_start"],
+                recipient["quiet_hours_end"],
+                recipient["timezone"],
+            )
+        )
+    if user_ids:
+        await connection.execute(
+            _INSERT_NOTIFICATIONS,
+            event["org_id"],
+            event["id"],
+            event_type,
+            policy.title,
+            policy.body,
+            _link(event["entity_type"], event["entity_id"], event["treasury_id"]),
+            policy.severity,
+            user_ids,
+            deliver_ats,
+        )
+    elif not recipients:
         logger.warning(
             "notification_without_recipients",
-            extra={"event_id": str(event["id"]), "type": event["type"]},
+            extra={"event_id": str(event["id"]), "type": event_type},
+        )
+    else:
+        logger.debug(
+            "notification_all_recipients_opted_out",
+            extra={"event_id": str(event["id"]), "type": event_type},
         )
     await connection.execute(
         _ENQUEUE_WEBHOOK_DELIVERIES, event["org_id"], event["id"], event["type"]

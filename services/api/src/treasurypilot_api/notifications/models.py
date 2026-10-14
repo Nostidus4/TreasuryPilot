@@ -132,6 +132,7 @@ class Notification(Base):
         ),
         UniqueConstraint("user_id", "event_id", name="uq_notifications_user_event"),
         Index("ix_notifications_org_created", "org_id", "created_at"),
+        Index("ix_notifications_user_deliver", "user_id", "org_id", "deliver_at"),
         Index(
             "ix_notifications_user_unread",
             "user_id",
@@ -153,6 +154,11 @@ class Notification(Base):
     link: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # When the notification becomes visible: later than created_at during quiet hours.
+    # List, unread count and the SSE cursor all key on this, never on created_at.
+    deliver_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

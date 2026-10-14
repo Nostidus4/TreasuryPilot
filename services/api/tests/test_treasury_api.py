@@ -57,6 +57,7 @@ from treasurypilot_api.treasury.service import (
     TreasuryRecord,
     TreasuryRequestError,
     TreasuryService,
+    TreasurySummaryRecord,
     WalletInput,
     WalletRecord,
     owner_set_warnings,
@@ -124,6 +125,29 @@ class FakeService:
             raise self.error
         return _record(treasury_id)
 
+    async def list_for_org(
+        self, *, organization_id: uuid.UUID
+    ) -> tuple[TreasurySummaryRecord, ...]:
+        assert organization_id == ORG
+        return (
+            TreasurySummaryRecord(
+                uuid.UUID(int=1),
+                31337,
+                ASSET,
+                TreasuryStatus.DRAFT,
+                Coverage.UNKNOWN,
+                datetime.now(UTC),
+            ),
+            TreasurySummaryRecord(
+                uuid.UUID(int=2),
+                84532,
+                uuid.UUID(int=2),
+                TreasuryStatus.READY,
+                Coverage.COMPLETE,
+                datetime.now(UTC),
+            ),
+        )
+
     async def refresh_coverage(self, **kwargs: Any) -> TreasuryRecord:
         self.coverage_refreshes.append(kwargs)
         return _record(kwargs["treasury_id"])
@@ -187,8 +211,22 @@ def test_non_members_get_404(monkeypatch: pytest.MonkeyPatch) -> None:
     for response in (
         client.post(f"/v1/orgs/{ORG}/treasuries", json=_payload()),
         client.get(f"/v1/orgs/{ORG}/treasuries/{uuid.uuid4()}"),
+        client.get(f"/v1/orgs/{ORG}/treasuries"),
     ):
         assert (response.status_code, response.json()["code"]) == (404, "ORG_NOT_FOUND")
+
+
+def test_treasury_list_keeps_chain_and_asset_rows_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _client(monkeypatch, {"Finance"}, FakeService()).get(f"/v1/orgs/{ORG}/treasuries")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [(item["chainId"], item["assetId"]) for item in items] == [
+        (31337, str(ASSET)),
+        (84532, str(uuid.UUID(int=2))),
+    ]
+    assert [item["status"] for item in items] == ["Draft", "Ready"]
 
 
 def test_safe_deployment_endpoint_fails_closed_without_verified_deployments(
@@ -358,6 +396,27 @@ def test_domain_errors_map_to_problem_responses(
         f"/v1/orgs/{ORG}/treasuries", json=_payload()
     )
     assert (response.status_code, response.json()["code"]) == (status, code)
+
+
+def test_non_safe_verification_error_identifies_the_wallet_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = FakeService()
+    service.error = TreasuryRequestError(
+        "NOT_A_SAFE", "No Safe contract was found at this address.", address=SAFES[1]
+    )
+    payload = _payload()
+    payload["wallets"][1]["label"] = "O1"
+    response = _client(monkeypatch, {"Owner"}, service).post(
+        f"/v1/orgs/{ORG}/treasuries", json=payload
+    )
+    assert response.status_code == 422
+    assert response.json()["errors"] == [
+        {
+            "field": "wallets.O1",
+            "message": "No Safe contract was found at this address.",
+        }
+    ]
 
 
 def test_unknown_treasury_is_404_and_bad_input_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -557,6 +616,12 @@ async def _exercise(database_url: str) -> None:
         assert created.warnings == ()
         fetched = await service.get(organization_id=org_a.id, treasury_id=created.id)
         assert fetched.wallets == created.wallets
+        second_addresses = ["0x" + f"{i:040x}" for i in (0x504, 0x505, 0x506)]
+        second_created = await create(org_a, second_addresses)
+        org_treasuries = await service.list_for_org(organization_id=org_a.id)
+        assert {row.id for row in org_treasuries} == {created.id, second_created.id}
+        assert {row.chain_id for row in org_treasuries} == {CHAIN_ID}
+        assert await service.list_for_org(organization_id=org_b.id) == ()
         async with sessions() as session:
             entries = list(
                 await session.scalars(select(AuditLog).where(AuditLog.org_id == org_a.id))

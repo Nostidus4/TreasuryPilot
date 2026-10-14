@@ -24,6 +24,10 @@ _DEFAULT_CATEGORIES: dict[NotificationCategory, bool] = {
 }
 
 
+_CHANNELS = {channel.value for channel in NotificationChannel}
+_CATEGORIES = {category.value for category in NotificationCategory}
+
+
 class NotificationPreferencesView(ApiModel):
     channels: dict[NotificationChannel, bool]
     categories: dict[NotificationCategory, bool]
@@ -34,8 +38,8 @@ class NotificationPreferencesView(ApiModel):
     @classmethod
     def defaults(cls) -> NotificationPreferencesView:
         return cls(
-            channels=_DEFAULT_CHANNELS,
-            categories=_DEFAULT_CATEGORIES,
+            channels=dict(_DEFAULT_CHANNELS),
+            categories=dict(_DEFAULT_CATEGORIES),
             quiet_hours_start=None,
             quiet_hours_end=None,
             timezone="UTC",
@@ -44,13 +48,18 @@ class NotificationPreferencesView(ApiModel):
     @classmethod
     def from_row(cls, row: NotificationPreference) -> NotificationPreferencesView:
         return cls(
+            # Stored JSONB may hold keys from older/newer builds: ignore unknown ones.
             channels={
                 **_DEFAULT_CHANNELS,
-                **{NotificationChannel(key): value for key, value in row.channels.items()},
+                **{NotificationChannel(k): v for k, v in row.channels.items() if k in _CHANNELS},
             },
             categories={
                 **_DEFAULT_CATEGORIES,
-                **{NotificationCategory(key): value for key, value in row.categories.items()},
+                **{
+                    NotificationCategory(k): v
+                    for k, v in row.categories.items()
+                    if k in _CATEGORIES
+                },
             },
             quiet_hours_start=row.quiet_hours_start,
             quiet_hours_end=row.quiet_hours_end,
@@ -59,13 +68,26 @@ class NotificationPreferencesView(ApiModel):
 
 
 class UpdateNotificationPreferences(ApiModel):
-    channels: dict[NotificationChannel, bool] = Field(default_factory=lambda: _DEFAULT_CHANNELS)
+    """PUT body. Omitted fields keep their stored value (the defaults below only
+    describe the schema); send ``null`` quiet hours to clear them."""
+
+    channels: dict[NotificationChannel, bool] = Field(
+        default_factory=lambda: dict(_DEFAULT_CHANNELS)
+    )
     categories: dict[NotificationCategory, bool] = Field(
-        default_factory=lambda: _DEFAULT_CATEGORIES
+        default_factory=lambda: dict(_DEFAULT_CATEGORIES)
     )
     quiet_hours_start: time | None = None
     quiet_hours_end: time | None = None
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+    @field_validator("quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def quiet_hours_must_be_naive(cls, value: time | None) -> time | None:
+        # The columns are timezone-naive local times; the zone lives in ``timezone``.
+        if value is not None and value.tzinfo is not None:
+            raise ValueError("quiet hours must be local times without a UTC offset")
+        return value
 
     @field_validator("timezone")
     @classmethod
@@ -78,7 +100,8 @@ class UpdateNotificationPreferences(ApiModel):
 
     @model_validator(mode="after")
     def preferences_are_valid(self) -> UpdateNotificationPreferences:
-        if (self.quiet_hours_start is None) != (self.quiet_hours_end is None):
+        provided = {"quiet_hours_start", "quiet_hours_end"} & self.model_fields_set
+        if len(provided) == 1 or (self.quiet_hours_start is None) != (self.quiet_hours_end is None):
             raise ValueError("quiet_hours_start and quiet_hours_end must be set together")
         if self.quiet_hours_start == self.quiet_hours_end and self.quiet_hours_start is not None:
             raise ValueError("quiet hours must have a non-zero duration")
@@ -111,16 +134,11 @@ class SqlAlchemyNotificationPreferencesRepository:
             if row is None:
                 row = NotificationPreference(user_id=user_id)
                 session.add(row)
-            row.channels = {
-                NotificationChannel(key).value: value for key, value in preferences.channels.items()
-            }
-            row.categories = {
-                NotificationCategory(key).value: value
-                for key, value in preferences.categories.items()
-            }
-            row.quiet_hours_start = preferences.quiet_hours_start
-            row.quiet_hours_end = preferences.quiet_hours_end
-            row.timezone = preferences.timezone
+            for field in preferences.model_fields_set:
+                value = getattr(preferences, field)
+                if field in ("channels", "categories"):
+                    value = {key.value: enabled for key, enabled in value.items()}
+                setattr(row, field, value)
             await session.flush()
             await session.refresh(row)
             return row
