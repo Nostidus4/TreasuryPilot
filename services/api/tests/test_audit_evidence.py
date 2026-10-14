@@ -24,7 +24,9 @@ def _source(request_id: uuid.UUID, **overrides: object) -> dict[str, object]:
             "amount": "250000",
             "currency": "USDC",
         },
-        "validations": [{"stage": "PAYMENT", "decision": "BLOCK", "reason_codes": ["LIMIT"], "checks": []}],
+        "validations": [
+            {"stage": "PAYMENT", "decision": "BLOCK", "reason_codes": ["LIMIT"], "checks": []}
+        ],
         "operations": [],
         "fixture_labels": ["TESTNET", "SYNTHETIC"],
         "app_version": "test",

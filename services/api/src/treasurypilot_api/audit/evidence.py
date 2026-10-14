@@ -4,6 +4,7 @@ The repository is deliberately an adapter: execution tables and chain receipt
 lookup are owned by the execution integration. Until that integration exists,
 the API fails closed when no repository is configured.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -162,7 +163,9 @@ class EvidenceBundleInvalid(Exception):
 
 
 class EvidenceRepository(Protocol):
-    async def export_request(self, *, organization_id: uuid.UUID, request_id: uuid.UUID) -> EvidenceBundle: ...
+    async def export_request(
+        self, *, organization_id: uuid.UUID, request_id: uuid.UUID
+    ) -> EvidenceBundle: ...
 
 
 def _reject_sensitive_keys(value: Any, path: str = "bundle") -> None:
@@ -201,8 +204,8 @@ async def build_evidence_bundle(
     for tx in bundle.transactions or []:
         if not await resolver(tx):
             raise EvidenceBundleInvalid(f"transaction hash {tx.tx_hash} did not resolve")
-    unsigned = bundle.model_dump(
-        mode="json", by_alias=True, exclude={"sha256"}, exclude_none=True
-    )
-    digest = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    unsigned = bundle.model_dump(mode="json", by_alias=True, exclude={"sha256"}, exclude_none=True)
+    digest = hashlib.sha256(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return bundle.model_copy(update={"sha256": digest})
