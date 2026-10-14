@@ -225,7 +225,8 @@ async def _operation_events(database_url: str, operation_id: str) -> list[Any]:
     pool = await create_worker_pool(database_url, min_size=1, max_size=1)
     try:
         return await pool.fetch(
-            "SELECT type, entity_type, entity_id, treasury_id, payload FROM domain_events "
+            "SELECT type, entity_type, entity_id, treasury_id, "
+            "jsonb_typeof(payload) AS payload_type, payload FROM domain_events "
             "WHERE entity_id = $1 ORDER BY created_at, id",
             uuid.UUID(operation_id),
         )
@@ -258,14 +259,16 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
             events[0]["entity_type"],
             events[0]["entity_id"],
             events[0]["treasury_id"],
-            events[0]["payload"],
         ) == (
             "OperationUpdated",
             "operation",
             uuid.UUID(operation_id),
             uuid.UUID(_TREASURY),
-            {"operationId": operation_id},
         )
+        # asyncpg returns JSONB as text by default. Assert storage is an object, then
+        # decode the transport value before checking the ids-only event contract.
+        assert events[0]["payload_type"] == "object"
+        assert json.loads(events[0]["payload"]) == {"operationId": operation_id}
 
         _mine(anvil_url)
         await _track(database_url, client)  # 2 confirmations
