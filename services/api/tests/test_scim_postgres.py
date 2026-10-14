@@ -10,9 +10,14 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from treasurypilot_api.identity.memberships import LastAdministrator, LastOwner
+from treasurypilot_api.identity.memberships import (
+    LastAdministrator,
+    LastOwner,
+    SqlAlchemyMembershipRepository,
+)
 from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.scim import SqlAlchemyScimIdentityRepository
 
@@ -163,11 +168,6 @@ async def _scenario(database_url: str) -> None:
         assert {row[1] for row in protected_statuses} == {"active"}
         assert audit_count == 1
     finally:
-        async with engine.begin() as connection:
-            await connection.execute(
-                text("DELETE FROM organizations WHERE id IN (:org, :other)"),
-                {"org": organization_id, "other": other_org_id},
-            )
         await engine.dispose()
 
 
@@ -184,7 +184,7 @@ def test_scim_deprovision_is_tenant_scoped_and_audited_on_postgres() -> None:
 async def _group_scenario(database_url: str) -> None:
     engine = create_async_engine(database_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
-    organization_id = uuid.uuid4()
+    organization_id, other_organization_id = uuid.uuid4(), uuid.uuid4()
     manual_user_id, scim_only_user_id, oidc_manual_user_id = (
         uuid.uuid4(),
         uuid.uuid4(),
@@ -195,8 +195,11 @@ async def _group_scenario(database_url: str) -> None:
     try:
         async with engine.begin() as connection:
             await connection.execute(
-                text("INSERT INTO organizations (id, name) VALUES (:org, 'SCIM groups')"),
-                {"org": organization_id},
+                text(
+                    "INSERT INTO organizations (id, name) VALUES "
+                    "(:org, 'SCIM groups'), (:other_org, 'Other SCIM org')"
+                ),
+                {"org": organization_id, "other_org": other_organization_id},
             )
             for user_id, email in (
                 (manual_user_id, "scim-manual@example.com"),
@@ -229,6 +232,17 @@ async def _group_scenario(database_url: str) -> None:
                     "VALUES (:id, :org, :user, ARRAY['Operator']::text[])"
                 ),
                 {"id": uuid.uuid4(), "org": organization_id, "user": oidc_manual_user_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO memberships (id, org_id, user_id, roles) "
+                    "VALUES (:id, :org, :user, ARRAY['Auditor', 'Operator']::text[])"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "org": other_organization_id,
+                    "user": oidc_manual_user_id,
+                },
             )
             await connection.execute(
                 text(
@@ -309,7 +323,9 @@ async def _group_scenario(database_url: str) -> None:
             linked_membership_after_oidc_removal[3],
         )
         assert linked_roles_after_oidc_removal == (["Operator"], ["Operator"], [], "active")
-        scim_repository = SqlAlchemyScimIdentityRepository(sessions)
+        scim_repository = SqlAlchemyScimIdentityRepository(
+            sessions, oidc_organization_id=organization_id
+        )
         role_map = {"Operators": ("Operator",)}
         group = await scim_repository.create_group(
             organization_id=organization_id,
@@ -348,6 +364,73 @@ async def _group_scenario(database_url: str) -> None:
             [],
             ["Operator"],
             "active",
+        )
+        await scim_repository.reconcile_group_roles(
+            organization_id=None, role_map={}, now=now + timedelta(seconds=1)
+        )
+        assert (
+            await scim_repository.get_group(organization_id=organization_id, group_id=group.id)
+            is not None
+        )
+        assert await membership(manual_user_id) == (
+            ["Finance", "Operator"],
+            ["Finance"],
+            [],
+            ["Operator"],
+            "active",
+        )
+
+        other_group = await scim_repository.create_group(
+            organization_id=other_organization_id,
+            display_name="Operators",
+            member_ids=(oidc_manual_user_id,),
+            role_map=role_map,
+            now=now,
+        )
+        async with sessions() as session:
+            other_org_roles = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, oidc_roles, scim_roles "
+                        "FROM memberships WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": other_organization_id, "user": oidc_manual_user_id},
+                )
+            ).one()
+        assert tuple(list(roles) for roles in other_org_roles) == (
+            ["Auditor", "Operator"],
+            ["Auditor", "Operator"],
+            [],
+            ["Operator"],
+        )
+        await scim_repository.delete_group(
+            organization_id=other_organization_id,
+            group_id=other_group.id,
+            role_map=role_map,
+            now=now + timedelta(seconds=1),
+        )
+        cross_org_member = await SqlAlchemyMembershipRepository(sessions).update_member(
+            org_id=other_organization_id,
+            user_id=oidc_manual_user_id,
+            roles=("Auditor",),
+            updated_by=oidc_manual_user_id,
+        )
+        assert cross_org_member is not None and cross_org_member.roles == ("Auditor",)
+        async with sessions() as session:
+            cross_org_role_sources = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, oidc_roles, scim_roles "
+                        "FROM memberships WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": other_organization_id, "user": oidc_manual_user_id},
+                )
+            ).one()
+        assert tuple(list(roles) for roles in cross_org_role_sources) == (
+            ["Auditor"],
+            ["Auditor"],
+            [],
+            [],
         )
         await oidc_repository.provision(
             issuer="https://id.example",
@@ -426,11 +509,61 @@ async def _group_scenario(database_url: str) -> None:
             )
         assert revoked_at is not None
         assert audit_count >= 5
-    finally:
-        async with engine.begin() as connection:
-            await connection.execute(
-                text("DELETE FROM organizations WHERE id = :org"), {"org": organization_id}
+
+        finance_group_map = {"Finance Team": ("Finance",)}
+        finance_group = await scim_repository.create_group(
+            organization_id=organization_id,
+            display_name="Finance Team",
+            member_ids=(manual_user_id,),
+            role_map=finance_group_map,
+            now=now + timedelta(seconds=4),
+        )
+        await scim_repository.reconcile_group_roles(
+            organization_id=None, role_map={}, now=now + timedelta(seconds=5)
+        )
+        assert (
+            await scim_repository.get_group(
+                organization_id=organization_id, group_id=finance_group.id
             )
+            is not None
+        )
+        assert await membership(manual_user_id) == (
+            ["Finance"],
+            ["Finance"],
+            [],
+            ["Finance"],
+            "active",
+        )
+
+        # An explicitly configured empty allowlist revokes groups only for this tenant.
+        # The manual Finance role keeps effective access unchanged, but group removal is audited.
+        await scim_repository.reconcile_group_roles(
+            organization_id=organization_id, role_map={}, now=now + timedelta(seconds=6)
+        )
+        assert (
+            await scim_repository.get_group(
+                organization_id=organization_id, group_id=finance_group.id
+            )
+            is None
+        )
+        assert await membership(manual_user_id) == (
+            ["Finance"],
+            ["Finance"],
+            [],
+            [],
+            "active",
+        )
+        async with sessions() as session:
+            config_removal_audit = await session.scalar(
+                text(
+                    "SELECT count(*) FROM audit_log WHERE org_id = :org "
+                    "AND action = 'identity.scim.group.configuration_removed' "
+                    "AND entity_id = :group_id"
+                ),
+                {"org": organization_id, "group_id": str(finance_group.id)},
+            )
+        assert config_removal_audit == 1
+    finally:
         await engine.dispose()
 
 
@@ -441,4 +574,233 @@ def test_scim_groups_keep_role_sources_separate_and_suspend_on_last_role_loss() 
     try:
         asyncio.run(_group_scenario(database_url))
     finally:
+        command.downgrade(config, "base")
+
+
+async def _insert_pre_source_roles(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    primary_org_id = uuid.UUID("00000000-0000-7000-8000-000000000201")
+    other_org_id = uuid.UUID("00000000-0000-7000-8000-000000000202")
+    user_id = uuid.UUID("00000000-0000-7000-8000-000000000203")
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name) VALUES "
+                    "(:primary, 'Legacy OIDC org'), (:other, 'Legacy manual org')"
+                ),
+                {"primary": primary_org_id, "other": other_org_id},
+            )
+            await connection.execute(
+                text("INSERT INTO users (id, email) VALUES (:id, 'legacy-scope@example.com')"),
+                {"id": user_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO oidc_identities (issuer, subject, user_id) "
+                    "VALUES ('https://id.example', 'legacy-scope-subject', :user)"
+                ),
+                {"user": user_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO memberships (id, org_id, user_id, roles) VALUES "
+                    "(:primary_membership, :primary_org, :user, ARRAY['Finance', 'Owner']::text[]), "
+                    "(:other_membership, :other_org, :user, ARRAY['Auditor', 'Operator']::text[])"
+                ),
+                {
+                    "primary_membership": uuid.uuid4(),
+                    "other_membership": uuid.uuid4(),
+                    "primary_org": primary_org_id,
+                    "other_org": other_org_id,
+                    "user": user_id,
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_legacy_role_sources_are_scoped(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    primary_org_id = uuid.UUID("00000000-0000-7000-8000-000000000201")
+    other_org_id = uuid.UUID("00000000-0000-7000-8000-000000000202")
+    user_id = uuid.UUID("00000000-0000-7000-8000-000000000203")
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    try:
+        oidc_repository = OIDCIdentityRepository(sessions)
+        # Editing a migrated membership must not freeze the migration's temporary
+        # all-manual attribution before configured-tenant OIDC sync can classify it.
+        edited_member = await SqlAlchemyMembershipRepository(sessions).update_member(
+            org_id=primary_org_id,
+            user_id=user_id,
+            roles=("Finance", "Owner"),
+            updated_by=user_id,
+        )
+        assert edited_member is not None and edited_member.roles == ("Finance", "Owner")
+        await oidc_repository.provision(
+            issuer="https://id.example",
+            subject="legacy-scope-subject",
+            email="legacy-scope@example.com",
+            display_name=None,
+            organization_id=primary_org_id,
+            groups=("finance",),
+            group_role_map={"finance": ("Finance",)},
+        )
+        with pytest.raises(ValueError):
+            await oidc_repository.provision(
+                issuer="https://id.example",
+                subject="legacy-scope-subject",
+                email="legacy-scope@example.com",
+                display_name=None,
+                organization_id=primary_org_id,
+                groups=(),
+                group_role_map={},
+            )
+        async with sessions() as session:
+            primary = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, oidc_roles, role_sources_initialized, status "
+                        "FROM memberships WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": primary_org_id, "user": user_id},
+                )
+            ).one()
+            other_before_scim = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, oidc_roles, role_sources_initialized "
+                        "FROM memberships WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": other_org_id, "user": user_id},
+                )
+            ).one()
+        assert tuple(
+            list(value) if index < 3 else value for index, value in enumerate(primary)
+        ) == (
+            ["Owner"],
+            ["Owner"],
+            [],
+            True,
+            "active",
+        )
+        assert tuple(
+            list(value) if index < 3 else value for index, value in enumerate(other_before_scim)
+        ) == (
+            ["Auditor", "Operator"],
+            ["Auditor", "Operator"],
+            [],
+            False,
+        )
+
+        scim_repository = SqlAlchemyScimIdentityRepository(
+            sessions, oidc_organization_id=primary_org_id
+        )
+        group = await scim_repository.create_group(
+            organization_id=other_org_id,
+            display_name="Operators",
+            member_ids=(user_id,),
+            role_map={"Operators": ("Operator",)},
+            now=now,
+        )
+        await scim_repository.reconcile_group_roles(
+            organization_id=primary_org_id, role_map={}, now=now
+        )
+        assert (
+            await scim_repository.get_group(organization_id=other_org_id, group_id=group.id)
+            is not None
+        )
+        await scim_repository.delete_group(
+            organization_id=other_org_id,
+            group_id=group.id,
+            role_map={"Operators": ("Operator",)},
+            now=now + timedelta(seconds=1),
+        )
+        member = await SqlAlchemyMembershipRepository(sessions).update_member(
+            org_id=other_org_id,
+            user_id=user_id,
+            roles=("Auditor",),
+            updated_by=user_id,
+        )
+        assert member is not None and member.roles == ("Auditor",)
+        async with sessions() as session:
+            other_after_edit = (
+                await session.execute(
+                    text(
+                        "SELECT roles, manual_roles, oidc_roles, scim_roles "
+                        "FROM memberships WHERE org_id = :org AND user_id = :user"
+                    ),
+                    {"org": other_org_id, "user": user_id},
+                )
+            ).one()
+        assert tuple(list(value) for value in other_after_edit) == (
+            ["Auditor"],
+            ["Auditor"],
+            [],
+            [],
+        )
+    finally:
+        await engine.dispose()
+
+
+def test_migration_and_oidc_role_initialization_are_organization_scoped() -> None:
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    config = _alembic_config(database_url)
+    command.upgrade(config, "20261015_0054")
+    try:
+        asyncio.run(_insert_pre_source_roles(database_url))
+        command.upgrade(config, "head")
+        asyncio.run(_assert_legacy_role_sources_are_scoped(database_url))
+    finally:
+        command.downgrade(config, "base")
+
+
+def test_migration_downgrade_refuses_active_scim_role_grants() -> None:
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    config = _alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_async_engine(database_url)
+    organization_id, user_id = uuid.uuid4(), uuid.uuid4()
+    try:
+
+        async def _seed_active_scim_role() -> None:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "INSERT INTO organizations (id, name) VALUES (:id, 'SCIM downgrade guard')"
+                    ),
+                    {"id": organization_id},
+                )
+                await connection.execute(
+                    text("INSERT INTO users (id, email) VALUES (:id, 'scim-guard@example.com')"),
+                    {"id": user_id},
+                )
+                await connection.execute(
+                    text(
+                        "INSERT INTO memberships "
+                        "(id, org_id, user_id, roles, scim_roles, role_sources_initialized) "
+                        "VALUES (:id, :org, :user, ARRAY['Operator']::text[], "
+                        "ARRAY['Operator']::text[], true)"
+                    ),
+                    {"id": uuid.uuid4(), "org": organization_id, "user": user_id},
+                )
+
+        asyncio.run(_seed_active_scim_role())
+        with pytest.raises(DBAPIError, match="clear all SCIM role grants"):
+            command.downgrade(config, "20261015_0054")
+    finally:
+
+        async def _clear_role_sources() -> None:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "UPDATE memberships SET manual_roles = roles, scim_roles = ARRAY[]::text[] "
+                        "WHERE org_id = :org"
+                    ),
+                    {"org": organization_id},
+                )
+
+        asyncio.run(_clear_role_sources())
+        asyncio.run(engine.dispose())
         command.downgrade(config, "base")

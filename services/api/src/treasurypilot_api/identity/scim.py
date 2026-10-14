@@ -34,7 +34,10 @@ from treasurypilot_api.identity.models import (
     User,
     UserStatus,
 )
-from treasurypilot_api.identity.role_grants import recompute_membership_roles
+from treasurypilot_api.identity.role_grants import (
+    initialize_legacy_role_sources,
+    recompute_membership_roles,
+)
 from treasurypilot_core.ids import uuid7
 
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
@@ -153,8 +156,14 @@ class ScimIdentityRepository(Protocol):
 class SqlAlchemyScimIdentityRepository:
     """Tenant-scoped SCIM reads and membership deprovisioning."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        oidc_organization_id: uuid.UUID | None = None,
+    ) -> None:
         self._sessions = sessions
+        self._oidc_organization_id = oidc_organization_id
 
     async def list_users(
         self,
@@ -448,42 +457,59 @@ class SqlAlchemyScimIdentityRepository:
         now: datetime,
     ) -> None:
         """Apply the current SCIM allowlist at startup and discard stale assignments."""
+        if organization_id is None:
+            return
         async with self._sessions() as session, session.begin():
             groups = list(
                 (
                     await session.scalars(
-                        select(ScimGroup).order_by(ScimGroup.org_id, ScimGroup.id).with_for_update()
+                        select(ScimGroup)
+                        .where(ScimGroup.org_id == organization_id)
+                        .order_by(ScimGroup.id)
+                        .with_for_update()
                     )
                 ).all()
             )
-            affected: dict[uuid.UUID, set[uuid.UUID]] = {}
+            affected: set[uuid.UUID] = set()
             for group in groups:
-                if organization_id == group.org_id and group.display_name in role_map:
+                if group.display_name in role_map:
                     continue
-                affected.setdefault(group.org_id, set()).update(
+                member_ids = set(
                     (
                         await session.scalars(
                             select(ScimGroupMember.user_id).where(
-                                ScimGroupMember.org_id == group.org_id,
+                                ScimGroupMember.org_id == organization_id,
                                 ScimGroupMember.group_id == group.id,
                             )
                         )
                     ).all()
                 )
+                affected.update(member_ids)
+                await write_audit(
+                    session,
+                    org_id=organization_id,
+                    actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                    action="identity.scim.group.configuration_removed",
+                    entity=AuditEntity("scim_group", group.id),
+                    data={"displayName": group.display_name, "memberCount": len(member_ids)},
+                )
                 await session.delete(group)
             stale_memberships = (
                 await session.scalars(
-                    select(Membership).where(func.cardinality(Membership.scim_roles) > 0)
+                    select(Membership).where(
+                        Membership.org_id == organization_id,
+                        func.cardinality(Membership.scim_roles) > 0,
+                    )
                 )
             ).all()
             for membership in stale_memberships:
-                affected.setdefault(membership.org_id, set()).add(membership.user_id)
-            for org_id, user_ids in affected.items():
+                affected.add(membership.user_id)
+            if affected:
                 await self._recompute_group_roles(
                     session,
-                    org_id,
-                    user_ids,
-                    role_map if org_id == organization_id else {},
+                    organization_id,
+                    affected,
+                    role_map,
                     now,
                 )
 
@@ -562,8 +588,8 @@ class SqlAlchemyScimIdentityRepository:
             )
         return added
 
-    @staticmethod
     async def _recompute_group_roles(
+        self,
         session: AsyncSession,
         organization_id: uuid.UUID,
         user_ids: set[uuid.UUID],
@@ -596,27 +622,21 @@ class SqlAlchemyScimIdentityRepository:
         roles_by_user: dict[uuid.UUID, set[str]] = {}
         for user_id, display_name in group_rows:
             roles_by_user.setdefault(user_id, set()).update(role_map.get(display_name, ()))
-        oidc_user_ids = set(
-            (
-                await session.scalars(
-                    select(OIDCIdentity.user_id).where(OIDCIdentity.user_id.in_(user_ids))
-                )
-            ).all()
-        )
+        oidc_user_ids: set[uuid.UUID] = set()
+        if organization_id == self._oidc_organization_id:
+            oidc_user_ids = set(
+                (
+                    await session.scalars(
+                        select(OIDCIdentity.user_id).where(OIDCIdentity.user_id.in_(user_ids))
+                    )
+                ).all()
+            )
         for membership in memberships:
             old_roles = set(membership.roles)
             old_status = membership.status
-            if (
-                not membership.manual_roles
-                and not membership.oidc_roles
-                and not membership.scim_roles
-                and old_roles
-            ):
-                if membership.user_id in oidc_user_ids:
-                    membership.manual_roles = sorted(old_roles - {"Operator", "Finance", "Auditor"})
-                    membership.oidc_roles = sorted(old_roles & {"Operator", "Finance", "Auditor"})
-                else:
-                    membership.manual_roles = sorted(old_roles)
+            initialize_legacy_role_sources(
+                membership, oidc_identity_linked=membership.user_id in oidc_user_ids
+            )
             membership.scim_roles = sorted(roles_by_user.get(membership.user_id, set()))
             new_roles = set(recompute_membership_roles(membership))
             if new_roles != old_roles or membership.status != old_status:

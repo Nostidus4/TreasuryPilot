@@ -39,29 +39,16 @@ def upgrade() -> None:
             "scim_roles", postgresql.ARRAY(sa.Text()), server_default=empty_roles, nullable=False
         ),
     )
+    op.add_column(
+        "memberships",
+        sa.Column(
+            "role_sources_initialized", sa.Boolean(), server_default=sa.false(), nullable=False
+        ),
+    )
     op.execute(
         sa.text(
-            f"""
-            UPDATE memberships AS m
-            SET manual_roles = COALESCE((
-                    SELECT array_agg(r.role ORDER BY r.role)
-                    FROM unnest(m.roles) AS r(role)
-                    WHERE NOT (
-                        r.role = ANY({_ASSIGNABLE_ROLES})
-                        AND EXISTS (
-                            SELECT 1 FROM oidc_identities AS oi WHERE oi.user_id = m.user_id
-                        )
-                    )
-                ), ARRAY[]::text[]),
-                oidc_roles = COALESCE((
-                    SELECT array_agg(r.role ORDER BY r.role)
-                    FROM unnest(m.roles) AS r(role)
-                    WHERE r.role = ANY({_ASSIGNABLE_ROLES})
-                      AND EXISTS (
-                          SELECT 1 FROM oidc_identities AS oi WHERE oi.user_id = m.user_id
-                      )
-                ), ARRAY[]::text[])
-            """
+            "UPDATE memberships SET manual_roles = roles, oidc_roles = ARRAY[]::text[], "
+            "scim_roles = ARRAY[]::text[], role_sources_initialized = false"
         )
     )
     op.drop_constraint("ck_memberships_roles_not_empty", "memberships", type_="check")
@@ -148,21 +135,25 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    has_empty_suspended_memberships = (
-        op.get_bind()
-        .execute(
-            sa.text(
-                "SELECT EXISTS (SELECT 1 FROM memberships "
-                "WHERE cardinality(roles) = 0 AND status = 'suspended')"
-            )
-        )
-        .scalar_one()
+    op.execute(
+        """
+        DO $scim_groups_downgrade$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM memberships WHERE cardinality(scim_roles) > 0
+            ) THEN
+                RAISE EXCEPTION 'clear all SCIM role grants before downgrading revision 20261015_0055';
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM memberships
+                WHERE cardinality(roles) = 0 AND status = 'suspended'
+            ) THEN
+                RAISE EXCEPTION 'restore a role grant before downgrading revision 20261015_0055';
+            END IF;
+        END;
+        $scim_groups_downgrade$
+        """
     )
-    if has_empty_suspended_memberships:
-        raise RuntimeError(
-            "SCIM role removal created suspended memberships with no roles; "
-            "restore a role grant before downgrading revision 20261015_0055"
-        )
     op.drop_index("ix_scim_group_members_org_user", table_name="scim_group_members")
     op.drop_table("scim_group_members")
     op.drop_table("scim_groups")
@@ -183,3 +174,4 @@ def downgrade() -> None:
     op.drop_column("memberships", "scim_roles")
     op.drop_column("memberships", "oidc_roles")
     op.drop_column("memberships", "manual_roles")
+    op.drop_column("memberships", "role_sources_initialized")

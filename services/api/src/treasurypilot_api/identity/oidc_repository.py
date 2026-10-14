@@ -18,8 +18,8 @@ from treasurypilot_api.identity.models import (
 )
 from treasurypilot_api.identity.oidc import OIDCFailure
 from treasurypilot_api.identity.role_grants import (
+    initialize_legacy_role_sources,
     recompute_membership_roles,
-    seed_legacy_role_sources,
 )
 from treasurypilot_core.ids import uuid7
 
@@ -69,7 +69,7 @@ class OIDCIdentityRepository:
                         .with_for_update()
                     )
                     if membership is not None:
-                        seed_legacy_role_sources(membership, oidc_identity_linked=True)
+                        initialize_legacy_role_sources(membership, oidc_identity_linked=True)
                         membership.oidc_roles = []
                         recompute_membership_roles(membership)
             raise ValueError("OIDC identity has no allowed mapped organization role")
@@ -129,6 +129,7 @@ class OIDCIdentityRepository:
                     user_id=user.id,
                     roles=roles,
                     oidc_roles=roles,
+                    role_sources_initialized=True,
                     status=MembershipStatus.ACTIVE,
                 )
                 session.add(membership)
@@ -136,7 +137,9 @@ class OIDCIdentityRepository:
                 raise ValueError("OIDC membership is not active")
             elif groups is not None:
                 # The provider's group claim is authoritative for SSO-managed roles only.
-                seed_legacy_role_sources(membership, oidc_identity_linked=identity_was_existing)
+                initialize_legacy_role_sources(
+                    membership, oidc_identity_linked=identity_was_existing
+                )
                 membership.oidc_roles = roles
                 recompute_membership_roles(membership)
             await session.flush()

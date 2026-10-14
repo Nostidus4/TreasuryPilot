@@ -268,6 +268,7 @@ class SqlAlchemyMembershipRepository:
                 user_id=user_id,
                 roles=list(invite.roles),
                 manual_roles=list(invite.roles),
+                role_sources_initialized=True,
                 status=MembershipStatus.ACTIVE,
                 created_by=invite.created_by,
                 updated_by=invite.created_by,

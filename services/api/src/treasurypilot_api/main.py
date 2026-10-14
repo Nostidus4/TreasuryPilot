@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -373,7 +374,12 @@ def create_app(
         )
 
     if scim_repository is None and sessions is not None:
-        scim_repository = SqlAlchemyScimIdentityRepository(sessions)
+        scim_repository = SqlAlchemyScimIdentityRepository(
+            sessions,
+            oidc_organization_id=(
+                UUID(settings.oidc_organization_id) if settings.oidc_organization_id else None
+            ),
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:

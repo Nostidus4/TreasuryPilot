@@ -314,6 +314,9 @@ class Membership(Base):
     scim_roles: Mapped[list[str]] = mapped_column(
         ARRAY(Text()), nullable=False, default=list, server_default=text("'{}'::text[]")
     )
+    role_sources_initialized: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
