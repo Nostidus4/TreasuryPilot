@@ -56,6 +56,12 @@ Service performs action → `audit.write(...)` inside the same DB transaction (r
 - **Evidence bundle v1 fields:** request (ids, vendor display, amounts, fingerprint, invoiceHash), approval (typed data, signer address, signature hash only), flags + acks, plan (planner source, plan hash, steps), validations (all stages), ai_calls (purpose, model, prompt version, output summary), attestation (typed data, signer), operations/transactions (hashes, blocks, fees), verifications, reconciliation, EAS UID, coverage labels, fixture labels (TEST asset/router), generated_at, app version. **No fabricated hashes**: a blocked request has no tx section (BR-095).
 - **Coverage labels:** every status DTO includes `coverage {level, missing[], snapshotBlock}`.
 
+### Exporter implementation boundary (AUD-003)
+
+The API contract and schema live in `services/api/src/treasurypilot_api/audit/evidence.py` and `evidence-bundle.v1.schema.json`. The request evidence route accepts an injected `EvidenceRepository`; that repository must scope the request to the organization, provide the operation/transaction rows, and resolve every transaction hash against its configured chain before returning. Missing hashes raise an invalid-bundle result and the HTTP route returns `409 EVIDENCE_INVALID` without a bundle. An empty transaction list is omitted, so blocked requests carry validator logs without a fabricated tx section. Signature values are rejected; only `signatureHash` is representable. Unknown fields are rejected and contact fields are checked recursively, with vendor display name as the sole exception.
+
+The SQL exporter/storage adapter remains dependent on execution persistence from EXE-008 (#65). Until that adapter is wired into `create_app(evidence_repository=...)`, this route returns `503 EVIDENCE_UNAVAILABLE`; do not treat the schema/model slice as proof that operation or chain evidence has been integrated. Fixture labels are supplied by that adapter and must distinguish synthetic/testnet data.
+
 ## 9. Configuration
 
 Audit retention: forever in M1; evidence stored in the private bucket; verification CLI shipped with the repo.

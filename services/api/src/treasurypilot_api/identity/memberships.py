@@ -147,6 +147,16 @@ class SqlAlchemyMembershipRepository:
     ) -> InviteRecord:
         try:
             async with self._sessions() as session, session.begin():
+                if await session.scalar(
+                    select(
+                        exists().where(
+                            Membership.org_id == org_id,
+                            Membership.user_id == User.id,
+                            User.email == email,
+                        )
+                    )
+                ):
+                    raise AlreadyMember
                 expired = (
                     await session.scalars(
                         select(Invite)
@@ -237,12 +247,13 @@ class SqlAlchemyMembershipRepository:
             )
             if invite is None:
                 raise MembershipNotFound
+            # Email first so a non-recipient cannot probe a token's used/expired state.
+            if normalize_email(invite.email) != normalize_email(email):
+                raise InviteEmailMismatch
             if invite.accepted_at is not None or invite.revoked_at is not None:
                 raise InviteAlreadyUsed
             if now >= invite.expires_at:
                 raise InviteExpired
-            if normalize_email(invite.email) != normalize_email(email):
-                raise InviteEmailMismatch
             existing = await session.scalar(
                 select(Membership).where(
                     Membership.org_id == invite.org_id,
@@ -299,7 +310,7 @@ class SqlAlchemyMembershipRepository:
                 )
             ).all()
             if not rows and not await session.scalar(
-                select(exists().where(Membership.org_id == org_id))
+                select(exists().where(Organization.id == org_id))
             ):
                 return None
             return tuple(
@@ -332,6 +343,8 @@ class SqlAlchemyMembershipRepository:
             membership.updated_by = updated_by
             await session.flush()
             user = await session.scalar(select(User).where(User.id == user_id))
+            if user is None:  # unreachable: memberships.user_id is a foreign key
+                raise RuntimeError("membership user is missing")
             wallet_linked = bool(
                 await session.scalar(
                     select(
@@ -344,7 +357,7 @@ class SqlAlchemyMembershipRepository:
             )
             return MemberRecord(
                 user_id=user_id,
-                email=user.email if user is not None else "",
+                email=user.email,
                 roles=tuple(membership.roles),
                 status=membership.status,
                 signer_roles_active=bool(_SIGNER_ROLES.intersection(membership.roles))
@@ -378,6 +391,7 @@ class SqlAlchemyMembershipRepository:
 def _guard_last_roles(
     memberships: list[Membership], target: Membership, new_roles: set[str]
 ) -> None:
+    # Only active members count toward the minimum, so a suspended target may be changed freely.
     if target.status != MembershipStatus.ACTIVE:
         return
     active = [item for item in memberships if item.status == MembershipStatus.ACTIVE]
@@ -578,6 +592,13 @@ async def create_invite(
             "INVITE_PENDING",
             "Invitation already pending",
             "Revoke the pending invitation before creating another.",
+        ) from None
+    except AlreadyMember:
+        raise _api_failure(
+            409,
+            "ALREADY_MEMBER",
+            "Already a member",
+            "This email already belongs to a member of the organization.",
         ) from None
     return InviteCreatedResponse(**InviteView.from_record(record).model_dump(), token=token)
 

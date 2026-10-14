@@ -12,6 +12,8 @@ from sqlalchemy import select
 
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.memberships import (
+    AlreadyMember,
+    InviteAlreadyUsed,
     InviteEmailMismatch,
     LastAdministrator,
     LastOwner,
@@ -19,6 +21,7 @@ from treasurypilot_api.identity.memberships import (
 )
 from treasurypilot_api.identity.models import (
     Membership,
+    MembershipStatus,
     Organization,
     User,
     WalletLink,
@@ -50,6 +53,7 @@ async def _exercise_membership_flow(database_url: str) -> None:
                 (signer_id, "signer@example.test"),
             ):
                 session.add(User(id=user_id, email=email, display_name=email))
+            await session.flush()
             session.add(
                 Organization(
                     id=org_id,
@@ -59,6 +63,7 @@ async def _exercise_membership_flow(database_url: str) -> None:
                     updated_by=owner_id,
                 )
             )
+            await session.flush()
             session.add_all(
                 [
                     Membership(
@@ -91,6 +96,16 @@ async def _exercise_membership_flow(database_url: str) -> None:
         )
         assert invitation.expires_at == now + timedelta(days=7)
 
+        with pytest.raises(AlreadyMember):
+            await repository.create_invite(
+                org_id=org_id,
+                email="Admin@example.test",
+                roles=("Finance",),
+                created_by=owner_id,
+                token_hash=b"x" * 32,
+                now=now,
+            )
+
         with pytest.raises(InviteEmailMismatch):
             await repository.accept_invite(
                 token_hash=token_hash,
@@ -107,6 +122,21 @@ async def _exercise_membership_flow(database_url: str) -> None:
         )
         assert accepted.roles == ("Approver",)
         assert accepted.signer_roles_active is False
+
+        with pytest.raises(InviteAlreadyUsed):
+            await repository.accept_invite(
+                token_hash=token_hash,
+                user_id=signer_id,
+                email="signer@example.test",
+                now=now,
+            )
+        with pytest.raises(InviteEmailMismatch):  # wrong email must not reveal the used state
+            await repository.accept_invite(
+                token_hash=token_hash,
+                user_id=uuid7(),
+                email="wrong@example.test",
+                now=now,
+            )
 
         listed = await repository.list_members(org_id=org_id)
         assert listed is not None
@@ -134,8 +164,20 @@ async def _exercise_membership_flow(database_url: str) -> None:
                 roles=("OrgAdmin",),
                 updated_by=admin_id,
             )
+        await repository.update_member(
+            org_id=org_id,
+            user_id=owner_id,
+            roles=("Owner",),
+            updated_by=admin_id,
+        )
         with pytest.raises(LastAdministrator):
             await repository.remove_member(org_id=org_id, user_id=admin_id)
+        await repository.update_member(
+            org_id=org_id,
+            user_id=owner_id,
+            roles=("OrgAdmin", "Owner"),
+            updated_by=admin_id,
+        )
 
         changed = await repository.update_member(
             org_id=org_id,
@@ -145,6 +187,22 @@ async def _exercise_membership_flow(database_url: str) -> None:
         )
         assert changed is not None and changed.roles == ("Finance",)
         assert await repository.remove_member(org_id=org_id, user_id=admin_id)
+
+        # Suspended members do not count toward the last-admin guard and can be stripped.
+        async with sessions() as session, session.begin():
+            suspended = await session.scalar(
+                select(Membership).where(
+                    Membership.org_id == org_id, Membership.user_id == signer_id
+                )
+            )
+            assert suspended is not None
+            suspended.roles = ["OrgAdmin"]
+            suspended.status = MembershipStatus.SUSPENDED
+        stripped = await repository.update_member(
+            org_id=org_id, user_id=signer_id, roles=("Finance",), updated_by=owner_id
+        )
+        assert stripped is not None and stripped.roles == ("Finance",)
+        assert await repository.list_members(org_id=uuid7()) is None
         async with sessions() as session:
             assert (
                 await session.scalar(
