@@ -1,7 +1,7 @@
 """add per-user notification preferences and notifications.deliver_at
 
-Revision ID: 20261014_0026
-Revises: 20261014_0025
+Revision ID: 20261014_0027
+Revises: 20261014_0026
 Create Date: 2026-10-13 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0026"
-down_revision: str | None = "20261014_0025"
+revision: str = "20261014_0027"
+down_revision: str | None = "20261014_0026"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
