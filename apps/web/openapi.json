@@ -451,6 +451,89 @@
         "title": "Coverage",
         "type": "string"
       },
+      "CoverageAcknowledgeRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "CoverageAcknowledgeRequest",
+        "type": "object"
+      },
+      "CoverageResponse": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/CoverageView"
+          }
+        },
+        "required": ["coverage"],
+        "title": "CoverageResponse",
+        "type": "object"
+      },
+      "CoverageView": {
+        "properties": {
+          "acknowledged": {
+            "title": "Acknowledged",
+            "type": "boolean"
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedat"
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedby"
+          },
+          "acknowledgmentReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgmentreason"
+          },
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "executionAllowed": {
+            "title": "Executionallowed",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Coverage"
+          }
+        },
+        "required": ["status", "acknowledged", "details", "executionAllowed"],
+        "title": "CoverageView",
+        "type": "object"
+      },
       "CreateGovernanceTxRequest": {
         "properties": {
           "calls": {
@@ -2101,7 +2184,7 @@
             "type": "integer"
           },
           "coverage": {
-            "$ref": "#/components/schemas/Coverage"
+            "$ref": "#/components/schemas/CoverageView"
           },
           "createdAt": {
             "format": "date-time",
@@ -4103,6 +4186,118 @@
           }
         },
         "summary": "Get Treasury",
+        "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge": {
+      "post": {
+        "operationId": "acknowledge_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoverageAcknowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Coverage",
+        "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/refresh": {
+      "post": {
+        "operationId": "refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Coverage",
         "tags": ["treasury"]
       }
     },

@@ -178,6 +178,10 @@ class Treasury(VersionedMixin, Base):
             "AND length(btrim(coverage_ack_reason)) > 0)",
             name="ck_treasuries_coverage_ack",
         ),
+        CheckConstraint(
+            "jsonb_typeof(coverage_details) = 'array'",
+            name="ck_treasuries_coverage_details_array",
+        ),
         CheckConstraint("version > 0", name="ck_treasuries_version"),
         Index("ix_treasuries_org_id", "org_id"),
         Index("ix_treasuries_chain_id", "chain_id"),
@@ -209,6 +213,9 @@ class Treasury(VersionedMixin, Base):
     )
     coverage_ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     coverage_ack_reason: Mapped[str | None] = mapped_column(Text)
+    coverage_details: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
 
 
 class TreasuryWallet(VersionedMixin, Base):
@@ -301,6 +308,14 @@ class SafeConfigSnapshot(Base):
             "guard IS NULL OR octet_length(guard) = 20",
             name="ck_safe_config_snapshots_guard_length",
         ),
+        CheckConstraint(
+            "fallback_handler IS NULL OR octet_length(fallback_handler) = 20",
+            name="ck_safe_config_snapshots_fallback_handler_length",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(module_implementations) = 'object'",
+            name="ck_safe_config_snapshots_module_implementations_object",
+        ),
         Index(
             "ix_safe_config_snapshots_org_wallet_block",
             "org_id",
@@ -319,6 +334,10 @@ class SafeConfigSnapshot(Base):
     threshold: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     modules: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary(20)), nullable=False)
     guard: Mapped[bytes | None] = mapped_column(LargeBinary(20))
+    fallback_handler: Mapped[bytes | None] = mapped_column(LargeBinary(20))
+    module_implementations: Mapped[dict[str, str | None]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

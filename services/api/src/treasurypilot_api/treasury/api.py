@@ -28,6 +28,7 @@ from treasurypilot_api.treasury.service import (
     TreasuryRequestError,
     TreasuryService,
     WalletInput,
+    coverage_allows_execution,
 )
 from treasurypilot_api.treasury.sync import asset_id
 
@@ -198,14 +199,46 @@ class WalletView(ApiModel):
     threshold: int
 
 
+class CoverageView(ApiModel):
+    status: Coverage
+    acknowledged: bool
+    details: list[str]
+    execution_allowed: bool
+    acknowledged_at: datetime | None = None
+    acknowledged_by: uuid.UUID | None = None
+    acknowledgment_reason: str | None = None
+
+    @classmethod
+    def from_record(cls, record: TreasuryRecord) -> CoverageView:
+        return cls(
+            status=record.coverage,
+            acknowledged=record.coverage_acknowledged,
+            details=list(record.coverage_details),
+            execution_allowed=coverage_allows_execution(
+                record.coverage, record.coverage_acknowledged
+            ),
+            acknowledged_at=record.coverage_acknowledged_at,
+            acknowledged_by=record.coverage_acknowledged_by,
+            acknowledgment_reason=record.coverage_ack_reason,
+        )
+
+
 class TreasuryView(ApiModel):
     id: uuid.UUID
     chain_id: int
     asset_id: uuid.UUID
     status: TreasuryStatus
-    coverage: Coverage
+    coverage: CoverageView
     module_address: str | None
     created_at: datetime
+
+
+class CoverageResponse(ApiModel):
+    coverage: CoverageView
+
+
+class CoverageAcknowledgeRequest(ApiModel):
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class WarningView(ApiModel):
@@ -227,7 +260,7 @@ class TreasuryResponse(ApiModel):
                 chain_id=record.chain_id,
                 asset_id=record.asset_id,
                 status=record.status,
-                coverage=record.coverage,
+                coverage=CoverageView.from_record(record),
                 module_address=record.module_address,
                 created_at=record.created_at,
             ),
@@ -313,3 +346,64 @@ async def get_treasury(
             detail="The treasury does not exist in this organization.",
         ) from None
     return TreasuryResponse.from_record(record)
+
+
+@router.post(
+    "/orgs/{organization_id}/treasuries/{treasury_id}/coverage/refresh",
+    response_model=CoverageResponse,
+)
+async def refresh_coverage(
+    treasury_id: uuid.UUID,
+    request: Request,
+    member: Annotated[
+        MemberAccess,
+        Depends(require_role(OrganizationRole.OWNER, OrganizationRole.ORG_ADMIN)),
+    ],
+) -> CoverageResponse:
+    try:
+        record = await _service(request).refresh_coverage(
+            organization_id=member.organization_id, treasury_id=treasury_id
+        )
+    except TreasuryNotFound:
+        raise AuthFailure(
+            status=404,
+            code="TREASURY_NOT_FOUND",
+            title="Treasury not found",
+            detail="The treasury does not exist in this organization.",
+        ) from None
+    return CoverageResponse(coverage=CoverageView.from_record(record))
+
+
+@router.post(
+    "/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge",
+    response_model=CoverageResponse,
+)
+async def acknowledge_coverage(
+    treasury_id: uuid.UUID,
+    payload: CoverageAcknowledgeRequest,
+    request: Request,
+    member: Annotated[MemberAccess, Depends(require_role(OrganizationRole.OWNER))],
+) -> CoverageResponse:
+    try:
+        record = await _service(request).acknowledge_coverage(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            user_id=member.user_id,
+            reason=payload.reason,
+        )
+    except TreasuryNotFound:
+        raise AuthFailure(
+            status=404,
+            code="TREASURY_NOT_FOUND",
+            title="Treasury not found",
+            detail="The treasury does not exist in this organization.",
+        ) from None
+    except TreasuryRequestError as exc:
+        status = 409 if exc.code in {"COVERAGE_COMPLETE", "COVERAGE_UNKNOWN"} else 422
+        raise AuthFailure(
+            status=status,
+            code=exc.code,
+            title="Coverage acknowledgment rejected",
+            detail=exc.detail,
+        ) from None
+    return CoverageResponse(coverage=CoverageView.from_record(record))
