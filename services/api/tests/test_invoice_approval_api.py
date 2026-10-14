@@ -1,20 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.request import Request as HttpRequest
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from eth_account.signers.local import LocalAccount
 from fastapi import FastAPI, Request, Response
 from sqlalchemy import text
 
+from treasurypilot_api.compliance.travel_rule import (
+    HttpTravelRuleProvider,
+    SqlAlchemyTravelRuleRepository,
+    TravelRulePolicy,
+    TravelRuleService,
+    TravelRuleThreshold,
+)
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
@@ -23,6 +33,7 @@ from treasurypilot_api.invoices.requests import (
     approve_request,
     get_approval_typed_data,
 )
+from treasurypilot_core.privacy import FieldCipher, FieldEncryptionKey
 
 API_ROOT = Path(__file__).parents[1]
 ORG = uuid.UUID("00000000-0000-7000-8000-000000000110")
@@ -55,7 +66,7 @@ class _Chain:
         return False
 
 
-async def _seed(connection, account: Account) -> None:  # type: ignore[no-untyped-def]
+async def _seed(connection, account: LocalAccount) -> None:  # type: ignore[no-untyped-def]
     for user_id, email in ((MAKER, "maker"), (APPROVER, "approver")):
         await connection.execute(
             text("INSERT INTO users (id, email) VALUES (:id, :email)"),
@@ -70,7 +81,8 @@ async def _seed(connection, account: Account) -> None:  # type: ignore[no-untype
         "wallet": WALLET,
     }
     statements = [
-        "INSERT INTO organizations (id, name) VALUES (:org, 'Approval')",
+        "INSERT INTO organizations (id, name, legal_name, country) "
+        "VALUES (:org, 'Approval', 'Approval Inc', 'US')",
         "INSERT INTO chains (chain_id, name, is_testnet, confirmations, explorer_url, rpc_urls) "
         "VALUES (11155111, 'Sepolia', true, 3, 'https://x.test', '[\"https://rpc\"]')",
         "INSERT INTO assets (id, chain_id, address, symbol, decimals, issuer_label) "
@@ -81,8 +93,8 @@ async def _seed(connection, account: Account) -> None:  # type: ignore[no-untype
         "safe_address, owners, threshold) VALUES (:wallet, :org, :treasury, 11155111, "
         "'OPERATIONAL', 'Ops', decode(repeat('44', 20), 'hex'), "
         f"'[\"0x{'55' * 20}\"]', 1)",
-        "INSERT INTO vendors (id, org_id, name, normalized_ref) "
-        "VALUES (:vendor, :org, 'Vendor', 'vendor')",
+        "INSERT INTO vendors (id, org_id, name, country, normalized_ref) "
+        "VALUES (:vendor, :org, 'Vendor Ltd', 'GB', 'vendor')",
         "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, "
         "oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) "
         "VALUES (:payee, :treasury, :org, :vendor, 'Main', decode(repeat('22', 20), 'hex'), "
@@ -112,9 +124,11 @@ async def _seed(connection, account: Account) -> None:  # type: ignore[no-untype
             text(
                 "INSERT INTO payment_requests (id, org_id, treasury_id, chain_id, vendor_id, "
                 "payee_id, invoice_no, issue_date, due_at, amount, asset_id, paying_wallet_id, "
+                "fiat_amount_minor_units, fiat_currency, fx_reference_quote, fx_tolerance_bps, "
                 "status, created_by, last_edited_by, fingerprint, invoice_hash, "
                 "onchain_request_id) VALUES (:id, :org, :treasury, 11155111, :vendor, :payee, "
-                ":no, '2026-10-01', :due, 1001, :asset, :wallet, 'AwaitingApproval', :maker, "
+                ":no, '2026-10-01', :due, 1001, :asset, :wallet, 101, 'USD', '{}', 0, "
+                "'AwaitingApproval', :maker, "
                 ":maker, :fp, :ih, :oid)"
             ),
             {
@@ -148,6 +162,36 @@ async def _approve_in_postgres(database_url: str) -> None:
         app = FastAPI()
         app.state.request_sessions = sessions
         app.state.approval_chain_reader = _Chain()
+
+        gateway_calls: list[tuple[str, str]] = []
+        exchange_started = False
+
+        def send(request: HttpRequest, timeout: float) -> bytes:
+            nonlocal exchange_started
+            gateway_calls.append((request.get_method(), request.full_url))
+            assert request.get_header("Authorization") == "Bearer test-secret"
+            assert timeout == 5
+            if request.full_url.endswith("/v1/counterparties/classify"):
+                response = {"kind": "VASP"}
+            elif request.full_url.endswith("/v1/exchanges"):
+                exchange_started = True
+                response = {"status": "PENDING", "providerRef": "approval-case"}
+            elif request.full_url.endswith("/v1/exchanges/approval-case") and exchange_started:
+                response = {"status": "COMPLETED", "providerRef": "approval-case"}
+            else:
+                raise AssertionError(f"unexpected Travel Rule request: {request.full_url}")
+            return json.dumps(response).encode()
+
+        app.state.travel_rule_service = TravelRuleService(
+            SqlAlchemyTravelRuleRepository(sessions),
+            HttpTravelRuleProvider(
+                base_url="https://gateway.example", api_key="test-secret", request_sender=send
+            ),
+            TravelRulePolicy(
+                (TravelRuleThreshold("US", "USD", 100), TravelRuleThreshold("GB", "USD", 100))
+            ),
+            FieldCipher(FieldEncryptionKey.from_base64("A" * 43)),
+        )
         request = Request({"type": "http", "app": app, "method": "GET", "path": "/"})
         approver = _member(APPROVER)
         maker = _member(MAKER)
@@ -184,6 +228,17 @@ async def _approve_in_postgres(database_url: str) -> None:
                     approver,
                 )
             assert error.value.code == code
+        with pytest.raises(AuthFailure) as error:
+            await approve_request(
+                ORG,
+                REQUEST,
+                ApproveRequest(signature=signature, revision=1, expiry=expiry),
+                request,
+                Response(),
+                "approve-key",
+                approver,
+            )
+        assert error.value.code == "TRAVEL_RULE_HOLD"
         result = await approve_request(
             ORG,
             REQUEST,
@@ -195,6 +250,7 @@ async def _approve_in_postgres(database_url: str) -> None:
         )
         assert result["request"]["status"] == "Approved"  # type: ignore[index]
         assert result["approval"]["typedData"] == typed  # type: ignore[index]
+        assert [method for method, _url in gateway_calls] == ["POST", "POST", "GET"]
     finally:
         await engine.dispose()
 

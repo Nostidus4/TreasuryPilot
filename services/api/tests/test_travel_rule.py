@@ -4,10 +4,11 @@ import asyncio
 import json
 import uuid
 from dataclasses import replace
+from typing import cast
 from urllib.request import Request as HttpRequest
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from treasurypilot_api.compliance.travel_rule import (
     CounterpartyAssessment,
@@ -182,12 +183,12 @@ def test_travel_rule_http_provider_configuration_requires_paired_https_credentia
         Settings(
             environment="production",
             travel_rule_provider_url="http://gateway.example",
-            travel_rule_provider_api_key="provider-secret",
+            travel_rule_provider_api_key=SecretStr("provider-secret"),
         )
     configured = Settings(
         environment="production",
         travel_rule_provider_url="https://gateway.example/api/",
-        travel_rule_provider_api_key="provider-secret",
+        travel_rule_provider_api_key=SecretStr("provider-secret"),
     )
     assert configured.travel_rule_provider_url == "https://gateway.example/api/"
 
@@ -245,7 +246,7 @@ def test_configured_http_provider_holds_then_releases_only_after_completion() ->
 
     def send(request: HttpRequest, timeout: float) -> bytes:
         nonlocal exchange_started
-        body = json.loads(request.data) if request.data is not None else None
+        body = json.loads(cast(bytes, request.data)) if request.data is not None else None
         calls.append(
             (
                 request.get_method(),

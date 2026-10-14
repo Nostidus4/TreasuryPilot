@@ -164,6 +164,7 @@ class Vendor(VersionedMixin, Base):
         UniqueConstraint("id", "org_id", name="uq_vendors_id_org"),
         CheckConstraint("length(btrim(name)) > 0", name="ck_vendors_name"),
         CheckConstraint("length(btrim(normalized_ref)) > 0", name="ck_vendors_normalized_ref"),
+        CheckConstraint("country IS NULL OR country ~ '^[A-Z]{2}$'", name="ck_vendors_country"),
         CheckConstraint("version > 0", name="ck_vendors_version"),
     )
 
@@ -172,6 +173,7 @@ class Vendor(VersionedMixin, Base):
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(2))
     normalized_ref: Mapped[str] = mapped_column(String(200), nullable=False)
     # Confidential PII (F-113): ciphertext only, never plaintext.
     tax_id_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)

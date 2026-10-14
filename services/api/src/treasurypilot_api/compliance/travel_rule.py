@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -418,11 +418,14 @@ class HttpTravelRuleProvider:
                 "jurisdiction": jurisdiction.upper(),
             },
         )
-        try:
-            kind = CounterpartyKind(payload["kind"])
-            attestation_verified = payload.get("attestationVerified", False)
-        except (KeyError, ValueError, TypeError):
+        raw_kind = payload.get("kind")
+        if not isinstance(raw_kind, str):
             raise TravelRuleProviderError("invalid counterparty response") from None
+        try:
+            kind = CounterpartyKind(raw_kind)
+        except ValueError:
+            raise TravelRuleProviderError("invalid counterparty response") from None
+        attestation_verified = payload.get("attestationVerified", False)
         if not isinstance(attestation_verified, bool):
             raise TravelRuleProviderError("invalid counterparty attestation response")
         if kind != CounterpartyKind.SELF_HOSTED and attestation_verified:
@@ -454,9 +457,12 @@ class HttpTravelRuleProvider:
         return TravelRuleOutcome(outcome.status, provider_ref)
 
     def _outcome(self, payload: dict[str, object]) -> TravelRuleOutcome:
+        raw_status = payload.get("status")
+        if not isinstance(raw_status, str):
+            raise TravelRuleProviderError("invalid exchange response") from None
         try:
-            status = TravelRuleStatus(payload["status"])
-        except (KeyError, ValueError, TypeError):
+            status = TravelRuleStatus(raw_status)
+        except ValueError:
             raise TravelRuleProviderError("invalid exchange response") from None
         # A self-hosted classification must come from classify_counterparty(), where
         # its attestation is explicitly verified. Exchange/status replies cannot clear it.
@@ -519,7 +525,7 @@ class HttpTravelRuleProvider:
             with opener.open(request, timeout=self._timeout_seconds) as response:
                 if response.status < 200 or response.status >= 300:
                     raise TravelRuleProviderError("Travel Rule gateway returned an error")
-                payload = response.read(self._MAX_RESPONSE_BYTES + 1)
+                payload = cast(bytes, response.read(self._MAX_RESPONSE_BYTES + 1))
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise TravelRuleProviderError("Travel Rule gateway is unavailable") from error
         if len(payload) > self._MAX_RESPONSE_BYTES:
