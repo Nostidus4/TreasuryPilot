@@ -154,6 +154,19 @@ const governanceView = (tx: (typeof db.governance)[number]) => {
 };
 
 export const treasuryHandlers = [
+  route<{ chainId: number; owners: string[]; threshold: number }>(
+    'post',
+    '/orgs/:orgId/safes/deploy-tx',
+    ({ params }) => {
+      requireOrg(params.orgId);
+      fail(
+        503,
+        'SAFE_DEPLOYMENT_UNAVAILABLE',
+        'The configured chain has no verified Safe proxy factory, v1.4.1 singleton, and fallback handler.',
+      );
+    },
+  ),
+
   route<{
     name?: string;
     chainId: number;

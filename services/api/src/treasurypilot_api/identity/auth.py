@@ -180,6 +180,7 @@ class AuthFailure(Exception):
         title: str,
         detail: str,
         retry_after: int | None = None,
+        extensions: dict[str, object] | None = None,
     ) -> None:
         super().__init__(code)
         self.status = status
@@ -187,6 +188,7 @@ class AuthFailure(Exception):
         self.title = title
         self.detail = detail
         self.retry_after = retry_after
+        self.extensions = extensions or {}
 
 
 def auth_unavailable(detail: str) -> AuthFailure:

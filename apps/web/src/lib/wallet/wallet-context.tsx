@@ -139,6 +139,7 @@ export function WalletProvider({ children }: PropsWithChildren) {
           to: call.to,
           data: call.data,
           value: BigInt(call.value ?? '0'),
+          chainId: call.chainId,
         });
       },
     };
