@@ -196,6 +196,7 @@ class Organization(Base):
             "country IS NULL OR country ~ '^[A-Z]{2}$'", name="ck_organizations_country"
         ),
         CheckConstraint("length(btrim(display_tz)) > 0", name="ck_organizations_display_tz"),
+        CheckConstraint("platform_status IN ('active', 'suspended')", name="ck_organizations_platform_status"),
         CheckConstraint("version > 0", name="ck_organizations_version"),
     )
 
@@ -205,6 +206,9 @@ class Organization(Base):
     country: Mapped[str | None] = mapped_column(String(2))
     display_tz: Mapped[str] = mapped_column(
         String(64), nullable=False, default="UTC", server_default="UTC"
+    )
+    platform_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
     )
     solo_mode: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

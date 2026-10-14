@@ -29,7 +29,7 @@ F-150 (FR-924), F-151 (FR-925, M1 via TRS-002), F-152 (FR-926).
 
 ## 4. Data model (Later)
 
-`platform_settings`, `tenants_status` (active/suspended), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
+`organizations.platform_status` (active/suspended), `platform_admin_events` (staff tenant operations), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
 
 ## 5. State
 
@@ -37,7 +37,7 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 ## 6. Interfaces (Later)
 
-`/admin/tenants`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with its own auth (staff SSO) and IP allowlist.
+`/admin/tenants`, `/admin/tenants/{id}/health`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with a staff bearer credential and socket-peer IP allowlist. It fails closed when any required credential or allowlist setting is missing. The initial implementation exposes tenant metadata and health counts and persists suspension with a platform event. Planning enforcement must be connected when planning routes and workers are implemented; staff SSO and read-only support sessions remain future work.
 
 ## 7–8. Flows and algorithms
 

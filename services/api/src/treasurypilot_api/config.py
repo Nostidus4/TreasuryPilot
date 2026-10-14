@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     csrf_header_name: str = "X-CSRF-Token"
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"
+    admin_staff_token: SecretStr | None = None
+    admin_staff_id: str | None = None
+    admin_ip_allowlist: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

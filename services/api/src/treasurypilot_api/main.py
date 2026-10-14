@@ -9,9 +9,10 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
+from treasurypilot_api.admin.api import create_admin_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.config import Settings, get_settings
@@ -160,6 +161,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    admin_sessions: async_sessionmaker[AsyncSession] | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -169,6 +171,9 @@ def create_app(
         SQLAlchemyInstrumentor().instrument()
     configure_error_tracking("api")
     engine: AsyncEngine | None = None
+    admin_engine: AsyncEngine | None = None
+    if admin_sessions is None and settings.database_url is not None:
+        admin_engine, admin_sessions = create_session_factory(settings.database_url.get_secret_value())
     redis_limiter: RedisRateLimiter | None = None
     if auth_service is None:
         (
@@ -212,6 +217,8 @@ def create_app(
         yield
         if engine is not None:
             await engine.dispose()
+        if admin_engine is not None:
+            await admin_engine.dispose()
         if redis_limiter is not None:
             await redis_limiter.aclose()
 
@@ -254,6 +261,7 @@ def create_app(
     app.include_router(organizations_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(create_admin_router(settings, admin_sessions))
 
     return app
 
