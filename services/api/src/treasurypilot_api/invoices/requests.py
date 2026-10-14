@@ -25,8 +25,8 @@ from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
-from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, maker_checker_conflict, require_role
 from treasurypilot_api.invoices.anomalies import (
     InvoiceRevisionSignals,
     PaidInvoice,
@@ -55,7 +55,14 @@ from treasurypilot_api.invoices.models import (
     StatusEventActorType,
 )
 from treasurypilot_api.invoices.near_duplicates import find_near_duplicates
-from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
+from treasurypilot_api.invoices.state_machine import (
+    AuditEntry,
+    RequestStateMachine,
+    RequestTransitionError,
+    SqlAlchemyPayOperationGuard,
+    TransitionAction,
+    TransitionActor,
+)
 from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.mandate.vendors import normalize_vendor_ref
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
@@ -66,6 +73,7 @@ from treasurypilot_core.money import BaseUnits
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
+_require_approver = require_role(OrganizationRole.APPROVER)
 
 CSV_REQUIRED_COLUMNS = (
     "vendor_ref",
@@ -139,6 +147,14 @@ _FINGERPRINT_INDEX = "uq_payment_requests_active_fingerprint"
 
 class ConfirmTermsRequest(ApiModel):
     terms: dict[str, object]
+
+
+class RequestReason(ApiModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class FlagAcknowledgment(ApiModel):
+    note: str = Field(min_length=10, max_length=2000)
 
 
 _TERMS_KEYS = {
@@ -268,6 +284,42 @@ def _not_found() -> AuthFailure:
     return _fail(
         404, "REQUEST_NOT_FOUND", "Request not found", "The request is not available to this user."
     )
+
+
+def _expected_version(if_match: str | None) -> int:
+    try:
+        version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
+    except ValueError:
+        version = None
+    if version is None:
+        raise _fail(
+            412,
+            "PRECONDITION_FAILED",
+            "Request changed",
+            "Provide the current request version in If-Match.",
+        )
+    return version
+
+
+async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequest) -> None:
+    """Reject approval signing while a HIGH flag on this revision remains open."""
+    unacknowledged = await session.scalar(
+        select(RequestFlag.id)
+        .where(
+            RequestFlag.request_id == row.id,
+            RequestFlag.revision == row.current_revision,
+            RequestFlag.severity == RequestFlagSeverity.HIGH.value,
+            RequestFlag.status == RequestFlagStatus.OPEN.value,
+        )
+        .limit(1)
+    )
+    if unacknowledged is not None:
+        raise _fail(
+            409,
+            "HIGH_FLAGS_UNACKED",
+            "High risk flags need acknowledgment",
+            "An approver must acknowledge every open HIGH flag on the current revision.",
+        )
 
 
 def _validate_dates(issue_date: date, due_date: date) -> None:
@@ -1441,17 +1493,7 @@ async def edit_request(
     if_match: str | None = Header(default=None, alias="If-Match"),
     member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
-    try:
-        expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
-    except ValueError:
-        expected_version = None
-    if expected_version is None:
-        raise _fail(
-            412,
-            "PRECONDITION_FAILED",
-            "Request changed",
-            "Provide the current request version in If-Match.",
-        )
+    expected_version = _expected_version(if_match)
     fields = payload.model_dump(exclude_unset=True)
     factory = _sessions(request)
     scope: tuple[uuid.UUID, bytes] | None = None
@@ -1655,17 +1697,7 @@ async def confirm_request_terms(
     if_match: str | None = Header(default=None, alias="If-Match"),
     member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
-    try:
-        expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
-    except ValueError:
-        expected_version = None
-    if expected_version is None:
-        raise _fail(
-            412,
-            "PRECONDITION_FAILED",
-            "Request changed",
-            "Provide the current request version in If-Match.",
-        )
+    expected_version = _expected_version(if_match)
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
             select(PaymentRequest)
@@ -1735,3 +1767,255 @@ async def confirm_request_terms(
         version = row.version
     response.headers["ETag"] = f'"{version}"'
     return {"request": result}
+
+
+class _AuditAppender:
+    async def append(self, *, session: AsyncSession, entry: AuditEntry) -> None:
+        await write_audit(
+            session,
+            org_id=entry.organization_id,
+            actor=AuditActor(AuditActorType(entry.actor_type.value), entry.actor_id),
+            action=entry.action,
+            entity=AuditEntity(entry.entity_type, entry.entity_id),
+            data=entry.data,
+        )
+
+
+async def _transition(
+    request: Request,
+    response: Response,
+    *,
+    member: MemberAccess,
+    request_id: uuid.UUID,
+    action: TransitionAction,
+    target: RequestStatus,
+    expected_version: int,
+    reason: str,
+) -> dict[str, object]:
+    """Run a user transition through the state machine and return the refreshed request."""
+    factory = _sessions(request)
+    machine = RequestStateMachine(
+        factory, audit=_AuditAppender(), pay_operation_guard=SqlAlchemyPayOperationGuard()
+    )
+    actor = TransitionActor(
+        StatusEventActorType.USER,
+        action,
+        member.user_id,
+        frozenset(OrganizationRole(role) for role in member.roles),
+    )
+    try:
+        await machine.transition(
+            organization_id=member.organization_id,
+            request_id=request_id,
+            target=target,
+            actor=actor,
+            expected_version=expected_version,
+            reason=reason,
+        )
+    except RequestTransitionError as error:
+        raise _fail(
+            error.status_code, error.code, "Request transition rejected", error.detail
+        ) from None
+    async with factory() as session:
+        row = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id))
+        assert row is not None
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.post("/{request_id}/submit", openapi_extra={"x-organization-scoped": True})
+async def submit_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
+    # The guards read the row at expected_version; the transition re-checks that version
+    # under the row lock, so an edit between the two is rejected with 412.
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        if row.version == expected_version and row.status == RequestStatus.DRAFT.value:
+            await _assert_submittable(session, row)
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.SUBMIT,
+        target=RequestStatus.AWAITING_APPROVAL,
+        expected_version=expected_version,
+        reason="request submitted for approval",
+    )
+
+
+async def _assert_submittable(session: AsyncSession, row: PaymentRequest) -> None:
+    if row.terms is not None and row.terms_confirmed_by is None:
+        raise _fail(
+            409,
+            "TERMS_UNCONFIRMED",
+            "Payment terms need confirmation",
+            "Confirm the extracted payment terms before submitting this request.",
+        )
+    if row.source == RequestSource.UPLOAD.value and row.extraction_confirmed_by is None:
+        raise _fail(
+            409,
+            "EXTRACTION_UNCONFIRMED",
+            "Extracted fields need confirmation",
+            "Confirm the extracted invoice fields before submitting this request.",
+        )
+    if (
+        row.treasury_id is None
+        or row.vendor_id is None
+        or row.payee_id is None
+        or row.asset_id is None
+        or row.invoice_no is None
+        or row.issue_date is None
+        or row.due_at is None
+        or row.amount is None
+    ):
+        raise _fail(
+            409,
+            "REQUEST_FIELDS_INCOMPLETE",
+            "Request fields are incomplete",
+            "Complete all required invoice fields before submitting this request.",
+        )
+    await _bound_fields(
+        session,
+        organization_id=row.org_id,
+        treasury_id=row.treasury_id,
+        vendor_id=row.vendor_id,
+        payee_id=row.payee_id,
+        asset_id=row.asset_id,
+        paying_wallet_id=row.paying_wallet_id,
+    )
+
+
+@router.post("/{request_id}/withdraw", openapi_extra={"x-organization-scoped": True})
+async def withdraw_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.WITHDRAW,
+        target=RequestStatus.DRAFT,
+        expected_version=_expected_version(if_match),
+        reason="request withdrawn by operator",
+    )
+
+
+@router.post("/{request_id}/request-changes", openapi_extra={"x-organization-scoped": True})
+async def request_changes(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.REQUEST_CHANGES,
+        target=RequestStatus.DRAFT,
+        expected_version=_expected_version(if_match),
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/flags/{flag_id}/ack", openapi_extra={"x-organization-scoped": True})
+async def acknowledge_flag(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    flag_id: uuid.UUID,
+    payload: FlagAcknowledgment,
+    request: Request,
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    note = payload.note.strip()
+    if len(note) < 10:
+        raise _fail(422, "ACK_NOTE_TOO_SHORT", "Note too short", "Provide at least 10 characters.")
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.status != RequestStatus.AWAITING_APPROVAL.value:
+            raise _fail(
+                409,
+                "NOT_AWAITING_APPROVAL",
+                "Request is not awaiting approval",
+                "Flags can only be acknowledged while the request awaits approval.",
+            )
+        flag = await session.scalar(
+            select(RequestFlag)
+            .where(RequestFlag.id == flag_id, RequestFlag.request_id == row.id)
+            .with_for_update()
+        )
+        if flag is None:
+            raise _fail(404, "FLAG_NOT_FOUND", "Flag not found", "The flag is not available.")
+        if (
+            flag.status == RequestFlagStatus.SUPERSEDED.value
+            or flag.revision != row.current_revision
+        ):
+            raise _fail(
+                409,
+                "FLAG_SUPERSEDED",
+                "Flag superseded",
+                "Only flags on the current request revision can be acknowledged.",
+            )
+        if flag.status != RequestFlagStatus.OPEN.value:
+            raise _fail(
+                409, "FLAG_NOT_OPEN", "Flag is not open", "Only open flags can be acknowledged."
+            )
+        solo_mode = bool(
+            await session.scalar(
+                select(Organization.solo_mode).where(Organization.id == member.organization_id)
+            )
+        )
+        # Same rule as the approve transition: the creator never acknowledges; the last
+        # editor may only in solo mode.
+        if member.user_id == row.created_by or (
+            not solo_mode and member.user_id == row.last_edited_by
+        ):
+            raise maker_checker_conflict()
+        flag.status = RequestFlagStatus.ACKNOWLEDGED.value
+        flag.acknowledged_by = member.user_id
+        flag.acknowledged_at = datetime.now(UTC)
+        flag.ack_note = note
+        await session.flush()
+        result = {
+            "id": str(flag.id),
+            "revision": flag.revision,
+            "code": flag.code,
+            "severity": flag.severity,
+            "evidence": flag.evidence,
+            "status": flag.status,
+            "acknowledgedBy": str(flag.acknowledged_by),
+            "acknowledgedAt": flag.acknowledged_at.isoformat(),
+            "ackNote": flag.ack_note,
+        }
+    return {"flag": result}
