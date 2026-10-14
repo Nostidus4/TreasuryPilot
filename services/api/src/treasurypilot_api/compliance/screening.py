@@ -308,7 +308,8 @@ async def screen_plan_before_pay(
     ``ScreeningService.require_clear`` reuses only the latest unexpired CLEAR/HIT result;
     stale results are synchronously refreshed under its five-second provider timeout.
     The policy validator then turns HIT into SCREENING_HIT and unavailable/error outcomes
-    into DATA_MISSING. Non-PAY plans do not need sanctions screening.
+    into DATA_MISSING. Plans without a PAY step are returned unchanged; the validator rejects
+    them as PLAN_MALFORMED, so ``screening_clear`` is never relied on there.
     """
     pay_steps = [step for step in plan.steps if step.action == "PAY"]
     if not pay_steps:

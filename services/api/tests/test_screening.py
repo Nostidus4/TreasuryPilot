@@ -6,7 +6,6 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -27,6 +26,8 @@ from treasurypilot_api.compliance.screening import (
 )
 from treasurypilot_api.identity.models import Organization
 from treasurypilot_api.mandate.models import ScreeningResult
+from treasurypilot_core.money import BaseUnits
+from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep, ValidationContext
 
 API_ROOT = Path(__file__).parents[1]
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
@@ -138,6 +139,36 @@ def test_cached_result_is_recorded_for_the_requesting_payee() -> None:
     assert reused.checked_at == repo.rows[0].checked_at
 
 
+def _plan(*payees: str) -> ExecutionPlan:
+    return ExecutionPlan(
+        request_id=b"\x01" * 32,
+        treasury="0x" + "11" * 20,
+        chain_id=1,
+        steps=[
+            PlanStep(
+                seq=i,
+                step_id=bytes([i + 1]) * 32,
+                action=Action.PAY,
+                from_wallet="0x" + "22" * 20,
+                to=payee,
+                asset="0x" + "55" * 20,
+                amount=BaseUnits(1),
+            )
+            for i, payee in enumerate(payees)
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+
+
+def _screen_plan(plan: ExecutionPlan, screening: ScreeningService) -> ValidationContext:
+    # Real frozen model; only the screening fields matter here, so skip validating the rest.
+    context = ValidationContext.model_construct(screening_hit=False)
+    return asyncio.run(
+        screen_plan_before_pay(plan, context, service=screening, organization_id=ORG_ID)
+    )
+
+
 def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
     repository = MemoryRepository()
     old = NOW - timedelta(hours=25)
@@ -156,27 +187,8 @@ def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
         )
     )
     provider = CountingProvider()
-    screening = service(provider, repository)
 
-    class Context:
-        screening_hit = False
-        screening_clear = False
-
-        def model_copy(self, *, update: dict[str, bool]) -> SimpleNamespace:
-            return SimpleNamespace(**update)
-
-    plan = SimpleNamespace(
-        chain_id=1,
-        steps=[SimpleNamespace(action="PAY", to=LISTED)],
-    )
-    context = asyncio.run(
-        screen_plan_before_pay(
-            plan,
-            Context(),
-            service=screening,
-            organization_id=ORG_ID,  # type: ignore[arg-type]
-        )
-    )
+    context = _screen_plan(_plan(LISTED), service(provider, repository))
 
     assert provider.calls == 1
     assert context.screening_hit is True
@@ -184,23 +196,29 @@ def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
 
 
 def test_plan_screening_marks_provider_failure_as_not_clear() -> None:
-    class Context:
-        screening_hit = False
-        screening_clear = False
-
-        def model_copy(self, *, update: dict[str, bool]) -> SimpleNamespace:
-            return SimpleNamespace(**update)
-
-    context = asyncio.run(
-        screen_plan_before_pay(
-            SimpleNamespace(chain_id=1, steps=[SimpleNamespace(action="PAY", to=CLEAN)]),
-            Context(),
-            service=service(UnconfiguredScreeningProvider()),
-            organization_id=ORG_ID,
-        )
-    )
+    context = _screen_plan(_plan(CLEAN), service(UnconfiguredScreeningProvider()))
 
     assert context.screening_hit is False
+    assert context.screening_clear is False
+
+
+def test_plan_screening_is_clear_only_after_a_valid_clear() -> None:
+    context = _screen_plan(_plan(CLEAN), service(CountingProvider()))
+
+    assert context.screening_hit is False
+    assert context.screening_clear is True
+
+
+def test_plan_screening_reports_a_hit_even_when_another_payee_errors() -> None:
+    class HitOrError(CountingProvider):
+        async def screen(self, *, address: bytes, chain_id: int) -> ProviderResult:
+            if address == normalize_address(LISTED):
+                return await super().screen(address=address, chain_id=chain_id)
+            raise RuntimeError("provider down")
+
+    context = _screen_plan(_plan(CLEAN, LISTED), service(HitOrError()))
+
+    assert context.screening_hit is True
     assert context.screening_clear is False
 
 

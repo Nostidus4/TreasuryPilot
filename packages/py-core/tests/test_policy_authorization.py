@@ -514,6 +514,11 @@ def test_screening_provider_error_fails_with_data_missing() -> None:
     assert _failing(authorization_checks(_plan(), _ctx(screening_clear=False))) == [C.DATA_MISSING]
 
 
+def test_screening_hit_reports_only_screening_hit() -> None:
+    ctx = _ctx(screening_hit=True, screening_clear=False)
+    assert _failing(authorization_checks(_plan(), ctx)) == [C.SCREENING_HIT]
+
+
 def _policy_state(**update: Any):
     from treasurypilot_core.policy import Limits, PolicyState
 

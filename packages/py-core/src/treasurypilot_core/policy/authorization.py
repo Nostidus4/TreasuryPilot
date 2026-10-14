@@ -111,7 +111,8 @@ _REQUEST_RULES: list[_Rule] = [
         and (i.request.status in APPROVED_STATUSES or i.request.status == "Cancelled"),
     ),
     ("screening", C.SCREENING_HIT, lambda i: not i.ctx.screening_hit),
-    ("screening_clear", C.DATA_MISSING, lambda i: i.ctx.screening_clear),
+    # A HIT is already reported as SCREENING_HIT; do not also call it missing data.
+    ("screening_clear", C.DATA_MISSING, lambda i: i.ctx.screening_clear or i.ctx.screening_hit),
     ("mandate_not_paused", C.MANDATE_PAUSED, lambda i: i.mandate.status != "Paused"),
     ("mandate_not_revoked", C.MANDATE_REVOKED, lambda i: i.mandate.status != "Revoked"),
     ("mandate_started", C.MANDATE_NOT_ACTIVE, lambda i: i.ctx.now >= i.mandate.valid_from),

@@ -97,7 +97,7 @@ class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10
     pause_requested: bool          # BR-063 backend pause
     circuit_open: bool             # BR-065
     screening_hit: bool            # BR-085; latest screening returned HIT
-    screening_clear: bool          # false by default; true only after a valid CLEAR
+    screening_clear: bool          # false by default; true only after a valid CLEAR (a HIT reports SCREENING_HIT only)
     policy_state: PolicyState      # balances, buffers, limits, daily counters and exception view (POL-003)
     config: PolicyConfig           # §9
 

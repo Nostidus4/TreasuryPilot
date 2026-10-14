@@ -50,7 +50,7 @@ The execution caller runs `screen_plan_before_pay()` before policy validation. I
 each PAY step's destination with the plan chain id, then sets `screening_hit` and
 `screening_clear` in `ValidationContext`. `screening_clear` defaults to false, so a
 missing screening result blocks with `DATA_MISSING`; a fresh or refreshed HIT blocks
-with `SCREENING_HIT`. No PAY executor is currently wired in the repository, so this is
+with `SCREENING_HIT` only (not also `DATA_MISSING`). No PAY executor is currently wired in the repository, so this is
 the integration seam that future execution code must call before `validate_plan()`.
 
 ## 8. Algorithms
