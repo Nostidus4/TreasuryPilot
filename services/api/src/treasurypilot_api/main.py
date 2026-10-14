@@ -50,6 +50,13 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.documents import (
+    ExtractionQueue,
+    ObjectStorage,
+    build_document_storage,
+    build_extraction_queue,
+)
+from treasurypilot_api.invoices.documents import router as invoice_documents_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
@@ -212,6 +219,8 @@ def create_app(
     evidence_repository: EvidenceRepository | None = None,
     notification_repository: NotificationRepository | None = None,
     notification_preferences_repository: NotificationPreferencesRepository | None = None,
+    document_storage: ObjectStorage | None = None,
+    extraction_queue: ExtractionQueue | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -266,10 +275,8 @@ def create_app(
         vendor_repository = SqlAlchemyVendorRepository(sessions)
     if payee_repository is None and sessions is not None:
         payee_repository = SqlAlchemyPayeeRepository(sessions)
-    if notification_preferences_repository is None and engine is not None:
-        notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(
-            async_sessionmaker(engine, expire_on_commit=False)
-        )
+    if notification_preferences_repository is None and sessions is not None:
+        notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -338,6 +345,8 @@ def create_app(
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
     app.state.notification_preferences_repository = notification_preferences_repository
+    app.state.document_storage = document_storage or build_document_storage(settings)
+    app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -374,6 +383,7 @@ def create_app(
     app.include_router(notifications_router)
     app.include_router(requests_router)
     app.include_router(notification_preferences_router)
+    app.include_router(invoice_documents_router)
 
     return app
 
