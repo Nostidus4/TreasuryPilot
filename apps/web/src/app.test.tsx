@@ -612,6 +612,41 @@ test('a non-Safe verification error is shown beside the affected wallet field', 
   );
 });
 
+test('the setup wizard clearly labels Sepolia and its supported asset as TEST', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`);
+
+  expect(await screen.findByText('Sepolia · TEST')).toBeInTheDocument();
+  expect(screen.getByText('Test network')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /continue/i }));
+  expect(await screen.findByText('USDC · TEST')).toBeInTheDocument();
+});
+
+test('the unsupported Guardian step stays pending and cannot finish setup', async () => {
+  renderApp(`${BASE}/treasuries/new?t=trs_main`, {
+    beforeRender: () => {
+      window.sessionStorage.setItem(
+        'treasurypilot.module-draft.trs_main',
+        JSON.stringify({ guardian: `0x${'3'.repeat(40)}` }),
+      );
+    },
+  });
+
+  expect(
+    await screen.findByRole('heading', { name: 'Guardian Safe' }),
+  ).toBeInTheDocument();
+  expect(await screen.findByText(/guardian setup pending/i)).toBeInTheDocument();
+  expect(
+    screen.getByLabelText(/address included in module settings \(unverified\)/i),
+  ).toHaveValue(`0x${'3'.repeat(40)}`);
+  expect(
+    screen.getByRole('button', {
+      name: /finish setup — guardian verification required/i,
+    }),
+  ).toBeDisabled();
+  expect(screen.getByText(/MDT-010/i)).toBeInTheDocument();
+});
+
 test('module setup creates a governance transaction for each treasury Safe', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/treasuries/new`, { demoWallet: true });
@@ -624,7 +659,7 @@ test('module setup creates a governance transaction for each treasury Safe', asy
     screen.getByRole('button', { name: /check safes and continue/i }),
   );
   await user.type(
-    await screen.findByLabelText(/guardian safe address/i),
+    await screen.findByLabelText(/guardian address in module config/i),
     `0x${'3'.repeat(36)}cc33`,
   );
   await user.click(
@@ -640,5 +675,11 @@ test('module setup creates a governance transaction for each treasury Safe', asy
   });
   expect(
     await screen.findByText(/Enable the TreasuryPilot module on O1/i),
+  ).toBeInTheDocument();
+  await user.click(
+    screen.getAllByRole('button', { name: /sign with wallet/i })[0],
+  );
+  expect(
+    await screen.findByRole('button', { name: /execute transaction/i }),
   ).toBeInTheDocument();
 });

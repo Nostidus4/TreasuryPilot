@@ -1,6 +1,6 @@
 import { Check, RotateCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { decodeEventLog, parseAbi } from 'viem';
 import { usePublicClient } from 'wagmi';
 
@@ -57,7 +57,10 @@ const steps = [
     detail: 'Enable the TreasuryPilot module with a Safe transaction.',
   },
   { title: 'Coverage', detail: 'Check that nothing else can move the funds.' },
-  { title: 'Guardian Safe', detail: 'Who can pause in an emergency.' },
+  {
+    title: 'Guardian Safe',
+    detail: 'Setup is pending until Sentinel verification is available.',
+  },
 ] as const;
 
 const draftKey = (orgId: string) => `treasurypilot.setup-draft.${orgId}`;
@@ -398,7 +401,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
     asset:
       summaryAsset &&
       (summaryAsset.isTest
-        ? `${summaryAsset.symbol} (${t('test asset')})`
+        ? `${summaryAsset.symbol} · TEST`
         : summaryAsset.symbol),
     safes: safeRoles.map(({ role, label }) => ({
       role,
@@ -448,7 +451,11 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                         }
                         options={items.map((item) => ({
                           value: String(item.chainId),
-                          label: item.name,
+                          label:
+                            item.assets.length > 0 &&
+                            item.assets.every((asset) => asset.isTest)
+                              ? `${item.name} · TEST`
+                              : item.name,
                         }))}
                       />
                     </Field>
@@ -462,7 +469,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                         options={(chain?.assets ?? []).map((asset) => ({
                           value: asset.id,
                           label: asset.isTest
-                            ? `${asset.symbol} (${t('test asset')})`
+                            ? `${asset.symbol} · TEST`
                             : asset.symbol,
                         }))}
                       />
@@ -472,7 +479,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                     ?.isTest && (
                     <Alert tone="warning" title={t('Test network')}>
                       {t(
-                        '{{chain}} is a testnet. Amounts shown in this treasury have no real value and are labelled TEST.',
+                        '{{chain}} is a test network. Amounts shown in this treasury have no real value. The selected asset is labelled TEST.',
                         { chain: chain.name },
                       )}
                     </Alert>
@@ -865,6 +872,14 @@ function ModuleStep({
                 { asset: state.treasury.asset.symbol },
               )}
             </Alert>
+            <Alert
+              tone="warning"
+              title={t('Guardian Safe verification is pending')}
+            >
+              {t(
+                'The guardian address below is included in the module settings, but this app cannot verify that it is a Safe controlled by the human guardian and pause-only Sentinel. The Guardian Safe step will stay blocked until that setup can be verified.',
+              )}
+            </Alert>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field htmlFor="module-executor" label={t('Executor address')}>
                 <Input
@@ -873,7 +888,10 @@ function ModuleStep({
                   onChange={(event) => update('executor', event.target.value)}
                 />
               </Field>
-              <Field htmlFor="module-guardian" label={t('Guardian Safe address')}>
+              <Field
+                htmlFor="module-guardian"
+                label={t('Guardian address in module config')}
+              >
                 <Input
                   id="module-guardian"
                   value={draft.guardian}
@@ -1160,41 +1178,53 @@ function CoverageStep({
 }
 
 function GuardianStep({ state }: { state: TreasuryState }) {
-  const scope = useOrgScope();
-  const navigate = useNavigate();
-  const [address, setAddress] = useState(
-    () => readModuleDraft(state.treasury.id).guardian ?? '',
-  );
+  const configuredAddress = readModuleDraft(state.treasury.id).guardian?.trim();
   return (
     <Card>
       <CardHeader
         title={t('Guardian Safe')}
         description={t(
-          'Confirm the Safe that was included as the Guardian when the module setup transactions were prepared. The Guardian can pause the treasury but cannot move funds or resume.',
+          'A Guardian Safe must have a human guardian and the pause-only Sentinel as owners. This step is pending until the app can create and verify that setup.',
         )}
       />
       <CardContent>
         <div className="grid gap-4">
-          <Field htmlFor="guardian-address" label={t('Guardian Safe address')}>
-            <Input
-              id="guardian-address"
-              className="num"
-              value={address}
-              onChange={(event) => setAddress(event.target.value.trim())}
-            />
-          </Field>
-          <p className="text-sm text-muted-foreground">
-            {t('Next you will define the mandate: limits, buffers and approvers.')}
+          <Alert tone="warning" title={t('Guardian setup pending')}>
+            {t(
+              'This treasury cannot finish setup yet. A valid address by itself does not prove that it is a Guardian Safe or that the Sentinel can pause through it.',
+            )}
+          </Alert>
+          {configuredAddress && (
+            <Field
+              htmlFor="guardian-configured-address"
+              label={t('Address included in module settings (unverified)')}
+            >
+              <Input
+                id="guardian-configured-address"
+                className="num"
+                value={configuredAddress}
+                readOnly
+                aria-describedby="guardian-setup-dependency"
+              />
+            </Field>
+          )}
+          <p
+            id="guardian-setup-dependency"
+            className="text-sm text-muted-foreground"
+          >
+            {t(
+              'Guardian Safe deployment, registration and Sentinel health checks depend on MDT-010 and its signer and module setup prerequisites.',
+            )}
           </p>
         </div>
       </CardContent>
       <CardFooter>
         <Button
           variant="primary"
-          disabled={!/^0x[0-9a-fA-F]{40}$/.test(address)}
-          onClick={() => navigate(`${scope.base}/t/${state.treasury.id}/mandate`)}
+          disabled
+          aria-describedby="guardian-setup-dependency"
         >
-          {t('Finish setup')}
+          {t('Finish setup — Guardian verification required')}
         </Button>
       </CardFooter>
     </Card>
@@ -1209,6 +1239,7 @@ interface SetupSummaryData {
   module?: string;
   coverage?: string;
   guardian?: string;
+  guardianPending?: boolean;
 }
 
 function Pending() {
@@ -1249,7 +1280,9 @@ function SetupSummary({ data }: { data: SetupSummaryData }) {
             { label: t('Coverage'), value: data.coverage ?? <Pending /> },
             {
               label: t('Guardian Safe'),
-              value: data.guardian ? (
+              value: data.guardianPending ? (
+                <span>{t('Verification pending')}</span>
+              ) : data.guardian ? (
                 <Address address={data.guardian} />
               ) : (
                 <Pending />
@@ -1308,14 +1341,11 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
               ? 4
               : 3;
         const current = stage ?? derived;
-        const guardian = state.wallets.find(
-          (wallet) => wallet.role === 'GUARDIAN',
-        );
         const summary: SetupSummaryData = {
           name: state.treasury.name,
           chain: state.treasury.chainName,
           asset: state.treasury.asset.isTest
-            ? `${state.treasury.asset.symbol} (${t('test asset')})`
+            ? `${state.treasury.asset.symbol} · TEST`
             : state.treasury.asset.symbol,
           safes: safeRoles.map(({ role, label }) => ({
             role,
@@ -1335,8 +1365,9 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
                 : state.coverage.acknowledged
                   ? t('Partial, acknowledged')
                   : t('Partial'),
-          guardian:
-            guardian?.safeAddress ?? readModuleDraft(treasuryId).guardian,
+          // A stored address alone does not prove Sentinel ownership or health.
+          // MDT-010 is still required before this can be shown as complete.
+          guardianPending: true,
         };
         return (
           <Layout current={current} summary={summary}>

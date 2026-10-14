@@ -11,7 +11,6 @@ import type {
   Forecast,
   GovernanceTx,
   Hex,
-  Treasury,
   TreasurySummary,
   TreasuryState,
   WalletRole,
@@ -293,13 +292,5 @@ export const useAcknowledgeCoverage = (orgId: string) =>
     api.post<{ coverage: Coverage }>(
       `${base(orgId, input.treasuryId)}/coverage/acknowledge`,
       { reason: input.reason },
-    ),
-  );
-
-export const useSetGuardian = (orgId: string) =>
-  useOrgMutation(orgId, (input: { treasuryId: string; safeAddress: string }) =>
-    api.post<{ treasury: Treasury }>(
-      `${base(orgId, input.treasuryId)}/guardian`,
-      { safeAddress: input.safeAddress },
     ),
   );
