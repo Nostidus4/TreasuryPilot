@@ -13,7 +13,7 @@ M02 registers **what a treasury is**: one chain, one payment stablecoin, one sou
 |---|---|
 | Platform chain config and deployments manifest | Mandate content (M03) |
 | Asset registry with on-chain decimals and test labels | Reading balances for planning (M06) |
-| Treasury creation with Safe verification | Multiple treasuries/assets (Later) |
+| Treasury creation with Safe verification; multiple per-chain treasuries and organization list view | Multiple assets per treasury (Later; TRS-L02) |
 | Safe config snapshots and change detection | |
 | Module deploy (factory) + enable on T/O1/O2 (via MDT-009) | |
 | Coverage computation and Owner acknowledgment | |
@@ -42,7 +42,7 @@ Treasury: `Draft` (Safes verified) → `ModulePending` (deploy+enable governance
 
 The worker reads each active Safe at one pinned block every 10 minutes and appends a block-hash-unique `safe_config_snapshots` row, including its fallback handler and the EIP-1167 implementation target (if any) for each enabled module. Coverage is recomputed in the snapshot transaction and by the Owner/Admin refresh endpoint. A missing or older-than-12-minute snapshot (also evaluated on every read), a treasury without a module, a missing expected deployment, or any failed or malformed chain read leaves coverage UNKNOWN. An acknowledgment applies only to the exact PARTIAL deviations the Owner reviewed: any change in the coverage details clears it. An Owner can acknowledge PARTIAL coverage with a reason; the audit log records that action and the acknowledgment state is returned to clients as a persistent banner state. `executionAllowed` is true only for COMPLETE or acknowledged PARTIAL coverage.
 
-The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and `SAFE_FALLBACK_HANDLER` before coverage can become COMPLETE. The current Sepolia record is still `configured_only`, and its deployment-record/API-manifest shape is documented as unreconciled; do not treat the configured-only address fields as a live deployment. TRS-006 (#44) remains open, so this issue does not claim module deployment, enablement, or a mined module-created event.
+The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and `SAFE_FALLBACK_HANDLER` before coverage can become COMPLETE. TRS-006 (#44) is implemented in PR #382; its builder fails closed until factory, implementation, MultiSend, and Safe fallback deployments are verified. Sepolia's current record is still `configured_only`, so do not treat those address fields as a live deployment. The wizard can prepare/sign transactions only when the verified API deployment records are present.
 
 ## 6. Interfaces (API_SPEC §2)
 
@@ -58,7 +58,7 @@ The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and 
 
 ## 7. Flows
 
-Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → configure initial mandate and buffers (M03) → T signs the module deploy-and-enable Safe transaction → O1/O2 each sign their own `enableModule` transaction (PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010).
+Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → configure initial mandate, Guardian address, and buffers (M03) → T signs the module deploy-and-enable Safe transaction → O1/O2 each sign their own `enableModule` transaction (PH-9) → TreasuryModuleCreated observed → coverage → review the configured Guardian Safe. Creating the Guardian Safe with its Sentinel owner remains MDT-010.
 
 Module setup requires explicit initializer values: mandate validity, executor, guardian, pay/refill/supply limits, approval age, approvers, and one buffer entry for T and each operational Safe. The API resolves the ERC-20 asset and operational Safes from the treasury record. It refuses to build transactions unless factory, implementation, and Safe MultiSendCallOnly addresses and code hashes are configured and match chain code. It predicts the Safe-scoped deterministic clone address, stores one governance transaction for T and one for each operational Safe, and records the clone only after a successful Safe execution receipt contains a matching `TreasuryModuleCreated` event and the clone runtime matches the configured implementation. The treasury becomes Ready after the module is enabled on every treasury Safe.
 
@@ -109,3 +109,7 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 ## 15. v0.3 changes (ADR-019)
 
 The deployments manifest adds `AAVE_POOL`, `AAVE_POOL_ADDRESSES_PROVIDER`, `ATOKEN` and the Aave test USDC; the demo treasury is T + one operational Safe (O1). Coverage rules are unchanged (the module calls Aave through Safe T; Aave is not a Safe module).
+
+## 16. Later: multiple payment assets (TRS-L02)
+
+The treasury remains anchored to its primary asset for backwards compatibility. A mandate may add other configured ERC-20 assets on the same chain, each with independent PAY/REFILL limits and explicit buffer/target values for Safe T and every operational Safe. Bundle previews configure all asset-specific wallet buffers before enabling the asset policy. Invoice requests select an asset; a secondary asset is accepted only if it is on the treasury chain and listed with a PAY limit in that treasury's active mandate. Its per-request limit is checked using the selected token's decimals and integer base units. Daily caps and refill behavior remain enforced by the module's per-asset policy/counters.

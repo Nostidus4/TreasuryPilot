@@ -9,8 +9,8 @@ Tiêu đề ticket giữ tiếng Anh vì GitHub issue viết bằng tiếng Anh 
 | Phase | P0 | P1 | P2 | Tổng |
 |---|---:|---:|---:|---:|
 | M1 (bản thi) | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 38 |
-| **Tất cả** | | | | **244** |
+| Later | – | – | – | 41 |
+| **Tất cả** | | | | **247** |
 
 Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A = bắt buộc cho bản demo nộp bài (khép kín phụ thuộc), B = nên có, còn lại làm sau khi nộp.
 
@@ -25,7 +25,7 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 | M01 · Identity & Access | `identity` | 8 | 6 | 3 | 6 |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 7 | 2 | 5.5 |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 7 | 1 | 10 |
-| M05 · Invoices & Payment Requests | `invoices` | 12 | 10 | 4 | 8.5 |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 10 | 7 | 8.5 |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 5 | 0 | 5 |
 | M09 · AI Agent | `agent` | 17 | 12 | 0 | 13 |
 | M10 · Orchestration & Execution | `execution` | 14 | 11 | 4 | 12.5 |
@@ -143,7 +143,10 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 | INV-011 | invoices | Implement reject, cancel, invalidation and expiry | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022, MDT-009 | Sẵn sàng phân công |
 | INV-L01 | invoices | Add the email-forwarding invoice inbox | F-033 | Later | - | L | Later | INV-004, AGT-004 | Đã chấp nhận (Later) |
 | INV-L02 | invoices | Add the inbound invoice API with scoped keys | F-034 | Later | - | M | Later | INV-003 | Đã chấp nhận (Later) |
-| INV-L03 | invoices | Add recurring payment schedules | F-040 | Later | - | M | Later | INV-003 | Đã chấp nhận (Later) |
+| INV-L03 | invoices | Add recurring payment schedules | F-040 | Later | - | L | Later | INV-003 | Đã chấp nhận (Later) |
+| INV-L03A | invoices | Create recurring schedule templates | F-040 | Later | - | M | Later | INV-003 | Đã chấp nhận (Later) |
+| INV-L03B | invoices | Generate recurring payment drafts | F-040 | Later | - | M | Later | INV-L03A | Đã chấp nhận (Later) |
+| INV-L03C | invoices | Skip a recurring payment period | F-040 | Later | - | S | Later | INV-L03A | Đã chấp nhận (Later) |
 | INV-L04 | invoices | Support fiat-denominated invoices | F-041 | Later | - | L | Later | INV-003, ENG-L02 | Đã chấp nhận (Later) |
 | CHR-001 | chain-reader | Build the RPC client with failover | F-050 | M1 | P0 | M | A | TRS-002 | Sẵn sàng phân công |
 | CHR-002 | chain-reader | Implement block-consistent snapshots | F-050 | M1 | P0 | M | A | CHR-001, TRS-004 | Sẵn sàng phân công |

@@ -76,8 +76,14 @@ T("ENG-L01","Plan refills from other operational wallets","Later","-","M","F-059
   "Use surplus in one operational wallet to fund another.", "Extend source selection;protect the source wallet's own obligations", "", "",
   "Source wallet obligations remain funded (property test)", "Unit + property")
 T("ENG-L02","Add FX conversion and depeg checks for fiat invoices","Later","-","M","F-041","FR-322","ENG-005",
-  "Schedule and pay fiat-denominated invoices safely.", "FX rate model with tolerance;max stablecoin amount;depeg threshold check", "", "",
-  "Never proposes more than the approved maximum stablecoin amount", "Unit")
+  "Parent ticket for the fiat FX safety work; keep unscheduled until ENG-015 and ENG-016 are estimated and complete.", "Track the two child tickets: ENG-015 models immutable fiat approvals, rational FX rates, quotes and source/depeg policy (S, ≤0.5 day); ENG-016 implements fail-closed quote validation, exact conversion and the approved maximum guard with boundary/property tests (S, ≤0.5 day)", "Invoice storage, approval signing and payment orchestration (INV-L04)", "Split before scheduling: deliver the pure models first, then the pure conversion/check function. Child work totals S + S (≤1 day); preserve this accepted parent as the traceability link for FR-322.",
+  "Never proposes more than the approved maximum stablecoin amount;Stale, mismatched, out-of-tolerance or depegged quotes are blocked", "Unit + property")
+T("ENG-015","Model fiat FX approvals, rates and quote policy","Later","-","S","F-041","FR-322","ENG-001 ENG-005",
+  "Represent approved fiat amounts and observed FX inputs using validated integer models.", "FiatApproval binds fiat minor units, reference rate, tolerance and maximum token base units;FxRate stores an exact rational token-base-units/fiat-minor-unit pair;FxQuote and FxPolicy carry source, observation time, USD peg price and freshness/depeg thresholds", "Conversion and payment orchestration", "Keep values integer-only and immutable; USD peg policy is scoped to the supported USD-pegged asset.",
+  "Invalid or non-positive amounts/rates and out-of-range bps are rejected;Amounts serialize without precision loss", "Unit")
+T("ENG-016","Guard fiat conversion against FX drift, depeg and approved caps","Later","-","S","F-041","FR-322","ENG-015 ENG-005",
+  "Return a deterministic token amount only when a fresh quote satisfies the approval and safety policy.", "Validate source/pair/freshness;compare rational rates by integer cross multiplication;check USD peg threshold;round conversion up to token base units;block instead of clipping if the rounded amount exceeds the approved maximum", "Fetching quotes, persisting invoices, signing approval and executing PAY", "Typed review-block reasons; recheck immediately before PAY and bind the returned amount to the approval.",
+  "Every returned amount is at most the approved maximum;Boundary, malformed input, stale quote, depeg and randomized valid-rate cases are covered", "Unit + property")
 T("ENG-L03","Extend the scheduler to multiple assets","Later","-","M","F-015","FR-111","ENG-007",
   "Schedule across more than one stablecoin.", "Per-asset budgets and balances in the objective", "", "",
   "Per-asset limits respected in all schedules", "Unit + property")
@@ -224,8 +230,8 @@ T("TRS-008","Build a Safe deployment transaction from the UI","M1","P2","S","F-0
   "Create a new Safe without leaving the app.",
   "Endpoint returning the Safe factory transaction for the Owner to sign;record the new address",
   "", "", "A Safe deployed through the flow is usable in treasury creation", "Integration on Anvil")
-T("TRS-L01","Support multiple treasuries with a consolidated view","Later","-","M","F-014","FR-110","TRS-004",
-  "Operate treasuries on several chains from one org.", "Per-chain treasuries;consolidated dashboard without cross-asset sums", "", "",
+T("TRS-L01","Support multiple treasuries with a consolidated view","Later","-","L","F-014","FR-110","TRS-004",
+  "Operate treasuries on several chains from one org.", "TRS-L01A (M): per-chain treasury registry;TRS-L01B (M): isolate controls and counters per treasury;TRS-L01C (S): consolidated view without cross-asset sums", "", "",
   "Counters and mandates are isolated per treasury", "Integration")
 T("TRS-L02","Support multiple stablecoins per treasury","Later","-","M","F-015","FR-111","TRS-L01 SC-L05",
   "Hold and pay in more than one stablecoin.", "Asset list per treasury;per-asset limits in the mandate UI and API", "", "",

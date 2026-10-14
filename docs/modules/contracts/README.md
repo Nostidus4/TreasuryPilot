@@ -63,7 +63,10 @@ The contracts are the **final authority over money** (AP-1). Every rule marked *
 ```solidity
 // ── configuration (set at initialize, never changed) ──
 address public safeT;                    // Owner = this Safe
-address public asset;                    // the only stablecoin of this treasury (M1)
+address public asset;                    // primary asset (Aave/swap integrations remain bound to this asset)
+mapping(address => AssetPolicy) private assetPolicies; // enabled payment assets with independent limits
+mapping(address => mapping(address => uint256)) private bufferOf; // per-asset wallet floors
+mapping(address => mapping(address => uint256)) private targetOf; // per-asset refill targets
 mapping(address => bool) public isOperational;   // O1, O2
 address[] public operationalList;
 bool    private initialized;
@@ -77,13 +80,14 @@ struct Mandate {
     uint32  payeeCoolingSeconds;     // M04-D5; ≥ 1 (demo 300, prod 86400)
     address executor;
     address guardian;
-    Limits  pay;                     // base units of `asset`
+    Limits  pay;                     // base units of primary `asset`; mirrored into its AssetPolicy
     Limits  refill;
     uint32  approvalMaxAge;          // seconds an approval stays usable after signing deadline window, default 14 days
 }
 Mandate public mandate;
-mapping(address => uint256) public bufferOf;   // minimum balance per wallet (incl. safeT)
-mapping(address => uint256) public targetOf;   // soft target per operational wallet (used by refill bound, BR-036)
+struct AssetPolicy { uint64 version; Limits pay; Limits refill; } // allowed only while version == mandate().version
+// Limits, UTC daily counters, wallet floors and targets are keyed by asset.
+// Primary-asset compatibility getters remain available for existing integrations.
 mapping(address => bool)    public isApprover;
 uint256 public approverCount;
 
@@ -149,9 +153,11 @@ The implementation's `initialize` is disabled in its constructor; clones are ini
 
 | Function | Effect | Reverts with |
 |---|---|---|
-| `configureMandate(MandateInit m)` | Replaces mandate fields, `version++`. Does **not** touch counters, payees, approvers or buffers. Unused exceptions of older versions become invalid automatically (they store `mandateVersion`). | `NotOwner`, `InvalidMandate(field)` (expiry ≤ validFrom, zero executor, zero cooling, perRequest > daily) |
+| `configureMandate(MandateInit m)` | Replaces mandate fields, `version++`. Does **not** touch counters, payees, approvers or buffers, but secondary-asset policies stop being allowed until re-enabled with `setAssetPolicy` under the new version. Unused exceptions of older versions become invalid automatically (they store `mandateVersion`). | `NotOwner`, `InvalidMandate(field)` (expiry ≤ validFrom, zero executor, zero cooling, perRequest > daily) |
 | `setApprovers(address[] add, address[] remove)` | Updates the set; must stay ≥ 1. | `NotOwner`, `NoApprovers` |
-| `setBuffer(address wallet, uint256 buffer, uint256 target)` | Wallet must be safeT or operational; `buffer ≤ target` for operational. | `NotOwner`, `UnknownWallet`, `TargetBelowBuffer` |
+| `setBuffer(address wallet, uint256 buffer, uint256 target)` | Sets primary-asset floor and target (compatibility form). | `NotOwner`, `UnknownWallet`, `TargetBelowBuffer` |
+| `setAssetPolicy(address asset, bool enabled, Limits pay, Limits refill)` | Enables or disables a non-primary ERC20 and its independent PAY/REFILL caps. Enabling needs a positive Safe T floor and a positive target on every operational wallet; disabling clears the asset's buffers. Limits are published in `AssetPolicySet` (no getter, to stay under the EIP-170 size limit). | `NotOwner`, `InvalidConfiguration`, `AssetBufferNotConfigured` |
+| `setAssetBuffer(address asset, address wallet, uint256 buffer, uint256 target)` | Sets the selected asset floor and operational refill target. | `NotOwner`, `AssetNotAllowed`, `UnknownWallet`, `TargetBelowBuffer` |
 | `addPayee(address payee)` | `activeFrom = now + mandate.payeeCoolingSeconds`, `active = true`. Re-adding restarts cooling. Payee must not be a treasury wallet. | `NotOwner`, `InvalidPayee` |
 | `deactivatePayee(address payee)` | `active = false`. | `NotOwner`, `UnknownPayee` |
 | `grantException(bytes32 requestId, uint128 amount, address payee, uint64 expiry)` | Stores an exception bound to the current `mandate.version`. Overwrites an unused one for the same request. M04-D3. | `NotOwner`, `ExpiryInPast`, `AlreadyPaid` |
@@ -231,7 +237,7 @@ All state-changing functions use a reentrancy guard and checks-effects-interacti
 
 ### 6.5 Views
 
-`mandate()`, `status()`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `requestCancelled(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
+`mandate()`, `status()`, `isAssetAllowed(asset)`, `usedToday(action, asset)`, `remainingToday(action, asset)`, `bufferOf(asset, wallet)`, `targetOf(asset, wallet)`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `requestCancelled(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
 
 ### 6.6 Events
 

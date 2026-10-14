@@ -236,10 +236,18 @@ T("SC-L04","Verify plan attestations on-chain","Later","-","M","F-056","BR-059",
   "Move attestation checking from the signer service to the contract.",
   "Verify PlanAttestation signature and nonce in pay/refill",
   "", "", "A step with a missing or stale attestation reverts", "Contract tests")
-T("SC-L05","Support multiple stablecoins with per-asset limits","Later","-","M","F-015","FR-111","SC-007",
+T("SC-L05","Support multiple stablecoins with per-asset limits","Later","-","L","F-015","FR-111","SC-007",
   "Allow more than one payment asset in a treasury.",
-  "Per-asset limits and buffers;asset allowlist in the mandate",
-  "", "", "Limits are enforced independently per asset", "Contract tests")
+  "Owner-managed asset allowlist;independent PAY and REFILL caps and daily counters;per-wallet floors and refill targets per asset",
+  "", "Re-estimated L; split into SC-L07 (allowlist and caps/counters) and SC-L08 (per-asset floors and refill targets).", "Unlisted assets are rejected; caps, counters, floors and refill targets are independent per asset", "Contract tests")
+T("SC-L07","Add asset allowlist and independent payment limits","Later","-","M","F-015","FR-111","SC-007",
+  "Allow an owner-mandated second payment asset with independent PAY and REFILL caps and daily counters.",
+  "Asset policy allowlist; approval validation; per-asset daily counter keys; preserve primary-asset compatibility views",
+  "Parent: SC-L05.", "Part 1 of the SC-L05 split. Implement before per-asset wallet targets.", "Unlisted assets are rejected and usage of one asset does not consume another asset's daily budget", "Contract tests")
+T("SC-L08","Add per-asset wallet floors and refill targets","Later","-","M","F-015","FR-111","SC-L07",
+  "Apply independent wallet balance floors and refill targets to each allowed payment asset.",
+  "Per-asset buffers and targets; refill and payment floor enforcement for the selected asset",
+  "Parent: SC-L05.", "Part 2 of the SC-L05 split.", "Each asset's payments and refills preserve only that asset's configured wallet floors and targets", "Contract tests")
 T("SC-L06","Allow refill paths between operational wallets","Later","-","M","F-059","BR-012, FR-416","SC-009",
   "Let O2 fund O1 when T is short.",
   "Generalize path allowlist;source buffer check for operational sources",

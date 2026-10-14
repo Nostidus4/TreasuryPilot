@@ -10,6 +10,8 @@ The worker package runs as three Compose services:
   user; AI tasks then fail when they build the adapter, because every AI call must be
   written to `ai_calls` (AGT-002).
 - `beat` publishes periodic jobs. Business schedules are added by their owning tickets.
+  It runs recurring payment draft generation shortly after midnight UTC; each template
+  period is claimed and recorded transactionally in PostgreSQL.
 
 All tasks inherit `SafeTask`: late acknowledgement, rejection/redelivery when a worker process
 is lost, bounded exponential retry for `RetryableTaskError`, and propagated
@@ -25,6 +27,12 @@ Treasury critical sections must use `treasury_advisory_xact_lock(pool, treasury_
 yields `None` when the non-blocking Postgres lock is busy; otherwise it yields the connection that
 owns the transaction and lock. All protected reads and writes must use that connection and must
 finish before the context exits.
+
+## Notification email delivery
+
+The `worker-webhooks` worker (egress) sends immediate notifications once per minute and daily digests at 08:00 UTC. Configure it with `DATABASE_URL`, `TP_RESEND_API_KEY` and `TP_RESEND_FROM_EMAIL` (unset means email is off), `TP_EMAIL_UNSUBSCRIBE_KEY` (a dedicated key of at least 32 bytes, matching the API) to sign unsubscribe links (the egress worker never gets the session secret), `TP_APP_BASE_URL` and `TP_PUBLIC_API_BASE_URL`.
+
+Users pick `immediate`, `daily` or `off` via `GET`/`PUT /v1/me/notifications/email`, or unsubscribe from the email's List-Unsubscribe URL. Mandatory events (`CRITICAL` or a mandatory category) are always sent immediately. Failed sends back off and stop after 5 attempts (4xx is permanent); sends carry an `Idempotency-Key`.
 
 Run the real lock-contention integration test against PostgreSQL with:
 

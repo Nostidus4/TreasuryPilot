@@ -6,7 +6,7 @@
 | **Epic** | M02 · Treasury & Chain Configuration |
 | **Module** | `treasury` ([spec](../../../docs/modules/treasury/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | M (~1 day) |
+| **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-110 |
@@ -31,8 +31,9 @@ Operate treasuries on several chains from one org.
 
 ## Scope
 
-- Per-chain treasuries
-- consolidated dashboard without cross-asset sums
+- TRS-L01A (M): per-chain treasury registry
+- TRS-L01B (M): isolate controls and counters per treasury
+- TRS-L01C (S): consolidated view without cross-asset sums
 
 ## Out of scope
 
@@ -53,6 +54,18 @@ Follow the module spec and the relevant ADRs.
 ## Testing requirements
 
 - Integration
+
+## Re-estimate and implementation split
+
+The original M estimate did not account for the registry contract, treasury isolation checks, and organization-wide view. Re-estimate the parent to L and schedule these three reviewable slices:
+
+| Slice | Estimate | Scope | Depends on |
+|---|---:|---|---|
+| TRS-L01A · Per-chain treasury registry | M | Create and list an organization's treasuries across supported chains; preserve chain/asset integrity and tenant isolation. | TRS-004 |
+| TRS-L01B · Treasury control isolation | M | Keep wallets, mandates, limits, coverage, requests, and counters scoped to one treasury; verify independent records in integration. | TRS-L01A |
+| TRS-L01C · Consolidated portfolio view | S | Show one row per treasury with its own chain, asset, status, and controls; never combine values from different assets without a pricing source. | TRS-L01A, TRS-L01B |
+
+Combined estimate: L (approximately 2–3 days). The parent acceptance criteria apply across all three slices.
 
 ## Definition of Done
 

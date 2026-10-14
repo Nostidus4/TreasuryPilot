@@ -131,6 +131,13 @@ services:
       <<: *app-environment
       SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
+      # Telegram linking (optional): the API stores chat ids encrypted and verifies the webhook.
+      TP_TELEGRAM_BOT_USERNAME: ${TP_TELEGRAM_BOT_USERNAME:-}
+      TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
+      TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
+      TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -221,6 +228,48 @@ services:
       TP_METRICS_PORT: '9100'
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
     tmpfs: [/tmp/prometheus]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public, internal]
+
+  # Sends signed webhooks, Telegram, Slack/Lark/WeCom messages and notification email to
+  # external HTTPS endpoints, so it is the only worker besides worker-ai on the public network.
+  # Explicit allowlist: no policy keystore, signer secret or object-store credentials; the
+  # webhook sender rejects non-public addresses.
+  worker-webhooks:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'worker',
+        '--loglevel=INFO',
+        '--queues=webhooks',
+        '--hostname=webhooks@%h',
+      ]
+    environment:
+      TP_ENVIRONMENT: local
+      TP_REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Telegram delivery (optional) also needs egress, so it runs here, not on the core worker.
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
+      # Notification email (optional) calls Resend, so it also runs here. The dedicated key only
+      # signs List-Unsubscribe links and must match the API's; never share the session secret.
+      TP_RESEND_API_KEY: ${TP_RESEND_API_KEY:-}
+      TP_RESEND_FROM_EMAIL: ${TP_RESEND_FROM_EMAIL:-}
+      TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
+      TP_PUBLIC_API_BASE_URL: ${TP_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
     depends_on:
       postgres:
         condition: service_healthy

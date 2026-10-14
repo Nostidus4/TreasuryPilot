@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +17,8 @@ from treasurypilot_api.mandate.configuration import (
 
 SAFE_T = "0x" + "11" * 20
 OPERATIONAL = "0x" + "22" * 20
+PRIMARY_ASSET_ID = "00000000-0000-4000-8000-000000000001"
+SECOND_ASSET_ID = "00000000-0000-4000-8000-000000000002"
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
 
 
@@ -375,3 +378,133 @@ def test_control_changes_and_new_buffer_targets_require_confirmation() -> None:
         "method": "setBuffer",
         "arguments": {"wallet": SAFE_T, "minimum": "0", "target": "0"},
     } in calls
+
+
+def secondary_policy() -> dict[str, object]:
+    return {
+        "assetId": SECOND_ASSET_ID,
+        "limits": {
+            "PAY": {"perRequest": "500000000", "daily": "2000000000"},
+            "REFILL": {"perRequest": "750000000", "daily": "3000000000"},
+        },
+        "buffers": [
+            {"wallet": SAFE_T, "minimum": "2000000000"},
+            {"wallet": OPERATIONAL, "minimum": "20000000", "target": "200000000"},
+        ],
+    }
+
+
+def test_secondary_asset_limits_are_chain_scoped_and_buffers_complete() -> None:
+    body = config_payload()
+    body["assetPolicies"] = [secondary_policy()]
+    config = MandateConfig.model_validate(body)
+    metadata = {SECOND_ASSET_ID: {"symbol": "USDT", "decimals": 6, "address": "0x" + "33" * 20}}
+    validate_mandate_config(
+        config,
+        known_wallets=known_wallets(),
+        environment="local",
+        asset_decimals=6,
+        now=NOW,
+        primary_asset_id=uuid.UUID(PRIMARY_ASSET_ID),
+        asset_metadata=metadata,
+    )
+    preview = build_bundle_preview(
+        {},
+        config.json_config(environment="local", asset_decimals=6),
+        asset_metadata=metadata,
+    )
+    methods = [call["method"] for call in preview["calls"]]
+    assert methods[-3:] == ["setAssetBuffer", "setAssetBuffer", "setAssetPolicy"]
+    assert preview["calls"][-3]["arguments"] == {
+        "asset": "0x" + "33" * 20,
+        "wallet": SAFE_T,
+        "minimum": "2000000000",
+        "target": "0",
+    }
+    assert preview["calls"][-1]["arguments"]["enabled"] is True
+    assert preview["calls"][-1]["arguments"]["asset"] == "0x" + "33" * 20
+
+
+def test_secondary_asset_policy_rejects_unconfigured_asset_and_missing_wallet_floor() -> None:
+    body = config_payload()
+    body["assetPolicies"] = [secondary_policy()]
+    config = MandateConfig.model_validate(body)
+    with pytest.raises(MandateValidationError) as unconfigured:
+        validate_mandate_config(
+            config,
+            known_wallets=known_wallets(),
+            environment="local",
+            asset_decimals=6,
+            now=NOW,
+            primary_asset_id=uuid.UUID(PRIMARY_ASSET_ID),
+            asset_metadata={},
+        )
+    assert unconfigured.value.code == "ASSET_POLICY_INVALID"
+
+    body["assetPolicies"] = [{**secondary_policy(), "buffers": [secondary_policy()["buffers"][0]]}]
+    incomplete = MandateConfig.model_validate(body)
+    with pytest.raises(MandateValidationError, match="explicit buffer for each asset") as missing:
+        validate_mandate_config(
+            incomplete,
+            known_wallets=known_wallets(),
+            environment="local",
+            asset_decimals=6,
+            now=NOW,
+            primary_asset_id=uuid.UUID(PRIMARY_ASSET_ID),
+        )
+    assert missing.value.code == "MANDATE_INCOMPLETE"
+
+
+def _validate_secondary(policy: dict[str, object], metadata: dict[str, dict[str, object]]) -> None:
+    body = config_payload()
+    body["assetPolicies"] = [policy]
+    validate_mandate_config(
+        MandateConfig.model_validate(body),
+        known_wallets=known_wallets(),
+        environment="local",
+        asset_decimals=6,
+        now=NOW,
+        primary_asset_id=uuid.UUID(PRIMARY_ASSET_ID),
+        asset_metadata=metadata,
+    )
+
+
+def test_secondary_asset_safe_t_zero_target_and_addressless_asset() -> None:
+    metadata = {SECOND_ASSET_ID: {"symbol": "USDT", "decimals": 6, "address": "0x" + "33" * 20}}
+    policy = secondary_policy()
+    buffers = policy["buffers"]
+    assert isinstance(buffers, list)
+    policy["buffers"] = [{"wallet": SAFE_T, "minimum": "2000000000", "target": "0"}, buffers[1]]
+    _validate_secondary(policy, metadata)
+    with pytest.raises(MandateValidationError) as native:
+        _validate_secondary(
+            secondary_policy(), {SECOND_ASSET_ID: {"symbol": "ETH", "decimals": 18, "address": ""}}
+        )
+    assert native.value.code == "ASSET_POLICY_INVALID"
+
+
+def test_asset_policy_diff_is_per_asset_and_summary_requires_metadata() -> None:
+    other = {**secondary_policy(), "assetId": "00000000-0000-4000-8000-000000000003"}
+    before = {"assetPolicies": [secondary_policy(), other]}
+    after = {"assetPolicies": [other, secondary_policy()]}
+    assert build_diff(before, after) == []
+    changed = {"assetPolicies": [{**secondary_policy(), "limits": {}}, other]}
+    assert [item["path"] for item in build_diff(before, changed)] == [
+        f"assetPolicies.{SECOND_ASSET_ID}"
+    ]
+    body = config_payload()
+    body["assetPolicies"] = [secondary_policy()]
+    with pytest.raises(MandateValidationError) as missing:
+        build_summary(MandateConfig.model_validate(body), decimals=6, symbol="USDC")
+    assert missing.value.code == "ASSET_POLICY_INVALID"
+
+
+def test_mandate_reconfiguration_reenables_unchanged_secondary_policies() -> None:
+    metadata = {SECOND_ASSET_ID: {"symbol": "USDT", "decimals": 6, "address": "0x" + "33" * 20}}
+    previous = {"expiresAt": "2026-11-01T00:00:00Z", "assetPolicies": [secondary_policy()]}
+    current = {"expiresAt": "2026-12-01T00:00:00Z", "assetPolicies": [secondary_policy()]}
+    methods = [
+        call["method"]
+        for call in build_bundle_preview(previous, current, asset_metadata=metadata)["calls"]
+    ]
+    assert methods == ["configureMandate", "setAssetBuffer", "setAssetBuffer", "setAssetPolicy"]
