@@ -1,4 +1,4 @@
-"""Run bounded retention batches against organization invitations.
+"""Run bounded retention batches against invitations and authentication artifacts.
 
 The policy row is locked before checking a hold or deleting records. Writers use an
 upsert on the same row, so placing a hold and a deletion cannot pass each other.
@@ -21,20 +21,34 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.models import AuditHead, AuditLog
-from treasurypilot_api.compliance.models import DeletionReceipt, RetentionPolicy
+from treasurypilot_api.compliance.models import (
+    AuthRetentionPolicy,
+    DeletionReceipt,
+    RetentionPolicy,
+)
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.models import Invite
+from treasurypilot_api.identity.models import Invite, MagicLink
+from treasurypilot_api.identity.models import Session as AuthSession
 
 logger = logging.getLogger(__name__)
 
 # 100 years. Also enforced by a database check so ``now - timedelta`` cannot overflow.
 MAX_INVITE_RETENTION_DAYS = 36500
+MAX_AUTH_RETENTION_DAYS = 36500
 
 
 def invite_receipt_hash(record_id: uuid.UUID) -> bytes:
     """Hash a random UUID, never an email, token or other personal field."""
 
     return hashlib.sha256(b"treasurypilot:invite:v1:" + record_id.bytes).digest()
+
+
+def auth_receipt_hash(record_type: str, record_id: uuid.UUID) -> bytes:
+    """Hash a random auth-row UUID with a domain-specific prefix."""
+
+    if record_type not in {"session", "magic_link"}:
+        raise ValueError("record_type must be 'session' or 'magic_link'")
+    return hashlib.sha256(f"treasurypilot:{record_type}:v1:".encode() + record_id.bytes).digest()
 
 
 async def configure_policy(
@@ -60,6 +74,40 @@ async def configure_policy(
             index_elements=[RetentionPolicy.org_id],
             set_={
                 "invite_retention_days": statement.excluded.invite_retention_days,
+                "legal_hold": statement.excluded.legal_hold,
+                "updated_at": datetime.now(UTC),
+            },
+        )
+    )
+
+
+async def configure_auth_policy(
+    session: AsyncSession,
+    *,
+    session_retention_days: int | None,
+    magic_link_retention_days: int | None,
+    legal_hold: bool,
+) -> None:
+    """Set explicit deployment-wide auth retention; ``None`` disables a record type."""
+
+    for name, days in (
+        ("session_retention_days", session_retention_days),
+        ("magic_link_retention_days", magic_link_retention_days),
+    ):
+        if days is not None and not 0 <= days <= MAX_AUTH_RETENTION_DAYS:
+            raise ValueError(f"{name} must be between 0 and {MAX_AUTH_RETENTION_DAYS}")
+    statement = pg_insert(AuthRetentionPolicy).values(
+        id=1,
+        session_retention_days=session_retention_days,
+        magic_link_retention_days=magic_link_retention_days,
+        legal_hold=legal_hold,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[AuthRetentionPolicy.id],
+            set_={
+                "session_retention_days": statement.excluded.session_retention_days,
+                "magic_link_retention_days": statement.excluded.magic_link_retention_days,
                 "legal_hold": statement.excluded.legal_hold,
                 "updated_at": datetime.now(UTC),
             },
@@ -121,6 +169,17 @@ async def run_retention(
             continue
         examined += org_examined
         deleted += org_deleted
+
+    try:
+        auth_examined, auth_deleted = await _run_auth(
+            sessions, now=now, batch_size=batch_size, dry_run=dry_run
+        )
+    except Exception:
+        logger.exception("authentication retention failed")
+        failed += 1
+    else:
+        examined += auth_examined
+        deleted += auth_deleted
 
     return RetentionResult(examined=examined, deleted=deleted, failed=failed)
 
@@ -190,6 +249,69 @@ async def _run_org(
         return len(record_ids), len(record_ids)
 
 
+async def _run_auth(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    now: datetime,
+    batch_size: int,
+    dry_run: bool,
+) -> tuple[int, int]:
+    """Delete expired auth artifacts under the explicit global auth policy."""
+
+    examined = deleted = 0
+    async with sessions() as session, session.begin():
+        policy = await session.get(AuthRetentionPolicy, 1, with_for_update=not dry_run)
+        if policy is None or policy.legal_hold:
+            return 0, 0
+
+        for model, record_type, retention_days, terminal_at in (
+            (
+                AuthSession,
+                "session",
+                policy.session_retention_days,
+                func.coalesce(AuthSession.revoked_at, AuthSession.expires_at),
+            ),
+            (
+                MagicLink,
+                "magic_link",
+                policy.magic_link_retention_days,
+                func.coalesce(MagicLink.used_at, MagicLink.expires_at),
+            ),
+        ):
+            if retention_days is None:
+                continue
+            cutoff = now - timedelta(days=retention_days)
+            query = (
+                select(model.id)
+                .where(terminal_at <= cutoff)
+                .order_by(terminal_at, model.id)
+                .limit(batch_size)
+            )
+            if not dry_run:
+                query = query.with_for_update(skip_locked=True)
+            record_ids = list(await session.scalars(query))
+            examined += len(record_ids)
+            if dry_run or not record_ids:
+                continue
+            await session.execute(
+                pg_insert(DeletionReceipt)
+                .values(
+                    [
+                        {
+                            "record_hash": auth_receipt_hash(record_type, record_id),
+                            "record_type": record_type,
+                            "deleted_at": now,
+                        }
+                        for record_id in record_ids
+                    ]
+                )
+                .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+            )
+            await session.execute(delete(model).where(model.id.in_(record_ids)))
+            deleted += len(record_ids)
+    return examined, deleted
+
+
 async def _run_cli(*, batch_size: int, execute: bool) -> None:
     from treasurypilot_api.config import get_settings
 
@@ -210,7 +332,7 @@ async def _run_cli(*, batch_size: int, execute: bool) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser(description="Apply configured invitation retention policies")
+    parser = argparse.ArgumentParser(description="Apply configured data retention policies")
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument(
         "--execute", action="store_true", help="Delete eligible rows; default is dry run"
