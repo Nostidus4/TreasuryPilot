@@ -214,7 +214,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | AUD-002 | audit | M15 | [Add audit read and chain verification](issues/audit/002-add-audit-read-and-chain-verification.md) | F-120 | M1 | P0 | S | After submission | AUD-001 | Ready for Assignment |
 | AUD-003 | audit | M15 | [Define the evidence bundle schema and exporter](issues/audit/003-define-the-evidence-bundle-schema-and-exporter.md) | F-121 | M1 | P0 | M | A | AUD-001, EXE-008 | Ready for Assignment |
 | AUD-004 | audit | M15 | [Propagate coverage labels through the API](issues/audit/004-propagate-coverage-labels-through-the-api.md) | F-122 | M1 | P1 | S | After submission | CHR-002 | Ready for Assignment |
-| AUD-L01 | audit | M15 | [Anchor the audit hash root on-chain daily](issues/audit/l01-anchor-the-audit-hash-root-on-chain-daily.md) | F-120 | Later | - | S | After submission | AUD-002 | Accepted |
+| AUD-L01 | audit | M15 | [Anchor the audit hash root on-chain daily](issues/audit/l01-anchor-the-audit-hash-root-on-chain-daily.md) | F-120 | Later | - | L | After submission | AUD-002 | Accepted |
 | OBS-001 | observability | M17 | [Configure structured logging with correlation ids](issues/observability/001-configure-structured-logging-with-correlation-ids.md) | F-142 | M1 | P1 | S | After submission | CMP-003 | Ready for Assignment |
 | OBS-002 | observability | M17 | [Add OpenTelemetry tracing](issues/observability/002-add-opentelemetry-tracing.md) | F-142 | M1 | P1 | M | After submission | OBS-001 | Ready for Assignment |
 | OBS-003 | observability | M17 | [Add Sentry and Prometheus metrics](issues/observability/003-add-sentry-and-prometheus-metrics.md) | F-142 | M1 | P1 | S | After submission | OBS-001 | Ready for Assignment |
