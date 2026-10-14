@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | BR-052, BR-075, M07-D1, M07-D2, ADR-019 |
-| **Blocks** | ENG-006, ENG-L02, INV-008, AGT-005, ENG-013 |
+| **Blocks** | ENG-006, ENG-L02, ENG-015, ENG-016, INV-008, AGT-005, ENG-013 |
 | **Submission cut** | A |
 
 ## Context

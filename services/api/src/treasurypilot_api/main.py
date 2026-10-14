@@ -59,6 +59,7 @@ from treasurypilot_api.invoices.documents import (
     build_extraction_queue,
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
+from treasurypilot_api.invoices.fx import FxQuoteProvider
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
@@ -97,6 +98,7 @@ from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformCon
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
 from treasurypilot_api.treasury.service import TreasuryService
 from treasurypilot_api.treasury.sync import sync_platform_configuration
+from treasurypilot_core.domain import FxPolicy
 from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
 from treasurypilot_core.observability_asgi import CorrelationMiddleware
@@ -234,6 +236,7 @@ def create_app(
     notification_preferences_repository: NotificationPreferencesRepository | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
+    fx_quote_provider: FxQuoteProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -384,6 +387,19 @@ def create_app(
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
+    # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
+    # three they respond 503 FX_UNAVAILABLE.
+    app.state.fx_quote_provider = fx_quote_provider
+    app.state.fx_tolerance_bps = settings.fx_tolerance_bps
+    app.state.fx_policy = (
+        FxPolicy(
+            source_id=settings.fx_source_id,
+            max_quote_age_seconds=settings.fx_max_quote_age_seconds,
+            depeg_threshold_bps=settings.fx_depeg_threshold_bps,
+        )
+        if settings.fx_source_id
+        else None
+    )
     app.state.telegram_repository = telegram_repository
     app.add_middleware(
         CORSMiddleware,

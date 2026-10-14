@@ -2524,6 +2524,10 @@ export interface components {
        * Format: date
        */
       dueDate: string;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo: string;
       /**
@@ -2567,6 +2571,10 @@ export interface components {
       costCenter?: string | null;
       /** Duedate */
       dueDate?: string | null;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo?: string | null;
       /** Issuedate */

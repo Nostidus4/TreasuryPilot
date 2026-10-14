@@ -2653,6 +2653,32 @@
             "title": "Duedate",
             "type": "string"
           },
+          "fiatAmountMinorUnits": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatamountminorunits"
+          },
+          "fiatCurrency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatcurrency"
+          },
           "invoiceNo": {
             "maxLength": 200,
             "minLength": 1,
@@ -2786,6 +2812,32 @@
               }
             ],
             "title": "Duedate"
+          },
+          "fiatAmountMinorUnits": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatamountminorunits"
+          },
+          "fiatCurrency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatcurrency"
           },
           "invoiceNo": {
             "anyOf": [
