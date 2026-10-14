@@ -43,7 +43,7 @@ async def _integration(database_url: str) -> None:
             await connection.execute(
                 text(
                     "INSERT INTO domain_events (id, org_id, type, entity_type, entity_id, payload) "
-                    "VALUES (:id, :org, 'OperationConfirmed', :entity, :entity_id, "
+                    "VALUES (:id, :org, 'OperationUpdated', :entity, :entity_id, "
                     "CAST(:payload AS jsonb))"
                 ),
                 {

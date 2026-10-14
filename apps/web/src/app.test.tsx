@@ -75,7 +75,7 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   ).toBeInTheDocument();
   expect(
     within(timeline).getByText(
-      'Verification passed: amount and recipient match the plan',
+      'Receipt cross-check passed: independent providers agree',
     ),
   ).toBeInTheDocument();
   expect(

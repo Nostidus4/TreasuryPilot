@@ -66,8 +66,12 @@ function answer(
   }
   if (/(plan|next|schedule|pay)/.test(text)) {
     const plan = db.plans[0];
+    const total = plan.totalAmount ? money(plan.totalAmount) : 'unavailable';
+    const saving = plan.expectedSaving
+      ? money(plan.expectedSaving)
+      : 'unavailable';
     return {
-      content: `The latest plan is ${plan.id} (${plan.status}). It has ${plan.steps.length} steps totalling ${money(plan.totalAmount)} and an expected saving of ${money(plan.expectedSaving)} from early-payment discounts.`,
+      content: `The latest plan is ${plan.id} (${plan.status}). It has ${plan.steps.length} steps totalling ${total} and an expected saving of ${saving} from early-payment discounts.`,
       citations: [
         { label: `Plan ${plan.id}`, href: `${base}/plans/${plan.id}` },
       ],

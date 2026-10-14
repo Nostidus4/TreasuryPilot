@@ -110,6 +110,7 @@ export const planStatuses: Record<PlanStatus, StatusMeta> = {
   Completed: { label: 'All steps verified', tone: 'success' },
   PartiallyCompleted: { label: 'Partially completed', tone: 'warning' },
   Rejected: { label: 'Rejected by policy', tone: 'danger' },
+  Unknown: { label: 'Execution status unavailable', tone: 'warning' },
 };
 
 export const payeeStatuses: Record<PayeeStatus, StatusMeta> = {

@@ -1930,6 +1930,7 @@ export function startCooling(payeeId: string) {
 /* ───────────── Plan execution ───────────── */
 
 export function startExecution(plan: PlanDetail) {
+  if (plan.steps.some((planStep) => planStep.amount === null)) return;
   plan.status = 'Executing';
   emit('plan', plan.id);
   const state = db.treasuries[plan.treasuryId];
@@ -1983,6 +1984,7 @@ function settleStep(
   planStep: PlanStep,
   state: TreasuryState,
 ) {
+  if (planStep.amount === null) return;
   const amount = BigInt(planStep.amount);
   const adjust = (role: string, delta: bigint) => {
     const wallet = state.wallets.find((item) => item.role === role);

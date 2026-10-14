@@ -5,6 +5,7 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -230,6 +231,29 @@ class GasLedger(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     day: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class Attestation(Base):
+    """Append-only signed plan reference used to find the persisted execution steps."""
+
+    __tablename__ = "attestations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    request_id: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    plan_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    step_ids: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary), nullable=False)
+    policy_version: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    executor: Mapped[str] = mapped_column(String(42), nullable=False)
+    nonce: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    evidence_digest: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    typed_data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    policy_signer: Mapped[str] = mapped_column(String(42), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class IndexStream(StrEnum):

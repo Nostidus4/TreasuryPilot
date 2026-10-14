@@ -188,6 +188,19 @@ def test_publisher_claims_with_skip_locked_and_is_idempotent() -> None:
     assert "ON CONFLICT (user_id, event_id) DO NOTHING" in connection.insert_query
 
 
+def test_operation_updates_are_streamed_without_creating_notifications() -> None:
+    connection = _FakeConnection()
+    connection.event.update(type="OperationUpdated", entity_type="operation")
+
+    async def exercise() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+
+    assert connection.event["published"] is True
+    assert connection.notifications == {}
+
+
 def test_governance_signature_routes_only_to_safe_owner_user_ids() -> None:
     connection = _FakeConnection()
     connection.event["type"] = "GovernanceSignatureNeeded"

@@ -221,6 +221,18 @@ async def _operation_status(database_url: str, operation_id: str) -> str:
     return str(row["status"])
 
 
+async def _operation_events(database_url: str, operation_id: str) -> list[Any]:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        return await pool.fetch(
+            "SELECT type, entity_type, entity_id, treasury_id, payload FROM domain_events "
+            "WHERE entity_id = $1 ORDER BY created_at, id",
+            uuid.UUID(operation_id),
+        )
+    finally:
+        await pool.close()
+
+
 def _nonce(url: str) -> int:
     return int(_rpc(url, "eth_getTransactionCount", [SENDER, "latest"]), 16)
 
@@ -239,10 +251,26 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
         assert (row["status"], row["confirmations"]) == ("Pending", 1)
         assert row["block_number"] is not None and row["confirmed_at"] is None
         assert await _operation_status(database_url, operation_id) == "Pending"
+        events = await _operation_events(database_url, operation_id)
+        assert len(events) == 1
+        assert (
+            events[0]["type"],
+            events[0]["entity_type"],
+            events[0]["entity_id"],
+            events[0]["treasury_id"],
+            events[0]["payload"],
+        ) == (
+            "OperationUpdated",
+            "operation",
+            uuid.UUID(operation_id),
+            uuid.UUID(_TREASURY),
+            {"operationId": operation_id},
+        )
 
         _mine(anvil_url)
         await _track(database_url, client)  # 2 confirmations
         assert (await _tx(database_url, tx_id))["status"] == "Pending"
+        assert len(await _operation_events(database_url, operation_id)) == 2
 
         _mine(anvil_url)
         await _track(database_url, client)  # 3 confirmations + secondary agrees
@@ -256,6 +284,21 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
         # BR-026: the day is attributed from the mined block's timestamp, not the poll time.
         assert row["confirmed_at"] == datetime.fromtimestamp(int(block["timestamp"], 16), UTC)
         assert await _operation_status(database_url, operation_id) == "Confirmed"
+        assert len(await _operation_events(database_url, operation_id)) == 3
+
+        # A stale operation row is repaired even when the transaction itself did not
+        # change; subscribers still receive an operation event for that state repair.
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            await pool.execute(
+                "UPDATE operations SET status = 'Submitted' WHERE id = $1",
+                uuid.UUID(operation_id),
+            )
+        finally:
+            await pool.close()
+        await _track(database_url, client)
+        assert await _operation_status(database_url, operation_id) == "Confirmed"
+        assert len(await _operation_events(database_url, operation_id)) == 4
 
     asyncio.run(scenario())
 

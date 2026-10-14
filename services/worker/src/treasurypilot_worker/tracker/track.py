@@ -33,6 +33,13 @@ TRACKED: Final = ["Submitted", "Pending", "Unknown"]
 FINAL: Final = ["Confirmed", "Reverted"]
 # shortcut: a reorg deeper than this is not handled here, M11 reconciliation flags it.
 REORG_WINDOW: Final = 64
+_TIMELINE_FIELDS: Final = (
+    "status",
+    "block_number",
+    "block_hash",
+    "confirmations",
+    "replaced_by_tx_id",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +173,8 @@ async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, no
         elif expired:
             new["status"] = "Unknown"
 
+    timeline_changed = any(new[field] != row[field] for field in _TIMELINE_FIELDS)
+
     async with pool.acquire() as connection, connection.transaction():
         # The status guard keeps overlapping runs from overwriting each other's progress.
         result = await connection.execute(
@@ -181,16 +190,33 @@ async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, no
         if result.endswith(" 0"):
             return 0
         # The operation follows the newest transaction that was not replaced.
-        await connection.execute(
+        operation = await connection.fetchrow(
             "UPDATE operations o SET status = t.status::text::operation_status, "
             "last_error = COALESCE($2, o.last_error) FROM (SELECT status FROM transactions "
             "WHERE operation_id = $1 AND status <> 'Dropped' "
             "ORDER BY submitted_at DESC, id DESC LIMIT 1) t "
             "WHERE o.id = $1 AND o.status IN "
-            "('Submitted', 'Pending', 'Unknown', 'Confirmed', 'Reverted')",
+            "('Submitted', 'Pending', 'Unknown', 'Confirmed', 'Reverted') "
+            "AND (o.status IS DISTINCT FROM t.status::text::operation_status "
+            "OR COALESCE($2, o.last_error) IS DISTINCT FROM o.last_error) "
+            "RETURNING o.id",
             row["operation_id"],
             last_error,
         )
+        if timeline_changed or operation is not None:
+            # This outbox row commits with the transaction facts. The API SSE stream
+            # forwards only operationId and invalidates plan details for the org.
+            await connection.execute(
+                "INSERT INTO domain_events "
+                "(id, org_id, treasury_id, type, entity_type, entity_id, payload) "
+                "SELECT gen_random_uuid(), treasury.org_id, treasury.id, "
+                "'OperationUpdated', 'operation', operation.id, "
+                "jsonb_build_object('operationId', operation.id::text) "
+                "FROM operations AS operation "
+                "JOIN treasuries AS treasury ON treasury.id = operation.treasury_id "
+                "WHERE operation.id = $1",
+                row["operation_id"],
+            )
     return int(new["status"] != row["status"])
 
 

@@ -10,6 +10,41 @@ permissions:
   pull-requests: read
 
 jobs:
+  execution-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treasurypilot
+          POSTGRES_PASSWORD: treasurypilot
+          POSTGRES_DB: treasurypilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treasurypilot -d treasurypilot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:treasurypilot@localhost:5432/treasurypilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Run execution API and Anvil integration tests
+        run: >-
+          uv run pytest -q
+          services/api/tests/test_execution_routes_postgres.py
+          services/worker/tests/test_tracker_integration.py
+
   quality:
     runs-on: ubuntu-latest
     steps:

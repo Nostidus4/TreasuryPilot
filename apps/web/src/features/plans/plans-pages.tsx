@@ -1,6 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
   ArrowRight,
   ArrowUpFromLine,
   Banknote,
@@ -52,11 +53,13 @@ function PlannerBadge({ source }: { source: Plan['plannerSource'] }) {
       <Bot aria-hidden="true" />
       {t('AI planner')}
     </Badge>
-  ) : (
+  ) : source === 'RULE_BASED' ? (
     <Badge tone="outline">
       <ListOrdered aria-hidden="true" />
       {t('Rule-based')}
     </Badge>
+  ) : (
+    <Badge tone="outline">{t('Planner unavailable')}</Badge>
   );
 }
 
@@ -75,7 +78,11 @@ export function PlansPage() {
           <div>
             <p className="num font-medium">{row.original.id}</p>
             <p className="text-xs text-muted-foreground">
-              {formatDateTime(row.original.createdAt)}
+              {row.original.plannerSource === 'UNKNOWN'
+                ? t('Signed {{when}}', {
+                    when: formatDateTime(row.original.createdAt),
+                  })
+                : formatDateTime(row.original.createdAt)}
             </p>
           </div>
         ),
@@ -107,18 +114,28 @@ export function PlansPage() {
       {
         id: 'total',
         header: () => <AmountHeader label="Total" />,
-        accessorFn: (row) => Number(BigInt(row.totalAmount) / 10000n),
+        accessorFn: (row) =>
+          row.totalAmount
+            ? Number(BigInt(row.totalAmount) / 10000n)
+            : undefined,
         meta: { align: 'right' },
-        cell: ({ row }) => (
-          <Amount value={row.original.totalAmount} context="column" />
-        ),
+        cell: ({ row }) =>
+          row.original.totalAmount ? (
+            <Amount value={row.original.totalAmount} context="column" />
+          ) : (
+            <span className="text-subtle-foreground">—</span>
+          ),
       },
       {
         id: 'saving',
         header: t('Expected saving'),
-        accessorFn: (row) => Number(BigInt(row.expectedSaving) / 10000n),
+        accessorFn: (row) =>
+          row.expectedSaving
+            ? Number(BigInt(row.expectedSaving) / 10000n)
+            : undefined,
         meta: { align: 'right', hideOnMobile: true },
         cell: ({ row }) =>
+          !row.original.expectedSaving ||
           row.original.expectedSaving === '0' ? (
             <span className="text-subtle-foreground">—</span>
           ) : (
@@ -175,6 +192,7 @@ const kindMeta = {
   PAY: { label: 'Pay', icon: Banknote },
   SUPPLY: { label: 'Supply', icon: ArrowUpFromLine },
   WITHDRAW: { label: 'Withdraw', icon: ArrowDownToLine },
+  SWAP: { label: 'Swap', icon: ArrowLeftRight },
 } as const;
 
 function StepMarker({ step }: { step: PlanStep }) {
@@ -256,7 +274,11 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                     )}
                   </p>
                 </div>
-                <Amount value={step.amount} />
+                {step.amount !== null ? (
+                  <Amount value={step.amount} />
+                ) : (
+                  <span className="text-sm text-subtle-foreground">—</span>
+                )}
               </div>
               <p className="mt-1.5 text-sm text-muted-foreground">
                 {step.reason}
@@ -277,10 +299,10 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                   >
                     {step.verification === 'VERIFIED'
                       ? t(
-                          'Verification passed: amount and recipient match the plan',
+                          'Receipt cross-check passed: independent providers agree',
                         )
                       : t(
-                          'Verification mismatch: on-chain result differs from the plan',
+                          'Receipt cross-check mismatch: providers disagree on the receipt',
                         )}
                   </span>
                 )}
@@ -339,10 +361,15 @@ export function PlanDetailPage() {
       }
       description={
         plan &&
-        t('Proposed {{when}} · live updates {{state}}', {
-          when: formatRelative(plan.createdAt),
-          state: scope.live ? t('on') : t('off, refreshing every 2 seconds'),
-        })
+        t(
+          plan.plannerSource === 'UNKNOWN'
+            ? 'Signed {{when}} · live updates {{state}}'
+            : 'Proposed {{when}} · live updates {{state}}',
+          {
+            when: formatRelative(plan.createdAt),
+            state: scope.live ? t('on') : t('off, refreshing every 2 seconds'),
+          },
+        )
       }
       actions={
         plan?.status === 'Validated' &&
@@ -373,28 +400,36 @@ export function PlanDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       {t('Total to move')}
                     </p>
-                    <Amount
-                      value={data.totalAmount}
-                      size="lg"
-                      context="column"
-                    />
+                    {data.totalAmount ? (
+                      <Amount
+                        value={data.totalAmount}
+                        size="lg"
+                        context="column"
+                      />
+                    ) : (
+                      <p className="text-subtle-foreground">—</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
                       {t('Expected saving')}
                     </p>
-                    <Amount
-                      value={data.expectedSaving}
-                      size="lg"
-                      context="column"
-                    />
+                    {data.expectedSaving ? (
+                      <Amount
+                        value={data.expectedSaving}
+                        size="lg"
+                        context="column"
+                      />
+                    ) : (
+                      <p className="text-subtle-foreground">—</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
                       {t('Progress')}
                     </p>
                     <p className="num text-xl font-medium">
-                      {done}/{data.steps.length}{' '}
+                      {done}/{data.stepCount}{' '}
                       <span className="font-sans text-base font-normal text-muted-foreground">
                         {t('steps verified')}
                       </span>
@@ -408,6 +443,15 @@ export function PlanDetailPage() {
                   {t(
                     '{{done}} of {{total}} steps are verified on-chain. The remaining steps were not completed; see each step for its state.',
                     { done: done ?? 0, total: data.steps.length },
+                  )}
+                </Alert>
+              )}
+
+              {data.steps.length < data.stepCount && (
+                <Alert tone="warning" title={t('Execution details incomplete')}>
+                  {t(
+                    'Live execution records are available for {{recorded}} of {{total}} signed steps. Steps without operation records cannot be shown yet.',
+                    { recorded: data.steps.length, total: data.stepCount },
                   )}
                 </Alert>
               )}
@@ -430,7 +474,18 @@ export function PlanDetailPage() {
               className="grid gap-4 lg:col-span-2"
             >
               <h2 className="text-lg font-semibold">{t('Why this plan')}</h2>
-              <PolicyDecision validations={data.validations} />
+              {data.validations.length > 0 ? (
+                <PolicyDecision validations={data.validations} />
+              ) : (
+                <Alert
+                  tone="neutral"
+                  title={t('Validation details unavailable')}
+                >
+                  {t(
+                    'The execution record does not include the validator checks for this plan.',
+                  )}
+                </Alert>
+              )}
               {data.aiExplanation ? (
                 <AiExplanation
                   model={data.aiExplanation.model}
@@ -439,10 +494,21 @@ export function PlanDetailPage() {
                   {data.aiExplanation.text}
                 </AiExplanation>
               ) : (
-                <Alert tone="neutral" title={t('No AI explanation')}>
-                  {t(
-                    'This plan was produced by the rule-based scheduler (earliest deadline first), so there is no AI text. The policy decision above is complete on its own.',
-                  )}
+                <Alert
+                  tone="neutral"
+                  title={
+                    data.plannerSource === 'RULE_BASED'
+                      ? t('No AI explanation')
+                      : t('Planner explanation unavailable')
+                  }
+                >
+                  {data.plannerSource === 'RULE_BASED'
+                    ? t(
+                        'This plan was produced by the rule-based scheduler (earliest deadline first), so there is no AI text. The policy decision above is complete on its own.',
+                      )
+                    : t(
+                        'Planner source and explanation were not persisted with this execution record.',
+                      )}
                 </Alert>
               )}
               {data.bindingConstraints.length > 0 && (

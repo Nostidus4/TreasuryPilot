@@ -73,6 +73,8 @@ SET failed_at = now(), last_error = $2
 WHERE id = $1 AND published_at IS NULL
 """
 
+_STREAM_ONLY_EVENT_TYPES = frozenset({"OperationUpdated"})
+
 
 def _event_payload(value: Any) -> dict[str, Any]:
     if isinstance(value, str):
@@ -145,6 +147,12 @@ def deliver_at(
 
 
 async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
+    # Execution updates feed the authenticated SSE stream but should not create an
+    # inbox/email notification for every confirmation-count or receipt change.
+    if event["type"] in _STREAM_ONLY_EVENT_TYPES and event["entity_type"] == "operation":
+        await connection.execute(_MARK_PUBLISHED, event["id"])
+        return
+
     policy = policy_for_event(event["type"])
     payload = _event_payload(event["payload"])
     roles = list(policy.roles)
