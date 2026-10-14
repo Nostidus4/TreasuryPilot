@@ -25,12 +25,17 @@ from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
+from treasurypilot_api.identity.models import Organization, OrganizationRole, WalletLink, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, maker_checker_conflict, require_role
 from treasurypilot_api.invoices.anomalies import (
     InvoiceRevisionSignals,
     PaidInvoice,
     evaluate_anomalies,
+)
+from treasurypilot_api.invoices.approval import (
+    ApprovalChainReader,
+    ApprovalExpiryError,
+    build_approval_typed_data,
 )
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
@@ -63,13 +68,22 @@ from treasurypilot_api.invoices.state_machine import (
     TransitionAction,
     TransitionActor,
 )
-from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
+from treasurypilot_api.mandate.models import (
+    MandateVersion,
+    MandateVersionStatus,
+    Payee,
+    PayeeStatus,
+    Vendor,
+)
 from treasurypilot_api.mandate.vendors import normalize_vendor_ref
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
+from treasurypilot_core.eip712 import digest as eip712_digest
+from treasurypilot_core.eip712 import verify_signature
 from treasurypilot_core.engine import InvalidTerms, validate_terms
 from treasurypilot_core.fingerprint import normalize
 from treasurypilot_core.money import BaseUnits
+from treasurypilot_core.policy.context import RequestView
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
@@ -155,6 +169,13 @@ class RequestReason(ApiModel):
 
 class FlagAcknowledgment(ApiModel):
     note: str = Field(min_length=10, max_length=2000)
+
+
+class ApproveRequest(ApiModel):
+    signature: str = Field(min_length=2, max_length=8192)
+    revision: int = Field(gt=0)
+    # The expiry from the typed data the approver signed; the server cannot re-derive it.
+    expiry: int = Field(gt=0)
 
 
 _TERMS_KEYS = {
@@ -2019,3 +2040,453 @@ async def acknowledge_flag(
             "ackNote": flag.ack_note,
         }
     return {"flag": result}
+
+
+def _approval_chain(request: Request) -> ApprovalChainReader:
+    chain = getattr(request.app.state, "approval_chain_reader", None)
+    if chain is None:
+        raise _fail(
+            503,
+            "RPC_UNAVAILABLE",
+            "Approval chain reader unavailable",
+            "On-chain approver verification is not configured.",
+        )
+    return cast(ApprovalChainReader, chain)
+
+
+def _approval_signature(raw: str) -> bytes:
+    try:
+        signature = bytes.fromhex(raw.removeprefix("0x"))
+    except ValueError:
+        signature = b""
+    if not signature:
+        raise _fail(400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature.")
+    return signature
+
+
+async def _approval_typed_data(
+    session: AsyncSession, row: PaymentRequest, expiry: int | None = None
+) -> tuple[dict[str, object], int, int]:
+    treasury = await session.scalar(select(Treasury).where(Treasury.id == row.treasury_id))
+    asset = await session.scalar(select(Asset).where(Asset.id == row.asset_id))
+    payee = await session.scalar(select(Payee).where(Payee.id == row.payee_id))
+    if treasury is None or asset is None or payee is None:
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "Bound request records are missing.",
+        )
+    if treasury.module_address is None or asset.address is None:
+        raise _fail(
+            503,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The treasury module is not configured.",
+        )
+    if (
+        row.onchain_request_id is None
+        or row.invoice_hash is None
+        or row.fingerprint is None
+        or payee.address is None
+    ):
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The request is missing signed fields.",
+        )
+
+    # The signed payingWallet must be the requester's explicit choice, never a server default.
+    wallet = (
+        await session.scalar(
+            select(TreasuryWallet).where(
+                TreasuryWallet.treasury_id == row.treasury_id,
+                TreasuryWallet.id == row.paying_wallet_id,
+            )
+        )
+        if row.paying_wallet_id is not None
+        else None
+    )
+    if wallet is None:
+        raise _fail(
+            409,
+            "PAYING_WALLET_UNKNOWN",
+            "Paying wallet invalid",
+            "Select an operational paying wallet on the request.",
+        )
+
+    mandate = await session.scalar(
+        select(MandateVersion)
+        .where(
+            MandateVersion.treasury_id == row.treasury_id,
+            MandateVersion.status == MandateVersionStatus.ACTIVE,
+        )
+        .order_by(MandateVersion.version.desc())
+        .limit(1)
+    )
+    if mandate is None:
+        raise _fail(
+            409,
+            "MANDATE_NOT_ACTIVE",
+            "Mandate unavailable",
+            "An active mandate is required to approve payments.",
+        )
+    approval_max_age_value = mandate.config.get(
+        "approvalMaxAge", mandate.config.get("approval_max_age", 14 * 86_400)
+    )
+    if isinstance(approval_max_age_value, bool) or not isinstance(approval_max_age_value, int):
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The active mandate has an invalid approvalMaxAge setting.",
+        )
+    approval_max_age = approval_max_age_value
+    if row.amount is None or row.due_at is None:  # unreachable: drafts cannot be in review
+        raise RuntimeError("Approval inputs are incomplete")
+    terms = confirmed_payment_terms(row)
+    early_amount, early_pay_by = (_early_option(terms, int(row.amount)) if terms else None) or (
+        0,
+        0,
+    )
+    # End of the due day UTC, matching the 23:59:59 UTC earlyPayBy convention (invoices README).
+    deadline = int(datetime.combine(row.due_at, datetime.max.time(), tzinfo=UTC).timestamp())
+    view = RequestView.model_validate(
+        {
+            "request_id": row.onchain_request_id,
+            "status": row.status,
+            "invoice_hash": row.invoice_hash,
+            "fingerprint": row.fingerprint,
+            "terms_hash": row.terms_hash or bytes(32),
+            "paying_wallet": "0x" + wallet.safe_address.hex(),
+            "payee": "0x" + payee.address.hex(),
+            "amount": int(row.amount),
+            "early_amount": early_amount,
+            "early_pay_by": early_pay_by,
+            "deadline": deadline,
+        }
+    )
+    now = int(datetime.now(UTC).timestamp())
+    try:
+        typed = build_approval_typed_data(
+            view,
+            chain_id=row.chain_id,
+            module_address="0x" + treasury.module_address.hex(),
+            now=now,
+            approval_max_age=approval_max_age,
+            asset="0x" + asset.address.hex(),
+            expiry=expiry,
+        )
+    except ApprovalExpiryError as error:
+        raise _fail(
+            400,
+            "APPROVAL_EXPIRY_INVALID",
+            "Approval expiry invalid",
+            "Request fresh typed data and sign it before it expires.",
+        ) from error
+    except ValueError as error:
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The request cannot be approved in its current state.",
+        ) from error
+    signed_expiry = cast(int, cast(dict[str, object], typed["message"])["expiry"])
+    return typed, signed_expiry, row.chain_id
+
+
+async def _enforce_maker_checker(
+    session: AsyncSession, organization_id: uuid.UUID, member: MemberAccess, row: PaymentRequest
+) -> bool:
+    """Reject makers unless the org is in solo mode; return the org's solo-mode flag."""
+    solo_mode = bool(
+        await session.scalar(
+            select(Organization.solo_mode).where(Organization.id == organization_id)
+        )
+    )
+    if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
+        raise maker_checker_conflict()
+    return solo_mode
+
+
+def _approval_view(row: PaymentApproval) -> dict[str, object]:
+    return {
+        "id": str(row.id),
+        "requestId": str(row.request_id),
+        "revision": row.revision,
+        "approverAddress": "0x" + row.approver_address.hex(),
+        "typedData": row.typed_data,
+        "acknowledgedFlagIds": [str(item) for item in row.acknowledged_flag_ids],
+        "soloMode": row.solo_mode,
+        "expiresAt": row.expires_at.isoformat(),
+        "status": row.status,
+    }
+
+
+@router.get("/{request_id}/approval-typed-data", openapi_extra={"x-organization-scoped": True})
+async def get_approval_typed_data(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    async with _sessions(request)() as session:
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        if row.status != RequestStatus.AWAITING_APPROVAL.value:
+            raise _fail(
+                409,
+                "NOT_AWAITING_APPROVAL",
+                "Request is not awaiting approval",
+                "Typed approval data is available only for requests awaiting approval.",
+            )
+        linked_wallet = await session.scalar(
+            select(WalletLink.id)
+            .where(WalletLink.user_id == member.user_id, WalletLink.unlinked_at.is_(None))
+            .limit(1)
+        )
+        if linked_wallet is None:
+            raise _fail(
+                403,
+                "WALLET_NOT_LINKED",
+                "Wallet not linked",
+                "Link an EVM wallet before approving a payment request.",
+            )
+        await _enforce_maker_checker(session, organization_id, member, row)
+        await assert_high_flags_acknowledged(session, row)
+        typed, _expiry, _chain_id = await _approval_typed_data(session, row)
+        # The POST must echo this revision and the signed message.expiry.
+        response.headers["X-Request-Revision"] = str(row.current_revision)
+        return typed
+
+
+@router.post("/{request_id}/approve", openapi_extra={"x-organization-scoped": True})
+async def approve_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: ApproveRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=255
+    ),
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    if idempotency_key is None:
+        raise _fail(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Idempotency key required",
+            "Provide an Idempotency-Key.",
+        )
+    signature = _approval_signature(payload.signature)
+    chain_reader = _approval_chain(request)
+    key_hash = keccak(idempotency_key.encode("utf-8"))
+    factory = _sessions(request)
+    result: dict[str, object]
+    try:
+        async with factory() as session, session.begin():
+            row = await session.scalar(
+                select(PaymentRequest)
+                .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise _not_found()
+            prior = await session.scalar(
+                select(PaymentApproval)
+                .where(
+                    PaymentApproval.request_id == row.id,
+                    PaymentApproval.idempotency_key_hash == key_hash,
+                )
+                .with_for_update()
+            )
+            if prior is not None:
+                if (
+                    prior.approver_user_id != member.user_id
+                    or prior.revision != payload.revision
+                    or prior.signature != signature
+                ):
+                    raise _fail(
+                        409,
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "Idempotency key reused",
+                        "Use a new key when the approval request changes.",
+                    )
+                result = {
+                    "request": _serialize(row),
+                    "approval": _approval_view(prior),
+                }
+                response.headers["ETag"] = f'"{row.version}"'
+                return result
+            if payload.revision != row.current_revision:
+                raise _fail(
+                    409,
+                    "REVISION_CHANGED",
+                    "Request revision changed",
+                    "Reload the request and sign the current revision.",
+                )
+            if row.status != RequestStatus.AWAITING_APPROVAL.value:
+                raise _fail(
+                    409,
+                    "NOT_AWAITING_APPROVAL",
+                    "Request is not awaiting approval",
+                    "Only requests awaiting approval can be approved.",
+                )
+            linked_wallets = list(
+                (
+                    await session.scalars(
+                        select(WalletLink)
+                        .where(
+                            WalletLink.user_id == member.user_id,
+                            WalletLink.unlinked_at.is_(None),
+                        )
+                        .order_by(WalletLink.linked_at, WalletLink.id)
+                    )
+                ).all()
+            )
+            if not linked_wallets:
+                raise _fail(
+                    403,
+                    "WALLET_NOT_LINKED",
+                    "Wallet not linked",
+                    "Link an EVM wallet before approving a payment request.",
+                )
+            solo_mode = await _enforce_maker_checker(session, organization_id, member, row)
+            await assert_high_flags_acknowledged(session, row)
+            typed, expiry, chain_id = await _approval_typed_data(session, row, payload.expiry)
+            module_address = cast(
+                str, cast(dict[str, object], typed["domain"])["verifyingContract"]
+            )
+            signer_address: str | None = None
+            signer_wallet: WalletLink | None = None
+            approval_digest = eip712_digest(typed)
+            # EOA wallets first: they need no RPC, so a failing ERC-1271 call cannot mask them.
+            for wallet in sorted(linked_wallets, key=lambda item: item.is_contract):
+                address = "0x" + wallet.address.hex()
+                if wallet.is_contract:
+                    try:
+                        valid = await chain_reader.is_valid_erc1271_signature(
+                            chain_id=chain_id,
+                            wallet=address,
+                            digest=approval_digest,
+                            signature=signature,
+                        )
+                    except Exception as error:
+                        raise _fail(
+                            503,
+                            "RPC_UNAVAILABLE",
+                            "Approval verification unavailable",
+                            "Could not verify the linked contract wallet signature.",
+                        ) from error
+                else:
+                    valid = verify_signature(typed, address, signature)
+                if valid:
+                    signer_address, signer_wallet = address, wallet
+                    break
+            if signer_address is None or signer_wallet is None:
+                raise _fail(
+                    400,
+                    "SIGNATURE_INVALID",
+                    "Signature invalid",
+                    "The signature does not match an active wallet linked to this approver.",
+                )
+            try:
+                onchain_approver = await chain_reader.is_approver(
+                    chain_id=chain_id, module=module_address, signer=signer_address
+                )
+            except Exception as error:
+                raise _fail(
+                    503,
+                    "RPC_UNAVAILABLE",
+                    "Approver verification unavailable",
+                    "Could not read the current on-chain approver set.",
+                ) from error
+            if not onchain_approver:
+                raise _fail(
+                    403,
+                    "NOT_IN_APPROVER_SET",
+                    "Signer is not an approver",
+                    "The linked wallet is not in the treasury module's current approver set.",
+                )
+            acknowledged_flag_ids = list(
+                (
+                    await session.scalars(
+                        select(RequestFlag.id).where(
+                            RequestFlag.request_id == row.id,
+                            RequestFlag.revision == row.current_revision,
+                            RequestFlag.status == RequestFlagStatus.ACKNOWLEDGED.value,
+                        )
+                    )
+                ).all()
+            )
+            approval = PaymentApproval(
+                id=uuid7(),
+                request_id=row.id,
+                revision=row.current_revision,
+                approver_user_id=member.user_id,
+                approver_address=signer_wallet.address,
+                idempotency_key_hash=key_hash,
+                typed_data=typed,
+                signature=signature,
+                acknowledged_flag_ids=acknowledged_flag_ids,
+                solo_mode=solo_mode and member.user_id in {row.created_by, row.last_edited_by},
+                expires_at=datetime.fromtimestamp(expiry, UTC),
+                status=ApprovalStatus.VALID.value,
+            )
+            session.add(approval)
+            previous_status = row.status
+            row.status = RequestStatus.APPROVED.value
+            session.add(
+                RequestStatusEvent(
+                    id=uuid7(),
+                    request_id=row.id,
+                    from_status=previous_status,
+                    to_status=row.status,
+                    actor_type=StatusEventActorType.USER.value,
+                    actor_id=member.user_id,
+                    reason="request approved with verified EIP-712 signature",
+                )
+            )
+            await write_audit(
+                session,
+                org_id=organization_id,
+                actor=AuditActor(AuditActorType.USER, member.user_id),
+                action=TransitionAction.APPROVE.value,
+                entity=AuditEntity("payment_request", row.id),
+                data={"from": previous_status, "to": row.status, "soloMode": solo_mode},
+            )
+            await session.flush()
+            await session.refresh(row)
+            await session.refresh(approval)
+            result = {
+                "request": _serialize(row),
+                "approval": _approval_view(approval),
+            }
+            version = row.version
+    except IntegrityError as error:
+        constraint_name = getattr(
+            getattr(error.orig, "diag", None),
+            "constraint_name",
+            getattr(error.orig, "constraint_name", None),
+        )
+        if constraint_name not in {
+            "uq_approvals_valid_request_revision_address",
+            "uq_approvals_request_idempotency_key",
+        }:
+            raise
+        raise _fail(
+            409,
+            "APPROVAL_EXISTS",
+            "Request already approved",
+            "A valid approval already exists for this request revision.",
+        ) from error
+    response.headers["ETag"] = f'"{version}"'
+    return result

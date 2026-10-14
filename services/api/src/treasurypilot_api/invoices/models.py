@@ -382,6 +382,10 @@ class PaymentApproval(Base):
         CheckConstraint("jsonb_typeof(typed_data) = 'object'", name="ck_approvals_typed_data"),
         CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
+        CheckConstraint(
+            "idempotency_key_hash IS NULL OR octet_length(idempotency_key_hash) = 32",
+            name="ck_approvals_idempotency_key_hash",
+        ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(
             ["request_id", "revision"],
@@ -401,6 +405,9 @@ class PaymentApproval(Base):
             unique=True,
             postgresql_where=text("status = 'Valid'"),
         ),
+        UniqueConstraint(
+            "request_id", "idempotency_key_hash", name="uq_approvals_request_idempotency_key"
+        ),
         Index("ix_approvals_request_revision", "request_id", "revision"),
     )
 
@@ -409,6 +416,7 @@ class PaymentApproval(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     approver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     approver_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    idempotency_key_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     typed_data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     acknowledged_flag_ids: Mapped[list[uuid.UUID]] = mapped_column(
