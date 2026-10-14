@@ -51,6 +51,7 @@ test('create and submit a request, then approve it with the demo signer', async 
 
   await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
   await signIn(page, 'an@northwind.test');
 
   await page.getByRole('link', { name: 'Approvals' }).click();
@@ -75,7 +76,7 @@ test('execute a seeded plan, verify payment, and reconcile its receipt', async (
   });
 
   await page.getByRole('link', { name: 'Reconciliation' }).click();
-  await page.getByRole('button', { name: 'Open payment BP-2026-219' }).click();
+  await page.getByRole('row', { name: 'Open payment BP-2026-219' }).click();
   await expect(page.getByText('Evidence is incomplete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as matched' }).click();
   await expect(page.getByText('Marked as matched')).toBeVisible();
