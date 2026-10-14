@@ -89,7 +89,7 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
     assert typed_message["data"] == "0x" + call.data.hex()
 
     with pytest.raises(FrozenInstanceError):
-        setattr(proposal, "amount", amount + 1)
+        proposal.amount = amount + 1  # type: ignore[misc]
 
 
 def test_cancel_request_call_encodes_module_selector_and_request_id() -> None:
