@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-322 |
-| **Blocks** | ENG-016 |
+| **Blocks** | ENG-016, INV-015 |
 | **Submission cut** | After submission |
 
 > **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.

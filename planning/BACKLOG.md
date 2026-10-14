@@ -10,8 +10,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 40 |
-| **All** | | | | **246** |
+| Later | – | – | – | 42 |
+| **All** | | | | **248** |
 
 ## Epics
 
@@ -24,7 +24,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 1 | [`issues/mandate/`](issues/mandate/) |
-| M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 6 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
@@ -145,7 +145,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
 | INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | M | After submission | INV-003 | Accepted |
 | INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
-| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-003, ENG-016 | Accepted |
+| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-015, INV-016 | Accepted |
+| INV-015 | invoices | M05 | [Model fiat invoice amounts and approval caps](issues/invoices/015-model-fiat-invoice-amounts-and-approval-caps.md) | F-041 | Later | - | S | After submission | INV-003, ENG-015 | Accepted |
+| INV-016 | invoices | M05 | [Guard fiat invoice payment against FX drift and depeg](issues/invoices/016-guard-fiat-invoice-payment-against-fx-drift-and-depeg.md) | F-041 | Later | - | S | After submission | INV-015, ENG-016 | Accepted |
 | CHR-001 | chain-reader | M06 | [Build the RPC client with failover](issues/chain-reader/001-build-the-rpc-client-with-failover.md) | F-050 | M1 | P0 | M | A | TRS-002 | Ready for Assignment |
 | CHR-002 | chain-reader | M06 | [Implement block-consistent snapshots](issues/chain-reader/002-implement-block-consistent-snapshots.md) | F-050 | M1 | P0 | M | A | CHR-001, TRS-004 | Ready for Assignment |
 | CHR-003 | chain-reader | M06 | [Implement the transaction tracker](issues/chain-reader/003-implement-the-transaction-tracker.md) | F-070 | M1 | P0 | M | A | CHR-001, EXE-001 | Ready for Assignment |

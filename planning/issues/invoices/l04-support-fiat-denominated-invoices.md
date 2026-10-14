@@ -31,9 +31,7 @@ Accept invoices in fiat with FX conversion.
 
 ## Scope
 
-- Fiat amount and currency on requests
-- approval binds max stablecoin amount
-- FX source adapter
+- Two independently schedulable pieces: persist and approve a fiat invoice cap, then safely obtain and validate a fresh execution quote
 
 ## Out of scope
 
@@ -45,8 +43,8 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- INV-003: Implement manual request creation and editing
-- ENG-016: Guard fiat conversion against FX drift, depeg and approved caps
+- INV-015: Model fiat invoice amounts and approval caps
+- INV-016: Guard fiat invoice payment against FX drift and depeg
 
 ## Acceptance criteria
 

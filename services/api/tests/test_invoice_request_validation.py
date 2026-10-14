@@ -15,6 +15,8 @@ from treasurypilot_api.invoices.fingerprints import (
 )
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
+    RequestCreate,
+    RequestPatch,
     _amount,
     _request_id,
     _validate_dates,
@@ -34,6 +36,39 @@ def test_manual_request_amount_must_be_positive() -> None:
     with pytest.raises(AuthFailure) as error:
         _amount("0", 6)
     assert error.value.code == "AMOUNT_NOT_POSITIVE"
+
+
+def test_fiat_fields_must_be_supplied_as_a_pair_and_use_minor_units() -> None:
+    common = {
+        "treasury_id": uuid.uuid4(),
+        "vendor_id": uuid.uuid4(),
+        "payee_id": uuid.uuid4(),
+        "invoice_no": "INV-1",
+        "issue_date": date(2026, 10, 1),
+        "due_date": date(2026, 10, 2),
+        "amount": "100.00",
+        "asset_id": uuid.uuid4(),
+    }
+    with pytest.raises(ValueError, match="supplied together"):
+        RequestCreate.model_validate({**common, "fiat_currency": "EUR"})
+    with pytest.raises(ValueError):
+        RequestCreate.model_validate(
+            {**common, "fiat_currency": "EUR", "fiat_amount_minor_units": "01"}
+        )
+    request = RequestCreate.model_validate(
+        {**common, "fiat_currency": "EUR", "fiat_amount_minor_units": "12345"}
+    )
+    assert request.fiat_amount_minor_units == "12345"
+
+
+def test_fiat_patch_can_clear_both_fields_together() -> None:
+    patch = RequestPatch.model_validate(
+        {"fiat_currency": None, "fiat_amount_minor_units": None}
+    )
+    assert patch.model_dump(exclude_unset=True) == {
+        "fiat_currency": None,
+        "fiat_amount_minor_units": None,
+    }
 
 
 def test_manual_request_due_date_cannot_precede_issue_date() -> None:

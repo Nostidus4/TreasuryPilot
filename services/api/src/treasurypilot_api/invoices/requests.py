@@ -26,6 +26,11 @@ from treasurypilot_api.invoices.fingerprints import (
     compute_fingerprint,
     find_active_duplicate,
 )
+from treasurypilot_api.invoices.fx import (
+    FxProviderUnavailable,
+    asset_key,
+    capture_reference_quote,
+)
 from treasurypilot_api.invoices.models import (
     ApprovalStatus,
     PaymentApproval,
@@ -43,8 +48,8 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
 from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
-from treasurypilot_core.domain import PaymentTerms
-from treasurypilot_core.engine import InvalidTerms, validate_terms
+from treasurypilot_core.domain import FxPolicy, PaymentTerms
+from treasurypilot_core.engine import FiatPaymentBlocked, InvalidTerms, validate_terms
 from treasurypilot_core.fingerprint import normalize
 from treasurypilot_core.money import BaseUnits
 
@@ -61,11 +66,21 @@ class RequestCreate(ApiModel):
     due_date: date
     amount: str = Field(min_length=1, max_length=80)
     asset_id: uuid.UUID
+    fiat_amount_minor_units: str | None = Field(
+        default=None, min_length=1, max_length=78, pattern=r"^[1-9][0-9]*$"
+    )
+    fiat_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     paying_wallet_id: uuid.UUID | None = None
     terms: dict[str, object] | None = None
     note: str | None = None
     tags: list[str] = Field(default_factory=list, max_length=50)
     cost_center: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _validate_fiat_pair(self) -> RequestCreate:
+        if (self.fiat_amount_minor_units is None) != (self.fiat_currency is None):
+            raise ValueError("fiat_amount_minor_units and fiat_currency must be supplied together")
+        return self
 
 
 class RequestPatch(ApiModel):
@@ -77,6 +92,10 @@ class RequestPatch(ApiModel):
     due_date: date | None = None
     amount: str | None = Field(default=None, min_length=1, max_length=80)
     asset_id: uuid.UUID | None = None
+    fiat_amount_minor_units: str | None = Field(
+        default=None, min_length=1, max_length=78, pattern=r"^[1-9][0-9]*$"
+    )
+    fiat_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     paying_wallet_id: uuid.UUID | None = None
     terms: dict[str, object] | None = None
     note: str | None = None
@@ -86,7 +105,14 @@ class RequestPatch(ApiModel):
     @model_validator(mode="after")
     def _reject_null_required_fields(self) -> RequestPatch:
         # Only these columns accept NULL; an explicit null elsewhere would 500 downstream.
-        nullable = {"paying_wallet_id", "terms", "note", "cost_center"}
+        nullable = {
+            "paying_wallet_id",
+            "terms",
+            "note",
+            "cost_center",
+            "fiat_amount_minor_units",
+            "fiat_currency",
+        }
         for name in self.model_fields_set - nullable:
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
@@ -102,6 +128,8 @@ _BOUND_FIELDS = (
     "due_date",
     "amount",
     "asset_id",
+    "fiat_amount_minor_units",
+    "fiat_currency",
     "paying_wallet_id",
     "terms",
 )
@@ -212,6 +240,79 @@ def _amount(value: str, decimals: int) -> int:
     return int(parsed)
 
 
+def _fiat_amount(value: str | None) -> int | None:
+    if value is None:
+        return None
+    # Pydantic already enforces canonical digits at the HTTP boundary; keep this
+    # check for internal callers and before converting untrusted input to int.
+    if not value.isascii() or not value.isdigit() or value.startswith("0"):
+        raise _fail(
+            422, "FIAT_AMOUNT_INVALID", "Fiat amount invalid", "Use positive integer minor units."
+        )
+    parsed = int(value)
+    if not 0 < parsed < 1 << 256:
+        raise _fail(
+            422, "FIAT_AMOUNT_INVALID", "Fiat amount invalid", "Use positive integer minor units."
+        )
+    return parsed
+
+
+async def _capture_fiat_reference(
+    request: Request,
+    *,
+    currency: str | None,
+    fiat_amount_minor_units: int | None,
+    max_stablecoin_amount: int,
+    stablecoin_asset: str,
+) -> tuple[dict[str, object] | None, int | None]:
+    if currency is None and fiat_amount_minor_units is None:
+        return None, None
+    if currency is None or fiat_amount_minor_units is None:
+        raise _fail(
+            422,
+            "FIAT_FIELDS_REQUIRED",
+            "Fiat fields incomplete",
+            "Provide both fiatAmountMinorUnits and fiatCurrency, or clear both.",
+        )
+    state = request.app.state
+    provider = getattr(state, "fx_quote_provider", None)
+    policy = getattr(state, "fx_policy", None)
+    tolerance_bps = getattr(state, "fx_tolerance_bps", None)
+    if provider is None or not isinstance(policy, FxPolicy) or not isinstance(tolerance_bps, int):
+        raise _fail(
+            503,
+            "FX_UNAVAILABLE",
+            "FX quotes unavailable",
+            "A configured FX quote source and policy are required for fiat requests.",
+        )
+    try:
+        quote = await capture_reference_quote(
+            provider,
+            fiat_currency=currency,
+            fiat_amount_minor_units=fiat_amount_minor_units,
+            stablecoin_asset=stablecoin_asset,
+            max_stablecoin_amount=max_stablecoin_amount,
+            tolerance_bps=tolerance_bps,
+            policy=policy,
+            now_timestamp=int(datetime.now(UTC).timestamp()),
+        )
+    except FxProviderUnavailable:
+        raise _fail(
+            503,
+            "FX_UNAVAILABLE",
+            "FX quotes unavailable",
+            "The configured FX quote source is temporarily unavailable.",
+        ) from None
+    except FiatPaymentBlocked as error:
+        code = (
+            "FX_MAX_EXCEEDED"
+            if error.reason == "APPROVED_MAX_EXCEEDED"
+            else "FX_QUOTE_INVALID"
+        )
+        raise _fail(422, code, "Fiat quote invalid", error.reason) from None
+    return quote.model_dump(mode="json"), tolerance_bps
+
+
 def _not_found() -> AuthFailure:
     return _fail(
         404, "REQUEST_NOT_FOUND", "Request not found", "The request is not available to this user."
@@ -241,7 +342,15 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "issueDate": row.issue_date.isoformat(),
         "dueDate": row.due_at.isoformat(),
         "amount": str(row.amount),
+        # For fiat requests amount/maxStablecoinAmount is the cap signed by approvers.
+        "maxStablecoinAmount": str(row.amount),
         "assetId": str(row.asset_id),
+        "fiatAmountMinorUnits": (
+            str(row.fiat_amount_minor_units) if row.fiat_amount_minor_units is not None else None
+        ),
+        "fiatCurrency": row.fiat_currency,
+        "fxReferenceQuote": row.fx_reference_quote,
+        "fxToleranceBps": row.fx_tolerance_bps,
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
         "termsHash": "0x" + row.terms_hash.hex() if row.terms_hash else None,
@@ -275,7 +384,14 @@ def _snapshot(row: PaymentRequest) -> dict[str, object]:
         "issueDate": row.issue_date.isoformat(),
         "dueDate": row.due_at.isoformat(),
         "amount": str(row.amount),
+        "maxStablecoinAmount": str(row.amount),
         "assetId": str(row.asset_id),
+        "fiatAmountMinorUnits": (
+            str(row.fiat_amount_minor_units) if row.fiat_amount_minor_units is not None else None
+        ),
+        "fiatCurrency": row.fiat_currency,
+        "fxReferenceQuote": row.fx_reference_quote,
+        "fxToleranceBps": row.fx_tolerance_bps,
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "terms": row.terms,
     }
@@ -392,10 +508,16 @@ async def _bound_changed(
         if asset is None:
             return True  # _bound_fields reports the invalid asset
         values["amount"] = _amount(str(values["amount"]), asset.decimals)
+    if "fiat_amount_minor_units" in values:
+        values["fiat_amount_minor_units"] = _fiat_amount(
+            cast(str | None, values["fiat_amount_minor_units"])
+        )
     current = {key: getattr(row, key) for key in values if key != "due_date"}
     current["due_date"] = row.due_at
     if "amount" in current:
         current["amount"] = int(row.amount)
+    if "fiat_amount_minor_units" in current and current["fiat_amount_minor_units"] is not None:
+        current["fiat_amount_minor_units"] = int(current["fiat_amount_minor_units"])
     return any(current[key] != value for key, value in values.items())
 
 
@@ -428,7 +550,19 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes
     row.fingerprint = value
     row.invoice_hash = keccak(
         encode(
-            ["string", "string", "uint256", "address", "string", "string", "bytes32"],
+            [
+                "string",
+                "string",
+                "uint256",
+                "address",
+                "string",
+                "string",
+                "string",
+                "string",
+                "uint256",
+                "string",
+                "bytes32",
+            ],
             [
                 normalize(vendor_ref),
                 normalize(row.invoice_no),
@@ -436,6 +570,12 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes
                 asset_address,
                 row.issue_date.isoformat(),
                 row.due_at.isoformat(),
+                str(row.fiat_amount_minor_units or ""),
+                row.fiat_currency or "",
+                int(row.fx_tolerance_bps or 0),
+                json.dumps(row.fx_reference_quote, sort_keys=True, separators=(",", ":"))
+                if row.fx_reference_quote is not None
+                else "",
                 bytes(32),
             ],
         )
@@ -591,6 +731,16 @@ async def create_request(
                     paying_wallet_id=payload.paying_wallet_id,
                 )
                 amount = _amount(payload.amount, asset.decimals)
+                fiat_amount_minor_units = _fiat_amount(payload.fiat_amount_minor_units)
+                fx_reference_quote, fx_tolerance_bps = await _capture_fiat_reference(
+                    request,
+                    currency=payload.fiat_currency,
+                    fiat_amount_minor_units=fiat_amount_minor_units,
+                    max_stablecoin_amount=amount,
+                    stablecoin_asset=(
+                        asset_key(asset.address or b"") if fiat_amount_minor_units is not None else ""
+                    ),
+                )
                 row = PaymentRequest(
                     id=uuid7(),
                     org_id=member.organization_id,
@@ -603,6 +753,10 @@ async def create_request(
                     due_at=payload.due_date,
                     amount=amount,
                     asset_id=asset.id,
+                    fiat_amount_minor_units=fiat_amount_minor_units,
+                    fiat_currency=payload.fiat_currency,
+                    fx_reference_quote=fx_reference_quote,
+                    fx_tolerance_bps=fx_tolerance_bps,
                     paying_wallet_id=payload.paying_wallet_id,
                     terms=payload.terms,
                     source=RequestSource.MANUAL.value,
@@ -721,6 +875,25 @@ async def edit_request(
                     "Request cannot be edited",
                     "Withdraw a request awaiting approval before editing it.",
                 )
+            fiat_amount_value = fields.get(
+                "fiat_amount_minor_units",
+                str(row.fiat_amount_minor_units)
+                if row.fiat_amount_minor_units is not None
+                else None,
+            )
+            fiat_amount_minor_units = _fiat_amount(
+                cast(str | None, fiat_amount_value)
+            )
+            fiat_currency = cast(
+                str | None, fields.get("fiat_currency", row.fiat_currency)
+            )
+            if (fiat_amount_minor_units is None) != (fiat_currency is None):
+                raise _fail(
+                    422,
+                    "FIAT_FIELDS_REQUIRED",
+                    "Fiat fields incomplete",
+                    "Provide both fiatAmountMinorUnits and fiatCurrency, or clear both.",
+                )
             bound_changed = await _bound_changed(session, row, fields)
             for key, value in fields.items():
                 if key in {"note", "tags", "cost_center"}:
@@ -758,6 +931,17 @@ async def edit_request(
                     if "amount" in fields
                     else int(row.amount)
                 )
+                fx_reference_quote, fx_tolerance_bps = await _capture_fiat_reference(
+                    request,
+                    currency=fiat_currency,
+                    fiat_amount_minor_units=fiat_amount_minor_units,
+                    max_stablecoin_amount=amount,
+                    stablecoin_asset=(
+                        asset_key(asset.address or b"")
+                        if fiat_amount_minor_units is not None
+                        else ""
+                    ),
+                )
                 row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
                     treasury.id,
                     treasury.chain_id,
@@ -770,6 +954,10 @@ async def edit_request(
                     new_due_date,
                 )
                 row.amount, row.asset_id, row.paying_wallet_id = amount, asset.id, wallet_id
+                row.fiat_amount_minor_units = fiat_amount_minor_units
+                row.fiat_currency = fiat_currency
+                row.fx_reference_quote = fx_reference_quote
+                row.fx_tolerance_bps = fx_tolerance_bps
                 if "terms" in fields:
                     row.terms = fields["terms"]
                 row.current_revision += 1
