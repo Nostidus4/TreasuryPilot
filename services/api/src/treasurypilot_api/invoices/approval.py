@@ -19,7 +19,7 @@ _MAX_DEADLINE_GRACE_SECONDS = 14 * 24 * 60 * 60
 _MIN_APPROVAL_MAX_AGE = 86_400
 _MAX_APPROVAL_MAX_AGE = 60 * 86_400
 _UINT64_MAX = 2**64 - 1
-_ADDRESS = TypeAdapter(Address)
+_ADDRESS: TypeAdapter[str] = TypeAdapter(Address)  # type: ignore[arg-type]  # PEP 695 alias
 
 
 def build_approval_typed_data(
