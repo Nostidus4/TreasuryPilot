@@ -2,6 +2,7 @@
 useDefault = true
 
 # Path-scoped (not commit-pinned) so squash-merges cannot invalidate it.
-[[allowlists]]
+# Uses the single [allowlist] table because gitleaks 8.24 predates [[allowlists]].
+[allowlist]
 description = "Public on-chain contract addresses in the reviewed Sepolia manifest (#264); no credential"
 paths = ['''^deployments/11155111\.json$''']
