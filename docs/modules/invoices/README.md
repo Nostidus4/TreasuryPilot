@@ -40,7 +40,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|
 | **Vendor** | A company we pay (name, tax id, normalized reference). Has 1..n payee addresses (M03). History (amounts, addresses) is kept **per vendor** (M05-D2). |
 | **Payment request** | One invoice to be paid once, in full, from one paying wallet to one payee (M05-D9). |
-| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
+| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
 | **Free fields** | Internal note, tags, cost center, attachments other than the invoice document. Editable at any time before Paid without invalidation. |
 | **requestId (on-chain)** | `keccak256(abi.encode("TP_REQ_V1", orgId, request uuid))`. Stable across revisions so `requestPaid` blocks a second payment of any revision. |
 | **invoiceHash** | `keccak256(abi.encode(normVendorRef, normInvoiceNo, amount, asset, issueDate, dueDate, documentSha256 or 0x0))` (M05-D3). |
@@ -124,7 +124,7 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart `file`, `treasuryId`, `?dryRun=true` → `{importId, dryRun, created[], errors[{row, field, code, message, value}], errorReportUrl}` | 413 `CSV_TOO_LARGE`; 422 `CSV_HEADER_INVALID`, `CSV_ENCODING`, `CSV_ROW_LIMIT` |
 | GET | `/orgs/{o}/requests/import-csv/{importId}/errors.csv` | OPR | downloadable, formula-neutralized error report | 404 `REQUEST_NOT_FOUND` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
-| POST | `/…/{r}/terms/confirm` | OPR | `{terms}` → `{request}` | 422 `TERMS_INVALID` |
+| POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`, 412, 422 `TERMS_INVALID` |
 | POST | `/…/{r}/submit` | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED` |
 | POST | `/…/{r}/withdraw` | OPR | → Draft | |
 | POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
@@ -135,6 +135,15 @@ stateDiagram-v2
 | POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
 | POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
+
+Terms submitted with a draft are provisional. The confirmation endpoint validates the
+ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
+the confirming operator and time (re-confirming identical terms keeps the original
+confirmer). Late-fee `amount`/`cap` may be sent as integers or canonical integer strings (stored as strings). Editing
+bound request fields clears confirmation. Only confirmed terms may be converted to
+scheduler input. A confirmed discount derives
+`earlyAmount = amount − floor(amount × discount_bps / 10000)` and `earlyPayBy` as
+23:59:59 UTC on the discount deadline day; both are `null` without a discount.
 
 **`PaymentApproval` typed data (corrected: 11 fields, no `overrideDuplicate`, M04-D3)**
 
@@ -238,6 +247,8 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 6. Recover the signer (ECDSA) or call `isValidSignature` (ERC-1271) on the caller's linked contract wallet (`SIGNATURE_INVALID`).
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
+
+`services/api/src/treasurypilot_api/invoices/approval.py` is the server-side typed-data builder for INV-010. It accepts the current normalized request view and on-chain module context, derives expiry from the due deadline and mandate `approvalMaxAge`, and delegates the exact 13-field EIP-712/domain encoding to `treasurypilot_core.eip712`. The INV-010 API routes must call it after loading the latest request revision; route, persistence, linked-wallet authorization, and signature submission wiring remain part of the invoice approval endpoint implementation.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

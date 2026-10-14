@@ -98,7 +98,7 @@
 | POST | `…/reconciliations/{id}/match`, `…/discrepancy` | Đánh dấu khớp, ghi chênh lệch | FIN |
 | GET | `/orgs/{o}/exports/reconciliation.csv` | Xuất CSV hoặc bút toán | FIN, AUD |
 | GET | `/orgs/{o}/requests/{r}/evidence` | Gói bằng chứng | FIN, AUD, ADM |
-| GET | `/orgs/{o}/audit-log`, `…/verify` | Đọc audit, kiểm tra chuỗi hash | AUD, ADM |
+| GET | `/orgs/{o}/audit-log`, `…/verify` | Đọc audit (AUD, OWN, ADM), kiểm tra chuỗi hash (AUD, OWN) | AUD, OWN, ADM |
 | GET | `/orgs/{o}/metrics/operations`, `…/savings` | Chỉ số vận hành, báo cáo tiết kiệm | OWN, FIN, AUD |
 
 ## 8. Copilot, thông báo

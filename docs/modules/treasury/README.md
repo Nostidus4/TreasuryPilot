@@ -40,6 +40,10 @@ F-010 (FR-101–102), F-011 (FR-103–105), F-012 (FR-106–107, BR-018), F-013 
 
 Treasury: `Draft` (Safes verified) → `ModulePending` (deploy+enable governance tx Collecting/Submitted) → `Ready` (module recorded, coverage computed) → `Revoked` (module revoked). Pause is shown from M03. Coverage: `UNKNOWN ⇄ PARTIAL ⇄ COMPLETE` recomputed on Safe config events and every 10 min.
 
+The worker reads each active Safe at one pinned block every 10 minutes and appends a block-hash-unique `safe_config_snapshots` row, including its fallback handler and the EIP-1167 implementation target (if any) for each enabled module. Coverage is recomputed in the snapshot transaction and by the Owner/Admin refresh endpoint. A missing or older-than-12-minute snapshot (also evaluated on every read), a treasury without a module, a missing expected deployment, or any failed or malformed chain read leaves coverage UNKNOWN. An acknowledgment applies only to the exact PARTIAL deviations the Owner reviewed: any change in the coverage details clears it. An Owner can acknowledge PARTIAL coverage with a reason; the audit log records that action and the acknowledgment state is returned to clients as a persistent banner state. `executionAllowed` is true only for COMPLETE or acknowledged PARTIAL coverage.
+
+The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and `SAFE_FALLBACK_HANDLER` before coverage can become COMPLETE. The current Sepolia record is still `configured_only`, and its deployment-record/API-manifest shape is documented as unreconciled; do not treat the configured-only address fields as a live deployment. TRS-006 (#44) remains open, so this issue does not claim module deployment, enablement, or a mined module-created event.
+
 ## 6. Interfaces (API_SPEC §2)
 
 | Method | Endpoint | Perm | Errors |
@@ -47,20 +51,24 @@ Treasury: `Draft` (Safes verified) → `ModulePending` (deploy+enable governance
 | GET | `/chains` | auth | |
 | POST | `/orgs/{o}/treasuries` | OWN, ADM | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET`, `SAFE_VERSION_UNSUPPORTED`, `OWNER_SETS_DIFFER` (warning) |
 | GET | `/orgs/{o}/treasuries/{t}` | ANY | |
-| POST | `/orgs/{o}/treasuries/{t}/module/governance-tx` | OWN | → `{governanceTx}` (factory.create + enableModule ×3 via MultiSend on T; enableModule on O1/O2 as separate Safe txs) |
+| POST | `/orgs/{o}/treasuries/{t}/module/deploy-tx` | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}`; T calls factory.createDeterministic + enableModule in one MultiSend, O1/O2 each receive their own enableModule Safe transaction |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/refresh` | OWN, ADM | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/acknowledge` | OWN | `{reason}`; 409 `COVERAGE_COMPLETE` |
-| POST | `/orgs/{o}/safes/deploy-tx` (P2) | OWN | `{owners, threshold}` → tx for the wallet |
+| POST | `/orgs/{o}/safes/deploy-tx` (P2) | OWN, ADM | `{chainId, owners, threshold}` → `{chainId, transaction:{to,data,value}}`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE` until verified Safe deployment entries are configured |
 
 ## 7. Flows
 
-Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or deploy, P2) → verify Safes → module governance tx on T (factory.create; enable on T) → enable on O1 and O2 (each Safe signs its own `enableModule` — same owners, PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010) → mandate (M03).
+Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → configure initial mandate and buffers (M03) → T signs the module deploy-and-enable Safe transaction → O1/O2 each sign their own `enableModule` transaction (PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010).
+
+Module setup requires explicit initializer values: mandate validity, executor, guardian, pay/refill/supply limits, approval age, approvers, and one buffer entry for T and each operational Safe. The API resolves the ERC-20 asset and operational Safes from the treasury record. It refuses to build transactions unless factory, implementation, and Safe MultiSendCallOnly addresses and code hashes are configured and match chain code. It predicts the Safe-scoped deterministic clone address, stores one governance transaction for T and one for each operational Safe, and records the clone only after a successful Safe execution receipt contains a matching `TreasuryModuleCreated` event and the clone runtime matches the configured implementation. The treasury becomes Ready after the module is enabled on every treasury Safe.
 
 ## 8. Algorithms
 
 - **Safe verification:** `getCode` non-empty; proxy `masterCopy` (storage slot 0) ∈ allowlisted Safe v1.4.1 singletons (L1/L2); `VERSION() == "1.4.1"`; chain id matches. EOAs → `NOT_A_SAFE`.
+- **Safe deployment:** the deploy-tx endpoint only builds `createProxyWithNonce` calldata when the API manifest explicitly includes `SAFE_SINGLETON_L1` or `SAFE_SINGLETON_L2` (version `1.4.1`), `SAFE_PROXY_FACTORY`, and `SAFE_FALLBACK_HANDLER`, each with a non-zero address and code hash; the endpoint also verifies all three runtime code hashes against a configured RPC before returning a transaction. Legacy scalar fields in the contracts deployment manifest do not satisfy this requirement. Current Sepolia API configuration lacks these entries, so the wizard reports deployment unavailable and the endpoint returns 503; existing Safe creation remains available.
+- **Implementation (TRS-004):** `treasury/safe.py` reads the chain through the configured HTTP RPC providers (failover, all reads pinned to one block) with the Safe ABI instead of safe-eth-py, whose web3 8 / eth-account 0.13 pins cannot resolve in this workspace. The singleton allowlist is the manifest deployments `SAFE_SINGLETON_L1` and `SAFE_SINGLETON_L2` with version `1.4.1`; none configured fails closed with `SAFE_VERSION_UNSUPPORTED`. A Safe belongs to one treasury across all tenants (`DUPLICATE_WALLET`). Creation is audited as `treasury.created`. Request: `{chainId, assetId, wallets[{role, safeAddress, label?}]}` with one SOURCE and one or two OPERATIONAL wallets; `OWNER_SETS_DIFFER` is returned in `warnings`; no RPC answer gives 503 `RPC_UNAVAILABLE`.
 - **Owner sets:** T, O1, O2 should share owners and threshold (PH-9); differences produce a warning, not an error.
-- **Coverage:** for each Safe: `modules = getModulesPaginated(SENTINEL, 10)`; expect exactly `[clone]` with `clone`'s EIP-1167 target = implementation; `getStorageAt(GUARD_SLOT) == 0`; fallback handler ∈ allowlist. Result per wallet + overall (worst of three).
+- **Coverage:** for each Safe, use the latest fresh snapshot: modules must equal `[clone]`, the clone's exact EIP-1167 runtime must target `TREASURY_MODULE_IMPLEMENTATION`, `getStorageAt(GUARD_SLOT) == 0`, and the fallback handler must equal the configured `SAFE_FALLBACK_HANDLER`. Any extra module, unexpected guard, wrong clone target, or wrong fallback handler yields PARTIAL; missing/stale snapshots or missing configured expectations yield UNKNOWN. The execution gate allows COMPLETE and Owner-acknowledged PARTIAL only.
 - **Decimals:** `decimals()` on-chain must equal config; mismatch refuses the asset.
 
 ## 9. Configuration

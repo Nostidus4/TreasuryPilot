@@ -117,6 +117,15 @@ Ids (request, step, operation, idempotency key) never change across attempts (BR
 
 SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCERTAIN_TX 1 h, others 48 h; overdue items escalate to Owner.
 
+`create_for_outcome` is the transaction-scoped queue adapter. It returns no item for
+ALLOW and uses the open `(request_id, type)` uniqueness rule for every other
+outcome, so repeated or concurrent reports share one actionable item. Review
+actions check the routed role and item version under a row lock. UNCERTAIN_TX
+acknowledgment stays unavailable until chain evidence marks the item resolved.
+The downstream command for actions such as CANCEL and GRANT_EXCEPTION is wired by
+the corresponding request and mandate flows; the queue records the reviewed
+decision and does not execute a chain transaction itself.
+
 ### 8.4 Circuit rules (BR-065 defaults)
 
 | Rule | Threshold | Action |

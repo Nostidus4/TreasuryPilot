@@ -53,7 +53,7 @@ async def _seed(database_url: str) -> None:
                 f"('{VENDOR_ID}', '{ORG_ID}', 'Acme', 'acme')",
                 "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) "
                 f"VALUES ('{PAYEE_ID}', '{TREASURY_ID}', '{ORG_ID}', '{VENDOR_ID}', 'Main', "
-                "decode(repeat('22', 20), 'hex'), 'Active')",
+                "decode(repeat('22', 20), 'hex'), 'Proposed')",
             ):
                 await connection.execute(text(statement))
     finally:

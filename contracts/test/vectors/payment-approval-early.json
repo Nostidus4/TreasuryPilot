@@ -1,0 +1,89 @@
+{
+  "formatVersion": 1,
+  "generator": "ethers@5.4.0",
+  "fixtureIdentity": 7,
+  "domain": {
+    "name": "TreasuryPilot",
+    "version": "1",
+    "chainId": 11155111,
+    "verifyingContract": "0x111122223333444455556666777788889999aaaa"
+  },
+  "types": {
+    "PaymentApproval": [
+      {
+        "name": "requestId",
+        "type": "bytes32"
+      },
+      {
+        "name": "invoiceHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "fingerprint",
+        "type": "bytes32"
+      },
+      {
+        "name": "treasury",
+        "type": "address"
+      },
+      {
+        "name": "payingWallet",
+        "type": "address"
+      },
+      {
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "name": "payee",
+        "type": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "name": "earlyAmount",
+        "type": "uint256"
+      },
+      {
+        "name": "earlyPayBy",
+        "type": "uint64"
+      },
+      {
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "name": "termsHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "expiry",
+        "type": "uint64"
+      }
+    ]
+  },
+  "message": {
+    "requestId": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+    "invoiceHash": "0x17397a4be7796dc25e7a58519de491259ecd7e496d7a34fad8338963921bb32c",
+    "fingerprint": "0xf37e7b89dfdfab6af61e41eb2916bc7578c5a2ee6ef6dc0d5f1b159dd87cf0f1",
+    "treasury": "0x111122223333444455556666777788889999aaaa",
+    "payingWallet": "0x22223333444455556666777788889999aaaabbbb",
+    "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+    "payee": "0x3333444455556666777788889999aaaabbbbcccc",
+    "amount": "100000000",
+    "earlyAmount": "90000000",
+    "earlyPayBy": 1799990000,
+    "deadline": 1800000000,
+    "termsHash": "0xfbaa1608e78a736fe06f43b257ee291ee948889e91a4a06b4001c9979d978f68",
+    "expiry": 1801209600
+  },
+  "typeHash": "0x87265570230a24bd6f95ca8117865af42d4e1c7820635d83c7abba2b80e20975",
+  "structHash": "0x9e991b37ea74d38a1a1e16fdb573209437bd53c69540dd7488d0d435b61e7491",
+  "domainSeparator": "0xa8d81e2f5a0c1710a87660cfb5e0df502e202d2c8a711b7efa102c43a4bcb6da",
+  "digest": "0x2643c8886169c381eb464fbafb6909c860c2a4d7b167f707031516713d563a47",
+  "signer": "0xd41c057fd1c78805AAC12B0A94a405c0461A6FBb",
+  "signature": "0xbff37ccb3db38c02bde7481f5e668a4fa05450af900d63280af19376bdd6a739337256b8849720c99a4172a4edd02b6a8e84fd315aa8dea30bda736aba2ea2b91b",
+  "approverSig": "0x000000000000000000000000d41c057fd1c78805aac12b0a94a405c0461a6fbb00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000041bff37ccb3db38c02bde7481f5e668a4fa05450af900d63280af19376bdd6a739337256b8849720c99a4172a4edd02b6a8e84fd315aa8dea30bda736aba2ea2b91b00000000000000000000000000000000000000000000000000000000000000"
+}

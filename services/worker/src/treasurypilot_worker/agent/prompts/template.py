@@ -58,6 +58,8 @@ class RenderedPrompt:
     version: str
     system: str
     messages: tuple[Message, ...]
+    # Sources of the untrusted blocks (e.g. "invoice:INV-7"), logged instead of their text.
+    input_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,6 +107,9 @@ class PromptTemplate:
             version=self.prompt_version,
             system=f"{UNTRUSTED_DATA_POLICY}\n\n{self.system}",
             messages=(user,),
+            input_refs=tuple(
+                str(value.source) for value in values.values() if isinstance(value, UntrustedBlock)
+            ),
         )
 
 
