@@ -209,12 +209,23 @@ async def _authenticated(request: Request, *, require_csrf: bool = False) -> Ses
     )
 
 
+def _require_unscoped(access: SessionAccess) -> None:
+    if access.organization_scope_id is not None:
+        raise AuthFailure(
+            status=403,
+            code="FORBIDDEN",
+            title="Forbidden",
+            detail="This action is unavailable to organization-scoped sessions.",
+        )
+
+
 router = APIRouter(prefix="/v1", tags=["identity"])
 
 
 @router.get("/auth/siwe/nonce", response_model=SiweNonceResponse)
 async def siwe_nonce(request: Request) -> SiweNonceResponse:
     access = await _authenticated(request)
+    _require_unscoped(access)
     service = _wallet_service(request)
     challenge = await service.issue_nonce(
         user_id=access.user.id,
@@ -233,6 +244,7 @@ async def siwe_nonce(request: Request) -> SiweNonceResponse:
 @router.post("/me/wallets", status_code=201, response_model=WalletView)
 async def link_wallet(payload: LinkWalletRequest, request: Request) -> WalletView:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     linked = await _wallet_service(request).link_wallet(
         user_id=access.user.id,
         origin=request.headers.get("origin"),
@@ -250,6 +262,7 @@ async def link_wallet(payload: LinkWalletRequest, request: Request) -> WalletVie
 @router.delete("/me/wallets/{address}", status_code=204, response_class=Response)
 async def unlink_wallet(address: str, request: Request) -> Response:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     await _wallet_service(request).unlink_wallet(user_id=access.user.id, address=address)
     return Response(status_code=204)
 
@@ -332,6 +345,7 @@ async def oidc_callback(request: Request, code: str, state: str) -> RedirectResp
         )
         verified = await _service(request).create_oidc_session(
             user=user,
+            organization_id=uuid.UUID(settings.oidc_organization_id or ""),
             client_ip=_client_ip(request),
             user_agent=request.headers.get("user-agent", "unknown"),
         )
@@ -470,6 +484,9 @@ async def logout(request: Request) -> Response:
 @router.get("/me", response_model=MeResponse)
 async def me(request: Request) -> MeResponse:
     access = await _authenticated(request)
-    if getattr(request.app.state, "wallet_repository", None) is not None:
+    if (
+        access.organization_scope_id is None
+        and getattr(request.app.state, "wallet_repository", None) is not None
+    ):
         await _wallet_service(request).refresh_owner_statuses(user_id=access.user.id)
     return MeResponse.from_record(await _service(request).profile(access))

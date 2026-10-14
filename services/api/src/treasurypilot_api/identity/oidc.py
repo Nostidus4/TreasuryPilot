@@ -264,8 +264,7 @@ class OIDCClient:
         )
 
     async def _metadata(self) -> dict[str, Any]:
-        issuer_url = urlparse(self.issuer)
-        discovery_url = f"{issuer_url.scheme}://{issuer_url.netloc}/.well-known/openid-configuration{issuer_url.path.rstrip('/')}"
+        discovery_url = f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
         metadata = await _fetch_json(discovery_url)
         if metadata.get("issuer") != self.issuer:
             raise OIDCFailure("OIDC issuer does not match discovery metadata")

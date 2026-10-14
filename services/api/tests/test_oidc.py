@@ -118,8 +118,9 @@ def test_oidc_client_uses_code_pkce_and_forces_a_fresh_provider_login(
     ) -> dict[str, object]:
         calls.append((url, data, headers))
         if url.endswith("/.well-known/openid-configuration"):
+            issuer = url.removesuffix("/.well-known/openid-configuration")
             return {
-                "issuer": "https://id.example",
+                "issuer": issuer,
                 "authorization_endpoint": "https://id.example/authorize",
                 "token_endpoint": "https://id.example/token",
                 "jwks_uri": "https://id.example/jwks",
@@ -144,6 +145,14 @@ def test_oidc_client_uses_code_pkce_and_forces_a_fresh_provider_login(
     assert query["max_age"] == ["0"]
     assert query["state"] == [state.state]
     assert calls[0][0] == "https://id.example/.well-known/openid-configuration"
+    path_client = oidc.OIDCClient(
+        issuer="https://id.example/oauth2/default",
+        client_id="client",
+        client_secret="secret",
+        redirect_uri="https://app.example/v1/auth/oidc/callback",
+    )
+    asyncio.run(path_client.authorization_url(state=state))
+    assert calls[-1][0] == "https://id.example/oauth2/default/.well-known/openid-configuration"
     claims = asyncio.run(client.exchange(code="authorization-code", state=state))
     assert claims.subject == "subject-1"
     token_request = next(call for call in calls if call[0].endswith("/token"))
@@ -172,6 +181,7 @@ def test_oidc_session_is_limited_to_five_minutes() -> None:
 
     now = datetime(2026, 10, 14, tzinfo=UTC)
     repository = Repository()
+    organization_id = uuid4()
     service = AuthService(
         repository=repository,  # type: ignore[arg-type]
         sender=Sender(),
@@ -184,6 +194,7 @@ def test_oidc_session_is_limited_to_five_minutes() -> None:
     asyncio.run(
         service.create_oidc_session(
             user=UserRecord(uuid4(), "person@example.com", "Person", "active"),
+            organization_id=organization_id,
             client_ip="127.0.0.1",
             user_agent="test",
         )
@@ -191,3 +202,4 @@ def test_oidc_session_is_limited_to_five_minutes() -> None:
     assert repository.created["expires_at"] - repository.created["created_at"] == timedelta(
         minutes=5
     )  # type: ignore[operator]
+    assert repository.created["organization_scope_id"] == organization_id

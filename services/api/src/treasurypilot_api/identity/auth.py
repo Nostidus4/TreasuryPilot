@@ -121,6 +121,7 @@ class ConsumeResult:
 class SessionAccess:
     user: UserRecord
     session_id: uuid.UUID
+    organization_scope_id: uuid.UUID | None = None
 
 
 class AuthRepository(Protocol):
@@ -151,6 +152,7 @@ class AuthRepository(Protocol):
         expires_at: datetime,
         ip_hash: bytes,
         ua_hash: bytes,
+        organization_scope_id: uuid.UUID | None = None,
     ) -> None: ...
 
     async def access_session(
@@ -164,7 +166,9 @@ class AuthRepository(Protocol):
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None: ...
 
-    async def get_profile(self, user_id: uuid.UUID) -> ProfileRecord | None: ...
+    async def get_profile(
+        self, user_id: uuid.UUID, organization_scope_id: uuid.UUID | None = None
+    ) -> ProfileRecord | None: ...
 
 
 class MagicLinkSender(Protocol):
@@ -429,7 +433,7 @@ class AuthService:
         )
 
     async def create_oidc_session(
-        self, *, user: UserRecord, client_ip: str, user_agent: str
+        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
     ) -> VerifiedSession:
         """Issue a short session so provider group changes take effect within five minutes."""
         now = self._now()
@@ -443,6 +447,7 @@ class AuthService:
             expires_at=now + timedelta(minutes=5),
             ip_hash=hash_client_value(client_ip, self._client_hash_secret),
             ua_hash=hash_client_value(user_agent, self._client_hash_secret),
+            organization_scope_id=organization_id,
         )
         return VerifiedSession(
             user=user,
@@ -495,7 +500,7 @@ class AuthService:
         await self._repository.revoke_session(session_id=access.session_id, now=self._now())
 
     async def profile(self, access: SessionAccess) -> ProfileRecord:
-        profile = await self._repository.get_profile(access.user.id)
+        profile = await self._repository.get_profile(access.user.id, access.organization_scope_id)
         if profile is None:
             raise self._authentication_required()
         return profile
