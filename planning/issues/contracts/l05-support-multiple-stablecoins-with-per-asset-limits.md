@@ -49,8 +49,9 @@ Re-estimated L; split into SC-L07 (allowlist and caps/counters) and SC-L08 (per-
 
 ## Acceptance criteria
 
-- [ ] Unlisted assets are rejected
-- [ ] caps, counters, floors and refill targets are independent per asset
+- [ ] Unlisted assets are rejected; enabling a secondary asset requires explicitly configured floors/targets for Safe T and every known operational wallet.
+- [ ] Secondary-asset buffer setup can precede allowlisting, and contract calls fail closed until every required wallet buffer is configured.
+- [ ] PAY/REFILL caps, daily counters, floors and refill targets are independent per asset.
 
 ## Testing requirements
 

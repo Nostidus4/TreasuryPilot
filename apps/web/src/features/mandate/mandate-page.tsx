@@ -25,10 +25,12 @@ import {
 import { useMembers } from '@/features/orgs/api';
 import { useTreasuryScope } from '@/features/orgs/org-scope';
 import { useTreasury } from '@/features/treasury/api';
-import { useAssetInfo } from '@/lib/api/chains';
+import { useChain } from '@/lib/api/chains';
 import { errorMessage, isApiError } from '@/lib/api/http';
 import type {
+  Asset,
   Hex,
+  MandateAssetPolicy,
   MandateConfig,
   MandateDraft,
   MandateVersion,
@@ -41,15 +43,32 @@ import { mandateStatus } from '@/lib/status';
 
 type Amounts = Record<string, string>;
 
-const amountFields = (config: MandateConfig) => [
-  { key: 'limits.PAY.perRequest', value: config.limits.PAY.perRequest },
-  { key: 'limits.PAY.daily', value: config.limits.PAY.daily },
-  { key: 'limits.REFILL.perRequest', value: config.limits.REFILL.perRequest },
-  { key: 'limits.REFILL.daily', value: config.limits.REFILL.daily },
+const amountFields = (
+  config: MandateConfig,
+  assetDecimals: Map<string, number>,
+  primaryDecimals: number,
+) => [
+  { key: 'limits.PAY.perRequest', value: config.limits.PAY.perRequest, decimals: primaryDecimals },
+  { key: 'limits.PAY.daily', value: config.limits.PAY.daily, decimals: primaryDecimals },
+  { key: 'limits.REFILL.perRequest', value: config.limits.REFILL.perRequest, decimals: primaryDecimals },
+  { key: 'limits.REFILL.daily', value: config.limits.REFILL.daily, decimals: primaryDecimals },
   ...config.buffers.flatMap((buffer) => [
-    { key: `buffers.${buffer.wallet}.minimum`, value: buffer.minimum },
-    { key: `buffers.${buffer.wallet}.target`, value: buffer.target },
+    { key: `buffers.${buffer.wallet}.minimum`, value: buffer.minimum, decimals: primaryDecimals },
+    { key: `buffers.${buffer.wallet}.target`, value: buffer.target, decimals: primaryDecimals },
   ]),
+  ...(config.assetPolicies ?? []).flatMap((policy) => {
+    const decimals = assetDecimals.get(policy.assetId) ?? primaryDecimals;
+    return [
+      ...(['PAY', 'REFILL'] as const).flatMap((action) => [
+        { key: `assetPolicies.${policy.assetId}.limits.${action}.perRequest`, value: policy.limits[action].perRequest, decimals },
+        { key: `assetPolicies.${policy.assetId}.limits.${action}.daily`, value: policy.limits[action].daily, decimals },
+      ]),
+      ...policy.buffers.flatMap((buffer) => [
+        { key: `assetPolicies.${policy.assetId}.buffers.${buffer.wallet}.minimum`, value: buffer.minimum, decimals },
+        { key: `assetPolicies.${policy.assetId}.buffers.${buffer.wallet}.target`, value: buffer.target ?? '0', decimals },
+      ]),
+    ];
+  }),
 ];
 
 function blankConfig(state: TreasuryState): MandateConfig {
@@ -57,6 +76,7 @@ function blankConfig(state: TreasuryState): MandateConfig {
   const expires = new Date(Date.now() + 30 * 86_400_000).toISOString();
   return {
     actions: ['REFILL', 'PAY'],
+    assetPolicies: [],
     limits: { PAY: zero, REFILL: zero },
     buffers: state.wallets
       .filter((wallet) => wallet.role === 'O1' || wallet.role === 'O2')
@@ -147,19 +167,28 @@ function Editor({
 }) {
   const scope = useTreasuryScope();
   const navigate = useNavigate();
-  const info = useAssetInfo();
-  const decimals = info?.asset.decimals ?? 6;
+  const decimals = state.treasury.asset.decimals;
+  const chain = useChain(state.treasury.chainId);
+  const availableAssets = (chain?.assets ?? []).filter(
+    (asset) => asset.id !== state.treasury.asset.id,
+  );
+  const decimalsByAsset = new Map(
+    availableAssets.map((asset) => [asset.id, asset.decimals]),
+  );
   const members = useMembers(scope.orgId);
   const saveDraft = useSaveMandateDraft(scope.orgId, scope.treasuryId);
   const activation = useMandateActivationTx(scope.orgId, scope.treasuryId);
 
   const [amounts, setAmounts] = useState<Amounts>(() =>
     Object.fromEntries(
-      amountFields(base).map((field) => [
+      amountFields(base, decimalsByAsset, decimals).map((field) => [
         field.key,
-        formatUnits(field.value, decimals, { group: false }),
+        formatUnits(field.value, field.decimals, { group: false }),
       ]),
     ),
+  );
+  const [assetPolicies, setAssetPolicies] = useState<MandateAssetPolicy[]>(
+    base.assetPolicies ?? [],
   );
   const [approvers, setApprovers] = useState<Hex[]>(base.approvers);
   const [newApprover, setNewApprover] = useState('');
@@ -180,12 +209,12 @@ function Editor({
 
   const build = (): MandateConfig | null => {
     const errors: Record<string, string> = {};
-    const read = (key: string) => {
-      const parsed = parseUnits(amounts[key] ?? '', decimals);
+    const read = (key: string, precision = decimals) => {
+      const parsed = parseUnits(amounts[key] ?? '', precision);
       if (!parsed.ok) {
         errors[key] =
           parsed.error === 'TOO_PRECISE'
-            ? t('At most {{count}} decimal places.', { count: decimals })
+            ? t('At most {{count}} decimal places.', { count: precision })
             : t('Enter an amount.');
         return '0';
       }
@@ -208,6 +237,27 @@ function Editor({
         minimum: read(`buffers.${buffer.wallet}.minimum`),
         target: read(`buffers.${buffer.wallet}.target`),
       })),
+      assetPolicies: assetPolicies.map((policy) => {
+        const precision = decimalsByAsset.get(policy.assetId) ?? decimals;
+        return {
+          assetId: policy.assetId,
+          limits: {
+            PAY: {
+              perRequest: read(`assetPolicies.${policy.assetId}.limits.PAY.perRequest`, precision),
+              daily: read(`assetPolicies.${policy.assetId}.limits.PAY.daily`, precision),
+            },
+            REFILL: {
+              perRequest: read(`assetPolicies.${policy.assetId}.limits.REFILL.perRequest`, precision),
+              daily: read(`assetPolicies.${policy.assetId}.limits.REFILL.daily`, precision),
+            },
+          },
+          buffers: policy.buffers.map((buffer) => ({
+            wallet: buffer.wallet,
+            minimum: read(`assetPolicies.${policy.assetId}.buffers.${buffer.wallet}.minimum`, precision),
+            target: read(`assetPolicies.${policy.assetId}.buffers.${buffer.wallet}.target`, precision),
+          })),
+        };
+      }),
       approvers,
       expiresAt: `${expiresAt}T00:00:00.000Z`,
     };
@@ -218,9 +268,36 @@ function Editor({
     return Object.keys(errors).length === 0 ? config : null;
   };
 
-  const amountField = (key: string, label: string, hint?: string) => (
+  const toggleAssetPolicy = (assetId: string, enabled: boolean) => {
+    touch();
+    if (enabled) {
+      const zero = { perRequest: '0', daily: '0' };
+      const policy: MandateAssetPolicy = {
+        assetId,
+        limits: { PAY: zero, REFILL: zero },
+        buffers: state.wallets
+          .filter((wallet) => wallet.role === 'T' || wallet.role === 'O1' || wallet.role === 'O2')
+          .map((wallet) => ({ wallet: wallet.safeAddress, minimum: '0', target: '0' })),
+      };
+      setAssetPolicies((current) => [...current, policy]);
+      const policyPrefix = `assetPolicies.${assetId}.`;
+      setAmounts((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          amountFields({ ...base, assetPolicies: [policy] }, decimalsByAsset, decimals)
+            .filter((field) => field.key.startsWith(policyPrefix))
+            .map((field) => [field.key, formatUnits(field.value, field.decimals, { group: false })]),
+        ),
+      }));
+    } else {
+      setAssetPolicies((current) => current.filter((policy) => policy.assetId !== assetId));
+    }
+  };
+
+  const amountField = (key: string, label: string, hint?: string, asset?: Asset) => (
     <Field htmlFor={key} label={label} error={errorFor(key)} hint={hint}>
       <AmountInput
+        asset={asset}
         id={key}
         value={amounts[key] ?? ''}
         aria-invalid={Boolean(errorFor(key))}
@@ -303,6 +380,52 @@ function Editor({
           <CardContent className="grid gap-4 sm:grid-cols-2">
             {amountField('limits.REFILL.perRequest', t('Per request'))}
             {amountField('limits.REFILL.daily', t('Per UTC day'))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title={t('Additional payment assets')}
+            description={t('Enable configured assets on this treasury and set independent PAY, REFILL, and wallet buffer limits.')}
+          />
+          <CardContent className="grid gap-5">
+            {availableAssets.map((asset) => {
+              const policy = assetPolicies.find((item) => item.assetId === asset.id);
+              return (
+                <section key={asset.id} className="grid gap-3 rounded-lg border p-3">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(policy)}
+                      onChange={(event) => toggleAssetPolicy(asset.id, event.target.checked)}
+                    />
+                    {asset.isTest ? `${asset.symbol} (${t('test asset')})` : asset.symbol}
+                  </label>
+                  {policy && (
+                    <div className="grid gap-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {(['PAY', 'REFILL'] as const).flatMap((action) => [
+                          amountField(`assetPolicies.${asset.id}.limits.${action}.perRequest`, `${action} · ${t('Per request')}`, undefined, asset),
+                          amountField(`assetPolicies.${asset.id}.limits.${action}.daily`, `${action} · ${t('Per UTC day')}`, undefined, asset),
+                        ])}
+                      </div>
+                      {policy.buffers.map((buffer) => (
+                        <fieldset key={buffer.wallet} className="grid gap-3 sm:grid-cols-2">
+                          <legend className="text-sm font-medium">
+                            {state.wallets.find((wallet) => wallet.safeAddress === buffer.wallet)?.label ?? buffer.wallet}
+                          </legend>
+                          {amountField(`assetPolicies.${asset.id}.buffers.${buffer.wallet}.minimum`, t('Minimum buffer'), undefined, asset)}
+                          {amountField(`assetPolicies.${asset.id}.buffers.${buffer.wallet}.target`, t('Target balance'), undefined, asset)}
+                        </fieldset>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+            {availableAssets.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('No additional assets are configured on this chain.')}</p>
+            )}
           </CardContent>
         </Card>
 

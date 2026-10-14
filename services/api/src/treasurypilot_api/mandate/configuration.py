@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
@@ -95,11 +96,18 @@ class WalletBuffer(MandateModel):
         return _address(value)
 
 
+class MandateAssetPolicy(MandateModel):
+    asset_id: uuid.UUID
+    limits: dict[str, ActionLimits]
+    buffers: list[WalletBuffer]
+
+
 class MandateConfig(MandateModel):
     actions: list[Literal["REFILL", "PAY", "SUPPLY", "SWAP"]] | None = None
     refill_paths: list[RefillPath] | None = None
     limits: dict[str, ActionLimits] | None = None
     buffers: list[WalletBuffer] | None = None
+    asset_policies: list[MandateAssetPolicy] | None = None
     gas_funding_cap_wei: BaseUnits | None = None
     swap: dict[str, object] | None = None
     executor: str | None = None
@@ -158,6 +166,8 @@ def validate_mandate_config(
     asset_decimals: int,
     now: datetime,
     enforce_future_expiry: bool = True,
+    primary_asset_id: uuid.UUID | None = None,
+    asset_metadata: dict[str, dict[str, object]] | None = None,
 ) -> None:
     required = (
         "actions",
@@ -356,6 +366,65 @@ def validate_mandate_config(
         raise MandateValidationError(
             "MANDATE_INCOMPLETE", "Every operational wallet requires a buffer and target."
         )
+    seen_assets: set[uuid.UUID] = set()
+    for policy in config.asset_policies or []:
+        if policy.asset_id in seen_assets or policy.asset_id == primary_asset_id:
+            raise MandateValidationError(
+                "ASSET_POLICY_INVALID",
+                "Each secondary payment asset must be unique and non-primary.",
+            )
+        seen_assets.add(policy.asset_id)
+        metadata = (asset_metadata or {}).get(str(policy.asset_id))
+        if asset_metadata is not None and metadata is None:
+            raise MandateValidationError(
+                "ASSET_POLICY_INVALID", "A payment asset is not configured on this treasury chain."
+            )
+        if set(policy.limits) != {"PAY", "REFILL"}:
+            raise MandateValidationError(
+                "MANDATE_INCOMPLETE", "Each secondary asset requires PAY and REFILL limits."
+            )
+        for action, limits in policy.limits.items():
+            if limits.per_request > limits.daily:
+                raise MandateValidationError(
+                    "PER_REQUEST_ABOVE_DAILY",
+                    f"The {action} per-request limit exceeds its daily limit for asset {policy.asset_id}.",
+                )
+            if limits.per_request > _MAX_UINT128 or limits.daily > _MAX_UINT128:
+                raise MandateValidationError(
+                    "AMOUNT_PRECISION", f"An {action} limit exceeds uint128 range."
+                )
+        policy_buffers: dict[str, WalletBuffer] = {}
+        for wallet_buffer in policy.buffers:
+            if wallet_buffer.wallet not in known_wallets:
+                raise MandateValidationError(
+                    "UNKNOWN_WALLET", f"Unknown wallet for asset {policy.asset_id}."
+                )
+            if wallet_buffer.wallet in policy_buffers:
+                raise MandateValidationError(
+                    "MANDATE_INCOMPLETE", "Each asset requires one buffer entry per wallet."
+                )
+            role = known_wallets[wallet_buffer.wallet]
+            if role == "OPERATIONAL" and wallet_buffer.target is None:
+                raise MandateValidationError(
+                    "MANDATE_INCOMPLETE", "Each operational asset buffer requires a target."
+                )
+            if wallet_buffer.target is not None and wallet_buffer.minimum > wallet_buffer.target:
+                raise MandateValidationError(
+                    "TARGET_BELOW_BUFFER",
+                    f"Asset target for {wallet_buffer.wallet} is below its buffer.",
+                )
+            if wallet_buffer.minimum > _MAX_UINT128 or (
+                wallet_buffer.target is not None and wallet_buffer.target > _MAX_UINT128
+            ):
+                raise MandateValidationError(
+                    "AMOUNT_PRECISION", "An asset wallet buffer exceeds uint128 range."
+                )
+            policy_buffers[wallet_buffer.wallet] = wallet_buffer
+        if set(policy_buffers) != set(known_wallets):
+            raise MandateValidationError(
+                "MANDATE_INCOMPLETE", "Every wallet requires an explicit buffer for each asset."
+            )
+
     for path in config.refill_paths:
         if path.from_wallet not in known_wallets or path.to_wallet not in known_wallets:
             raise MandateValidationError(
@@ -367,7 +436,13 @@ def validate_mandate_config(
             )
 
 
-def build_summary(config: MandateConfig, *, decimals: int, symbol: str) -> list[dict[str, str]]:
+def build_summary(
+    config: MandateConfig,
+    *,
+    decimals: int,
+    symbol: str,
+    asset_metadata: dict[str, dict[str, object]] | None = None,
+) -> list[dict[str, str]]:
     summary: list[dict[str, str]] = []
     if config.actions:
         summary.append(
@@ -407,6 +482,25 @@ def build_summary(config: MandateConfig, *, decimals: int, symbol: str) -> list[
                     "dailyBaseUnits": str(int(limits.daily)),
                 }
             )
+    for policy in config.asset_policies or []:
+        metadata = (asset_metadata or {}).get(str(policy.asset_id), {})
+        policy_symbol = str(metadata.get("symbol", "asset"))
+        policy_decimals = int(metadata.get("decimals", decimals))
+        for action, limits in sorted(policy.limits.items()):
+            summary.append(
+                {
+                    "field": f"assetPolicies.{policy.asset_id}.limits.{action}",
+                    "text": (
+                        f"{policy_symbol} {action}: up to "
+                        f"{format_base_units(limits.per_request, policy_decimals)} {policy_symbol} "
+                        f"per request and {format_base_units(limits.daily, policy_decimals)} "
+                        f"{policy_symbol} per UTC day."
+                    ),
+                    "perRequestBaseUnits": str(int(limits.per_request)),
+                    "dailyBaseUnits": str(int(limits.daily)),
+                }
+            )
+
     if config.gas_funding_cap_wei is not None:
         summary.append(
             {
@@ -695,6 +789,14 @@ def build_diff(
             )
         add(field, before, after, risk)
 
+    if previous.get("assetPolicies", []) != current.get("assetPolicies", []):
+        add(
+            "assetPolicies",
+            previous.get("assetPolicies", []),
+            current.get("assetPolicies", []),
+            "changed",
+            critical=True,
+        )
     for field in ("executor", "guardian", "swap"):
         before, after = previous.get(field), current.get(field)
         add(field, before, after, "changed", critical=True)
@@ -712,7 +814,10 @@ def build_diff(
 
 
 def build_bundle_preview(
-    previous: dict[str, object] | None, current: dict[str, object]
+    previous: dict[str, object] | None,
+    current: dict[str, object],
+    *,
+    asset_metadata: dict[str, dict[str, object]] | None = None,
 ) -> dict[str, object]:
     previous = previous or {}
     calls: list[dict[str, object]] = []
@@ -758,6 +863,42 @@ def build_bundle_preview(
         # A removed buffer is cleared on-chain; otherwise the old one stays in force.
         calls.append(
             {"method": "setBuffer", "arguments": {"wallet": wallet, "minimum": "0", "target": "0"}}
+        )
+    old_policies = {
+        str(item.get("assetId")): item for item in _object_list(previous.get("assetPolicies", []))
+    }
+    new_policies = {
+        str(item.get("assetId")): item for item in _object_list(current.get("assetPolicies", []))
+    }
+    metadata = asset_metadata or {}
+    for asset_key, policy in new_policies.items():
+        if old_policies.get(asset_key) == policy:
+            continue
+        asset_address = metadata.get(asset_key, {}).get("address", asset_key)
+        for item in _object_list(policy.get("buffers", [])):
+            calls.append(
+                {
+                    "method": "setBuffer",
+                    "arguments": {"asset": asset_address, **item},
+                }
+            )
+        calls.append(
+            {
+                "method": "setAssetPolicy",
+                "arguments": {
+                    "asset": asset_address,
+                    "enabled": True,
+                    "limits": policy.get("limits", {}),
+                },
+            }
+        )
+    for asset_key in sorted(old_policies.keys() - new_policies.keys()):
+        asset_address = metadata.get(asset_key, {}).get("address", asset_key)
+        calls.append(
+            {
+                "method": "setAssetPolicy",
+                "arguments": {"asset": asset_address, "enabled": False},
+            }
         )
     treasury_settings = [
         {"field": field, "value": current.get(field)}

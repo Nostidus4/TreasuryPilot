@@ -34,6 +34,8 @@ class MandateContext:
     asset_symbol: str
     wallets: dict[str, str]
     active_config: dict[str, object] | None
+    primary_asset_id: uuid.UUID | None = None
+    asset_metadata: dict[str, dict[str, object]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,13 +109,22 @@ async def _load_context(
     session: AsyncSession, organization_id: uuid.UUID, treasury_id: uuid.UUID
 ) -> MandateContext | None:
     row = await session.execute(
-        select(Treasury.id, Asset.decimals, Asset.symbol)
+        select(Treasury.id, Treasury.asset_id, Treasury.chain_id, Asset.decimals, Asset.symbol)
         .join(Asset, (Asset.id == Treasury.asset_id) & (Asset.chain_id == Treasury.chain_id))
         .where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
     )
     treasury = row.one_or_none()
     if treasury is None:
         return None
+    chain_assets = await session.scalars(select(Asset).where(Asset.chain_id == treasury.chain_id))
+    asset_metadata = {
+        str(item.id): {
+            "symbol": item.symbol,
+            "decimals": item.decimals,
+            "address": "0x" + item.address.hex() if item.address is not None else "",
+        }
+        for item in chain_assets
+    }
     wallets = await session.scalars(
         select(TreasuryWallet).where(
             TreasuryWallet.treasury_id == treasury_id,
@@ -135,6 +146,8 @@ async def _load_context(
         asset_symbol=treasury.symbol,
         wallets=wallet_roles,
         active_config=dict(active.config) if active is not None else None,
+        primary_asset_id=treasury.asset_id,
+        asset_metadata=asset_metadata,
     )
 
 
@@ -335,10 +348,17 @@ def _draft_response(
     diff = build_diff(context.active_config, row.config)
     return MandateDraftResponse(
         draft=MandateView.from_record(row),
-        summary=build_summary(config, decimals=context.asset_decimals, symbol=context.asset_symbol),
+        summary=build_summary(
+            config,
+            decimals=context.asset_decimals,
+            symbol=context.asset_symbol,
+            asset_metadata=context.asset_metadata,
+        ),
         diff=diff,
         requires_confirmation=any(item["requiresConfirmation"] for item in diff),
-        bundle_preview=build_bundle_preview(context.active_config, row.config),
+        bundle_preview=build_bundle_preview(
+            context.active_config, row.config, asset_metadata=context.asset_metadata
+        ),
     )
 
 
@@ -383,6 +403,8 @@ async def _create_draft(
             asset_decimals=context.asset_decimals,
             now=datetime.now(UTC),
             enforce_future_expiry=enforce_future_expiry,
+            primary_asset_id=context.primary_asset_id,
+            asset_metadata=context.asset_metadata,
         )
         return payload.json_config(environment=environment, asset_decimals=context.asset_decimals)
 

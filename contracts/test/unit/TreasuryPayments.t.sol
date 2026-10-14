@@ -25,8 +25,10 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         I.MandateInit memory m = config;
         m.pay = I.Limits(100e6, 100e6);
         _owner(abi.encodeCall(module.configureMandate, (m)));
-        _owner(abi.encodeWithSignature("setAssetPolicy(address,bool,(uint128,uint128),(uint128,uint128))", address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0)));
+        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0));
         _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(op1), 20e6, 150e6));
+        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(op2), 10e6, 150e6));
+        _owner(abi.encodeWithSignature("setAssetPolicy(address,bool,(uint128,uint128),(uint128,uint128))", address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0)));
 
         I.PaymentApproval memory primaryFirst = _approval(501, 60e6);
         _pay(primaryFirst, bytes32(uint256(501)));
@@ -45,6 +47,18 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         require(token.balanceOf(vendor) == 100e6 && second.balanceOf(vendor) == 60e6, "asset transfers");
         require(module.bufferOf(address(token), address(op1)) == 10e6, "primary buffer unchanged");
         require(module.bufferOf(address(second), address(op1)) == 20e6, "secondary buffer");
+    }
+
+    function testSecondaryAssetCannotBeEnabledBeforeEveryWalletHasAFloor() external {
+        TestUSDC second = new TestUSDC();
+        vm.expectRevert(E.AssetBufferNotConfigured.selector);
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+
+        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0));
+        vm.expectRevert(E.AssetBufferNotConfigured.selector);
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
     }
 
     function testPaymentApprovalRejectsAssetOutsideAllowlist() external {

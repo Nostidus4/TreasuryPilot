@@ -41,7 +41,13 @@ from treasurypilot_api.invoices.models import (
     StatusEventActorType,
 )
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
-from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
+from treasurypilot_api.mandate.models import (
+    MandateVersion,
+    MandateVersionStatus,
+    Payee,
+    PayeeStatus,
+    Vendor,
+)
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.engine import InvalidTerms, validate_terms
@@ -218,6 +224,44 @@ def _not_found() -> AuthFailure:
     )
 
 
+def _asset_pay_limit(config: object, asset_id: uuid.UUID) -> int | None:
+    """Return the active mandate PAY per-request limit for this asset, if present."""
+    if not isinstance(config, dict):
+        return None
+    policies = config.get("assetPolicies")
+    if not isinstance(policies, list):
+        return None
+    policy = next(
+        (
+            item
+            for item in policies
+            if isinstance(item, dict) and item.get("assetId") == str(asset_id)
+        ),
+        None,
+    )
+    limits = policy.get("limits") if isinstance(policy, dict) else None
+    pay_limits = limits.get("PAY") if isinstance(limits, dict) else None
+    if not isinstance(pay_limits, dict) or "perRequest" not in pay_limits:
+        return None
+    try:
+        limit = int(pay_limits["perRequest"])
+    except (TypeError, ValueError):
+        return None
+    return limit if 0 <= limit < 1 << 128 else None
+
+
+def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> object:
+    return (
+        select(MandateVersion.config)
+        .where(
+            MandateVersion.treasury_id == treasury_id,
+            MandateVersion.status == MandateVersionStatus.ACTIVE,
+        )
+        .order_by(MandateVersion.version.desc())
+        .limit(1)
+    )
+
+
 def _validate_dates(issue_date: date, due_date: date) -> None:
     if due_date < issue_date:
         raise _fail(
@@ -290,6 +334,7 @@ async def _bound_fields(
     payee_id: uuid.UUID,
     asset_id: uuid.UUID,
     paying_wallet_id: uuid.UUID | None,
+    amount: str | int | None = None,
     require_active_payee: bool = True,
 ) -> tuple[Treasury, Vendor, Payee, Asset]:
     treasury = await session.scalar(
@@ -304,23 +349,35 @@ async def _bound_fields(
             "Treasury invalid",
             "The treasury does not exist in this organization.",
         )
-    if treasury.asset_id != asset_id:
-        raise _fail(
-            422,
-            "ASSET_NOT_PAYMENT_STABLECOIN",
-            "Payment asset invalid",
-            "Requests must use the treasury payment stablecoin.",
-        )
     asset = await session.scalar(
-        select(Asset).where(Asset.id == treasury.asset_id, Asset.chain_id == treasury.chain_id)
+        select(Asset).where(Asset.id == asset_id, Asset.chain_id == treasury.chain_id)
     )
     if asset is None or asset.address is None:
         raise _fail(
             422,
             "ASSET_NOT_PAYMENT_STABLECOIN",
             "Payment asset invalid",
-            "The treasury payment asset must be an ERC-20 stablecoin.",
+            "The payment asset must be a configured ERC-20 on the treasury chain.",
         )
+    if asset_id != treasury.asset_id:
+        active_config = await session.scalar(_active_mandate_config_stmt(treasury_id))
+        pay_limit = _asset_pay_limit(active_config, asset_id)
+        if pay_limit is None:
+            raise _fail(
+                422,
+                "ASSET_NOT_PAYMENT_STABLECOIN",
+                "Payment asset invalid",
+                "The asset is not enabled by the treasury's active mandate.",
+            )
+        if amount is not None:
+            amount_units = amount if isinstance(amount, int) else _amount(amount, asset.decimals)
+            if amount_units > pay_limit:
+                raise _fail(
+                    422,
+                    "ASSET_LIMIT_EXCEEDED",
+                    "Payment limit exceeded",
+                    "The amount exceeds this asset's per-request mandate limit.",
+                )
     vendor = await session.scalar(
         select(Vendor).where(Vendor.id == vendor_id, Vendor.org_id == organization_id)
     )
@@ -589,6 +646,7 @@ async def create_request(
                     payee_id=payload.payee_id,
                     asset_id=payload.asset_id,
                     paying_wallet_id=payload.paying_wallet_id,
+                    amount=payload.amount,
                 )
                 amount = _amount(payload.amount, asset.decimals)
                 row = PaymentRequest(
@@ -748,6 +806,7 @@ async def edit_request(
                     payee_id=payee_id,
                     asset_id=asset_id,
                     paying_wallet_id=wallet_id,
+                    amount=fields.get("amount", int(row.amount)),
                     require_active_payee=payee_id != row.payee_id,
                 )
                 new_issue_date = fields.get("issue_date", row.issue_date)

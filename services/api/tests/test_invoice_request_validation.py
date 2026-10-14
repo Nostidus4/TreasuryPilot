@@ -15,7 +15,9 @@ from treasurypilot_api.invoices.fingerprints import (
 )
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
+    _active_mandate_config_stmt,
     _amount,
+    _asset_pay_limit,
     _request_id,
     _validate_dates,
     _validated_terms,
@@ -34,6 +36,42 @@ def test_manual_request_amount_must_be_positive() -> None:
     with pytest.raises(AuthFailure) as error:
         _amount("0", 6)
     assert error.value.code == "AMOUNT_NOT_POSITIVE"
+
+
+def test_secondary_asset_requires_its_own_active_pay_policy_and_limit() -> None:
+    asset_id = uuid.uuid4()
+    other_asset_id = uuid.uuid4()
+    config = {
+        "assetPolicies": [
+            {
+                "assetId": str(asset_id),
+                "limits": {"PAY": {"perRequest": "5000", "daily": "10000"}},
+            }
+        ]
+    }
+    assert _asset_pay_limit(config, asset_id) == 5000
+    assert _asset_pay_limit(config, other_asset_id) is None
+    assert _asset_pay_limit({"assetPolicies": []}, asset_id) is None
+    assert (
+        _asset_pay_limit(
+            {
+                "assetPolicies": [
+                    {"assetId": str(asset_id), "limits": {"PAY": {"perRequest": "NaN"}}}
+                ]
+            },
+            asset_id,
+        )
+        is None
+    )
+
+
+def test_active_asset_policy_lookup_is_scoped_to_treasury() -> None:
+    treasury_id = uuid.uuid4()
+    statement = _active_mandate_config_stmt(treasury_id)
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+    assert "mandate_versions.treasury_id =" in compiled
+    assert "mandate_versions.status =" in compiled
+    assert "mandate_versions.version DESC" in compiled
 
 
 def test_manual_request_due_date_cannot_precede_issue_date() -> None:

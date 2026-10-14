@@ -154,7 +154,15 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
                 || pay.perRequest > pay.daily || refill.perRequest > refill.daily
         ) revert E.InvalidConfiguration();
         AssetPolicy storage policy = _assetPolicies[asset_];
-        if (enabled && !policy.enabled) _allowedAssetList.push(asset_);
+        if (enabled && !policy.enabled) {
+            if (!_assetBufferConfigured[asset_][safeT]) revert E.AssetBufferNotConfigured();
+            for (uint256 i; i < _operationalList.length; ++i) {
+                if (!_assetBufferConfigured[asset_][_operationalList[i]]) {
+                    revert E.AssetBufferNotConfigured();
+                }
+            }
+            _allowedAssetList.push(asset_);
+        }
         if (!enabled && policy.enabled) {
             for (uint256 i; i < _allowedAssetList.length; ++i) {
                 if (_allowedAssetList[i] == asset_) {
@@ -171,11 +179,12 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
     }
 
     function _setBuffer(address asset_, address wallet, uint256 buffer, uint256 target) internal {
-        if (!isAssetAllowed(asset_)) revert E.AssetNotAllowed();
+        if (asset_ == address(0) || asset_.code.length == 0) revert E.AssetNotAllowed();
         if (wallet != safeT && !isOperational[wallet]) revert E.UnknownWallet();
         if (isOperational[wallet] && target < buffer) revert E.TargetBelowBuffer();
         _bufferOf[asset_][wallet] = buffer;
         _targetOf[asset_][wallet] = target;
+        _assetBufferConfigured[asset_][wallet] = true;
         if (asset_ == asset) emit BufferSet(wallet, buffer, target);
         emit AssetBufferSet(asset_, wallet, buffer, target);
     }

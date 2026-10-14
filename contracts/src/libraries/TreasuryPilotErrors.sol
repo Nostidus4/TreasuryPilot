@@ -63,4 +63,5 @@ library TreasuryPilotErrors {
     error OverSwapDaily();
     error InsufficientOutput();
     error AssetNotAllowed();
+    error AssetBufferNotConfigured();
 }
