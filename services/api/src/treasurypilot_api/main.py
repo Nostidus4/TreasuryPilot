@@ -51,6 +51,7 @@ from treasurypilot_api.identity.rate_limit import (
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.invoices.requests import router as requests_router
+from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
@@ -310,6 +311,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
+    app.state.api_key_rate_limiter = getattr(auth_service, "_rate_limiter", None)
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
@@ -362,6 +364,7 @@ def create_app(
     app.include_router(review_router)
     app.include_router(notifications_router)
     app.include_router(requests_router)
+    app.include_router(invoice_api_keys_router)
 
     return app
 

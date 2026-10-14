@@ -21,6 +21,7 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.invoices.api_keys import InvoiceCreateAccess, require_invoice_create
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
     compute_fingerprint,
@@ -91,6 +92,10 @@ class RequestPatch(ApiModel):
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
+
+
+class RequestBulkCreate(ApiModel):
+    requests: list[RequestCreate] = Field(min_length=1, max_length=100)
 
 
 _BOUND_FIELDS = (
@@ -545,9 +550,9 @@ async def create_request(
     request: Request,
     response: Response,
     idempotency_key: str | None = Header(
-        default=None, alias="Idempotency-Key", min_length=1, max_length=255
+        default=None, alias="Idempotency-Key", min_length=1, max_length=180
     ),
-    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess | InvoiceCreateAccess = Depends(require_invoice_create),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -557,6 +562,9 @@ async def create_request(
             "Provide an Idempotency-Key for this create request.",
         )
     _validate_dates(payload.issue_date, payload.due_date)
+    api_key_id = getattr(member, "api_key_id", None)
+    if api_key_id is not None:
+        idempotency_key = f"api:{api_key_id}:{idempotency_key}"
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
     scope: tuple[uuid.UUID, bytes] | None = None
@@ -670,6 +678,54 @@ async def create_request(
             flags = await _flag_views(session, row)
     response.headers["ETag"] = f'"{row.version}"'
     return {"request": _serialize(row), "flags": flags}
+
+
+@router.post("/bulk", status_code=200, openapi_extra={"x-organization-scoped": True})
+async def create_requests_bulk(
+    organization_id: uuid.UUID,
+    payload: RequestBulkCreate,
+    request: Request,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=180
+    ),
+    member: InvoiceCreateAccess = Depends(require_invoice_create),  # noqa: B008
+) -> dict[str, object]:
+    if idempotency_key is None:
+        raise _fail(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Idempotency key required",
+            "Provide an Idempotency-Key for this bulk request.",
+        )
+    items: list[dict[str, object]] = []
+    for index, item in enumerate(payload.requests):
+        response = Response()
+        row_key = f"{idempotency_key}:{index}"
+        try:
+            result = await create_request(
+                organization_id=organization_id,
+                payload=item,
+                request=request,
+                response=response,
+                idempotency_key=row_key,
+                member=member,
+            )
+        except AuthFailure as error:
+            items.append(
+                {
+                    "index": index,
+                    "status": error.status,
+                    "code": error.code,
+                    "detail": error.detail,
+                }
+            )
+        else:
+            items.append({"index": index, "status": 201, **result})
+    return {
+        "items": items,
+        "created": sum(item["status"] == 201 for item in items),
+        "total": len(items),
+    }
 
 
 @router.patch("/{request_id}", openapi_extra={"x-organization-scoped": True})
