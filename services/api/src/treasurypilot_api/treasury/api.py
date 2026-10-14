@@ -234,6 +234,24 @@ class TreasuryView(ApiModel):
     created_at: datetime
 
 
+class TreasurySummaryView(ApiModel):
+    id: uuid.UUID
+    chain_id: int
+    chain_name: str
+    asset_id: uuid.UUID
+    asset_symbol: str
+    # Null when the asset is no longer in the startup configuration.
+    asset_decimals: int | None
+    asset_is_test: bool | None
+    status: TreasuryStatus
+    coverage: Coverage
+    created_at: datetime
+
+
+class TreasuriesResponse(ApiModel):
+    items: list[TreasurySummaryView]
+
+
 class CoverageResponse(ApiModel):
     coverage: CoverageView
 
@@ -315,8 +333,23 @@ async def create_treasury(
             ],
         )
     except TreasuryRequestError as exc:
+        extensions: dict[str, object] = {}
+        if exc.address is not None:
+            # Attribute by role and position, never by the client-supplied label.
+            slots = {WalletRole.SOURCE: ["T"], WalletRole.OPERATIONAL: ["O1", "O2"]}
+            seen = {WalletRole.SOURCE: 0, WalletRole.OPERATIONAL: 0}
+            for item in payload.wallets:
+                slot = slots[item.role][min(seen[item.role], len(slots[item.role]) - 1)]
+                seen[item.role] += 1
+                if item.safe_address.lower() == exc.address.lower():
+                    extensions["errors"] = [{"field": f"wallets.{slot}", "message": exc.detail}]
+                    break
         raise AuthFailure(
-            status=422, code=exc.code, title="Treasury request rejected", detail=exc.detail
+            status=422,
+            code=exc.code,
+            title="Treasury request rejected",
+            detail=exc.detail,
+            extensions=extensions,
         ) from None
     except RpcUnavailable:
         raise AuthFailure(
@@ -327,6 +360,45 @@ async def create_treasury(
             retry_after=5,
         ) from None
     return TreasuryResponse.from_record(record)
+
+
+@router.get("/orgs/{organization_id}/treasuries", response_model=TreasuriesResponse)
+async def list_treasuries(
+    request: Request,
+    member: Annotated[MemberAccess, Depends(require_member)],
+) -> TreasuriesResponse:
+    # The organization scope comes from the authenticated membership. Keep each
+    # treasury as its own row: balances, limits, and counters have no cross-chain
+    # aggregate until a pricing source exists.
+    rows = await _service(request).list_for_org(organization_id=member.organization_id)
+    configuration: PlatformConfiguration = request.app.state.platform_configuration
+    chains = {chain.chain_id: chain for chain in configuration.chains}
+    assets_by_chain = {
+        chain.chain_id: {asset_id(chain.chain_id, item.address): item for item in chain.assets}
+        for chain in configuration.chains
+    }
+    items: list[TreasurySummaryView] = []
+    for row in rows:
+        chain = chains.get(row.chain_id)
+        asset = assets_by_chain.get(row.chain_id, {}).get(row.asset_id)
+        # Persisted assets are validated against this startup configuration. If an
+        # operator removes a config entry after deployment, keep the row visible by
+        # id without inventing a cross-chain symbol or valuation.
+        items.append(
+            TreasurySummaryView(
+                id=row.id,
+                chain_id=row.chain_id,
+                chain_name=chain.name if chain is not None else f"Chain {row.chain_id}",
+                asset_id=row.asset_id,
+                asset_symbol=asset.symbol if asset is not None else "Unknown asset",
+                asset_decimals=asset.decimals if asset is not None else None,
+                asset_is_test=asset.is_test if asset is not None else None,
+                status=row.status,
+                coverage=row.coverage,
+                created_at=row.created_at,
+            )
+        )
+    return TreasuriesResponse(items=items)
 
 
 @router.get("/orgs/{organization_id}/treasuries/{treasury_id}", response_model=TreasuryResponse)

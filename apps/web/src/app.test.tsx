@@ -126,6 +126,76 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
 });
 
+test('the organization view lists cross-chain treasuries separately without a combined balance', async () => {
+  const user = userEvent.setup();
+  renderApp(BASE, {
+    beforeRender: () => {
+      const second = structuredClone(db.treasuries.trs_main);
+      second.treasury.id = 'trs_base';
+      second.treasury.name = 'Base treasury';
+      second.treasury.chainId = 84532;
+      second.treasury.chainName = 'Base Sepolia';
+      second.treasury.status = 'Active';
+      second.treasury.asset = {
+        ...second.treasury.asset,
+        id: 'usdc-base-sepolia',
+        address: `0x${'22'.repeat(20)}`,
+      };
+      second.mandate = {
+        version: 7,
+        status: 'Active',
+        expiresAt: '2030-03-01T00:00:00.000Z',
+      };
+      second.budgets = [
+        {
+          action: 'PAY',
+          usedToday: '42000000',
+          dailyLimit: '100000000',
+          perRequest: '20000000',
+        },
+      ];
+      db.treasuries.trs_base = second;
+      db.orgs[0].treasuries.push({ id: 'trs_base', name: 'Base treasury' });
+    },
+  });
+
+  expect(await screen.findByText('2 treasuries')).toBeInTheDocument();
+  expect(screen.getByText('Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.getByText('Base Sepolia · USDC')).toBeInTheDocument();
+  expect(screen.queryByText('163,000.00')).not.toBeInTheDocument();
+  const secondTreasuryLink = screen.getByRole('link', {
+    name: /Base Sepolia · USDC/i,
+  });
+  expect(secondTreasuryLink).toHaveAttribute('href', `${BASE}/t/trs_base`);
+
+  await user.click(secondTreasuryLink);
+  expect(
+    await screen.findByRole('heading', { name: 'Base treasury' }),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByRole('heading', { name: 'Liquidity' }),
+  ).toBeInTheDocument();
+  expect(screen.getByText('v7')).toBeInTheDocument();
+  expect(
+    await screen.findByRole('meter', { name: 'Payments today' }),
+  ).toHaveAttribute('aria-valuenow', '42');
+  expect(
+    screen.queryByRole('meter', { name: 'Refills today' }),
+  ).not.toBeInTheDocument();
+});
+
+test('an organization without treasuries opens the setup checklist', async () => {
+  renderApp(BASE, {
+    beforeRender: () => {
+      db.orgs[0].treasuries = [];
+    },
+  });
+
+  expect(
+    await screen.findByRole('heading', { name: /set up northwind/i }),
+  ).toBeInTheDocument();
+});
+
 test('selecting a Safe in one chart zooms the liquidity chart into it', async () => {
   const user = userEvent.setup();
   renderApp(T);
@@ -375,4 +445,59 @@ test('reconciliation refuses to match a payment with incomplete evidence', async
   expect(
     within(sheet).getByRole('button', { name: /mark as matched/i }),
   ).toBeDisabled();
+});
+
+test('a non-Safe verification error is shown beside the affected wallet field', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`);
+
+  await user.click(await screen.findByRole('button', { name: /continue/i }));
+  await user.type(
+    await screen.findByLabelText(/treasury safe \(T\)/i),
+    `0x${'1'.repeat(36)}dead`,
+  );
+  await user.type(
+    screen.getByLabelText(/payments safe \(O1\)/i),
+    `0x${'2'.repeat(36)}bb22`,
+  );
+  await user.click(
+    screen.getByRole('button', { name: /check safes and continue/i }),
+  );
+
+  expect(
+    await screen.findByText(/no safe contract was found at this address/i),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText(/treasury safe \(T\)/i)).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+});
+
+test('module setup creates a governance transaction for each treasury Safe', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`, { demoWallet: true });
+
+  await user.click(await screen.findByRole('button', { name: /continue/i }));
+  await user.click(await screen.findByRole('button', { name: /use demo safes/i }));
+  await user.click(
+    screen.getByRole('button', { name: /check safes and continue/i }),
+  );
+  await user.type(
+    await screen.findByLabelText(/guardian safe address/i),
+    `0x${'3'.repeat(36)}cc33`,
+  );
+  await user.click(
+    screen.getByRole('button', { name: /prepare module transactions/i }),
+  );
+
+  await waitFor(() => {
+    expect(
+      db.governance.filter(
+        (tx) => tx.treasuryId !== 'trs_main' && tx.kind === 'DEPLOY_MODULE',
+      ),
+    ).toHaveLength(2);
+  });
+  expect(
+    await screen.findByText(/Enable the TreasuryPilot module on O1/i),
+  ).toBeInTheDocument();
 });

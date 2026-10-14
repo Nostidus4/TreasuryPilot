@@ -95,6 +95,10 @@ const DashboardPage = page(
   () => import('@/features/treasury/dashboard-page'),
   'DashboardPage',
 );
+const TreasuryPortfolioPage = page(
+  () => import('@/features/treasury/portfolio-page'),
+  'TreasuryPortfolioPage',
+);
 const BorrowProposalPage = page(
   () => import('@/features/treasury/fees-borrow-pages'),
   'BorrowProposalPage',
@@ -145,7 +149,14 @@ export function App() {
             <Route path="/dev/components" element={<ComponentsPage />} />
           )}
           <Route path="/o/:org" element={<OrgLayout />}>
-            <Route index element={<OrgIndexRedirect />} />
+            <Route
+              index
+              element={
+                <OrgIndexRedirect>
+                  <TreasuryPortfolioPage />
+                </OrgIndexRedirect>
+              }
+            />
             <Route path="onboarding" element={<OnboardingPage />} />
             <Route path="t/:t" element={<DashboardPage />} />
             <Route path="treasuries/new" element={<SetupWizardPage />} />

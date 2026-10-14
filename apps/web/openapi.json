@@ -67,6 +67,40 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "ApiKeyCreate": {
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": ["name", "scopes"],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
       "ApprovalEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -1896,6 +1930,16 @@
         "title": "ModuleMandateInput",
         "type": "object"
       },
+      "NotificationCategory": {
+        "enum": ["mandatory", "approvals", "payments", "operations"],
+        "title": "NotificationCategory",
+        "type": "string"
+      },
+      "NotificationChannel": {
+        "enum": ["in_app", "email", "telegram"],
+        "title": "NotificationChannel",
+        "type": "string"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -1912,6 +1956,67 @@
         },
         "required": ["items", "unreadCount"],
         "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationPreferencesView": {
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channels",
+          "categories",
+          "quietHoursStart",
+          "quietHoursEnd",
+          "timezone"
+        ],
+        "title": "NotificationPreferencesView",
         "type": "object"
       },
       "NotificationView": {
@@ -2400,6 +2505,22 @@
           }
         },
         "title": "RenewRequest",
+        "type": "object"
+      },
+      "RequestBulkCreate": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestCreate"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": ["requests"],
+        "title": "RequestBulkCreate",
         "type": "object"
       },
       "RequestCreate": {
@@ -2932,6 +3053,110 @@
         "title": "SubmittedRequest",
         "type": "object"
       },
+      "SupportGrantRequest": {
+        "properties": {
+          "durationHours": {
+            "default": 24,
+            "maximum": 72.0,
+            "minimum": 1.0,
+            "title": "Durationhours",
+            "type": "integer"
+          },
+          "staffUser": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Staffuser",
+            "type": "string"
+          }
+        },
+        "required": ["staffUser"],
+        "title": "SupportGrantRequest",
+        "type": "object"
+      },
+      "SupportGrantView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "grantedBy": {
+            "format": "uuid",
+            "title": "Grantedby",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revokedat"
+          },
+          "scope": {
+            "const": "read",
+            "title": "Scope",
+            "type": "string"
+          },
+          "staffUser": {
+            "title": "Staffuser",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "expired", "revoked"],
+            "readOnly": true,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "staffUser",
+          "scope",
+          "expiresAt",
+          "grantedBy",
+          "createdAt",
+          "revokedAt",
+          "status"
+        ],
+        "title": "SupportGrantView",
+        "type": "object"
+      },
+      "SupportSummary": {
+        "properties": {
+          "grantId": {
+            "format": "uuid",
+            "title": "Grantid",
+            "type": "string"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantView"
+          }
+        },
+        "required": ["tenant", "grantId"],
+        "title": "SupportSummary",
+        "type": "object"
+      },
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -3062,6 +3287,20 @@
         "title": "TransactionEvidence",
         "type": "object"
       },
+      "TreasuriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TreasurySummaryView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TreasuriesResponse",
+        "type": "object"
+      },
       "TreasuryResponse": {
         "properties": {
           "treasury": {
@@ -3090,6 +3329,79 @@
         "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
         "title": "TreasuryStatus",
         "type": "string"
+      },
+      "TreasurySummaryView": {
+        "properties": {
+          "assetDecimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetdecimals"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "assetIsTest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetistest"
+          },
+          "assetSymbol": {
+            "title": "Assetsymbol",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "chainName": {
+            "title": "Chainname",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "chainName",
+          "assetId",
+          "assetSymbol",
+          "assetDecimals",
+          "assetIsTest",
+          "status",
+          "coverage",
+          "createdAt"
+        ],
+        "title": "TreasurySummaryView",
+        "type": "object"
       },
       "TreasuryView": {
         "properties": {
@@ -3140,6 +3452,64 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UpdateNotificationPreferences": {
+        "description": "PUT body. Omitted fields keep their stored value (the defaults below only\ndescribe the schema); send ``null`` quiet hours to clear them.",
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "UpdateNotificationPreferences",
         "type": "object"
       },
       "UploadResponse": {
@@ -3731,6 +4101,47 @@
         "tags": ["platform-admin"]
       }
     },
+    "/admin/tenants/{tenant_id}/support": {
+      "get": {
+        "operationId": "support_summary_admin_tenants__tenant_id__support_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Summary",
+        "tags": ["platform-admin"]
+      }
+    },
     "/admin/tenants/{tenant_id}/suspend": {
       "post": {
         "operationId": "suspend_tenant_admin_tenants__tenant_id__suspend_post",
@@ -4074,6 +4485,62 @@
         "tags": ["identity"]
       }
     },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "get_notification_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Notification Preferences",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "put_notification_preferences_v1_me_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Notification Preferences",
+        "tags": ["notifications"]
+      }
+    },
     "/v1/me/wallets": {
       "post": {
         "operationId": "link_wallet_v1_me_wallets_post",
@@ -4224,6 +4691,156 @@
         },
         "summary": "Get Organization",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys": {
+      "get": {
+        "operationId": "list_api_keys_v1_orgs__organization_id__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Api Keys V1 Orgs  Organization Id  Api Keys Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Api Keys",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_api_key_v1_orgs__organization_id__api_keys_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Api Key V1 Orgs  Organization Id  Api Keys Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys/{key_id}": {
+      "delete": {
+        "operationId": "revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Api Key V1 Orgs  Organization Id  Api Keys  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/audit-log": {
@@ -5192,6 +5809,22 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "requestBody": {
@@ -5229,6 +5862,94 @@
           }
         },
         "summary": "Create Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/bulk": {
+      "post": {
+        "operationId": "create_requests_bulk_v1_orgs__organization_id__requests_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestBulkCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Requests Bulk V1 Orgs  Organization Id  Requests Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Requests Bulk",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
@@ -6806,7 +7527,196 @@
         "tags": ["organizations"]
       }
     },
+    "/v1/orgs/{organization_id}/support-grants": {
+      "get": {
+        "operationId": "list_support_grants_v1_orgs__organization_id__support_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportGrantView"
+                  },
+                  "title": "Response List Support Grants V1 Orgs  Organization Id  Support Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Support Grants",
+        "tags": ["support"]
+      },
+      "post": {
+        "operationId": "grant_support_v1_orgs__organization_id__support_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Support",
+        "tags": ["support"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants/{grant_id}": {
+      "delete": {
+        "operationId": "revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Support Grant",
+        "tags": ["support"]
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries": {
+      "get": {
+        "operationId": "list_treasuries_v1_orgs__organization_id__treasuries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Treasuries",
+        "tags": ["treasury"]
+      },
       "post": {
         "operationId": "create_treasury_v1_orgs__organization_id__treasuries_post",
         "parameters": [

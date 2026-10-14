@@ -118,6 +118,20 @@ export interface Treasury {
   pauseReason?: string;
 }
 
+/** One row in the organization-wide treasury view; amounts are intentionally absent. */
+export interface TreasurySummary {
+  id: string;
+  chainId: number;
+  chainName: string;
+  assetId: string;
+  assetSymbol: string;
+  assetDecimals: number | null;
+  assetIsTest: boolean | null;
+  status: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+  coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+  createdAt: string;
+}
+
 export interface Coverage {
   status: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN';
   acknowledged: boolean;

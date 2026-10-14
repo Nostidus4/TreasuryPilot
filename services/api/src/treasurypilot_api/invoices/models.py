@@ -11,6 +11,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -44,6 +45,37 @@ class RequestStatus(StrEnum):
     REJECTED = "Rejected"
     CANCELLED = "Cancelled"
     EXPIRED = "Expired"
+
+
+class InvoiceApiKey(Base):
+    __tablename__ = "invoice_api_keys"
+    __table_args__ = (
+        CheckConstraint("length(btrim(name)) BETWEEN 1 AND 120", name="ck_invoice_api_keys_name"),
+        CheckConstraint("octet_length(token_hash) = 32", name="ck_invoice_api_keys_hash"),
+        CheckConstraint("cardinality(scopes) > 0", name="ck_invoice_api_keys_scopes"),
+        CheckConstraint(
+            "array_position(scopes, NULL) IS NULL", name="ck_invoice_api_keys_scopes_no_null"
+        ),
+        Index("ix_invoice_api_keys_org", "org_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    prefix: Mapped[str] = mapped_column(String(24), nullable=False)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RequestSource(StrEnum):
@@ -253,6 +285,9 @@ class PaymentRequest(Base):
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     last_edited_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_via_api_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoice_api_keys.id", ondelete="SET NULL")
+    )
     note: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default="{}"
