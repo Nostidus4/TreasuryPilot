@@ -31,6 +31,7 @@ Show that skipping the backend does not skip the rules.
 
 - Tests calling the module directly as executor with: altered payee, altered amount, unapproved request, cooling payee, over daily limit, paused state
 - tests calling as a random address
+- Maintain C-rule to direct-call test and error-selector mapping in docs/security/contract-rule-test-mapping.md
 
 ## Out of scope
 

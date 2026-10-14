@@ -1,6 +1,8 @@
 import { Check, RotateCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { decodeEventLog, parseAbi } from 'viem';
+import { usePublicClient } from 'wagmi';
 
 import { Address } from '@/components/domain/chain';
 import { KeyValueList } from '@/components/domain/display';
@@ -26,6 +28,7 @@ import {
   useCreateTreasury,
   useDeployModuleTx,
   useRefreshCoverage,
+  useSafeDeploymentTx,
   useSetGuardian,
   useTreasury,
   type TreasuryInput,
@@ -36,6 +39,11 @@ import type { TreasuryState } from '@/lib/api/types';
 import { mockApiEnabled } from '@/lib/env';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useWallet } from '@/lib/wallet/wallet-context';
+
+const safeFactoryAbi = parseAbi([
+  'event ProxyCreation(address indexed proxy, address singleton)',
+]);
 
 const steps = [
   {
@@ -151,6 +159,8 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
   const scope = useOrgScope();
   const chains = useChains();
   const create = useCreateTreasury(scope.orgId);
+  const deploySafe = useSafeDeploymentTx(scope.orgId);
+  const wallet = useWallet();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(() => ({
     name: 'Operating treasury',
@@ -160,6 +170,13 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
     ...readDraft(scope.orgId),
   }));
   const [formError, setFormError] = useState<Record<string, string>>({});
+  const [safeOwners, setSafeOwners] = useState('');
+  const [safeThreshold, setSafeThreshold] = useState('1');
+  const [safeTargetRole, setSafeTargetRole] = useState<'T' | 'O1' | 'O2'>('T');
+  const [deployError, setDeployError] = useState('');
+  const publicClient = usePublicClient({
+    chainId: draft.chainId || 11155111,
+  });
 
   useEffect(() => {
     try {
@@ -217,6 +234,100 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
         onCreated(treasury.id);
       },
     });
+  };
+
+  const createSafe = async (role: 'T' | 'O1' | 'O2') => {
+    setDeployError('');
+    const owners = safeOwners
+      .split(/[\s,]+/)
+      .map((owner) => owner.trim())
+      .filter(Boolean);
+    const threshold = Number(safeThreshold);
+    if (
+      owners.length === 0 ||
+      owners.some((owner) => !/^0x[0-9a-fA-F]{40}$/.test(owner)) ||
+      new Set(owners.map((owner) => owner.toLowerCase())).size !==
+        owners.length ||
+      !Number.isInteger(threshold) ||
+      threshold < 1 ||
+      threshold > owners.length
+    ) {
+      setDeployError(
+        t(
+          'Enter distinct owner addresses and a threshold from 1 to the owner count.',
+        ),
+      );
+      return;
+    }
+    if (!wallet.address) {
+      setDeployError(
+        t('Connect a wallet to submit the Safe deployment transaction.'),
+      );
+      return;
+    }
+    try {
+      const result = await deploySafe.mutateAsync({
+        chainId: draft.chainId,
+        owners,
+        threshold,
+      });
+      if (wallet.chainId !== draft.chainId)
+        await wallet.switchChain(draft.chainId);
+      const hash = await wallet.sendTransaction({
+        to: result.transaction.to,
+        data: result.transaction.data,
+        value: result.transaction.value,
+        chainId: draft.chainId,
+      });
+      if (!publicClient)
+        throw new Error(t('No RPC client is available for this chain.'));
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') {
+        throw new Error(
+          t('The Safe deployment transaction reverted. Transaction: {{hash}}', {
+            hash,
+          }),
+        );
+      }
+      const factory = result.transaction.to.toLowerCase();
+      const event = receipt.logs.find((log) => {
+        if (log.address.toLowerCase() !== factory) return false;
+        try {
+          decodeEventLog({
+            abi: safeFactoryAbi,
+            data: log.data,
+            topics: log.topics,
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!event) {
+        throw new Error(
+          t(
+            'The transaction was mined, but no Safe address was returned. Transaction: {{hash}}',
+            {
+              hash,
+            },
+          ),
+        );
+      }
+      const decoded = decodeEventLog({
+        abi: safeFactoryAbi,
+        data: event.data,
+        topics: event.topics,
+      });
+      // Functional update: the draft may have been edited while the wallet prompt and receipt wait ran.
+      setDraft((current) => ({
+        ...current,
+        safes: { ...current.safes, [role]: decoded.args.proxy },
+      }));
+    } catch (error) {
+      setDeployError(
+        error instanceof Error ? error.message : t('Safe deployment failed.'),
+      );
+    }
   };
 
   const summaryChain =
@@ -331,7 +442,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
               <CardHeader
                 title={t('Safes')}
                 description={t(
-                  'Paste the addresses of Safes you already own on {{chain}}. TreasuryPilot never creates or owns a Safe.',
+                  'Paste the addresses of Safes on {{chain}}. TreasuryPilot never owns a Safe.',
                   { chain: chain?.name ?? '' },
                 )}
                 action={
@@ -355,6 +466,85 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                 }
               />
               <CardContent className="grid gap-4">
+                {chain && !chain.safeDeploymentAvailable && (
+                  <Alert
+                    tone="warning"
+                    title={t('Safe deployment unavailable')}
+                  >
+                    {t(
+                      'Creating a Safe from this screen is unavailable on {{chain}} because its verified Safe factory, v1.4.1 singleton, and fallback handler are not configured. You can continue with Safes that already exist on this chain.',
+                      { chain: chain.name },
+                    )}
+                  </Alert>
+                )}
+                {chain?.safeDeploymentAvailable && (
+                  <section className="grid gap-3 rounded-md border border-border p-4">
+                    <div>
+                      <h3 className="font-medium">{t('Create a Safe')}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {t(
+                          'The transaction is sent by your connected wallet. TreasuryPilot never receives keys or signs for you.',
+                        )}
+                      </p>
+                    </div>
+                    <Field
+                      htmlFor="safe-owners"
+                      label={t('Safe owners')}
+                      hint={t('Enter one 0x address per line.')}
+                    >
+                      <Textarea
+                        id="safe-owners"
+                        value={safeOwners}
+                        onChange={(event) => setSafeOwners(event.target.value)}
+                        placeholder="0x…"
+                      />
+                    </Field>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field
+                        htmlFor="safe-threshold"
+                        label={t('Signing threshold')}
+                      >
+                        <Input
+                          id="safe-threshold"
+                          inputMode="numeric"
+                          type="number"
+                          min={1}
+                          value={safeThreshold}
+                          onChange={(event) =>
+                            setSafeThreshold(event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field
+                        htmlFor="safe-target-role"
+                        label={t('Use this Safe for')}
+                      >
+                        <Select
+                          id="safe-target-role"
+                          value={safeTargetRole}
+                          onValueChange={(value) =>
+                            setSafeTargetRole(value as 'T' | 'O1' | 'O2')
+                          }
+                          options={safeRoles.map(({ role, label }) => ({
+                            value: role,
+                            label: t(label),
+                          }))}
+                        />
+                      </Field>
+                    </div>
+                    {deployError && <Alert tone="danger">{deployError}</Alert>}
+                    <div>
+                      <Button
+                        variant="secondary"
+                        loading={deploySafe.isPending}
+                        disabled={!draft.chainId}
+                        onClick={() => void createSafe(safeTargetRole)}
+                      >
+                        {t('Create Safe and add address')}
+                      </Button>
+                    </div>
+                  </section>
+                )}
                 {safeRoles.map(({ role, label, hint, optional }) => (
                   <Field
                     key={role}

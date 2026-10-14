@@ -47,6 +47,33 @@ class _ConfigModel(BaseModel):
     )
 
 
+class AssetConfig(_ConfigModel):
+    address: str
+    symbol: str = Field(min_length=1, max_length=32)
+    # Checked against the token's on-chain decimals() before the asset is added (M02-D9).
+    decimals: int = Field(ge=0, le=255)
+    issuer_label: str = Field(min_length=1, max_length=120)
+    is_test: bool = False
+
+    @field_validator("symbol", "issuer_label")
+    @classmethod
+    def _strip_non_empty(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+    @field_validator("address")
+    @classmethod
+    def _validate_address(cls, value: str) -> str:
+        _parse_hex(value, byte_length=20, field_name="asset address")
+        return "0x" + value.removeprefix("0x").lower()
+
+    @property
+    def address_bytes(self) -> bytes:
+        return bytes.fromhex(self.address.removeprefix("0x"))
+
+
 class ChainConfig(_ConfigModel):
     chain_id: int = Field(gt=0, le=MAX_POSTGRES_INTEGER)
     name: str = Field(min_length=1, max_length=120)
@@ -55,6 +82,7 @@ class ChainConfig(_ConfigModel):
     explorer_url: HttpUrl
     rpc_urls: tuple[str, ...]
     enabled: bool = True
+    assets: tuple[AssetConfig, ...] = ()
 
     @field_validator("name")
     @classmethod
@@ -79,6 +107,18 @@ class ChainConfig(_ConfigModel):
         if len(self.rpc_urls) < minimum:
             state = "enabled" if self.enabled else "disabled"
             raise ValueError(f"{state} chains require at least {minimum} RPC URL(s)")
+        return self
+
+    @model_validator(mode="after")
+    def _unique_asset_addresses(self) -> Self:
+        addresses = [asset.address for asset in self.assets]
+        if len(addresses) != len(set(addresses)):
+            raise ValueError("asset addresses must be unique per chain")
+        # Asset decimals are verified over HTTP JSON-RPC (treasury/onchain.py).
+        if self.assets and not any(
+            url.startswith(("http://", "https://")) for url in self.rpc_urls
+        ):
+            raise ValueError("chains with assets require at least one http(s) RPC URL")
         return self
 
 
