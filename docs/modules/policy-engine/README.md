@@ -164,7 +164,7 @@ A re-plan after partial completion (RCV-003) produces a **new** plan containing 
 | Function | Notes |
 |---|---|
 | `attest(plan, decision) → Attestation` | Only for `decision == ALLOW` at stage PLAN. Loads the policy key (§10). Persists the row before returning. |
-| `simulate(step, attestation_ctx) → Decision` | stage SIMULATION: `eth_call` of `module.refill/pay` with `from = executor`, at block `latest`, same calldata the signer will send. Revert → decoded code, BLOCK. RPC error → `SIMULATION_UNAVAILABLE`, BLOCK. |
+| `simulate(step, attestation_ctx) → Decision` | stage SIMULATION: `eth_call` of `module.refill/pay` with `from = executor`, at block `latest`, same calldata the signer will send. Revert → decoded code, BLOCK. RPC error → `SIMULATION_UNAVAILABLE`, BLOCK. Implemented as `treasurypilot_worker.executor.simulation.simulate(rpc, step, ctx)` (the call targets the mandate executor with the signer's calldata); `record_validation` appends the SIMULATION row. |
 
 ### 6.3 PlanAttestation (EIP-712, M08-D3)
 
