@@ -305,6 +305,143 @@ async def _previous_upload(
     return previous, document
 
 
+async def create_invoice_document_draft(
+    *,
+    request: Request,
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    document: tuple[bytes, str, int],
+    idempotency_key: str,
+    uploaded_by: uuid.UUID | None,
+) -> UploadResponse:
+    """Store an already-inspected document and enqueue the existing extraction path."""
+    body, mime, pages = document
+    digest = hashlib.sha256(body).digest()
+    storage = _storage(request)
+    queue = _queue(request)
+    factory = _sessions(request)
+
+    async with factory() as session:
+        treasury = await session.scalar(
+            select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        )
+        if treasury is None:
+            raise _fail(404, "TREASURY_NOT_FOUND", "Treasury not found", "Treasury not found.")
+        asset = await session.scalar(
+            select(Asset).where(Asset.id == treasury.asset_id, Asset.chain_id == treasury.chain_id)
+        )
+        if asset is None:
+            raise _fail(
+                422,
+                "ASSET_NOT_PAYMENT_STABLECOIN",
+                "Payment asset invalid",
+                "The treasury payment asset is unavailable.",
+            )
+
+    payload_hash = hashlib.sha256(treasury_id.bytes + digest).digest()
+    replay = await _previous_upload(factory, organization_id, idempotency_key, payload_hash)
+    if replay is None:
+        request_id, document_id = uuid7(), uuid7()
+        object_key = f"organizations/{organization_id}/requests/{request_id}/{document_id}"
+        try:
+            await run_in_threadpool(storage.put, object_key, body, mime)
+        except Exception as error:
+            raise _fail(
+                503,
+                "DOCUMENT_STORAGE_UNAVAILABLE",
+                "Document storage unavailable",
+                "The invoice file could not be stored.",
+            ) from error
+
+        row = PaymentRequest(
+            id=request_id,
+            org_id=organization_id,
+            treasury_id=treasury.id,
+            chain_id=treasury.chain_id,
+            vendor_id=None,
+            payee_id=None,
+            invoice_no=None,
+            issue_date=None,
+            due_at=None,
+            amount=None,
+            asset_id=asset.id,
+            source=RequestSource.UPLOAD.value,
+            extraction_status=ExtractionStatus.EXTRACTING.value,
+            status=RequestStatus.DRAFT.value,
+            current_revision=1,
+            created_by=uploaded_by,
+            last_edited_by=uploaded_by,
+            onchain_request_id=_request_id(organization_id, request_id),
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
+        )
+        revision = RequestRevision(
+            id=uuid7(),
+            request_id=request_id,
+            revision=1,
+            edited_by=uploaded_by,
+            snapshot={
+                "treasuryId": str(treasury.id),
+                "vendorId": None,
+                "payeeId": None,
+                "invoiceNo": None,
+                "issueDate": None,
+                "dueDate": None,
+                "amount": None,
+                "assetId": str(asset.id),
+            },
+            reason="invoice document uploaded",
+        )
+        document_row = RequestDocument(
+            id=document_id,
+            request_id=request_id,
+            storage_key=object_key,
+            sha256=digest,
+            mime=mime,
+            size=len(body),
+            pages=pages,
+            uploaded_by=uploaded_by,
+        )
+        try:
+            async with factory() as write_session, write_session.begin():
+                write_session.add_all([row, revision, document_row])
+        except Exception as error:
+            try:
+                await run_in_threadpool(storage.delete, object_key)
+            except Exception:
+                # An object may stay orphaned; a periodic reconciliation job can remove it.
+                logger.exception("Failed to delete orphaned document %s", object_key)
+            if not isinstance(error, IntegrityError):
+                raise
+            # A concurrent upload with the same key won the race: treat it as a replay.
+            replay = await _previous_upload(factory, organization_id, idempotency_key, payload_hash)
+            if replay is None:
+                raise
+    confirmed = False
+    if replay is not None:
+        previous, document_row = replay
+        request_id, document_id = previous.id, document_row.id
+        confirmed = previous.extraction_confirmed_at is not None
+
+    job_id = uuid.uuid5(uuid.NAMESPACE_URL, f"treasurypilot:invoice-extract:{request_id}").hex
+    if confirmed:  # replay after confirmation must not re-run extraction
+        return UploadResponse(
+            request_id=request_id, document_id=document_id, extraction_job_id=job_id
+        )
+    try:
+        scheduled_id = await run_in_threadpool(queue.enqueue, request_id, document_id, job_id)
+    except Exception as error:
+        raise _fail(
+            503,
+            "EXTRACTION_QUEUE_UNAVAILABLE",
+            "Extraction queue unavailable",
+            "The document is stored but extraction could not be scheduled.",
+        ) from error
+    return UploadResponse(
+        request_id=request_id, document_id=document_id, extraction_job_id=scheduled_id
+    )
+
+
 @router.post("/upload", status_code=202, openapi_extra={"x-organization-scoped": True})
 async def upload_invoice_document(
     organization_id: uuid.UUID,
@@ -324,133 +461,13 @@ async def upload_invoice_document(
             "Provide an Idempotency-Key for this upload.",
         )
     body, mime, pages = await _read_document(file)
-    digest = hashlib.sha256(body).digest()
-    storage = _storage(request)
-    queue = _queue(request)
-    factory = _sessions(request)
-
-    async with factory() as session:
-        treasury = await session.scalar(
-            select(Treasury).where(
-                Treasury.id == treasury_id, Treasury.org_id == member.organization_id
-            )
-        )
-        if treasury is None:
-            raise _fail(404, "TREASURY_NOT_FOUND", "Treasury not found", "Treasury not found.")
-        asset = await session.scalar(
-            select(Asset).where(Asset.id == treasury.asset_id, Asset.chain_id == treasury.chain_id)
-        )
-        if asset is None:
-            raise _fail(
-                422,
-                "ASSET_NOT_PAYMENT_STABLECOIN",
-                "Payment asset invalid",
-                "The treasury payment asset is unavailable.",
-            )
-
-    payload_hash = hashlib.sha256(treasury_id.bytes + digest).digest()
-    replay = await _previous_upload(factory, member.organization_id, idempotency_key, payload_hash)
-    if replay is None:
-        request_id, document_id = uuid7(), uuid7()
-        object_key = f"organizations/{member.organization_id}/requests/{request_id}/{document_id}"
-        try:
-            await run_in_threadpool(storage.put, object_key, body, mime)
-        except Exception as error:
-            raise _fail(
-                503,
-                "DOCUMENT_STORAGE_UNAVAILABLE",
-                "Document storage unavailable",
-                "The invoice file could not be stored.",
-            ) from error
-
-        row = PaymentRequest(
-            id=request_id,
-            org_id=member.organization_id,
-            treasury_id=treasury.id,
-            chain_id=treasury.chain_id,
-            vendor_id=None,
-            payee_id=None,
-            invoice_no=None,
-            issue_date=None,
-            due_at=None,
-            amount=None,
-            asset_id=asset.id,
-            source=RequestSource.UPLOAD.value,
-            extraction_status=ExtractionStatus.EXTRACTING.value,
-            status=RequestStatus.DRAFT.value,
-            current_revision=1,
-            created_by=member.user_id,
-            last_edited_by=member.user_id,
-            onchain_request_id=_request_id(member.organization_id, request_id),
-            idempotency_key=idempotency_key,
-            idempotency_payload_hash=payload_hash,
-        )
-        revision = RequestRevision(
-            id=uuid7(),
-            request_id=request_id,
-            revision=1,
-            edited_by=member.user_id,
-            snapshot={
-                "treasuryId": str(treasury.id),
-                "vendorId": None,
-                "payeeId": None,
-                "invoiceNo": None,
-                "issueDate": None,
-                "dueDate": None,
-                "amount": None,
-                "assetId": str(asset.id),
-            },
-            reason="invoice document uploaded",
-        )
-        document = RequestDocument(
-            id=document_id,
-            request_id=request_id,
-            storage_key=object_key,
-            sha256=digest,
-            mime=mime,
-            size=len(body),
-            pages=pages,
-            uploaded_by=member.user_id,
-        )
-        try:
-            async with factory() as write_session, write_session.begin():
-                write_session.add_all([row, revision, document])
-        except Exception as error:
-            try:
-                await run_in_threadpool(storage.delete, object_key)
-            except Exception:
-                # shortcut: an object may stay orphaned; needs a periodic reconciliation job.
-                logger.exception("Failed to delete orphaned document %s", object_key)
-            if not isinstance(error, IntegrityError):
-                raise
-            # A concurrent upload with the same key won the race: treat this one as its replay.
-            replay = await _previous_upload(
-                factory, member.organization_id, idempotency_key, payload_hash
-            )
-            if replay is None:
-                raise
-    confirmed = False
-    if replay is not None:
-        previous, document = replay
-        request_id, document_id = previous.id, document.id
-        confirmed = previous.extraction_confirmed_at is not None
-
-    job_id = uuid.uuid5(uuid.NAMESPACE_URL, f"treasurypilot:invoice-extract:{request_id}").hex
-    if confirmed:  # replay after confirmation must not re-run extraction
-        return UploadResponse(
-            request_id=request_id, document_id=document_id, extraction_job_id=job_id
-        )
-    try:
-        scheduled_id = await run_in_threadpool(queue.enqueue, request_id, document_id, job_id)
-    except Exception as error:
-        raise _fail(
-            503,
-            "EXTRACTION_QUEUE_UNAVAILABLE",
-            "Extraction queue unavailable",
-            "The document is stored but extraction could not be scheduled.",
-        ) from error
-    return UploadResponse(
-        request_id=request_id, document_id=document_id, extraction_job_id=scheduled_id
+    return await create_invoice_document_draft(
+        request=request,
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        document=(body, mime, pages),
+        idempotency_key=idempotency_key,
+        uploaded_by=member.user_id,
     )
 
 

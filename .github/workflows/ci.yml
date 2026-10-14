@@ -66,6 +66,35 @@ jobs:
           TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:test-only-password@localhost:5432/treasurypilot_test
         run: uv run pytest services/api/tests/test_retention.py
 
+  invoice-email-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: treasurypilot_test
+          POSTGRES_USER: treasurypilot
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treasurypilot -d treasurypilot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Invoice upload and email intake PostgreSQL integration
+        env:
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:test-only-password@localhost:5432/treasurypilot_test
+        run: uv run pytest services/api/tests/test_invoice_documents_postgres.py -q
+
   # Live-RPC check kept out of `quality` so a public RPC outage cannot block unit tests.
   config-check:
     runs-on: ubuntu-latest

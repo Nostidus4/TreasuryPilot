@@ -1,5 +1,6 @@
 import ipaddress
 import json
+import re
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -82,6 +83,20 @@ class Settings(BaseSettings):
     fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
     # JSON jurisdiction -> currency -> integer minor-unit threshold. No legal default is assumed.
     travel_rule_thresholds: str = "{}"
+    inbound_email_domain: str | None = None
+    inbound_email_webhook_secret: SecretStr | None = None
+
+    @field_validator("inbound_email_domain")
+    @classmethod
+    def _validate_inbound_email_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        domain = value.strip().casefold().rstrip(".")
+        if not re.fullmatch(
+            r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", domain
+        ):
+            raise ValueError("inbound email domain must be a DNS hostname")
+        return domain
 
     @model_validator(mode="after")
     def _validate_oidc_configuration(self) -> "Settings":
@@ -198,6 +213,14 @@ class Settings(BaseSettings):
                 self.oidc_redirect_uri,
                 self.oidc_organization_id,
             )
+        )
+
+    @property
+    def inbound_email_configured(self) -> bool:
+        return bool(
+            self.inbound_email_domain
+            and self.inbound_email_webhook_secret
+            and len(self.inbound_email_webhook_secret.get_secret_value().encode()) >= 32
         )
 
     @property

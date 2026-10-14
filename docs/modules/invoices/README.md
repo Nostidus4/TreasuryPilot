@@ -7,19 +7,25 @@
 
 ## 1. Purpose and boundaries
 
-M05 turns an invoice into a **payment request** that a human approves with a wallet signature over the exact fields the contract will check. It owns intake (manual, upload, CSV), revisions, fingerprints, deterministic risk flags, the approval typed data and its verification, cancellation (off-chain and on-chain), and the request state machine.
+M05 turns an invoice into a **payment request** that a human approves with a wallet signature over the exact fields the contract will check. It owns intake (manual, upload, CSV, and authenticated email attachments), revisions, fingerprints, deterministic risk flags, the approval typed data and its verification, cancellation (off-chain and on-chain), and the request state machine.
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Manual entry, document upload, CSV import | LLM extraction and instruction-text detection (M09 — we consume its output) |
+| Manual entry, document upload, CSV import, authenticated email attachment intake | LLM extraction and instruction-text detection (M09 — we consume its output) |
 | Revisions and approval invalidation | Payee registration on-chain, cooling (M03) |
 | Fingerprint, exact-duplicate block, near-duplicate flag | Paying, scheduling (M07, M10) |
 | Deterministic flags (address, outlier, dates, currency/chain, first payment) | Screening provider (M14) |
 | `PaymentApproval` typed data, signature verification, maker-checker | Exceptions (M03 + Owner) |
-| Request state machine and status events | Email inbox, inbound API and fiat (Later: F-033/034/041) |
+| Request state machine and status events | Email-body parsing, inbound API and fiat (Later: F-033 remainder/F-034/F-041) |
 | Cancel, including on-chain `cancelRequest` (M05-D4) | |
 
 **Who decides what:** the Operator enters data; the AI suggests fields (M09); the **Approver decides whether to pay** by signing; the engine and agent decide how and when; the contract enforces.
+
+### Forwarded invoice attachments (INV-L01 partial)
+
+An OrgAdmin can configure one inbound address per organization and select the treasury used for its drafts. The API accepts provider webhooks only when they carry an HMAC-SHA256 signature over `<unix timestamp>.<raw JSON body>` in `X-TP-Email-Signature` (`t=<timestamp>,v1=<hex>`). Signatures outside a five-minute window are rejected. Configure `TP_INBOUND_EMAIL_DOMAIN` and a `TP_INBOUND_EMAIL_WEBHOOK_SECRET` of at least 32 bytes, and configure the mail provider to sign callbacks with that secret. The signed provider event must include the exact recipient address and SPF/DKIM results with their authenticated domains. A passing SPF or DKIM domain must exactly match the sender's From domain; otherwise each attachment draft receives an open HIGH `INBOUND_EMAIL_SENDER_UNVERIFIED` flag.
+
+The webhook accepts up to five PDF, PNG or JPEG attachments, with a 10 MiB combined content limit. Each attachment goes through the same type, size, page, private-storage and extraction-queue path as a user upload. It creates an ordinary `Draft`; it does not create an approval or transition the request. The email body is ignored and never sent to extraction. Messages without attachments are rejected. Provider/MX deployment and body-only parsing remain outside this partial slice.
 
 ### Fiat-denominated requests (INV-L04)
 

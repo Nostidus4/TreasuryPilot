@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import os
+import time
 import uuid
 from datetime import UTC, date, datetime
 from io import BytesIO
@@ -18,11 +21,13 @@ from pypdf import PdfWriter
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
-from treasurypilot_api.invoices import documents, requests
+from treasurypilot_api.invoices import documents, inbound_email, requests
 from treasurypilot_api.invoices.models import (
+    PaymentApproval,
     PaymentRequest,
     RequestDocument,
     RequestFlag,
@@ -143,11 +148,18 @@ async def _scenario(database_url: str) -> None:
     ids = await _seed(sessions)
     app = FastAPI()
     app.state.request_sessions = sessions
+    webhook_secret = "inbound-email-test-secret-with-at-least-32-bytes"
+    app.state.settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        inbound_email_domain="invoices.example.test",
+        inbound_email_webhook_secret=webhook_secret,
+    )
     enqueued: list[uuid.UUID] = []
+    stored_keys: list[str] = []
 
     class Storage:
         def put(self, object_key: str, body: bytes, content_type: str) -> None:
-            pass
+            stored_keys.append(object_key)
 
     class Queue:
         def enqueue(self, request_id: uuid.UUID, document_id: uuid.UUID, job_id: str) -> str:
@@ -165,10 +177,21 @@ async def _scenario(database_url: str) -> None:
     async def operator() -> MemberAccess:
         return member
 
+    admin = MemberAccess(
+        access=SimpleNamespace(user=SimpleNamespace(id=USER_ID)),  # type: ignore[arg-type]
+        organization_id=ORG_ID,
+        roles=frozenset({"OrgAdmin"}),
+    )
+
+    async def org_admin() -> MemberAccess:
+        return admin
+
     app.dependency_overrides[documents._require_operator] = operator
     app.dependency_overrides[requests._require_operator] = operator
+    app.dependency_overrides[inbound_email._require_org_admin] = org_admin
     app.include_router(documents.router)
     app.include_router(requests.router)
+    app.include_router(inbound_email.router)
 
     @app.exception_handler(AuthFailure)
     async def handler(request: Request, exc: AuthFailure) -> JSONResponse:
@@ -180,6 +203,127 @@ async def _scenario(database_url: str) -> None:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
+            config_response = await client.put(
+                f"/v1/orgs/{ORG_ID}/invoice-inbound-email",
+                json={"treasuryId": str(TREASURY_ID), "enabled": True},
+            )
+            assert config_response.status_code == 200, config_response.text
+            address = config_response.json()["address"]
+            assert address.endswith("@invoices.example.test")
+            local_part = address.removeprefix("invoices+").split("@", 1)[0]
+            assert len(local_part) == 48
+
+            writer = PdfWriter()
+            writer.add_blank_page(width=100, height=100)
+            email_pdf = BytesIO()
+            writer.write(email_pdf)
+            email_body = json.dumps(
+                {
+                    "messageId": "<spoofed-invoice@example.test>",
+                    "sender": "billing@example.test",
+                    "recipient": address,
+                    "authenticationResults": {
+                        "spf": "pass",
+                        "spfDomain": "attacker.test",
+                        "dkim": "pass",
+                        "dkimDomain": "attacker.test",
+                    },
+                    "attachments": [
+                        {
+                            "filename": "invoice.pdf",
+                            "contentBase64": base64.b64encode(email_pdf.getvalue()).decode(),
+                        }
+                    ],
+                },
+                separators=(",", ":"),
+            ).encode()
+            invalid_auth = await client.post(
+                f"/v1/inbound/invoices/{local_part}",
+                content=email_body,
+                headers={"Content-Type": "application/json"},
+            )
+            assert invalid_auth.status_code == 401, invalid_auth.text
+
+            mismatched_body = email_body.replace(
+                address.encode(), b"invoices+" + b"b" * 48 + b"@invoices.example.test"
+            )
+            timestamp = int(time.time())
+            mismatched_signature = inbound_email.sign_webhook_body(
+                webhook_secret.encode(), timestamp, mismatched_body
+            )
+            mismatch = await client.post(
+                f"/v1/inbound/invoices/{local_part}",
+                content=mismatched_body,
+                headers={
+                    "Content-Type": "application/json",
+                    inbound_email.SIGNATURE_HEADER: mismatched_signature,
+                },
+            )
+            assert mismatch.status_code == 403, mismatch.text
+
+            timestamp = int(time.time())
+            signature = inbound_email.sign_webhook_body(
+                webhook_secret.encode(), timestamp, email_body
+            )
+            email_response = await client.post(
+                f"/v1/inbound/invoices/{local_part}",
+                content=email_body,
+                headers={
+                    "Content-Type": "application/json",
+                    inbound_email.SIGNATURE_HEADER: signature,
+                },
+            )
+            assert email_response.status_code == 202, email_response.text
+            email_request_id = uuid.UUID(email_response.json()["drafts"][0]["requestId"])
+            async with sessions() as session:
+                email_draft = await session.get(PaymentRequest, email_request_id)
+                email_approval = await session.scalar(
+                    select(PaymentApproval.id).where(PaymentApproval.request_id == email_request_id)
+                )
+                spoof_flag = await session.scalar(
+                    select(RequestFlag).where(
+                        RequestFlag.request_id == email_request_id,
+                        RequestFlag.code == "INBOUND_EMAIL_SENDER_UNVERIFIED",
+                    )
+                )
+                email_document = await session.scalar(
+                    select(RequestDocument).where(RequestDocument.request_id == email_request_id)
+                )
+            assert email_draft is not None and email_draft.status == RequestStatus.DRAFT.value
+            assert email_draft.source == RequestSource.UPLOAD.value
+            assert email_approval is None
+            assert spoof_flag is not None and spoof_flag.severity == "HIGH"
+            assert email_document is not None and email_document.uploaded_by is None
+            assert email_document.storage_key in stored_keys
+            assert email_request_id in enqueued
+
+            # Sender-authentication risk stays on the active revision after an operator confirms.
+            response = await client.post(
+                f"{base}/{email_request_id}/extraction/confirm",
+                json={**confirm, "invoiceNo": "EMAIL-INV-1"},
+            )
+            assert response.status_code == 200, response.text
+            async with sessions() as session:
+                email_draft = await session.get(PaymentRequest, email_request_id)
+                spoof_flags = (
+                    await session.scalars(
+                        select(RequestFlag)
+                        .where(
+                            RequestFlag.request_id == email_request_id,
+                            RequestFlag.code == "INBOUND_EMAIL_SENDER_UNVERIFIED",
+                        )
+                        .order_by(RequestFlag.revision)
+                    )
+                ).all()
+                assert email_draft is not None and email_draft.current_revision == 2
+                assert [(flag.revision, flag.status) for flag in spoof_flags] == [
+                    (1, "Superseded"),
+                    (2, "Open"),
+                ]
+                with pytest.raises(AuthFailure) as unacked_sender:
+                    await requests.assert_high_flags_acknowledged(session, email_draft)
+                assert unacked_sender.value.code == "HIGH_FLAGS_UNACKED"
+
             # An upload starts in Extracting for the worker to settle (AGT-004).
             writer = PdfWriter()
             writer.add_blank_page(width=100, height=100)
@@ -197,7 +341,7 @@ async def _scenario(database_url: str) -> None:
                     PaymentRequest, uuid.UUID(response.json()["requestId"])
                 )
             assert uploaded is not None and uploaded.extraction_status == "Extracting"
-            assert enqueued == [uploaded.id]
+            assert enqueued == [email_request_id, uploaded.id]
 
             # Deactivated payee is rejected by the shared _bound_fields guard.
             first = await _draft(sessions, RequestSource.UPLOAD.value)
