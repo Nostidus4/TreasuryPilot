@@ -25,8 +25,11 @@ from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
+from treasurypilot_api.invoices.fingerprints import (
+    DuplicateFingerprintConflict,
+    find_active_duplicate,
+)
 from treasurypilot_api.invoices.models import (
-    TERMINAL_REQUEST_STATUSES,
     PaymentRequest,
     RequestDocument,
     RequestFlag,
@@ -40,10 +43,9 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.requests import (
     _amount,
     _bound_fields,
-    _duplicate_fingerprint,
     _fail,
     _hashes,
-    _is_fingerprint_conflict,
+    _raise_if_fingerprint_race,
     _recompute_flags,
     _request_id,
     _sessions,
@@ -460,6 +462,7 @@ async def confirm_extraction(
     """Apply operator-reviewed extraction fields to the current upload draft."""
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
+    scope: tuple[uuid.UUID, bytes] | None = None
     multi_invoice = payload.invoice_count_in_document > 1
     try:
         async with factory() as session, session.begin():
@@ -535,21 +538,17 @@ async def confirm_extraction(
                 row.last_edited_by = member.user_id
                 row.current_revision += 1
                 row.version += 1
-                _hashes(row, vendor.normalized_ref, cast(bytes, asset.address), document.sha256)
-                duplicate = await session.scalar(
-                    select(PaymentRequest.id)
-                    .where(
-                        PaymentRequest.treasury_id == row.treasury_id,
-                        PaymentRequest.id != row.id,
-                        PaymentRequest.fingerprint == row.fingerprint,
-                        PaymentRequest.status.not_in(
-                            [status.value for status in TERMINAL_REQUEST_STATUSES]
-                        ),
-                    )
-                    .limit(1)
+                scope = (
+                    row.treasury_id,
+                    _hashes(
+                        row, vendor.normalized_ref, cast(bytes, asset.address), document.sha256
+                    ),
+                )
+                duplicate = await find_active_duplicate(
+                    session, treasury_id=scope[0], value=scope[1], exclude_request_id=row.id
                 )
                 if duplicate is not None:
-                    raise _duplicate_fingerprint()
+                    raise DuplicateFingerprintConflict(duplicate)
                 await session.execute(
                     update(RequestFlag)
                     .where(
@@ -589,8 +588,7 @@ async def confirm_extraction(
                 }
     except IntegrityError as error:
         # Concurrent confirm of the same invoice lost the uq_payment_requests_active_fingerprint race.
-        if _is_fingerprint_conflict(error):
-            raise _duplicate_fingerprint() from error
+        await _raise_if_fingerprint_race(factory, error, scope, request_id)
         raise
     raise _fail(
         422,

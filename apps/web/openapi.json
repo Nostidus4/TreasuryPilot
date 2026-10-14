@@ -463,6 +463,18 @@
         "title": "ChainsResponse",
         "type": "object"
       },
+      "ConfirmTermsRequest": {
+        "properties": {
+          "terms": {
+            "additionalProperties": true,
+            "title": "Terms",
+            "type": "object"
+          }
+        },
+        "required": ["terms"],
+        "title": "ConfirmTermsRequest",
+        "type": "object"
+      },
       "Coverage": {
         "enum": ["UNKNOWN", "PARTIAL", "COMPLETE"],
         "title": "Coverage",
@@ -5280,6 +5292,86 @@
         },
         "summary": "Confirm Extraction",
         "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/terms/confirm": {
+      "post": {
+        "operationId": "confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmTermsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Request Terms V1 Orgs  Organization Id  Requests  Request Id  Terms Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Request Terms",
+        "tags": ["requests"],
         "x-organization-scoped": true
       }
     },

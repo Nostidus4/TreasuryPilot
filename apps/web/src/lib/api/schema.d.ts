@@ -627,6 +627,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/terms/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Confirm Request Terms */
+    post: operations['confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/review-items': {
     parameters: {
       query?: never;
@@ -1154,6 +1171,13 @@ export interface components {
     ChainsResponse: {
       /** Chains */
       chains: components['schemas']['ChainView'][];
+    };
+    /** ConfirmTermsRequest */
+    ConfirmTermsRequest: {
+      /** Terms */
+      terms: {
+        [key: string]: unknown;
+      };
     };
     /**
      * Coverage
@@ -3498,6 +3522,46 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['ExtractionConfirmation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmTermsRequest'];
       };
     };
     responses: {
