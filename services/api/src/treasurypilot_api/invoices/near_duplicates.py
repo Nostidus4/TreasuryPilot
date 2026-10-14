@@ -45,7 +45,8 @@ async def find_near_duplicates(
     refreshed when a counterpart request later changes or is cancelled.
     """
 
-    if request.fingerprint is None:
+    # upload drafts have no fingerprint, issue date or invoice number yet
+    if request.fingerprint is None or request.issue_date is None or request.invoice_no is None:
         return []
     candidates = await session.execute(
         select(PaymentRequest.id, PaymentRequest.invoice_no)
@@ -67,6 +68,8 @@ async def find_near_duplicates(
     normalized_invoice = normalize(request.invoice_no)
     matches: list[NearDuplicate] = []
     for candidate_id, candidate_invoice in candidates:
+        if candidate_invoice is None:
+            continue
         distance = damerau_levenshtein(normalized_invoice, normalize(candidate_invoice))
         matches.append(NearDuplicate(candidate_id, candidate_invoice, distance))
     return matches

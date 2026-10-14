@@ -517,7 +517,7 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
             (
                 "POSSIBLE_DUPLICATE",
                 RequestFlagSeverity(duplicate.severity),
-                duplicate.evidence(row.invoice_no),
+                duplicate.evidence(row.invoice_no or ""),
             )
         )
     result: list[dict[str, object]] = []
