@@ -276,3 +276,30 @@ def test_cpsat_output_is_byte_identical_for_the_same_input(scenario: SchedulerSc
     second = schedule_cpsat(list(reversed(requests)), snapshot, policy)
 
     assert first.model_dump_json() == second.model_dump_json()
+
+
+def test_payee_activating_beyond_the_horizon_is_not_selected_not_needing_an_exception() -> None:
+    request = _request("A", seq=0, early_amount=80, early_pay_by=1)
+    snapshot = _snapshot(ops_balance=500).model_copy(update={"payee_active_day": {"payee": 40}})
+
+    result = schedule_cpsat([request], snapshot, _policy())
+
+    assert [(item.request_id, item.reason) for item in result.infeasible] == [
+        ("A", CPSAT_NOT_SELECTED)
+    ]
+
+
+def test_worse_than_edf_guard_still_checks_missed_deadlines_when_a_fee_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from treasurypilot_core.engine import cpsat
+
+    # A solver that pays nothing misses a deadline EDF meets, whatever the fee.
+    monkeypatch.setattr(cpsat, "_optimise", lambda *_args, **_kwargs: ([], "OPTIMAL"))
+    request = _request("A", seq=0, early_amount=80, early_pay_by=1)
+
+    result = schedule_cpsat(
+        [request], _snapshot(ops_balance=500), _policy(), fee_in_asset=BaseUnits(1)
+    )
+
+    assert (result.solver, result.status) == ("EDF", "FALLBACK")
