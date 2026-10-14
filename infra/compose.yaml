@@ -219,6 +219,12 @@ services:
       TP_REDIS_URL: redis://redis:6379/0
       # Empty means no DB access; when needed, provide a URL for a least-privilege AI role.
       DATABASE_URL: ${AI_DATABASE_URL:-}
+      # Invoice extraction reads uploaded documents; local-only, reuses the MinIO root credentials.
+      # Deployments must set a read-only app key for the documents bucket.
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Secondary LLM provider (AGT-017); unset means no failover.
       AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}

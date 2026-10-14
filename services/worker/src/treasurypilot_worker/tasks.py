@@ -2,19 +2,24 @@ import asyncio
 import logging
 import os
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from functools import cache
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 from celery import Task
+from minio.error import S3Error
 
 from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher, FieldEncryptionKey
+from treasurypilot_worker.agent.factory import get_ai_adapter
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.invoices.documents import MinioDocumentReader
+from treasurypilot_worker.invoices.extraction import extract_invoice_document
 from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
 from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
@@ -238,6 +243,27 @@ def generate_recurring_drafts_task() -> dict[str, int]:
             await pool.close()
 
     return asyncio.run(run())
+
+
+@app.task(name="treasurypilot.invoices.extract_document", queue="ai")
+def extract_document_task(request_id: str, document_id: str) -> dict[str, str]:
+    """Extract an uploaded invoice with the LLM; any AI failure leaves manual entry (AGT-004)."""
+
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for invoice extraction")
+    try:
+        reader = MinioDocumentReader.from_settings(settings)
+        outcome = extract_invoice_document(
+            uuid.UUID(request_id),
+            uuid.UUID(document_id),
+            adapter=get_ai_adapter(),
+            reader=reader,
+            database_url=settings.database_url,
+        )
+    except (OSError, S3Error) as error:  # storage or database unreachable: safe to redeliver
+        raise RetryableTaskError(f"invoice extraction infrastructure failure: {error}") from error
+    return {"outcome": outcome}
 
 
 # Outbound-egress tasks run on the "webhooks" queue: its worker is the only one with public

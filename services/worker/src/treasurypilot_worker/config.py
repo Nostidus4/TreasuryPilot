@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from treasurypilot_core.observability import LogFormat
@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     ai_config_path: Path = Path("config/ai.yaml")
     # Compose sets DATABASE_URL unprefixed; empty means this process has no DB access.
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    # Private invoice document storage, read by worker-ai for extraction (same names as the API).
+    s3_endpoint_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL")
+    )
+    s3_bucket: str | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_BUCKET", "S3_BUCKET")
+    )
+    s3_access_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_ACCESS_KEY", "S3_ACCESS_KEY")
+    )
+    s3_secret_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_SECRET_KEY", "S3_SECRET_KEY")
+    )
     # Environment-only credentials for notification email, held by the egress worker.
     environment: str = "local"
     resend_api_key: SecretStr | None = None

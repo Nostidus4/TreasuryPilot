@@ -4,6 +4,7 @@ import asyncio
 import os
 import uuid
 from datetime import UTC, date, datetime
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from pypdf import PdfWriter
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -141,6 +143,19 @@ async def _scenario(database_url: str) -> None:
     ids = await _seed(sessions)
     app = FastAPI()
     app.state.request_sessions = sessions
+    enqueued: list[uuid.UUID] = []
+
+    class Storage:
+        def put(self, object_key: str, body: bytes, content_type: str) -> None:
+            pass
+
+    class Queue:
+        def enqueue(self, request_id: uuid.UUID, document_id: uuid.UUID, job_id: str) -> str:
+            enqueued.append(request_id)
+            return job_id
+
+    app.state.document_storage = Storage()
+    app.state.extraction_queue = Queue()
     member = MemberAccess(
         access=SimpleNamespace(user=SimpleNamespace(id=USER_ID)),  # type: ignore[arg-type]
         organization_id=ORG_ID,
@@ -165,6 +180,25 @@ async def _scenario(database_url: str) -> None:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
+            # An upload starts in Extracting for the worker to settle (AGT-004).
+            writer = PdfWriter()
+            writer.add_blank_page(width=100, height=100)
+            pdf = BytesIO()
+            writer.write(pdf)
+            response = await client.post(
+                f"{base}/upload",
+                data={"treasury_id": str(TREASURY_ID)},
+                files={"file": ("invoice.pdf", pdf.getvalue(), "application/pdf")},
+                headers={"Idempotency-Key": "upload-1"},
+            )
+            assert response.status_code == 202, response.text
+            async with sessions() as session:
+                uploaded = await session.get(
+                    PaymentRequest, uuid.UUID(response.json()["requestId"])
+                )
+            assert uploaded is not None and uploaded.extraction_status == "Extracting"
+            assert enqueued == [uploaded.id]
+
             # Deactivated payee is rejected by the shared _bound_fields guard.
             first = await _draft(sessions, RequestSource.UPLOAD.value)
             response = await client.post(

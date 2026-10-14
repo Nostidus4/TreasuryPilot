@@ -49,6 +49,7 @@ from treasurypilot_worker.agent.secret_scan import SecretScanner, default_scanne
 from treasurypilot_worker.agent.types import (
     AiResult,
     ContentBlock,
+    DocumentBlock,
     Message,
     Provider,
     ProviderRequest,
@@ -94,6 +95,7 @@ __all__ = [
     "AiUnavailable",
     "BudgetLedger",
     "ContentBlock",
+    "DocumentBlock",
     "FailoverProvider",
     "FakeClock",
     "FakeProvider",

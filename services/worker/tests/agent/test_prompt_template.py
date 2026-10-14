@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from treasurypilot_worker.agent import (
     POLICY_VERSION,
     UNTRUSTED_DATA_POLICY,
+    DocumentBlock,
     PromptTemplate,
     PromptTemplateError,
     Slot,
@@ -156,3 +157,31 @@ def test_model_text_cannot_close_the_data_element() -> None:
 
     assert text.count("</data>") == 1
     assert "\\u003c/data\\u003e" in text
+
+
+def test_document_slot_attaches_the_file_before_the_text_and_logs_its_source() -> None:
+    template = PromptTemplate(
+        version="doc.v1",
+        system="s.",
+        instructions="Read the document.",
+        slots=(Slot.document("file"), Slot.trusted("as_of")),
+    )
+    document = DocumentBlock("document:d1", "application/pdf", b"%PDF-")
+
+    prompt = template.render(file=document, as_of=date(2026, 10, 14))
+
+    blocks = prompt.messages[0].content
+    assert blocks[0] is document
+    assert isinstance(blocks[1], TextBlock)
+    assert "Read the document." in blocks[1].text
+    assert "%PDF" not in blocks[1].text
+    assert prompt.input_refs == ("document:d1",)
+
+
+def test_document_slot_refuses_anything_but_a_document_block() -> None:
+    template = PromptTemplate(
+        version="doc.v1", system="s.", instructions="i.", slots=(Slot.document("file"),)
+    )
+
+    with pytest.raises(PromptTemplateError, match="DocumentBlock"):
+        template.render(file="raw text")
