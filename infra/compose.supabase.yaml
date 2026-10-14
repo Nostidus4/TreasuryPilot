@@ -2,6 +2,8 @@
 # auth stays in-house, ADR-009). Usage, with SUPABASE_DATABASE_URL set in infra/env/.env:
 #   docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml up
 # Needs Docker Compose >= 2.24 for the !reset tag. See DEVELOPMENT.md "Using Supabase Postgres".
+# Also needs AI_DATABASE_URL (a dedicated Supabase role for worker-ai). Services that reach hosted
+# Supabase are attached to `public` (egress); `internal` has no outbound access.
 x-supabase-environment: &supabase-environment
   DATABASE_URL: ${SUPABASE_DATABASE_URL:?set SUPABASE_DATABASE_URL}
 
@@ -12,7 +14,8 @@ services:
 
   migrate:
     environment: *supabase-environment
-    depends_on: !reset {}
+    networks: [public]
+    depends_on: !reset null
 
   api:
     environment: *supabase-environment
@@ -21,14 +24,23 @@ services:
 
   worker:
     environment: *supabase-environment
+    networks: [public]
     depends_on:
       postgres: !reset null
+      migrate:
+        condition: service_completed_successfully
 
   beat:
     environment: *supabase-environment
+    networks: [public]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
-  # worker-ai keeps AI_DATABASE_URL on purpose: it must use a least-privilege role, never the
-  # core credential. Set AI_DATABASE_URL to a dedicated Supabase role if it needs DB access.
+  # worker-ai must use a least-privilege role, never the core credential, and the local postgres
+  # is gone, so AI_DATABASE_URL is required here (a silent empty value would misconfigure it).
   worker-ai:
+    environment:
+      DATABASE_URL: ${AI_DATABASE_URL:?set a Supabase AI role URL in AI_DATABASE_URL}
     depends_on:
       postgres: !reset null

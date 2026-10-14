@@ -6,10 +6,12 @@
 # public RPC or a domain-restricted key only. Never commit keyed URLs.
 services:
   worker:
+    networks: [public] # egress to the Sepolia RPC; `internal` has none
     environment:
       CHAIN_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
 
   signer:
+    networks: [public] # egress to the Sepolia RPC; `internal` has none
     environment:
       CHAIN_RPC_URL: ${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
 

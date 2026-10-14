@@ -84,7 +84,7 @@ docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.
 docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml up
 ```
 
-The override points `api`, `worker`, `beat` and `migrate` at Supabase and drops their dependency on the local `postgres` container, which is then only started under the `local-postgres` profile. `worker-ai` still reads `AI_DATABASE_URL`; give it a dedicated least-privilege role, never the core credential.
+The override points `api`, `worker`, `beat` and `migrate` at Supabase and drops their dependency on the local `postgres` container, which is then only started under the `local-postgres` profile. `worker-ai` requires `AI_DATABASE_URL` in this mode (compose fails fast if it is unset); give it a dedicated least-privilege Supabase role, never the core credential. `migrate`, `worker` and `beat` are also attached to the `public` network, since `internal` has no outbound access to reach Supabase.
 
 ## Running against Ethereum Sepolia
 
@@ -92,7 +92,7 @@ The override points `api`, `worker`, `beat` and `migrate` at Supabase and drops 
 docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.sepolia.yaml up -d --build
 ```
 
-Do not enable the `local` or `ci` profiles; anvil is not needed. Combine with `-f infra/compose.supabase.yaml` if wanted.
+Do not enable the `local` or `ci` profiles; anvil is not needed. `worker` and `signer` are attached to the `public` network for outbound RPC access (`internal` has none). Combine with `-f infra/compose.supabase.yaml` if wanted.
 
 - `SEPOLIA_RPC_URL` feeds `CHAIN_RPC_URL` for worker/signer (Alchemy URL goes here). `SEPOLIA_WEB_RPC_URL` feeds the web build arg `VITE_RPC_URL` (public RPC or domain-restricted key only, since it ships in the JS bundle). Both default to `https://ethereum-sepolia-rpc.publicnode.com`. `VITE_CHAIN_ID` becomes `11155111`. Rebuild the web image after changing either. Never commit keyed URLs.
 - Current limitation: only the web wallet uses Sepolia today. No backend code reads `CHAIN_RPC_URL` yet, and `deployments/chains.json` stays empty until the treasury module is deployed to Sepolia and the manifest format gap in `deployments/README.md` is reconciled (the API config requires >= 2 distinct RPC URLs and a deployed `TREASURY_MODULE_IMPLEMENTATION`).
