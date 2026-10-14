@@ -1502,27 +1502,6 @@
         "title": "MembershipView",
         "type": "object"
       },
-<<<<<<< HEAD
-      "OobMethod": {
-        "enum": ["PHONE", "IN_PERSON", "SIGNED_LETTER", "OTHER"],
-        "title": "OobMethod",
-        "type": "string"
-      },
-      "OobVerification": {
-        "properties": {
-          "method": {
-            "$ref": "#/components/schemas/OobMethod"
-          },
-          "note": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Note",
-            "type": "string"
-          }
-        },
-        "required": ["method", "note"],
-        "title": "OobVerification",
-=======
       "ModuleBufferInput": {
         "properties": {
           "minimum": {
@@ -1639,7 +1618,27 @@
           "approvers"
         ],
         "title": "ModuleMandateInput",
->>>>>>> origin/main
+        "type": "object"
+      },
+      "OobMethod": {
+        "enum": ["PHONE", "IN_PERSON", "SIGNED_LETTER", "OTHER"],
+        "title": "OobMethod",
+        "type": "string"
+      },
+      "OobVerification": {
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/OobMethod"
+          },
+          "note": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": ["method", "note"],
+        "title": "OobVerification",
         "type": "object"
       },
       "OrganizationChecklist": {
@@ -1799,7 +1798,6 @@
         "title": "OrganizationView",
         "type": "object"
       },
-<<<<<<< HEAD
       "PayeeCreate": {
         "properties": {
           "address": {
@@ -1808,7 +1806,7 @@
             "type": "string"
           },
           "label": {
-            "maxLength": 200,
+            "maxLength": 120,
             "minLength": 1,
             "title": "Label",
             "type": "string"
@@ -1979,7 +1977,8 @@
           "screening"
         ],
         "title": "PayeeView",
-=======
+        "type": "object"
+      },
       "PlanEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -2009,7 +2008,6 @@
         },
         "required": ["plannerSource"],
         "title": "PlanEvidence",
->>>>>>> origin/main
         "type": "object"
       },
       "RefillPath": {
@@ -2028,24 +2026,6 @@
         "title": "RefillPath",
         "type": "object"
       },
-<<<<<<< HEAD
-      "ScreeningView": {
-        "properties": {
-          "checkedAt": {
-            "format": "date-time",
-            "title": "Checkedat",
-            "type": "string"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
-          },
-          "result": {
-            "title": "Result",
-            "type": "string"
-          },
-          "sourceRef": {
-=======
       "ReviewAction": {
         "enum": [
           "RETRY",
@@ -2183,6 +2163,55 @@
         "title": "SafeDeploymentTransaction",
         "type": "object"
       },
+      "ScreeningView": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "title": "Checkedat",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "sourceRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceref"
+          },
+          "ttlUntil": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttluntil"
+          }
+        },
+        "required": [
+          "result",
+          "sourceRef",
+          "provider",
+          "checkedAt",
+          "ttlUntil"
+        ],
+        "title": "ScreeningView",
+        "type": "object"
+      },
       "SignatureRequest": {
         "properties": {
           "signature": {
@@ -2280,7 +2309,6 @@
             "type": "integer"
           },
           "country": {
->>>>>>> origin/main
             "anyOf": [
               {
                 "type": "string"
@@ -2289,31 +2317,6 @@
                 "type": "null"
               }
             ],
-<<<<<<< HEAD
-            "title": "Sourceref"
-          },
-          "ttlUntil": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ttluntil"
-          }
-        },
-        "required": [
-          "result",
-          "sourceRef",
-          "provider",
-          "checkedAt",
-          "ttlUntil"
-        ],
-        "title": "ScreeningView",
-=======
             "title": "Country"
           },
           "createdAt": {
@@ -2469,7 +2472,6 @@
           "createdAt"
         ],
         "title": "TreasuryView",
->>>>>>> origin/main
         "type": "object"
       },
       "UserView": {
@@ -2539,7 +2541,49 @@
         "title": "ValidationError",
         "type": "object"
       },
-<<<<<<< HEAD
+      "ValidationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoncodes",
+            "type": "array"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": ["stage", "decision"],
+        "title": "ValidationEvidence",
+        "type": "object"
+      },
       "VendorCreate": {
         "properties": {
           "contact": {
@@ -2711,34 +2755,12 @@
           "notes": {
             "anyOf": [
               {
-=======
-      "ValidationEvidence": {
-        "additionalProperties": false,
-        "properties": {
-          "checks": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Checks",
-            "type": "array"
-          },
-          "decision": {
-            "title": "Decision",
-            "type": "string"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "format": "uuid",
->>>>>>> origin/main
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-<<<<<<< HEAD
             "title": "Notes"
           }
         },
@@ -2752,23 +2774,6 @@
           "createdAt"
         ],
         "title": "VendorView",
-=======
-            "title": "Id"
-          },
-          "reasonCodes": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Reasoncodes",
-            "type": "array"
-          },
-          "stage": {
-            "title": "Stage",
-            "type": "string"
-          }
-        },
-        "required": ["stage", "decision"],
-        "title": "ValidationEvidence",
         "type": "object"
       },
       "VerificationEvidence": {
@@ -2795,7 +2800,6 @@
         },
         "required": ["txHash", "status", "checkedAt"],
         "title": "VerificationEvidence",
->>>>>>> origin/main
         "type": "object"
       },
       "VerifyMagicLinkRequest": {
@@ -5032,7 +5036,69 @@
         "x-organization-scoped": true
       }
     },
-<<<<<<< HEAD
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx": {
+      "post": {
+        "operationId": "create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModuleSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Module Setup V1 Orgs  Organization Id  Treasuries  Treasury Id  Module Deploy Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Module Setup",
+        "tags": ["governance"]
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees": {
       "get": {
         "operationId": "list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get",
@@ -5086,11 +5152,6 @@
       },
       "post": {
         "operationId": "propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post",
-=======
-    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx": {
-      "post": {
-        "operationId": "create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post",
->>>>>>> origin/main
         "parameters": [
           {
             "in": "path",
@@ -5117,11 +5178,7 @@
           "content": {
             "application/json": {
               "schema": {
-<<<<<<< HEAD
                 "$ref": "#/components/schemas/PayeeCreate"
-=======
-                "$ref": "#/components/schemas/CreateModuleSetupRequest"
->>>>>>> origin/main
               }
             }
           },
@@ -5132,13 +5189,7 @@
             "content": {
               "application/json": {
                 "schema": {
-<<<<<<< HEAD
                   "$ref": "#/components/schemas/PayeeResponse"
-=======
-                  "additionalProperties": true,
-                  "title": "Response Create Module Setup V1 Orgs  Organization Id  Treasuries  Treasury Id  Module Deploy Tx Post",
-                  "type": "object"
->>>>>>> origin/main
                 }
               }
             },
@@ -5155,7 +5206,6 @@
             "description": "Validation Error"
           }
         },
-<<<<<<< HEAD
         "summary": "Propose Payee",
         "tags": ["payees"],
         "x-organization-scoped": true
@@ -5600,10 +5650,6 @@
         "summary": "Update Vendor",
         "tags": ["vendors"],
         "x-organization-scoped": true
-=======
-        "summary": "Create Module Setup",
-        "tags": ["governance"]
->>>>>>> origin/main
       }
     }
   }

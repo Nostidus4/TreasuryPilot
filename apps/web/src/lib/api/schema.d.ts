@@ -687,7 +687,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Module Setup */
+    post: operations['create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees': {
     parameters: {
       query?: never;
@@ -724,9 +740,6 @@ export interface paths {
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/registration-tx': {
-=======
-  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx': {
->>>>>>> origin/main
     parameters: {
       query?: never;
       header?: never;
@@ -735,20 +748,14 @@ export interface paths {
     };
     get?: never;
     put?: never;
-<<<<<<< HEAD
     /** Build Registration Tx */
     post: operations['build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post'];
-=======
-    /** Create Module Setup */
-    post: operations['create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post'];
->>>>>>> origin/main
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/verify-oob': {
     parameters: {
       query?: never;
@@ -803,8 +810,6 @@ export interface paths {
     patch: operations['update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch'];
     trace?: never;
   };
-=======
->>>>>>> origin/main
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1387,18 +1392,6 @@ export interface components {
       /** Status */
       status: string;
     };
-<<<<<<< HEAD
-    /**
-     * OobMethod
-     * @enum {string}
-     */
-    OobMethod: 'PHONE' | 'IN_PERSON' | 'SIGNED_LETTER' | 'OTHER';
-    /** OobVerification */
-    OobVerification: {
-      method: components['schemas']['OobMethod'];
-      /** Note */
-      note: string;
-=======
     /** ModuleBufferInput */
     ModuleBufferInput: {
       /** Minimum */
@@ -1440,7 +1433,17 @@ export interface components {
        * Format: date-time
        */
       validFrom: string;
->>>>>>> origin/main
+    };
+    /**
+     * OobMethod
+     * @enum {string}
+     */
+    OobMethod: 'PHONE' | 'IN_PERSON' | 'SIGNED_LETTER' | 'OTHER';
+    /** OobVerification */
+    OobVerification: {
+      method: components['schemas']['OobMethod'];
+      /** Note */
+      note: string;
     };
     /** OrganizationChecklist */
     OrganizationChecklist: {
@@ -1507,7 +1510,6 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
-<<<<<<< HEAD
     /** PayeeCreate */
     PayeeCreate: {
       /** Address */
@@ -1570,7 +1572,7 @@ export interface components {
        * Format: uuid
        */
       vendorId: string;
-=======
+    };
     /** PlanEvidence */
     PlanEvidence: {
       /** Planhash */
@@ -1581,7 +1583,6 @@ export interface components {
       steps?: {
         [key: string]: unknown;
       }[];
->>>>>>> origin/main
     };
     /** RefillPath */
     RefillPath: {
@@ -1590,23 +1591,6 @@ export interface components {
       /** To */
       to: string;
     };
-<<<<<<< HEAD
-    /** ScreeningView */
-    ScreeningView: {
-      /**
-       * Checkedat
-       * Format: date-time
-       */
-      checkedAt: string;
-      /** Provider */
-      provider: string;
-      /** Result */
-      result: string;
-      /** Sourceref */
-      sourceRef: string | null;
-      /** Ttluntil */
-      ttlUntil: string | null;
-=======
     /**
      * ReviewAction
      * @enum {string}
@@ -1675,6 +1659,22 @@ export interface components {
       to: string;
       /** Value */
       value: string;
+    };
+    /** ScreeningView */
+    ScreeningView: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Provider */
+      provider: string;
+      /** Result */
+      result: string;
+      /** Sourceref */
+      sourceRef: string | null;
+      /** Ttluntil */
+      ttlUntil: string | null;
     };
     /** SignatureRequest */
     SignatureRequest: {
@@ -1791,7 +1791,6 @@ export interface components {
       /** Moduleaddress */
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
->>>>>>> origin/main
     };
     /** UserView */
     UserView: {
@@ -1820,7 +1819,21 @@ export interface components {
       /** Error Type */
       type: string;
     };
-<<<<<<< HEAD
+    /** ValidationEvidence */
+    ValidationEvidence: {
+      /** Checks */
+      checks?: {
+        [key: string]: unknown;
+      }[];
+      /** Decision */
+      decision: string;
+      /** Id */
+      id?: string | null;
+      /** Reasoncodes */
+      reasonCodes?: string[];
+      /** Stage */
+      stage: string;
+    };
     /** VendorCreate */
     VendorCreate: {
       /** Contact */
@@ -1876,21 +1889,6 @@ export interface components {
       normalizedRef: string;
       /** Notes */
       notes: string | null;
-=======
-    /** ValidationEvidence */
-    ValidationEvidence: {
-      /** Checks */
-      checks?: {
-        [key: string]: unknown;
-      }[];
-      /** Decision */
-      decision: string;
-      /** Id */
-      id?: string | null;
-      /** Reasoncodes */
-      reasonCodes?: string[];
-      /** Stage */
-      stage: string;
     };
     /** VerificationEvidence */
     VerificationEvidence: {
@@ -1907,7 +1905,6 @@ export interface components {
       status: string;
       /** Txhash */
       txHash: string;
->>>>>>> origin/main
     };
     /** VerifyMagicLinkRequest */
     VerifyMagicLinkRequest: {
@@ -3335,7 +3332,44 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
+  create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateModuleSetupRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get: {
     parameters: {
       query?: never;
@@ -3369,9 +3403,6 @@ export interface operations {
     };
   };
   propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post: {
-=======
-  create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post: {
->>>>>>> origin/main
     parameters: {
       query?: never;
       header?: never;
@@ -3383,11 +3414,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-<<<<<<< HEAD
         'application/json': components['schemas']['PayeeCreate'];
-=======
-        'application/json': components['schemas']['CreateModuleSetupRequest'];
->>>>>>> origin/main
       };
     };
     responses: {
@@ -3397,7 +3424,6 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-<<<<<<< HEAD
           'application/json': components['schemas']['PayeeResponse'];
         };
       };
@@ -3666,11 +3692,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['VendorResponse'];
-=======
-          'application/json': {
-            [key: string]: unknown;
-          };
->>>>>>> origin/main
         };
       };
       /** @description Validation Error */
