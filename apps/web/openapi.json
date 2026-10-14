@@ -2795,6 +2795,20 @@
         "title": "TransactionEvidence",
         "type": "object"
       },
+      "TreasuriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TreasurySummaryView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TreasuriesResponse",
+        "type": "object"
+      },
       "TreasuryResponse": {
         "properties": {
           "treasury": {
@@ -2823,6 +2837,65 @@
         "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
         "title": "TreasuryStatus",
         "type": "string"
+      },
+      "TreasurySummaryView": {
+        "properties": {
+          "assetDecimals": {
+            "title": "Assetdecimals",
+            "type": "integer"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "assetIsTest": {
+            "title": "Assetistest",
+            "type": "boolean"
+          },
+          "assetSymbol": {
+            "title": "Assetsymbol",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "chainName": {
+            "title": "Chainname",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "chainName",
+          "assetId",
+          "assetSymbol",
+          "assetDecimals",
+          "assetIsTest",
+          "status",
+          "coverage",
+          "createdAt"
+        ],
+        "title": "TreasurySummaryView",
+        "type": "object"
       },
       "TreasuryView": {
         "properties": {
@@ -5385,6 +5458,45 @@
       }
     },
     "/v1/orgs/{organization_id}/treasuries": {
+      "get": {
+        "operationId": "list_treasuries_v1_orgs__organization_id__treasuries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Treasuries",
+        "tags": ["treasury"]
+      },
       "post": {
         "operationId": "create_treasury_v1_orgs__organization_id__treasuries_post",
         "parameters": [

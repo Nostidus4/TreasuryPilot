@@ -682,7 +682,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** List Treasuries */
+    get: operations['list_treasuries_v1_orgs__organization_id__treasuries_get'];
     put?: never;
     /** Create Treasury */
     post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
@@ -2014,6 +2015,11 @@ export interface components {
       /** Txhash */
       txHash: string;
     };
+    /** TreasuriesResponse */
+    TreasuriesResponse: {
+      /** Items */
+      items: components['schemas']['TreasurySummaryView'][];
+    };
     /** TreasuryResponse */
     TreasuryResponse: {
       treasury: components['schemas']['TreasuryView'];
@@ -2027,6 +2033,36 @@ export interface components {
      * @enum {string}
      */
     TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasurySummaryView */
+    TreasurySummaryView: {
+      /** Assetdecimals */
+      assetDecimals: number;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Assetistest */
+      assetIsTest: boolean;
+      /** Assetsymbol */
+      assetSymbol: string;
+      /** Chainid */
+      chainId: number;
+      /** Chainname */
+      chainName: string;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      status: components['schemas']['TreasuryStatus'];
+    };
     /** TreasuryView */
     TreasuryView: {
       /**
@@ -3524,6 +3560,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_treasuries_v1_orgs__organization_id__treasuries_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuriesResponse'];
         };
       };
       /** @description Validation Error */
