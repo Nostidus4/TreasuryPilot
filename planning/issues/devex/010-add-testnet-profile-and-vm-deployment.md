@@ -48,7 +48,7 @@ Only web and api are exposed. Signer, Postgres, Redis and MinIO stay internal.
 ## Dependencies
 
 - DEV-002: Create Docker Compose stack (local profile)
-- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Nostidus4)
 - SC-016: Write deployment scripts and the deployments manifest
 
 ## Acceptance criteria

@@ -45,7 +45,7 @@ Decision taken 2026-10-11 (PH-2).
 
 ## Dependencies
 
-- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Nostidus4)
 
 ## Acceptance criteria
 

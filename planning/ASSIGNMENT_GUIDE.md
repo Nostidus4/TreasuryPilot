@@ -33,7 +33,7 @@ Why this split: track A is the money path that must be correct first (contract �
 ### Track C
 | Issue | ID | Ticket | Prio | Size | Cut |
 |---|---|---|---|---|---|
-| #70 | DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Phúc) | P0 | S | A |
+| #70 | DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | P0 | S | A |
 | #177 | DOM-005 | Author planner scenarios with ground truth (≥30) | P0 | L | A |
 | #179 | DOM-006 | Author the red-team invoice set (20) | P0 | M | A |
 | #232 | DOM-008 | Review business rules and demo limits from a finance view | P0 | S | A |
@@ -71,3 +71,4 @@ Then follow each module's §13 order and `planning/DEPENDENCIES.md` waves. Prior
 
 Updated 2026-10-12: about 30 % of backend (execution core: EXE, POL, CHR) moved to @therealtunguyen. Applied on GitHub: issue assignees, Project **Owner** field and Status **Assigned** (182 open M1 code tickets). Default reviewers live in `.github/CODEOWNERS`. Re-run `python3 planning/tools/assign.py` after adding tickets. The suggested tracks in §1 are superseded by this table.
 
+2026-10-14 handoff: **DOM-001 (#70) → @Nostidus4 (Tân)**, the repository owner who holds the infrastructure access. He owns Sepolia RPC/API/service verification and Safe transaction evidence; @longhuynh55 supports contract integration. This ticket-specific handoff leaves the other area assignments and DOM-002 unchanged.

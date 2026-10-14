@@ -128,7 +128,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | ID | Title | Prio | Size | Blocked by |
 |---|---|---|---|---|
 | DEV-001 | Initialize monorepo skeleton | P0 | M | — |
-| DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Phúc) | P0 | S | — |
+| DOM-001 | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | P0 | S | — |
 | DOM-004 | Author the labelled invoice dataset (30) | P0 | M | — |
 | DOM-005 | Author planner scenarios with ground truth (≥30) | P0 | L | — |
 | DOM-006 | Author the red-team invoice set (20) | P0 | M | — |
