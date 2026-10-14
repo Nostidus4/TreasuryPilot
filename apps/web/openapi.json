@@ -364,6 +364,38 @@
         "title": "BundleRequest",
         "type": "object"
       },
+      "CallInput": {
+        "properties": {
+          "data": {
+            "maxLength": 131074,
+            "pattern": "^0x(?:[0-9a-fA-F]{2})*$",
+            "title": "Data",
+            "type": "string"
+          },
+          "operation": {
+            "default": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Operation",
+            "type": "integer"
+          },
+          "to": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "default": "0",
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data"],
+        "title": "CallInput",
+        "type": "object"
+      },
       "ChainView": {
         "properties": {
           "assets": {
@@ -418,6 +450,25 @@
         "enum": ["UNKNOWN", "PARTIAL", "COMPLETE"],
         "title": "Coverage",
         "type": "string"
+      },
+      "CreateGovernanceTxRequest": {
+        "properties": {
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/CallInput"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Calls",
+            "type": "array"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/GovernanceTxPurpose"
+          }
+        },
+        "required": ["purpose", "calls"],
+        "title": "CreateGovernanceTxRequest",
+        "type": "object"
       },
       "CreateOrganizationRequest": {
         "properties": {
@@ -710,6 +761,24 @@
         "required": ["id", "code", "severity", "status"],
         "title": "FlagEvidence",
         "type": "object"
+      },
+      "GovernanceTxPurpose": {
+        "enum": [
+          "MODULE_SETUP",
+          "MANDATE",
+          "PAYEE_ADD",
+          "PAYEE_DEACTIVATE",
+          "EXCEPTION_GRANT",
+          "EXCEPTION_REVOKE",
+          "ALLOW_DUPLICATE",
+          "CANCEL_REQUEST",
+          "PAUSE",
+          "RESUME",
+          "REVOKE",
+          "GUARDIAN_SETUP"
+        ],
+        "title": "GovernanceTxPurpose",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1672,6 +1741,18 @@
         "title": "SafeDeploymentTransaction",
         "type": "object"
       },
+      "SignatureRequest": {
+        "properties": {
+          "signature": {
+            "pattern": "^0x(?:[0-9a-fA-F]{2}){65}$",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["signature"],
+        "title": "SignatureRequest",
+        "type": "object"
+      },
       "SiweNonceResponse": {
         "properties": {
           "chainId": {
@@ -1698,6 +1779,18 @@
         },
         "required": ["nonce", "domain", "scheme", "chainId", "expiresAt"],
         "title": "SiweNonceResponse",
+        "type": "object"
+      },
+      "SubmittedRequest": {
+        "properties": {
+          "transactionHash": {
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "title": "Transactionhash",
+            "type": "string"
+          }
+        },
+        "required": ["transactionHash"],
+        "title": "SubmittedRequest",
         "type": "object"
       },
       "TenantHealth": {
@@ -2893,6 +2986,240 @@
         "tags": ["audit"]
       }
     },
+    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}": {
+      "get": {
+        "operationId": "get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "governance_tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Governance Tx Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Governance Tx V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Governance Tx",
+        "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call": {
+      "get": {
+        "operationId": "get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "governance_tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Governance Tx Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Exec Call V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Exec Call Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Exec Call",
+        "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures": {
+      "post": {
+        "operationId": "add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "governance_tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Governance Tx Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Governance Signature V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Signatures Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Governance Signature",
+        "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted": {
+      "post": {
+        "operationId": "report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "governance_tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Governance Tx Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmittedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Report Submission V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Submitted Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Submission",
+        "tags": ["governance"]
+      }
+    },
     "/v1/orgs/{organization_id}/invites": {
       "get": {
         "operationId": "list_invites_v1_orgs__organization_id__invites_get",
@@ -3640,6 +3967,69 @@
         },
         "summary": "Get Treasury",
         "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs": {
+      "post": {
+        "operationId": "create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGovernanceTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Governance Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Governance Txs Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Governance Tx",
+        "tags": ["governance"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates": {

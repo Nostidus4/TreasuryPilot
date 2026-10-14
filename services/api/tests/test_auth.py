@@ -844,6 +844,20 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         assert owner_setting.json()["org"]["soloMode"] is True
 
 
+def test_governance_routes_hide_transactions_from_non_member_organizations() -> None:
+    organizations = MemoryOrganizationRepository()
+    member_org = uuid.UUID("00000000-0000-4000-8000-000000000012")
+    user_id = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    organizations.memberships[(member_org, user_id)] = {"Owner"}
+
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        response = harness.client.get(f"/v1/orgs/{uuid.uuid4()}/governance-txs/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "ORG_NOT_FOUND"
+
+
 def test_organization_input_is_validated_and_settings_require_authentication() -> None:
     organizations = MemoryOrganizationRepository()
     with make_harness(organization_repository=organizations) as harness:

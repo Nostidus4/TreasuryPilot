@@ -50,6 +50,8 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.routes import (
     MandateRepository,
     SqlAlchemyMandateRepository,
@@ -183,6 +185,7 @@ def create_app(
     screening_service: ScreeningService | None = None,
     mandate_repository: MandateRepository | None = None,
     treasury_service: TreasuryService | None = None,
+    governance_service: GovernanceService | None = None,
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
 ) -> FastAPI:
@@ -243,6 +246,10 @@ def create_app(
             application.state.treasury_service = TreasuryService(
                 sessions, RpcSafeVerifier(configuration), configuration
             )
+        if application.state.governance_service is None and sessions is not None:
+            application.state.governance_service = GovernanceService(
+                sessions, RpcSafeVerifier(configuration), configuration
+            )
         if settings.database_url is None:
             if configuration.chains:
                 raise PlatformConfigurationError(
@@ -286,6 +293,7 @@ def create_app(
         async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
     )
     app.state.treasury_service = treasury_service
+    app.state.governance_service = governance_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
     app.add_middleware(
@@ -315,6 +323,7 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(governance_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(mandate_router)
     app.include_router(review_router)
