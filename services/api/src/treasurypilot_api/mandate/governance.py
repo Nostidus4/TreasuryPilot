@@ -34,11 +34,69 @@ _MULTISEND_SELECTOR = keccak(b"multiSend(bytes)")[:4]
 _EXEC_SELECTOR = keccak(
     b"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)"
 )[:4]
+<<<<<<< HEAD
 _ENABLE_MODULE_SELECTOR = keccak(b"enableModule(address)")[:4]
 _FACTORY_CREATE_SELECTOR = keccak(
     b"createDeterministic(address,address[],(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)"
 )[:4]
 _FACTORY_PREDICT_SELECTOR = keccak(b"predictDeterministicAddress(address,bytes32)")[:4]
+=======
+_AUTHORIZE_BORROW_SELECTOR = keccak(b"authorizeBorrow(bytes32,uint256,uint64,uint256,uint256)")[:4]
+_AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
+
+
+def _require_positive_uint(name: str, value: int, bits: int = 256) -> None:
+    if not 0 < value < 1 << bits:
+        raise ValueError(f"{name} must be positive and fit uint{bits}")
+
+
+def _require_authorization(kind: str, plan_id: bytes, amount: int, expiry: int) -> None:
+    if len(plan_id) != 32:
+        raise ValueError("plan_id must be bytes32")
+    _require_positive_uint(f"{kind} amount", amount)
+    _require_positive_uint("expiry", expiry, 64)
+
+
+def build_borrow_authorization_call(
+    module_address: bytes,
+    *,
+    plan_id: bytes,
+    amount: int,
+    expiry: int,
+    min_health_factor: int,
+    max_rate_ray: int,
+) -> GovernanceCall:
+    """Encode the exact owner authorization for one borrow proposal.
+
+    Only shape and range are checked here; linking the values to a proposal is the
+    caller's responsibility. All numeric values are integer base units / protocol scalars. Callers must pass
+    proposal-derived values directly; this builder deliberately performs no rounding
+    or conversion from display units.
+    """
+    _require_authorization("borrow", plan_id, amount, expiry)
+    _require_positive_uint("minimum health factor", min_health_factor)
+    _require_positive_uint("maximum rate", max_rate_ray)
+    data = _AUTHORIZE_BORROW_SELECTOR + encode(
+        ["bytes32", "uint256", "uint64", "uint256", "uint256"],
+        [plan_id, amount, expiry, min_health_factor, max_rate_ray],
+    )
+    return GovernanceCall(module_address, 0, data)
+
+
+def build_repay_authorization_call(
+    module_address: bytes,
+    *,
+    plan_id: bytes,
+    amount: int,
+    expiry: int,
+) -> GovernanceCall:
+    """Encode the exact owner authorization for one repay proposal."""
+    _require_authorization("repay", plan_id, amount, expiry)
+    data = _AUTHORIZE_REPAY_SELECTOR + encode(
+        ["bytes32", "uint256", "uint64"], [plan_id, amount, expiry]
+    )
+    return GovernanceCall(module_address, 0, data)
+>>>>>>> origin/main
 
 
 @dataclass(frozen=True, slots=True)

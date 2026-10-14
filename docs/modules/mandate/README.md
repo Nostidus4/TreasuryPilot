@@ -155,6 +155,15 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | POST | `/…/governance-txs/{g}/cancel` | creator, OWN | → `{status: Cancelled}` | 409 `ALREADY_SUBMITTED` |
 | GET | `/…/governance-txs/{g}/safe-wallet-link` | OWN | → `{url}` (optional: propose to Safe Transaction Service, open in Safe{Wallet}) | 503 if the service is unavailable |
 
+Borrow and repay calldata builders encode the module's `authorizeBorrow` and
+`authorizeRepay` calls from integer arguments. Amounts, expiry, minimum health
+factor and maximum rate are carried without display-unit conversion or rounding.
+The proposal read model currently has no API-backed `planId`, expiry, minimum
+health-factor authorization, or max-rate authorization fields, so proposal-backed
+creation and the WEB-027 owner action are not wired yet. Until that integration
+exists, the general governance endpoint persists and tracks calls supplied by an
+Owner but does not independently prove they match a validated borrow proposal.
+
 ### 6.4 Fee policy (FEE-1 … FEE-3)
 
 | Method | Endpoint | Perm | Request → Response |
