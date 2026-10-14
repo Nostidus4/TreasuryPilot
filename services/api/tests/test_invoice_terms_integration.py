@@ -4,6 +4,7 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -12,7 +13,7 @@ from fastapi import FastAPI, Request, Response
 from sqlalchemy import select, text
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.access import MemberContext
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import ConfirmTermsRequest, confirm_request_terms
 
@@ -58,7 +59,7 @@ async def _confirm_in_postgres(database_url: str) -> None:
             )
             await connection.execute(
                 text(
-                    "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) VALUES ('00000000-0000-7000-8000-000000000060', '00000000-0000-7000-8000-000000000040', :org, '00000000-0000-7000-8000-000000000050', 'Main', decode(repeat('22', 20), 'hex'), 'Active')"
+                    "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) VALUES ('00000000-0000-7000-8000-000000000060', '00000000-0000-7000-8000-000000000040', :org, '00000000-0000-7000-8000-000000000050', 'Main', decode(repeat('22', 20), 'hex'), 'Active', '00000000-0000-7000-8000-000000000001', now(), 'PHONE', 'verified', now())"
                 ),
                 {"org": ORG_ID},
             )
@@ -73,7 +74,11 @@ async def _confirm_in_postgres(database_url: str) -> None:
         app.state.request_sessions = sessions
         request = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
         response = Response()
-        member = MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))
+        member = MemberAccess(
+            access=SimpleNamespace(user=SimpleNamespace(id=USER_ID)),  # type: ignore[arg-type]
+            organization_id=ORG_ID,
+            roles=frozenset({"OPERATOR"}),
+        )
         result = await confirm_request_terms(
             ORG_ID,
             REQUEST_ID,

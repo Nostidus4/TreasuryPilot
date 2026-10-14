@@ -6,12 +6,8 @@ from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext import asyncio as sqlalchemy_asyncio
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
@@ -24,7 +20,8 @@ def create_session_factory(
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     """Create the API engine and transaction-scoped asynchronous session factory."""
 
-    engine = create_async_engine(database_url, pool_pre_ping=True)
+    # Looked up at call time so OpenTelemetry's wrapper (installed in create_app) traces it.
+    engine = sqlalchemy_asyncio.create_async_engine(database_url, pool_pre_ping=True)
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 
