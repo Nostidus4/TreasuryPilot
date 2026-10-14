@@ -6,6 +6,7 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -22,6 +23,7 @@ from treasurypilot_api.compliance.screening import (
     UnconfiguredScreeningProvider,
     build_screening_service,
     normalize_address,
+    screen_plan_before_pay,
 )
 from treasurypilot_api.identity.models import Organization
 from treasurypilot_api.mandate.models import ScreeningResult
@@ -134,6 +136,72 @@ def test_cached_result_is_recorded_for_the_requesting_payee() -> None:
     assert fixture.calls == 1
     assert reused.payee_id == payee_b
     assert reused.checked_at == repo.rows[0].checked_at
+
+
+def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
+    repository = MemoryRepository()
+    old = NOW - timedelta(hours=25)
+    repository.rows.append(
+        ScreeningRecord(
+            id=uuid.uuid4(),
+            organization_id=ORG_ID,
+            payee_id=None,
+            address=normalize_address(LISTED),
+            chain_id=1,
+            provider="fixture-test",
+            result=ScreeningResult.CLEAR,
+            source_ref=None,
+            checked_at=old,
+            ttl_until=old + timedelta(hours=24),
+        )
+    )
+    provider = CountingProvider()
+    screening = service(provider, repository)
+
+    class Context:
+        screening_hit = False
+        screening_clear = False
+
+        def model_copy(self, *, update: dict[str, bool]) -> SimpleNamespace:
+            return SimpleNamespace(**update)
+
+    plan = SimpleNamespace(
+        chain_id=1,
+        steps=[SimpleNamespace(action="PAY", to=LISTED)],
+    )
+    context = asyncio.run(
+        screen_plan_before_pay(
+            plan,
+            Context(),
+            service=screening,
+            organization_id=ORG_ID,  # type: ignore[arg-type]
+        )
+    )
+
+    assert provider.calls == 1
+    assert context.screening_hit is True
+    assert context.screening_clear is False
+
+
+def test_plan_screening_marks_provider_failure_as_not_clear() -> None:
+    class Context:
+        screening_hit = False
+        screening_clear = False
+
+        def model_copy(self, *, update: dict[str, bool]) -> SimpleNamespace:
+            return SimpleNamespace(**update)
+
+    context = asyncio.run(
+        screen_plan_before_pay(
+            SimpleNamespace(chain_id=1, steps=[SimpleNamespace(action="PAY", to=CLEAN)]),
+            Context(),
+            service=service(UnconfiguredScreeningProvider()),
+            organization_id=ORG_ID,
+        )
+    )
+
+    assert context.screening_hit is False
+    assert context.screening_clear is False
 
 
 def test_expired_cache_is_refreshed() -> None:

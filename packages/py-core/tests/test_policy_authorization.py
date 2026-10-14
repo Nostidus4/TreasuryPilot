@@ -174,6 +174,7 @@ def _ctx(**update: Any) -> ValidationContext:
         "pause_requested": False,
         "circuit_open": False,
         "screening_hit": False,
+        "screening_clear": True,
     }
     return ValidationContext.model_validate(fields | update)
 
@@ -507,6 +508,10 @@ def test_unparseable_input_fails_with_data_missing() -> None:
 
     assert _failing(authorization_checks(_plan(), naive)) == [C.DATA_MISSING]
     assert C.DATA_MISSING in _failing(authorization_checks(_plan(), bad_amount))
+
+
+def test_screening_provider_error_fails_with_data_missing() -> None:
+    assert _failing(authorization_checks(_plan(), _ctx(screening_clear=False))) == [C.DATA_MISSING]
 
 
 def _policy_state(**update: Any):

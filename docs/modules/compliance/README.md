@@ -46,6 +46,13 @@ Internal `screen(org_id, address, chain) → ScreeningResult`; `encrypt(value, c
 
 Payee proposal → screen → CLEAR → Owner may register (M03). Before each PAY (validator, M08): latest screening ≤ 24 h old? CLEAR → pass; stale → refresh synchronously (timeout 5 s); HIT or ERROR → BLOCK `SCREENING_HIT` / `DATA_MISSING` (fail closed, BR-085).
 
+The execution caller runs `screen_plan_before_pay()` before policy validation. It screens
+each PAY step's destination with the plan chain id, then sets `screening_hit` and
+`screening_clear` in `ValidationContext`. `screening_clear` defaults to false, so a
+missing screening result blocks with `DATA_MISSING`; a fresh or refreshed HIT blocks
+with `SCREENING_HIT`. No PAY executor is currently wired in the repository, so this is
+the integration seam that future execution code must call before `validate_plan()`.
+
 ## 8. Algorithms
 
 - Fixture list: a sample of public sanctions-list addresses (labelled source and date) + team test entries; exact checksum-insensitive match.
