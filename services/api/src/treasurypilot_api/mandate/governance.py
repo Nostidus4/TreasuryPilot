@@ -34,13 +34,11 @@ _MULTISEND_SELECTOR = keccak(b"multiSend(bytes)")[:4]
 _EXEC_SELECTOR = keccak(
     b"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)"
 )[:4]
-<<<<<<< HEAD
 _ENABLE_MODULE_SELECTOR = keccak(b"enableModule(address)")[:4]
 _FACTORY_CREATE_SELECTOR = keccak(
     b"createDeterministic(address,address[],(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)"
 )[:4]
 _FACTORY_PREDICT_SELECTOR = keccak(b"predictDeterministicAddress(address,bytes32)")[:4]
-=======
 _AUTHORIZE_BORROW_SELECTOR = keccak(b"authorizeBorrow(bytes32,uint256,uint64,uint256,uint256)")[:4]
 _AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
 
@@ -96,7 +94,6 @@ def build_repay_authorization_call(
         ["bytes32", "uint256", "uint64"], [plan_id, amount, expiry]
     )
     return GovernanceCall(module_address, 0, data)
->>>>>>> origin/main
 
 
 @dataclass(frozen=True, slots=True)
