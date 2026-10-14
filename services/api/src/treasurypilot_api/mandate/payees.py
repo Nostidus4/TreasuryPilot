@@ -17,10 +17,10 @@ from treasurypilot_api.compliance.screening import (
     ScreeningService,
     normalize_address,
 )
-from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.mandate.models import (
     OobMethod,
     Payee,
@@ -153,14 +153,14 @@ def _payee_record(row: Payee, screening: Screening | None = None) -> PayeeRecord
         vendor_id=row.vendor_id,
         label=row.label,
         address=row.address,
-        status=row.status,
-        oob_method=row.oob_method,
+        status=row.status.value,
+        oob_method=row.oob_method.value if row.oob_method else None,
         oob_note=row.oob_note,
         oob_verified_by=row.oob_verified_by,
         oob_verified_at=row.oob_verified_at,
         registration_tx_id=row.registration_tx_id,
         active_from=row.active_from,
-        proposed_by=row.proposed_by,
+        proposed_by=row.created_by,
         created_at=row.created_at,
         screening=_screening_summary(screening),
     )
@@ -227,7 +227,7 @@ class SqlAlchemyPayeeRepository:
                         Payee.treasury_id == treasury_id,
                         Payee.address == address,
                         Payee.status.not_in(
-                            (PayeeStatus.DEACTIVATED.value, PayeeStatus.SCREENING_FAILED.value)
+                            (PayeeStatus.DEACTIVATED, PayeeStatus.SCREENING_FAILED)
                         ),
                     )
                 )
@@ -240,8 +240,8 @@ class SqlAlchemyPayeeRepository:
                     vendor_id=vendor_id,
                     label=label,
                     address=address,
-                    status=PayeeStatus.SCREENING.value,
-                    proposed_by=user_id,
+                    status=PayeeStatus.SCREENING,
+                    created_by=user_id,
                 )
                 session.add(row)
                 await session.flush()
@@ -287,13 +287,9 @@ class SqlAlchemyPayeeRepository:
             )
             if row is None:
                 return None
-            if row.status == PayeeStatus.SCREENING.value:
+            if row.status == PayeeStatus.SCREENING:
                 clear = result == ScreeningResult.CLEAR
-                row.status = (
-                    PayeeStatus.AWAITING_OWNER.value
-                    if clear
-                    else PayeeStatus.SCREENING_FAILED.value
-                )
+                row.status = PayeeStatus.AWAITING_OWNER if clear else PayeeStatus.SCREENING_FAILED
                 await session.flush()
                 await self._audit(
                     session,
@@ -364,13 +360,13 @@ class SqlAlchemyPayeeRepository:
             )
             if row is None:
                 return None
-            if row.status != PayeeStatus.AWAITING_OWNER.value:
+            if row.status != PayeeStatus.AWAITING_OWNER:
                 raise NotAwaitingOwner
             if row.oob_verified_at is not None:
                 raise OobAlreadyVerified
             row.oob_verified_by = user_id
             row.oob_verified_at = at
-            row.oob_method = method.value
+            row.oob_method = method
             row.oob_note = note
             await session.flush()
             await self._audit(
@@ -392,7 +388,7 @@ class SqlAlchemyPayeeRepository:
 
 class PayeeCreate(ApiModel):
     vendor_id: uuid.UUID
-    label: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=120)
     address: str = Field(max_length=100)
 
     @field_validator("label")
@@ -520,7 +516,7 @@ def check_registration_gates(payee: PayeeRecord, *, now: datetime) -> AuthFailur
     """
 
     screening = payee.screening
-    if payee.status != PayeeStatus.AWAITING_OWNER.value or (
+    if payee.status != PayeeStatus.AWAITING_OWNER or (
         screening is None or screening.result != ScreeningResult.CLEAR
     ):
         return AuthFailure(
@@ -560,7 +556,7 @@ async def list_payees(
     organization_id: uuid.UUID,
     treasury_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> PayeeListResponse:
     rows = await _repository(request).list_payees(
         organization_id=member.organization_id, treasury_id=treasury_id
@@ -578,7 +574,7 @@ async def get_payee(
     treasury_id: uuid.UUID,
     payee_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> PayeeResponse:
     row = await _repository(request).get_payee(
         organization_id=member.organization_id, treasury_id=treasury_id, payee_id=payee_id
@@ -600,7 +596,7 @@ async def propose_payee(
     payload: PayeeCreate,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(_require_proposer),  # noqa: B008
+    member: MemberAccess = Depends(_require_proposer),  # noqa: B008
 ) -> PayeeResponse:
     repository = _repository(request)
     screening_service = _screening(request)
@@ -653,7 +649,10 @@ async def propose_payee(
 
     # The check ends in CLEAR, HIT or ERROR (provider failure, fail closed); never an exception.
     record: ScreeningRecord = await screening_service.screen(
-        address=address, chain_id=context.chain_id, payee_id=payee.id
+        organization_id=member.organization_id,
+        address=address,
+        chain_id=context.chain_id,
+        payee_id=payee.id,
     )
     updated = await repository.finish_screening(
         organization_id=member.organization_id,
@@ -699,7 +698,7 @@ async def verify_oob(
     payee_id: uuid.UUID,
     payload: OobVerification,
     request: Request,
-    member: MemberContext = Depends(_require_owner),  # noqa: B008
+    member: MemberAccess = Depends(_require_owner),  # noqa: B008
 ) -> PayeeResponse:
     try:
         row = await _repository(request).verify_oob(
@@ -740,7 +739,7 @@ async def build_registration_tx(
     treasury_id: uuid.UUID,
     payee_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(_require_owner),  # noqa: B008
+    member: MemberAccess = Depends(_require_owner),  # noqa: B008
 ) -> Response:
     row = await _repository(request).get_payee(
         organization_id=member.organization_id, treasury_id=treasury_id, payee_id=payee_id

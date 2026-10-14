@@ -1,0 +1,26 @@
+{
+  "analyzer": "slither-analyzer==0.11.3",
+  "accepted": [
+    {
+      "check": "uninitialized-state",
+      "impact": "High",
+      "fingerprint": "965c9d27e1b424fc8bd97c9e1caba7d2c4b29d564e9d176bda5fbd63b923bb00",
+      "reason": "Abstract-base false positive: requestPaid is a default-false mapping and is set by the concrete TreasuryPilotModule.pay before interaction. TreasuryPilotGovernance is abstract and cannot be deployed as a module.",
+      "evidence": "TreasuryPaymentsTest.testPayTransfersExactApprovedAmountAndSetsReplayState; TreasuryGovernanceTest.testApproverAndOwnerCanCancelDuringPauseButStrangerCannot; invariants I5 and I11"
+    },
+    {
+      "check": "incorrect-equality",
+      "impact": "Medium",
+      "fingerprint": "c28735fe2c230f31ff0980d3878cef6f7020191912a75f3384dbde23069d8a42",
+      "reason": "activeFrom == 0 is the explicit never-registered sentinel, not a financial or time threshold equality. Initialized payees always have activeFrom > 0 because cooling >= 1.",
+      "evidence": "TreasuryGovernanceTest.testPayeeCoolingBoundaryAndReactivation; testMandateValidationMatrix"
+    },
+    {
+      "check": "unused-return",
+      "impact": "Medium",
+      "fingerprint": "8445eff1f6db4e65f7d12e0470aa2ae84d6e2da14329989f3ce80394d8e791f2",
+      "reason": "The helper intentionally reads only the healthFactor field of the fixed Pool's six-field getUserAccountData response. Remaining account values do not authorize treasury movement.",
+      "evidence": "TreasuryAaveTest.testBorrowRejectsHealthFactorBeforeAndAfterAndRollsBack; fork account-data and owner-authorized borrow tests"
+    }
+  ]
+}

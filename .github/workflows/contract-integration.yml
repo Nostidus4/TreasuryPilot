@@ -1,0 +1,142 @@
+name: Contract deployment and pinned Aave fork
+on:
+  pull_request:
+    paths:
+      [
+        'contracts/**',
+        'deployments/**',
+        'infra/scripts/**',
+        'packages/py-core/**',
+        '.github/workflows/contract-integration.yml',
+      ]
+  push:
+    branches: [main]
+    paths:
+      [
+        'contracts/**',
+        'deployments/**',
+        'infra/scripts/**',
+        'packages/py-core/**',
+        '.github/workflows/contract-integration.yml',
+      ]
+permissions:
+  contents: read
+jobs:
+  local-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+      - run: pnpm install --frozen-lockfile
+      - run: uv sync --frozen
+      - name: Deploy Safes, module, factory, test token and local EAS
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: deploy
+          DEMO_OWNER: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+          DEMO_EXECUTOR: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+          DEMO_APPROVER: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
+          DEMO_GUARDIAN: '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
+          DEMO_PAYEE: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65'
+          DEMO_RECEIPT_ATTESTER: '0x976EA74026E726554dB657fA54763abd0C3a0aa9'
+        run: |
+          anvil --silent --chain-id 31337 --port 8545 > /tmp/treasurypilot-anvil.log 2>&1 &
+          echo $! > /tmp/treasurypilot-anvil.pid
+          for attempt in $(seq 1 40); do
+            cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          test ! -f ../deployments/31337.json
+          if ../.venv/bin/python ../infra/scripts/publish_manifest.py --prediction ../deployments/predictions/31337.json --manifest ../deployments/31337.json --rpc-url http://127.0.0.1:8545 >/tmp/treasurypilot-unmined-check.log 2>&1; then
+            echo 'Unmined prediction was incorrectly published' >&2
+            exit 1
+          fi
+          test ! -f ../deployments/31337.json
+          forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+          ../.venv/bin/python ../infra/scripts/publish_manifest.py --prediction ../deployments/predictions/31337.json --manifest ../deployments/31337.json --rpc-url http://127.0.0.1:8545
+          python - <<'PY'
+          import json
+          p = json.load(open('../deployments/31337.json', encoding='utf-8'))
+          assert p['chainId'] == 31337 and p['localEasMock'] is True and p['deploymentStatus'] == 'deployed'
+          for key in ('implementation', 'factory', 'testToken', 'module', 'safeT', 'safeO1', 'safeO2', 'easSchemaUid'):
+              assert p[key] and p[key] != '0x' + '00' * (32 if 'Uid' in key else 20), key
+          print('Local deployment manifest validated')
+          PY
+          cp ../deployments/31337.json /tmp/treasurypilot-deploy-first.json
+          forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          cmp ../deployments/31337.json /tmp/treasurypilot-deploy-first.json
+          forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+          ../.venv/bin/python ../infra/scripts/publish_manifest.py --prediction ../deployments/predictions/31337.json --manifest ../deployments/31337.json --rpc-url http://127.0.0.1:8545
+          python - <<'PY'
+          import json
+          first = json.load(open('/tmp/treasurypilot-deploy-first.json'))
+          second = json.load(open('../deployments/31337.json'))
+          assert first['factory'] == second['factory'] and first['implementation'] == second['implementation']
+          assert first['module'] != second['module'] and first['safeT'] != second['safeT']
+          print('A used factory deploys another treasury with verified module enablement')
+          PY
+          kill "$(cat /tmp/treasurypilot-anvil.pid)"
+          anvil --silent --chain-id 31337 --port 8546 > /tmp/treasurypilot-anvil-repeat.log 2>&1 &
+          echo $! > /tmp/treasurypilot-anvil-repeat.pid
+          for attempt in $(seq 1 40); do
+            cast chain-id --rpc-url http://127.0.0.1:8546 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8546 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          python tools/compare_deploy_runs.py /tmp/treasurypilot-deploy-first.json ../deployments/predictions/31337.json
+          kill "$(cat /tmp/treasurypilot-anvil-repeat.pid)"
+  sepolia-fork:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: actions/cache@v4
+        with:
+          path: ~/.foundry/cache/rpc
+          key: foundry-rpc-${{ runner.os }}-v1.8.5-sepolia-11155111-11890000-8000000-v3
+      - run: pnpm install --frozen-lockfile
+      - name: Run D2, D3 and owner-authorized debt tests at the pinned Sepolia block
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: fork
+          SEPOLIA_RPC_URL: https://sepolia.drpc.org
+        run: forge test --json > fork-run-1.json
+      - name: Repeat the pinned block run
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: fork
+          SEPOLIA_RPC_URL: https://sepolia.drpc.org
+        run: forge test --json > fork-run-2.json
+      - name: Require identical test results on the same Sepolia block
+        working-directory: contracts
+        run: python tools/compare_fork_runs.py fork-run-1.json fork-run-2.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+      - run: uv sync --frozen
+      - name: Canonical Safe deployment repeats on a LOCAL Sepolia fork
+        env:
+          SEPOLIA_RPC_URL: https://sepolia.drpc.org
+        run: bash infra/scripts/check-sepolia-deploy.sh
