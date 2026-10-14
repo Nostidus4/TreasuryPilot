@@ -1183,6 +1183,8 @@ export function seed(): Db {
         coverage: {
           status: 'COMPLETE',
           acknowledged: false,
+          missing: [],
+          snapshotBlock: 6_914_300,
           details: [
             'The TreasuryPilot module is the only module enabled on all three Safes.',
             'No guard or fallback handler can move funds outside the mandate.',

@@ -704,11 +704,36 @@
             "title": "Executionallowed",
             "type": "boolean"
           },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "snapshotBlock": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshotblock"
+          },
           "status": {
             "$ref": "#/components/schemas/Coverage"
           }
         },
-        "required": ["status", "acknowledged", "details", "executionAllowed"],
+        "required": [
+          "status",
+          "acknowledged",
+          "details",
+          "missing",
+          "snapshotBlock",
+          "executionAllowed"
+        ],
         "title": "CoverageView",
         "type": "object"
       },
@@ -4039,6 +4064,13 @@
           "coverage": {
             "$ref": "#/components/schemas/Coverage"
           },
+          "coverageDetails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Coveragedetails",
+            "type": "array"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -4063,6 +4095,7 @@
           "assetIsTest",
           "status",
           "coverage",
+          "coverageDetails",
           "createdAt"
         ],
         "title": "TreasurySummaryView",

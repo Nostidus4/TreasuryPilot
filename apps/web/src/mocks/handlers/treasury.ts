@@ -181,6 +181,7 @@ export const treasuryHandlers = [
             assetIsTest: state.treasury.asset.isTest,
             status,
             coverage: state.coverage.status,
+            coverageDetails: state.coverage.details,
             createdAt: iso(-30 * DAY),
           },
         ];
@@ -283,7 +284,13 @@ export const treasuryHandlers = [
           threshold: 1,
           owners: [owner],
         })),
-        coverage: { status: 'UNKNOWN', acknowledged: false, details: [] },
+        coverage: {
+          status: 'UNKNOWN',
+          acknowledged: false,
+          details: [],
+          missing: [],
+          snapshotBlock: null,
+        },
         mandate: null,
         budgets: [],
         staleness: {
@@ -402,6 +409,8 @@ export const treasuryHandlers = [
       ? {
           status: 'PARTIAL',
           acknowledged: false,
+          missing: [],
+          snapshotBlock: null,
           details: [
             `${partial.label} has another enabled module that can move funds without the mandate.`,
             'TreasuryPilot can still operate, but its limits do not bind that module.',
@@ -410,6 +419,8 @@ export const treasuryHandlers = [
       : {
           status: 'COMPLETE',
           acknowledged: false,
+          missing: [],
+          snapshotBlock: null,
           details: [
             'The TreasuryPilot module is the only module enabled on every Safe.',
             'No guard or fallback handler can move funds outside the mandate.',

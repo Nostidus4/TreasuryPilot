@@ -442,6 +442,8 @@ def test_coverage_refresh_is_available_to_owner_and_admin(monkeypatch: pytest.Mo
     assert response.status_code == 200
     assert response.json()["coverage"]["status"] == "UNKNOWN"
     assert response.json()["coverage"]["executionAllowed"] is False
+    assert response.json()["coverage"]["missing"] == []
+    assert response.json()["coverage"]["snapshotBlock"] is None
     assert service.coverage_refreshes[0]["organization_id"] == ORG
 
 
@@ -628,7 +630,9 @@ async def _exercise(database_url: str) -> None:
             entries = list(
                 await session.scalars(select(AuditLog).where(AuditLog.org_id == org_a.id))
             )
-        (entry,) = [e for e in entries if e.action == "treasury.created"]
+        (entry,) = [
+            e for e in entries if e.action == "treasury.created" and e.entity_id == str(created.id)
+        ]
         assert entry.entity_id == str(created.id) and entry.actor_id == str(user.id)
         assert entry.data["wallets"][0]["safeVersion"] == "1.4.1"
 
@@ -737,6 +741,16 @@ async def _exercise(database_url: str) -> None:
             )
         stale = await service.get(organization_id=org_a.id, treasury_id=created.id)
         assert stale.coverage is Coverage.UNKNOWN
+        assert "no recent Safe configuration snapshot" in stale.coverage_details[0]
+        assert set(stale.coverage_missing) == {w.label for w in treasury_wallets}
+        assert stale.snapshot_block == 100
+        # The list view must not show the stored verdict either.
+        (summary,) = [
+            item
+            for item in await service.list_for_org(organization_id=org_a.id)
+            if item.id == created.id
+        ]
+        assert summary.coverage is Coverage.UNKNOWN and summary.coverage_details
 
         # Tenant isolation: another org cannot read it.
         with pytest.raises(TreasuryNotFound):

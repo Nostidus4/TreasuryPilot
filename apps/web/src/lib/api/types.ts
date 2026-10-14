@@ -129,6 +129,7 @@ export interface TreasurySummary {
   assetIsTest: boolean | null;
   status: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
   coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+  coverageDetails: string[];
   createdAt: string;
 }
 
@@ -136,6 +137,8 @@ export interface Coverage {
   status: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN';
   acknowledged: boolean;
   details: string[];
+  missing: string[];
+  snapshotBlock: number | null;
   executionAllowed?: boolean;
 }
 
