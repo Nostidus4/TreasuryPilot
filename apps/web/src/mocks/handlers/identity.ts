@@ -11,6 +11,7 @@ import type {
 } from '@/lib/api/types';
 import { ADDR, CHAINS, db, demoUser, membersOf, setSession } from '@/mocks/db';
 
+import { APPROVER } from '../seeded';
 import { fail, find, isLinked, isoNow, route, sameAddress } from './core';
 
 const SIGNER_ROLES: Role[] = ['OWN', 'APR', 'GRD'];
@@ -97,10 +98,14 @@ export const identityHandlers = [
         fail(422, 'EMAIL_INVALID', 'Enter a valid work email address.');
       }
       if (email.startsWith('ratelimit')) {
+        // The API sends the seconds left in its 15-minute fixed window; the mock always
+        // reports the full window.
         fail(
           429,
           'RATE_LIMITED',
-          'Too many sign-in links requested. Try again in a minute.',
+          'Too many sign-in attempts. Please wait and try again.',
+          undefined,
+          { 'Retry-After': '900' },
         );
       }
     },
@@ -126,15 +131,17 @@ export const identityHandlers = [
       const user =
         email === demoUser.email
           ? demoUser
-          : {
-              id: `usr_${email.replace(/[^a-z0-9]/g, '_')}`,
-              email,
-              name: email
-                .split('@')[0]
-                .split(/[._-]/)
-                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-                .join(' '),
-            };
+          : email === APPROVER.email
+            ? APPROVER
+            : {
+                id: `usr_${email.replace(/[^a-z0-9]/g, '_')}`,
+                email,
+                name: email
+                  .split('@')[0]
+                  .split(/[._-]/)
+                  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                  .join(' '),
+              };
       setSession(user);
       return { user };
     },

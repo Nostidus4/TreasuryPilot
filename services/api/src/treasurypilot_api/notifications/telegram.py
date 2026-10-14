@@ -11,7 +11,6 @@ import hashlib
 import hmac
 import logging
 import secrets
-import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
@@ -30,6 +29,7 @@ from treasurypilot_api.notifications.models import (
     NotificationChannel,
     TelegramLinkCode,
 )
+from treasurypilot_core.notifications import canonical_chat_webhook_url
 from treasurypilot_core.privacy import FieldCipher
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 LINK_CODE_TTL = timedelta(minutes=10)
 # Encryption context binds the envelope to this column (see FieldCipher.encrypt).
 TARGET_CONTEXT = "notification_channels.target"
+TARGET_CONSTRAINT = "uq_notification_channels_target"
 
 LINKED_REPLY = (
     "TreasuryPilot is linked. You will get notifications here. "
@@ -125,7 +126,7 @@ class SqlAlchemyTelegramRepository:
         sessions: async_sessionmaker[AsyncSession],
         *,
         cipher: FieldCipher | None,
-        hash_key: bytes,
+        hash_key: bytes | None,
         now: Any = None,
     ) -> None:
         self._sessions = sessions
@@ -136,50 +137,30 @@ class SqlAlchemyTelegramRepository:
     def _chat_hash(self, chat_id: int) -> bytes:
         # Keyed: Telegram chat ids are small integers and must not be recoverable
         # from a leaked hash column.
+        if not self._hash_key:
+            raise TelegramUnavailable
         return hmac.new(self._hash_key, f"telegram:{chat_id}".encode(), hashlib.sha256).digest()
 
-    @staticmethod
-    def _validate_chat_webhook(kind: ChannelKind, value: str) -> None:
-        parsed = urllib.parse.urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.port not in (None, 443)
-            or parsed.fragment
-        ):
-            raise ValueError("invalid webhook URL")
-        host, path = parsed.hostname.casefold(), parsed.path
-        if kind is ChannelKind.SLACK:
-            valid = host == "hooks.slack.com" and path.startswith("/services/")
-        elif kind is ChannelKind.LARK:
-            valid = host in {"open.larksuite.com", "open.feishu.cn"} and path.startswith(
-                "/open-apis/bot/v2/hook/"
-            )
-        elif kind is ChannelKind.WECOM:
-            valid = host == "qyapi.weixin.qq.com" and path == "/cgi-bin/webhook/send"
-        else:
-            valid = False
-        if not valid:
-            raise ValueError("invalid webhook URL")
+    def _chat_values(self, kind: ChannelKind, webhook_url: str) -> dict[str, Any]:
+        """Column values for a webhook channel; hash and ciphertext use the canonical URL."""
 
-    async def connect_chat(
-        self, *, user_id: uuid.UUID, kind: ChannelKind, webhook_url: str
-    ) -> NotificationChannel:
-        if kind is ChannelKind.TELEGRAM or self._cipher is None:
+        if kind is ChannelKind.TELEGRAM or self._cipher is None or not self._hash_key:
             raise TelegramUnavailable
-        self._validate_chat_webhook(kind, webhook_url)
-        now = self._now()
-        values = {
+        webhook_url = canonical_chat_webhook_url(kind.value, webhook_url)
+        return {
             "target": self._cipher.encrypt_text(webhook_url, context=TARGET_CONTEXT),
             "target_hash": hmac.new(
                 self._hash_key, f"{kind.value}:{webhook_url}".encode(), hashlib.sha256
             ).digest(),
-            "verified_at": now,
+            "verified_at": self._now(),
             "active": True,
             "last_sent_at": None,
         }
+
+    async def connect_chat(
+        self, *, user_id: uuid.UUID, kind: ChannelKind, webhook_url: str
+    ) -> NotificationChannel:
+        values = self._chat_values(kind, webhook_url)
         try:
             async with self._sessions() as session, session.begin():
                 statement = insert(NotificationChannel).values(
@@ -190,21 +171,25 @@ class SqlAlchemyTelegramRepository:
                         constraint="uq_notification_channels_user_kind", set_=values
                     ).returning(NotificationChannel)
                 )
-                assert row is not None
+                if row is None:
+                    raise RuntimeError("channel upsert returned no row")
                 return row
         except IntegrityError as exc:
             raise WebhookAlreadyLinked from exc
 
     async def issue_link_code(self, *, user_id: uuid.UUID) -> tuple[str, datetime]:
+        # Fail before handing out a code that complete_link could never honour.
+        if self._cipher is None or not self._hash_key:
+            raise TelegramUnavailable
         now = self._now()
         code = secrets.token_urlsafe(16)  # 128 bits; fits Telegram's start-parameter alphabet
         expires_at = now + LINK_CODE_TTL
         async with self._sessions() as session, session.begin():
-            # A user holds at most one live code: a new one replaces older unused ones.
+            # A user holds at most one code (new replaces old, used or not), and any
+            # expired code is swept, so the table cannot grow without bound.
             await session.execute(
                 delete(TelegramLinkCode).where(
-                    TelegramLinkCode.user_id == user_id,
-                    (TelegramLinkCode.used_at.is_(None)) | (TelegramLinkCode.expires_at <= now),
+                    (TelegramLinkCode.user_id == user_id) | (TelegramLinkCode.expires_at <= now)
                 )
             )
             session.add(
@@ -215,7 +200,7 @@ class SqlAlchemyTelegramRepository:
         return code, expires_at
 
     async def complete_link(self, *, code: str, chat_id: int) -> str:
-        if self._cipher is None:
+        if self._cipher is None or not self._hash_key:
             raise TelegramUnavailable
         now = self._now()
         try:
@@ -248,7 +233,9 @@ class SqlAlchemyTelegramRepository:
                         constraint="uq_notification_channels_user_kind", set_=values
                     )
                 )
-        except IntegrityError:
+        except IntegrityError as error:
+            if TARGET_CONSTRAINT not in str(error.orig):
+                raise
             # The chat is already linked to a different user; the transaction rolled
             # back, so the code was not consumed.
             return LinkOutcome.CHAT_TAKEN
@@ -409,10 +396,11 @@ def _start_code(text: object) -> str | None:
 @router.post("/integrations/telegram/webhook", include_in_schema=False)
 async def telegram_webhook(request: Request) -> dict[str, object]:
     expected = request.app.state.settings.telegram_webhook_secret
-    if expected is None:
+    secret = expected.get_secret_value() if expected is not None else ""
+    if not secret:  # unset or empty (compose passes "") means unconfigured, never "match empty"
         raise _unavailable()
     supplied = request.headers.get(WEBHOOK_SECRET_HEADER, "")
-    if not hmac.compare_digest(supplied.encode(), expected.get_secret_value().encode()):
+    if not hmac.compare_digest(supplied.encode(), secret.encode()):
         raise AuthFailure(
             status=401,
             code="WEBHOOK_UNAUTHORIZED",

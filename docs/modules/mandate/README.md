@@ -50,15 +50,15 @@ M03 is the **Owner's control room**. It turns what the Owner wants (limits, buff
 
 | Table | Columns | Notes |
 |---|---|---|
-| `mandate_versions` | id, treasury_id, version (off-chain seq), onchain_version null, status enum(Draft, Discarded, PendingActivation, Active, Superseded, Expired, Revoked, Discrepancy), config jsonb, config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | immutable rows except status/onchain_version/activated_at (governance_tx_id, valid_from, expires_at also settable while Draft); unique(treasury_id, version); one Active per treasury |
+| `mandate_versions` | id, treasury_id, version (off-chain seq), onchain_version null, status enum(Draft, PendingActivation, Active, Superseded, Expired, Revoked, Discrepancy), config jsonb, config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | immutable rows except status/onchain_version/activated_at; unique(treasury_id, version) |
 | `mandate_status_events` | id, mandate_version_id, from, to, tx_hash, at, by | append-only |
 | `governance_txs` *(new)* | id, treasury_id, safe_address, purpose enum(MODULE_SETUP, MANDATE, PAYEE_ADD, PAYEE_DEACTIVATE, EXCEPTION_GRANT, EXCEPTION_REVOKE, ALLOW_DUPLICATE, CANCEL_REQUEST, PAUSE, RESUME, REVOKE, GUARDIAN_SETUP), entity_type, entity_id, calls jsonb (decoded list), to, value, data, operation, safe_nonce, safe_tx_hash, threshold, owners_snapshot address[], status enum(Collecting, Ready, Submitted, Executed, Failed, Superseded, Cancelled), exec_tx_hash, created_by, created_at | unique(safe_address, safe_nonce) where status ∈ (Collecting, Ready, Submitted) |
 | `governance_signatures` *(new)* | id, governance_tx_id, owner_address, signature, signed_by_user, at | unique(governance_tx_id, owner_address) |
-| `payees` | id, treasury_id, org_id, vendor_id (same org), label, address, status enum(Proposed, Screening, ScreeningFailed, AwaitingOwner, Cooling, Active, Deactivated), active_from, oob_verified_by/at, oob_method enum(PHONE, IN_PERSON, SIGNED_LETTER, OTHER), oob_note, registration_tx_id, deactivated_at, proposed_by | unique(treasury_id, address) where status ∉ (Deactivated, ScreeningFailed) |
-| `screenings` | id, payee_id null, address (always snapshotted), provider, result enum(CLEAR, HIT, ERROR), source_ref, checked_at, ttl_until | |
-| `exceptions` | id, treasury_id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested, Proposed, Granted, Consumed, Expired, Invalidated, Rejected, Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status ∈ (Requested, Proposed, Granted) |
+| `payees` | id, treasury_id, vendor_id, label, address, status enum(Proposed, Screening, ScreeningFailed, AwaitingOwner, Cooling, Active, Deactivated), active_from, oob_verified_by/at, oob_method enum(PHONE, IN_PERSON, SIGNED_LETTER, OTHER), oob_note, registration_tx_id, deactivated_at, proposed_by | unique(treasury_id, address) where status ≠ Deactivated |
+| `screenings` | id, payee_id or address, provider, result enum(CLEAR, HIT, ERROR), source_ref, checked_at, ttl_until | |
+| `exceptions` | id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested, Proposed, Granted, Consumed, Expired, Invalidated, Rejected, Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status ∈ (Proposed, Granted) |
 | `guardian_setups` *(new)* | id, treasury_id, guardian_safe, human_owners address[], sentinel_address, threshold (=1), created_tx_id, status | |
-| `treasury_fee_policies` *(new)* | id, treasury_id, preset enum(ECONOMY, NORMAL, FAST), max_fee_multiplier_bps, tip_percentile, resend_after_s, bump_bps, per_plan_threshold_wei, daily_budget_wei, reference_eth_price (asset base units per 1 ETH, for value comparison only), proposed_at, accepted_by, accepted_at, version | one active row per treasury; unique(treasury_id, version); history kept |
+| `treasury_fee_policies` *(new)* | id, treasury_id, preset enum(ECONOMY, NORMAL, FAST), max_fee_multiplier_bps, tip_percentile, resend_after_s, bump_bps, per_plan_threshold_wei, daily_budget_wei, reference_eth_price (asset base units per 1 ETH, for value comparison only), proposed_at, accepted_by, accepted_at, version | one active row per treasury; history kept |
 | `fee_acceptances` *(new)* | id, plan_id, estimated_fee_wei, accepted_cap_wei, accepted_by, at, reason | |
 | `backend_pause` | treasury_id, paused bool, reason, by, at, onchain_status enum(NotRequested, Requested, Effective) | one row per treasury |
 
@@ -129,8 +129,8 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
-| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT` |
-| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER` |
+| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT`; a provider ERROR fails closed with 503 `DATA_MISSING` (payee `ScreeningFailed`, registration stays blocked) |
+| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER`, `OOB_ALREADY_VERIFIED` (evidence is recorded once) |
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
 | GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |
@@ -147,12 +147,22 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET | `/…/governance-txs?status=` | ANY | → `{items}` | |
+| POST | `/orgs/{o}/treasuries/{t}/governance-txs` 🔁 | OWN | `{purpose, calls[]}` → `{governanceTx, decodedCalls[], humanSummary, typedData}` | 503 `MULTISEND_UNAVAILABLE` when a bundle has no configured Safe MultiSendCallOnly v1.4.1 deployment |
 | GET | `/…/governance-txs/{g}` | ANY | → `{governanceTx, decodedCalls[], humanSummary, typedData (SafeTx EIP-712), signatures[], threshold, owners[]}` | |
 | POST | `/…/governance-txs/{g}/signatures` 🔁 | OWN (an owner of that Safe) | `{signature}` → `{signatures[], status}` | 400 `SIGNATURE_INVALID`, 403 `NOT_SAFE_OWNER`, 409 `ALREADY_SIGNED`, `SUPERSEDED` |
 | GET | `/…/governance-txs/{g}/exec-call` | OWN | → `{to: safe, data: execTransaction(..., packedSignatures)}` for the owner's wallet | 409 `NOT_READY` |
-| POST | `/…/governance-txs/{g}/submitted` | OWN | `{txHash}` → `{status: Submitted}` | |
+| POST | `/…/governance-txs/{g}/submitted` | OWN | `{transactionHash}` → `{status: Submitted}` | |
 | POST | `/…/governance-txs/{g}/cancel` | creator, OWN | → `{status: Cancelled}` | 409 `ALREADY_SUBMITTED` |
 | GET | `/…/governance-txs/{g}/safe-wallet-link` | OWN | → `{url}` (optional: propose to Safe Transaction Service, open in Safe{Wallet}) | 503 if the service is unavailable |
+
+Borrow and repay calldata builders encode the module's `authorizeBorrow` and
+`authorizeRepay` calls from integer arguments. Amounts, expiry, minimum health
+factor and maximum rate are carried without display-unit conversion or rounding.
+The proposal read model currently has no API-backed `planId`, expiry, minimum
+health-factor authorization, or max-rate authorization fields, so proposal-backed
+creation and the WEB-027 owner action are not wired yet. Until that integration
+exists, the general governance endpoint persists and tracks calls supplied by an
+Owner but does not independently prove they match a validated borrow proposal.
 
 ### 6.4 Fee policy (FEE-1 … FEE-3)
 
@@ -215,7 +225,7 @@ Human summary template (one line per rule, display units and base units), e.g. *
 
 ### 8.3 Bundle building
 
-Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` (delegatecall to the canonical MultiSendCallOnly v1.4.1, operation = 1). `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
+Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` v1.4.1 (the Safe uses delegatecall, operation = 1; each bundled operation is CALL). Its address must be configured in the chain deployment manifest as `SAFE_MULTISEND_CALL_ONLY`. `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
 
 ### 8.4 Read-back
 

@@ -88,6 +88,7 @@ export interface Chain {
   chainId: number;
   name: string;
   explorerUrl: string;
+  safeDeploymentAvailable: boolean;
   assets: Asset[];
 }
 
@@ -117,10 +118,25 @@ export interface Treasury {
   pauseReason?: string;
 }
 
+/** One row in the organization-wide treasury view; amounts are intentionally absent. */
+export interface TreasurySummary {
+  id: string;
+  chainId: number;
+  chainName: string;
+  assetId: string;
+  assetSymbol: string;
+  assetDecimals: number | null;
+  assetIsTest: boolean | null;
+  status: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+  coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+  createdAt: string;
+}
+
 export interface Coverage {
   status: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN';
   acknowledged: boolean;
   details: string[];
+  executionAllowed?: boolean;
 }
 
 export interface Budget {
@@ -338,6 +354,8 @@ export interface TxCall {
   to: Hex;
   data: Hex;
   value?: string;
+  /** When set, the wallet must be on this chain or the send is rejected. */
+  chainId?: number;
 }
 
 /* ───────────── Invoices & requests ───────────── */

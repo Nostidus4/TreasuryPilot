@@ -159,7 +159,7 @@ T("AUD-004","Propagate coverage labels through the API","M1","P1","S","F-122","F
   "Uncertainty is visible wherever a status is shown.",
   "Coverage enum on snapshots, assessments and status DTOs;missing-data list;API responses include coverage", "", "",
   "A stale snapshot is returned with coverage PARTIAL or UNKNOWN and the reason", "Unit")
-T("AUD-L01","Anchor the audit hash root on-chain daily","Later","-","S","F-120","","AUD-002", "External tamper evidence.", "Daily job publishing the org chain head hash", "", "", "The anchored hash matches the log head at that time", "Integration")
+T("AUD-L01","Anchor the audit hash root on-chain daily","Later","-","L","F-120","","AUD-002", "External tamper evidence.", "Contract and deployment: store one authorized immutable root per organization and UTC day;Publisher and configuration: capture org heads in one repeatable-read snapshot and publish the exact captured hashes with a dedicated publisher;Integration acceptance: run PostgreSQL plus Anvil and prove the on-chain root equals the captured audit head", "", "Re-estimate: L total (1.5–2 days), split into three sequential, reviewable S slices: contract/deployment, publisher/configuration, and live integration acceptance. Do not mark complete or deploy before a reviewed contract address, configured publisher identity, and passing PostgreSQL/Anvil proof are available.", "The anchored hash matches audit_heads.last_hash from the recorded database snapshot;A PostgreSQL/Anvil integration test proves the captured head is stored on-chain;The deployment chain, contract address, and dedicated publisher identity are verified", "Contract unit tests;Worker unit tests;PostgreSQL + Anvil integration")
 
 # ───────────── OBS · Observability & Analytics ─────────────
 T("OBS-001","Configure structured logging with correlation ids","M1","P1","S","F-142","NFR-AUD-04, FR-923","CMP-003",
@@ -182,6 +182,14 @@ T("OBS-005","Compute the savings report","M1","P1","M","F-141","FR-922","OBS-004
   "", "", "Savings for a seeded batch equal a hand-computed value;Negative savings are reported as negative", "Integration")
 
 # ───────────── ADM · Platform Admin & Billing (Later) ─────────────
-T("ADM-L01","Build the platform admin console","Later","-","L","F-150","FR-924, BR-094","IDN-006", "Operate tenants.", "Tenant list, suspend, health;read-only support access with consent and audit", "", "", "No admin endpoint can move funds or sign", "Security review")
+T("ADM-L01","Build the platform admin console","Later","-","L","F-150","FR-924, BR-094","IDN-006",
+  "Operate tenants and provide bounded, consented support access.",
+  "Slice A (M, ~1 day): tenant list, health and suspend endpoints with append-only staff events;Slice B (M, ~1 day, after A): tenant-admin consent and revocation for time-limited read scope;staff support summary requires a matching live grant and writes an access event",
+  "",
+  "Platform admin access stays on a separate staff credential and socket-peer IP allowlist;support reads expose tenant metadata and health counts only;customer fund movement and signing remain unavailable",
+  "No admin endpoint can move funds or sign;No support read succeeds without tenant consent;Expired or revoked grants deny access;Grant and support-read actions are auditable",
+  "Security tests for route surface and grant expiry;API tests for consent and support access",
+  split_plan=("Slice A — tenant operations and staff audit (M, ~1 day)",
+              "Slice B — consented read support and audit (M, ~1 day; depends on A)"))
 T("ADM-L02","Meter usage for billing","Later","-","M","F-152","FR-926","OBS-004", "Usage numbers per org.", "Metering from events (paid requests, volume)", "", "", "Usage reconciles with the event store", "Integration")
 T("ADM-L03","Add subscriptions and customer invoicing","Later","-","L","F-152","FR-926, BR-091","ADM-L02", "Charge customers.", "Plans;invoices;payment collection outside customer treasuries", "", "", "No fee is ever deducted from a customer treasury", "Integration")

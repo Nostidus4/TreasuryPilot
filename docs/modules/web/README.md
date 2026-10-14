@@ -92,11 +92,15 @@ Typed data displayed = object passed to the wallet (unit-tested); no secrets in 
 
 ## 11. Failure scenarios
 
-API down → error state with retry; SSE drop → auto-reconnect with Last-Event-ID, then 10 s polling; wallet rejection → no change; stale ETag → "Someone changed this, reload".
+API down → error state with retry; SSE drop → auto-reconnect with Last-Event-ID and 10 s org-wide polling; an open execution detail refreshes every 2 s whenever SSE is not connected (including before the first connect or without EventSource) to meet WEB-012's status-change target; while SSE is connected the detail relies on `plan` / `operation` events, so it can go stale if the backend does not emit them (tracked with the backend dependency below); wallet rejection → no change; stale ETag → "Someone changed this, reload".
+
+**Execution API dependency:** the plan screen calls `GET /v1/orgs/{orgId}/plans/{planId}` and `GET /v1/orgs/{orgId}/treasuries/{treasuryId}/plans`; run-now calls `POST /v1/orgs/{orgId}/treasuries/{treasuryId}/run-now`. In this repository revision these routes exist only in the web MSW handlers: `services/api` has no plans/operations router or execution read model. The notifications SSE endpoint is implemented, and its `plan` / `operation` events can invalidate the detail query, but they do not supply plan-step state. The live screen therefore needs those API routes and durable `plan` / `operation` domain events from the execution backend before it can show real Anvil execution data.
+
+**WEB-023 integration boundary:** the API server also does not mount request or reconciliation routers. The Playwright browser flow therefore uses the web MSW fixture API: it creates/submits a request and signs its approval with the app's public demo key, then separately runs a pre-seeded plan and matches its resulting fixture reconciliation. CI checks that the local Anvil RPC responds with chain ID 31337. Locally, set `E2E_ANVIL_RPC_URL=http://127.0.0.1:8545` to run that same check. In mock mode, transaction sends return simulated hashes and do not call Anvil contracts. This is UI/API-fixture coverage, not proof of one request flowing through production planning, execution and reconciliation. Completing that acceptance requires request, planning/execution and reconciliation endpoints plus contract deployments and seeded state against Anvil.
 
 ## 12. Test plan
 
-Component tests for typed-data display and amount conversion; Playwright happy path (WEB-023) with a mock wallet on Anvil; axe on approve/review/dashboard; 390 px checks; status wording checklist.
+Component tests for typed-data display and amount conversion; Playwright browser flow (WEB-023) with MSW and the public demo signer, plus an Anvil RPC health check; axe on approve/review/dashboard; 390 px checks; status wording checklist. The current Playwright flow is explicitly limited to the browser fixture contract as described in §11.
 
 ## 13. Tickets
 

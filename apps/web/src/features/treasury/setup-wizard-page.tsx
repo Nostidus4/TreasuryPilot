@@ -1,6 +1,8 @@
 import { Check, RotateCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { decodeEventLog, parseAbi } from 'viem';
+import { usePublicClient } from 'wagmi';
 
 import { Address } from '@/components/domain/chain';
 import { KeyValueList } from '@/components/domain/display';
@@ -18,7 +20,7 @@ import {
 import { Select } from '@/components/ui/controls';
 import { Field, Input, Textarea } from '@/components/ui/input';
 import { Alert, Skeleton } from '@/components/ui/misc';
-import { useGovernanceTx } from '@/features/controls/api';
+import { useGovernanceTx, useGovernanceTxs } from '@/features/controls/api';
 import { GovernanceActions } from '@/features/governance/governance-detail';
 import { useOrgScope } from '@/features/orgs/org-scope';
 import {
@@ -26,8 +28,9 @@ import {
   useCreateTreasury,
   useDeployModuleTx,
   useRefreshCoverage,
-  useSetGuardian,
-  useTreasury,
+  useSafeDeploymentTx,
+  useTreasurySetup,
+  type ModuleSetupInput,
   type TreasuryInput,
 } from '@/features/treasury/api';
 import { useChains } from '@/lib/api/chains';
@@ -36,6 +39,12 @@ import type { TreasuryState } from '@/lib/api/types';
 import { mockApiEnabled } from '@/lib/env';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useWallet } from '@/lib/wallet/wallet-context';
+import { parseUnits } from '@/lib/money';
+
+const safeFactoryAbi = parseAbi([
+  'event ProxyCreation(address indexed proxy, address singleton)',
+]);
 
 const steps = [
   {
@@ -52,12 +61,65 @@ const steps = [
 ] as const;
 
 const draftKey = (orgId: string) => `treasurypilot.setup-draft.${orgId}`;
+const moduleDraftKey = (treasuryId: string) =>
+  `treasurypilot.module-draft.${treasuryId}`;
 
 interface Draft {
   name: string;
   chainId: number;
   assetId: string;
   safes: Record<'T' | 'O1' | 'O2', string>;
+}
+
+interface ModuleDraft {
+  executor: string;
+  guardian: string;
+  approvers: string;
+  payPerRequest: string;
+  payDaily: string;
+  refillPerRequest: string;
+  refillDaily: string;
+  supplyPerRequest: string;
+  supplyDaily: string;
+  approvalMaxAgeDays: string;
+  payeeCoolingSeconds: string;
+  expiresInDays: string;
+  buffers: Record<string, { minimum: string; target: string }>;
+}
+
+function defaultModuleDraft(roles: string[], executor = ''): ModuleDraft {
+  return {
+    executor,
+    guardian: '',
+    approvers: executor,
+    payPerRequest: '2000',
+    payDaily: '10000',
+    refillPerRequest: '2500',
+    refillDaily: '12000',
+    supplyPerRequest: '0',
+    supplyDaily: '0',
+    approvalMaxAgeDays: '14',
+    payeeCoolingSeconds: '300',
+    expiresInDays: '30',
+    buffers: Object.fromEntries(
+      roles.map((role) => [
+        role,
+        role === 'T'
+          ? { minimum: '0', target: '1000' }
+          : { minimum: '10', target: '150' },
+      ]),
+    ),
+  };
+}
+
+function readModuleDraft(treasuryId: string): Partial<ModuleDraft> {
+  try {
+    return JSON.parse(
+      window.sessionStorage.getItem(moduleDraftKey(treasuryId)) ?? '{}',
+    ) as Partial<ModuleDraft>;
+  } catch {
+    return {};
+  }
 }
 
 function readDraft(orgId: string): Partial<Draft> {
@@ -151,6 +213,8 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
   const scope = useOrgScope();
   const chains = useChains();
   const create = useCreateTreasury(scope.orgId);
+  const deploySafe = useSafeDeploymentTx(scope.orgId);
+  const wallet = useWallet();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(() => ({
     name: 'Operating treasury',
@@ -160,6 +224,13 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
     ...readDraft(scope.orgId),
   }));
   const [formError, setFormError] = useState<Record<string, string>>({});
+  const [safeOwners, setSafeOwners] = useState('');
+  const [safeThreshold, setSafeThreshold] = useState('1');
+  const [safeTargetRole, setSafeTargetRole] = useState<'T' | 'O1' | 'O2'>('T');
+  const [deployError, setDeployError] = useState('');
+  const publicClient = usePublicClient({
+    chainId: draft.chainId || 11155111,
+  });
 
   useEffect(() => {
     try {
@@ -217,6 +288,102 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
         onCreated(treasury.id);
       },
     });
+  };
+
+  const createSafe = async (role: 'T' | 'O1' | 'O2') => {
+    setDeployError('');
+    const owners = safeOwners
+      .split(/[\s,]+/)
+      .map((owner) => owner.trim())
+      .filter(Boolean);
+    const threshold = /^\d+$/.test(safeThreshold.trim())
+      ? Number(safeThreshold)
+      : NaN;
+    if (
+      owners.length === 0 ||
+      owners.some((owner) => !/^0x[0-9a-fA-F]{40}$/.test(owner)) ||
+      new Set(owners.map((owner) => owner.toLowerCase())).size !==
+        owners.length ||
+      !Number.isInteger(threshold) ||
+      threshold < 1 ||
+      threshold > owners.length
+    ) {
+      setDeployError(
+        t(
+          'Enter distinct owner addresses and a threshold from 1 to the owner count.',
+        ),
+      );
+      return;
+    }
+    if (!wallet.address) {
+      setDeployError(
+        t('Connect a wallet to submit the Safe deployment transaction.'),
+      );
+      return;
+    }
+    try {
+      const result = await deploySafe.mutateAsync({
+        chainId: draft.chainId,
+        owners,
+        threshold,
+      });
+      if (wallet.chainId !== draft.chainId)
+        await wallet.switchChain(draft.chainId);
+      const hash = await wallet.sendTransaction({
+        to: result.transaction.to,
+        data: result.transaction.data,
+        value: result.transaction.value,
+        chainId: draft.chainId,
+      });
+      if (!publicClient)
+        throw new Error(t('No RPC client is available for this chain.'));
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') {
+        throw new Error(
+          t('The Safe deployment transaction reverted. Transaction: {{hash}}', {
+            hash,
+          }),
+        );
+      }
+      const factory = result.transaction.to.toLowerCase();
+      const event = receipt.logs.find((log) => {
+        if (log.address.toLowerCase() !== factory) return false;
+        try {
+          decodeEventLog({
+            abi: safeFactoryAbi,
+            data: log.data,
+            topics: log.topics,
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!event) {
+        throw new Error(
+          t(
+            'The transaction was mined, but no Safe address was returned. Transaction: {{hash}}',
+            {
+              hash,
+            },
+          ),
+        );
+      }
+      const decoded = decodeEventLog({
+        abi: safeFactoryAbi,
+        data: event.data,
+        topics: event.topics,
+      });
+      // Functional update: the draft may have been edited while the wallet prompt and receipt wait ran.
+      setDraft((current) => ({
+        ...current,
+        safes: { ...current.safes, [role]: decoded.args.proxy },
+      }));
+    } catch (error) {
+      setDeployError(
+        error instanceof Error ? error.message : t('Safe deployment failed.'),
+      );
+    }
   };
 
   const summaryChain =
@@ -331,7 +498,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
               <CardHeader
                 title={t('Safes')}
                 description={t(
-                  'Paste the addresses of Safes you already own on {{chain}}. TreasuryPilot never creates or owns a Safe.',
+                  'Paste the addresses of Safes on {{chain}}. TreasuryPilot never owns a Safe.',
                   { chain: chain?.name ?? '' },
                 )}
                 action={
@@ -355,6 +522,85 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                 }
               />
               <CardContent className="grid gap-4">
+                {chain && !chain.safeDeploymentAvailable && (
+                  <Alert
+                    tone="warning"
+                    title={t('Safe deployment unavailable')}
+                  >
+                    {t(
+                      'Creating a Safe from this screen is unavailable on {{chain}} because its verified Safe factory, v1.4.1 singleton, and fallback handler are not configured. You can continue with Safes that already exist on this chain.',
+                      { chain: chain.name },
+                    )}
+                  </Alert>
+                )}
+                {chain?.safeDeploymentAvailable && (
+                  <section className="grid gap-3 rounded-md border border-border p-4">
+                    <div>
+                      <h3 className="font-medium">{t('Create a Safe')}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {t(
+                          'The transaction is sent by your connected wallet. TreasuryPilot never receives keys or signs for you.',
+                        )}
+                      </p>
+                    </div>
+                    <Field
+                      htmlFor="safe-owners"
+                      label={t('Safe owners')}
+                      hint={t('Enter one 0x address per line.')}
+                    >
+                      <Textarea
+                        id="safe-owners"
+                        value={safeOwners}
+                        onChange={(event) => setSafeOwners(event.target.value)}
+                        placeholder="0x…"
+                      />
+                    </Field>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field
+                        htmlFor="safe-threshold"
+                        label={t('Signing threshold')}
+                      >
+                        <Input
+                          id="safe-threshold"
+                          inputMode="numeric"
+                          type="number"
+                          min={1}
+                          value={safeThreshold}
+                          onChange={(event) =>
+                            setSafeThreshold(event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field
+                        htmlFor="safe-target-role"
+                        label={t('Use this Safe for')}
+                      >
+                        <Select
+                          id="safe-target-role"
+                          value={safeTargetRole}
+                          onValueChange={(value) =>
+                            setSafeTargetRole(value as 'T' | 'O1' | 'O2')
+                          }
+                          options={safeRoles.map(({ role, label }) => ({
+                            value: role,
+                            label: t(label),
+                          }))}
+                        />
+                      </Field>
+                    </div>
+                    {deployError && <Alert tone="danger">{deployError}</Alert>}
+                    <div>
+                      <Button
+                        variant="secondary"
+                        loading={deploySafe.isPending}
+                        disabled={!draft.chainId}
+                        onClick={() => void createSafe(safeTargetRole)}
+                      >
+                        {t('Create Safe and add address')}
+                      </Button>
+                    </div>
+                  </section>
+                )}
                 {safeRoles.map(({ role, label, hint, optional }) => (
                   <Field
                     key={role}
@@ -412,48 +658,386 @@ function ModuleStep({
 }) {
   const scope = useOrgScope();
   const deploy = useDeployModuleTx(scope.orgId);
-  const [txId, setTxId] = useState<string>();
-  const tx = useGovernanceTx(scope.orgId, txId);
+  const governance = useGovernanceTxs(scope.orgId);
+  const wallet = useWallet();
   const treasuryId = state.treasury.id;
-  const { mutate } = deploy;
-
+  const treasuryWallets = state.wallets.filter((item) =>
+    ['T', 'O1', 'O2'].includes(item.role),
+  );
+  const initialDraft = defaultModuleDraft(
+    treasuryWallets.map((item) => item.role),
+    wallet.address ?? '',
+  );
+  const persistedDraft = readModuleDraft(treasuryId);
+  const [draft, setDraft] = useState<ModuleDraft>(() => ({
+    ...initialDraft,
+    ...persistedDraft,
+    buffers: { ...initialDraft.buffers, ...persistedDraft.buffers },
+  }));
+  const [formError, setFormError] = useState('');
+  // An empty persisted value means the wallet was not connected yet, so fill it once it is.
   useEffect(() => {
-    mutate(treasuryId, {
-      onSuccess: ({ governanceTx }) => setTxId(governanceTx.id),
-    });
-  }, [mutate, treasuryId]);
+    const connected = wallet.address;
+    if (!connected) return;
+    setDraft((current) => ({
+      ...current,
+      executor: current.executor || connected,
+      approvers: current.approvers || connected,
+    }));
+  }, [wallet.address]);
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        moduleDraftKey(treasuryId),
+        JSON.stringify(draft),
+      );
+    } catch {
+      /* keep the draft for this page only */
+    }
+  }, [draft, treasuryId]);
 
-  const executed = tx.data?.governanceTx.status === 'Executed';
+  const moduleTxs = (governance.data?.items ?? []).filter(
+    (item) => item.treasuryId === treasuryId && item.kind === 'DEPLOY_MODULE',
+  );
+  const txsBySafe = treasuryWallets.map((safe) =>
+    moduleTxs.find(
+      (item) => item.safeAddress.toLowerCase() === safe.safeAddress.toLowerCase(),
+    ),
+  );
+  const hasPreparedTransactions =
+    txsBySafe.length > 0 && txsBySafe.every(Boolean);
+  const hasPartialTransactions =
+    !hasPreparedTransactions && txsBySafe.some(Boolean);
+  const executed =
+    txsBySafe.length > 0 &&
+    txsBySafe.every((item) => item?.status === 'Executed');
+
+  const prepare = async () => {
+    setFormError('');
+    const addressPattern = /^0x[0-9a-fA-F]{40}$/;
+    const nonzeroAddress = (value: string) =>
+      addressPattern.test(value) && !/^0x0{40}$/i.test(value);
+    const approvers = draft.approvers
+      .split(/[\s,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!nonzeroAddress(draft.executor.trim())) {
+      setFormError(t('Enter the configured executor address.'));
+      return;
+    }
+    if (!nonzeroAddress(draft.guardian.trim())) {
+      setFormError(t('Enter the Guardian Safe address.'));
+      return;
+    }
+    if (
+      approvers.length === 0 ||
+      approvers.some((item) => !nonzeroAddress(item)) ||
+      new Set(approvers.map((item) => item.toLowerCase())).size !==
+        approvers.length
+    ) {
+      setFormError(t('Enter distinct approver wallet addresses.'));
+      return;
+    }
+    const amount = (value: string) => {
+      const parsed = parseUnits(value, state.treasury.asset.decimals);
+      if (!parsed.ok) {
+        throw new Error(
+          t('Enter a valid amount in {{asset}}.', {
+            asset: state.treasury.asset.symbol,
+          }),
+        );
+      }
+      return parsed.value.toString();
+    };
+    try {
+      const pay = {
+        perRequest: amount(draft.payPerRequest),
+        daily: amount(draft.payDaily),
+      };
+      const refill = {
+        perRequest: amount(draft.refillPerRequest),
+        daily: amount(draft.refillDaily),
+      };
+      const supply = {
+        perRequest: amount(draft.supplyPerRequest),
+        daily: amount(draft.supplyDaily),
+      };
+      if (
+        BigInt(pay.perRequest) > BigInt(pay.daily) ||
+        BigInt(refill.perRequest) > BigInt(refill.daily) ||
+        BigInt(supply.perRequest) > BigInt(supply.daily)
+      ) {
+        throw new Error(t('A per-request limit cannot exceed its daily limit.'));
+      }
+      if ((BigInt(supply.perRequest) === 0n) !== (BigInt(supply.daily) === 0n)) {
+        throw new Error(t('Set both supply limits to zero, or set both to a positive amount.'));
+      }
+      const buffers = treasuryWallets.map((safe) => {
+        const values = draft.buffers[safe.role];
+        if (!values) throw new Error(t('Add a buffer for every treasury Safe.'));
+        const minimum = amount(values.minimum);
+        const target = amount(values.target);
+        if (safe.role !== 'T' && BigInt(target) < BigInt(minimum)) {
+          throw new Error(
+            t('An operational Safe target cannot be below its minimum.'),
+          );
+        }
+        return { wallet: safe.safeAddress, minimum, target };
+      });
+      const whole = (value: string) =>
+        /^\d+$/.test(value.trim()) ? Number(value) : NaN;
+      const cooling = whole(draft.payeeCoolingSeconds);
+      const approvalAgeDays = whole(draft.approvalMaxAgeDays);
+      const expiresInDays = whole(draft.expiresInDays);
+      if (
+        !Number.isInteger(cooling) ||
+        cooling < 1 ||
+        cooling > 4_294_967_295 ||
+        !Number.isInteger(approvalAgeDays) ||
+        approvalAgeDays < 1 ||
+        approvalAgeDays > 365 ||
+        !Number.isInteger(expiresInDays) ||
+        expiresInDays < 1 ||
+        expiresInDays > 365
+      ) {
+        throw new Error(t('Enter valid cooling and mandate durations.'));
+      }
+      const validFrom = new Date();
+      // A day of slack so signing delays do not eat into the chosen duration; the API caps a mandate at 365 days.
+      const expiresAt = new Date(
+        validFrom.getTime() + Math.min(expiresInDays + 1, 365) * 86_400_000,
+      );
+      const setup: ModuleSetupInput = {
+        mandate: {
+          validFrom: validFrom.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          payeeCoolingSeconds: cooling,
+          executor: draft.executor.trim(),
+          guardian: draft.guardian.trim(),
+          pay,
+          refill,
+          supply,
+          approvalMaxAge: approvalAgeDays * 86_400,
+          approvers,
+        },
+        buffers,
+      };
+      await deploy.mutateAsync({
+        treasuryId,
+        setup,
+      });
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : t('Could not prepare module transactions.'),
+      );
+    }
+  };
+
+  const update = (key: keyof ModuleDraft, value: string) =>
+    setDraft((current) => ({ ...current, [key]: value }));
   return (
     <Card>
       <CardHeader
-        title={t('Enable the module')}
+        title={t('Set up and enable the module')}
         description={t(
-          'The module is the on-chain component that enforces the mandate. Enabling it is a transaction of your Treasury Safe: sign it, then execute it.',
+          'Set the initial limits and buffers. Treasury Safe and each operational Safe must approve its own transaction before coverage can be checked.',
         )}
       />
       <CardContent className="grid gap-4">
-        {deploy.isError && (
-          <Alert tone="danger">{errorMessage(deploy.error)}</Alert>
+        {governance.isPending && <Skeleton className="h-20" />}
+        {governance.isError && (
+          <Alert tone="danger">{errorMessage(governance.error)}</Alert>
         )}
-        {!tx.data ? (
-          <Skeleton className="h-48" />
-        ) : (
-          <>
-            <DecodedCalls calls={tx.data.governanceTx.calls} />
-            <GovernanceActions
-              tx={tx.data.governanceTx}
-              typedData={tx.data.typedData}
-            />
-          </>
+        {!governance.isPending && !hasPreparedTransactions && (
+          <div className="grid gap-4">
+            {hasPartialTransactions && (
+              <Alert tone="warning">
+                {t(
+                  'Transactions were prepared for only some Safes. Prepare them again to cover every Safe.',
+                )}
+              </Alert>
+            )}
+            <Alert tone="neutral" title={t('Initial module settings')}>
+              {t(
+                'Amounts are entered in {{asset}} and sent to the API as integer base units. Use the executor address configured for this organization.',
+                { asset: state.treasury.asset.symbol },
+              )}
+            </Alert>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field htmlFor="module-executor" label={t('Executor address')}>
+                <Input
+                  id="module-executor"
+                  value={draft.executor}
+                  onChange={(event) => update('executor', event.target.value)}
+                />
+              </Field>
+              <Field htmlFor="module-guardian" label={t('Guardian Safe address')}>
+                <Input
+                  id="module-guardian"
+                  value={draft.guardian}
+                  onChange={(event) => update('guardian', event.target.value)}
+                />
+              </Field>
+            </div>
+            <Field
+              htmlFor="module-approvers"
+              label={t('Approver wallets')}
+              hint={t('Enter distinct addresses, separated by spaces or commas.')}
+            >
+              <Textarea
+                id="module-approvers"
+                value={draft.approvers}
+                onChange={(event) => update('approvers', event.target.value)}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {([
+                ['payeeCoolingSeconds', 'Payee cooling (seconds)'],
+                ['approvalMaxAgeDays', 'Approval maximum age (days)'],
+                ['expiresInDays', 'Mandate duration (days)'],
+              ] as const).map(([key, label]) => (
+                <Field key={key} htmlFor={`module-${key}`} label={t(label)}>
+                  <Input
+                    id={`module-${key}`}
+                    inputMode="numeric"
+                    value={draft[key]}
+                    onChange={(event) => update(key, event.target.value)}
+                  />
+                </Field>
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {([
+                ['PAY', 'payPerRequest', 'payDaily'],
+                ['REFILL', 'refillPerRequest', 'refillDaily'],
+                ['SUPPLY', 'supplyPerRequest', 'supplyDaily'],
+              ] as const).map(([kind, perRequest, daily]) => (
+                <fieldset
+                  key={kind}
+                  className="grid gap-3 rounded-md border border-border p-3"
+                >
+                  <legend className="px-1 text-sm font-medium">
+                    {t('{{kind}} limits ({{asset}})', {
+                      kind,
+                      asset: state.treasury.asset.symbol,
+                    })}
+                  </legend>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field
+                      htmlFor={`module-${kind.toLowerCase()}-request`}
+                      label={t('Per request')}
+                    >
+                      <Input
+                        id={`module-${kind.toLowerCase()}-request`}
+                        inputMode="decimal"
+                        value={draft[perRequest]}
+                        onChange={(event) => update(perRequest, event.target.value)}
+                      />
+                    </Field>
+                    <Field
+                      htmlFor={`module-${kind.toLowerCase()}-daily`}
+                      label={t('Per day')}
+                    >
+                      <Input
+                        id={`module-${kind.toLowerCase()}-daily`}
+                        inputMode="decimal"
+                        value={draft[daily]}
+                        onChange={(event) => update(daily, event.target.value)}
+                      />
+                    </Field>
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+            {treasuryWallets.map((safe) => (
+              <fieldset
+                key={safe.role}
+                className="grid gap-3 rounded-md border border-border p-3"
+              >
+                <legend className="px-1 text-sm font-medium">
+                  {t('{{label}} buffer', { label: safe.label })}
+                </legend>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['minimum', 'target'] as const).map((key) => (
+                    <Field
+                      key={key}
+                      htmlFor={`buffer-${safe.role}-${key}`}
+                      label={t('{{kind}} ({{asset}})', {
+                        kind: key === 'minimum' ? 'Minimum' : 'Target',
+                        asset: state.treasury.asset.symbol,
+                      })}
+                    >
+                      <Input
+                        id={`buffer-${safe.role}-${key}`}
+                        inputMode="decimal"
+                        value={draft.buffers[safe.role]?.[key] ?? ''}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            buffers: {
+                              ...current.buffers,
+                              [safe.role]: {
+                                ...current.buffers[safe.role],
+                                [key]: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </Field>
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+            {formError && <Alert tone="danger">{formError}</Alert>}
+            {deploy.isError && (
+              <Alert tone="danger">{errorMessage(deploy.error)}</Alert>
+            )}
+          </div>
+        )}
+        {txsBySafe.map((tx) =>
+          tx ? <ModuleSetupTransaction key={tx.id} id={tx.id} /> : null,
         )}
       </CardContent>
       <CardFooter>
-        <Button variant="primary" disabled={!executed} onClick={onDone}>
-          {t('Continue')}
-        </Button>
+        {!hasPreparedTransactions ? (
+          <Button
+            variant="primary"
+            loading={deploy.isPending}
+            onClick={() => void prepare()}
+          >
+            {t('Prepare module transactions')}
+          </Button>
+        ) : (
+          <Button variant="primary" disabled={!executed} onClick={onDone}>
+            {t('Continue')}
+          </Button>
+        )}
       </CardFooter>
     </Card>
+  );
+}
+
+function ModuleSetupTransaction({ id }: { id: string }) {
+  const scope = useOrgScope();
+  const query = useGovernanceTx(scope.orgId, id);
+  return (
+    <QueryBoundary query={query}>
+      {({ governanceTx, typedData }) => (
+        <Card>
+          <CardHeader
+            title={governanceTx.title}
+            description={governanceTx.summary}
+          />
+          <CardContent className="grid gap-4">
+            <DecodedCalls calls={governanceTx.calls} />
+            <GovernanceActions tx={governanceTx} typedData={typedData} />
+          </CardContent>
+        </Card>
+      )}
+    </QueryBoundary>
   );
 }
 
@@ -578,68 +1162,37 @@ function CoverageStep({
 function GuardianStep({ state }: { state: TreasuryState }) {
   const scope = useOrgScope();
   const navigate = useNavigate();
-  const setGuardian = useSetGuardian(scope.orgId);
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(
+    () => readModuleDraft(state.treasury.id).guardian ?? '',
+  );
   return (
     <Card>
       <CardHeader
         title={t('Guardian Safe')}
         description={t(
-          'The Guardian can pause the treasury at any time but can never move funds or resume. Use a Safe whose owners can react quickly.',
+          'Confirm the Safe that was included as the Guardian when the module setup transactions were prepared. The Guardian can pause the treasury but cannot move funds or resume.',
         )}
       />
       <CardContent>
-        <form
-          id="guardian-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setGuardian.mutate(
-              { treasuryId: state.treasury.id, safeAddress: address.trim() },
-              {
-                onSuccess: () =>
-                  navigate(`${scope.base}/t/${state.treasury.id}/mandate`),
-              },
-            );
-          }}
-        >
-          <Field
-            htmlFor="guardian-address"
-            label={t('Guardian Safe address')}
-            error={
-              setGuardian.isError ? errorMessage(setGuardian.error) : undefined
-            }
-            hint={t(
-              'Next you will define the mandate: limits, buffers and approvers.',
-            )}
-          >
+        <div className="grid gap-4">
+          <Field htmlFor="guardian-address" label={t('Guardian Safe address')}>
             <Input
               id="guardian-address"
               className="num"
-              placeholder="0x…"
               value={address}
-              aria-invalid={setGuardian.isError}
-              onChange={(event) => setAddress(event.target.value)}
+              onChange={(event) => setAddress(event.target.value.trim())}
             />
           </Field>
-        </form>
+          <p className="text-sm text-muted-foreground">
+            {t('Next you will define the mandate: limits, buffers and approvers.')}
+          </p>
+        </div>
       </CardContent>
       <CardFooter>
-        {mockApiEnabled && (
-          <Button
-            className="mr-auto"
-            size="sm"
-            onClick={() =>
-              setAddress('0x3333333333333333333333333333333333333cc3')
-            }
-          >
-            {t('Use demo Safe')}
-          </Button>
-        )}
         <Button
-          type="submit"
-          form="guardian-form"
           variant="primary"
-          loading={setGuardian.isPending}
+          disabled={!/^0x[0-9a-fA-F]{40}$/.test(address)}
+          onClick={() => navigate(`${scope.base}/t/${state.treasury.id}/mandate`)}
         >
           {t('Finish setup')}
         </Button>
@@ -742,7 +1295,7 @@ function Layout({
 /** Steps 3–5 resume from server state, so a reload never loses progress. */
 function ResumeSteps({ treasuryId }: { treasuryId: string }) {
   const scope = useOrgScope();
-  const query = useTreasury(scope.orgId, treasuryId);
+  const query = useTreasurySetup(scope.orgId, treasuryId);
   const [stage, setStage] = useState<number>();
   return (
     <QueryBoundary query={query}>
@@ -782,7 +1335,8 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
                 : state.coverage.acknowledged
                   ? t('Partial, acknowledged')
                   : t('Partial'),
-          guardian: guardian?.safeAddress,
+          guardian:
+            guardian?.safeAddress ?? readModuleDraft(treasuryId).guardian,
         };
         return (
           <Layout current={current} summary={summary}>

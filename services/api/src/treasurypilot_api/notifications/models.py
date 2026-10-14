@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -15,10 +15,12 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,6 +52,12 @@ class Notification(Base):
         ),
         UniqueConstraint("user_id", "event_id", name="uq_notifications_user_event"),
         Index("ix_notifications_org_created", "org_id", "created_at"),
+        Index("ix_notifications_user_deliver", "user_id", "org_id", "deliver_at"),
+        Index(
+            "ix_notifications_actionable_deliver",
+            "deliver_at",
+            postgresql_where=text("severity IN ('ACTION', 'CRITICAL')"),
+        ),
         Index(
             "ix_notifications_user_unread",
             "user_id",
@@ -71,6 +79,11 @@ class Notification(Base):
     link: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # When the notification becomes visible: later than created_at during quiet hours.
+    # List, unread count and the SSE cursor all key on this, never on created_at.
+    deliver_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -183,6 +196,34 @@ class TelegramDelivery(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class NotificationPreference(Base):
+    """Per-user delivery controls; mandatory events bypass every setting."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        CheckConstraint(
+            "(quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)",
+            name="ck_notification_preferences_quiet_hours_pair",
+        ),
+        CheckConstraint("length(btrim(timezone)) > 0", name="ck_notification_preferences_timezone"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    channels: Mapped[dict[str, bool]] = mapped_column(
+        postgresql.JSONB(astext_type=Text()),
+        nullable=False,
+        server_default=text('\'{"in_app": true, "email": true, "telegram": true}\'::jsonb'),
+    )
+    categories: Mapped[dict[str, bool]] = mapped_column(
+        postgresql.JSONB(astext_type=Text()), nullable=False, server_default=text("'{}'::jsonb")
+    )
+    quiet_hours_start: Mapped[time | None] = mapped_column(Time(timezone=False))
+    quiet_hours_end: Mapped[time | None] = mapped_column(Time(timezone=False))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default="UTC")
 
 
 class ChatDelivery(Base):

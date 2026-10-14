@@ -22,6 +22,8 @@ MAX_MAGIC_LINK_TOKEN_LENGTH = 256
 
 # Identity README section 6: 5 per 15 min per email, 20 per 15 min per IP.
 RATE_LIMIT_WINDOW = timedelta(minutes=15)
+# RFC 9110 §10.2.3: hint a short backoff while the limiter backend is down.
+AUTH_UNAVAILABLE_RETRY_AFTER_S = 30
 MAGIC_LINK_EMAIL_LIMIT = 5
 MAGIC_LINK_IP_LIMIT = 20
 VERIFY_IP_LIMIT = 20
@@ -83,6 +85,9 @@ class MembershipRecord:
     org_id: uuid.UUID
     roles: tuple[str, ...]
     status: str
+    owner_is_onchain: bool = False
+    owner_checked_at: datetime | None = None
+    signer_roles_active: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +121,7 @@ class ConsumeResult:
 class SessionAccess:
     user: UserRecord
     session_id: uuid.UUID
+    organization_scope_id: uuid.UUID | None = None
 
 
 class AuthRepository(Protocol):
@@ -146,6 +152,7 @@ class AuthRepository(Protocol):
         expires_at: datetime,
         ip_hash: bytes,
         ua_hash: bytes,
+        organization_scope_id: uuid.UUID | None = None,
     ) -> None: ...
 
     async def access_session(
@@ -159,7 +166,9 @@ class AuthRepository(Protocol):
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None: ...
 
-    async def get_profile(self, user_id: uuid.UUID) -> ProfileRecord | None: ...
+    async def get_profile(
+        self, user_id: uuid.UUID, organization_scope_id: uuid.UUID | None = None
+    ) -> ProfileRecord | None: ...
 
 
 class MagicLinkSender(Protocol):
@@ -174,6 +183,7 @@ class AuthFailure(Exception):
         code: str,
         title: str,
         detail: str,
+        retry_after: int | None = None,
         extensions: dict[str, object] | None = None,
     ) -> None:
         super().__init__(code)
@@ -181,7 +191,20 @@ class AuthFailure(Exception):
         self.code = code
         self.title = title
         self.detail = detail
+        self.retry_after = retry_after
         self.extensions = extensions or {}
+
+
+def auth_unavailable(detail: str) -> AuthFailure:
+    """503 AUTH_UNAVAILABLE; every variant carries the same Retry-After hint."""
+
+    return AuthFailure(
+        status=503,
+        code="AUTH_UNAVAILABLE",
+        title="Authentication unavailable",
+        detail=detail,
+        retry_after=AUTH_UNAVAILABLE_RETRY_AFTER_S,
+    )
 
 
 class SessionTokenCodec:
@@ -271,26 +294,38 @@ class AuthService:
         return require_aware_utc(self._clock())
 
     async def _enforce_limit(self, scope: str, value: str, limit: int) -> None:
-        # Key on a keyed hash so the limiter store never holds emails or IPs.
-        digest = _encode(hash_client_value(value, self._client_hash_secret))
-        try:
-            allowed = await self._rate_limiter.hit(
-                f"{scope}:{digest}", limit=limit, window=RATE_LIMIT_WINDOW
-            )
-        except RateLimiterUnavailable:
-            # Identity M01-D8: fail closed for auth endpoints when Redis is down.
-            raise AuthFailure(
-                status=503,
-                code="AUTH_UNAVAILABLE",
-                title="Authentication unavailable",
-                detail="Sign-in is temporarily unavailable. Please retry.",
-            ) from None
-        if not allowed:
+        await self._enforce_limits((scope, value, limit))
+
+    async def _enforce_limits(self, *checks: tuple[str, str, int]) -> None:
+        """Count every limit, then reject with the longest wait among those exceeded.
+
+        Checking all of them means a client that honours Retry-After is not limited
+        again by a second, longer window it had not been told about.
+        """
+
+        waits: list[int] = []
+        for scope, value, limit in checks:
+            # Key on a keyed hash so the limiter store never holds emails or IPs.
+            digest = _encode(hash_client_value(value, self._client_hash_secret))
+            try:
+                result = await self._rate_limiter.hit(
+                    f"{scope}:{digest}", limit=limit, window=RATE_LIMIT_WINDOW
+                )
+            except RateLimiterUnavailable:
+                # Identity M01-D8: fail closed for auth endpoints when Redis is down.
+                raise auth_unavailable(
+                    "Sign-in is temporarily unavailable. Please retry."
+                ) from None
+            if not result.allowed:
+                waits.append(result.retry_after)
+        if waits:
             raise AuthFailure(
                 status=429,
                 code="RATE_LIMITED",
                 title="Too many requests",
                 detail="Too many sign-in attempts. Please wait and try again.",
+                # The time left in the longest exceeded fixed window.
+                retry_after=max(waits),
             )
 
     async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:
@@ -303,8 +338,10 @@ class AuthService:
     async def enforce_magic_link_limits(self, email: str, *, client_ip: str) -> None:
         """Apply shared request limits before an enumeration-safe 202 response."""
         normalized = normalize_email(email)
-        await self._enforce_limit("magic-link:ip", client_ip, MAGIC_LINK_IP_LIMIT)
-        await self._enforce_limit("magic-link:email", normalized, MAGIC_LINK_EMAIL_LIMIT)
+        await self._enforce_limits(
+            ("magic-link:ip", client_ip, MAGIC_LINK_IP_LIMIT),
+            ("magic-link:email", normalized, MAGIC_LINK_EMAIL_LIMIT),
+        )
 
     async def issue_magic_link(self, email: str) -> MagicLinkDelivery | None:
         """Look up the account and issue its link outside the HTTP response path."""
@@ -395,6 +432,30 @@ class AuthService:
             csrf_token=self._token_codec.csrf_token(session_id),
         )
 
+    async def create_oidc_session(
+        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
+    ) -> VerifiedSession:
+        """Issue a short session so provider group changes take effect within five minutes."""
+        now = self._now()
+        session_id = uuid.uuid4()
+        session_token = self._token_codec.session_token(session_id)
+        await self._repository.create_session(
+            session_id=session_id,
+            user_id=user.id,
+            token_hash=hash_token(session_token),
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+            ip_hash=hash_client_value(client_ip, self._client_hash_secret),
+            ua_hash=hash_client_value(user_agent, self._client_hash_secret),
+            organization_scope_id=organization_id,
+        )
+        return VerifiedSession(
+            user=user,
+            session_id=session_id,
+            session_token=session_token,
+            csrf_token=self._token_codec.csrf_token(session_id),
+        )
+
     async def authenticate(
         self,
         *,
@@ -439,7 +500,7 @@ class AuthService:
         await self._repository.revoke_session(session_id=access.session_id, now=self._now())
 
     async def profile(self, access: SessionAccess) -> ProfileRecord:
-        profile = await self._repository.get_profile(access.user.id)
+        profile = await self._repository.get_profile(access.user.id, access.organization_scope_id)
         if profile is None:
             raise self._authentication_required()
         return profile

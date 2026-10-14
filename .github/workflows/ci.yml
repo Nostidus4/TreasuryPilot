@@ -20,6 +20,10 @@ jobs:
         with:
           version: '0.11.3'
           enable-cache: true
+      # Anvil for the on-chain integration tests (asset decimals check).
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
       - name: Install Python workspace
         run: uv sync --frozen
       - name: Ruff
@@ -32,6 +36,31 @@ jobs:
         run: uv run lint-imports
       - name: Tests
         run: uv run pytest --cov=treasurypilot_core --cov-report=term-missing
+
+  # Live-RPC check kept out of `quality` so a public RPC outage cannot block unit tests.
+  config-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Deployment config gate
+        env:
+          SEPOLIA_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
+        run: |
+          for attempt in 1 2 3; do
+            make config-check && exit 0
+            sleep $((attempt * 10))
+          done
+          exit 1
 
   secrets:
     runs-on: ubuntu-latest

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from treasurypilot_worker.config import Settings
+from treasurypilot_worker.config import Settings, get_settings
 from treasurypilot_worker.notify import telegram as telegram_module
 from treasurypilot_worker.notify.telegram import (
     HttpTelegramClient,
@@ -179,3 +179,19 @@ def test_token_is_never_rendered_by_repr_or_settings(monkeypatch: pytest.MonkeyP
 def test_client_requires_a_token() -> None:
     with pytest.raises(ValueError):
         HttpTelegramClient("")
+
+
+@pytest.mark.parametrize("token", ["", "   "])
+def test_delivery_task_is_a_no_op_for_an_empty_token(
+    monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    from treasurypilot_worker import tasks
+
+    monkeypatch.setenv("TP_TELEGRAM_BOT_TOKEN", token)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    get_settings.cache_clear()
+    try:
+        # Would raise (no DATABASE_URL, then ValueError from the client) if it proceeded.
+        assert tasks.deliver_telegram.run() == {"sent": 0}
+    finally:
+        get_settings.cache_clear()

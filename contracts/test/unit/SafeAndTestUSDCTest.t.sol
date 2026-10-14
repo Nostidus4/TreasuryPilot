@@ -2,14 +2,14 @@
 pragma solidity 0.8.28;
 
 import {Enum} from "@safe-global/safe-contracts/contracts/common/Enum.sol";
-import {Safe} from "@safe-global/safe-contracts/contracts/Safe.sol";
+import {ISafeWallet} from "../../src/interfaces/ISafeWallet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestUSDC} from "../../src/test-assets/TestUSDC.sol";
 import {SafeTestHelper} from "../helpers/SafeTestHelper.sol";
 
 contract SafeAndTestUSDCTest is SafeTestHelper {
     function testSafeCanTransferTestUSDC() external {
-        Safe safe = deployOneOfOneSafe(address(this), 1);
+        ISafeWallet safe = deployOneOfOneSafe(address(this), 1);
         TestUSDC token = new TestUSDC();
         address recipient = address(0xBEEF);
         uint256 amount = 125_000_000;

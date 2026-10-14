@@ -16,7 +16,7 @@ from treasurypilot_worker.runtime import (
 from treasurypilot_worker.tasks import (
     ai_probe,
     core_probe,
-    escalate_overdue_review_items,
+    publish_daily_audit_roots_task,
     publish_domain_events,
 )
 
@@ -35,6 +35,14 @@ def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
 
 
+def test_safe_config_refresh_is_scheduled_every_ten_minutes() -> None:
+    entry = app.conf.beat_schedule["refresh-safe-config-snapshots"]
+
+    assert entry["task"] == "treasurypilot.treasury.refresh_safe_config_snapshots"
+    assert entry["schedule"].minute == {0, 10, 20, 30, 40, 50}
+    assert entry["options"]["queue"] == "core"
+
+
 def test_registered_tasks_inherit_safe_base() -> None:
     assert isinstance(core_probe, SafeTask)
     assert core_probe.acks_late is True
@@ -45,8 +53,8 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert ai_probe.queue == "ai"
     assert isinstance(publish_domain_events, SafeTask)
     assert publish_domain_events.queue == "core"
-    assert isinstance(escalate_overdue_review_items, SafeTask)
-    assert escalate_overdue_review_items.queue == "core"
+    assert isinstance(publish_daily_audit_roots_task, SafeTask)
+    assert publish_daily_audit_roots_task.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -57,12 +65,13 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["options"] == {"queue": "core", "expires": 2}
 
 
-def test_overdue_review_escalation_is_scheduled_every_minute() -> None:
-    entry = app.conf.beat_schedule["escalate-overdue-review-items"]
+def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
+    entry = app.conf.beat_schedule["publish-daily-audit-roots"]
 
-    assert entry["task"] == "treasurypilot.recovery.escalate-overdue-review-items"
-    assert entry["schedule"] == timedelta(seconds=60)
-    assert entry["options"] == {"queue": "core", "expires": 30}
+    assert entry["task"] == "treasurypilot.audit.publish-daily-roots"
+    assert entry["schedule"].hour == {0}
+    assert entry["schedule"].minute == {5}
+    assert entry["options"] == {"queue": "core"}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

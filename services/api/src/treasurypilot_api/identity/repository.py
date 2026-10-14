@@ -17,8 +17,10 @@ from treasurypilot_api.identity.auth import (
     WalletRecord,
 )
 from treasurypilot_api.identity.models import (
+    SIGNER_ROLES,
     MagicLink,
     Membership,
+    MembershipStatus,
     Session,
     User,
     UserStatus,
@@ -112,6 +114,7 @@ class SqlAlchemyAuthRepository:
         expires_at: datetime,
         ip_hash: bytes,
         ua_hash: bytes,
+        organization_scope_id: uuid.UUID | None = None,
     ) -> None:
         async with self._sessions() as session, session.begin():
             session.add(
@@ -124,6 +127,7 @@ class SqlAlchemyAuthRepository:
                     last_seen_at=created_at,
                     ip_hash=ip_hash,
                     ua_hash=ua_hash,
+                    organization_scope_id=organization_scope_id,
                 )
             )
 
@@ -157,7 +161,11 @@ class SqlAlchemyAuthRepository:
                 auth_session.revoked_at = now
                 return None
             auth_session.last_seen_at = now
-            return SessionAccess(user=_user_record(user), session_id=session_id)
+            return SessionAccess(
+                user=_user_record(user),
+                session_id=session_id,
+                organization_scope_id=auth_session.organization_scope_id,
+            )
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None:
         async with self._sessions() as session, session.begin():
@@ -167,27 +175,36 @@ class SqlAlchemyAuthRepository:
                 .values(revoked_at=now)
             )
 
-    async def get_profile(self, user_id: uuid.UUID) -> ProfileRecord | None:
+    async def get_profile(
+        self, user_id: uuid.UUID, organization_scope_id: uuid.UUID | None = None
+    ) -> ProfileRecord | None:
         async with self._sessions() as session:
             user = await session.scalar(
                 select(User).where(User.id == user_id, User.status == UserStatus.ACTIVE)
             )
             if user is None:
                 return None
+            memberships_query = select(Membership).where(Membership.user_id == user_id)
+            if organization_scope_id is not None:
+                memberships_query = memberships_query.where(
+                    Membership.org_id == organization_scope_id
+                )
             memberships = (
-                await session.scalars(
-                    select(Membership)
-                    .where(Membership.user_id == user_id)
-                    .order_by(Membership.org_id, Membership.id)
-                )
+                await session.scalars(memberships_query.order_by(Membership.org_id, Membership.id))
             ).all()
-            wallets = (
-                await session.scalars(
-                    select(WalletLink)
-                    .where(WalletLink.user_id == user_id, WalletLink.unlinked_at.is_(None))
-                    .order_by(WalletLink.linked_at, WalletLink.id)
-                )
-            ).all()
+            if organization_scope_id is None:
+                wallets = (
+                    await session.scalars(
+                        select(WalletLink)
+                        .where(
+                            WalletLink.user_id == user_id,
+                            WalletLink.unlinked_at.is_(None),
+                        )
+                        .order_by(WalletLink.linked_at, WalletLink.id)
+                    )
+                ).all()
+            else:
+                wallets = []
             return ProfileRecord(
                 user=_user_record(user),
                 memberships=tuple(
@@ -196,6 +213,13 @@ class SqlAlchemyAuthRepository:
                         org_id=item.org_id,
                         roles=tuple(item.roles),
                         status=item.status,
+                        owner_is_onchain=item.owner_is_onchain,
+                        owner_checked_at=item.owner_checked_at,
+                        # A wallet only activates the signer roles this membership holds.
+                        # Suspended memberships hold no active signer roles.
+                        signer_roles_active=bool(wallets)
+                        and item.status == MembershipStatus.ACTIVE
+                        and not SIGNER_ROLES.isdisjoint(item.roles),
                     )
                     for item in memberships
                 ),

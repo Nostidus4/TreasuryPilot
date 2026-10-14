@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from treasurypilot_api.notifications.telegram import (
     TelegramUnavailable,
     router,
 )
+from treasurypilot_core.privacy import FieldCipher, FieldEncryptionKey
 
 SECRET = "webhook-secret-for-tests"
 USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000333")
@@ -113,7 +115,7 @@ def _client(
     app.state.telegram_repository = repository
     app.state.settings = SimpleNamespace(
         telegram_bot_username=username,
-        telegram_webhook_secret=SecretStr(secret) if secret else None,
+        telegram_webhook_secret=SecretStr(secret) if secret is not None else None,
     )
     return TestClient(app)
 
@@ -166,19 +168,41 @@ def test_chat_webhook_registration_uses_authenticated_user_and_channel_kind(
     assert repository.connect_calls == [(USER_ID, ChannelKind(kind.upper()), url)]
 
 
-@pytest.mark.parametrize(
-    ("kind", "url"),
-    [
-        (ChannelKind.SLACK, "https://example.com/hook"),
-        (ChannelKind.LARK, "https://127.0.0.1/open-apis/bot/v2/hook/x"),
-        (ChannelKind.WECOM, "http://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x"),
-    ],
-)
-def test_chat_webhook_validation_only_accepts_provider_endpoints(
-    kind: ChannelKind, url: str
-) -> None:
+def _repository_for_values() -> SqlAlchemyTelegramRepository:
+    key = FieldEncryptionKey.from_base64(base64.urlsafe_b64encode(bytes(range(32))).decode())
+    return SqlAlchemyTelegramRepository(
+        None,  # type: ignore[arg-type]
+        cipher=FieldCipher(key),
+        hash_key=b"h" * 32,
+    )
+
+
+def test_chat_webhook_variants_hash_to_the_same_destination() -> None:
+    repo = _repository_for_values()
+    plain = repo._chat_values(ChannelKind.SLACK, "https://hooks.slack.com/services/T/B/x")
+    for variant in (
+        "HTTPS://Hooks.Slack.com/services/T/B/x",
+        "https://hooks.slack.com:443/services/T/B/x",
+        "https://hooks.slack.com/services/T/B/x?",
+    ):
+        assert repo._chat_values(ChannelKind.SLACK, variant)["target_hash"] == plain["target_hash"]
+    assert (
+        repo._chat_values(ChannelKind.LARK, "https://open.feishu.cn/open-apis/bot/v2/hook/x")[
+            "target_hash"
+        ]
+        != plain["target_hash"]
+    )
+
+
+def test_chat_webhook_values_reject_unavailable_or_foreign_destinations() -> None:
+    repo = _repository_for_values()
     with pytest.raises(ValueError, match="invalid webhook URL"):
-        SqlAlchemyTelegramRepository._validate_chat_webhook(kind, url)
+        repo._chat_values(ChannelKind.SLACK, "https://example.com/hook")
+    with pytest.raises(TelegramUnavailable):
+        repo._chat_values(ChannelKind.TELEGRAM, "https://hooks.slack.com/services/T/B/x")
+    keyless = SqlAlchemyTelegramRepository(None, cipher=repo._cipher, hash_key=None)  # type: ignore[arg-type]
+    with pytest.raises(TelegramUnavailable):
+        keyless._chat_values(ChannelKind.SLACK, "https://hooks.slack.com/services/T/B/x")
 
 
 @pytest.mark.parametrize("secret", [None, "wrong", ""])
@@ -196,6 +220,16 @@ def test_webhook_is_closed_when_no_secret_is_configured(
 ) -> None:
     client = _client(repository, monkeypatch, secret=None)
     assert _hook(client, _update("/start abc"), secret="anything").status_code == 503
+    assert repository.complete_calls == []
+
+
+def test_webhook_treats_an_empty_secret_as_unconfigured(
+    repository: _Repository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Compose passes "" for an unset variable; an empty header must not match it.
+    client = _client(repository, monkeypatch, secret="")
+    assert _hook(client, _update("/start abc"), secret="").status_code == 503
+    assert _hook(client, _update("/start abc"), secret=None).status_code == 503
     assert repository.complete_calls == []
 
 

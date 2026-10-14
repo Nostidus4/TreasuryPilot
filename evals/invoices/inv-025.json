@@ -1,0 +1,19 @@
+{
+  "id": "inv-025",
+  "vendor_name": "SYNTH Vendor 025 Ltd",
+  "invoice_no": "TEST-INV-0025",
+  "issue_date": "2026-10-01",
+  "amount": "725000000",
+  "currency": "USDC",
+  "decimals": 6,
+  "payee_address": "0x2222222222222222222222222222222222222222",
+  "due_date": "2026-10-31",
+  "terms": null,
+  "expected_flags": [
+    "ADDRESS_CHANGED",
+    "ADDRESS_NOT_REGISTERED"
+  ],
+  "layout": "clean",
+  "language": "en",
+  "notes": "Synthetic evaluation fixture; no real company or payment authority."
+}

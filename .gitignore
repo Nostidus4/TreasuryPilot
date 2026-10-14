@@ -20,6 +20,9 @@ apps/web/dist/
 contracts/cache/
 contracts/out/
 contracts/broadcast/
+deployments/31337.json
+deployments/predictions/*
+!deployments/predictions/.gitkeep
 contracts/slither-report/
 
 # Local environment and secrets
@@ -32,3 +35,7 @@ infra/env/.env
 .DS_Store
 .idea/
 .vscode/
+
+# Playwright
+test-results/
+playwright-report/

@@ -31,6 +31,7 @@ Encode the source document's acceptance scenarios that are enforceable on-chain 
 
 - Tests for AT-01, 02, 05, 06, 07, 08, 10, 11 (after SC-011), 12
 - shared fixture: 3 Safes, module, TestUSDC, approver and executor keys
+- Store forge gas report with compiler/profile/revision in CI evidence
 
 ## Out of scope
 
@@ -50,6 +51,7 @@ Name tests `test_AT05_*` so reports map to the source cases.
 
 - [ ] Each listed AT case has at least one passing test
 - [ ] The test report lists AT ids
+- [ ] CI uploads the gas report artifact
 
 ## Testing requirements
 

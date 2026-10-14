@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, cast
@@ -11,10 +12,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.mandate.configuration import (
     MandateConfig,
     MandateValidationError,
@@ -71,8 +72,10 @@ class MandateRepository(Protocol):
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         user_id: uuid.UUID,
-        config: dict[str, object],
-    ) -> MandateVersionRecord | None: ...
+        build_config: Callable[[MandateContext], dict[str, object]],
+    ) -> tuple[MandateVersionRecord, MandateContext] | None:
+        """Insert a draft built from the context read under the treasury row lock."""
+        ...
 
     async def discard_draft(
         self,
@@ -100,6 +103,41 @@ def _record(row: MandateVersion) -> MandateVersionRecord:
     )
 
 
+async def _load_context(
+    session: AsyncSession, organization_id: uuid.UUID, treasury_id: uuid.UUID
+) -> MandateContext | None:
+    row = await session.execute(
+        select(Treasury.id, Asset.decimals, Asset.symbol)
+        .join(Asset, (Asset.id == Treasury.asset_id) & (Asset.chain_id == Treasury.chain_id))
+        .where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+    )
+    treasury = row.one_or_none()
+    if treasury is None:
+        return None
+    wallets = await session.scalars(
+        select(TreasuryWallet).where(
+            TreasuryWallet.treasury_id == treasury_id,
+            TreasuryWallet.org_id == organization_id,
+        )
+    )
+    wallet_roles = {f"0x{wallet.safe_address.hex()}": wallet.role.value for wallet in wallets}
+    active = await session.scalar(
+        select(MandateVersion)
+        .where(
+            MandateVersion.treasury_id == treasury_id,
+            MandateVersion.status == MandateVersionStatus.ACTIVE,
+        )
+        .order_by(MandateVersion.version.desc())
+        .limit(1)
+    )
+    return MandateContext(
+        asset_decimals=treasury.decimals,
+        asset_symbol=treasury.symbol,
+        wallets=wallet_roles,
+        active_config=dict(active.config) if active is not None else None,
+    )
+
+
 class SqlAlchemyMandateRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
@@ -108,40 +146,7 @@ class SqlAlchemyMandateRepository:
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
     ) -> MandateContext | None:
         async with self._sessions() as session:
-            row = await session.execute(
-                select(Treasury.id, Asset.decimals, Asset.symbol)
-                .join(
-                    Asset, (Asset.id == Treasury.asset_id) & (Asset.chain_id == Treasury.chain_id)
-                )
-                .where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
-            )
-            treasury = row.one_or_none()
-            if treasury is None:
-                return None
-            wallets = await session.scalars(
-                select(TreasuryWallet).where(
-                    TreasuryWallet.treasury_id == treasury_id,
-                    TreasuryWallet.org_id == organization_id,
-                )
-            )
-            wallet_roles = {
-                f"0x{wallet.safe_address.hex()}": wallet.role.value for wallet in wallets
-            }
-            active = await session.scalar(
-                select(MandateVersion)
-                .where(
-                    MandateVersion.treasury_id == treasury_id,
-                    MandateVersion.status == MandateVersionStatus.ACTIVE,
-                )
-                .order_by(MandateVersion.version.desc())
-                .limit(1)
-            )
-            return MandateContext(
-                asset_decimals=treasury.decimals,
-                asset_symbol=treasury.symbol,
-                wallets=wallet_roles,
-                active_config=dict(active.config) if active is not None else None,
-            )
+            return await _load_context(session, organization_id, treasury_id)
 
     async def list_versions(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -188,8 +193,8 @@ class SqlAlchemyMandateRepository:
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         user_id: uuid.UUID,
-        config: dict[str, object],
-    ) -> MandateVersionRecord | None:
+        build_config: Callable[[MandateContext], dict[str, object]],
+    ) -> tuple[MandateVersionRecord, MandateContext] | None:
         async with self._sessions() as session, session.begin():
             treasury = await session.scalar(
                 select(Treasury)
@@ -198,6 +203,11 @@ class SqlAlchemyMandateRepository:
             )
             if treasury is None:
                 return None
+            # Read under the row lock so validation and the diff see a consistent state.
+            context = await _load_context(session, organization_id, treasury_id)
+            if context is None:
+                return None
+            config = build_config(context)
             latest_version = await session.scalar(
                 select(func.max(MandateVersion.version)).where(
                     MandateVersion.treasury_id == treasury_id
@@ -208,6 +218,7 @@ class SqlAlchemyMandateRepository:
             ).encode("utf-8")
             row = MandateVersion(
                 id=uuid7(),
+                org_id=organization_id,
                 treasury_id=treasury_id,
                 version=int(latest_version or 0) + 1,
                 status=MandateVersionStatus.DRAFT,
@@ -219,7 +230,7 @@ class SqlAlchemyMandateRepository:
             )
             session.add(row)
             await session.flush()
-            return _record(row)
+            return _record(row), context
 
     async def discard_draft(
         self,
@@ -242,7 +253,7 @@ class SqlAlchemyMandateRepository:
             if row is None:
                 return None
             if row.status == MandateVersionStatus.DRAFT:
-                row.status = MandateVersionStatus.DISCARDED
+                await session.delete(row)
                 await session.flush()
             return _record(row)
 
@@ -334,7 +345,6 @@ def _draft_response(
 router = APIRouter(
     prefix="/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates", tags=["mandates"]
 )
-_require_owner = require_role(OrganizationRole.OWNER)
 
 
 @router.get("", response_model=MandateListResponse, openapi_extra={"x-organization-scoped": True})
@@ -342,7 +352,7 @@ async def list_mandates(
     organization_id: uuid.UUID,
     treasury_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> MandateListResponse:
     rows = await _repository(request).list_versions(
         organization_id=member.organization_id,
@@ -351,6 +361,47 @@ async def list_mandates(
     if rows is None:
         raise _not_found()
     return MandateListResponse(items=[MandateView.from_record(row) for row in rows])
+
+
+async def _create_draft(
+    *,
+    request: Request,
+    response: Response,
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    member: MemberAccess,
+    payload: MandateConfig,
+    enforce_future_expiry: bool,
+) -> MandateDraftResponse:
+    environment = request.app.state.settings.environment
+
+    def build_config(context: MandateContext) -> dict[str, object]:
+        validate_mandate_config(
+            payload,
+            known_wallets=context.wallets,
+            environment=environment,
+            asset_decimals=context.asset_decimals,
+            now=datetime.now(UTC),
+            enforce_future_expiry=enforce_future_expiry,
+        )
+        return payload.json_config(environment=environment, asset_decimals=context.asset_decimals)
+
+    try:
+        created = await _repository(request).create_draft(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            user_id=member.user_id,
+            build_config=build_config,
+        )
+    except MandateValidationError as error:
+        raise _validation_failure(error) from None
+    if created is None:
+        raise _not_found()
+    row, context = created
+    response.headers["Location"] = (
+        f"/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{row.id}"
+    )
+    return _draft_response(row, MandateConfig.model_validate(row.config), context=context)
 
 
 @router.post(
@@ -365,40 +416,17 @@ async def create_mandate_draft(
     payload: MandateConfig,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(_require_owner),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> MandateDraftResponse:
-    repository = _repository(request)
-    context = await repository.get_context(
-        organization_id=member.organization_id,
+    return await _create_draft(
+        request=request,
+        response=response,
+        organization_id=organization_id,
         treasury_id=treasury_id,
+        member=member,
+        payload=payload,
+        enforce_future_expiry=True,
     )
-    if context is None:
-        raise _not_found()
-    environment = request.app.state.settings.environment
-    try:
-        validate_mandate_config(
-            payload,
-            known_wallets=context.wallets,
-            environment=environment,
-            asset_decimals=context.asset_decimals,
-            now=datetime.now(UTC),
-        )
-    except MandateValidationError as error:
-        raise _validation_failure(error) from None
-    config = payload.json_config(environment=environment, asset_decimals=context.asset_decimals)
-    normalized_config = MandateConfig.model_validate(config)
-    row = await repository.create_draft(
-        organization_id=member.organization_id,
-        treasury_id=treasury_id,
-        user_id=member.user_id,
-        config=config,
-    )
-    if row is None:
-        raise _not_found()
-    response.headers["Location"] = (
-        f"/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{row.id}"
-    )
-    return _draft_response(row, normalized_config, context=context)
 
 
 @router.post(
@@ -413,19 +441,14 @@ async def clone_mandate_draft(
     mandate_id: uuid.UUID,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(_require_owner),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> MandateDraftResponse:
-    repository = _repository(request)
-    context = await repository.get_context(
-        organization_id=member.organization_id,
-        treasury_id=treasury_id,
-    )
-    source = await repository.get_version(
+    source = await _repository(request).get_version(
         organization_id=member.organization_id,
         treasury_id=treasury_id,
         mandate_id=mandate_id,
     )
-    if context is None or source is None:
+    if source is None:
         raise _not_found()
     try:
         config_model = MandateConfig.model_validate(source.config)
@@ -436,33 +459,16 @@ async def clone_mandate_draft(
             title="Mandate cannot be cloned",
             detail="The stored mandate configuration is incompatible with the current schema.",
         ) from None
-    environment = request.app.state.settings.environment
-    try:
-        validate_mandate_config(
-            config_model,
-            known_wallets=context.wallets,
-            environment=environment,
-            asset_decimals=context.asset_decimals,
-            now=datetime.now(UTC),
-        )
-    except MandateValidationError as error:
-        raise _validation_failure(error) from None
-    config = config_model.json_config(
-        environment=environment, asset_decimals=context.asset_decimals
-    )
-    normalized_config = MandateConfig.model_validate(config)
-    row = await repository.create_draft(
-        organization_id=member.organization_id,
+    # Cloning is how an expired mandate is renewed, so the old expiry is not rejected here.
+    return await _create_draft(
+        request=request,
+        response=response,
+        organization_id=organization_id,
         treasury_id=treasury_id,
-        user_id=member.user_id,
-        config=config,
+        member=member,
+        payload=config_model,
+        enforce_future_expiry=False,
     )
-    if row is None:
-        raise _not_found()
-    response.headers["Location"] = (
-        f"/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{row.id}"
-    )
-    return _draft_response(row, normalized_config, context=context)
 
 
 @router.delete(
@@ -476,7 +482,7 @@ async def discard_mandate_draft(
     treasury_id: uuid.UUID,
     mandate_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(_require_owner),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
 ) -> Response:
     row = await _repository(request).discard_draft(
         organization_id=member.organization_id,
@@ -485,7 +491,7 @@ async def discard_mandate_draft(
     )
     if row is None:
         raise _not_found()
-    if row.status != MandateVersionStatus.DISCARDED:
+    if row.status != MandateVersionStatus.DRAFT:
         raise AuthFailure(
             status=409,
             code="NOT_DRAFT",

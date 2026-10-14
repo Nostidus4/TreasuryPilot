@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import secrets
-import time
 import uuid
 from datetime import datetime
 from enum import StrEnum
@@ -24,20 +22,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from treasurypilot_api.database import Base
-
-
-def uuid7() -> uuid.UUID:
-    """Generate a time-ordered UUIDv7 without requiring a pre-3.14 backport."""
-
-    timestamp_ms = time.time_ns() // 1_000_000
-    random_a = secrets.randbits(12)
-    random_b = secrets.randbits(62)
-    value = (timestamp_ms & ((1 << 48) - 1)) << 80
-    value |= 0x7 << 76
-    value |= random_a << 64
-    value |= 0b10 << 62
-    value |= random_b
-    return uuid.UUID(int=value)
+from treasurypilot_core.ids import uuid7
 
 
 class UserStatus(StrEnum):
@@ -59,6 +44,12 @@ class OrganizationRole(StrEnum):
     GUARDIAN = "Guardian"
     AUDITOR = "Auditor"
     PLATFORM_ADMIN = "PlatformAdmin"
+
+
+# Roles that sign with a linked wallet; they are inactive until one is linked (FR-012).
+SIGNER_ROLES = frozenset(
+    {OrganizationRole.OWNER.value, OrganizationRole.APPROVER.value, OrganizationRole.GUARDIAN.value}
+)
 
 
 class User(Base):
@@ -108,6 +99,9 @@ class Session(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_scope_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
     )
     token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -205,6 +199,9 @@ class Organization(Base):
             "country IS NULL OR country ~ '^[A-Z]{2}$'", name="ck_organizations_country"
         ),
         CheckConstraint("length(btrim(display_tz)) > 0", name="ck_organizations_display_tz"),
+        CheckConstraint(
+            "platform_status IN ('active', 'suspended')", name="ck_organizations_platform_status"
+        ),
         CheckConstraint("version > 0", name="ck_organizations_version"),
     )
 
@@ -214,6 +211,9 @@ class Organization(Base):
     country: Mapped[str | None] = mapped_column(String(2))
     display_tz: Mapped[str] = mapped_column(
         String(64), nullable=False, default="UTC", server_default="UTC"
+    )
+    platform_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
     )
     solo_mode: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
@@ -253,6 +253,10 @@ class Membership(Base):
         CheckConstraint("array_position(roles, NULL) IS NULL", name="ck_memberships_roles_no_null"),
         CheckConstraint(_VALID_ROLES_SQL, name="ck_memberships_roles_valid"),
         CheckConstraint("status IN ('active', 'suspended')", name="ck_memberships_status"),
+        CheckConstraint(
+            "NOT owner_is_onchain OR owner_checked_at IS NOT NULL",
+            name="ck_memberships_owner_check_time",
+        ),
         CheckConstraint("version > 0", name="ck_memberships_version"),
         Index("ix_memberships_user_id", "user_id"),
     )
@@ -271,6 +275,10 @@ class Membership(Base):
         default=MembershipStatus.ACTIVE,
         server_default=MembershipStatus.ACTIVE,
     )
+    owner_is_onchain: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    owner_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -333,3 +341,22 @@ class Invite(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OIDCIdentity(Base):
+    __tablename__ = "oidc_identities"
+    __table_args__ = (
+        UniqueConstraint("user_id", "issuer", name="uq_oidc_identities_user_issuer"),
+        CheckConstraint(
+            "length(subject) BETWEEN 1 AND 255", name="ck_oidc_identity_subject_length"
+        ),
+    )
+
+    issuer: Mapped[str] = mapped_column(String(500), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

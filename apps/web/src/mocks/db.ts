@@ -36,14 +36,16 @@ import type {
   Vendor,
 } from '@/lib/api/types';
 
+import { APPROVER, SEEDED_PAYMENT_INVOICE, SEEDED_PLAN_ID } from './seeded';
+
 export const usdc = (whole: number, cents = 0) =>
   (BigInt(whole) * 1_000_000n + BigInt(cents) * 10_000n).toString();
 
 const now = () => Date.now();
-const iso = (offsetMs = 0) => new Date(now() + offsetMs).toISOString();
+export const iso = (offsetMs = 0) => new Date(now() + offsetMs).toISOString();
 const MIN = 60_000;
 const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
+export const DAY = 24 * HOUR;
 const dayIso = (days: number) => {
   const date = new Date(now() + days * DAY);
   date.setUTCHours(23, 59, 59, 0);
@@ -71,6 +73,7 @@ export const CHAINS: Chain[] = [
     chainId: 11155111,
     name: 'Sepolia',
     explorerUrl: 'https://sepolia.etherscan.io',
+    safeDeploymentAvailable: false,
     assets: [
       {
         id: 'usdc-sepolia',
@@ -111,7 +114,7 @@ export interface Db {
   members: Member[];
   /** Members and creator of orgs created during the session. */
   orgMembers: Record<string, Member[]>;
-  moduleEnabled: Record<string, boolean>;
+  moduleEnabled: Record<string, string[]>;
   treasuries: Record<string, TreasuryState>;
   mandates: Record<string, MandateVersion[]>;
   payees: Payee[];
@@ -524,7 +527,7 @@ export function seed(): Db {
     }),
     request({
       id: 'req_219',
-      invoiceNumber: 'BP-2026-219',
+      invoiceNumber: SEEDED_PAYMENT_INVOICE,
       vendorId: 'vnd_brightpath',
       vendorName: 'Brightpath Design',
       amount: usdc(640),
@@ -617,7 +620,7 @@ export function seed(): Db {
 
   const plans: PlanDetail[] = [
     {
-      id: 'pln_0421',
+      id: SEEDED_PLAN_ID,
       treasuryId: 'trs_main',
       createdAt: iso(-12 * MIN),
       status: 'Validated',
@@ -1088,7 +1091,7 @@ export function seed(): Db {
       },
     ],
     orgMembers: {},
-    moduleEnabled: { trs_main: true },
+    moduleEnabled: { trs_main: ['T', 'O1', 'O2'] },
     members: [
       {
         userId: ME.id,
@@ -1100,9 +1103,9 @@ export function seed(): Db {
         joinedAt: iso(-40 * DAY),
       },
       {
-        userId: 'usr_an',
-        name: 'An Nguyen',
-        email: 'an@northwind.test',
+        userId: APPROVER.id,
+        name: APPROVER.name,
+        email: APPROVER.email,
         roles: ['OWN', 'APR'],
         wallet: ADDR.an,
         status: 'Active',
@@ -1700,10 +1703,13 @@ export function createGovernanceTx(
   > & {
     diff?: DiffEntry[];
     effect?: () => void;
+    safeRole?: 'T' | 'O1' | 'O2';
   },
 ) {
   const state = db.treasuries[input.treasuryId];
-  const safe = state.wallets.find((wallet) => wallet.role === 'T')!;
+  const safe = state.wallets.find(
+    (wallet) => wallet.role === (input.safeRole ?? 'T'),
+  )!;
   const nonce =
     Math.max(
       0,
@@ -1717,7 +1723,7 @@ export function createGovernanceTx(
     id,
     status: 'AwaitingSignatures',
     safeAddress: safe.safeAddress,
-    safeLabel: `${safe.label} (T)`,
+    safeLabel: `${safe.label} (${safe.role})`,
     nonce,
     threshold: safe.threshold,
     owners: safe.owners.map((address) => ({

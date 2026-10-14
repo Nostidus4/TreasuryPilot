@@ -92,6 +92,8 @@ class World:
         entity_id: uuid.UUID | None = None,
         org_id: uuid.UUID | None = None,
         title: str = "Approval required",
+        deliver_after: float = 0,
+        event_type: str = "ApprovalNeeded",
     ) -> uuid.UUID:
         org = org_id or self.org_id
         entity = entity_id or uuid.uuid4()
@@ -99,14 +101,15 @@ class World:
         async with self.pool.acquire() as c, c.transaction():
             await c.execute(
                 "INSERT INTO domain_events (id, org_id, type, entity_type, entity_id, payload, published_at) "
-                "VALUES ($1, $2, 'ApprovalNeeded', 'payment_request', $3, '{}'::jsonb, now())",
+                "VALUES ($1, $2, $4, 'payment_request', $3, '{}'::jsonb, now())",
                 event_id,
                 org,
                 entity,
+                event_type,
             )
             await c.execute(
-                "INSERT INTO notifications (id, org_id, user_id, event_id, type, title, body, link, severity) "
-                "VALUES ($1, $2, $3, $4, 'ApprovalNeeded', $5, 'generic body', $6, $7)",
+                "INSERT INTO notifications (id, org_id, user_id, event_id, type, title, body, link, severity, deliver_at) "
+                "VALUES ($1, $2, $3, $4, $8, $5, 'generic body', $6, $7, $9)",
                 uuid.uuid4(),
                 org,
                 user_id or self.user_id,
@@ -114,6 +117,8 @@ class World:
                 title,
                 f"/requests/{entity}",
                 severity,
+                event_type,
+                self.t0 + timedelta(seconds=deliver_after),
             )
         return entity
 
@@ -432,5 +437,102 @@ def test_messages_carry_no_actionable_payload() -> None:
         # The adapter takes text only; there is no channel for buttons or callbacks.
         assert isinstance(text, str) and "approve" not in text.lower()
         assert json.dumps(text).count("callback") == 0
+
+    _run(scenario)
+
+
+def test_no_row_lock_is_held_while_the_message_is_in_flight() -> None:
+    async def scenario(world: World) -> None:
+        await world.notify()
+        probes: list[int] = []
+
+        class ProbingClient(FakeTelegramClient):
+            async def send_message(self, chat_id: str, text: str) -> None:
+                # NOWAIT raises if the sender still holds the channel's row lock.
+                rows = await world.rows(
+                    "SELECT 1 FROM notification_channels WHERE id = $1 FOR UPDATE NOWAIT",
+                    world.channel_id,
+                )
+                probes.append(len(rows))
+                await super().send_message(chat_id, text)
+
+        assert await world.run(ProbingClient()) == 1
+        assert probes == [1]
+
+    _run(scenario)
+
+
+def test_an_unexpected_send_error_is_contained_and_counted_as_an_attempt() -> None:
+    async def scenario(world: World) -> None:
+        await world.notify()
+
+        class BrokenClient(FakeTelegramClient):
+            async def send_message(self, chat_id: str, text: str) -> None:
+                raise RuntimeError("boom")
+
+        assert await world.run(BrokenClient()) == 0  # does not raise
+        (row,) = await world.rows("SELECT status, attempts FROM telegram_deliveries")
+        assert (row["status"], row["attempts"]) == ("PENDING", 1)
+
+    _run(scenario)
+
+
+def test_a_deferred_notification_is_not_sent_before_deliver_at() -> None:
+    async def scenario(world: World) -> None:
+        await world.notify(deliver_after=3600)  # held back by quiet hours
+        client = FakeTelegramClient()
+
+        assert await world.run(client, after=60) == 0
+        assert await world.rows("SELECT 1 FROM telegram_deliveries") == []
+        # Once due it is sent, even though it was created more than the backlog window ago.
+        assert await world.run(client, after=3601) == 1
+        assert len(client.sent) == 1
+
+    _run(scenario)
+
+
+async def _set_preferences(world: World, channels: str, categories: str = "{}") -> None:
+    async with world.pool.acquire() as c:
+        await c.execute(
+            "INSERT INTO notification_preferences (user_id, channels, categories) "
+            "VALUES ($1, $2::jsonb, $3::jsonb)",
+            world.user_id,
+            channels,
+            categories,
+        )
+
+
+def test_a_user_with_telegram_disabled_is_not_sent_optional_notifications() -> None:
+    async def scenario(world: World) -> None:
+        await _set_preferences(world, '{"telegram": false}')
+        await world.notify()
+        client = FakeTelegramClient()
+
+        assert await world.run(client) == 0
+        (row,) = await world.rows("SELECT status, last_error FROM telegram_deliveries")
+        assert (row["status"], row["last_error"]) == ("FAILED", "preference_opt_out")
+        assert await world.run(client, after=30) == 0  # not re-evaluated or sent later
+        assert client.sent == []
+
+    _run(scenario)
+
+
+def test_mandatory_events_ignore_the_telegram_preference() -> None:
+    async def scenario(world: World) -> None:
+        await _set_preferences(world, '{"telegram": false}')
+        await world.notify(severity="CRITICAL", event_type="UnexpectedOutflow")
+        client = FakeTelegramClient()
+
+        assert await world.run(client) == 1
+
+    _run(scenario)
+
+
+def test_a_disabled_category_is_not_sent() -> None:
+    async def scenario(world: World) -> None:
+        await _set_preferences(world, "{}", '{"approvals": false}')
+        await world.notify()
+
+        assert await world.run(FakeTelegramClient()) == 0
 
     _run(scenario)

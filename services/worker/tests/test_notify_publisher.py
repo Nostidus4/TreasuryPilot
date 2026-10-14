@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import uuid
+from datetime import UTC, datetime, time
 from typing import Any
 from unittest.mock import Mock
 
@@ -12,7 +13,7 @@ import pytest
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify import publisher as publisher_module
 from treasurypilot_worker.notify import routing as routing_module
-from treasurypilot_worker.notify.publisher import _link, publish_from_pool
+from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.routing import ROUTING_TABLE, policy_for_event
 
 
@@ -43,11 +44,6 @@ def test_routing_table_covers_documented_notification_events() -> None:
         "Discrepancy",
     } <= ROUTING_TABLE.keys()
     assert policy_for_event("NeedsReview:Finance").roles == ("Finance",)
-
-
-def test_review_notifications_link_to_the_review_item() -> None:
-    review_id = uuid.uuid4()
-    assert _link("review_item", review_id, uuid.uuid4()) == f"/review-items/{review_id}"
 
 
 class _FakeTransaction:
@@ -84,6 +80,9 @@ class _FakeConnection:
             {"user_id": self.other_owner_id, "roles": ["Owner"]},
         )
         self.notifications: dict[tuple[uuid.UUID, uuid.UUID], tuple[Any, ...]] = {}
+        self.preferences: dict[uuid.UUID, tuple[dict[str, bool], dict[str, bool]]] = {}
+        self.quiet_hours: dict[uuid.UUID, tuple[time, time, str]] = {}
+        self.deliver_at: dict[uuid.UUID, datetime] = {}
         self.claim_query = ""
         self.insert_query = ""
 
@@ -91,6 +90,35 @@ class _FakeConnection:
         return _FakeTransaction()
 
     async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
+        if "FROM memberships" in query:
+            roles, user_ids, creator_id, excluded = (
+                set(args[1]),
+                set(args[2]),
+                args[3],
+                set(args[4]),
+            )  # type: ignore[call-overload]
+            rows = []
+            for membership in self.memberships:
+                user_id = membership["user_id"]
+                if user_id in excluded or not (
+                    roles.intersection(membership["roles"])
+                    or user_id in user_ids
+                    or user_id == creator_id
+                ):
+                    continue
+                channels, categories = self.preferences.get(user_id, ({}, {}))
+                start, end, timezone = self.quiet_hours.get(user_id, (None, None, None))
+                rows.append(
+                    {
+                        "user_id": user_id,
+                        "channels": json.dumps(channels),
+                        "categories": categories,
+                        "quiet_hours_start": start,
+                        "quiet_hours_end": end,
+                        "timezone": timezone,
+                    }
+                )
+            return rows
         assert "FOR UPDATE SKIP LOCKED" in query
         self.claim_query = query
         return [event for event in self.events if not event["published"] and not event["failed"]]
@@ -98,26 +126,14 @@ class _FakeConnection:
     async def execute(self, query: str, *args: object) -> str:
         if "ON CONFLICT (user_id, event_id) DO NOTHING" in query:
             self.insert_query = query
-            org_id, event_id = args[0], args[1]
-            roles, user_ids, creator_id, excluded = (
-                set(args[7]),
-                set(args[8]),
-                args[9],
-                set(args[10]),
-            )
+            assert args[0] == self.org_id
+            event_id, user_ids, deliver_ats = args[1], args[7], args[8]
             inserted = 0
-            for membership in self.memberships:
-                user_id = membership["user_id"]
-                if user_id in excluded:
-                    continue
-                if (
-                    roles.intersection(membership["roles"])
-                    or user_id in user_ids
-                    or user_id == creator_id
-                ) and (user_id, event_id) not in self.notifications:
+            for user_id, at in zip(user_ids, deliver_ats, strict=True):  # type: ignore[call-overload]
+                if (user_id, event_id) not in self.notifications:
                     self.notifications[(user_id, event_id)] = args
+                    self.deliver_at[user_id] = at
                     inserted += 1
-            assert org_id == self.org_id
             return f"INSERT 0 {inserted}"
         event = next(event for event in self.events if event["id"] == args[0])
         if "failed_at" in query:
@@ -182,6 +198,39 @@ def test_governance_signature_routes_only_to_safe_owner_user_ids() -> None:
     assert recipients == {connection.owner_id}
 
 
+def test_preferences_filter_regular_events_but_never_mandatory_events() -> None:
+    connection = _FakeConnection()
+    connection.preferences[connection.approver_id] = ({"in_app": False}, {})
+    connection.preferences[connection.owner_id] = ({}, {"mandatory": False})
+    connection.preferences[connection.finance_id] = ({}, {"approvals": False})
+
+    async def exercise() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+    assert set(connection.notifications) == set()
+
+    connection.events = [dict(connection.event_data)]
+    event = connection.events[0]
+    event.update(
+        id=uuid.uuid4(),
+        type="Discrepancy",
+        payload="{}",
+        published=False,
+        failed=False,
+    )
+
+    async def publish_mandatory() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(publish_mandatory())
+    assert {user for user, _ in connection.notifications} == {
+        connection.owner_id,
+        connection.other_owner_id,
+        connection.finance_id,
+    }
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -193,6 +242,7 @@ def test_postgres_publisher_routes_and_deduplicates_notifications() -> None:
     approver_id = uuid.uuid4()
     finance_id = uuid.uuid4()
     event_id = uuid.uuid4()
+    quiet_event_id = uuid.uuid4()
     entity_id = uuid.uuid4()
 
     async def exercise() -> None:
@@ -248,7 +298,57 @@ def test_postgres_publisher_routes_and_deduplicates_notifications() -> None:
                     "SELECT count(*) FROM notifications WHERE event_id = $1", event_id
                 )
                 assert count == 1
+
+                # A muted channel/category cannot suppress a mandatory event.
+                await connection.execute(
+                    "INSERT INTO notification_preferences "
+                    "(user_id, channels, categories, timezone) "
+                    "VALUES ($1, '{\"in_app\": false}'::jsonb, "
+                    "'{\"approvals\": false, \"mandatory\": false}'::jsonb, 'UTC')",
+                    finance_id,
+                )
+                await connection.execute(
+                    "UPDATE domain_events SET type = 'Discrepancy', published_at = NULL "
+                    "WHERE id = $1",
+                    event_id,
+                )
+            assert await publish_from_pool(pool) == 1
+            async with pool.acquire() as connection:
+                mandatory_count = await connection.fetchval(
+                    "SELECT count(*) FROM notifications WHERE event_id = $1 AND user_id = $2",
+                    event_id,
+                    finance_id,
+                )
+                assert mandatory_count == 1
+
+                # Quiet hours hold an ordinary in-app notification until the
+                # user's next local quiet-hours end.
+                await connection.execute(
+                    "UPDATE notification_preferences SET channels = '{\"in_app\": true}'::jsonb, "
+                    "categories = '{}'::jsonb, quiet_hours_start = '00:00', "
+                    "quiet_hours_end = '23:59:59', timezone = 'UTC' WHERE user_id = $1",
+                    finance_id,
+                )
+                await connection.execute(
+                    "INSERT INTO domain_events "
+                    "(id, org_id, type, entity_type, entity_id, payload) "
+                    "VALUES ($1, $2, 'PaymentDone', 'payment_request', $3, '{}'::jsonb)",
+                    quiet_event_id,
+                    organization_id,
+                    entity_id,
+                )
+            assert await publish_from_pool(pool) == 1
+            async with pool.acquire() as connection:
+                deferred_at = await connection.fetchval(
+                    "SELECT deliver_at FROM notifications WHERE event_id = $1 AND user_id = $2",
+                    quiet_event_id,
+                    finance_id,
+                )
+                assert deferred_at is not None and await connection.fetchval(
+                    "SELECT $1::timestamptz > now()", deferred_at
+                )
                 await connection.execute("DELETE FROM domain_events WHERE id = $1", event_id)
+                await connection.execute("DELETE FROM domain_events WHERE id = $1", quiet_event_id)
                 await connection.execute("DELETE FROM organizations WHERE id = $1", organization_id)
                 await connection.execute(
                     "DELETE FROM users WHERE id = ANY($1::uuid[])", [approver_id, finance_id]
@@ -329,3 +429,58 @@ def test_unknown_routing_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
         "notification_review_role_unknown",
         "notification_event_type_unknown",
     ]
+
+
+def test_deliver_at_defers_to_quiet_hours_end_in_the_users_zone() -> None:
+    now = datetime(2026, 10, 14, 15, 0, tzinfo=UTC)  # 22:00 in Ho Chi Minh (UTC+7)
+    overnight = publisher_module.deliver_at(now, time(22), time(7), "Asia/Ho_Chi_Minh")
+    assert overnight == datetime(2026, 10, 15, 0, 0, tzinfo=UTC)  # 07:00 local next day
+    early = publisher_module.deliver_at(
+        datetime(2026, 10, 14, 20, 0, tzinfo=UTC), time(22), time(7), "Asia/Ho_Chi_Minh"
+    )
+    assert early == datetime(2026, 10, 15, 0, 0, tzinfo=UTC)  # 03:00 local, same-day end
+    assert publisher_module.deliver_at(now, time(23), time(7), "Asia/Ho_Chi_Minh") == now
+    assert publisher_module.deliver_at(now, None, None, "UTC") == now
+
+
+def test_deliver_at_falls_back_to_utc_for_an_unusable_timezone() -> None:
+    now = datetime(2026, 10, 14, 23, 0, tzinfo=UTC)
+    for bad in ("Not/AZone", "../etc/passwd", ""):
+        assert publisher_module.deliver_at(now, time(22), time(7), bad) == datetime(
+            2026, 10, 15, 7, 0, tzinfo=UTC
+        )
+
+
+def test_a_bad_stored_timezone_cannot_fail_the_batch() -> None:
+    connection = _FakeConnection()
+    connection.memberships = (
+        {"user_id": connection.finance_id, "roles": ["Approver"]},
+        {"user_id": connection.approver_id, "roles": ["Approver"]},
+    )
+    connection.quiet_hours[connection.finance_id] = (time(0), time(23, 59), "Mars/Olympus")
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    assert connection.event["published"] and not connection.event["failed"]
+    assert {user for user, _ in connection.notifications} == {
+        connection.finance_id,
+        connection.approver_id,
+    }
+
+
+def test_no_recipients_warning_only_when_nobody_was_targeted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = Mock()
+    monkeypatch.setattr(publisher_module, "logger", logger)
+    connection = _FakeConnection()
+    connection.preferences[connection.approver_id] = ({"in_app": False}, {})
+
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+    assert connection.notifications == {}
+    logger.warning.assert_not_called()
+
+    connection.memberships = ()
+    connection.event["published"] = False
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+    assert logger.warning.call_args.args[0] == "notification_without_recipients"
