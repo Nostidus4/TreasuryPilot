@@ -1,7 +1,7 @@
 """persist fallback and module clone evidence for treasury coverage
 
-Revision ID: 20261014_0013
-Revises: 20261013_0012
+Revision ID: 20261014_0018
+Revises: 20261014_0017
 Create Date: 2026-10-14 00:00:00
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0013"
-down_revision: str | None = "20261013_0012"
+revision: str = "20261014_0018"
+down_revision: str | None = "20261014_0017"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
