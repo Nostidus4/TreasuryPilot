@@ -1039,6 +1039,22 @@ def test_every_org_scoped_route_returns_404_to_non_members() -> None:
             assert response.status_code == 404, (method, path, response.text)
             assert response.json()["code"] == "ORG_NOT_FOUND"
 
+            # Invoice creation also accepts org-scoped API keys. Its dependency
+            # authenticates either a key or a member at runtime, so overriding
+            # require_member cannot intercept the member-only branch here.
+            if (method, path) in {
+                ("POST", "/v1/orgs/{organization_id}/requests"),
+                ("POST", "/v1/orgs/{organization_id}/requests/bulk"),
+            }:
+                invalid_key = harness.client.request(
+                    method,
+                    url,
+                    json={},
+                    headers={"Authorization": "Bearer tp_live_invalid", "X-CSRF-Token": csrf},
+                )
+                assert invalid_key.status_code in {401, 503}
+                continue
+
             # A 404 alone could come from a missing row; prove require_member is wired.
             app.dependency_overrides[require_member] = _member_guard_reached
             try:
