@@ -61,3 +61,44 @@ def test_unknown_fields_are_rejected(tmp_path: Path, repo_config: AiConfig) -> N
 
     with pytest.raises(ValidationError, match="temperature"):
         load_ai_config(_write(tmp_path, raw))
+
+
+def test_repo_config_fails_over_from_anthropic_to_bedrock(repo_config: AiConfig) -> None:
+    assert [(p.name, p.model_prefix) for p in repo_config.providers] == [
+        ("anthropic", ""),
+        ("bedrock", "anthropic."),
+    ]
+
+
+def test_providers_default_to_anthropic_only(tmp_path: Path, repo_config: AiConfig) -> None:
+    raw = _raw(repo_config)
+    del raw["providers"]  # type: ignore[attr-defined]
+
+    config = load_ai_config(_write(tmp_path, raw))
+
+    assert [p.name for p in config.providers] == ["anthropic"]
+
+
+def test_unknown_provider_is_rejected(tmp_path: Path, repo_config: AiConfig) -> None:
+    raw = _raw(repo_config)
+    raw["providers"] = [{"name": "openai"}]
+
+    with pytest.raises(ValidationError, match="openai"):
+        load_ai_config(_write(tmp_path, raw))
+
+
+@pytest.mark.parametrize(
+    ("providers", "message"),
+    [
+        ([{"name": "anthropic"}, {"name": "anthropic"}], "duplicate"),
+        ([{"name": "anthropic"}, {"name": "bedrock"}], "model_prefix"),
+    ],
+)
+def test_misconfigured_providers_are_rejected(
+    tmp_path: Path, repo_config: AiConfig, providers: list[dict[str, str]], message: str
+) -> None:
+    raw = _raw(repo_config)
+    raw["providers"] = providers
+
+    with pytest.raises(ValidationError, match=message):
+        load_ai_config(_write(tmp_path, raw))

@@ -3,12 +3,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -19,24 +22,43 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    desc,
+    func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from treasurypilot_api.database import Base
-from treasurypilot_api.identity.models import uuid7
+from treasurypilot_api.database import Base, RowVersionedMixin, VersionedMixin
+from treasurypilot_core.ids import uuid7
+
+# ADR-014: money is integer base units, read back as int.
+Money = Numeric(78, 0, asdecimal=False)
 
 
 class MandateVersionStatus(StrEnum):
     DRAFT = "Draft"
-    DISCARDED = "Discarded"
     PENDING_ACTIVATION = "PendingActivation"
     ACTIVE = "Active"
     SUPERSEDED = "Superseded"
     EXPIRED = "Expired"
     REVOKED = "Revoked"
     DISCREPANCY = "Discrepancy"
+
+
+class GovernanceTxPurpose(StrEnum):
+    MODULE_SETUP = "MODULE_SETUP"
+    MANDATE = "MANDATE"
+    PAYEE_ADD = "PAYEE_ADD"
+    PAYEE_DEACTIVATE = "PAYEE_DEACTIVATE"
+    EXCEPTION_GRANT = "EXCEPTION_GRANT"
+    EXCEPTION_REVOKE = "EXCEPTION_REVOKE"
+    ALLOW_DUPLICATE = "ALLOW_DUPLICATE"
+    CANCEL_REQUEST = "CANCEL_REQUEST"
+    PAUSE = "PAUSE"
+    RESUME = "RESUME"
+    REVOKE = "REVOKE"
+    GUARDIAN_SETUP = "GUARDIAN_SETUP"
 
 
 class GovernanceTxStatus(StrEnum):
@@ -83,40 +105,66 @@ class ExceptionStatus(StrEnum):
     REVOKED = "Revoked"
 
 
+class GuardianSetupStatus(StrEnum):
+    PENDING = "Pending"
+    ACTIVE = "Active"
+    SUPERSEDED = "Superseded"
+
+
 class FeePreset(StrEnum):
     ECONOMY = "ECONOMY"
     NORMAL = "NORMAL"
     FAST = "FAST"
 
 
-class BackendPauseStatus(StrEnum):
+class OnchainPauseStatus(StrEnum):
     NOT_REQUESTED = "NotRequested"
     REQUESTED = "Requested"
     EFFECTIVE = "Effective"
 
 
-_MANDATE_STATUSES = ", ".join(f"'{status.value}'" for status in MandateVersionStatus)
-_PAYEE_STATUSES = ", ".join(f"'{status.value}'" for status in PayeeStatus)
-_GOVERNANCE_STATUSES = ", ".join(f"'{status.value}'" for status in GovernanceTxStatus)
-_SCREENING_RESULTS = ", ".join(f"'{result.value}'" for result in ScreeningResult)
-_EXCEPTION_STATUSES = ", ".join(f"'{status.value}'" for status in ExceptionStatus)
-_OOB_METHODS = ", ".join(f"'{method.value}'" for method in OobMethod)
-_OPEN_EXCEPTION_STATUSES = ", ".join(
-    f"'{status.value}'"
-    for status in (ExceptionStatus.REQUESTED, ExceptionStatus.PROPOSED, ExceptionStatus.GRANTED)
-)
-_FEE_PRESETS = ", ".join(f"'{preset.value}'" for preset in FeePreset)
-_BACKEND_PAUSE_STATUSES = ", ".join(f"'{status.value}'" for status in BackendPauseStatus)
+def _enum(enum_class: type[StrEnum], name: str) -> Enum:
+    return Enum(enum_class, name=name, values_callable=lambda values: [v.value for v in values])
 
 
-class Vendor(Base):
+mandate_version_status_enum = _enum(MandateVersionStatus, "mandate_version_status")
+governance_tx_purpose_enum = _enum(GovernanceTxPurpose, "governance_tx_purpose")
+governance_tx_status_enum = _enum(GovernanceTxStatus, "governance_tx_status")
+payee_status_enum = _enum(PayeeStatus, "payee_status")
+oob_method_enum = _enum(OobMethod, "payee_oob_method")
+screening_result_enum = _enum(ScreeningResult, "screening_result")
+exception_status_enum = _enum(ExceptionStatus, "exception_status")
+guardian_setup_status_enum = _enum(GuardianSetupStatus, "guardian_setup_status")
+fee_preset_enum = _enum(FeePreset, "fee_preset")
+onchain_pause_status_enum = _enum(OnchainPauseStatus, "onchain_pause_status")
+
+
+def _treasury_fk(table: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(
+        ["treasury_id", "org_id"],
+        ["treasuries.id", "treasuries.org_id"],
+        name=f"fk_{table}_treasury_org",
+        ondelete="CASCADE",
+    )
+
+
+def _governance_tx_fk(table: str, column: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(
+        [column, "org_id"],
+        ["governance_txs.id", "governance_txs.org_id"],
+        name=f"fk_{table}_{column}",
+        ondelete="RESTRICT",
+    )
+
+
+class Vendor(VersionedMixin, Base):
     __tablename__ = "vendors"
     __table_args__ = (
-        UniqueConstraint("org_id", "normalized_ref", name="uq_vendors_org_normalized_ref"),
+        UniqueConstraint("org_id", "normalized_ref", name="uq_vendors_org_ref"),
         UniqueConstraint("id", "org_id", name="uq_vendors_id_org"),
         CheckConstraint("length(btrim(name)) > 0", name="ck_vendors_name"),
         CheckConstraint("length(btrim(normalized_ref)) > 0", name="ck_vendors_normalized_ref"),
-        Index("ix_vendors_org_id", "org_id"),
+        CheckConstraint("version > 0", name="ck_vendors_version"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -124,88 +172,85 @@ class Vendor(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    normalized_ref: Mapped[str] = mapped_column(String(320), nullable=False)
-    # These byte fields contain application-encrypted confidential identifiers/contact data.
-    tax_id: Mapped[bytes | None] = mapped_column(LargeBinary())
-    contact: Mapped[bytes | None] = mapped_column(LargeBinary())
-    notes: Mapped[str | None] = mapped_column(Text())
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
+    normalized_ref: Mapped[str] = mapped_column(String(200), nullable=False)
+    tax_id: Mapped[str | None] = mapped_column(String(64))
+    # Confidential PII (F-113): ciphertext only, never plaintext.
+    contact_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
-class GovernanceTx(Base):
+class GovernanceTx(VersionedMixin, Base):
+    """A SafeTx built by the app; owners sign its hash in-app (M03-D1)."""
+
     __tablename__ = "governance_txs"
     __table_args__ = (
-        CheckConstraint("octet_length(safe_address) = 20", name="ck_governance_txs_safe_address"),
-        CheckConstraint(
-            "purpose IN ('MODULE_SETUP', 'MANDATE', 'PAYEE_ADD', 'PAYEE_DEACTIVATE', "
-            "'EXCEPTION_GRANT', 'EXCEPTION_REVOKE', 'ALLOW_DUPLICATE', 'CANCEL_REQUEST', "
-            "'PAUSE', 'RESUME', 'REVOKE', 'GUARDIAN_SETUP')",
-            name="ck_governance_txs_purpose",
+        UniqueConstraint("id", "org_id", name="uq_governance_txs_id_org"),
+        _treasury_fk("governance_txs"),
+        ForeignKeyConstraint(
+            ["treasury_id", "chain_id"],
+            ["treasuries.id", "treasuries.chain_id"],
+            name="fk_governance_txs_treasury_chain",
+            ondelete="CASCADE",
         ),
-        CheckConstraint(f"status IN ({_GOVERNANCE_STATUSES})", name="ck_governance_txs_status"),
-        CheckConstraint("operation IN (0, 1)", name="ck_governance_txs_operation"),
-        CheckConstraint("threshold > 0", name="ck_governance_txs_threshold"),
+        CheckConstraint(
+            "octet_length(safe_address) = 20", name="ck_governance_txs_safe_address_length"
+        ),
+        CheckConstraint('octet_length("to") = 20', name="ck_governance_txs_to_length"),
         CheckConstraint("jsonb_typeof(calls) = 'array'", name="ck_governance_txs_calls_array"),
+        CheckConstraint("value >= 0", name="ck_governance_txs_value"),
+        CheckConstraint("operation IN (0, 1)", name="ck_governance_txs_operation"),
+        CheckConstraint("safe_nonce >= 0", name="ck_governance_txs_safe_nonce"),
         CheckConstraint(
-            "cardinality(owners_snapshot) > 0", name="ck_governance_txs_owners_snapshot_array"
+            "octet_length(safe_tx_hash) = 32", name="ck_governance_txs_safe_tx_hash_length"
         ),
         CheckConstraint(
-            "threshold <= cardinality(owners_snapshot)",
-            name="ck_governance_txs_owners_snapshot_threshold",
-        ),
-        CheckConstraint(
-            "array_position(owners_snapshot, NULL) IS NULL",
-            name="ck_governance_txs_owners_snapshot_no_null",
-        ),
-        CheckConstraint(
-            "safe_tx_hash IS NULL OR octet_length(safe_tx_hash) = 32",
-            name="ck_governance_txs_safe_tx_hash",
+            "threshold > 0 AND threshold <= cardinality(owners_snapshot)",
+            name="ck_governance_txs_threshold",
         ),
         CheckConstraint(
             "exec_tx_hash IS NULL OR octet_length(exec_tx_hash) = 32",
-            name="ck_governance_txs_exec_tx_hash",
+            name="ck_governance_txs_exec_tx_hash_length",
         ),
-        UniqueConstraint("id", "treasury_id", name="uq_governance_txs_id_treasury"),
-        Index("ix_governance_txs_treasury_created", "treasury_id", "created_at"),
+        CheckConstraint("version > 0", name="ck_governance_txs_version"),
+        Index("ix_governance_txs_org_treasury", "org_id", "treasury_id"),
+        # M03-D5: one open governance tx per Safe nonce; the next change queues at nonce + 1.
         Index(
-            "uq_governance_txs_open_safe_nonce",
+            "uq_governance_txs_open_nonce",
+            "chain_id",
             "safe_address",
             "safe_nonce",
             unique=True,
-            postgresql_where=text("status IN ('Collecting', 'Ready', 'Submitted')"),
+            postgresql_where=text(
+                "status IN ('Collecting'::governance_tx_status, 'Ready'::governance_tx_status, "
+                "'Submitted'::governance_tx_status)"
+            ),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
-    )
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
     safe_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    purpose: Mapped[GovernanceTxPurpose] = mapped_column(governance_tx_purpose_enum, nullable=False)
     entity_type: Mapped[str | None] = mapped_column(String(64))
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    calls: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
-    to_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    value: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False, default=0)
-    data: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
-    operation: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
-    safe_nonce: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    safe_tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    calls: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    to: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    value: Mapped[int] = mapped_column(Money, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    operation: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    safe_nonce: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    safe_tx_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     threshold: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     owners_snapshot: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary(20)), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[GovernanceTxStatus] = mapped_column(
+        governance_tx_status_enum,
+        nullable=False,
+        default=GovernanceTxStatus.COLLECTING,
+        server_default=GovernanceTxStatus.COLLECTING,
+    )
     exec_tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
 
 
 class GovernanceSignature(Base):
@@ -214,209 +259,253 @@ class GovernanceSignature(Base):
         UniqueConstraint(
             "governance_tx_id", "owner_address", name="uq_governance_signatures_tx_owner"
         ),
-        CheckConstraint(
-            "octet_length(owner_address) = 20", name="ck_governance_signatures_owner_address"
+        Index("ix_governance_signatures_org_tx", "org_id", "governance_tx_id"),
+        ForeignKeyConstraint(
+            ["governance_tx_id", "org_id"],
+            ["governance_txs.id", "governance_txs.org_id"],
+            name="fk_governance_signatures_tx_org",
+            ondelete="CASCADE",
         ),
-        Index("ix_governance_signatures_tx_id", "governance_tx_id"),
+        CheckConstraint(
+            "octet_length(owner_address) = 20", name="ck_governance_signatures_owner_length"
+        ),
+        CheckConstraint(
+            "octet_length(signature) >= 65", name="ck_governance_signatures_signature_length"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    governance_tx_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("governance_txs.id", ondelete="CASCADE"), nullable=False
-    )
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    governance_tx_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     owner_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    signature: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
+    signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     signed_by_user: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
 class MandateVersion(Base):
+    """Immutable governance snapshot (M03-D4); a trigger allows only lifecycle columns to move."""
+
     __tablename__ = "mandate_versions"
     __table_args__ = (
         UniqueConstraint("treasury_id", "version", name="uq_mandate_versions_treasury_version"),
-        UniqueConstraint("id", "treasury_id", name="uq_mandate_versions_id_treasury"),
-        CheckConstraint("version > 0", name="ck_mandate_versions_version"),
-        CheckConstraint(
-            "onchain_version IS NULL OR onchain_version >= 0",
-            name="ck_mandate_versions_onchain_version",
-        ),
-        CheckConstraint(f"status IN ({_MANDATE_STATUSES})", name="ck_mandate_versions_status"),
-        CheckConstraint("octet_length(config_hash) = 32", name="ck_mandate_versions_config_hash"),
-        CheckConstraint(
-            "expires_at IS NULL OR valid_from IS NULL OR expires_at > valid_from",
-            name="ck_mandate_versions_expiry",
-        ),
-        ForeignKeyConstraint(
-            ["governance_tx_id", "treasury_id"],
-            ["governance_txs.id", "governance_txs.treasury_id"],
-            name="fk_mandate_versions_governance_tx_treasury",
-        ),
-        Index("ix_mandate_versions_treasury_status", "treasury_id", "status"),
+        UniqueConstraint("id", "org_id", name="uq_mandate_versions_id_org"),
         Index(
-            "uq_mandate_versions_active_treasury",
+            "uq_mandate_versions_active",
             "treasury_id",
             unique=True,
-            postgresql_where=text(f"status = '{MandateVersionStatus.ACTIVE.value}'"),
+            postgresql_where=text("status = 'Active'::mandate_version_status"),
         ),
+        _treasury_fk("mandate_versions"),
+        _governance_tx_fk("mandate_versions", "governance_tx_id"),
+        CheckConstraint("version > 0", name="ck_mandate_versions_version"),
+        CheckConstraint(
+            "onchain_version IS NULL OR onchain_version > 0",
+            name="ck_mandate_versions_onchain_version",
+        ),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="ck_mandate_versions_config"),
+        CheckConstraint(
+            "octet_length(config_hash) = 32", name="ck_mandate_versions_config_hash_length"
+        ),
+        CheckConstraint("expires_at > valid_from", name="ck_mandate_versions_validity"),
+        CheckConstraint(
+            "status <> 'Active'::mandate_version_status "
+            "OR (onchain_version IS NOT NULL AND activated_at IS NOT NULL)",
+            name="ck_mandate_versions_active",
+        ),
+        Index("ix_mandate_versions_org_treasury", "org_id", "treasury_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
-    )
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     onchain_version: Mapped[int | None] = mapped_column(BigInteger)
-    status: Mapped[str] = mapped_column(String(24), nullable=False)
-    config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[MandateVersionStatus] = mapped_column(
+        mandate_version_status_enum,
+        nullable=False,
+        default=MandateVersionStatus.DRAFT,
+        server_default=MandateVersionStatus.DRAFT,
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Users are soft-deleted; SET NULL would be rejected by the immutability trigger.
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # NO ACTION, not SET NULL: the immutability trigger would reject the cascaded update.
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MandateStatusEvent(Base):
+    """Append-only history of mandate version transitions."""
+
     __tablename__ = "mandate_status_events"
-    __table_args__ = (Index("ix_mandate_status_events_version_at", "mandate_version_id", "at"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    mandate_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("mandate_versions.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    from_status: Mapped[str | None] = mapped_column("from", String(24))
-    to_status: Mapped[str] = mapped_column("to", String(24), nullable=False)
-    tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
-    at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
-    by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
-    )
-
-
-class Payee(Base):
-    __tablename__ = "payees"
     __table_args__ = (
-        CheckConstraint("length(btrim(label)) > 0", name="ck_payees_label"),
-        CheckConstraint("octet_length(address) = 20", name="ck_payees_address"),
-        CheckConstraint(f"status IN ({_PAYEE_STATUSES})", name="ck_payees_status"),
-        CheckConstraint(
-            "oob_verified_at IS NULL OR oob_verified_by IS NOT NULL",
-            name="ck_payees_oob_verification_actor",
-        ),
-        CheckConstraint(
-            "oob_verified_by IS NULL OR oob_method IS NOT NULL",
-            name="ck_payees_oob_method",
-        ),
-        CheckConstraint(
-            f"oob_method IS NULL OR oob_method IN ({_OOB_METHODS})",
-            name="ck_payees_oob_method_value",
-        ),
         ForeignKeyConstraint(
-            ["registration_tx_id", "treasury_id"],
-            ["governance_txs.id", "governance_txs.treasury_id"],
-            name="fk_payees_registration_tx_treasury",
-        ),
-        ForeignKeyConstraint(
-            ["treasury_id", "org_id"],
-            ["treasuries.id", "treasuries.org_id"],
-            name="fk_payees_treasury_org",
+            ["mandate_version_id", "org_id"],
+            ["mandate_versions.id", "mandate_versions.org_id"],
+            name="fk_mandate_status_events_version_org",
             ondelete="CASCADE",
         ),
+        CheckConstraint(
+            "tx_hash IS NULL OR octet_length(tx_hash) = 32",
+            name="ck_mandate_status_events_tx_hash_length",
+        ),
+        Index("ix_mandate_status_events_org_version_at", "org_id", "mandate_version_id", "at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    mandate_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    from_status: Mapped[MandateVersionStatus | None] = mapped_column(mandate_version_status_enum)
+    to_status: Mapped[MandateVersionStatus] = mapped_column(
+        mandate_version_status_enum, nullable=False
+    )
+    tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # NULL means the system (watcher, scheduler) made the transition.
+    by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION")
+    )
+
+
+class Payee(VersionedMixin, Base):
+    """A vendor's payout address; ``created_by`` is the proposer."""
+
+    __tablename__ = "payees"
+    __table_args__ = (
+        UniqueConstraint("id", "org_id", name="uq_payees_id_org"),
+        _treasury_fk("payees"),
         ForeignKeyConstraint(
             ["vendor_id", "org_id"],
             ["vendors.id", "vendors.org_id"],
             name="fk_payees_vendor_org",
             ondelete="RESTRICT",
         ),
-        UniqueConstraint("id", "treasury_id", name="uq_payees_id_treasury"),
         UniqueConstraint("id", "treasury_id", "vendor_id", name="uq_payees_id_treasury_vendor"),
+        _governance_tx_fk("payees", "registration_tx_id"),
+        CheckConstraint("length(btrim(label)) > 0", name="ck_payees_label"),
+        CheckConstraint("octet_length(address) = 20", name="ck_payees_address_length"),
+        # M03-D7: an out-of-band verification is recorded whole or not at all.
+        CheckConstraint(
+            "(oob_verified_by IS NULL AND oob_verified_at IS NULL AND oob_method IS NULL "
+            "AND oob_note IS NULL) OR (oob_verified_by IS NOT NULL "
+            "AND oob_verified_at IS NOT NULL AND oob_method IS NOT NULL "
+            "AND length(btrim(oob_note)) > 0)",
+            name="ck_payees_oob",
+        ),
+        CheckConstraint(
+            "status NOT IN ('Cooling'::payee_status, 'Active'::payee_status) "
+            "OR (oob_verified_at IS NOT NULL AND active_from IS NOT NULL)",
+            name="ck_payees_registered",
+        ),
+        CheckConstraint(
+            "status <> 'Deactivated'::payee_status OR deactivated_at IS NOT NULL",
+            name="ck_payees_deactivated",
+        ),
+        CheckConstraint("version > 0", name="ck_payees_version"),
+        Index("ix_payees_org_treasury", "org_id", "treasury_id"),
+        Index("ix_payees_vendor", "vendor_id"),
         Index("ix_payees_treasury_status", "treasury_id", "status"),
         Index(
-            "uq_payees_active_treasury_address",
+            "uq_payees_treasury_address_live",
             "treasury_id",
             "address",
             unique=True,
-            # ScreeningFailed is terminal, so it must not block re-proposing the address.
             postgresql_where=text(
-                f"status NOT IN ('{PayeeStatus.DEACTIVATED.value}', "
-                f"'{PayeeStatus.SCREENING_FAILED.value}')"
+                "status NOT IN ('Deactivated'::payee_status, 'ScreeningFailed'::payee_status)"
             ),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
     address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[PayeeStatus] = mapped_column(
+        payee_status_enum,
+        nullable=False,
+        default=PayeeStatus.PROPOSED,
+        server_default=PayeeStatus.PROPOSED,
+    )
     active_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # ck_payees_oob_verification_actor needs the verifier, so it cannot be nulled.
     oob_verified_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION")
     )
     oob_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    oob_method: Mapped[str | None] = mapped_column(String(24))
-    oob_note: Mapped[str | None] = mapped_column(Text())
+    oob_method: Mapped[OobMethod | None] = mapped_column(oob_method_enum)
+    oob_note: Mapped[str | None] = mapped_column(Text)
     registration_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    proposed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
-    )
 
 
 class Screening(Base):
     __tablename__ = "screenings"
     __table_args__ = (
-        CheckConstraint(f"result IN ({_SCREENING_RESULTS})", name="ck_screenings_result"),
-        CheckConstraint("octet_length(address) = 20", name="ck_screenings_address"),
-        Index("ix_screenings_payee_checked", "payee_id", "checked_at"),
-        Index("ix_screenings_address_checked", "address", text("checked_at DESC")),
+        ForeignKeyConstraint(
+            ["payee_id", "org_id"],
+            ["payees.id", "payees.org_id"],
+            name="fk_screenings_payee_org",
+            ondelete="SET NULL (payee_id)",
+        ),
+        CheckConstraint("octet_length(address) = 20", name="ck_screenings_address_length"),
+        CheckConstraint("length(btrim(provider)) > 0", name="ck_screenings_provider"),
+        CheckConstraint("ttl_until IS NULL OR ttl_until > checked_at", name="ck_screenings_ttl"),
+        Index("ix_screenings_address_checked", "address", desc("checked_at")),
+        Index("ix_screenings_org_payee", "org_id", "payee_id"),
+        CheckConstraint("chain_id IS NULL OR chain_id > 0", name="ck_screenings_chain_id"),
+        Index(
+            "ix_screenings_lookup",
+            "org_id",
+            "address",
+            "chain_id",
+            "provider",
+            desc("checked_at"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    payee_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("payees.id", ondelete="SET NULL")
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
-    # Always snapshotted so the row stays meaningful after its payee is deleted.
+    payee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    provider: Mapped[str] = mapped_column(String(120), nullable=False)
-    result: Mapped[str] = mapped_column(String(16), nullable=False)
-    source_ref: Mapped[str | None] = mapped_column(String(300))
+    # NULL only for legacy rows; screening cache lookups always require a chain.
+    chain_id: Mapped[int | None] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[ScreeningResult] = mapped_column(screening_result_enum, nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ttl_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class ExceptionRecord(Base):
+class MandateException(VersionedMixin, Base):
+    """One-time exception for a single request (F-025)."""
+
     __tablename__ = "exceptions"
     __table_args__ = (
-        CheckConstraint("mandate_onchain_version >= 0", name="ck_exceptions_mandate_version"),
-        CheckConstraint("amount > 0", name="ck_exceptions_amount_positive"),
-        CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_address"),
-        CheckConstraint(f"status IN ({_EXCEPTION_STATUSES})", name="ck_exceptions_status"),
-        ForeignKeyConstraint(
-            ["governance_tx_id", "treasury_id"],
-            ["governance_txs.id", "governance_txs.treasury_id"],
-            name="fk_exceptions_governance_tx_treasury",
-        ),
+        _treasury_fk("exceptions"),
+        _governance_tx_fk("exceptions", "governance_tx_id"),
+        CheckConstraint("mandate_onchain_version > 0", name="ck_exceptions_mandate_version"),
+        CheckConstraint("amount > 0", name="ck_exceptions_amount"),
+        CheckConstraint("octet_length(payee) = 20", name="ck_exceptions_payee_length"),
+        CheckConstraint("version > 0", name="ck_exceptions_version"),
+        Index("ix_exceptions_org_treasury", "org_id", "treasury_id"),
+        # BR-041: at most one live exception per request.
         ForeignKeyConstraint(
             ["request_id", "treasury_id"],
             ["payment_requests.id", "payment_requests.treasury_id"],
@@ -427,162 +516,189 @@ class ExceptionRecord(Base):
             "uq_exceptions_open_request",
             "request_id",
             unique=True,
-            postgresql_where=text(f"status IN ({_OPEN_EXCEPTION_STATUSES})"),
+            postgresql_where=text(
+                "status IN ('Requested'::exception_status, 'Proposed'::exception_status, "
+                "'Granted'::exception_status)"
+            ),
         ),
-        Index("ix_exceptions_status_expiry", "status", "expiry"),
-        Index("ix_exceptions_treasury_status", "treasury_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
-    )
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     mandate_onchain_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    amount: Mapped[int] = mapped_column(Money, nullable=False)
     payee: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     expiry: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    draft_ai_call_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    reason: Mapped[str | None] = mapped_column(Text())
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    status: Mapped[ExceptionStatus] = mapped_column(
+        exception_status_enum,
+        nullable=False,
+        default=ExceptionStatus.REQUESTED,
+        server_default=ExceptionStatus.REQUESTED,
     )
+    governance_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    draft_ai_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_calls.id", ondelete="RESTRICT")
+    )
+    reason: Mapped[str | None] = mapped_column(Text)
 
 
-class GuardianSetup(Base):
+class GuardianSetup(VersionedMixin, Base):
+    """Guardian Safe 1-of-N {humans, sentinel} that can only pause (M03-D2)."""
+
     __tablename__ = "guardian_setups"
     __table_args__ = (
-        CheckConstraint("octet_length(guardian_safe) = 20", name="ck_guardian_setups_safe"),
-        CheckConstraint("cardinality(human_owners) > 0", name="ck_guardian_setups_human_owners"),
+        _treasury_fk("guardian_setups"),
+        _governance_tx_fk("guardian_setups", "created_tx_id"),
         CheckConstraint(
-            "array_position(human_owners, NULL) IS NULL",
-            name="ck_guardian_setups_no_null_owners",
+            "octet_length(guardian_safe) = 20", name="ck_guardian_setups_guardian_safe_length"
         ),
-        CheckConstraint("octet_length(sentinel_address) = 20", name="ck_guardian_setups_sentinel"),
+        CheckConstraint(
+            "cardinality(human_owners) > 0 AND array_position(human_owners, NULL) IS NULL",
+            name="ck_guardian_setups_human_owners",
+        ),
+        CheckConstraint(
+            "octet_length(sentinel_address) = 20", name="ck_guardian_setups_sentinel_length"
+        ),
         CheckConstraint("threshold = 1", name="ck_guardian_setups_threshold"),
-        CheckConstraint(
-            "status IN ('Pending', 'Active', 'Failed', 'Revoked')", name="ck_guardian_setups_status"
-        ),
-        UniqueConstraint("id", "treasury_id", name="uq_guardian_setups_id_treasury"),
-        ForeignKeyConstraint(
-            ["created_tx_id", "treasury_id"],
-            ["governance_txs.id", "governance_txs.treasury_id"],
-            name="fk_guardian_setups_created_tx_treasury",
-        ),
+        CheckConstraint("version > 0", name="ck_guardian_setups_version"),
+        Index("ix_guardian_setups_org_treasury", "org_id", "treasury_id"),
         Index(
-            "uq_guardian_setups_active_treasury",
+            "uq_guardian_setups_active",
             "treasury_id",
             unique=True,
-            postgresql_where=text("status = 'Active'"),
+            postgresql_where=text("status = 'Active'::guardian_setup_status"),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
-    )
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     guardian_safe: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     human_owners: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary(20)), nullable=False)
     sentinel_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
-    threshold: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    threshold: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=1, server_default="1"
+    )
     created_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    status: Mapped[GuardianSetupStatus] = mapped_column(
+        guardian_setup_status_enum,
+        nullable=False,
+        default=GuardianSetupStatus.PENDING,
+        server_default=GuardianSetupStatus.PENDING,
     )
 
 
-class TreasuryFeePolicy(Base):
+class TreasuryFeePolicy(RowVersionedMixin, Base):
+    """System-proposed, Owner-accepted fee policy (FEE-1); old rows are kept as history."""
+
     __tablename__ = "treasury_fee_policies"
     __table_args__ = (
-        CheckConstraint(f"preset IN ({_FEE_PRESETS})", name="ck_treasury_fee_policies_preset"),
+        UniqueConstraint("treasury_id", "version", name="uq_treasury_fee_policies_version"),
+        _treasury_fk("treasury_fee_policies"),
         CheckConstraint("max_fee_multiplier_bps > 0", name="ck_treasury_fee_policies_multiplier"),
         CheckConstraint(
             "tip_percentile BETWEEN 0 AND 100", name="ck_treasury_fee_policies_tip_percentile"
         ),
-        CheckConstraint("resend_after_s >= 0", name="ck_treasury_fee_policies_resend_after"),
+        CheckConstraint("resend_after_s > 0", name="ck_treasury_fee_policies_resend_after"),
         CheckConstraint("bump_bps >= 0", name="ck_treasury_fee_policies_bump"),
         CheckConstraint(
-            "per_plan_threshold_wei >= 0", name="ck_treasury_fee_policies_plan_threshold"
+            "per_plan_threshold_wei >= 0", name="ck_treasury_fee_policies_per_plan_threshold"
         ),
         CheckConstraint("daily_budget_wei >= 0", name="ck_treasury_fee_policies_daily_budget"),
-        CheckConstraint("reference_eth_price >= 0", name="ck_treasury_fee_policies_eth_price"),
+        CheckConstraint(
+            "reference_eth_price > 0", name="ck_treasury_fee_policies_reference_eth_price"
+        ),
+        CheckConstraint(
+            "(accepted_by IS NULL) = (accepted_at IS NULL)",
+            name="ck_treasury_fee_policies_acceptance",
+        ),
+        CheckConstraint(
+            "superseded_at IS NULL OR accepted_at IS NOT NULL",
+            name="ck_treasury_fee_policies_superseded",
+        ),
         CheckConstraint("version > 0", name="ck_treasury_fee_policies_version"),
+        CheckConstraint("row_version > 0", name="ck_treasury_fee_policies_row_version"),
+        Index("ix_treasury_fee_policies_org_treasury", "org_id", "treasury_id"),
         Index(
             "uq_treasury_fee_policies_active",
             "treasury_id",
             unique=True,
-            postgresql_where=text("active"),
-        ),
-        UniqueConstraint(
-            "treasury_id", "version", name="uq_treasury_fee_policies_treasury_version"
+            postgresql_where=text("accepted_at IS NOT NULL AND superseded_at IS NULL"),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), nullable=False
-    )
-    preset: Mapped[str] = mapped_column(String(16), nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    preset: Mapped[FeePreset] = mapped_column(fee_preset_enum, nullable=False)
     max_fee_multiplier_bps: Mapped[int] = mapped_column(Integer, nullable=False)
     tip_percentile: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     resend_after_s: Mapped[int] = mapped_column(Integer, nullable=False)
     bump_bps: Mapped[int] = mapped_column(Integer, nullable=False)
-    per_plan_threshold_wei: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    daily_budget_wei: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    reference_eth_price: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    per_plan_threshold_wei: Mapped[int] = mapped_column(Money, nullable=False)
+    daily_budget_wei: Mapped[int] = mapped_column(Money, nullable=False)
+    # Asset base units per 1 ETH; only for comparing fees with payment values.
+    reference_eth_price: Mapped[int] = mapped_column(Money, nullable=False)
+    proposed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     accepted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION")
     )
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
-    )
 
 
 class FeeAcceptance(Base):
     __tablename__ = "fee_acceptances"
     __table_args__ = (
         CheckConstraint("estimated_fee_wei >= 0", name="ck_fee_acceptances_estimated_fee"),
-        CheckConstraint("accepted_cap_wei >= estimated_fee_wei", name="ck_fee_acceptances_cap"),
-        CheckConstraint("length(btrim(reason)) > 0", name="ck_fee_acceptances_reason"),
-        Index("ix_fee_acceptances_plan_at", "plan_id", "at"),
+        CheckConstraint(
+            "accepted_cap_wei >= estimated_fee_wei", name="ck_fee_acceptances_accepted_cap"
+        ),
+        Index("ix_fee_acceptances_org_plan", "org_id", "plan_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    # plans is introduced by M07; its FK is added with that schema.
-    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    estimated_fee_wei: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    accepted_cap_wei: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    accepted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    # shortcut: no FK yet, plans land with the planning schema; add the FK there.
+    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    estimated_fee_wei: Mapped[int] = mapped_column(Money, nullable=False)
+    accepted_cap_wei: Mapped[int] = mapped_column(Money, nullable=False)
+    accepted_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION"), nullable=False
+    )
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reason: Mapped[str | None] = mapped_column(Text)
 
 
-class BackendPause(Base):
+class BackendPause(VersionedMixin, Base):
+    """Backend pause flag, set before any on-chain pause (M03-D14); ``updated_*`` = by/at."""
+
     __tablename__ = "backend_pause"
     __table_args__ = (
-        CheckConstraint(
-            f"onchain_status IN ({_BACKEND_PAUSE_STATUSES})", name="ck_backend_pause_onchain_status"
-        ),
-        CheckConstraint("length(btrim(reason)) > 0", name="ck_backend_pause_reason"),
+        _treasury_fk("backend_pause"),
+        CheckConstraint("NOT paused OR length(btrim(reason)) > 0", name="ck_backend_pause_reason"),
+        CheckConstraint("version > 0", name="ck_backend_pause_version"),
+        Index("ix_backend_pause_org", "org_id"),
     )
 
-    treasury_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("treasuries.id", ondelete="CASCADE"),
-        primary_key=True,
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    paused: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
-    paused: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    reason: Mapped[str | None] = mapped_column(Text)
+    onchain_status: Mapped[OnchainPauseStatus] = mapped_column(
+        onchain_pause_status_enum,
+        nullable=False,
+        default=OnchainPauseStatus.NOT_REQUESTED,
+        server_default=OnchainPauseStatus.NOT_REQUESTED,
     )
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    onchain_status: Mapped[str] = mapped_column(String(16), nullable=False)

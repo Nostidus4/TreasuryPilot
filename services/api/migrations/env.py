@@ -9,18 +9,23 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from treasurypilot_api.agent import models as agent_models  # noqa: F401
+from treasurypilot_api.audit import models as audit_models  # noqa: F401
+from treasurypilot_api.compliance import models as compliance_models  # noqa: F401
 from treasurypilot_api.database import Base
 from treasurypilot_api.events import models as event_models  # noqa: F401
+from treasurypilot_api.execution import models as execution_models  # noqa: F401
 from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.invoices import models as invoice_models  # noqa: F401
 from treasurypilot_api.mandate import models as mandate_models  # noqa: F401
 from treasurypilot_api.notifications import models as notification_models  # noqa: F401
-from treasurypilot_api.review import models as review_models  # noqa: F401
+from treasurypilot_api.recovery import models as recovery_models  # noqa: F401
 from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
+    # Keep loggers created before migrations (e.g. structlog's stdlib loggers) enabled.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # A URL set by the caller (for example the migration tests) must win over the

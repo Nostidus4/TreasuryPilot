@@ -73,7 +73,7 @@ There is no `Failed`. `Unknown` blocks the treasury (BR-060) until M11 resolves 
 
 | Function | Returns / effect |
 |---|---|
-| `rpc.call(method, params, critical=False)` | ordered providers with timeout 4 s, 2 retries each, then failover; `RpcUnavailable` if all fail (never a default value) |
+| `rpc.call(method, params)` | ordered providers with timeout 4 s, 2 retries each, then failover; `RpcUnavailable` if all fail (never a default value); JSON-RPC error answers fail over too, and `RpcResponseError` is raised only when every provider answers with one |
 | `rpc.crosscheck_receipt(tx_hash)` | reads receipt + block hash from the secondary; `Match` / `Mismatch` / `Unavailable` |
 | `snapshot(treasury_id, purpose, block="latest") → Snapshot` | §8.1 |
 | `is_fresh(snapshot, now, head) → bool` | ≤ 30 s and ≤ 2 blocks behind head (M08-D6) |

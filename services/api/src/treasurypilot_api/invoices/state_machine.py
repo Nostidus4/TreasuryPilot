@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass
 from enum import StrEnum
@@ -18,8 +17,6 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
-from treasurypilot_api.review.models import ReviewType
-from treasurypilot_api.review.service import dismiss_open_review_items, open_review_item
 
 
 class TransitionAction(StrEnum):
@@ -72,8 +69,11 @@ class RequestVersionConflict(RequestTransitionError):
     code = "PRECONDITION_FAILED"
 
 
-class RequestNotFound(Exception):
+class RequestNotFound(RequestTransitionError):
     """The request does not exist or is outside the requested organization."""
+
+    status_code = 404
+    code = "REQUEST_NOT_FOUND"
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,37 +367,6 @@ class RequestTransitionResult:
     version: int
 
 
-_REVIEW_STATUSES = frozenset({RequestStatus.NEEDS_REVIEW, RequestStatus.AWAITING_AUTHORITY})
-_REVIEW_CODE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
-
-
-def review_code(value: str | None) -> str | None:
-    """Return the reason-code token of ``value`` (before any ``:`` detail), or None.
-
-    ``'LIMIT_EXCEEDED: daily cap'`` gives ``LIMIT_EXCEEDED``; free text is not a code.
-    """
-    token = (value or "").partition(":")[0].strip().upper()
-    return token if _REVIEW_CODE.fullmatch(token) else None
-
-
-def review_type_for_outcome(action: TransitionAction, reason: str | None) -> ReviewType | None:
-    """Map terminal non-ALLOW request outcomes to their recovery queue category."""
-    if action == TransitionAction.NEEDS_APPROVAL:
-        return ReviewType.NEEDS_AUTHORITY
-    if action == TransitionAction.PLAN_BLOCKED:
-        return ReviewType.POLICY_BLOCK
-    if action == TransitionAction.PREPARATION_FAILED:
-        normalized_reason = (reason or "").upper()
-        if normalized_reason.startswith(("AI_", "PAYLOAD_MISMATCH", "ATTESTATION_")):
-            return ReviewType.AI_REJECTED
-        if normalized_reason.startswith("SIMULATION_REVERTED"):
-            return ReviewType.POLICY_BLOCK
-        return ReviewType.INFRA
-    if action == TransitionAction.PAY_UNKNOWN:
-        return ReviewType.UNCERTAIN_TX
-    return None
-
-
 class RequestStateMachine:
     """Apply request transitions and audit them in one database transaction."""
 
@@ -421,189 +390,142 @@ class RequestStateMachine:
         actor: TransitionActor,
         expected_version: int | None = None,
         reason: str | None = None,
-        review_reason_codes: tuple[str, ...] | None = None,
-        completed_steps: list[dict[str, object]] | None = None,
-        plan_id: uuid.UUID | None = None,
     ) -> RequestTransitionResult:
-        """Apply ``target``; user actors must pass the version they saw (``If-Match``)."""
+        """Apply ``target``; user actors must pass the version they saw (``If-Match``).
+
+        The request row stays locked for the whole transaction, including the PAY
+        in-flight check. M07 must take the same row lock (or re-check under it)
+        before advancing a PAY operation.
+        """
         async with self._sessions() as session, session.begin():
-            return await self.apply(
-                session,
-                organization_id=organization_id,
-                request_id=request_id,
+            request = await session.scalar(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id,
+                    PaymentRequest.org_id == organization_id,
+                )
+                .with_for_update()
+            )
+            if request is None:
+                raise RequestNotFound("Payment request not found.")
+            if actor.actor_type == StatusEventActorType.USER and expected_version is None:
+                raise RequestVersionConflict("If-Match with the request version is required.")
+            if expected_version is not None and expected_version != request.version:
+                raise RequestVersionConflict(
+                    "The request changed since it was read; reload and try again."
+                )
+
+            source = _coerce_status(request.status)
+            version_before = request.version
+            solo_mode = False
+            if actor.action in _CHECKER_ACTIONS:
+                solo_mode = bool(
+                    await session.scalar(
+                        select(Organization.solo_mode).where(Organization.id == organization_id)
+                    )
+                )
+            pay_operation_in_flight = _blocked_by_pay_in_flight(
+                target, actor.action
+            ) and await self._pay_operation_guard.has_in_flight_pay(
+                session=session, request_id=request_id
+            )
+            rule = validate_transition(
+                source=source,
                 target=target,
                 actor=actor,
-                expected_version=expected_version,
+                created_by=request.created_by,
+                last_edited_by=request.last_edited_by,
+                solo_mode=solo_mode,
+                pay_operation_in_flight=pay_operation_in_flight,
+            )
+
+            if target == RequestStatus.CANCELLED:
+                approved_before = source == RequestStatus.APPROVED
+                if not approved_before:
+                    approved_before = (
+                        await session.scalar(
+                            select(RequestStatusEvent.id)
+                            .where(
+                                RequestStatusEvent.request_id == request_id,
+                                RequestStatusEvent.to_status == RequestStatus.APPROVED.value,
+                            )
+                            .limit(1)
+                        )
+                        is not None
+                    )
+                if approved_before:
+                    request.cancel_onchain = CancelOnchainStatus.PENDING.value
+
+            request.status = rule.target.value
+            event = RequestStatusEvent(
+                id=uuid7(),
+                request_id=request_id,
+                from_status=source.value,
+                to_status=rule.target.value,
+                actor_type=actor.actor_type.value,
+                actor_id=actor.actor_id,
                 reason=reason,
-                review_reason_codes=review_reason_codes,
-                completed_steps=completed_steps,
-                plan_id=plan_id,
             )
-
-    async def apply(
-        self,
-        session: AsyncSession,
-        *,
-        organization_id: uuid.UUID,
-        request_id: uuid.UUID,
-        target: RequestStatus,
-        actor: TransitionActor,
-        expected_version: int | None = None,
-        reason: str | None = None,
-        review_reason_codes: tuple[str, ...] | None = None,
-        completed_steps: list[dict[str, object]] | None = None,
-        plan_id: uuid.UUID | None = None,
-    ) -> RequestTransitionResult:
-        """``transition`` inside the caller's transaction (e.g. resolving a review item)."""
-        request = await session.scalar(
-            select(PaymentRequest)
-            .where(
-                PaymentRequest.id == request_id,
-                PaymentRequest.org_id == organization_id,
-            )
-            .with_for_update()
-        )
-        if request is None:
-            raise RequestNotFound
-        if actor.actor_type == StatusEventActorType.USER and expected_version is None:
-            raise RequestVersionConflict("If-Match with the request version is required.")
-        if expected_version is not None and expected_version != request.version:
-            raise RequestVersionConflict(
-                "The request changed since it was read; reload and try again."
-            )
-
-        source = _coerce_status(request.status)
-        solo_mode = False
-        if actor.action in _CHECKER_ACTIONS:
-            solo_mode = bool(
-                await session.scalar(
+            session.add(event)
+            if target == RequestStatus.AWAITING_APPROVAL:
+                approval_ids: dict[str, uuid.UUID | list[uuid.UUID]] = {"requestId": request_id}
+                org_solo_mode = await session.scalar(
                     select(Organization.solo_mode).where(Organization.id == organization_id)
                 )
-            )
-        pay_operation_in_flight = _blocked_by_pay_in_flight(
-            target, actor.action
-        ) and await self._pay_operation_guard.has_in_flight_pay(
-            session=session, request_id=request_id
-        )
-        rule = validate_transition(
-            source=source,
-            target=target,
-            actor=actor,
-            created_by=request.created_by,
-            last_edited_by=request.last_edited_by,
-            solo_mode=solo_mode,
-            pay_operation_in_flight=pay_operation_in_flight,
-        )
-
-        if target == RequestStatus.CANCELLED:
-            approved_before = source == RequestStatus.APPROVED
-            if not approved_before:
-                approved_before = (
-                    await session.scalar(
-                        select(RequestStatusEvent.id)
-                        .where(
-                            RequestStatusEvent.request_id == request_id,
-                            RequestStatusEvent.to_status == RequestStatus.APPROVED.value,
-                        )
-                        .limit(1)
-                    )
-                    is not None
+                if not org_solo_mode:
+                    # Maker-checker: the creator and last editor cannot approve, so they
+                    # get no "Approval required" notification they cannot act on.
+                    makers = {request.created_by, request.last_edited_by} - {None}
+                    approval_ids["excludeUserIds"] = sorted(makers, key=str)  # type: ignore[arg-type]
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="ApprovalNeeded",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids=approval_ids,
                 )
-            if approved_before:
-                request.cancel_onchain = CancelOnchainStatus.PENDING.value
+            elif target == RequestStatus.PAID:
+                payload_ids = {"requestId": request_id}
+                if request.created_by is not None:
+                    payload_ids["creatorId"] = request.created_by
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="PaymentDone",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids=payload_ids,
+                )
+            await session.flush()
 
-        request.status = rule.target.value
-        event = RequestStatusEvent(
-            id=uuid7(),
-            request_id=request_id,
-            from_status=source.value,
-            to_status=rule.target.value,
-            actor_type=actor.actor_type.value,
-            actor_id=actor.actor_id,
-            reason=reason,
-        )
-        session.add(event)
-        if target == RequestStatus.AWAITING_APPROVAL:
-            approval_ids: dict[str, uuid.UUID | list[uuid.UUID]] = {"requestId": request_id}
-            org_solo_mode = await session.scalar(
-                select(Organization.solo_mode).where(Organization.id == organization_id)
+            await self._audit.append(
+                session=session,
+                entry=AuditEntry(
+                    organization_id=organization_id,
+                    actor_type=actor.actor_type,
+                    actor_id=actor.actor_id,
+                    action=actor.action.value,
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    data={
+                        "from": source.value,
+                        "to": rule.target.value,
+                        "reason": reason,
+                        # Only evaluated for checker actions; None means "not evaluated".
+                        "soloMode": solo_mode if actor.action in _CHECKER_ACTIONS else None,
+                        "cancelOnchain": request.cancel_onchain,
+                        "fromVersion": version_before,
+                        "version": request.version,
+                    },
+                ),
             )
-            if not org_solo_mode:
-                # Maker-checker: the creator and last editor cannot approve, so they
-                # get no "Approval required" notification they cannot act on.
-                makers = {request.created_by, request.last_edited_by} - {None}
-                approval_ids["excludeUserIds"] = sorted(makers, key=str)  # type: ignore[arg-type]
-            append_domain_event(
-                session,
-                organization_id=organization_id,
-                treasury_id=request.treasury_id,
-                event_type="ApprovalNeeded",
-                entity_type="payment_request",
-                entity_id=request_id,
-                payload_ids=approval_ids,
-            )
-        elif target == RequestStatus.PAID:
-            payload_ids = {"requestId": request_id}
-            if request.created_by is not None:
-                payload_ids["creatorId"] = request.created_by
-            append_domain_event(
-                session,
-                organization_id=organization_id,
-                treasury_id=request.treasury_id,
-                event_type="PaymentDone",
-                entity_type="payment_request",
-                entity_id=request_id,
-                payload_ids=payload_ids,
-            )
-        await session.flush()
-
-        if source in _REVIEW_STATUSES and rule.target != source:
-            # The request left review some other way: its open items can no longer
-            # be acted on, so they must not block the next review of this request.
-            await dismiss_open_review_items(session, request_id=request_id)
-
-        review_type = review_type_for_outcome(actor.action, reason)
-        if review_type is not None:
-            primary_code = review_code(reason) or review_type.value
-            codes = [
-                code for code in map(review_code, review_reason_codes or ()) if code is not None
-            ]
-            await open_review_item(
-                session,
-                organization_id=organization_id,
-                treasury_id=request.treasury_id,
+            await session.flush()
+            return RequestTransitionResult(
                 request_id=request_id,
-                request_version=request.version,
-                item_type=review_type,
-                primary_code=primary_code,
-                reason_codes=codes or [primary_code],
-                completed_steps=completed_steps,
-                plan_id=plan_id,
+                status=rule.target,
+                cancel_onchain=CancelOnchainStatus(request.cancel_onchain),
+                version=request.version,
             )
-
-        await self._audit.append(
-            session=session,
-            entry=AuditEntry(
-                organization_id=organization_id,
-                actor_type=actor.actor_type,
-                actor_id=actor.actor_id,
-                action=actor.action.value,
-                entity_type="payment_request",
-                entity_id=request_id,
-                data={
-                    "from": source.value,
-                    "to": rule.target.value,
-                    "reason": reason,
-                    "soloMode": solo_mode,
-                    "cancelOnchain": request.cancel_onchain,
-                    "version": request.version,
-                },
-            ),
-        )
-        await session.flush()
-        return RequestTransitionResult(
-            request_id=request_id,
-            status=rule.target,
-            cancel_onchain=CancelOnchainStatus(request.cancel_onchain),
-            version=request.version,
-        )
