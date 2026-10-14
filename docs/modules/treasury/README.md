@@ -40,6 +40,8 @@ F-010 (FR-101–102), F-011 (FR-103–105), F-012 (FR-106–107, BR-018), F-013 
 
 Treasury: `Draft` (Safes verified) → `ModulePending` (deploy+enable governance tx Collecting/Submitted) → `Ready` (module recorded, coverage computed) → `Revoked` (module revoked). Pause is shown from M03. Coverage: `UNKNOWN ⇄ PARTIAL ⇄ COMPLETE` recomputed on Safe config events and every 10 min.
 
+The worker reads each active Safe at one pinned block every 10 minutes and appends a block-hash-unique `safe_config_snapshots` row. An owner, threshold, module, or guard change publishes `safe_config_changed` in the same database transaction. The notification publisher can adapt this event to the durable `domain_events` outbox.
+
 ## 6. Interfaces (API_SPEC §2)
 
 | Method | Endpoint | Perm | Errors |

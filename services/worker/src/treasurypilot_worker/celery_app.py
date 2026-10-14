@@ -1,4 +1,5 @@
 from celery import Celery, signals
+from celery.schedules import crontab
 from kombu import Exchange, Queue
 from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
@@ -44,6 +45,13 @@ def create_celery_app() -> Celery:
         worker_prefetch_multiplier=1,
         timezone="UTC",
         enable_utc=True,
+        beat_schedule={
+            "refresh-safe-config-snapshots": {
+                "task": "treasurypilot.treasury.refresh_safe_config_snapshots",
+                "schedule": crontab(minute="*/10"),
+                "options": {"queue": "core"},
+            }
+        },
     )
     return app
 
