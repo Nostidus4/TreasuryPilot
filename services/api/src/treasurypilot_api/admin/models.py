@@ -46,7 +46,9 @@ class SupportGrant(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     staff_user: Mapped[str] = mapped_column(String(200), nullable=False)
-    scope: Mapped[str] = mapped_column(String(8), nullable=False, default="read", server_default="read")
+    scope: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="read", server_default="read"
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     granted_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False

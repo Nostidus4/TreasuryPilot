@@ -214,8 +214,8 @@ def test_migration_creates_read_only_support_grants() -> None:
     config.set_main_option("sqlalchemy.url", "postgresql+asyncpg://offline/offline")
     config.output_buffer = output
 
-    command.upgrade(config, "20261014_0017:20261014_0018", sql=True)
-    command.downgrade(config, "20261014_0018:20261014_0017", sql=True)
+    command.upgrade(config, "20261014_0021:20261014_0022", sql=True)
+    command.downgrade(config, "20261014_0022:20261014_0021", sql=True)
 
     sql = output.getvalue()
     assert "CREATE TABLE support_grants" in sql

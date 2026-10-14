@@ -324,7 +324,9 @@ def create_support_grant_router(
                 .where(SupportGrant.org_id == member.organization_id)
                 .order_by(SupportGrant.created_at.desc(), SupportGrant.id)
             )
-            return [SupportGrantView.model_validate(grant, from_attributes=True) for grant in grants]
+            return [
+                SupportGrantView.model_validate(grant, from_attributes=True) for grant in grants
+            ]
 
     @router.delete("/{grant_id}", status_code=204)
     async def revoke_support_grant(

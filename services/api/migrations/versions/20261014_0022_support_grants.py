@@ -1,7 +1,7 @@
 """add consented, time-limited read support grants
 
-Revision ID: 20261014_0018
-Revises: 20261014_0017
+Revision ID: 20261014_0022
+Revises: 20261014_0021
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0018"
-down_revision: str | None = "20261014_0017"
+revision: str = "20261014_0022"
+down_revision: str | None = "20261014_0021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -26,7 +26,12 @@ def upgrade() -> None:
         sa.Column("scope", sa.String(length=8), server_default="read", nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("granted_by", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("scope = 'read'", name="ck_support_grants_read_only"),
         sa.CheckConstraint("expires_at > created_at", name="ck_support_grants_expiry"),
