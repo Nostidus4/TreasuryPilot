@@ -23,6 +23,7 @@ from treasurypilot_api.invoices.models import (
     ApprovalStatus,
     PaymentApproval,
     PaymentRequest,
+    RequestDocument,
     RequestFlag,
     RequestFlagSeverity,
     RequestFlagSource,
@@ -707,7 +708,11 @@ async def edit_request(
                 row.terms = fields["terms"]
             row.current_revision += 1
             row.last_edited_by = member.user_id
-            _hashes(row, vendor.normalized_ref, asset.address or b"")
+            # Upload drafts must keep committing to the uploaded file in invoice_hash.
+            document_sha256 = await session.scalar(
+                select(RequestDocument.sha256).where(RequestDocument.request_id == row.id)
+            )
+            _hashes(row, vendor.normalized_ref, asset.address or b"", document_sha256 or bytes(32))
             row.terms_hash = (
                 keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
                 if row.terms is not None
@@ -784,6 +789,7 @@ async def edit_request(
             flags = []
             approval_invalidated = False
         await session.flush()
+        await session.refresh(row)  # reload server-generated updated_at; no lazy IO in async
         result = _serialize(row)
         version = row.version
         revision = row.current_revision

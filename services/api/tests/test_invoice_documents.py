@@ -8,8 +8,9 @@ from fastapi import UploadFile
 from PIL import Image
 from pypdf import PdfWriter
 
+from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.invoices.documents import _read_document
+from treasurypilot_api.invoices.documents import _read_document, build_document_storage
 
 
 def _png() -> bytes:
@@ -67,3 +68,22 @@ def test_upload_rejects_more_than_twenty_pdf_pages() -> None:
         asyncio.run(_read_document(UploadFile(file=BytesIO(_pdf(21)), filename="invoice.pdf")))
     assert error.value.status == 413
     assert error.value.code == "DOCUMENT_TOO_MANY_PAGES"
+
+
+def test_partial_s3_config_disables_uploads_instead_of_failing_startup() -> None:
+    settings = Settings(_env_file=None, s3_endpoint_url="http://minio:9000", s3_bucket="bucket")  # type: ignore[call-arg]
+    assert build_document_storage(settings) is None
+
+
+def test_presigned_urls_use_the_public_endpoint() -> None:
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        s3_endpoint_url="http://minio:9000",
+        s3_public_endpoint_url="http://localhost:9000",
+        s3_bucket="bucket",
+        s3_access_key="key",
+        s3_secret_key="secret",
+    )
+    storage = build_document_storage(settings)
+    assert storage is not None
+    assert storage.sign_read("k").startswith("http://localhost:9000/bucket/k?")

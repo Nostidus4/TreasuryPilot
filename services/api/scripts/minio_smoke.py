@@ -12,8 +12,9 @@ from treasurypilot_api.invoices.documents import build_document_storage
 
 def main() -> None:
     settings = get_settings()
-    storage = build_document_storage(settings)
-    if storage is None or settings.s3_bucket is None:
+    # Sign against the internal endpoint: the public one is not reachable from inside compose.
+    storage = build_document_storage(settings.model_copy(update={"s3_public_endpoint_url": None}))
+    if storage is None or settings.s3_bucket is None or settings.s3_endpoint_url is None:
         raise RuntimeError("MinIO document storage must be configured for this smoke test")
     key = f"ci-smoke/{uuid.uuid4().hex}"
     body = b"private invoice document smoke"
@@ -21,11 +22,11 @@ def main() -> None:
     try:
         signed_body = urllib.request.urlopen(storage.sign_read(key), timeout=5).read()
         assert signed_body == body
-        direct_url = f"http://minio:9000/{settings.s3_bucket}/{key}"
+        direct_url = f"{settings.s3_endpoint_url.rstrip('/')}/{settings.s3_bucket}/{key}"
         try:
             urllib.request.urlopen(direct_url, timeout=5)
         except urllib.error.HTTPError as error:
-            assert error.code in (400, 403)
+            assert error.code == 403, error.code
         else:
             raise AssertionError("MinIO document was publicly readable without a signature")
     finally:
