@@ -2614,6 +2614,278 @@
         "title": "PlanEvidence",
         "type": "object"
       },
+      "RecurrenceCadence": {
+        "enum": ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
+        "title": "RecurrenceCadence",
+        "type": "string"
+      },
+      "RecurringScheduleCreate": {
+        "properties": {
+          "amount": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Amount",
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "cadence": {
+            "$ref": "#/components/schemas/RecurrenceCadence"
+          },
+          "costCenter": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costcenter"
+          },
+          "dueDaysAfterIssue": {
+            "default": 30,
+            "maximum": 365.0,
+            "minimum": 0.0,
+            "title": "Duedaysafterissue",
+            "type": "integer"
+          },
+          "endDate": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enddate"
+          },
+          "interval": {
+            "default": 1,
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Interval",
+            "type": "integer"
+          },
+          "invoiceNoTemplate": {
+            "maxLength": 180,
+            "minLength": 8,
+            "title": "Invoicenotemplate",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "payeeId": {
+            "format": "uuid",
+            "title": "Payeeid",
+            "type": "string"
+          },
+          "payingWalletId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payingwalletid"
+          },
+          "startDate": {
+            "format": "date",
+            "title": "Startdate",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Tags",
+            "type": "array"
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "vendorId": {
+            "format": "uuid",
+            "title": "Vendorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "treasuryId",
+          "vendorId",
+          "payeeId",
+          "assetId",
+          "invoiceNoTemplate",
+          "amount",
+          "cadence",
+          "startDate"
+        ],
+        "title": "RecurringScheduleCreate",
+        "type": "object"
+      },
+      "RecurringSchedulePatch": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "costCenter": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costcenter"
+          },
+          "endDate": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enddate"
+          },
+          "invoiceNoTemplate": {
+            "anyOf": [
+              {
+                "maxLength": 180,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoicenotemplate"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "payeeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payeeid"
+          },
+          "payingWalletId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payingwalletid"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "pattern": "^(Active|Paused)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms"
+          }
+        },
+        "title": "RecurringSchedulePatch",
+        "type": "object"
+      },
       "RefillPath": {
         "additionalProperties": false,
         "properties": {
@@ -6273,6 +6545,246 @@
         },
         "summary": "Mark Notification Read",
         "tags": ["notifications"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules": {
+      "get": {
+        "operationId": "list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Schedules V1 Orgs  Organization Id  Recurring Payment Schedules Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Schedules",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringScheduleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Schedule V1 Orgs  Organization Id  Recurring Payment Schedules Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Schedule",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}": {
+      "patch": {
+        "operationId": "edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringSchedulePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Edit Schedule V1 Orgs  Organization Id  Recurring Payment Schedules  Schedule Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Schedule",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}/periods/{period_date}/skip": {
+      "post": {
+        "operationId": "skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "period_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Period Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skip Period V1 Orgs  Organization Id  Recurring Payment Schedules  Schedule Id  Periods  Period Date  Skip Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skip Period",
+        "tags": ["recurring payment schedules"],
         "x-organization-scoped": true
       }
     },
