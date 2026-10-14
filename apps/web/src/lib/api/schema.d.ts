@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  '/admin/tenants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenants */
+    get: operations['tenants_admin_tenants_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenant Health */
+    get: operations['tenant_health_admin_tenants__tenant_id__health_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suspend Tenant */
+    post: operations['suspend_tenant_admin_tenants__tenant_id__suspend_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/health': {
     parameters: {
       query?: never;
@@ -72,6 +123,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/auth/siwe/nonce': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Siwe Nonce */
+    get: operations['siwe_nonce_v1_auth_siwe_nonce_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/chains': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Chains */
+    get: operations['list_chains_v1_chains_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/health': {
     parameters: {
       query?: never;
@@ -83,6 +168,23 @@ export interface paths {
     get: operations['health_v1_health_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/invites/{token}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Invite */
+    post: operations['accept_invite_v1_invites__token__accept_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -101,6 +203,40 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Link Wallet */
+    post: operations['link_wallet_v1_me_wallets_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/wallets/{address}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Unlink Wallet */
+    delete: operations['unlink_wallet_v1_me_wallets__address__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -140,6 +276,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/audit-log': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Audit Log */
+    get: operations['list_audit_log_v1_orgs__organization_id__audit_log_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/audit-log/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Verify Audit Log */
+    get: operations['verify_audit_log_v1_orgs__organization_id__audit_log_verify_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/events': {
     parameters: {
       query?: never;
@@ -158,6 +328,144 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Governance Tx */
+    get: operations['get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Exec Call */
+    get: operations['get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add Governance Signature */
+    post: operations['add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report Submission */
+    post: operations['report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Invites */
+    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
+    put?: never;
+    /** Create Invite */
+    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites/{invite_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Invite */
+    delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Members */
+    get: operations['list_members_v1_orgs__organization_id__members_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members/{user_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Member */
+    delete: operations['remove_member_v1_orgs__organization_id__members__user_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Member */
+    patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
     trace?: never;
   };
   '/v1/orgs/{organization_id}/notifications': {
@@ -208,6 +516,332 @@ export interface paths {
      * @description Mark one notification read; idempotent for the owner, 404 for anyone else.
      */
     post: operations['mark_notification_read_v1_orgs__organization_id__notifications__notification_id__read_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Request */
+    post: operations['create_request_v1_orgs__organization_id__requests_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/import-csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Import Requests Csv */
+    post: operations['import_requests_csv_v1_orgs__organization_id__requests_import_csv_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Download Csv Import Errors */
+    get: operations['download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload Invoice Document */
+    post: operations['upload_invoice_document_v1_orgs__organization_id__requests_upload_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Edit Request */
+    patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Approval Typed Data */
+    get: operations['get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Request */
+    post: operations['approve_request_v1_orgs__organization_id__requests__request_id__approve_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Request */
+    post: operations['cancel_request_v1_orgs__organization_id__requests__request_id__cancel_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/cancel-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Cancel Transaction */
+    get: operations['get_cancel_transaction_v1_orgs__organization_id__requests__request_id__cancel_tx_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/documents/{document_id}/url': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Document Read Url */
+    get: operations['document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Request Evidence */
+    get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Extraction
+     * @description Apply operator-reviewed extraction fields to the current upload draft.
+     */
+    post: operations['confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/flags/{flag_id}/ack': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Acknowledge Flag */
+    post: operations['acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Request */
+    post: operations['reject_request_v1_orgs__organization_id__requests__request_id__reject_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/renew': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew Request */
+    post: operations['renew_request_v1_orgs__organization_id__requests__request_id__renew_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/request-changes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request Changes */
+    post: operations['request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/submit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit Request */
+    post: operations['submit_request_v1_orgs__organization_id__requests__request_id__submit_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/terms/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Confirm Request Terms */
+    post: operations['confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/withdraw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Withdraw Request */
+    post: operations['withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -265,6 +899,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/safes/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safe Deployment Transaction */
+    post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -280,6 +931,91 @@ export interface paths {
     head?: never;
     /** Update Organization Settings */
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Treasury */
+    post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Treasury */
+    get: operations['get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Acknowledge Coverage */
+    post: operations['acknowledge_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_acknowledge_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Refresh Coverage */
+    post: operations['refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Governance Tx */
+    post: operations['create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
@@ -334,16 +1070,369 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Module Setup */
+    post: operations['create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Payees */
+    get: operations['list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get'];
+    put?: never;
+    /** Propose Payee */
+    post: operations['propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Payee */
+    get: operations['get_payee_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/registration-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Build Registration Tx */
+    post: operations['build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/verify-oob': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify Oob */
+    post: operations['verify_oob_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__verify_oob_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/vendors': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Vendors */
+    get: operations['list_vendors_v1_orgs__organization_id__vendors_get'];
+    put?: never;
+    /** Create Vendor */
+    post: operations['create_vendor_v1_orgs__organization_id__vendors_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/vendors/{vendor_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Vendor */
+    get: operations['get_vendor_v1_orgs__organization_id__vendors__vendor_id__get'];
+    put?: never;
+    post?: never;
+    /** Delete Vendor */
+    delete: operations['delete_vendor_v1_orgs__organization_id__vendors__vendor_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Vendor */
+    patch: operations['update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch'];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AICallEvidence */
+    AICallEvidence: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Model */
+      model?: string | null;
+      /** Outputsummary */
+      outputSummary?: string | null;
+      /** Promptversion */
+      promptVersion?: string | null;
+      /** Purpose */
+      purpose: string;
+    };
     /** ActionLimits */
     ActionLimits: {
       /** Daily */
       daily: string;
       /** Perrequest */
       perRequest: string;
+    };
+    /** ApprovalEvidence */
+    ApprovalEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
+    };
+    /** ApproveRequest */
+    ApproveRequest: {
+      /** Expiry */
+      expiry: number;
+      /** Revision */
+      revision: number;
+      /** Signature */
+      signature: string;
+    };
+    /** AssetView */
+    AssetView: {
+      /** Address */
+      address: string;
+      /** Decimals */
+      decimals: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Istest */
+      isTest: boolean;
+      /** Symbol */
+      symbol: string;
+    };
+    /** AttestationEvidence */
+    AttestationEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
+    };
+    /** AuditLogResponse */
+    AuditLogResponse: {
+      /** Items */
+      items: components['schemas']['AuditRecordView'][];
+      /** Nextcursor */
+      nextCursor: string | null;
+    };
+    /**
+     * AuditRecordView
+     * @description One audit record; JSON Lines of these are the dump that ``chain.py verify`` reads.
+     */
+    AuditRecordView: {
+      /** Action */
+      action: string;
+      /** Actorid */
+      actorId: string | null;
+      /** Actortype */
+      actorType: string;
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Data */
+      data: {
+        [key: string]: unknown;
+      };
+      /** Entityid */
+      entityId: string | null;
+      /** Entitytype */
+      entityType: string;
+      /** Hash */
+      hash: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Prevhash */
+      prevHash: string;
+      /** Seq */
+      seq: number;
+    };
+    /** AuditVerifyResponse */
+    AuditVerifyResponse: {
+      /** Brokenat */
+      brokenAt: number | null;
+      /** Checked */
+      checked: number;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'INTACT' | 'BROKEN';
+    };
+    /** Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post */
+    Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post: {
+      /** File */
+      file: string;
+      /**
+       * Treasury Id
+       * Format: uuid
+       */
+      treasury_id: string;
+    };
+    /** BundleRequest */
+    BundleRequest: {
+      /** Amount */
+      amount: string;
+      /** Currency */
+      currency: string;
+      /** Fingerprint */
+      fingerprint?: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Invoicehash */
+      invoiceHash?: string | null;
+      /** Vendordisplayname */
+      vendorDisplayName?: string | null;
+    };
+    /** CallInput */
+    CallInput: {
+      /** Data */
+      data: string;
+      /**
+       * Operation
+       * @default 0
+       */
+      operation: number;
+      /** To */
+      to: string;
+      /**
+       * Value
+       * @default 0
+       */
+      value: string;
+    };
+    /** ChainView */
+    ChainView: {
+      /** Assets */
+      assets: components['schemas']['AssetView'][];
+      /** Chainid */
+      chainId: number;
+      /** Explorerurl */
+      explorerUrl: string;
+      /** Name */
+      name: string;
+      /** Safedeploymentavailable */
+      safeDeploymentAvailable: boolean;
+    };
+    /** ChainsResponse */
+    ChainsResponse: {
+      /** Chains */
+      chains: components['schemas']['ChainView'][];
+    };
+    /** ConfirmTermsRequest */
+    ConfirmTermsRequest: {
+      /** Terms */
+      terms: {
+        [key: string]: unknown;
+      };
+    };
+    /**
+     * Coverage
+     * @enum {string}
+     */
+    Coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+    /** CoverageAcknowledgeRequest */
+    CoverageAcknowledgeRequest: {
+      /** Reason */
+      reason: string;
+    };
+    /** CoverageResponse */
+    CoverageResponse: {
+      coverage: components['schemas']['CoverageView'];
+    };
+    /** CoverageView */
+    CoverageView: {
+      /** Acknowledged */
+      acknowledged: boolean;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Acknowledgmentreason */
+      acknowledgmentReason?: string | null;
+      /** Details */
+      details: string[];
+      /** Executionallowed */
+      executionAllowed: boolean;
+      status: components['schemas']['Coverage'];
+    };
+    /** CreateGovernanceTxRequest */
+    CreateGovernanceTxRequest: {
+      /** Calls */
+      calls: components['schemas']['CallInput'][];
+      purpose: components['schemas']['GovernanceTxPurpose'];
+    };
+    /** CreateModuleSetupRequest */
+    CreateModuleSetupRequest: {
+      /** Buffers */
+      buffers: components['schemas']['ModuleBufferInput'][];
+      mandate: components['schemas']['ModuleMandateInput'];
     };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
@@ -359,6 +1448,198 @@ export interface components {
       /** Name */
       name: string;
     };
+    /** CreateTreasuryRequest */
+    CreateTreasuryRequest: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      /** Wallets */
+      wallets: components['schemas']['WalletRequest'][];
+    };
+    /** CsvImportCreated */
+    CsvImportCreated: {
+      /** Flags */
+      flags: string[];
+      /** Invoicenumber */
+      invoiceNumber: string;
+      /** Requestid */
+      requestId: string | null;
+      /** Row */
+      row: number;
+    };
+    /** CsvImportResponse */
+    CsvImportResponse: {
+      /** Created */
+      created: components['schemas']['CsvImportCreated'][];
+      /** Dryrun */
+      dryRun: boolean;
+      /** Errorreporturl */
+      errorReportUrl: string | null;
+      /** Errors */
+      errors: components['schemas']['CsvImportRowError'][];
+      /** Importid */
+      importId: string | null;
+    };
+    /** CsvImportRowError */
+    CsvImportRowError: {
+      /** Code */
+      code: string;
+      /** Field */
+      field: string;
+      /** Message */
+      message: string;
+      /** Row */
+      row: number;
+      /** Value */
+      value: string;
+    };
+    /** DocumentUrlResponse */
+    DocumentUrlResponse: {
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Url */
+      url: string;
+    };
+    /** EvidenceBundle */
+    EvidenceBundle: {
+      /** Aicalls */
+      aiCalls?: components['schemas']['AICallEvidence'][];
+      /** Appversion */
+      appVersion: string;
+      approval?: components['schemas']['ApprovalEvidence'] | null;
+      attestation?: components['schemas']['AttestationEvidence'] | null;
+      /** Coverage */
+      coverage?: {
+        [key: string]: unknown;
+      };
+      /** Easuid */
+      easUid?: string | null;
+      /** Fixturelabels */
+      fixtureLabels?: string[];
+      /** Flags */
+      flags?: components['schemas']['FlagEvidence'][];
+      /**
+       * Generatedat
+       * Format: date-time
+       */
+      generatedAt: string;
+      /** Operations */
+      operations?: {
+        [key: string]: unknown;
+      }[];
+      /**
+       * Organizationid
+       * Format: uuid
+       */
+      organizationId: string;
+      plan?: components['schemas']['PlanEvidence'] | null;
+      /** Reconciliation */
+      reconciliation?: {
+        [key: string]: unknown;
+      } | null;
+      request: components['schemas']['BundleRequest'];
+      /**
+       * Schemaversion
+       * @default evidence-bundle.v1
+       * @constant
+       */
+      schemaVersion: 'evidence-bundle.v1';
+      /** Sha256 */
+      sha256?: string | null;
+      /**
+       * Status
+       * @default VALID
+       * @constant
+       */
+      status: 'VALID';
+      /** Transactions */
+      transactions?: components['schemas']['TransactionEvidence'][] | null;
+      /** Validations */
+      validations?: components['schemas']['ValidationEvidence'][];
+      /** Verifications */
+      verifications?: components['schemas']['VerificationEvidence'][];
+    };
+    /** ExtractionConfirmation */
+    ExtractionConfirmation: {
+      /** Amount */
+      amount: string;
+      /**
+       * Duedate
+       * Format: date
+       */
+      dueDate: string;
+      /**
+       * Invoicecountindocument
+       * @default 1
+       */
+      invoiceCountInDocument: number;
+      /** Invoiceno */
+      invoiceNo: string;
+      /**
+       * Issuedate
+       * Format: date
+       */
+      issueDate: string;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** FlagAcknowledgment */
+    FlagAcknowledgment: {
+      /** Note */
+      note: string;
+    };
+    /** FlagEvidence */
+    FlagEvidence: {
+      /** Acknote */
+      ackNote?: string | null;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Code */
+      code: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Severity */
+      severity: string;
+      /** Status */
+      status: string;
+    };
+    /**
+     * GovernanceTxPurpose
+     * @enum {string}
+     */
+    GovernanceTxPurpose:
+      | 'MODULE_SETUP'
+      | 'MANDATE'
+      | 'PAYEE_ADD'
+      | 'PAYEE_DEACTIVATE'
+      | 'EXCEPTION_GRANT'
+      | 'EXCEPTION_REVOKE'
+      | 'ALLOW_DUPLICATE'
+      | 'CANCEL_REQUEST'
+      | 'PAUSE'
+      | 'RESUME'
+      | 'REVOKE'
+      | 'GUARDIAN_SETUP';
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -372,6 +1653,81 @@ export interface components {
       status: string;
       /** Version */
       version: string;
+    };
+    /** InviteCreateRequest */
+    InviteCreateRequest: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** InviteCreatedResponse */
+    InviteCreatedResponse: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+      /** Token */
+      token: string;
+    };
+    /** InviteView */
+    InviteView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+    };
+    /** InvitesResponse */
+    InvitesResponse: {
+      /** Invites */
+      invites: components['schemas']['InviteView'][];
+    };
+    /** LinkWalletRequest */
+    LinkWalletRequest: {
+      /** Message */
+      message: string;
+      /** Signature */
+      signature: string;
     };
     /** MagicLinkRequest */
     MagicLinkRequest: {
@@ -489,7 +1845,32 @@ export interface components {
       memberships: components['schemas']['MembershipView'][];
       user: components['schemas']['UserView'];
       /** Wallets */
-      wallets: components['schemas']['WalletView'][];
+      wallets: components['schemas']['treasurypilot_api__identity__api__WalletView'][];
+    };
+    /** MemberResponse */
+    MemberResponse: {
+      member: components['schemas']['MemberView'];
+    };
+    /** MemberView */
+    MemberView: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
+      /** Status */
+      status: string;
+      /**
+       * Userid
+       * Format: uuid
+       */
+      userId: string;
+    };
+    /** MembersResponse */
+    MembersResponse: {
+      /** Members */
+      members: components['schemas']['MemberView'][];
     };
     /** MembershipView */
     MembershipView: {
@@ -503,10 +1884,58 @@ export interface components {
        * Format: uuid
        */
       orgId: string;
+      /** Ownercheckedat */
+      ownerCheckedAt: string | null;
+      /** Ownerisonchain */
+      ownerIsOnchain: boolean;
       /** Roles */
       roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
       /** Status */
       status: string;
+    };
+    /** ModuleBufferInput */
+    ModuleBufferInput: {
+      /** Minimum */
+      minimum: string;
+      /** Target */
+      target: string;
+      /** Wallet */
+      wallet: string;
+    };
+    /** ModuleLimitInput */
+    ModuleLimitInput: {
+      /** Daily */
+      daily: string;
+      /** Perrequest */
+      perRequest: string;
+    };
+    /** ModuleMandateInput */
+    ModuleMandateInput: {
+      /** Approvalmaxage */
+      approvalMaxAge: number;
+      /** Approvers */
+      approvers: string[];
+      /** Executor */
+      executor: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Guardian */
+      guardian?: string | null;
+      pay: components['schemas']['ModuleLimitInput'];
+      /** Payeecoolingseconds */
+      payeeCoolingSeconds: number;
+      refill: components['schemas']['ModuleLimitInput'];
+      supply: components['schemas']['ModuleLimitInput'];
+      /**
+       * Validfrom
+       * Format: date-time
+       */
+      validFrom: string;
     };
     /** NotificationList */
     NotificationList: {
@@ -545,6 +1974,17 @@ export interface components {
       /** Type */
       type: string;
     };
+    /**
+     * OobMethod
+     * @enum {string}
+     */
+    OobMethod: 'PHONE' | 'IN_PERSON' | 'SIGNED_LETTER' | 'OTHER';
+    /** OobVerification */
+    OobVerification: {
+      method: components['schemas']['OobMethod'];
+      /** Note */
+      note: string;
+    };
     /** OrganizationChecklist */
     OrganizationChecklist: {
       /** Membercount */
@@ -565,6 +2005,19 @@ export interface components {
     OrganizationResponse: {
       org: components['schemas']['OrganizationView'];
     };
+    /**
+     * OrganizationRole
+     * @enum {string}
+     */
+    OrganizationRole:
+      | 'OrgAdmin'
+      | 'Owner'
+      | 'Approver'
+      | 'Operator'
+      | 'Finance'
+      | 'Guardian'
+      | 'Auditor'
+      | 'PlatformAdmin';
     /** OrganizationSettingsRequest */
     OrganizationSettingsRequest: {
       /** Automatch */
@@ -597,12 +2050,176 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** PayeeCreate */
+    PayeeCreate: {
+      /** Address */
+      address: string;
+      /** Label */
+      label: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** PayeeListResponse */
+    PayeeListResponse: {
+      /** Items */
+      items: components['schemas']['PayeeView'][];
+    };
+    /** PayeeResponse */
+    PayeeResponse: {
+      payee: components['schemas']['PayeeView'];
+    };
+    /** PayeeView */
+    PayeeView: {
+      /** Activefrom */
+      activeFrom: string | null;
+      /** Address */
+      address: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Label */
+      label: string;
+      /** Oobmethod */
+      oobMethod: string | null;
+      /** Oobnote */
+      oobNote: string | null;
+      /** Oobverifiedat */
+      oobVerifiedAt: string | null;
+      /** Oobverifiedby */
+      oobVerifiedBy: string | null;
+      /** Registrationtxid */
+      registrationTxId: string | null;
+      screening: components['schemas']['ScreeningView'] | null;
+      /** Status */
+      status: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** PlanEvidence */
+    PlanEvidence: {
+      /** Planhash */
+      planHash?: string | null;
+      /** Plannersource */
+      plannerSource: string;
+      /** Steps */
+      steps?: {
+        [key: string]: unknown;
+      }[];
+    };
     /** RefillPath */
     RefillPath: {
       /** From */
       from: string;
       /** To */
       to: string;
+    };
+    /** RenewRequest */
+    RenewRequest: {
+      /** Duedate */
+      dueDate?: string | null;
+    };
+    /** RequestCreate */
+    RequestCreate: {
+      /** Amount */
+      amount: string;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Costcenter */
+      costCenter?: string | null;
+      /**
+       * Duedate
+       * Format: date
+       */
+      dueDate: string;
+      /** Invoiceno */
+      invoiceNo: string;
+      /**
+       * Issuedate
+       * Format: date
+       */
+      issueDate: string;
+      /** Note */
+      note?: string | null;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Tags */
+      tags?: string[];
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** RequestPatch */
+    RequestPatch: {
+      /** Amount */
+      amount?: string | null;
+      /** Assetid */
+      assetId?: string | null;
+      /** Costcenter */
+      costCenter?: string | null;
+      /** Duedate */
+      dueDate?: string | null;
+      /** Invoiceno */
+      invoiceNo?: string | null;
+      /** Issuedate */
+      issueDate?: string | null;
+      /** Note */
+      note?: string | null;
+      /** Payeeid */
+      payeeId?: string | null;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Tags */
+      tags?: string[] | null;
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /** Treasuryid */
+      treasuryId?: string | null;
+      /** Vendorid */
+      vendorId?: string | null;
+    };
+    /** RequestReason */
+    RequestReason: {
+      /** Reason */
+      reason: string;
     };
     /**
      * ReviewAction
@@ -615,6 +2232,7 @@ export interface components {
       | 'EDIT_REQUEST'
       | 'GRANT_EXCEPTION'
       | 'ACCEPT_FEE'
+      | 'DEFER'
       | 'ACKNOWLEDGE'
       | 'MARK_MATCHED';
     /** ReviewActionRequest */
@@ -622,75 +2240,6 @@ export interface components {
       action: components['schemas']['ReviewAction'];
       /** Note */
       note?: string | null;
-      /** Version */
-      version: number;
-    };
-    /** ReviewItemList */
-    ReviewItemList: {
-      /** Items */
-      items: components['schemas']['ReviewItemView'][];
-    };
-    /** ReviewItemResponse */
-    ReviewItemResponse: {
-      item: components['schemas']['ReviewItemView'];
-    };
-    /** ReviewItemView */
-    ReviewItemView: {
-      /** Allowedactions */
-      allowedActions?: components['schemas']['ReviewAction'][];
-      /** Assignedrole */
-      assignedRole: string;
-      /** Completedsteps */
-      completedSteps: {
-        [key: string]: unknown;
-      }[];
-      /**
-       * Createdat
-       * Format: date-time
-       */
-      createdAt: string;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Note */
-      note: string | null;
-      /** Planid */
-      planId: string | null;
-      /** Primarycode */
-      primaryCode: string;
-      /** Reasoncodes */
-      reasonCodes: string[];
-      /**
-       * Requestid
-       * Format: uuid
-       */
-      requestId: string;
-      resolution: components['schemas']['ReviewAction'] | null;
-      /** Resolvedat */
-      resolvedAt: string | null;
-      /** Resolvedby */
-      resolvedBy: string | null;
-      /**
-       * Sladueat
-       * Format: date-time
-       */
-      slaDueAt: string;
-      /** Sourceversion */
-      sourceVersion: number;
-      status: components['schemas']['ReviewStatus'];
-      /**
-       * Treasuryid
-       * Format: uuid
-       */
-      treasuryId: string;
-      type: components['schemas']['ReviewType'];
-      /**
-       * Updatedat
-       * Format: date-time
-       */
-      updatedAt: string;
       /** Version */
       version: number;
     };
@@ -712,6 +2261,182 @@ export interface components {
       | 'AI_REJECTED'
       | 'INFRA'
       | 'UNEXPECTED_OUTFLOW';
+    /** RoleUpdateRequest */
+    RoleUpdateRequest: {
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** SafeDeploymentRequest */
+    SafeDeploymentRequest: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Threshold */
+      threshold: number;
+    };
+    /** SafeDeploymentResponse */
+    SafeDeploymentResponse: {
+      /** Chainid */
+      chainId: number;
+      transaction: components['schemas']['SafeDeploymentTransaction'];
+    };
+    /** SafeDeploymentTransaction */
+    SafeDeploymentTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
+    };
+    /** ScreeningView */
+    ScreeningView: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Provider */
+      provider: string;
+      /** Result */
+      result: string;
+      /** Sourceref */
+      sourceRef: string | null;
+      /** Ttluntil */
+      ttlUntil: string | null;
+    };
+    /** SignatureRequest */
+    SignatureRequest: {
+      /** Signature */
+      signature: string;
+    };
+    /** SiweNonceResponse */
+    SiweNonceResponse: {
+      /** Chainid */
+      chainId: number;
+      /** Domain */
+      domain: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Nonce */
+      nonce: string;
+      /** Scheme */
+      scheme: string;
+    };
+    /** SubmittedRequest */
+    SubmittedRequest: {
+      /** Transactionhash */
+      transactionHash: string;
+    };
+    /** TenantHealth */
+    TenantHealth: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Status */
+      status: string;
+      /**
+       * Tenantid
+       * Format: uuid
+       */
+      tenantId: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TenantList */
+    TenantList: {
+      /** Items */
+      items: components['schemas']['TenantView'][];
+    };
+    /** TenantView */
+    TenantView: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Country */
+      country: string | null;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TransactionEvidence */
+    TransactionEvidence: {
+      /** Blocknumber */
+      blockNumber?: number | null;
+      /** Chainid */
+      chainId: number;
+      /** Feebaseunits */
+      feeBaseUnits?: string | null;
+      /** Txhash */
+      txHash: string;
+    };
+    /** TreasuryResponse */
+    TreasuryResponse: {
+      treasury: components['schemas']['TreasuryView'];
+      /** Wallets */
+      wallets: components['schemas']['treasurypilot_api__treasury__api__WalletView'][];
+      /** Warnings */
+      warnings: components['schemas']['WarningView'][];
+    };
+    /**
+     * TreasuryStatus
+     * @enum {string}
+     */
+    TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasuryView */
+    TreasuryView: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Chainid */
+      chainId: number;
+      coverage: components['schemas']['CoverageView'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Moduleaddress */
+      moduleAddress: string | null;
+      status: components['schemas']['TreasuryStatus'];
+    };
+    /** UploadResponse */
+    UploadResponse: {
+      /**
+       * Documentid
+       * Format: uuid
+       */
+      documentId: string;
+      /** Extractionjobid */
+      extractionJobId: string;
+      /**
+       * Requestid
+       * Format: uuid
+       */
+      requestId: string;
+    };
     /** UserView */
     UserView: {
       /** Displayname */
@@ -739,6 +2464,93 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** ValidationEvidence */
+    ValidationEvidence: {
+      /** Checks */
+      checks?: {
+        [key: string]: unknown;
+      }[];
+      /** Decision */
+      decision: string;
+      /** Id */
+      id?: string | null;
+      /** Reasoncodes */
+      reasonCodes?: string[];
+      /** Stage */
+      stage: string;
+    };
+    /** VendorCreate */
+    VendorCreate: {
+      /** Contact */
+      contact?: string | null;
+      /** Name */
+      name: string;
+      /** Notes */
+      notes?: string | null;
+      /** Suppliercode */
+      supplierCode?: string | null;
+      /** Taxid */
+      taxId?: string | null;
+    };
+    /** VendorListResponse */
+    VendorListResponse: {
+      /** Items */
+      items: components['schemas']['VendorView'][];
+    };
+    /** VendorPatch */
+    VendorPatch: {
+      /** Contact */
+      contact?: string | null;
+      /** Name */
+      name?: string | null;
+      /** Notes */
+      notes?: string | null;
+      /** Taxid */
+      taxId?: string | null;
+    };
+    /** VendorResponse */
+    VendorResponse: {
+      vendor: components['schemas']['VendorView'];
+    };
+    /** VendorView */
+    VendorView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Hascontact */
+      hasContact: boolean;
+      /** Hastaxid */
+      hasTaxId: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Normalizedref */
+      normalizedRef: string;
+      /** Notes */
+      notes: string | null;
+    };
+    /** VerificationEvidence */
+    VerificationEvidence: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Status */
+      status: string;
+      /** Txhash */
+      txHash: string;
+    };
     /** VerifyMagicLinkRequest */
     VerifyMagicLinkRequest: {
       /** Token */
@@ -759,8 +2571,30 @@ export interface components {
       /** Wallet */
       wallet: string;
     };
+    /** WalletRequest */
+    WalletRequest: {
+      /** Label */
+      label?: string | null;
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+    };
+    /**
+     * WalletRole
+     * @enum {string}
+     */
+    WalletRole: 'SOURCE' | 'OPERATIONAL';
+    /** WarningView */
+    WarningView: {
+      /** Code */
+      code: string;
+      /** Message */
+      message: string;
+      /** Wallets */
+      wallets: string[];
+    };
     /** WalletView */
-    WalletView: {
+    treasurypilot_api__identity__api__WalletView: {
       /** Address */
       address: string;
       /** Chainfamily */
@@ -773,6 +2607,23 @@ export interface components {
        */
       linkedAt: string;
     };
+    /** WalletView */
+    treasurypilot_api__treasury__api__WalletView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Label */
+      label: string;
+      /** Owners */
+      owners: string[];
+      role: components['schemas']['WalletRole'];
+      /** Safeaddress */
+      safeAddress: string;
+      /** Threshold */
+      threshold: number;
+    };
   };
   responses: never;
   parameters: never;
@@ -782,6 +2633,88 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  tenants_admin_tenants_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantList'];
+        };
+      };
+    };
+  };
+  tenant_health_admin_tenants__tenant_id__health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantHealth'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  suspend_tenant_admin_tenants__tenant_id__suspend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_health_get: {
     parameters: {
       query?: never;
@@ -884,6 +2817,46 @@ export interface operations {
       };
     };
   };
+  siwe_nonce_v1_auth_siwe_nonce_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SiweNonceResponse'];
+        };
+      };
+    };
+  };
+  list_chains_v1_chains_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChainsResponse'];
+        };
+      };
+    };
+  };
   health_v1_health_get: {
     parameters: {
       query?: never;
@@ -904,6 +2877,37 @@ export interface operations {
       };
     };
   };
+  accept_invite_v1_invites__token__accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   me_v1_me_get: {
     parameters: {
       query?: never;
@@ -920,6 +2924,68 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  link_wallet_v1_me_wallets_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LinkWalletRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['treasurypilot_api__identity__api__WalletView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unlink_wallet_v1_me_wallets__address__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -988,6 +3054,76 @@ export interface operations {
       };
     };
   };
+  list_audit_log_v1_orgs__organization_id__audit_log_get: {
+    parameters: {
+      query?: {
+        entityType?: string | null;
+        entityId?: string | null;
+        actor?: string | null;
+        from?: string | null;
+        to?: string | null;
+        cursor?: number | null;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  verify_audit_log_v1_orgs__organization_id__audit_log_verify_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditVerifyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   stream_events_v1_orgs__organization_id__events_get: {
     parameters: {
       query?: never;
@@ -1007,6 +3143,343 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: string;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SignatureRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubmittedRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_invites_v1_orgs__organization_id__invites_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvitesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_invite_v1_orgs__organization_id__invites_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['InviteCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteCreatedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_invite_v1_orgs__organization_id__invites__invite_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        invite_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_members_v1_orgs__organization_id__members_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MembersResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  remove_member_v1_orgs__organization_id__members__user_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_member_v1_orgs__organization_id__members__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RoleUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
       };
       /** @description Validation Error */
       422: {
@@ -1120,14 +3593,731 @@ export interface operations {
       };
     };
   };
+  create_request_v1_orgs__organization_id__requests_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  import_requests_csv_v1_orgs__organization_id__requests_import_csv_post: {
+    parameters: {
+      query?: {
+        dryRun?: boolean;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+          /** Format: uuid */
+          treasuryId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CsvImportResponse'];
+        };
+      };
+      /** @description CSV file exceeds the upload limit */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        import_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  upload_invoice_document_v1_orgs__organization_id__requests_upload_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': components['schemas']['Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  edit_request_v1_orgs__organization_id__requests__request_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  approve_request_v1_orgs__organization_id__requests__request_id__approve_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cancel_request_v1_orgs__organization_id__requests__request_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_cancel_transaction_v1_orgs__organization_id__requests__request_id__cancel_tx_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DocumentUrlResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ExtractionConfirmation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+        flag_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FlagAcknowledgment'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reject_request_v1_orgs__organization_id__requests__request_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  renew_request_v1_orgs__organization_id__requests__request_id__renew_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RenewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  submit_request_v1_orgs__organization_id__requests__request_id__submit_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmTermsRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_review_items_v1_orgs__organization_id__review_items_get: {
     parameters: {
       query?: {
         status?: components['schemas']['ReviewStatus'] | null;
         type?: components['schemas']['ReviewType'] | null;
-        role?: string | null;
-        limit?: number;
-        includeClosed?: boolean;
+        role?: components['schemas']['OrganizationRole'] | null;
       };
       header?: never;
       path: {
@@ -1143,7 +4333,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ReviewItemList'];
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -1162,8 +4354,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        item_id: string;
         organization_id: string;
+        item_id: string;
       };
       cookie?: never;
     };
@@ -1175,7 +4367,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ReviewItemResponse'];
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -1194,8 +4388,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        item_id: string;
         organization_id: string;
+        item_id: string;
       };
       cookie?: never;
     };
@@ -1211,7 +4405,44 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ReviewItemResponse'];
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SafeDeploymentRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SafeDeploymentResponse'];
         };
       };
       /** @description Validation Error */
@@ -1247,6 +4478,179 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_treasury_v1_orgs__organization_id__treasuries_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTreasuryRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  acknowledge_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_acknowledge_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CoverageAcknowledgeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CoverageResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CoverageResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGovernanceTxRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -1379,6 +4783,379 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MandateDraftResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateModuleSetupRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PayeeCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_payee_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  verify_oob_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__verify_oob_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OobVerification'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_vendors_v1_orgs__organization_id__vendors_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_vendor_v1_orgs__organization_id__vendors_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VendorCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_vendor_v1_orgs__organization_id__vendors__vendor_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_vendor_v1_orgs__organization_id__vendors__vendor_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VendorPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
         };
       };
       /** @description Validation Error */

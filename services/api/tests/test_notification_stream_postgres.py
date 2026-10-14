@@ -75,6 +75,7 @@ async def _integration(database_url: str) -> None:
             organization_id=org, user_id=user
         )
         frames: list[str] = []
+        floor = cursor.event_id, cursor.notification_at, cursor.notification_id
 
         async def run() -> None:
             async for frame in event_stream(
@@ -84,8 +85,14 @@ async def _integration(database_url: str) -> None:
                 cursor=cursor,
                 options=OPTIONS,
                 is_disconnected=_never,
+                resumed=since is not None,
             ):
                 if frame.startswith("id:"):
+                    # A resumed stream may replay the lookback window; keep only newer frames.
+                    sent = parse_cursor(frame.splitlines()[0][4:])
+                    assert sent is not None
+                    if (sent.event_id, sent.notification_at, sent.notification_id) <= floor:
+                        continue
                     frames.append(frame)
                     if len(frames) >= count:
                         return

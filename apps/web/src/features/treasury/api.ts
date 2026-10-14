@@ -89,6 +89,16 @@ export const useCreateTreasury = (orgId: string) =>
     api.post<{ treasury: Treasury }>(`/orgs/${orgId}/treasuries`, input),
   );
 
+export const useSafeDeploymentTx = (orgId: string) =>
+  useOrgMutation(
+    orgId,
+    (input: { chainId: number; owners: string[]; threshold: number }) =>
+      api.post<{
+        chainId: number;
+        transaction: { to: Hex; data: Hex; value: string };
+      }>(`/orgs/${orgId}/safes/deploy-tx`, input),
+  );
+
 export const useDeployModuleTx = (orgId: string) =>
   useOrgMutation(orgId, (treasuryId: string) =>
     api.post<{ governanceTx: GovernanceTx }>(

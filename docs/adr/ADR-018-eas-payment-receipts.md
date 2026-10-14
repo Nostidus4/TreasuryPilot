@@ -10,7 +10,12 @@ After a request is Paid and its PAY block is finalized (M11-D8, does not wait fo
 - The UI and evidence bundle link to easscan.
 
 ## Why
-It lets anyone (judges, auditors, vendors) verify the chain *invoice → approval → attested plan → payment* without trusting our database.
+It lets judges, auditors and vendors compare the commitments with supplied invoice,
+approval and policy-plan evidence and the canonical PAY transaction without a
+database lookup. The dedicated backend attester asserts the invoice/approval/plan/
+policy hashes. Consumers check the trusted attester and verify any supplied hash
+preimages/signatures; the receipt helper itself checks requestId, payee, amount
+and finalized PAY evidence. The public schema alone does not validate the metadata.
 
 ## Consequences
 SC-019 and REC-005 become P1 / Tier A. Schema UID is recorded in the deployments manifest.

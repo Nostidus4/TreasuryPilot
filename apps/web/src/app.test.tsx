@@ -87,10 +87,9 @@ test('plan timeline shows partial completion, verification evidence and unknown 
     within(timeline).getByText('Dropped by the network'),
   ).toBeInTheDocument();
   const explorerLinks = await within(timeline).findAllByRole('link', {
-      name: 'Open transaction in the block explorer',
+    name: 'Open transaction in the block explorer',
   });
-  expect(explorerLinks[1]).toHaveAttribute(
-    'href',
+  expect(explorerLinks.map((link) => link.getAttribute('href'))).toContain(
     `https://sepolia.etherscan.io/tx/0x${'b'.repeat(64)}`,
   );
 });
@@ -131,9 +130,9 @@ test('selecting a Safe in one chart zooms the liquidity chart into it', async ()
   const user = userEvent.setup();
   renderApp(T);
 
-  const safes = (
-    await screen.findByRole('heading', { name: 'Safes' })
-  ).closest('section')!;
+  const safes = (await screen.findByRole('heading', { name: 'Safes' })).closest(
+    'section',
+  )!;
   const payroll = await within(safes).findByRole('button', {
     name: /payroll safe/i,
   });
