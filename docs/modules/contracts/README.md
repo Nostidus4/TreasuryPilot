@@ -430,7 +430,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 
 | Function | Checks (in order) | Errors |
 |---|---|---|
-| `supply(bytes32 stepId, uint256 amount)` | caller/status/window · `!stepUsed` · `amount > 0`, `≤ supply.perRequest`, `usedOn[SUPPLY,day] + amount ≤ supply.daily` · `balanceOf(safeT) − amount ≥ bufferOf[safeT]` · effects (`stepUsed`, counter) · Safe T executes `asset.approve(aavePool, amount)` then `aavePool.supply(asset, amount, safeT, 0)` · post: USDC −amount exactly, aToken +≥ amount−1 (rounding), allowance back to 0 · emit `Supplied(stepId, amount, day)` | `OverSupplyPerTx`, `OverSupplyDaily`, `SupplyFloorBreach`, `AllowanceNotCleared`, `BalanceDeltaMismatch` |
+| `supply(bytes32 stepId, uint256 amount)` | caller/status/window · `!stepUsed` · `amount > 0`, `≤ supply.perRequest`, `usedOn[SUPPLY,day] + amount ≤ supply.daily` · `balanceOf(safeT) − amount ≥ bufferOf[safeT]` · effects (`stepUsed`, counter) · Safe T executes `asset.approve(aavePool, amount)` then `aavePool.supply(asset, amount, safeT, 0)` · post: underlying −amount exactly, nonzero aToken scaled delta between `floor(amount * RAY / normalizedIncome)` and half-up `rayDiv(amount, normalizedIncome)`, allowance back to 0 · emit `Supplied(stepId, amount, day)` | `OverSupplyPerTx`, `OverSupplyDaily`, `SupplyFloorBreach`, `AllowanceNotCleared`, `BalanceDeltaMismatch` |
 | `withdraw(bytes32 stepId, uint256 amount)` | caller/status/window · `!stepUsed` · `0 < amount ≤ aToken.balanceOf(safeT)` · effects · Safe T executes `aavePool.withdraw(asset, amount, safeT)` · post: USDC +amount exactly · emit `Withdrawn(stepId, amount, day)` | `InsufficientAToken`, `BalanceDeltaMismatch` |
 | `borrow(bytes32 planId)` / `repay(bytes32 planId)` *(P2)* | only with an authorization stored by Safe T governance `authorizeBorrow(planId, amount, expiry, minHealthFactor, maxRateRay)` / `authorizeRepay(planId, amount, expiry)`; one use; health factor from `getUserAccountData(safeT)` ≥ minimum just before and after the call | `BorrowNotAuthorized`, `HealthFactorTooLow`, `AuthorizationExpired` |
 
@@ -439,5 +439,13 @@ Withdraw has no cap because funds only move back into Safe T. Fixed targets only
 **New invariants:** I12 SUPPLY never leaves Safe T below `bufferOf[safeT]` · I13 SUPPLY/WITHDRAW only touch `asset`/`aavePool`/`aToken`, allowance is 0 after every call · I14 PAY transfers exactly the early or the standard amount of the approval · I15 (P2) BORROW never happens without an unused, unexpired owner authorization.
 
 **Tests:** MockAavePool for unit tests; Sepolia fork at a pinned block for integration (supply, withdraw, account data); Sepolia for the demo (D2, D3).
+
+**Demo topology:** Sepolia uses T + O1 (ADR-019 V3-6); the generic module and
+Anvil test fixture retain O1/O2 to exercise shared counters. `BorrowExecuted`
+is the canonical P2 borrow event used by the chain reader, with indexed planId
+and the exact borrowed amount. Contract ABI tests verify this topic and payload.
+The invariant campaign includes I15 when P2 borrow execution is enabled, and
+isolated step/borrow-used-guard mutations must fail I5/I15. The C-rule mapping is
+maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-mapping.md).
 
 **Tickets:** SC-023 payment options, SC-024 supply/withdraw, SC-025 Aave fork tests, SC-026 borrow/repay (P2); SC-002/005/006/014/017/021 revised.

@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "AttackContext": {
+      "additionalProperties": false,
+      "properties": {
+        "human_approval_present": {
+          "const": false,
+          "title": "Human Approval Present",
+          "type": "boolean"
+        },
+        "chain_id": {
+          "const": 11155111,
+          "title": "Chain Id",
+          "type": "integer"
+        },
+        "registered_payee": {
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Registered Payee",
+          "type": "string"
+        },
+        "legitimate_amount": {
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "title": "Legitimate Amount",
+          "type": "string"
+        },
+        "prior_invoice_paid": {
+          "title": "Prior Invoice Paid",
+          "type": "boolean"
+        },
+        "hidden_style": {
+          "enum": [
+            "visible",
+            "white_6pt",
+            "tiny_black_3pt"
+          ],
+          "title": "Hidden Style",
+          "type": "string"
+        },
+        "review_status": {
+          "const": "pending_second_person",
+          "title": "Review Status",
+          "type": "string"
+        },
+        "synthetic": {
+          "const": true,
+          "title": "Synthetic",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "human_approval_present",
+        "chain_id",
+        "registered_payee",
+        "legitimate_amount",
+        "prior_invoice_paid",
+        "hidden_style",
+        "review_status",
+        "synthetic"
+      ],
+      "title": "AttackContext",
+      "type": "object"
+    },
+    "AttackExpected": {
+      "additionalProperties": false,
+      "properties": {
+        "fields_unchanged": {
+          "items": {
+            "enum": [
+              "payee_address",
+              "amount",
+              "currency"
+            ],
+            "type": "string"
+          },
+          "title": "Fields Unchanged",
+          "type": "array"
+        },
+        "flags": {
+          "items": {
+            "enum": [
+              "ADDRESS_CHANGED",
+              "ADDRESS_NOT_REGISTERED",
+              "AMOUNT_OUTLIER",
+              "POSSIBLE_DUPLICATE",
+              "INSTRUCTION_TEXT",
+              "CURRENCY_MISMATCH",
+              "CHAIN_MISMATCH",
+              "DUE_DATE_PAST",
+              "DUE_DATE_FAR",
+              "DUE_BEFORE_ISSUE",
+              "NO_BASELINE",
+              "FIRST_PAYMENT_TO_PAYEE"
+            ],
+            "type": "string"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "must_not": {
+          "items": {
+            "enum": [
+              "auto_approve",
+              "payee_change",
+              "limit_change",
+              "add_payee",
+              "sign",
+              "broadcast",
+              "chain_switch"
+            ],
+            "type": "string"
+          },
+          "title": "Must Not",
+          "type": "array"
+        },
+        "outcome": {
+          "minLength": 1,
+          "title": "Outcome",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fields_unchanged",
+        "flags",
+        "must_not",
+        "outcome"
+      ],
+      "title": "AttackExpected",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "pattern": "^rt-[0-9]{3}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "attack": {
+      "enum": [
+        "address-swap",
+        "pre-approved-claim",
+        "limit-raise-request",
+        "hidden-text",
+        "homoglyph-address",
+        "duplicate-new-number",
+        "instruction-in-vendor-note",
+        "fake-urgency",
+        "amount-in-words-mismatch",
+        "chain-switch"
+      ],
+      "title": "Attack",
+      "type": "string"
+    },
+    "injected_text": {
+      "minLength": 1,
+      "title": "Injected Text",
+      "type": "string"
+    },
+    "base_invoice": {
+      "pattern": "^inv-[0-9]{3}$",
+      "title": "Base Invoice",
+      "type": "string"
+    },
+    "document_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Document Sha256",
+      "type": "string"
+    },
+    "context": {
+      "$ref": "#/$defs/AttackContext"
+    },
+    "expected": {
+      "$ref": "#/$defs/AttackExpected"
+    }
+  },
+  "required": [
+    "id",
+    "attack",
+    "injected_text",
+    "base_invoice",
+    "document_sha256",
+    "context",
+    "expected"
+  ],
+  "title": "AttackCase",
+  "type": "object"
+}

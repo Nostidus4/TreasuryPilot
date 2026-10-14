@@ -12,7 +12,9 @@ up inside the window are merged into one digest line sent when the window reopen
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,6 +37,9 @@ MAX_ATTEMPTS = 3
 RETRY_BACKOFF = (timedelta(seconds=5), timedelta(seconds=20))
 BACKLOG_WINDOW = timedelta(hours=1)
 CHANNELS_PER_RUN = 50
+# A run stops starting new channels after this long; sends are sequential and each can take
+# up to the client timeout, and the next scheduled run must not pile up behind this one.
+RUN_BUDGET_SECONDS = 20.0
 _PREFIX = "[TreasuryPilot]"
 _VENDOR_LIMIT = 60
 
@@ -50,15 +55,21 @@ WHERE n.severity IN ('ACTION', 'CRITICAL')
 ON CONFLICT (notification_id, channel_id) DO NOTHING
 """
 
+# Only channels that can send now (active, outside the rate-limit window), oldest first, so a
+# backlog on rate-limited channels cannot crowd out ready ones.
 _CANDIDATE_CHANNELS = """
-SELECT DISTINCT d.channel_id
+SELECT d.channel_id
 FROM telegram_deliveries AS d
+JOIN notification_channels AS c ON c.id = d.channel_id AND c.active
 WHERE d.status = 'PENDING' AND d.next_attempt_at <= $1
+  AND (c.last_sent_at IS NULL OR c.last_sent_at <= $1::timestamptz - $3::interval)
+GROUP BY d.channel_id
+ORDER BY MIN(d.next_attempt_at), d.channel_id
 LIMIT $2
 """
 
 _LOCK_CHANNEL = """
-SELECT id, user_id, target, show_amounts
+SELECT id, user_id, target, show_amounts, last_sent_at
 FROM notification_channels
 WHERE id = $1 AND active
   AND (last_sent_at IS NULL OR last_sent_at <= $2::timestamptz - $3::interval)
@@ -90,6 +101,8 @@ SET status = 'SENT', sent_at = $2, attempts = attempts + 1, last_error = NULL
 WHERE id = ANY($1::uuid[])
 """
 
+# Written in the claim transaction (before the HTTP call) so concurrent workers skip the channel
+# while the message is in flight.
 _MARK_CHANNEL_SENT = "UPDATE notification_channels SET last_sent_at = $2 WHERE id = $1"
 
 _MARK_RETRY = """
@@ -162,6 +175,52 @@ def _pending_message(row: asyncpg.Record) -> PendingMessage:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Claim:
+    chat_id: str
+    text: str
+    delivery_ids: list[uuid.UUID]
+    previous_sent_at: datetime | None
+
+
+async def _claim_channel(
+    connection: asyncpg.Connection,
+    channel_id: uuid.UUID,
+    *,
+    cipher: FieldCipher,
+    base_url: str,
+    now: datetime,
+) -> _Claim | None:
+    """Short transaction: lock the channel, read its pending messages, start the rate window.
+
+    The lock is released at commit, before any network call. Stamping ``last_sent_at`` is
+    what keeps other workers off the channel while the message is in flight.
+    """
+
+    async with connection.transaction():
+        channel = await connection.fetchrow(_LOCK_CHANNEL, channel_id, now, MIN_INTERVAL)
+        if channel is None:
+            return None  # rate-limited, inactive, or another worker holds it
+        rows = await connection.fetch(
+            _PENDING, channel_id, channel["show_amounts"], channel["user_id"], now
+        )
+        if not rows:
+            return None
+        try:
+            chat_id = cipher.decrypt_text(channel["target"], context=TARGET_CONTEXT)
+        except DecryptionError:
+            logger.error("telegram_target_undecryptable", extra={"channel_id": str(channel_id)})
+            await connection.execute(_FAIL_PENDING, channel_id, "target_undecryptable")
+            return None
+        await connection.execute(_MARK_CHANNEL_SENT, channel_id, now)
+        return _Claim(
+            chat_id=chat_id,
+            text=build_text([_pending_message(row) for row in rows], base_url),
+            delivery_ids=[row["delivery_id"] for row in rows],
+            previous_sent_at=channel["last_sent_at"],
+        )
+
+
 async def _deliver_channel(
     connection: asyncpg.Connection,
     channel_id: uuid.UUID,
@@ -171,50 +230,44 @@ async def _deliver_channel(
     base_url: str,
     now: datetime,
 ) -> bool:
-    async with connection.transaction():
-        channel = await connection.fetchrow(_LOCK_CHANNEL, channel_id, now, MIN_INTERVAL)
-        if channel is None:
-            return False  # rate-limited, inactive, or another worker holds it
-        rows = await connection.fetch(
-            _PENDING, channel_id, channel["show_amounts"], channel["user_id"], now
-        )
-        if not rows:
-            return False
-        delivery_ids = [row["delivery_id"] for row in rows]
-        text = build_text([_pending_message(row) for row in rows], base_url)
-        try:
-            chat_id = cipher.decrypt_text(channel["target"], context=TARGET_CONTEXT)
-        except DecryptionError:
-            logger.error("telegram_target_undecryptable", extra={"channel_id": str(channel_id)})
-            await connection.execute(_FAIL_PENDING, channel_id, "target_undecryptable")
-            return False
-        try:
-            await client.send_message(chat_id, text)
-        except TelegramBotBlocked:
+    claim = await _claim_channel(connection, channel_id, cipher=cipher, base_url=base_url, now=now)
+    if claim is None:
+        return False
+    try:
+        await client.send_message(claim.chat_id, claim.text)
+    except TelegramBotBlocked:
+        async with connection.transaction():
             await connection.execute(_DEACTIVATE, channel_id)
             await connection.execute(_FAIL_PENDING, channel_id, "bot_blocked")
-            logger.warning("telegram_channel_deactivated", extra={"channel_id": str(channel_id)})
-            return False
-        except TelegramError as error:
-            # A permanent rejection exhausts the attempts at once; a transient one backs off.
-            max_attempts = MAX_ATTEMPTS if isinstance(error, TelegramTransientError) else 0
+        logger.warning("telegram_channel_deactivated", extra={"channel_id": str(channel_id)})
+        return False
+    except Exception as error:
+        # A permanent rejection exhausts the attempts at once; transient and unexpected
+        # errors back off, so one bad row cannot be retried forever.
+        permanent = isinstance(error, TelegramError) and not isinstance(
+            error, TelegramTransientError
+        )
+        async with connection.transaction():
+            # A failed attempt is not a message: give the window back so the retry is
+            # paced by the backoff alone.
+            await connection.execute(_MARK_CHANNEL_SENT, channel_id, claim.previous_sent_at)
             await connection.execute(
                 _MARK_RETRY,
-                delivery_ids,
+                claim.delivery_ids,
                 now,
                 type(error).__name__,
-                max_attempts,
+                0 if permanent else MAX_ATTEMPTS,
                 RETRY_BACKOFF[0],
                 RETRY_BACKOFF[1],
             )
-            logger.warning(
-                "telegram_send_failed",
-                extra={"channel_id": str(channel_id), "error": type(error).__name__},
-            )
-            return False
-        await connection.execute(_MARK_SENT, delivery_ids, now)
-        await connection.execute(_MARK_CHANNEL_SENT, channel_id, now)
-        return True
+        logger.warning(
+            "telegram_send_failed",
+            extra={"channel_id": str(channel_id), "error": type(error).__name__},
+        )
+        return False
+    async with connection.transaction():
+        await connection.execute(_MARK_SENT, claim.delivery_ids, now)
+    return True
 
 
 async def deliver_pending(
@@ -224,29 +277,45 @@ async def deliver_pending(
     cipher: FieldCipher,
     base_url: str,
     now: datetime | None = None,
+    budget_seconds: float = RUN_BUDGET_SECONDS,
 ) -> int:
     """Queue new notifications for linked channels and send what the rate limit allows.
 
-    Returns the number of Telegram messages sent. Safe to run concurrently: channels
-    are claimed with ``FOR UPDATE SKIP LOCKED`` and deliveries are unique per
-    (notification, channel).
+    Returns the number of Telegram messages sent. Safe to run concurrently: a channel is
+    claimed in a short transaction (``FOR UPDATE SKIP LOCKED`` plus a rate-window stamp),
+    the HTTP call happens with no transaction or lock held, and the outcome is recorded in
+    a second short transaction. Deliveries are unique per (notification, channel). A crash
+    between claim and record leaves the deliveries PENDING, so they are retried.
     """
 
-    moment = now or datetime.now(UTC)
+    clock: Callable[[], datetime] = (lambda: now) if now else (lambda: datetime.now(UTC))
+    deadline = time.monotonic() + budget_seconds
     async with pool.acquire() as connection:
-        await connection.execute(_ENQUEUE, moment, BACKLOG_WINDOW)
+        await connection.execute(_ENQUEUE, clock(), BACKLOG_WINDOW)
         candidates: list[Any] = await connection.fetch(
-            _CANDIDATE_CHANNELS, moment, CHANNELS_PER_RUN
+            _CANDIDATE_CHANNELS, clock(), CHANNELS_PER_RUN, MIN_INTERVAL
         )
         sent = 0
         for candidate in candidates:
-            if await _deliver_channel(
-                connection,
-                candidate["channel_id"],
-                client=client,
-                cipher=cipher,
-                base_url=base_url,
-                now=moment,
-            ):
+            if time.monotonic() >= deadline:
+                break
+            try:
+                delivered = await _deliver_channel(
+                    connection,
+                    candidate["channel_id"],
+                    client=client,
+                    cipher=cipher,
+                    base_url=base_url,
+                    now=clock(),
+                )
+            except (asyncpg.PostgresConnectionError, asyncpg.InterfaceError):
+                raise  # the connection is gone: let the task rebuild the pool
+            except Exception:
+                # One bad channel must not abort the run for the others.
+                logger.exception(
+                    "telegram_channel_failed", extra={"channel_id": str(candidate["channel_id"])}
+                )
+                continue
+            if delivered:
                 sent += 1
     return sent

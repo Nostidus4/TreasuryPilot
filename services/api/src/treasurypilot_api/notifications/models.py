@@ -51,6 +51,11 @@ class Notification(Base):
         UniqueConstraint("user_id", "event_id", name="uq_notifications_user_event"),
         Index("ix_notifications_org_created", "org_id", "created_at"),
         Index(
+            "ix_notifications_actionable_created",
+            "created_at",
+            postgresql_where=text("severity IN ('ACTION', 'CRITICAL')"),
+        ),
+        Index(
             "ix_notifications_user_unread",
             "user_id",
             "org_id",

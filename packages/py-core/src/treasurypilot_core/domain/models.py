@@ -122,11 +122,22 @@ class PolicyView(FrozenModel):
     cooling_seconds: NonNegativeInt
 
 
+class LiquidityPolicy(FrozenModel):
+    """Supply controls and non-payment reserves for one liquidity cycle."""
+
+    supply: Limits
+    min_supply: BaseUnits
+    debt_service_reserve: BaseUnits = BaseUnits(0)
+    execution_holds: BaseUnits = BaseUnits(0)
+    reserve_horizon_days: Annotated[int, Field(ge=1, le=30)] = 30
+
+
 class Snapshot(FrozenModel):
     day: NonNegativeInt
     source: WalletState
     operational: FrozenMapping[str, WalletState]
-    used_today: FrozenMapping[Literal["pay", "refill"], BaseUnits]
+    # "pay" and "refill" are required; "supply" and "withdraw" default to zero.
+    used_today: FrozenMapping[Literal["pay", "refill", "supply", "withdraw"], BaseUnits]
     payee_active_day: FrozenMapping[str, NonNegativeInt]
     safe_usdc: BaseUnits
     a_usdc: BaseUnits
@@ -138,8 +149,8 @@ class Snapshot(FrozenModel):
 
     @model_validator(mode="after")
     def validate_usage_counters(self) -> Snapshot:
-        if set(self.used_today) != {"pay", "refill"}:
-            raise ValueError("used_today must contain exactly the pay and refill counters")
+        if not {"pay", "refill"} <= set(self.used_today):
+            raise ValueError("used_today must contain the pay and refill counters")
         if self.debt > 0 and self.health_factor is None:
             raise ValueError("health_factor is required when debt exists")
         return self
@@ -182,12 +193,15 @@ class ScheduledItem(FrozenModel):
     day: NonNegativeInt
     refill: BaseUnits
     value: int
+    # ``default`` preserves the meaning of schedules produced by the single-asset API.
+    asset_id: Annotated[str, Field(min_length=1)] = "default"
 
 
 class Infeasible(FrozenModel):
     request_id: Annotated[str, Field(min_length=1)]
     reason: ReasonCode
     detail: str
+    asset_id: Annotated[str, Field(min_length=1)] = "default"
 
 
 class Schedule(FrozenModel):
@@ -197,3 +211,107 @@ class Schedule(FrozenModel):
     binding: FrozenSequence[BindingConstraint]
     solver: Literal["EDF", "CPSAT", "ORACLE"]
     status: Literal["OPTIMAL", "FEASIBLE", "FALLBACK"]
+
+
+class BindingConstraintDetail(FrozenModel):
+    """Numeric explanation of a constraint that a proposed plan reaches or breaks."""
+
+    name: Literal[
+        "PAY_DAILY_CAP",
+        "REFILL_DAILY_CAP",
+        "BUFFER",
+        "SOURCE_CAPACITY",
+        "REFILL_BOUND",
+        "COOLING",
+        "DEADLINE",
+    ]
+    request_id: Annotated[str, Field(min_length=1)]
+    day: NonNegativeInt
+    used: int
+    limit: int
+
+
+class ExceptionValue(FrozenModel):
+    """Value currently blocked by the per-request cap if an Owner grants an exception."""
+
+    request_id: Annotated[str, Field(min_length=1)]
+    value: int
+
+
+class LiquidityPosition(FrozenModel):
+    payment_reserve: BaseUnits
+    safe_floor: BaseUnits
+    debt_service_reserve: BaseUnits
+    execution_holds: BaseUnits
+    required_safe_reserve: BaseUnits
+    deficit: BaseUnits
+    available_for_supply: BaseUnits
+    accessible_liquidity: BaseUnits
+
+
+class LiquidityDecision(FrozenModel):
+    """One liquidity action per cycle.
+
+    ``amount`` is what to SUPPLY or WITHDRAW. For ``INSUFFICIENT_LIQUIDITY`` it is the
+    partial withdrawal still worth making before a borrow proposal, and it is zero
+    when nothing can be withdrawn: callers must not submit a zero withdrawal.
+    """
+
+    kind: Literal["NONE", "SUPPLY", "WITHDRAW", "INSUFFICIENT_LIQUIDITY"]
+    amount: BaseUnits
+    shortfall: BaseUnits = BaseUnits(0)
+    reason: str
+    position: LiquidityPosition
+
+    @model_validator(mode="after")
+    def validate_amounts(self) -> LiquidityDecision:
+        if self.kind in ("SUPPLY", "WITHDRAW") and self.amount == 0:
+            raise ValueError(f"{self.kind} requires a positive amount")
+        if self.kind == "NONE" and self.amount != 0:
+            raise ValueError("NONE carries no amount")
+        if (self.kind == "INSUFFICIENT_LIQUIDITY") != (self.shortfall > 0):
+            raise ValueError("only INSUFFICIENT_LIQUIDITY carries a shortfall")
+        return self
+
+
+class BorrowProposal(FrozenModel):
+    """A non-executable estimate for covering a liquidity shortfall with borrowing."""
+
+    amount: BaseUnits
+    cost_to_repayment: BaseUnits
+    withdraw_cost: BaseUnits
+    health_factor_before: NonNegativeInt | None
+    health_factor_after: NonNegativeInt | None
+    reason: str
+
+    @model_validator(mode="after")
+    def validate_proposal(self) -> BorrowProposal:
+        if self.amount == 0:
+            raise ValueError("borrow proposal requires a positive amount")
+        if not self.reason.strip():
+            raise ValueError("borrow proposal requires a reason")
+        return self
+
+
+class ForecastRefill(FrozenModel):
+    day: NonNegativeInt
+    request_id: Annotated[str, Field(min_length=1)]
+    source_wallet: Annotated[str, Field(min_length=1)]
+    target_wallet: Annotated[str, Field(min_length=1)]
+    amount: BaseUnits
+
+
+class ForecastDay(FrozenModel):
+    day: NonNegativeInt
+    balances: FrozenMapping[str, BaseUnits]
+    buffer_hit_wallets: FrozenSequence[str]
+    suggested_refills: FrozenSequence[ForecastRefill]
+    unpaid_due: BaseUnits
+
+
+class Forecast(FrozenModel):
+    days: FrozenSequence[ForecastDay]
+    buffer_hit_days: FrozenMapping[str, FrozenSequence[int]]
+    shortfall_days: FrozenSequence[int]
+    unplanned_request_ids: FrozenSequence[str]
+    deferred_request_ids: FrozenSequence[str]

@@ -102,7 +102,7 @@ def _client(
     app.state.telegram_repository = repository
     app.state.settings = SimpleNamespace(
         telegram_bot_username=username,
-        telegram_webhook_secret=SecretStr(secret) if secret else None,
+        telegram_webhook_secret=SecretStr(secret) if secret is not None else None,
     )
     return TestClient(app)
 
@@ -152,6 +152,16 @@ def test_webhook_is_closed_when_no_secret_is_configured(
 ) -> None:
     client = _client(repository, monkeypatch, secret=None)
     assert _hook(client, _update("/start abc"), secret="anything").status_code == 503
+    assert repository.complete_calls == []
+
+
+def test_webhook_treats_an_empty_secret_as_unconfigured(
+    repository: _Repository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Compose passes "" for an unset variable; an empty header must not match it.
+    client = _client(repository, monkeypatch, secret="")
+    assert _hook(client, _update("/start abc"), secret="").status_code == 503
+    assert _hook(client, _update("/start abc"), secret=None).status_code == 503
     assert repository.complete_calls == []
 
 

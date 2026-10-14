@@ -37,6 +37,7 @@ WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 LINK_CODE_TTL = timedelta(minutes=10)
 # Encryption context binds the envelope to this column (see FieldCipher.encrypt).
 TARGET_CONTEXT = "notification_channels.target"
+TARGET_CONSTRAINT = "uq_notification_channels_target"
 
 LINKED_REPLY = (
     "TreasuryPilot is linked. You will get notifications here. "
@@ -112,7 +113,7 @@ class SqlAlchemyTelegramRepository:
         sessions: async_sessionmaker[AsyncSession],
         *,
         cipher: FieldCipher | None,
-        hash_key: bytes,
+        hash_key: bytes | None,
         now: Any = None,
     ) -> None:
         self._sessions = sessions
@@ -123,18 +124,23 @@ class SqlAlchemyTelegramRepository:
     def _chat_hash(self, chat_id: int) -> bytes:
         # Keyed: Telegram chat ids are small integers and must not be recoverable
         # from a leaked hash column.
+        if not self._hash_key:
+            raise TelegramUnavailable
         return hmac.new(self._hash_key, f"telegram:{chat_id}".encode(), hashlib.sha256).digest()
 
     async def issue_link_code(self, *, user_id: uuid.UUID) -> tuple[str, datetime]:
+        # Fail before handing out a code that complete_link could never honour.
+        if self._cipher is None or not self._hash_key:
+            raise TelegramUnavailable
         now = self._now()
         code = secrets.token_urlsafe(16)  # 128 bits; fits Telegram's start-parameter alphabet
         expires_at = now + LINK_CODE_TTL
         async with self._sessions() as session, session.begin():
-            # A user holds at most one live code: a new one replaces older unused ones.
+            # A user holds at most one code (new replaces old, used or not), and any
+            # expired code is swept, so the table cannot grow without bound.
             await session.execute(
                 delete(TelegramLinkCode).where(
-                    TelegramLinkCode.user_id == user_id,
-                    (TelegramLinkCode.used_at.is_(None)) | (TelegramLinkCode.expires_at <= now),
+                    (TelegramLinkCode.user_id == user_id) | (TelegramLinkCode.expires_at <= now)
                 )
             )
             session.add(
@@ -145,7 +151,7 @@ class SqlAlchemyTelegramRepository:
         return code, expires_at
 
     async def complete_link(self, *, code: str, chat_id: int) -> str:
-        if self._cipher is None:
+        if self._cipher is None or not self._hash_key:
             raise TelegramUnavailable
         now = self._now()
         try:
@@ -178,7 +184,9 @@ class SqlAlchemyTelegramRepository:
                         constraint="uq_notification_channels_user_kind", set_=values
                     )
                 )
-        except IntegrityError:
+        except IntegrityError as error:
+            if TARGET_CONSTRAINT not in str(error.orig):
+                raise
             # The chat is already linked to a different user; the transaction rolled
             # back, so the code was not consumed.
             return LinkOutcome.CHAT_TAKEN
@@ -303,10 +311,11 @@ def _start_code(text: object) -> str | None:
 @router.post("/integrations/telegram/webhook", include_in_schema=False)
 async def telegram_webhook(request: Request) -> dict[str, object]:
     expected = request.app.state.settings.telegram_webhook_secret
-    if expected is None:
+    secret = expected.get_secret_value() if expected is not None else ""
+    if not secret:  # unset or empty (compose passes "") means unconfigured, never "match empty"
         raise _unavailable()
     supplied = request.headers.get(WEBHOOK_SECRET_HEADER, "")
-    if not hmac.compare_digest(supplied.encode(), expected.get_secret_value().encode()):
+    if not hmac.compare_digest(supplied.encode(), secret.encode()):
         raise AuthFailure(
             status=401,
             code="WEBHOOK_UNAUTHORIZED",

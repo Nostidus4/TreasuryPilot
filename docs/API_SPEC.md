@@ -42,8 +42,11 @@
 |---|---|---|---|---|---|
 | GET | `/chains` | Supported chains and assets | auth | → `{chains[{chainId, assets[]}]}` | |
 | POST | `/orgs/{orgId}/treasuries` | Create a treasury | OWN, ADM | `{chainId, assetId, wallets[{role, safeAddress, label}]}` → `201 {treasury}` | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET` |
+| POST | `/orgs/{orgId}/safes/deploy-tx` | Build a Safe deployment transaction | OWN, ADM | `{chainId, owners[], threshold}` → `{chainId, transaction:{to,data,value}}`; submitted by the connected wallet | 422 `INVALID_SAFE_CONFIGURATION`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE` |
 | GET | `/orgs/{orgId}/treasuries/{tId}` | Treasury state (balances, coverage, mandate, today's budget) | ANY | → `{treasury, wallets[], coverage, mandate, budgets, staleness}` | |
-| POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build the Safe tx to deploy and enable the module | OWN | → `{safeTx}` (to sign in the wallet) | |
+| POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build module deployment and enablement Safe transactions | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}` | 503 `MODULE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE`; 409 if setup is already open |
+
+`mandate` supplies `validFrom`, `expiresAt`, `payeeCoolingSeconds`, `executor`, optional `guardian`, `pay`, `refill`, and `supply` limits (`perRequest` and `daily` as integer base-unit strings), `approvalMaxAge`, and `approvers`. `buffers` must contain exactly one `{wallet, minimum, target}` entry for T and every operational Safe. The endpoint returns separate Safe transactions because each Safe must authorize its own `enableModule` call.
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/refresh` | Re-read Safe configs | OWN, ADM | → `{coverage, details}` | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/acknowledge` | Accept PARTIAL coverage | OWN | `{reason}` → `{coverage}` | 409 `COVERAGE_COMPLETE` |
 
@@ -108,7 +111,7 @@
 | POST | `/orgs/{o}/requests/{rId}/submit` | Draft → AwaitingApproval | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT`, `TERMS_UNCONFIRMED` |
 | POST | `/orgs/{o}/requests/{rId}/flags/{fId}/ack` | Acknowledge a flag | APR | `{note}` → `{flag}` | |
 | GET | `/orgs/{o}/requests/{rId}/approval-typed-data` | EIP-712 `PaymentApproval` to sign | APR | → `{domain, types, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED` |
-| POST | `/orgs/{o}/requests/{rId}/approve` 🔁 | Submit the approval signature | APR | `{signature}` → `{request: Approved}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, 409 `MAKER_CHECKER`, `REVISION_CHANGED` |
+| POST | `/orgs/{o}/requests/{rId}/approve` 🔁 | Submit the approval signature | APR | `{signature, revision, expiry}` (`expiry` = `message.expiry` that was signed; `revision` = `X-Request-Revision` of the typed-data response) → `{request: Approved}` | 400 `SIGNATURE_INVALID`, `APPROVAL_EXPIRY_INVALID`, 403 `NOT_IN_APPROVER_SET`, 409 `MAKER_CHECKER`, `REVISION_CHANGED` |
 | POST | `/orgs/{o}/requests/{rId}/reject` | Reject | APR | `{reason}` → `{request: Rejected}` | |
 | POST | `/orgs/{o}/requests/{rId}/cancel` | Cancel | OPR, OWN | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/orgs/{o}/requests/{rId}/cancel-tx` | On-chain `cancelRequest` tx (approver wallet or Safe tx) | APR, OWN | → `{to, data}` / `{safeTx}` | 409 `CANCEL_NOT_NEEDED` |
@@ -150,8 +153,8 @@
 | POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | Flag a discrepancy | FIN | `{note}` → `{reconciliation}` | |
 | GET | `/orgs/{o}/exports/reconciliation.csv` | CSV/journal export | FIN, AUD | `?from=&to=&treasuryId=&format=csv\|journal` → file | |
 | GET | `/orgs/{o}/requests/{rId}/evidence` | Evidence bundle | FIN, AUD, ADM | → JSON (schema `evidence-bundle.v1`) | |
-| GET | `/orgs/{o}/audit-log` | Audit records | AUD, ADM | `?entityType=&entityId=` → `{items}` | |
-| GET | `/orgs/{o}/audit-log/verify` | Hash-chain check | AUD | → `{valid, brokenAt?}` | |
+| GET | `/orgs/{o}/audit-log` | Audit records in `seq` order | AUD, OWN, ADM | `?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` | 422 naive `from`/`to` |
+| GET | `/orgs/{o}/audit-log/verify` | Hash-chain check | AUD, OWN | → `{status: INTACT\|BROKEN, checked, brokenAt}` | |
 | GET | `/orgs/{o}/metrics/operations` | Operational metrics | OWN, FIN, AUD | `?from=&to=` → `{metrics}` | |
 | GET | `/orgs/{o}/metrics/savings` | Savings vs B1 | OWN, FIN | → `{totals, perRequest[], methodology}` | |
 
@@ -175,6 +178,9 @@
 | DELETE | `/me/channels/{id}` | Unlink | auth | |
 | POST | `/integrations/telegram/webhook` | Bot webhook | Telegram secret header | internal |
 | GET | `/platform/chains` · PUT `/platform/chains/{id}` | Chain/asset config (M1: seed-driven) | PlatformAdmin | Later UI |
+| GET | `/admin/tenants` | Tenant metadata and active member/treasury counts | staff bearer + source IP allowlist | Platform admin router; requires `TP_ADMIN_STAFF_TOKEN` (≥32 bytes), `TP_ADMIN_STAFF_ID`, and `TP_ADMIN_IP_ALLOWLIST`; missing or invalid configuration fails closed |
+| GET | `/admin/tenants/{tenantId}/health` | Tenant status and basic health counts | staff bearer + source IP allowlist | Metadata only |
+| POST | `/admin/tenants/{tenantId}/suspend` | Suspend a tenant for platform operations | staff bearer + source IP allowlist | Persists status and records a platform admin event; cannot sign or move funds |
 
 ### Internal (not public): signer service
 
@@ -200,5 +206,5 @@ These map 1:1 to validator reason codes where applicable, so the UI and the cont
 | `AI_PLAN_REJECTED`, `AI_UNAVAILABLE` | AI path | BR-055, BR-056 |
 | `ATTESTATION_INVALID`, `PAYLOAD_MISMATCH` | Signer | BR-059 |
 | `ATTESTATION_EXPIRED`, `NONCE_REUSED` | Signer | BR-059 |
-| `FLAG_UNACKNOWLEDGED`, `APPROVAL_STALE`, `EXCEPTION_INVALID`, `NOT_OPERATIONAL_WALLET`, `WRONG_REFILL_TARGET`, `ALREADY_REFILLED_FOR_REQUEST`, `OVER_REFILL_PER_REQUEST`, `OVER_REFILL_DAILY`, `SOURCE_BUFFER_BREACH`, `REFILL_EXCEEDS_NEED`, `REFILL_BOUND`, `PAUSE_REQUESTED`, `CIRCUIT_OPEN`, `DATA_MISSING`, `CHAIN_MISMATCH`, `ASSET_MISMATCH`, `EXECUTOR_MISMATCH`, `MANDATE_REVOKED`, `PLAN_MALFORMED`, `SIMULATION_REVERTED`, `SIMULATION_UNAVAILABLE` | Added in M08; full catalogue with decisions and contract errors in docs/modules/policy-engine §6.4 | |
-| Warnings: `DEADLINE_MISSED`, `DISCOUNT_MISSED`, `TARGET_NOT_REACHED` | Never change the decision | M08-D7 |
+| `FLAG_UNACKNOWLEDGED`, `APPROVAL_STALE`, `EXCEPTION_INVALID`, `NOT_OPERATIONAL_WALLET`, `WRONG_REFILL_TARGET`, `ALREADY_REFILLED_FOR_REQUEST`, `OVER_REFILL_PER_REQUEST`, `OVER_REFILL_DAILY`, `SOURCE_BUFFER_BREACH`, `REFILL_EXCEEDS_NEED`, `REFILL_BOUND`, `PAUSE_REQUESTED`, `CIRCUIT_OPEN`, `DATA_MISSING`, `CHAIN_MISMATCH`, `ASSET_MISMATCH`, `EXECUTOR_MISMATCH`, `MANDATE_REVOKED`, `PLAN_MALFORMED`, `SIMULATION_REVERTED`, `SIMULATION_UNAVAILABLE`, `OVER_SUPPLY_PER_TX`, `OVER_SUPPLY_DAILY`, `SUPPLY_FLOOR_BREACH`, `RESERVE_BREACH`, `INSUFFICIENT_POOL_LIQUIDITY`, `INSUFFICIENT_A_TOKEN`, `BORROW_NOT_AUTHORIZED`, `HEALTH_FACTOR_TOO_LOW`, `WRONG_PAYMENT_OPTION`, `TRANSFER_FAILED`, `BALANCE_DELTA_MISMATCH`, `ALLOWANCE_NOT_CLEARED`, `REQUEST_CANCELLED` | Added in M08; full catalogue with decisions and contract errors in docs/modules/policy-engine §6.4 | |
+| Warnings: `DEADLINE_MISSED`, `DISCOUNT_MISSED`, `TARGET_NOT_REACHED`, `BELOW_MIN_SUPPLY` | Never change the decision | M08-D7 |

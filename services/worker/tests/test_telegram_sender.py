@@ -398,3 +398,39 @@ def test_messages_carry_no_actionable_payload() -> None:
         assert json.dumps(text).count("callback") == 0
 
     _run(scenario)
+
+
+def test_no_row_lock_is_held_while_the_message_is_in_flight() -> None:
+    async def scenario(world: World) -> None:
+        await world.notify()
+        probes: list[int] = []
+
+        class ProbingClient(FakeTelegramClient):
+            async def send_message(self, chat_id: str, text: str) -> None:
+                # NOWAIT raises if the sender still holds the channel's row lock.
+                rows = await world.rows(
+                    "SELECT 1 FROM notification_channels WHERE id = $1 FOR UPDATE NOWAIT",
+                    world.channel_id,
+                )
+                probes.append(len(rows))
+                await super().send_message(chat_id, text)
+
+        assert await world.run(ProbingClient()) == 1
+        assert probes == [1]
+
+    _run(scenario)
+
+
+def test_an_unexpected_send_error_is_contained_and_counted_as_an_attempt() -> None:
+    async def scenario(world: World) -> None:
+        await world.notify()
+
+        class BrokenClient(FakeTelegramClient):
+            async def send_message(self, chat_id: str, text: str) -> None:
+                raise RuntimeError("boom")
+
+        assert await world.run(BrokenClient()) == 0  # does not raise
+        (row,) = await world.rows("SELECT status, attempts FROM telegram_deliveries")
+        assert (row["status"], row["attempts"]) == ("PENDING", 1)
+
+    _run(scenario)

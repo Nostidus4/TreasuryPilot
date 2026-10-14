@@ -15,7 +15,7 @@ export COREPACK_HOME
 .DEFAULT_GOAL := help
 
 .PHONY: help bootstrap check-env dev infra down logs ps smoke openapi web-dev \
-	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format
+	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local
 
 help:
 	@echo "TreasuryPilot developer commands"
@@ -27,8 +27,14 @@ help:
 	@echo "  make openapi         Regenerate the typed web API client"
 	@echo "  make web-dev         Start the Vite development server"
 	@echo "  make test            Run Python, web and contract tests"
+	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
+	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+
+.PHONY: eval-validate
+eval-validate:
+	uv run --frozen python evals/validate.py
 
 bootstrap:
 	uv sync
@@ -73,6 +79,9 @@ test-web:
 
 test-contracts:
 	$(FOUNDRY) test
+
+deploy-local:
+	infra/scripts/deploy-local.sh
 
 lint: lint-python lint-web lint-contracts
 
