@@ -16,10 +16,12 @@ company and vendors are fictional. Use frequent 100-850 token invoices and one
 funded wallets or a newly agreed production policy.
 
 [OQ-05](../OPEN_QUESTIONS.md) already accepts source YAML limits, scaled to faucet
-budget. [Deploy.s.sol](../../contracts/script/Deploy.s.sol) implements the unscaled
-limits/floors below. Circle evidence uses the accepted division by 100 and is
-PAY-only; Aave's test USDC is the Sepolia treasury asset under ADR-019. They must
-remain separate asset/configuration identities.
+budget. [Deploy.s.sol](../../contracts/script/Deploy.s.sol) encodes the unscaled
+limits, floors, targets, cooling, validity and approval age below; `minSupply` is
+an off-chain treasury setting (ADR-019), not set by the script. The Circle evidence
+run uses the division by 100 accepted in [ADR-012](../adr/ADR-012-chain-and-stablecoin.md)
+(OQ-03/PH-2) and is PAY-only; Aave's test USDC is the Sepolia treasury asset under
+ADR-019. They must remain separate asset/configuration identities.
 
 | Parameter                              | Main synthetic demo: tokens / base units                    | Circle PAY-only scale: tokens / base units               |
 | -------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
@@ -30,10 +32,18 @@ remain separate asset/configuration identities.
 | Safe T hard floor                      | 1,000 / `1000000000`                                        | 10 / `10000000`                                          |
 | O1 hard floor                          | 10 / `10000000`                                             | 0.1 / `100000`                                           |
 | O1 soft target                         | 150 / `150000000`                                           | 1.5 / `1500000`                                          |
-| SUPPLY per call / daily                | 5,000 / 20,000                                              | Disabled for Circle PAY-only                             |
+| SUPPLY per call / daily                | 5,000 / 20,000 / `5000000000` / `20000000000`; script sets 0 when no pool | Disabled for Circle PAY-only                             |
 | minSupply (off-chain liquidity policy) | 500 / `500000000`                                           | Disabled                                                 |
 | Payee cooling                          | 300 seconds in demo; documented production default 24 hours | Same safety semantics; token scaling does not scale time |
 | Mandate validity                       | 30 days from initial deployment                             | Same; repeat deploy does not renew it                    |
+| Approval max age                       | 14 days (`approvalMaxAge`)                                  | Same                                                     |
+
+Status: Sepolia contracts are not deployed. `deployments/11155111.json` is
+`configured_only` (no Safe, module or aToken addresses). It records that Aave USDC
+supply is expected to revert while reserve capacity is full (cap 2,000,000,000
+tokens vs aToken supply of about 4.54 billion at historical block 11890000), so
+live headroom must be checked before any D2 supply; withdraw, refill and PAY do not
+depend on it. All figures here are proposed parameters, not observed deployments.
 
 The scaling example is recorded for runbook preparation. Today's deployment script
 does not automatically select or install the Circle profile; do not mutate the
@@ -50,7 +60,7 @@ the separate PAY-only evidence run and record actual funded balances.
 | BR-030..036 floors/targets       | Hard buffer protects cash; target is a soft operational convenience. Target top-up is request-bound and occurs only with a shortage.                        | Show minimum-only fallback and complete STOP when minimum cannot be met; no partial vendor payment.                                                 |
 | BR-005/007/008 maker-checker     | Separation reduces unilateral errors. Current approver signature is on-chain; creator/editor identity and flag acknowledgment are backend responsibilities. | Use separate operator and approver demo identities; label solo mode. One M1 approver is not a multisig request approval.                            |
 | BR-017 cooling                   | Five minutes enables a short demo but has weaker reaction time than 24h. Even an exception must not bypass cooling.                                         | Pre-register routine vendors; show a fresh payee block. Production policy requires separate operational calibration.                                |
-| BR-040..043 exception            | Exact one-time cap override is narrower than a policy increase. It does not waive daily cap, floor, payee or expiry.                                        | Include 2,100-token request; owner grant only for that request/amount/version; expose remaining daily budget.                                       |
+| BR-040..043 exception            | Exact one-time cap override is narrower than a policy increase. It does not waive daily cap, floor, payee or expiry.                                        | Include 2,100-token request; owner grant only for that request/amount/payee/expiry/version; its full amount counts toward the daily PAY budget (BR-042), so show remaining budget.                                       |
 | BR-024/052/ADR-019 early payment | Exact early debit must match credited saving. Discount is economically useful only after execution fees and forgone interest.                               | Store the exact early option; report net modeled value and assumptions. Do not credit a discount while paying the full standard amount.             |
 | BR-037/038 idle liquidity        | Dynamic obligations plus static floor/holds form required reserve; pool accessibility is bounded by available cash.                                         | The contract checks static floor/caps, the backend dynamic reserve. Recheck live cap/cash before D2/D3; no promised yield or guaranteed withdrawal. |
 | BR-044 borrowing                 | Rate/HF at execution do not guarantee future financing cost. Borrow proposal is advisory; an owner grant is required for P2 execution.                      | Present unknown HF as unknown and record repayment assumptions; avoid treating a proposal as executable authorization.                              |
