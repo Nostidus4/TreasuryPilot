@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     admin_staff_token: SecretStr | None = None
     admin_staff_id: str | None = None
     admin_ip_allowlist: str = ""
+    # Fiat-denominated requests are enabled only when both fx_source_id and fx_tolerance_bps are
+    # set (and an FxQuoteProvider is passed to create_app); otherwise they return 503.
+    fx_source_id: str | None = Field(default=None, min_length=1)
+    fx_max_quote_age_seconds: int = Field(default=60, ge=0)
+    fx_depeg_threshold_bps: int = Field(default=100, ge=0, le=10_000)
+    fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
 
     @model_validator(mode="after")
     def _validate_oidc_configuration(self) -> "Settings":

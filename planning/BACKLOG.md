@@ -10,8 +10,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 41 |
-| **All** | | | | **247** |
+| Later | – | – | – | 45 |
+| **All** | | | | **251** |
 
 ## Epics
 
@@ -19,12 +19,12 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 12 | 0 | [`issues/devex/`](issues/devex/) |
 | M04 · Smart Contracts | `contracts` | 26 | 6 | [`issues/contracts/`](issues/contracts/) |
-| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
+| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 5 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 1 | [`issues/mandate/`](issues/mandate/) |
-| M05 · Invoices & Payment Requests | `invoices` | 12 | 4 | [`issues/invoices/`](issues/invoices/) |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 6 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
@@ -92,6 +92,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | ENG-011 | financial-engine | M07 | [Implement the 7-day liquidity forecast](issues/financial-engine/011-implement-the-7-day-liquidity-forecast.md) | F-058 | M1 | P2 | S | After submission | ENG-003 | Ready for Assignment |
 | ENG-L01 | financial-engine | M07 | [Plan refills from other operational wallets](issues/financial-engine/l01-plan-refills-from-other-operational-wallets.md) | F-059 | Later | - | M | After submission | ENG-007, SC-L06 | Accepted |
 | ENG-L02 | financial-engine | M07 | [Add FX conversion and depeg checks for fiat invoices](issues/financial-engine/l02-add-fx-conversion-and-depeg-checks-for-fiat-invoices.md) | F-041 | Later | - | M | After submission | ENG-005 | Accepted |
+| ENG-015 | financial-engine | M07 | [Model fiat FX approvals, rates and quote policy](issues/financial-engine/015-model-fiat-fx-approvals-rates-and-quote-policy.md) | F-041 | Later | - | S | After submission | ENG-001, ENG-005 | Accepted |
+| ENG-016 | financial-engine | M07 | [Guard fiat conversion against FX drift, depeg and approved caps](issues/financial-engine/016-guard-fiat-conversion-against-fx-drift-depeg-and-approved-ca.md) | F-041 | Later | - | S | After submission | ENG-015, ENG-005 | Accepted |
 | ENG-L03 | financial-engine | M07 | [Extend the scheduler to multiple assets](issues/financial-engine/l03-extend-the-scheduler-to-multiple-assets.md) | F-015 | Later | - | M | After submission | ENG-007 | Accepted |
 | POL-001 | policy-engine | M08 | [Define the reason-code catalogue and decision model](issues/policy-engine/001-define-the-reason-code-catalogue-and-decision-model.md) | F-055 | M1 | P0 | S | A | ENG-001 | Ready for Assignment |
 | POL-002 | policy-engine | M08 | [Validate approval, mandate and payee conditions](issues/policy-engine/002-validate-approval-mandate-and-payee-conditions.md) | F-055 | M1 | P0 | M | A | POL-001, ENG-010 | Ready for Assignment |
@@ -143,7 +145,9 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
 | INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | L | After submission | INV-003 | Accepted |
 | INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
-| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-003, ENG-L02 | Accepted |
+| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-015, INV-016 | Accepted |
+| INV-015 | invoices | M05 | [Model fiat invoice amounts and approval caps](issues/invoices/015-model-fiat-invoice-amounts-and-approval-caps.md) | F-041 | Later | - | S | After submission | INV-003, ENG-015 | Accepted |
+| INV-016 | invoices | M05 | [Guard fiat invoice payment against FX drift and depeg](issues/invoices/016-guard-fiat-invoice-payment-against-fx-drift-and-depeg.md) | F-041 | Later | - | S | After submission | INV-015, ENG-016 | Accepted |
 | CHR-001 | chain-reader | M06 | [Build the RPC client with failover](issues/chain-reader/001-build-the-rpc-client-with-failover.md) | F-050 | M1 | P0 | M | A | TRS-002 | Ready for Assignment |
 | CHR-002 | chain-reader | M06 | [Implement block-consistent snapshots](issues/chain-reader/002-implement-block-consistent-snapshots.md) | F-050 | M1 | P0 | M | A | CHR-001, TRS-004 | Ready for Assignment |
 | CHR-003 | chain-reader | M06 | [Implement the transaction tracker](issues/chain-reader/003-implement-the-transaction-tracker.md) | F-070 | M1 | P0 | M | A | CHR-001, EXE-001 | Ready for Assignment |

@@ -21,6 +21,32 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 
 **Who decides what:** the Operator enters data; the AI suggests fields (M09); the **Approver decides whether to pay** by signing; the engine and agent decide how and when; the contract enforces.
 
+### Fiat-denominated requests (INV-L04)
+
+A request may include `fiatAmountMinorUnits` (a positive integer string) and
+`fiatCurrency` (uppercase ISO currency code). Both are required together. The
+existing `amount` remains an exact stablecoin base-unit value; for a fiat request
+it is the approver's **maximum stablecoin amount**, also returned as
+`maxStablecoinAmount`. The API captures a source quote at request creation or any
+bound edit that changes the fiat value, currency, asset or amount, stores it in the request revision, and includes the fiat value, rate,
+source, observation time, tolerance, and cap in the invoice hash. A change to any
+of these invalidates prior approvals.
+
+The approval typed data's `amount` field signs that maximum. At payment planning,
+the caller must use `propose_request_payment` with a fresh quote and configured
+`FxPolicy`. The pure core guard checks source and pair, quote age, FX drift and
+stablecoin peg, then converts with integer ceiling division. A blocked quote yields
+no amount; the caller must not clamp an over-cap amount or reuse the reference
+quote. `FxQuoteProvider` is the adapter boundary; adapters report transient
+provider failures as `FxProviderUnavailable`. Hashes of non-fiat requests keep the
+original encoding; the four fiat fields are appended only when `fiatCurrency` is set.
+
+Configuration: fiat requests are enabled only when `TP_FX_SOURCE_ID` and
+`TP_FX_TOLERANCE_BPS` (0..10000) are set (optional `TP_FX_MAX_QUOTE_AGE_SECONDS`,
+default 60, and `TP_FX_DEPEG_THRESHOLD_BPS`, default 100) **and** an `FxQuoteProvider`
+is passed to `create_app(fx_quote_provider=...)`. No provider adapter ships yet, so
+until one is wired in fiat requests return `503 FX_UNAVAILABLE`.
+
 ## 2. Features, requirements and rules
 
 | Feature | FR | BR |
