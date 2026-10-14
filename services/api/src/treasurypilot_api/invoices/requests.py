@@ -851,6 +851,8 @@ def _bulk_flag_codes(
     row: PaymentRequest, *, paid_payees: set[uuid.UUID], paid_by_vendor: dict[uuid.UUID, int]
 ) -> list[tuple[str, RequestFlagSeverity, dict[str, object]]]:
     flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
+    if row.due_at is None or row.issue_date is None or row.vendor_id is None:
+        return flags  # CSV rows always carry these; only upload drafts lack them
     if row.due_at < datetime.now(UTC).date():
         flags.append(
             ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
@@ -1171,7 +1173,7 @@ async def _import_csv_rows(
                 )
                 .group_by(PaymentRequest.vendor_id)
             )
-            paid_by_vendor = {vendor_id: count for vendor_id, count in counts}
+            paid_by_vendor = {vendor_id: count for vendor_id, count in counts if vendor_id is not None}
 
         if dry_run:
             return {
