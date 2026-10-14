@@ -394,6 +394,7 @@ class Payee(VersionedMixin, Base):
             name="fk_payees_vendor_org",
             ondelete="RESTRICT",
         ),
+        UniqueConstraint("id", "treasury_id", "vendor_id", name="uq_payees_id_treasury_vendor"),
         _governance_tx_fk("payees", "registration_tx_id"),
         CheckConstraint("length(btrim(label)) > 0", name="ck_payees_label"),
         CheckConstraint("octet_length(address) = 20", name="ck_payees_address_length"),
@@ -417,6 +418,7 @@ class Payee(VersionedMixin, Base):
         CheckConstraint("version > 0", name="ck_payees_version"),
         Index("ix_payees_org_treasury", "org_id", "treasury_id"),
         Index("ix_payees_vendor", "vendor_id"),
+        Index("ix_payees_treasury_status", "treasury_id", "status"),
         Index(
             "uq_payees_treasury_address_live",
             "treasury_id",
@@ -493,6 +495,12 @@ class MandateException(VersionedMixin, Base):
         CheckConstraint("version > 0", name="ck_exceptions_version"),
         Index("ix_exceptions_org_treasury", "org_id", "treasury_id"),
         # BR-041: at most one live exception per request.
+        ForeignKeyConstraint(
+            ["request_id", "treasury_id"],
+            ["payment_requests.id", "payment_requests.treasury_id"],
+            name="fk_exceptions_request_treasury",
+            ondelete="RESTRICT",
+        ),
         Index(
             "uq_exceptions_open_request",
             "request_id",
@@ -507,7 +515,6 @@ class MandateException(VersionedMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    # shortcut: no FK yet, payment_requests lands with INV-001; add the FK there.
     request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     mandate_onchain_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     amount: Mapped[int] = mapped_column(Money, nullable=False)
