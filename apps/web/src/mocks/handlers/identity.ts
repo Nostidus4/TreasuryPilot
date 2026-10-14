@@ -11,6 +11,7 @@ import type {
 } from '@/lib/api/types';
 import { ADDR, CHAINS, db, demoUser, membersOf, setSession } from '@/mocks/db';
 
+import { APPROVER } from '../seeded';
 import { fail, find, isLinked, isoNow, route, sameAddress } from './core';
 
 const SIGNER_ROLES: Role[] = ['OWN', 'APR', 'GRD'];
@@ -130,8 +131,8 @@ export const identityHandlers = [
       const user =
         email === demoUser.email
           ? demoUser
-          : email === 'an@northwind.test'
-            ? { id: 'usr_an', email, name: 'An Nguyen' }
+          : email === APPROVER.email
+            ? APPROVER
             : {
                 id: `usr_${email.replace(/[^a-z0-9]/g, '_')}`,
                 email,

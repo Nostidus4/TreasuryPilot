@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import {
+  APPROVER,
+  SEEDED_PAYMENT_INVOICE,
+  SEEDED_PLAN_ID,
+} from '../src/mocks/seeded';
+
+const requesterEmail = 'linh@northwind.test';
+
 const anvilRpcUrl = process.env.E2E_ANVIL_RPC_URL ?? 'http://127.0.0.1:8545';
 
 async function signIn(page: Page, email: string) {
@@ -8,14 +16,20 @@ async function signIn(page: Page, email: string) {
   if (!new URL(page.url()).pathname.endsWith('/login')) {
     await page.goto('/login');
   }
-  await page.getByLabel('Work email').fill(email);
+  const emailField = page.getByLabel('Work email');
+  await expect(emailField).toBeVisible();
+  await emailField.fill(email);
   await page.getByRole('button', { name: 'Send sign-in link' }).click();
   await page.getByRole('link', { name: 'Open the sign-in link' }).click();
   await expect(page).toHaveURL(/\/o\/org_northwind/);
 }
 
-test.beforeEach(async ({ request }) => {
-  if (!process.env.E2E_ANVIL_RPC_URL) return;
+test('Anvil RPC is reachable', async ({ request }) => {
+  if (!process.env.E2E_ANVIL_RPC_URL) {
+    // CI must prove Anvil is up; locally the check is opt-in.
+    expect(process.env.CI, 'E2E_ANVIL_RPC_URL must be set in CI').toBeFalsy();
+    test.skip(true, 'E2E_ANVIL_RPC_URL is not set');
+  }
   const response = await request.post(anvilRpcUrl, {
     data: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
   });
@@ -27,7 +41,7 @@ test.beforeEach(async ({ request }) => {
 test('create and submit a request, then approve it with the demo signer', async ({
   page,
 }) => {
-  await signIn(page, 'linh@northwind.test');
+  await signIn(page, requesterEmail);
   await page.getByRole('link', { name: 'Requests' }).click();
   await page.getByRole('link', { name: 'New request' }).click();
 
@@ -52,12 +66,10 @@ test('create and submit a request, then approve it with the demo signer', async 
   await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
-  await signIn(page, 'an@northwind.test');
+  await signIn(page, APPROVER.email);
 
   await page.getByRole('link', { name: 'Requests' }).click();
-  await page
-    .getByRole('row', { name: 'Open request E2E-WEB-023-001' })
-    .click();
+  await page.getByRole('row', { name: 'Open request E2E-WEB-023-001' }).click();
   await page.getByRole('link', { name: 'Open in approvals' }).click();
   await page
     .getByRole('button', { name: 'Connect wallet to continue' })
@@ -65,23 +77,28 @@ test('create and submit a request, then approve it with the demo signer', async 
   await page.getByRole('button', { name: /Demo signer/ }).click();
   await page.getByRole('button', { name: 'Sign approval' }).click();
   await expect(
-    page.getByRole('paragraph').filter({ hasText: /^Approved$/ }),
+    page
+      .getByRole('status')
+      .filter({ hasText: 'This request is no longer waiting for approval.' })
+      .getByText('Approved', { exact: true }),
   ).toBeVisible();
 });
 
 test('execute a seeded plan, verify payment, and reconcile its receipt', async ({
   page,
 }) => {
-  await signIn(page, 'linh@northwind.test');
+  await signIn(page, requesterEmail);
   await page.getByRole('link', { name: 'Plans' }).click();
-  await page.getByRole('row', { name: 'Open plan pln_0421' }).click();
+  await page.getByRole('row', { name: `Open plan ${SEEDED_PLAN_ID}` }).click();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByText('All steps verified')).toBeVisible({
     timeout: 35_000,
   });
 
   await page.getByRole('link', { name: 'Reconciliation' }).click();
-  await page.getByRole('row', { name: 'Open payment BP-2026-219' }).click();
+  await page
+    .getByRole('row', { name: `Open payment ${SEEDED_PAYMENT_INVOICE}` })
+    .click();
   await expect(page.getByText('Evidence is incomplete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as matched' }).click();
   await expect(page.getByText('Marked as matched')).toBeVisible();
