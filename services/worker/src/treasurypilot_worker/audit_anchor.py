@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import UTC, datetime
 from typing import Protocol, cast
 from uuid import UUID
 
 from web3 import Account, Web3
+from web3.exceptions import ContractLogicError
 
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -54,7 +54,7 @@ class AuditRootChain(Protocol):
 
 
 async def fetch_audit_heads(database_url: str) -> list[Mapping[str, object]]:
-    """Read every organization head from one read-only repeatable-read snapshot."""
+    """Read every organization head in one read-only repeatable-read transaction."""
 
     pool = await create_worker_pool(database_url)
     try:
@@ -62,10 +62,7 @@ async def fetch_audit_heads(database_url: str) -> list[Mapping[str, object]]:
             async with connection.transaction(isolation="repeatable_read", readonly=True):
                 return list(
                     await connection.fetch(
-                        """
-                        SELECT org_id, last_hash, statement_timestamp() AS snapshot_at
-                        FROM audit_heads ORDER BY org_id
-                        """
+                        "SELECT org_id, last_hash FROM audit_heads ORDER BY org_id"
                     )
                 )
     finally:
@@ -75,16 +72,35 @@ async def fetch_audit_heads(database_url: str) -> list[Mapping[str, object]]:
 def publish_snapshot(
     heads: Sequence[Mapping[str, object]], *, utc_day: int, chain: AuditRootChain
 ) -> int:
-    """Publish the exact captured hashes; identical retries are successful no-ops."""
+    """Publish the exact captured hashes; identical retries are successful no-ops.
 
-    published = 0
+    One organization's failure does not stop the others; failures are raised together at the end.
+    """
+
+    rows: list[tuple[UUID, bytes]] = []
     for head in heads:
         org_id = head["org_id"]
         root = head["last_hash"]
         if not isinstance(org_id, UUID) or not isinstance(root, bytes) or len(root) != 32:
             raise ValueError("invalid audit head snapshot row")
-        if chain.anchor_or_confirm(org_id, utc_day, root):
-            published += 1
+        rows.append((org_id, root))
+
+    published = 0
+    failed = 0
+    for org_id, root in rows:
+        try:
+            if chain.anchor_or_confirm(org_id, utc_day, root):
+                published += 1
+        except Exception as exc:
+            failed += 1
+            # Type only: RPC error text can echo credentialed URLs.
+            logger.error(
+                "audit root publication failed org_id=%s error=%s", org_id, type(exc).__name__
+            )
+    if failed:
+        raise RuntimeError(
+            f"audit root publication failed for {failed} of {len(rows)} organizations"
+        )
     return published
 
 
@@ -108,30 +124,35 @@ class Web3AuditRootChain:
         )
 
     def anchor_or_confirm(self, org_id: UUID, utc_day: int, root: bytes) -> bool:
-        # Hash UUID bytes to an opaque, stable, non-PII contract key.
+        # Opaque, non-PII contract key: keccak256 of the UUID's 16 raw bytes (UUID.bytes).
         contract_org_id = Web3.keccak(org_id.bytes)
-        already_anchored = self.contract.functions.isAnchored(contract_org_id, utc_day).call()
-        if already_anchored:
+        if self.contract.functions.isAnchored(contract_org_id, utc_day).call():
             # A chain can advance after the first daily publication. Never compare
             # today's head with the immutable root from an earlier attempt.
             return False
 
-        nonce = self.web3.eth.get_transaction_count(self.account.address, "pending")
         function = self.contract.functions.anchorRoot(contract_org_id, utc_day, root)
-        transaction = function.build_transaction(
-            {
-                "from": self.account.address,
-                "nonce": nonce,
-                "chainId": self.web3.eth.chain_id,
-                "gas": function.estimate_gas({"from": self.account.address}),
-                "gasPrice": self.web3.eth.gas_price,
-            }
-        )
-        signed = self.account.sign_transaction(transaction)
-        tx_hash = self.web3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-        if cast(Mapping[str, object], receipt).get("status") != 1:
-            raise RuntimeError(f"audit anchor transaction reverted: {tx_hash.hex()}")
+        try:
+            transaction = function.build_transaction(
+                {
+                    "from": self.account.address,
+                    "nonce": self.web3.eth.get_transaction_count(self.account.address, "pending"),
+                    "chainId": self.web3.eth.chain_id,
+                    "gas": function.estimate_gas({"from": self.account.address}),
+                    "gasPrice": self.web3.eth.gas_price,
+                }
+            )
+            signed = self.account.sign_transaction(transaction)
+            tx_hash = self.web3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            reverted = cast(Mapping[str, object], receipt).get("status") != 1
+        except ContractLogicError:
+            reverted = True  # gas estimation simulates the revert, e.g. AlreadyAnchored
+        if reverted:
+            # An earlier attempt whose receipt wait timed out may have been mined since.
+            if self.contract.functions.isAnchored(contract_org_id, utc_day).call():
+                return False
+            raise RuntimeError("audit anchor transaction reverted")
         confirmed = bytes(self.contract.functions.rootAt(contract_org_id, utc_day).call())
         if confirmed != root:
             raise RuntimeError(
@@ -144,27 +165,13 @@ async def publish_daily_audit_roots(
     database_url: str,
     chain: AuditRootChain,
     *,
-    now: datetime | None = None,
+    utc_day: int,
     heads_reader: Callable[[str], Awaitable[list[Mapping[str, object]]]] = fetch_audit_heads,
 ) -> int:
-    """Capture heads once and publish them under the UTC day of that snapshot."""
+    """Read the heads once and publish them under ``utc_day``.
 
-    heads = await heads_reader(database_url)
-    if now is not None:
-        captured_at = now
-    elif heads:
-        raw_timestamps = [head.get("snapshot_at") for head in heads]
-        if any(not isinstance(value, datetime) for value in raw_timestamps):
-            raise ValueError("database audit snapshot timestamp is invalid")
-        timestamps = {value for value in raw_timestamps if isinstance(value, datetime)}
-        if len(timestamps) != 1:
-            raise ValueError("audit head rows do not share one database snapshot timestamp")
-        captured_at = next(iter(timestamps))
-    else:
-        # An organization is created with its head, so an empty table means there is
-        # nothing to publish. Still validate the caller's current timestamp below.
-        captured_at = datetime.now(UTC)
-    if captured_at.utcoffset() is None:
-        raise ValueError("audit anchor timestamp must be timezone-aware")
-    utc_day = int(captured_at.astimezone(UTC).timestamp()) // 86_400
-    return publish_snapshot(heads, utc_day=utc_day, chain=chain)
+    ``utc_day`` is fixed by the caller when the job starts and reused by every retry, so a
+    retry after UTC midnight still fills the intended day instead of skipping it.
+    """
+
+    return publish_snapshot(await heads_reader(database_url), utc_day=utc_day, chain=chain)

@@ -49,6 +49,13 @@ contract AuditRootAnchorTest {
         anchor.anchorRoot(ORG, uint64(block.timestamp / 1 days + 1), keccak256("root"));
     }
 
+    function testRecordsAnchorTimeSoLateBackfillIsVisible() public {
+        vm.warp(10 days);
+        vm.prank(PUBLISHER);
+        anchor.anchorRoot(ORG, 3, keccak256("late"));
+        require(anchor.anchoredAt(ORG, 3) == 10 days, "anchor time not recorded");
+    }
+
     function testCanAnchorEmptyChainGenesisRoot() public {
         vm.prank(PUBLISHER);
         anchor.anchorRoot(ORG, uint64(block.timestamp / 1 days), bytes32(0));

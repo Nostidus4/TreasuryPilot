@@ -102,12 +102,19 @@ AUD-001 → AUD-002 → AUD-004 → AUD-003. Later AUD-L01.
 `contracts/src/AuditRootAnchor.sol` is the on-chain registry for daily roots. The
 contract accepts one root per opaque organization identifier and UTC day, rejects
 future dates and overwrites, and restricts publication to the configured publisher
-for that organization. A separate existence bit allows the all-zero genesis head to
-be anchored. The worker reads `audit_heads.last_hash` values inside one read-only
-`REPEATABLE READ` transaction and publishes those exact bytes. Retries read `isAnchored`
-for that organization and UTC day. Once an anchor exists, a retry is a no-op even if
-the live audit head has advanced; the first daily root is immutable and is never
-overwritten.
+for that organization. The organization identifier is `keccak256` of the organization
+UUID's 16 raw bytes (RFC 4122 big-endian order, Python `UUID.bytes`). A separate
+existence bit allows the all-zero genesis head to be anchored, and `anchoredAt` stores
+the block timestamp of each anchor. Past days may be backfilled after an outage, so
+verifiers compare `anchoredAt` with the end of the UTC day to see how late a root was
+published. The worker fixes the target UTC day when the task starts and reuses it on
+every retry. It reads `audit_heads.last_hash` values inside one read-only
+`REPEATABLE READ` transaction and publishes those exact bytes under that day. Retries
+read `isAnchored` for that organization and UTC day. Once an anchor exists, a retry is
+a no-op (including a revert caused by an earlier timed-out attempt that was mined
+afterwards) even if the live audit head has advanced; the first daily root is
+immutable and is never overwritten. One organization's failure does not stop the
+others; the task retries after all have been attempted.
 
 The worker runs daily at 00:05 UTC. Configure `TP_AUDIT_ANCHOR_RPC_URL`,
 `TP_AUDIT_ANCHOR_CHAIN_ID`, `TP_AUDIT_ANCHOR_CONTRACT_ADDRESS`, and the dedicated
