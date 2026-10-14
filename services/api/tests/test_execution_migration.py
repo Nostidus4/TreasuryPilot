@@ -42,7 +42,7 @@ def test_execution_upgrade_and_downgrade_compile_offline() -> None:
     assert "uq_gas_ledger_transaction" in sql
 
 
-async def _assert_duplicate_step_id_is_rejected(database_url: str) -> None:
+async def _assert_execution_constraints(database_url: str) -> None:
     org_id = "00000000-0000-7000-8000-000000000010"
     asset_id = "00000000-0000-7000-8000-000000000030"
     treasury_id = "00000000-0000-7000-8000-000000000040"
@@ -122,6 +122,91 @@ async def _assert_duplicate_step_id_is_rejected(database_url: str) -> None:
                         f"'{request_id}', decode(repeat('ab', 32), 'hex'), 'PAY', '{{}}'::jsonb, 'attempt-b')"
                     )
                 )
+
+        # Transactions: status server_default, replacement FK, CHECKs, gas_ledger uniqueness.
+        tx_a = "00000000-0000-7000-8000-0000000000a0"
+        tx_b = "00000000-0000-7000-8000-0000000000a1"
+        insert_tx = (
+            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address"
+            "{extra_cols}) VALUES (:id, :op, 11155111, decode(:hash, 'hex'), :nonce, "
+            "decode(repeat('33', 20), 'hex'){extra_vals})"
+        )
+
+        async def insert_transaction(
+            tx_id: str, operation_id: str, tx_hash: str, nonce: int = 0, extra: str = ""
+        ) -> None:
+            cols, _, vals = extra.partition("=")
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        insert_tx.format(
+                            extra_cols=f", {cols}" if cols else "",
+                            extra_vals=f", {vals}" if cols else "",
+                        )
+                    ),
+                    {"id": tx_id, "op": operation_id, "hash": tx_hash, "nonce": nonce},
+                )
+
+        await insert_transaction(tx_a, operation_a, "aa" * 32)
+        async with engine.connect() as connection:
+            status = await connection.scalar(
+                text("SELECT status FROM transactions WHERE id = :id"), {"id": tx_a}
+            )
+        assert status == "Submitted"
+
+        for name, args in {
+            "ck_transactions_hash_length": (tx_b, operation_a, "bb" * 31),
+            "ck_transactions_nonce_nonnegative": (tx_b, operation_a, "bb" * 32, -1),
+            "ck_transactions_block_hash_length": (
+                tx_b,
+                operation_a,
+                "bb" * 32,
+                0,
+                "block_hash=decode('00', 'hex')",
+            ),
+            "uq_transactions_chain_hash": (tx_b, operation_a, "aa" * 32),
+        }.items():
+            with pytest.raises(IntegrityError, match=name):
+                await insert_transaction(*args)  # type: ignore[arg-type]
+
+        # Replacement must point at a transaction of the same operation.
+        await insert_transaction(tx_b, operation_a, "bb" * 32, extra=f"replaced_by_tx_id='{tx_a}'")
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
+                    "kind, payload, idempotency_key) VALUES "
+                    f"('{operation_b}', '{treasury_id}', '00000000-0000-7000-8000-000000000091', "
+                    f"'{request_id}', decode(repeat('cd', 32), 'hex'), 'PAY', '{{}}'::jsonb, "
+                    "'attempt-b')"
+                )
+            )
+        with pytest.raises(IntegrityError, match="fk_transactions_replacement_same_operation"):
+            await insert_transaction(
+                "00000000-0000-7000-8000-0000000000a2",
+                operation_b,
+                "cc" * 32,
+                extra=f"replaced_by_tx_id='{tx_a}'",
+            )
+
+        # Deleting the replacement target only nulls replaced_by_tx_id (PostgreSQL 15+ syntax).
+        async with engine.begin() as connection:
+            await connection.execute(text("DELETE FROM transactions WHERE id = :id"), {"id": tx_a})
+            replaced_by = await connection.scalar(
+                text("SELECT replaced_by_tx_id FROM transactions WHERE id = :id"), {"id": tx_b}
+            )
+        assert replaced_by is None
+
+        gas_insert = text(
+            "INSERT INTO gas_ledger (id, treasury_id, transaction_id, payer, payer_address, "
+            f"fee_wei, day) VALUES (:id, '{treasury_id}', '{tx_b}', 'EXECUTOR', "
+            "decode(repeat('33', 20), 'hex'), 1, '2026-10-14')"
+        )
+        async with engine.begin() as connection:
+            await connection.execute(gas_insert, {"id": "00000000-0000-7000-8000-0000000000b0"})
+        with pytest.raises(IntegrityError, match="uq_gas_ledger_transaction"):
+            async with engine.begin() as connection:
+                await connection.execute(gas_insert, {"id": "00000000-0000-7000-8000-0000000000b1"})
     finally:
         await engine.dispose()
 
@@ -130,11 +215,11 @@ async def _assert_duplicate_step_id_is_rejected(database_url: str) -> None:
     "TP_TEST_DATABASE_URL" not in os.environ,
     reason="TP_TEST_DATABASE_URL is required for the PostgreSQL execution migration test",
 )
-def test_execution_migration_and_unique_step_id_on_postgres() -> None:
+def test_execution_migration_and_constraints_on_postgres() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
     config = alembic_config(database_url)
     command.upgrade(config, "head")
     try:
-        asyncio.run(_assert_duplicate_step_id_is_rejected(database_url))
+        asyncio.run(_assert_execution_constraints(database_url))
     finally:
         command.downgrade(config, "base")

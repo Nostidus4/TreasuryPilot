@@ -103,7 +103,12 @@ def upgrade() -> None:
         sa.Column("nonce", MONEY, nullable=False),
         sa.Column("from_address", sa.LargeBinary(length=20), nullable=False),
         sa.Column("replaced_by_tx_id", postgresql.UUID(as_uuid=True)),
-        sa.Column("status", _enum("transaction_status"), nullable=False),
+        sa.Column(
+            "status",
+            _enum("transaction_status"),
+            server_default="Submitted",
+            nullable=False,
+        ),
         sa.Column("block_number", sa.BigInteger()),
         sa.Column("block_hash", sa.LargeBinary(length=32)),
         sa.Column("confirmations", sa.Integer(), server_default="0", nullable=False),

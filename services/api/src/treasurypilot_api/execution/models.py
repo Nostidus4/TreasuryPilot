@@ -178,7 +178,10 @@ class Transaction(Base):
     from_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     replaced_by_tx_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     status: Mapped[TransactionStatus] = mapped_column(
-        transaction_status_enum, nullable=False, default=TransactionStatus.SUBMITTED
+        transaction_status_enum,
+        nullable=False,
+        default=TransactionStatus.SUBMITTED,
+        server_default=TransactionStatus.SUBMITTED.value,
     )
     block_number: Mapped[int | None] = mapped_column(BigInteger)
     block_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
