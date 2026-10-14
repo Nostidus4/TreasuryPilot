@@ -20,6 +20,7 @@ from treasurypilot_api.execution.routes import (
     _plan_status,
     _step_amount,
     _step_verification,
+    _total_amount,
     get_execution_plan,
     list_execution_plans,
     router,
@@ -60,6 +61,12 @@ def test_plan_status_only_claims_states_supported_by_persisted_rows() -> None:
     assert _plan_status(["Confirmed"], 1) == "Unknown"
     assert _plan_status(["Failed"], 1) == "Unknown"
     assert _plan_status(["Pending"], 2) == "Unknown"
+
+
+def test_plan_total_requires_every_signed_step_amount() -> None:
+    assert _total_amount(["975", "25"], 2) == "1000"
+    assert _total_amount(["975"], 2) is None
+    assert _total_amount(["975", None], 2) is None
 
 
 def _alembic_config(database_url: str) -> Config:
@@ -202,6 +209,7 @@ async def _read_routes(database_url: str) -> None:
         assert step["id"] == str(PLAN_STEP_ID)
         assert step["requestId"] == str(REQUEST_ID)
         assert step["kind"] == "PAY"
+        assert step["to"] == "Unavailable"
         assert step["status"] == "Pending"
         assert step["amount"] == "975"
         assert step["verification"] is None

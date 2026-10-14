@@ -23,7 +23,7 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import PaymentRequest
-from treasurypilot_api.mandate.models import Payee, Vendor
+from treasurypilot_api.mandate.models import Vendor
 from treasurypilot_api.treasury.models import Treasury
 
 _BASE_UNITS = re.compile(r"^(0|[1-9][0-9]*)$")
@@ -176,6 +176,12 @@ def _plan_status(statuses: list[StepStatus], expected_steps: int) -> PlanStatus:
     return "Unknown"
 
 
+def _total_amount(amounts: list[str | None], expected_steps: int) -> str | None:
+    if not amounts or len(amounts) != expected_steps or any(amount is None for amount in amounts):
+        return None
+    return str(sum(int(amount) for amount in amounts if amount is not None))
+
+
 async def _plan_detail(
     session: AsyncSession, *, organization_id: uuid.UUID, plan_id: uuid.UUID
 ) -> PlanDetailView:
@@ -189,11 +195,10 @@ async def _plan_detail(
 
     rows = (
         await session.execute(
-            select(Operation, PaymentRequest, Vendor, Payee)
+            select(Operation, Vendor)
             .join(Treasury, Treasury.id == Operation.treasury_id)
             .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
             .outerjoin(Vendor, Vendor.id == PaymentRequest.vendor_id)
-            .outerjoin(Payee, Payee.id == PaymentRequest.payee_id)
             .where(
                 Treasury.org_id == organization_id,
                 Operation.step_id.in_(attestation.step_ids),
@@ -203,7 +208,7 @@ async def _plan_detail(
     if not rows:
         raise _not_found()
 
-    operation_ids = [operation.id for operation, *_ in rows]
+    operation_ids = [operation.id for operation, _vendor in rows]
     transactions = (
         await session.scalars(
             select(Transaction)
@@ -217,7 +222,7 @@ async def _plan_detail(
 
     step_order = {step_id: index for index, step_id in enumerate(attestation.step_ids, start=1)}
     steps: list[PlanStepView] = []
-    for operation, _payment_request, vendor, payee in rows:
+    for operation, vendor in rows:
         tx = latest_transaction.get(operation.id)
         kind = operation.kind.value
         amount = _step_amount(operation)
@@ -229,8 +234,9 @@ async def _plan_detail(
             "WITHDRAW": "Withdraw treasury reserve",
             "SWAP": "Swap treasury assets",
         }[kind]
-        to_address = _address(payee.address) if kind == "PAY" and payee else None
-        to_address = to_address or _address(payload.get("to")) or "Unavailable"
+        # The payee record is mutable. Show only the destination carried in the
+        # signed operation payload, so later payee edits cannot rewrite history.
+        to_address = _address(payload.get("to")) or "Unavailable"
         from_address = _address(payload.get("from")) or "Treasury"
         updated_at = (
             tx.confirmed_at or tx.last_seen_pending_at or tx.submitted_at
@@ -259,11 +265,7 @@ async def _plan_detail(
         )
     steps.sort(key=lambda step: step.index)
 
-    total_amount = (
-        str(sum(int(step.amount or "0") for step in steps))
-        if steps and all(step.amount is not None for step in steps)
-        else None
-    )
+    total_amount = _total_amount([step.amount for step in steps], len(attestation.step_ids))
     first_operation = min((row[0] for row in rows), key=lambda item: item.created_at)
     status = _plan_status([step.status for step in steps], len(attestation.step_ids))
     return PlanDetailView(
