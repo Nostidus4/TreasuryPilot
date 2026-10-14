@@ -102,8 +102,10 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
 | `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
-| `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
-| `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
+| `score(plan, requests, snapshot, policy) → (violations, missed_deadlines, −value, tx_count)` | lexicographic tuple, lower is better; values are recomputed from confirmed terms | shared by deterministic schedules and AI proposals (AGT-009) |
+| `compare_plans(left, right, …) → -1, 0, or 1` | deterministic comparison using `score` | choose between proposals |
+| `binding_constraints(plan, …) → BindingConstraintDetail[]` | constraint name, request, day, observed value and limit | shown in the "Why" panel |
+| `exception_values(requests, snapshot, policy) → ExceptionValue[]` | potential request value when the Owner grants the required per-request exception | M07-D9 exception drafts |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
 | `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |

@@ -18,6 +18,7 @@ from .liquidity import (
 )
 from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, validate_terms
 from .scheduler import schedule_edf, schedule_oracle
+from .scoring import binding_constraints, compare_plans, exception_values, score
 from .solver import SOLVERS, Solver, SolverName, get_solver
 
 __all__ = [
@@ -28,9 +29,12 @@ __all__ = [
     "FiatPaymentBlocked",
     "amount_due",
     "available",
+    "binding_constraints",
     "cap",
+    "compare_plans",
     "decide_liquidity",
     "decide_refill",
+    "exception_values",
     "forecast",
     "funding_deficit",
     "liquidity_position",
@@ -45,6 +49,7 @@ __all__ = [
     "schedule_cpsat",
     "schedule_edf",
     "schedule_oracle",
+    "score",
     "source_capacity",
     "validate_terms",
 ]
