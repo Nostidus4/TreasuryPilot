@@ -3,13 +3,16 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.auth import SessionAccess, UserRecord
+from treasurypilot_api.identity.api import problem_response
+from treasurypilot_api.identity.auth import AuthFailure, SessionAccess, UserRecord
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.main import create_app
 from treasurypilot_api.mandate.routes import (
@@ -65,10 +68,12 @@ class MemoryMandateRepository:
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         user_id: uuid.UUID,
-        config: dict[str, object],
-    ) -> MandateVersionRecord | None:
-        if organization_id != ORG_ID or treasury_id != TREASURY_ID:
+        build_config: Callable[[MandateContext], dict[str, object]],
+    ) -> tuple[MandateVersionRecord, MandateContext] | None:
+        context = await self.get_context(organization_id=organization_id, treasury_id=treasury_id)
+        if context is None:
             return None
+        config = build_config(context)
         encoded = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
         row = MandateVersionRecord(
             id=uuid.uuid4(),
@@ -80,7 +85,7 @@ class MemoryMandateRepository:
             created_at=datetime.now(UTC),
         )
         self.rows.append(row)
-        return row
+        return row, context
 
     async def discard_draft(
         self,
@@ -215,3 +220,48 @@ def test_mandate_draft_can_be_listed_cloned_and_discarded() -> None:
     assert [item["version"] for item in listed.json()["items"]] == [2, 1]
     assert discarded.status_code == 204
     assert [item["version"] for item in listed_after_discard.json()["items"]] == [1]
+
+
+def test_clone_of_expired_mandate_is_allowed_but_create_is_not() -> None:
+    repository = MemoryMandateRepository()
+    expired = config_payload() | {
+        "validFrom": _iso(datetime.now(UTC) - timedelta(days=60)),
+        "expiresAt": _iso(datetime.now(UTC) - timedelta(days=30)),
+    }
+    with make_client(repository) as client:
+        base_url = f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates"
+        rejected = client.post(base_url, json=expired)
+        repository.rows.append(
+            MandateVersionRecord(
+                id=uuid.uuid4(),
+                treasury_id=TREASURY_ID,
+                version=1,
+                status="Expired",
+                config=expired,
+                config_hash=b"\x00" * 32,
+                created_at=datetime.now(UTC),
+            )
+        )
+        cloned = client.post(f"{base_url}/{repository.rows[0].id}/clone")
+
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "MANDATE_ALREADY_EXPIRED"
+    assert cloned.status_code == 201
+    assert cloned.json()["draft"]["version"] == 2
+
+
+def test_problem_extensions_cannot_overwrite_standard_fields() -> None:
+    failure = AuthFailure(
+        status=422,
+        code="X",
+        title="t",
+        detail="real detail",
+        extensions={"detail": "spoofed", "status": 200, "fields": ["a"]},
+    )
+    request = Request({"type": "http", "path": "/p", "headers": []})
+
+    body = json.loads(problem_response(request, failure).body)
+
+    assert body["detail"] == "real detail"
+    assert body["status"] == 422
+    assert body["fields"] == ["a"]

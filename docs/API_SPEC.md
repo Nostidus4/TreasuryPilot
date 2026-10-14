@@ -42,6 +42,7 @@
 |---|---|---|---|---|---|
 | GET | `/chains` | Supported chains and assets | auth | → `{chains[{chainId, assets[]}]}` | |
 | POST | `/orgs/{orgId}/treasuries` | Create a treasury | OWN, ADM | `{chainId, assetId, wallets[{role, safeAddress, label}]}` → `201 {treasury}` | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET` |
+| POST | `/orgs/{orgId}/safes/deploy-tx` | Build a Safe deployment transaction | OWN, ADM | `{chainId, owners[], threshold}` → `{chainId, transaction:{to,data,value}}`; submitted by the connected wallet | 422 `INVALID_SAFE_CONFIGURATION`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE`, `RPC_UNAVAILABLE` |
 | GET | `/orgs/{orgId}/treasuries/{tId}` | Treasury state (balances, coverage, mandate, today's budget) | ANY | → `{treasury, wallets[], coverage, mandate, budgets, staleness}` | |
 | POST | `/orgs/{orgId}/treasuries/{tId}/module/deploy-tx` | Build the Safe tx to deploy and enable the module | OWN | → `{safeTx}` (to sign in the wallet) | |
 | POST | `/orgs/{orgId}/treasuries/{tId}/coverage/refresh` | Re-read Safe configs | OWN, ADM | → `{coverage, details}` | 503 `RPC_UNAVAILABLE` |

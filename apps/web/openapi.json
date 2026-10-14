@@ -1,6 +1,56 @@
 {
   "components": {
     "schemas": {
+      "AICallEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outputSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputsummary"
+          },
+          "promptVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promptversion"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": ["id", "purpose"],
+        "title": "AICallEvidence",
+        "type": "object"
+      },
       "ActionLimits": {
         "additionalProperties": false,
         "properties": {
@@ -15,6 +65,47 @@
         },
         "required": ["perRequest", "daily"],
         "title": "ActionLimits",
+        "type": "object"
+      },
+      "ApprovalEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "signatureHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signaturehash"
+          },
+          "signerAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signeraddress"
+          },
+          "typedData": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typeddata"
+          }
+        },
+        "title": "ApprovalEvidence",
         "type": "object"
       },
       "AssetView": {
@@ -43,6 +134,47 @@
         },
         "required": ["id", "symbol", "decimals", "address", "isTest"],
         "title": "AssetView",
+        "type": "object"
+      },
+      "AttestationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "signatureHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signaturehash"
+          },
+          "signerAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signeraddress"
+          },
+          "typedData": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typeddata"
+          }
+        },
+        "title": "AttestationEvidence",
         "type": "object"
       },
       "AuditLogResponse": {
@@ -178,6 +310,60 @@
         "title": "AuditVerifyResponse",
         "type": "object"
       },
+      "BundleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invoiceHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoicehash"
+          },
+          "vendorDisplayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendordisplayname"
+          }
+        },
+        "required": ["id", "amount", "currency"],
+        "title": "BundleRequest",
+        "type": "object"
+      },
       "ChainView": {
         "properties": {
           "assets": {
@@ -198,9 +384,19 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "safeDeploymentAvailable": {
+            "title": "Safedeploymentavailable",
+            "type": "boolean"
           }
         },
-        "required": ["chainId", "name", "explorerUrl", "assets"],
+        "required": [
+          "chainId",
+          "name",
+          "explorerUrl",
+          "assets",
+          "safeDeploymentAvailable"
+        ],
         "title": "ChainView",
         "type": "object"
       },
@@ -217,6 +413,11 @@
         "required": ["chains"],
         "title": "ChainsResponse",
         "type": "object"
+      },
+      "Coverage": {
+        "enum": ["UNKNOWN", "PARTIAL", "COMPLETE"],
+        "title": "Coverage",
+        "type": "string"
       },
       "CreateOrganizationRequest": {
         "properties": {
@@ -262,6 +463,254 @@
         "title": "CreateOrganizationRequest",
         "type": "object"
       },
+      "CreateTreasuryRequest": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "chainId": {
+            "exclusiveMinimum": 0.0,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "wallets": {
+            "items": {
+              "$ref": "#/components/schemas/WalletRequest"
+            },
+            "maxItems": 3,
+            "minItems": 2,
+            "title": "Wallets",
+            "type": "array"
+          }
+        },
+        "required": ["chainId", "assetId", "wallets"],
+        "title": "CreateTreasuryRequest",
+        "type": "object"
+      },
+      "EvidenceBundle": {
+        "additionalProperties": false,
+        "properties": {
+          "aiCalls": {
+            "items": {
+              "$ref": "#/components/schemas/AICallEvidence"
+            },
+            "title": "Aicalls",
+            "type": "array"
+          },
+          "appVersion": {
+            "title": "Appversion",
+            "type": "string"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attestation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttestationEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "easUid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Easuid"
+          },
+          "fixtureLabels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fixturelabels",
+            "type": "array"
+          },
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FlagEvidence"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reconciliation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciliation"
+          },
+          "request": {
+            "$ref": "#/components/schemas/BundleRequest"
+          },
+          "schemaVersion": {
+            "const": "evidence-bundle.v1",
+            "default": "evidence-bundle.v1",
+            "title": "Schemaversion",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "status": {
+            "const": "VALID",
+            "default": "VALID",
+            "title": "Status",
+            "type": "string"
+          },
+          "transactions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TransactionEvidence"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transactions"
+          },
+          "validations": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationEvidence"
+            },
+            "title": "Validations",
+            "type": "array"
+          },
+          "verifications": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationEvidence"
+            },
+            "title": "Verifications",
+            "type": "array"
+          }
+        },
+        "required": ["organizationId", "request", "generatedAt", "appVersion"],
+        "title": "EvidenceBundle",
+        "type": "object"
+      },
+      "FlagEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "ackNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknote"
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedat"
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedby"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["id", "code", "severity", "status"],
+        "title": "FlagEvidence",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -292,6 +741,130 @@
         },
         "required": ["status", "service", "version"],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "InviteCreateRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationRole"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["email", "roles"],
+        "title": "InviteCreateRequest",
+        "type": "object"
+      },
+      "InviteCreatedResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "roles",
+          "createdAt",
+          "expiresAt",
+          "token"
+        ],
+        "title": "InviteCreatedResponse",
+        "type": "object"
+      },
+      "InviteView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["id", "orgId", "email", "roles", "createdAt", "expiresAt"],
+        "title": "InviteView",
+        "type": "object"
+      },
+      "InvitesResponse": {
+        "properties": {
+          "invites": {
+            "items": {
+              "$ref": "#/components/schemas/InviteView"
+            },
+            "title": "Invites",
+            "type": "array"
+          }
+        },
+        "required": ["invites"],
+        "title": "InvitesResponse",
         "type": "object"
       },
       "LinkWalletRequest": {
@@ -637,7 +1210,7 @@
           },
           "wallets": {
             "items": {
-              "$ref": "#/components/schemas/WalletView"
+              "$ref": "#/components/schemas/treasurypilot_api__identity__api__WalletView"
             },
             "title": "Wallets",
             "type": "array"
@@ -645,6 +1218,61 @@
         },
         "required": ["user", "memberships", "wallets"],
         "title": "MeResponse",
+        "type": "object"
+      },
+      "MemberResponse": {
+        "properties": {
+          "member": {
+            "$ref": "#/components/schemas/MemberView"
+          }
+        },
+        "required": ["member"],
+        "title": "MemberResponse",
+        "type": "object"
+      },
+      "MemberView": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "signerRolesActive": {
+            "title": "Signerrolesactive",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": ["userId", "email", "roles", "status", "signerRolesActive"],
+        "title": "MemberView",
+        "type": "object"
+      },
+      "MembersResponse": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberView"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": ["members"],
+        "title": "MembersResponse",
         "type": "object"
       },
       "MembershipView": {
@@ -754,6 +1382,20 @@
         "title": "OrganizationResponse",
         "type": "object"
       },
+      "OrganizationRole": {
+        "enum": [
+          "OrgAdmin",
+          "Owner",
+          "Approver",
+          "Operator",
+          "Finance",
+          "Guardian",
+          "Auditor",
+          "PlatformAdmin"
+        ],
+        "title": "OrganizationRole",
+        "type": "string"
+      },
       "OrganizationSettingsRequest": {
         "properties": {
           "autoMatch": {
@@ -846,6 +1488,37 @@
         "title": "OrganizationView",
         "type": "object"
       },
+      "PlanEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "planHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planhash"
+          },
+          "plannerSource": {
+            "title": "Plannersource",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": ["plannerSource"],
+        "title": "PlanEvidence",
+        "type": "object"
+      },
       "RefillPath": {
         "additionalProperties": false,
         "properties": {
@@ -860,6 +1533,82 @@
         },
         "required": ["from", "to"],
         "title": "RefillPath",
+        "type": "object"
+      },
+      "RoleUpdateRequest": {
+        "properties": {
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationRole"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": ["roles"],
+        "title": "RoleUpdateRequest",
+        "type": "object"
+      },
+      "SafeDeploymentRequest": {
+        "properties": {
+          "chainId": {
+            "exclusiveMinimum": 0.0,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Owners",
+            "type": "array"
+          },
+          "threshold": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Threshold",
+            "type": "integer"
+          }
+        },
+        "required": ["chainId", "owners", "threshold"],
+        "title": "SafeDeploymentRequest",
+        "type": "object"
+      },
+      "SafeDeploymentResponse": {
+        "properties": {
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/SafeDeploymentTransaction"
+          }
+        },
+        "required": ["chainId", "transaction"],
+        "title": "SafeDeploymentResponse",
+        "type": "object"
+      },
+      "SafeDeploymentTransaction": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data", "value"],
+        "title": "SafeDeploymentTransaction",
         "type": "object"
       },
       "SiweNonceResponse": {
@@ -888,6 +1637,126 @@
         },
         "required": ["nonce", "domain", "scheme", "chainId", "expiresAt"],
         "title": "SiweNonceResponse",
+        "type": "object"
+      },
+      "TransactionEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "blockNumber": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocknumber"
+          },
+          "chainId": {
+            "minimum": 1.0,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "feeBaseUnits": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feebaseunits"
+          },
+          "txHash": {
+            "title": "Txhash",
+            "type": "string"
+          }
+        },
+        "required": ["txHash", "chainId"],
+        "title": "TransactionEvidence",
+        "type": "object"
+      },
+      "TreasuryResponse": {
+        "properties": {
+          "treasury": {
+            "$ref": "#/components/schemas/TreasuryView"
+          },
+          "wallets": {
+            "items": {
+              "$ref": "#/components/schemas/treasurypilot_api__treasury__api__WalletView"
+            },
+            "title": "Wallets",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WarningView"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": ["treasury", "wallets", "warnings"],
+        "title": "TreasuryResponse",
+        "type": "object"
+      },
+      "TreasuryStatus": {
+        "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
+        "title": "TreasuryStatus",
+        "type": "string"
+      },
+      "TreasuryView": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "moduleAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleaddress"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "assetId",
+          "status",
+          "coverage",
+          "moduleAddress",
+          "createdAt"
+        ],
+        "title": "TreasuryView",
         "type": "object"
       },
       "UserView": {
@@ -957,6 +1826,75 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "ValidationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoncodes",
+            "type": "array"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": ["stage", "decision"],
+        "title": "ValidationEvidence",
+        "type": "object"
+      },
+      "VerificationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "title": "Checkedat",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "txHash": {
+            "title": "Txhash",
+            "type": "string"
+          }
+        },
+        "required": ["txHash", "status", "checkedAt"],
+        "title": "VerificationEvidence",
+        "type": "object"
+      },
       "VerifyMagicLinkRequest": {
         "properties": {
           "token": {
@@ -1009,7 +1947,61 @@
         "title": "WalletBuffer",
         "type": "object"
       },
-      "WalletView": {
+      "WalletRequest": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "role": {
+            "$ref": "#/components/schemas/WalletRole"
+          },
+          "safeAddress": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "Safeaddress",
+            "type": "string"
+          }
+        },
+        "required": ["role", "safeAddress"],
+        "title": "WalletRequest",
+        "type": "object"
+      },
+      "WalletRole": {
+        "enum": ["SOURCE", "OPERATIONAL"],
+        "title": "WalletRole",
+        "type": "string"
+      },
+      "WarningView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "wallets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wallets",
+            "type": "array"
+          }
+        },
+        "required": ["code", "message", "wallets"],
+        "title": "WarningView",
+        "type": "object"
+      },
+      "treasurypilot_api__identity__api__WalletView": {
         "properties": {
           "address": {
             "title": "Address",
@@ -1030,6 +2022,47 @@
           }
         },
         "required": ["address", "chainFamily", "isContract", "linkedAt"],
+        "title": "WalletView",
+        "type": "object"
+      },
+      "treasurypilot_api__treasury__api__WalletView": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owners",
+            "type": "array"
+          },
+          "role": {
+            "$ref": "#/components/schemas/WalletRole"
+          },
+          "safeAddress": {
+            "title": "Safeaddress",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "label",
+          "safeAddress",
+          "owners",
+          "threshold"
+        ],
         "title": "WalletView",
         "type": "object"
       }
@@ -1201,6 +2234,46 @@
         "tags": ["system"]
       }
     },
+    "/v1/invites/{token}/accept": {
+      "post": {
+        "operationId": "accept_invite_v1_invites__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invite",
+        "tags": ["membership"]
+      }
+    },
     "/v1/me": {
       "get": {
         "operationId": "me_v1_me_get",
@@ -1238,7 +2311,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WalletView"
+                  "$ref": "#/components/schemas/treasurypilot_api__identity__api__WalletView"
                 }
               }
             },
@@ -1568,6 +2641,392 @@
         "tags": ["audit"]
       }
     },
+    "/v1/orgs/{organization_id}/invites": {
+      "get": {
+        "operationId": "list_invites_v1_orgs__organization_id__invites_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invites",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_invite_v1_orgs__organization_id__invites_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invite",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invites/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_invite_v1_orgs__organization_id__invites__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invite",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/members": {
+      "get": {
+        "operationId": "list_members_v1_orgs__organization_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Members",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "remove_member_v1_orgs__organization_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Member",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      },
+      "patch": {
+        "operationId": "update_member_v1_orgs__organization_id__members__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Member",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/evidence": {
+      "get": {
+        "operationId": "get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceBundle"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Request Evidence",
+        "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/safes/deploy-tx": {
+      "post": {
+        "operationId": "safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafeDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeDeploymentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Safe Deployment Transaction",
+        "tags": ["treasury"]
+      }
+    },
     "/v1/orgs/{organization_id}/settings": {
       "patch": {
         "operationId": "update_organization_settings_v1_orgs__organization_id__settings_patch",
@@ -1617,6 +3076,108 @@
         },
         "summary": "Update Organization Settings",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries": {
+      "post": {
+        "operationId": "create_treasury_v1_orgs__organization_id__treasuries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTreasuryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Treasury",
+        "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}": {
+      "get": {
+        "operationId": "get_treasury_v1_orgs__organization_id__treasuries__treasury_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Treasury",
+        "tags": ["treasury"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates": {
