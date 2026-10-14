@@ -346,10 +346,11 @@ class TreasuryService:
         record: TreasuryRecord,
         wallets: Sequence[TreasuryWallet],
         latest: Mapping[uuid.UUID, SafeConfigSnapshot],
+        now: datetime | None = None,
     ) -> TreasuryRecord:
         """Fail closed on read: a stopped worker must not leave a stored COMPLETE usable forever."""
 
-        now = datetime.now(UTC)
+        now = now or datetime.now(UTC)
         missing = tuple(
             wallet.label
             for wallet in wallets
@@ -448,7 +449,7 @@ class TreasuryService:
             treasury.coverage = coverage
             treasury.coverage_details = list(details)
             await session.flush()
-            record = self._with_freshness(_record(treasury, wallets), wallets, latest)
+            record = self._with_freshness(_record(treasury, wallets), wallets, latest, now)
             return replace(record, coverage_details=tuple(details))
 
     async def acknowledge_coverage(
