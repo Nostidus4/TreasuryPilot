@@ -126,6 +126,33 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
 });
 
+test('the position card shows the reserve breakdown and what is available to supply', async () => {
+  renderApp(T);
+
+  const card = await screen.findByRole('group', { name: 'Position breakdown' });
+  const rows = within(card);
+  const row = (label: string) =>
+    rows.getByText(label).closest('div')! as HTMLElement;
+  expect(within(row('Safe USDC')).getByText('61,440.00')).toBeInTheDocument();
+  expect(
+    within(row('aUSDC (Aave)')).getByText('101,560.00'),
+  ).toBeInTheDocument();
+  expect(
+    within(row('Payment reserve')).getByText('18,440.00'),
+  ).toBeInTheDocument();
+  expect(within(row('Floor')).getByText('5,000.00')).toBeInTheDocument();
+  expect(within(row('Holds')).getByText('0.00')).toBeInTheDocument();
+  expect(
+    within(row('Required safe reserve')).getByText('23,440.00'),
+  ).toBeInTheDocument();
+  expect(
+    within(row('Available for supply')).getByText('38,000.00'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/no payment was due within 48 hours/i),
+  ).toBeInTheDocument();
+});
+
 test('the organization view lists cross-chain treasuries separately without a combined balance', async () => {
   const user = userEvent.setup();
   renderApp(BASE, {
@@ -478,7 +505,9 @@ test('module setup creates a governance transaction for each treasury Safe', asy
   renderApp(`${BASE}/treasuries/new`, { demoWallet: true });
 
   await user.click(await screen.findByRole('button', { name: /continue/i }));
-  await user.click(await screen.findByRole('button', { name: /use demo safes/i }));
+  await user.click(
+    await screen.findByRole('button', { name: /use demo safes/i }),
+  );
   await user.click(
     screen.getByRole('button', { name: /check safes and continue/i }),
   );
