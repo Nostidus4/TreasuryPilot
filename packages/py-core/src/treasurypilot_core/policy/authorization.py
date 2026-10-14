@@ -33,19 +33,23 @@ class _Inputs:
     erc1271: Erc1271Call | None
 
     # Only read by rules that run after the gates (request, mandate) or with an approval.
+    # Explicit checks, not assert: they must fail closed under `python -O` too (see `_run`).
     @property
     def request(self) -> RequestView:
-        assert self.ctx.request is not None
+        if self.ctx.request is None:
+            raise LookupError("request")
         return self.ctx.request
 
     @property
     def mandate(self) -> MandateView:
-        assert self.ctx.snapshot.mandate is not None
+        if self.ctx.snapshot.mandate is None:
+            raise LookupError("mandate")
         return self.ctx.snapshot.mandate
 
     @property
     def approval(self) -> ApprovalView:
-        assert self.ctx.approval is not None
+        if self.ctx.approval is None:
+            raise LookupError("approval")
         return self.ctx.approval
 
 
@@ -97,6 +101,7 @@ _GATES: list[_Rule] = [
 ]
 
 _REQUEST_RULES: list[_Rule] = [
+    ("request_present", C.DATA_MISSING, lambda i: i.ctx.request is not None),
     (
         "request_not_cancelled",
         C.REQUEST_CANCELLED,
@@ -109,6 +114,10 @@ _REQUEST_RULES: list[_Rule] = [
         lambda i: i.ctx.approval is not None
         and (i.request.status in APPROVED_STATUSES or i.request.status == "Cancelled"),
     ),
+]
+
+# Need only the mandate, so they also run for liquidity (SUPPLY/WITHDRAW) plans.
+_MANDATE_RULES: list[_Rule] = [
     ("screening", C.SCREENING_HIT, lambda i: not i.ctx.screening_hit),
     ("mandate_not_paused", C.MANDATE_PAUSED, lambda i: i.mandate.status != "Paused"),
     ("mandate_not_revoked", C.MANDATE_REVOKED, lambda i: i.mandate.status != "Revoked"),
@@ -197,6 +206,9 @@ _PLAN_SHAPES = (
     [Action.PAY],
     [Action.REFILL, Action.PAY],
     [Action.WITHDRAW, Action.REFILL, Action.PAY],
+    [Action.SUPPLY],
+    [Action.WITHDRAW],
+    [Action.SUPPLY, Action.WITHDRAW],
 )
 
 
@@ -205,8 +217,20 @@ def _plan_well_formed(i: _Inputs) -> bool:
 
     shortcut: stepId is not recomputed until POL-005 ships `step_id`; add it to this check then.
     """
-    steps, r, snap = list(i.plan.steps), i.request, i.ctx.snapshot
+    steps, snap = list(i.plan.steps), i.ctx.snapshot
     actions = [s.action for s in steps]
+    if actions and all(action in (Action.SUPPLY, Action.WITHDRAW) for action in actions):
+        return (
+            [s.seq for s in steps] == list(range(len(steps)))
+            and actions in _PLAN_SHAPES
+            and len({s.step_id for s in steps}) == len(steps)
+            and all(_same(s.to, snap.safe_t) for s in steps)
+            # SUPPLY spends from Safe T (floor and reserve are checked on it); the pool is not modelled.
+            and all(_same(s.from_wallet, snap.safe_t) for s in steps if s.action == Action.SUPPLY)
+        )
+    if i.ctx.request is None:
+        return False
+    r = i.request
     if (
         [s.seq for s in steps] != list(range(len(steps)))
         or actions not in _PLAN_SHAPES
@@ -218,7 +242,8 @@ def _plan_well_formed(i: _Inputs) -> bool:
     early = r.early_amount > 0 and i.ctx.now <= r.early_pay_by
     by_action = {s.action: s for s in steps}
     pay, refill, withdraw = (by_action.get(a) for a in (Action.PAY, Action.REFILL, Action.WITHDRAW))
-    assert pay is not None
+    if pay is None:
+        return False
     return (
         pay.amount == (r.early_amount if early else r.amount)
         and _same(pay.from_wallet, r.paying_wallet)
@@ -264,8 +289,20 @@ def authorization_checks(
     steps = list(plan.steps) if seq is None else [s for s in plan.steps if s.seq == seq]
     inputs = _Inputs(plan, steps, ctx, erc1271)
 
-    gates = [_run(rule, inputs) for rule in _GATES]
-    rest = _REQUEST_RULES + _APPROVAL_RULES
+    # From the whole plan: a lone WITHDRAW step of a WITHDRAW -> REFILL -> PAY plan is not one.
+    liquidity_plan = bool(plan.steps) and all(
+        step.action in (Action.SUPPLY, Action.WITHDRAW) for step in plan.steps
+    )
+    gate_rules = list(_GATES)
+    if liquidity_plan:
+        gate_rules = [
+            (name, code, lambda i: i.ctx.snapshot.mandate is not None)
+            if name == "data_present"
+            else (name, code, passes)
+            for name, code, passes in gate_rules
+        ]
+    gates = [_run(rule, inputs) for rule in gate_rules]
+    rest = _MANDATE_RULES if liquidity_plan else _REQUEST_RULES + _MANDATE_RULES + _APPROVAL_RULES
     if seq is not None:
         rest = rest + _STEP_RULES
     if any(s.action == Action.PAY for s in steps):

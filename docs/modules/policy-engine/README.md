@@ -97,6 +97,7 @@ class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10
     pause_requested: bool          # BR-063 backend pause
     circuit_open: bool             # BR-065
     screening_hit: bool            # BR-085 (stub in M1)
+    policy_state: PolicyState      # balances, buffers, limits, daily counters and exception view (POL-003)
     config: PolicyConfig           # §9
 
 class Check(BaseModel):    name: str; passed: bool; code: PolicyReasonCode | None; expected: str | None; observed: str | None
@@ -112,6 +113,8 @@ class Decision(BaseModel):
     policy_version: bytes32
     snapshot_block: int
 ```
+
+PolicyState is the immutable, block-consistent input to POL-003: pay/refill/supply limits; wallet balances, buffers and targets; daily usage; request/step/fingerprint replay flags; matching exception; and liquidity reserve/Aave balances. Missing policy state is DATA_MISSING, never an implicit zero. PLAN checks project balance and daily usage after earlier steps before validating the next step. validate_plan and validate_step return a Decision; the decision policy version hashes the mandate version, validator version and canonical policy configuration.
 
 ### 4.2 Database (changes to DATA_MODEL §2.5)
 

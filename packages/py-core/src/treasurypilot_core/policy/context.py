@@ -34,8 +34,9 @@ class _HexModel(FrozenModel):
 class Action(StrEnum):
     REFILL = "REFILL"
     PAY = "PAY"
+    SUPPLY = "SUPPLY"
+    WITHDRAW = "WITHDRAW"  # pool → Safe T ahead of a REFILL
     SWAP = "SWAP"  # P2
-    WITHDRAW = "WITHDRAW"  # pool → Safe T ahead of a REFILL (financial-engine §15)
 
 
 # The module's uint8 action codes (M08 §8.4); SWAP is P2 and not mapped to SWAP_IN yet.
@@ -154,6 +155,43 @@ class PolicyConfig(FrozenModel):
 
     snapshot_max_age_seconds: NonNegativeInt = 30
     snapshot_max_blocks_behind: NonNegativeInt = 2
+    min_supply: NonNegativeInt = 0
+    validator_version: str = "0.1.0"
+
+
+class Limits(FrozenModel):
+    per_request: NonNegativeInt
+    daily: NonNegativeInt
+
+
+class ExceptionView(FrozenModel):
+    amount: BaseUnits
+    payee: Address
+    expiry: NonNegativeInt
+    mandate_version: NonNegativeInt
+    used: bool = False
+
+
+class PolicyState(FrozenModel):
+    """Contract state needed by POL-003; every mapping is keyed by lowercase address/action."""
+
+    pay_limits: Limits
+    refill_limits: Limits
+    supply_limits: Limits
+    balances: FrozenMapping[str, BaseUnits]
+    buffers: FrozenMapping[str, BaseUnits]
+    targets: FrozenMapping[str, BaseUnits]
+    used_today: FrozenMapping[str, BaseUnits]
+    request_paid: bool = False
+    step_used: FrozenSequence[bytes] = ()
+    fingerprint_paid: bool = False
+    duplicate_allowed: bool = False
+    refilled_for_request: bool = False
+    exception: ExceptionView | None = None
+    payment_reserve: BaseUnits = BaseUnits(0)
+    available_for_supply: BaseUnits = BaseUnits(0)
+    a_token_balance: BaseUnits = BaseUnits(0)
+    pool_liquidity: BaseUnits = BaseUnits(0)
 
 
 class ValidationContext(FrozenModel):
@@ -169,4 +207,5 @@ class ValidationContext(FrozenModel):
     pause_requested: bool
     circuit_open: bool
     screening_hit: bool
+    policy_state: PolicyState | None = None
     config: PolicyConfig = PolicyConfig()
