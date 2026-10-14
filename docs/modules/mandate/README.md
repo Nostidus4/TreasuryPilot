@@ -225,7 +225,7 @@ Human summary template (one line per rule, display units and base units), e.g. *
 
 ### 8.3 Bundle building
 
-Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` v1.4.1 (the Safe uses delegatecall, operation = 1; each bundled operation is CALL). Its address must be configured in the chain deployment manifest as `SAFE_MULTISEND_CALL_ONLY`. `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
+Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. Each secondary asset policy → `setAssetBuffer(asset, wallet, buffer, target)` per wallet, then `setAssetPolicy`; because `configureMandate` clears secondary policies on-chain, they are all re-sent whenever it is included. One call → direct call; several → `MultiSendCallOnly` v1.4.1 (the Safe uses delegatecall, operation = 1; each bundled operation is CALL). Its address must be configured in the chain deployment manifest as `SAFE_MULTISEND_CALL_ONLY`. `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
 
 ### 8.4 Read-back
 

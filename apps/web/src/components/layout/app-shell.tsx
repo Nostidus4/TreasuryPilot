@@ -78,7 +78,12 @@ function useNavigation(): Array<{ label?: string; items: NavItem[] }> {
   return [
     {
       items: [
-        { label: t('Overview'), to: tBase, icon: LayoutDashboard, end: true },
+        {
+          label: t('Overview'),
+          to: scope.treasuryId ? tBase : base,
+          icon: LayoutDashboard,
+          end: true,
+        },
       ],
     },
     {

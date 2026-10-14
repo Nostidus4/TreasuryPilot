@@ -22,7 +22,7 @@ _rev("DOM-002", title="Set up tUSDC and the Circle USDC evidence run (owner: Ph�
   scope="tUSDC (6 decimals, label TEST) deployment parameters;Circle USDC Sepolia address verified;collect Circle faucet funds (developer console) for one run with limits ÷ 100;document the scaled mandate values",
   notes="Decision taken 2026-10-11 (PH-2).",
   ac="ADR-012 lists both token addresses;At least 120 Circle USDC are available on the demo treasury before the evidence run;The scaled mandate config is in the demo runbook")
-_rev("DOM-003", prio="P1", notes="PH-3: anh Phúc confirms public testnet evidence is acceptable; keep asking for a written confirmation.")
+_rev("DOM-003", prio="P1")  # PH-3 wording lives in the DOM-003 definition
 _rev("SC-016", deps="SC-010 SC-021 DOM-001",
   scope="forge script deploying tUSDC (local and Sepolia), the module implementation and the factory with CREATE2 and a fixed salt (PH-10);demo setup script (Safe T calls factory.create, enable module on T/O1/O2 via MultiSend);write deployments/<chainId>.json with implementation, factory, token(s), EAS schema UID and code hashes;verify on Etherscan for Sepolia",
   ac="`make deploy-local` produces deployments/31337.json;Sepolia deployment produces the same implementation and factory addresses as a second dry run (CREATE2);Contracts are verified on Etherscan;The manifest contains token, module, factory and Safe addresses plus code hashes")

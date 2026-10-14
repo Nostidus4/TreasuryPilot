@@ -19,8 +19,9 @@ abstract contract TreasuryPilotStorage is ITreasuryPilotModule {
     mapping(address => bool) public isOperational;
     address[] internal _operationalList;
     Mandate internal _mandate;
-    mapping(address => uint256) public bufferOf;
-    mapping(address => uint256) public targetOf;
+    mapping(address => AssetPolicy) internal _assetPolicies;
+    mapping(address => mapping(address => uint256)) internal _bufferOf;
+    mapping(address => mapping(address => uint256)) internal _targetOf;
     mapping(address => bool) public isApprover;
     uint256 public approverCount;
     Status public status;

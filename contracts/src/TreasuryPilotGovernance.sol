@@ -17,14 +17,23 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
     }
 
     modifier onlyOwner() {
-        if (msg.sender != safeT) revert E.NotOwner();
+        _onlyOwner();
         _;
     }
     modifier onlyExecutor() {
+        _onlyExecutor();
+        _;
+    }
+
+    // Modifier bodies live in functions so the checks are not duplicated at every call site.
+    function _onlyOwner() internal view {
+        if (msg.sender != safeT) revert E.NotOwner();
+    }
+
+    function _onlyExecutor() internal view {
         if (msg.sender != _mandate.executor) revert E.NotExecutor();
         if (status != Status.Active) revert E.NotActive();
         if (block.timestamp < _mandate.validFrom || block.timestamp > _mandate.expiresAt) revert E.MandateExpired();
-        _;
     }
 
     /// @inheritdoc ITreasuryPilotModule
@@ -57,7 +66,7 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
             for (uint256 j; j < i; ++j) {
                 if (buffers[i].wallet == buffers[j].wallet) revert E.InvalidConfiguration();
             }
-            _setBuffer(buffers[i].wallet, buffers[i].buffer, buffers[i].target);
+            _setBuffer(asset_, buffers[i].wallet, buffers[i].buffer, buffers[i].target);
         }
         if (aavePool_ != address(0)) {
             if (aavePool_.code.length == 0) revert E.InvalidConfiguration();
@@ -89,8 +98,11 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         if (m.refill.perRequest > m.refill.daily) revert E.InvalidMandate("refill");
         if (m.supply.perRequest > m.supply.daily) revert E.InvalidMandate("supply");
         if (m.approvalMaxAge == 0) revert E.InvalidMandate("approvalMaxAge");
+        // Secondary policies carry the mandate version they were enabled under, so a new version invalidates them.
+        uint64 version = _mandate.version + 1;
+        _assetPolicies[asset] = AssetPolicy(version, m.pay, m.refill);
         _mandate = Mandate(
-            _mandate.version + 1,
+            version,
             m.validFrom,
             m.expiresAt,
             m.payeeCoolingSeconds,
@@ -129,15 +141,83 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
 
     /// @inheritdoc ITreasuryPilotModule
     function setBuffer(address wallet, uint256 buffer, uint256 target) external onlyOwner nonReentrant {
-        _setBuffer(wallet, buffer, target);
+        _setBuffer(asset, wallet, buffer, target);
     }
 
-    function _setBuffer(address wallet, uint256 buffer, uint256 target) internal {
+    /// @inheritdoc ITreasuryPilotModule
+    function setAssetBuffer(address asset_, address wallet, uint256 buffer, uint256 target)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        _setBuffer(asset_, wallet, buffer, target);
+    }
+
+    /// @inheritdoc ITreasuryPilotModule
+    function setAssetPolicy(address asset_, bool enabled, Limits calldata pay, Limits calldata refill)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        if (
+            asset_ == address(0) || asset_.code.length == 0 || asset_ == asset || pay.perRequest > pay.daily
+                || refill.perRequest > refill.daily
+        ) revert E.InvalidConfiguration();
+        if (!enabled) {
+            delete _assetPolicies[asset_];
+            for (uint256 i; i <= _operationalList.length; ++i) {
+                address wallet = _wallet(i);
+                delete _bufferOf[asset_][wallet];
+                delete _targetOf[asset_][wallet];
+            }
+        } else {
+            if (!isAssetAllowed(asset_)) {
+                // Safe T needs a positive floor and every operational wallet a positive refill target.
+                for (uint256 i; i <= _operationalList.length; ++i) {
+                    address wallet = _wallet(i);
+                    if ((wallet == safeT ? _bufferOf[asset_][wallet] : _targetOf[asset_][wallet]) == 0) {
+                        revert E.AssetBufferNotConfigured();
+                    }
+                }
+            }
+            _assetPolicies[asset_] = AssetPolicy(_mandate.version, pay, refill);
+        }
+        emit AssetPolicySet(asset_, enabled, pay.perRequest, pay.daily, refill.perRequest, refill.daily);
+    }
+
+    /// @dev Index 0 is Safe T, then the operational wallets.
+    function _wallet(uint256 i) internal view returns (address) {
+        return i == 0 ? safeT : _operationalList[i - 1];
+    }
+
+    function _setBuffer(address asset_, address wallet, uint256 buffer, uint256 target) internal {
+        if (asset_ == address(0) || asset_.code.length == 0) revert E.AssetNotAllowed();
         if (wallet != safeT && !isOperational[wallet]) revert E.UnknownWallet();
         if (isOperational[wallet] && target < buffer) revert E.TargetBelowBuffer();
-        bufferOf[wallet] = buffer;
-        targetOf[wallet] = target;
-        emit BufferSet(wallet, buffer, target);
+        _bufferOf[asset_][wallet] = buffer;
+        _targetOf[asset_][wallet] = target;
+        if (asset_ == asset) emit BufferSet(wallet, buffer, target);
+        emit AssetBufferSet(asset_, wallet, buffer, target);
+    }
+
+    function isAssetAllowed(address asset_) public view returns (bool) {
+        return asset_ != address(0) && _assetPolicies[asset_].version == _mandate.version;
+    }
+
+    function bufferOf(address wallet) public view returns (uint256) {
+        return _bufferOf[asset][wallet];
+    }
+
+    function bufferOf(address asset_, address wallet) public view returns (uint256) {
+        return _bufferOf[asset_][wallet];
+    }
+
+    function targetOf(address wallet) public view returns (uint256) {
+        return _targetOf[asset][wallet];
+    }
+
+    function targetOf(address asset_, address wallet) public view returns (uint256) {
+        return _targetOf[asset_][wallet];
     }
 
     /// @inheritdoc ITreasuryPilotModule
@@ -253,7 +333,7 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         returns (address signer)
     {
         if (
-            ap.treasury != address(this) || ap.asset != asset || ap.requestId == bytes32(0)
+            ap.treasury != address(this) || !isAssetAllowed(ap.asset) || ap.requestId == bytes32(0)
                 || ap.fingerprint == bytes32(0) || ap.amount == 0
         ) revert E.ApprovalInvalid();
         if (block.timestamp > ap.expiry) revert E.ApprovalExpired();

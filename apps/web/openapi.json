@@ -67,6 +67,40 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "ApiKeyCreate": {
+        "properties": {
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": ["name", "scopes"],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
       "ApprovalEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -486,6 +520,64 @@
         "title": "ChainsResponse",
         "type": "object"
       },
+      "ChannelKind": {
+        "enum": ["TELEGRAM", "SLACK", "LARK", "WECOM"],
+        "title": "ChannelKind",
+        "type": "string"
+      },
+      "ChannelList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "ChannelList",
+        "type": "object"
+      },
+      "ChannelPatch": {
+        "properties": {
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          }
+        },
+        "required": ["showAmounts"],
+        "title": "ChannelPatch",
+        "type": "object"
+      },
+      "ChannelView": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChannelKind"
+          },
+          "showAmounts": {
+            "title": "Showamounts",
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "title": "Verifiedat",
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "active", "showAmounts", "verifiedAt"],
+        "title": "ChannelView",
+        "type": "object"
+      },
       "ConfirmTermsRequest": {
         "properties": {
           "terms": {
@@ -694,6 +786,28 @@
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
+      "CreateWebhookRequest": {
+        "properties": {
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 9,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "eventTypes"],
+        "title": "CreateWebhookRequest",
+        "type": "object"
+      },
       "CsvImportCreated": {
         "properties": {
           "flags": {
@@ -823,6 +937,31 @@
         },
         "required": ["url", "expiresAt"],
         "title": "DocumentUrlResponse",
+        "type": "object"
+      },
+      "EmailDeliveryMode": {
+        "enum": ["immediate", "daily", "off"],
+        "title": "EmailDeliveryMode",
+        "type": "string"
+      },
+      "EmailPreferenceRequest": {
+        "properties": {
+          "deliveryMode": {
+            "$ref": "#/components/schemas/EmailDeliveryMode"
+          }
+        },
+        "required": ["deliveryMode"],
+        "title": "EmailPreferenceRequest",
+        "type": "object"
+      },
+      "EmailPreferenceView": {
+        "properties": {
+          "deliveryMode": {
+            "$ref": "#/components/schemas/EmailDeliveryMode"
+          }
+        },
+        "required": ["deliveryMode"],
+        "title": "EmailPreferenceView",
         "type": "object"
       },
       "EvidenceBundle": {
@@ -1286,6 +1425,26 @@
         "title": "InvitesResponse",
         "type": "object"
       },
+      "LinkCodeIssued": {
+        "properties": {
+          "botUrl": {
+            "title": "Boturl",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": ["code", "botUrl", "expiresAt"],
+        "title": "LinkCodeIssued",
+        "type": "object"
+      },
       "LinkWalletRequest": {
         "properties": {
           "message": {
@@ -1316,6 +1475,33 @@
         },
         "required": ["email"],
         "title": "MagicLinkRequest",
+        "type": "object"
+      },
+      "MandateAssetPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "buffers": {
+            "items": {
+              "$ref": "#/components/schemas/WalletBuffer"
+            },
+            "title": "Buffers",
+            "type": "array"
+          },
+          "limits": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ActionLimits"
+            },
+            "title": "Limits",
+            "type": "object"
+          }
+        },
+        "required": ["assetId", "limits", "buffers"],
+        "title": "MandateAssetPolicy",
         "type": "object"
       },
       "MandateConfig": {
@@ -1355,6 +1541,20 @@
               }
             ],
             "title": "Approvers"
+          },
+          "assetPolicies": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MandateAssetPolicy"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetpolicies"
           },
           "buffers": {
             "anyOf": [
@@ -1896,6 +2096,16 @@
         "title": "ModuleMandateInput",
         "type": "object"
       },
+      "NotificationCategory": {
+        "enum": ["mandatory", "approvals", "payments", "operations"],
+        "title": "NotificationCategory",
+        "type": "string"
+      },
+      "NotificationChannel": {
+        "enum": ["in_app", "email", "telegram", "slack", "lark", "wecom"],
+        "title": "NotificationChannel",
+        "type": "string"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -1912,6 +2122,67 @@
         },
         "required": ["items", "unreadCount"],
         "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationPreferencesView": {
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channels",
+          "categories",
+          "quietHoursStart",
+          "quietHoursEnd",
+          "timezone"
+        ],
+        "title": "NotificationPreferencesView",
         "type": "object"
       },
       "NotificationView": {
@@ -2368,6 +2639,278 @@
         "title": "PlanEvidence",
         "type": "object"
       },
+      "RecurrenceCadence": {
+        "enum": ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
+        "title": "RecurrenceCadence",
+        "type": "string"
+      },
+      "RecurringScheduleCreate": {
+        "properties": {
+          "amount": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Amount",
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "cadence": {
+            "$ref": "#/components/schemas/RecurrenceCadence"
+          },
+          "costCenter": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costcenter"
+          },
+          "dueDaysAfterIssue": {
+            "default": 30,
+            "maximum": 365.0,
+            "minimum": 0.0,
+            "title": "Duedaysafterissue",
+            "type": "integer"
+          },
+          "endDate": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enddate"
+          },
+          "interval": {
+            "default": 1,
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Interval",
+            "type": "integer"
+          },
+          "invoiceNoTemplate": {
+            "maxLength": 180,
+            "minLength": 8,
+            "title": "Invoicenotemplate",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "payeeId": {
+            "format": "uuid",
+            "title": "Payeeid",
+            "type": "string"
+          },
+          "payingWalletId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payingwalletid"
+          },
+          "startDate": {
+            "format": "date",
+            "title": "Startdate",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Tags",
+            "type": "array"
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "vendorId": {
+            "format": "uuid",
+            "title": "Vendorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "treasuryId",
+          "vendorId",
+          "payeeId",
+          "assetId",
+          "invoiceNoTemplate",
+          "amount",
+          "cadence",
+          "startDate"
+        ],
+        "title": "RecurringScheduleCreate",
+        "type": "object"
+      },
+      "RecurringSchedulePatch": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "costCenter": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costcenter"
+          },
+          "endDate": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enddate"
+          },
+          "invoiceNoTemplate": {
+            "anyOf": [
+              {
+                "maxLength": 180,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoicenotemplate"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "payeeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payeeid"
+          },
+          "payingWalletId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payingwalletid"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "pattern": "^(Active|Paused)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms"
+          }
+        },
+        "title": "RecurringSchedulePatch",
+        "type": "object"
+      },
       "RefillPath": {
         "additionalProperties": false,
         "properties": {
@@ -2402,6 +2945,22 @@
         "title": "RenewRequest",
         "type": "object"
       },
+      "RequestBulkCreate": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestCreate"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": ["requests"],
+        "title": "RequestBulkCreate",
+        "type": "object"
+      },
       "RequestCreate": {
         "properties": {
           "amount": {
@@ -2431,6 +2990,32 @@
             "format": "date",
             "title": "Duedate",
             "type": "string"
+          },
+          "fiatAmountMinorUnits": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatamountminorunits"
+          },
+          "fiatCurrency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatcurrency"
           },
           "invoiceNo": {
             "maxLength": 200,
@@ -2565,6 +3150,32 @@
               }
             ],
             "title": "Duedate"
+          },
+          "fiatAmountMinorUnits": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatamountminorunits"
+          },
+          "fiatCurrency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiatcurrency"
           },
           "invoiceNo": {
             "anyOf": [
@@ -2932,6 +3543,110 @@
         "title": "SubmittedRequest",
         "type": "object"
       },
+      "SupportGrantRequest": {
+        "properties": {
+          "durationHours": {
+            "default": 24,
+            "maximum": 72.0,
+            "minimum": 1.0,
+            "title": "Durationhours",
+            "type": "integer"
+          },
+          "staffUser": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Staffuser",
+            "type": "string"
+          }
+        },
+        "required": ["staffUser"],
+        "title": "SupportGrantRequest",
+        "type": "object"
+      },
+      "SupportGrantView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "grantedBy": {
+            "format": "uuid",
+            "title": "Grantedby",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revokedat"
+          },
+          "scope": {
+            "const": "read",
+            "title": "Scope",
+            "type": "string"
+          },
+          "staffUser": {
+            "title": "Staffuser",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "expired", "revoked"],
+            "readOnly": true,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "staffUser",
+          "scope",
+          "expiresAt",
+          "grantedBy",
+          "createdAt",
+          "revokedAt",
+          "status"
+        ],
+        "title": "SupportGrantView",
+        "type": "object"
+      },
+      "SupportSummary": {
+        "properties": {
+          "grantId": {
+            "format": "uuid",
+            "title": "Grantid",
+            "type": "string"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantView"
+          }
+        },
+        "required": ["tenant", "grantId"],
+        "title": "SupportSummary",
+        "type": "object"
+      },
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -3062,6 +3777,20 @@
         "title": "TransactionEvidence",
         "type": "object"
       },
+      "TreasuriesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TreasurySummaryView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TreasuriesResponse",
+        "type": "object"
+      },
       "TreasuryResponse": {
         "properties": {
           "treasury": {
@@ -3090,6 +3819,79 @@
         "enum": ["Draft", "ModulePending", "Ready", "Paused", "Revoked"],
         "title": "TreasuryStatus",
         "type": "string"
+      },
+      "TreasurySummaryView": {
+        "properties": {
+          "assetDecimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetdecimals"
+          },
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "assetIsTest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetistest"
+          },
+          "assetSymbol": {
+            "title": "Assetsymbol",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "chainName": {
+            "title": "Chainname",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "chainName",
+          "assetId",
+          "assetSymbol",
+          "assetDecimals",
+          "assetIsTest",
+          "status",
+          "coverage",
+          "createdAt"
+        ],
+        "title": "TreasurySummaryView",
+        "type": "object"
       },
       "TreasuryView": {
         "properties": {
@@ -3140,6 +3942,75 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UpdateNotificationPreferences": {
+        "description": "PUT body. Omitted fields keep their stored value (the defaults below only\ndescribe the schema); send ``null`` quiet hours to clear them.",
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "UpdateNotificationPreferences",
+        "type": "object"
+      },
+      "UpdateWebhookRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "title": "UpdateWebhookRequest",
         "type": "object"
       },
       "UploadResponse": {
@@ -3597,6 +4468,128 @@
         "title": "WarningView",
         "type": "object"
       },
+      "WebhookChannelCreate": {
+        "properties": {
+          "webhookUrl": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Webhookurl",
+            "type": "string"
+          }
+        },
+        "required": ["webhookUrl"],
+        "title": "WebhookChannelCreate",
+        "type": "object"
+      },
+      "WebhookDeliveryView": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "endpointId": {
+            "format": "uuid",
+            "title": "Endpointid",
+            "type": "string"
+          },
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasterror"
+          },
+          "lastStatusCode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laststatuscode"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "endpointId",
+          "status",
+          "attemptCount",
+          "lastStatusCode",
+          "lastError",
+          "createdAt"
+        ],
+        "title": "WebhookDeliveryView",
+        "type": "object"
+      },
+      "WebhookEndpointView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["id", "url", "eventTypes", "enabled", "createdAt"],
+        "title": "WebhookEndpointView",
+        "type": "object"
+      },
       "treasurypilot_api__identity__api__WalletView": {
         "properties": {
           "address": {
@@ -3728,6 +4721,47 @@
           }
         },
         "summary": "Tenant Health",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/tenants/{tenant_id}/support": {
+      "get": {
+        "operationId": "support_summary_admin_tenants__tenant_id__support_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Summary",
         "tags": ["platform-admin"]
       }
     },
@@ -3874,6 +4908,90 @@
         "tags": ["identity"]
       }
     },
+    "/v1/auth/oidc/callback": {
+      "get": {
+        "operationId": "oidc_callback_v1_auth_oidc_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Oidc Callback",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/oidc/start": {
+      "get": {
+        "operationId": "oidc_start_v1_auth_oidc_start_get",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Oidc Start",
+        "tags": ["identity"]
+      }
+    },
     "/v1/auth/siwe/nonce": {
       "get": {
         "operationId": "siwe_nonce_v1_auth_siwe_nonce_get",
@@ -3988,6 +5106,334 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/v1/me/channels": {
+      "get": {
+        "operationId": "list_channels_v1_me_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Channels",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/telegram/link-code": {
+      "post": {
+        "operationId": "create_link_code_v1_me_channels_telegram_link_code_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCodeIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Link Code",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/{channel_id}": {
+      "delete": {
+        "operationId": "delete_channel_v1_me_channels__channel_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Channel",
+        "tags": ["notifications"]
+      },
+      "patch": {
+        "operationId": "update_channel_v1_me_channels__channel_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Channel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Channel",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/{kind}": {
+      "post": {
+        "operationId": "connect_chat_channel_v1_me_channels__kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": ["slack", "lark", "wecom"],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookChannelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connect Chat Channel",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "get_notification_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Notification Preferences",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "put_notification_preferences_v1_me_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Notification Preferences",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notifications/email": {
+      "get": {
+        "operationId": "get_email_preference_v1_me_notifications_email_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPreferenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Email Preference",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "set_email_preference_v1_me_notifications_email_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailPreferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPreferenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Email Preference",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/notifications/email/unsubscribe": {
+      "post": {
+        "description": "Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory.",
+        "operationId": "unsubscribe_email_v1_me_notifications_email_unsubscribe_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "signature",
+            "required": true,
+            "schema": {
+              "title": "Signature",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Email",
+        "tags": ["notifications"]
       }
     },
     "/v1/me/wallets": {
@@ -4140,6 +5586,156 @@
         },
         "summary": "Get Organization",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys": {
+      "get": {
+        "operationId": "list_api_keys_v1_orgs__organization_id__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Api Keys V1 Orgs  Organization Id  Api Keys Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Api Keys",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_api_key_v1_orgs__organization_id__api_keys_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Api Key V1 Orgs  Organization Id  Api Keys Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/api-keys/{key_id}": {
+      "delete": {
+        "operationId": "revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Api Key V1 Orgs  Organization Id  Api Keys  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Api Key",
+        "tags": ["invoice API keys"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/audit-log": {
@@ -5077,6 +6673,246 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules": {
+      "get": {
+        "operationId": "list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Schedules V1 Orgs  Organization Id  Recurring Payment Schedules Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Schedules",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringScheduleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Schedule V1 Orgs  Organization Id  Recurring Payment Schedules Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Schedule",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}": {
+      "patch": {
+        "operationId": "edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringSchedulePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Edit Schedule V1 Orgs  Organization Id  Recurring Payment Schedules  Schedule Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Schedule",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}/periods/{period_date}/skip": {
+      "post": {
+        "operationId": "skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "period_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Period Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skip Period V1 Orgs  Organization Id  Recurring Payment Schedules  Schedule Id  Periods  Period Date  Skip Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skip Period",
+        "tags": ["recurring payment schedules"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests": {
       "post": {
         "operationId": "create_request_v1_orgs__organization_id__requests_post",
@@ -5107,6 +6943,22 @@
                 }
               ],
               "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -5145,6 +6997,94 @@
           }
         },
         "summary": "Create Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/bulk": {
+      "post": {
+        "operationId": "create_requests_bulk_v1_orgs__organization_id__requests_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestBulkCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Requests Bulk V1 Orgs  Organization Id  Requests Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Requests Bulk",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
@@ -6722,7 +8662,196 @@
         "tags": ["organizations"]
       }
     },
+    "/v1/orgs/{organization_id}/support-grants": {
+      "get": {
+        "operationId": "list_support_grants_v1_orgs__organization_id__support_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportGrantView"
+                  },
+                  "title": "Response List Support Grants V1 Orgs  Organization Id  Support Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Support Grants",
+        "tags": ["support"]
+      },
+      "post": {
+        "operationId": "grant_support_v1_orgs__organization_id__support_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Support",
+        "tags": ["support"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants/{grant_id}": {
+      "delete": {
+        "operationId": "revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Support Grant",
+        "tags": ["support"]
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries": {
+      "get": {
+        "operationId": "list_treasuries_v1_orgs__organization_id__treasuries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreasuriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Treasuries",
+        "tags": ["treasury"]
+      },
       "post": {
         "operationId": "create_treasury_v1_orgs__organization_id__treasuries_post",
         "parameters": [
@@ -7841,6 +9970,305 @@
         },
         "summary": "Update Vendor",
         "tags": ["vendors"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks": {
+      "get": {
+        "operationId": "list_endpoints_v1_orgs__organization_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEndpointView"
+                  },
+                  "title": "Response List Endpoints V1 Orgs  Organization Id  Webhooks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Endpoints",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_endpoint_v1_orgs__organization_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters": {
+      "get": {
+        "operationId": "list_dead_letters_v1_orgs__organization_id__webhooks_dead_letters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryView"
+                  },
+                  "title": "Response List Dead Letters V1 Orgs  Organization Id  Webhooks Dead Letters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dead Letters",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/dead-letters/{delivery_id}/replay": {
+      "post": {
+        "operationId": "replay_dead_letter_v1_orgs__organization_id__webhooks_dead_letters__delivery_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Dead Letter",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/webhooks/{endpoint_id}": {
+      "delete": {
+        "operationId": "disable_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Endpoint",
+        "tags": ["webhooks"],
+        "x-organization-scoped": true
+      },
+      "patch": {
+        "operationId": "update_endpoint_v1_orgs__organization_id__webhooks__endpoint_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Endpoint",
+        "tags": ["webhooks"],
         "x-organization-scoped": true
       }
     }

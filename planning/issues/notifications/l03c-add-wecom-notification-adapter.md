@@ -1,12 +1,12 @@
-# [NOTIFY] Add Slack, Lark and WeCom channels
+# [NOTIFY] Add WeCom notification adapter
 
 | Field | Value |
 |---|---|
-| **ID** | NTF-L03 |
+| **ID** | NTF-L03c |
 | **Epic** | M13 · Notifications |
 | **Module** | `notifications` ([spec](../../../docs/modules/notifications/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | L (1.5–2 days; split if it grows) |
+| **Size** | S (≤ 0.5 day) |
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-905 |
@@ -27,11 +27,13 @@ Problem behind this work (from `docs/FEATURES.md`):
 
 ## Objective
 
-Chat-platform channels.
+Deliver notification events to WeCom group webhooks.
 
 ## Scope
 
-- One adapter per platform
+- WeCom webhook payload
+- response validation
+- provider failure mapping
 
 ## Out of scope
 
@@ -43,11 +45,12 @@ Follow the module spec and the relevant ADRs.
 
 ## Dependencies
 
-- NTF-001: Create the domain event bus and notification routing
+- NTF-L03: Build secure chat-channel registration and delivery
 
 ## Acceptance criteria
 
-- [ ] Event parity with Telegram
+- [ ] WeCom receives Telegram-equivalent notifications
+- [ ] webhook secrets never appear in logs
 
 ## Testing requirements
 

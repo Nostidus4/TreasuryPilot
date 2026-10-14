@@ -63,9 +63,22 @@ def render(t):
     probs = [f"- **{f}** solves: {FP[f]}" for f in feats[:3] if f in FP]
     why = ("Problem behind this work (from `docs/FEATURES.md`):\n\n" + "\n".join(probs)) if probs else \
           "This is enabling work: other tickets cannot start, or evidence cannot be produced, without it."
-    why = t.get("context_override", why)
-    later_note = ("\n> **Phase: Later.** This ticket is intentionally coarser than M1 tickets. "
-                  "It must be re-estimated and split before it is scheduled.\n") if t["phase"] != "M1" else ""
+    why = t.get("context") or why
+    if t["id"] == "INV-L03":
+        later_note = (
+            "\n> **Phase: Later.** This ticket was re-estimated and split into the separately "
+            "sized INV-L03A, INV-L03B and INV-L03C slices before scheduling.\n"
+        )
+    elif t["id"] in {"INV-L03A", "INV-L03B", "INV-L03C"}:
+        later_note = "\n> **Phase: Later.** This is a separately estimated delivery slice.\n"
+    elif t["phase"] != "M1" and t.get("split_plan"):
+        later_note = ("\n> **Phase: Later.** Re-estimated as L (2 days) and split before scheduling:\n>\n"
+                      + "\n".join(f"> - {part}" for part in t["split_plan"]) + "\n")
+    elif t["phase"] != "M1":
+        later_note = ("\n> **Phase: Later.** This ticket is intentionally coarser than M1 tickets. "
+                      "It must be re-estimated and split before it is scheduled.\n")
+    else:
+        later_note = ""
     return f"""# {title(t)}
 
 | Field | Value |

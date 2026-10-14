@@ -7,7 +7,7 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 | ID | Câu hỏi | Vì sao quan trọng | Ảnh hưởng | Phương án | Khuyến nghị BA |
 |---|---|---|---|---|---|
 | OQ-01 | Thể lệ yêu cầu bằng chứng nào và nhóm chọn mạng nào? | Phân biệt yêu cầu BTC với giả định của nhóm | NFR-CMP-01, F-151, mục submission 06 | Tx hash on-chain thật; checklist không chỉ định testnet/mainnet | Dùng Ethereum Sepolia theo ADR-012/019 và NFR-CMP-01; hỏi thêm BTC là tùy chọn, không chặn công việc |
-| OQ-02 | Chain nào cho M1? *(Phase 3)* | Ảnh hưởng: có Safe không, có faucet USDC test không, có EAS không, RPC, explorer | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Base Sepolia**, chờ kiểm chứng ở Phase 3 |
+| OQ-02 | Chain nào cho M1? *(Phase 3)* | Ảnh hưởng: có Safe không, có faucet USDC test không, có EAS không, RPC, explorer | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Đã chốt (PH-1, 11/10/2026): Ethereum Sepolia** (ADR-012); DOM-001 ghi nhận kết quả kiểm chứng. Base Sepolia không còn là khuyến nghị. |
 | OQ-03 | Stablecoin cho M1: USDC testnet của Circle hay `tUSDC` tự triển khai? | Đánh đổi giữa tính thực tế và quyền kiểm soát nguồn cung | F-013, demo | (a) USDC Circle; (b) tUSDC | (a) nếu faucet đủ cho hơn 40 lần chạy; nếu không thì (b), ghi nhãn rõ |
 | OQ-04 | Thời gian chờ payee | Đánh đổi giữa bảo mật và sự phiền phức | F-022, BR-017 | 24 / 48 / 72 giờ; demo 5 phút | 24 giờ (cấu hình 1 giờ–7 ngày); demo 5 phút |
 | OQ-05 | Giá trị hạn mức trong demo | Demo cần một hóa đơn vượt trần và một buffer có ý nghĩa | F-020, F-023, F-024 | Dùng YAML gốc | Theo YAML gốc, co giãn theo lượng faucet |

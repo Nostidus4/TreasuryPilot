@@ -30,7 +30,7 @@ Record the published on-chain execution-evidence requirement and distinguish it 
 - Cite PBCSF Appendix 2, page 3, submission checklist item 06 in OPEN_QUESTIONS.md
 - Record that on-chain submissions require real on-chain transaction hashes, while the checklist does not specify testnet or mainnet
 - Record Ethereum Sepolia as the team's working choice under ADR-012/019 and NFR-CMP-01, not as explicit organizer confirmation
-- Keep organizer clarification optional and non-blocking; record an actual reply only if one is obtained
+- Keep organizer clarification optional and non-blocking, and record an actual reply only if one is obtained
 
 ## Out of scope
 
