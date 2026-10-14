@@ -1,0 +1,107 @@
+id: sc-027
+family: idle-cash-supply
+as_of: '2026-10-14'
+treasury:
+  stablecoin_decimals: 6
+  balances:
+    T: '3000000000'
+    O1: '20000000'
+  buffers:
+    T: '1000000000'
+    O1: '10000000'
+  targets:
+    O1: '150000000'
+  limits:
+    pay:
+      per_request: '2000000000'
+      daily: '10000000000'
+    refill:
+      per_request: '2500000000'
+      daily: '12000000000'
+  used_today:
+    pay: '0'
+    refill: '0'
+rates:
+  supply_rate_bps: 0
+  borrow_rate_bps: 800
+payees:
+- id: vendor-a
+  address: '0x1111111111111111111111111111111111111111'
+  active_from: '2026-10-04'
+- id: vendor-b
+  address: '0x2222222222222222222222222222222222222222'
+  active_from: '2026-10-04'
+requests:
+- id: r1
+  payee: vendor-a
+  wallet: O1
+  amount: '200000000'
+  due: '2026-10-16'
+  approved_seq: 1
+  terms: {}
+assumptions:
+  synthetic: true
+  horizon_days: 30
+  future_inflows: []
+  estimated_execution_fee: '0'
+  other_holds: '0'
+  all_requests_human_approved: true
+  review_status: pending_second_person
+  authoring_exposure: AI-authored and public; not an unseen evaluation set
+  liquidity_model: Withdrawal is capped by a_usdc and pool_available, and a partial
+    withdrawal is still executed when it cannot cover the deficit (INSUFFICIENT_LIQUIDITY;
+    requests stay blocked, e.g. sc-112). Supply is capped by supply.per_request/daily;
+    pool_available is a withdrawal-side limit only and does not bound SUPPLY.
+liquidity:
+  safe_usdc: '3000000000'
+  a_usdc: '2000000000'
+  pool_available: '2000000000'
+  min_supply: '500000000'
+  debt_service_reserve: '0'
+  execution_holds: '0'
+  supply:
+    per_request: '5000000000'
+    daily: '20000000000'
+expected_liquidity:
+  kind: SUPPLY
+  amount: '1800000000'
+  shortfall: '0'
+  payment_reserve: '200000000'
+  required_safe_reserve: '1200000000'
+expected:
+  value: '0'
+  transaction_count: 2
+  missed_deadlines: 0
+  refills:
+  - request: r1
+    day: '2026-10-14'
+    amount: '190000000'
+  balances_after:
+    T: '1010000000'
+    O1: '10000000'
+  schedule:
+    '2026-10-14':
+    - r1
+  violations: 0
+  infeasible: []
+  explanation: Independent enumeration of ordered feasible 30-day schedules. Maximize
+    completion, then minimize missed deadlines, maximize modeled value, minimize transactions;
+    ties use day/approval sequence/request ID. No future inflows or AI priority weight.
+expected_b0:
+  value: '0'
+  transaction_count: 2
+  missed_deadlines: 0
+  refills:
+  - request: r1
+    day: '2026-10-14'
+    amount: '330000000'
+  balances_after:
+    T: '2670000000'
+    O1: '150000000'
+  schedule:
+    '2026-10-14':
+    - r1
+  violations: 0
+  infeasible: []
+  liquidity_action: NONE
+  explanation: Independent EDF reference; idle cash and no lending actions.
