@@ -225,6 +225,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/notification-preferences': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Notification Preferences */
+    get: operations['get_notification_preferences_v1_me_notification_preferences_get'];
+    /** Put Notification Preferences */
+    put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/wallets': {
     parameters: {
       query?: never;
@@ -1044,7 +1062,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** List Treasuries */
+    get: operations['list_treasuries_v1_orgs__organization_id__treasuries_get'];
     put?: never;
     /** Create Treasury */
     post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
@@ -2041,12 +2060,39 @@ export interface components {
        */
       validFrom: string;
     };
+    /**
+     * NotificationCategory
+     * @enum {string}
+     */
+    NotificationCategory: 'mandatory' | 'approvals' | 'payments' | 'operations';
+    /**
+     * NotificationChannel
+     * @enum {string}
+     */
+    NotificationChannel: 'in_app' | 'email' | 'telegram';
     /** NotificationList */
     NotificationList: {
       /** Items */
       items: components['schemas']['NotificationView'][];
       /** Unreadcount */
       unreadCount: number;
+    };
+    /** NotificationPreferencesView */
+    NotificationPreferencesView: {
+      /** Categories */
+      categories: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd: string | null;
+      /** Quiethoursstart */
+      quietHoursStart: string | null;
+      /** Timezone */
+      timezone: string;
     };
     /** NotificationView */
     NotificationView: {
@@ -2637,6 +2683,11 @@ export interface components {
       /** Txhash */
       txHash: string;
     };
+    /** TreasuriesResponse */
+    TreasuriesResponse: {
+      /** Items */
+      items: components['schemas']['TreasurySummaryView'][];
+    };
     /** TreasuryResponse */
     TreasuryResponse: {
       treasury: components['schemas']['TreasuryView'];
@@ -2650,6 +2701,36 @@ export interface components {
      * @enum {string}
      */
     TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasurySummaryView */
+    TreasurySummaryView: {
+      /** Assetdecimals */
+      assetDecimals: number | null;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Assetistest */
+      assetIsTest: boolean | null;
+      /** Assetsymbol */
+      assetSymbol: string;
+      /** Chainid */
+      chainId: number;
+      /** Chainname */
+      chainName: string;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      status: components['schemas']['TreasuryStatus'];
+    };
     /** TreasuryView */
     TreasuryView: {
       /**
@@ -2673,6 +2754,30 @@ export interface components {
       /** Moduleaddress */
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
+    };
+    /**
+     * UpdateNotificationPreferences
+     * @description PUT body. Omitted fields keep their stored value (the defaults below only
+     *     describe the schema); send ``null`` quiet hours to clear them.
+     */
+    UpdateNotificationPreferences: {
+      /** Categories */
+      categories?: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels?: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd?: string | null;
+      /** Quiethoursstart */
+      quietHoursStart?: string | null;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone: string;
     };
     /** UploadResponse */
     UploadResponse: {
@@ -3207,6 +3312,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  get_notification_preferences_v1_me_notification_preferences_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+    };
+  };
+  put_notification_preferences_v1_me_notification_preferences_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotificationPreferences'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -5005,6 +5163,37 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_treasuries_v1_orgs__organization_id__treasuries_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuriesResponse'];
+        };
       };
       /** @description Validation Error */
       422: {

@@ -6,8 +6,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0022"
-down_revision: str | None = "20261014_0021"
+revision: str = "20261014_0028"
+down_revision: str | None = "20261014_0027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -43,6 +43,7 @@ def upgrade() -> None:
         sa.Column("end_date", sa.Date(), nullable=True),
         sa.Column("due_days_after_issue", sa.Integer(), server_default="30", nullable=False),
         sa.Column("status", sa.String(length=16), server_default="Active", nullable=False),
+        sa.Column("pause_reason", sa.Text(), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("last_edited_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
@@ -127,16 +128,20 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("skipped_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("skipped_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("reason", sa.Text(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.CheckConstraint("status IN ('Generated', 'Skipped')", name="ck_recurring_period_status"),
+        sa.CheckConstraint(
+            "status IN ('Generated', 'Skipped', 'Failed')", name="ck_recurring_period_status"
+        ),
         sa.CheckConstraint(
             "(status = 'Generated' AND request_id IS NOT NULL AND skipped_by IS NULL AND skipped_at IS NULL) OR "
-            "(status = 'Skipped' AND request_id IS NULL AND skipped_by IS NOT NULL AND skipped_at IS NOT NULL)",
+            "(status = 'Skipped' AND request_id IS NULL AND skipped_by IS NOT NULL AND skipped_at IS NOT NULL) OR "
+            "(status = 'Failed' AND request_id IS NULL AND skipped_by IS NULL AND skipped_at IS NULL AND reason IS NOT NULL)",
             name="ck_recurring_period_outcome",
         ),
         sa.ForeignKeyConstraint(
