@@ -75,6 +75,8 @@ SELECT d.id AS delivery_id, d.attempts, n.title, n.link,
        CASE WHEN $2 THEN v.name END AS vendor
 FROM telegram_deliveries AS d
 JOIN notifications AS n ON n.id = d.notification_id AND n.user_id = $3
+JOIN notification_channels AS c ON c.id = d.channel_id AND c.user_id = n.user_id
+  AND n.created_at >= c.verified_at
 LEFT JOIN domain_events AS e
   ON e.id = n.event_id AND e.org_id = n.org_id AND e.entity_type = 'payment_request'
 LEFT JOIN payment_requests AS pr ON pr.id = e.entity_id AND pr.org_id = n.org_id
@@ -82,6 +84,15 @@ LEFT JOIN assets AS a ON a.id = pr.asset_id
 LEFT JOIN vendors AS v ON v.id = pr.vendor_id AND v.org_id = pr.org_id
 WHERE d.channel_id = $1 AND d.status = 'PENDING' AND d.next_attempt_at <= $4
 ORDER BY n.created_at, n.id
+"""
+
+_EXPIRE_UNVERIFIED = """
+UPDATE telegram_deliveries AS d
+SET status = 'FAILED', last_error = 'channel_reverified'
+FROM notifications AS n, notification_channels AS c
+WHERE d.channel_id = $1 AND d.status = 'PENDING'
+  AND n.id = d.notification_id AND c.id = d.channel_id
+  AND n.created_at < c.verified_at
 """
 
 _MARK_SENT = """
@@ -175,6 +186,7 @@ async def _deliver_channel(
         channel = await connection.fetchrow(_LOCK_CHANNEL, channel_id, now, MIN_INTERVAL)
         if channel is None:
             return False  # rate-limited, inactive, or another worker holds it
+        await connection.execute(_EXPIRE_UNVERIFIED, channel_id)
         rows = await connection.fetch(
             _PENDING, channel_id, channel["show_amounts"], channel["user_id"], now
         )

@@ -6,7 +6,7 @@ import asyncio
 import base64
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -79,7 +79,8 @@ def test_action_notification_is_delivered_to_encrypted_chat_target() -> None:
                     text(
                         "INSERT INTO domain_events "
                         "(id,org_id,type,entity_type,entity_id,payload,published_at) "
-                        "VALUES (:id,:org,'ApprovalNeeded','payment_request',:entity,'{}'::jsonb,now())"
+                        "VALUES (:id,:org,'ApprovalNeeded','payment_request',:entity,"
+                        "'{}'::jsonb,now())"
                     ),
                     {"id": event_id, "org": org_id, "entity": uuid.uuid4()},
                 )
@@ -106,6 +107,108 @@ def test_action_notification_is_delivered_to_encrypted_chat_target() -> None:
                     f"[TreasuryPilot] Approval required · open: {BASE_URL}/requests/example",
                 )
             ]
+        finally:
+            async with sessions() as session, session.begin():
+                await session.execute(text("DELETE FROM users WHERE id=:id"), {"id": user_id})
+                await session.execute(
+                    text("DELETE FROM domain_events WHERE id=:id"), {"id": event_id}
+                )
+                await session.execute(
+                    text("DELETE FROM organizations WHERE id=:id"), {"id": org_id}
+                )
+            await pool.close()
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_pending_delivery_from_before_reverification_is_failed_without_send() -> None:
+    async def run() -> None:
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        pool = await create_worker_pool(os.environ["TEST_DATABASE_URL"], min_size=1, max_size=1)
+        org_id, user_id, event_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        channel_id, notification_id, delivery_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        moment = datetime.now(UTC)
+        client = FakeChatClient()
+        try:
+            async with sessions() as session, session.begin():
+                await session.execute(
+                    text("INSERT INTO organizations (id, name) VALUES (:id, 'Chat reverify test')"),
+                    {"id": org_id},
+                )
+                await session.execute(
+                    text("INSERT INTO users (id, email) VALUES (:id, :email)"),
+                    {"id": user_id, "email": f"chat-reverify-{user_id}@example.test"},
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO notification_channels "
+                        "(id,user_id,kind,target,target_hash,verified_at) "
+                        "VALUES (:id,:user,'SLACK',:target,:hash,:verified)"
+                    ),
+                    {
+                        "id": channel_id,
+                        "user": user_id,
+                        "target": CIPHER.encrypt_text(
+                            WEBHOOK_URL, context="notification_channels.target"
+                        ),
+                        "hash": bytes(range(32)),
+                        "verified": moment,
+                    },
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO domain_events "
+                        "(id,org_id,type,entity_type,entity_id,payload,published_at) "
+                        "VALUES (:id,:org,'ApprovalNeeded','payment_request',:entity,"
+                        "'{}'::jsonb,now())"
+                    ),
+                    {"id": event_id, "org": org_id, "entity": uuid.uuid4()},
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO notifications "
+                        "(id,org_id,user_id,event_id,type,title,body,link,severity) "
+                        "VALUES (:id,:org,:user,:event,'ApprovalNeeded','Old approval',"
+                        "'generic body','/requests/old','ACTION')"
+                    ),
+                    {"id": notification_id, "org": org_id, "user": user_id, "event": event_id},
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO chat_deliveries "
+                        "(id,notification_id,channel_id,next_attempt_at) "
+                        "VALUES (:id,:notification,:channel,:next_attempt)"
+                    ),
+                    {
+                        "id": delivery_id,
+                        "notification": notification_id,
+                        "channel": channel_id,
+                        "next_attempt": moment,
+                    },
+                )
+                await session.execute(
+                    text("UPDATE notification_channels SET verified_at=:verified WHERE id=:id"),
+                    {"id": channel_id, "verified": moment + timedelta(minutes=1)},
+                )
+
+            sent = await deliver_chat_pending(
+                pool,
+                clients={ChatPlatform.SLACK: client},
+                cipher=CIPHER,
+                base_url=BASE_URL,
+                now=moment + timedelta(minutes=2),
+            )
+            assert sent == 0
+            assert client.sent == []
+            async with sessions() as session:
+                result = await session.execute(
+                    text("SELECT status, last_error FROM chat_deliveries WHERE id=:id"),
+                    {"id": delivery_id},
+                )
+                status = result.mappings().one()
+            assert (status["status"], status["last_error"]) == ("FAILED", "channel_reverified")
         finally:
             async with sessions() as session, session.begin():
                 await session.execute(text("DELETE FROM users WHERE id=:id"), {"id": user_id})
