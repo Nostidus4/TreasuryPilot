@@ -65,6 +65,16 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "core", "expires": 2},
             },
+            "send-notification-emails": {
+                "task": "treasurypilot.notifications.send-emails",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "core", "expires": 55},
+            },
+            "send-daily-notification-digests": {
+                "task": "treasurypilot.notifications.send-daily-digests",
+                "schedule": crontab(minute=0, hour=8),
+                "options": {"queue": "core", "expires": 3600},
+            },
         },
     )
     return app

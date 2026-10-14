@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Protocol, cast
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import Field
 from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.events.models import DomainEvent
-from treasurypilot_api.identity.api import ApiModel
+from treasurypilot_api.identity.api import ApiModel, _authenticated
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.models import User
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
-from treasurypilot_api.notifications.models import Notification
+from treasurypilot_api.notifications.models import (
+    EmailDeliveryMode,
+    Notification,
+    NotificationEmailPreference,
+)
 from treasurypilot_api.notifications.stream import (
     EVENT_STREAM_TYPES,
     StreamBatch,
@@ -73,6 +80,14 @@ class MarkReadRequest(ApiModel):
 
 class MarkReadResponse(ApiModel):
     updated: int
+
+
+class EmailPreferenceRequest(ApiModel):
+    delivery_mode: EmailDeliveryMode
+
+
+class EmailPreferenceView(ApiModel):
+    delivery_mode: EmailDeliveryMode
 
 
 class NotificationRepository(Protocol):
@@ -257,6 +272,7 @@ def stream_options(request: Request) -> StreamOptions:
 
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}", tags=["notifications"])
+email_router = APIRouter(prefix="/v1/me/notifications", tags=["notifications"])
 
 
 @router.get(
@@ -362,3 +378,85 @@ async def stream_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@email_router.get("/email", response_model=EmailPreferenceView)
+async def get_email_preference(request: Request) -> EmailPreferenceView:
+    access = await _authenticated(request)
+    sessions = getattr(request.app.state, "request_sessions", None)
+    if sessions is None:
+        raise AuthFailure(
+            status=503,
+            code="NOTIFICATIONS_UNAVAILABLE",
+            title="Notifications unavailable",
+            detail="Email preferences are not configured.",
+        )
+    async with sessions() as session:
+        row = await session.get(NotificationEmailPreference, access.user.id)
+    return EmailPreferenceView(
+        delivery_mode=EmailDeliveryMode(row.delivery_mode) if row else EmailDeliveryMode.IMMEDIATE
+    )
+
+
+@email_router.put("/email", response_model=EmailPreferenceView)
+async def set_email_preference(
+    payload: EmailPreferenceRequest, request: Request
+) -> EmailPreferenceView:
+    access = await _authenticated(request, require_csrf=True)
+    sessions = getattr(request.app.state, "request_sessions", None)
+    if sessions is None:
+        raise AuthFailure(
+            status=503,
+            code="NOTIFICATIONS_UNAVAILABLE",
+            title="Notifications unavailable",
+            detail="Email preferences are not configured.",
+        )
+    async with sessions() as session, session.begin():
+        row = await session.get(NotificationEmailPreference, access.user.id)
+        if row is None:
+            row = NotificationEmailPreference(
+                user_id=access.user.id, delivery_mode=payload.delivery_mode.value
+            )
+            session.add(row)
+        else:
+            row.delivery_mode = payload.delivery_mode.value
+            row.updated_at = datetime.now(UTC)
+    return EmailPreferenceView(delivery_mode=payload.delivery_mode)
+
+
+@email_router.post("/email/unsubscribe", status_code=204, response_class=Response)
+async def unsubscribe_email(request: Request, user_id: uuid.UUID, signature: str) -> Response:
+    """Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory."""
+    settings = request.app.state.settings
+    secret_value = getattr(settings, "session_secret", None)
+    secret = (
+        secret_value.get_secret_value().encode()
+        if secret_value and secret_value.get_secret_value()
+        else b"treasurypilot-local-development-only-session-secret"
+    )
+    expected = hmac.new(secret, str(user_id).encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise AuthFailure(
+            status=400,
+            code="INVALID_UNSUBSCRIBE_TOKEN",
+            title="Invalid unsubscribe link",
+            detail="This unsubscribe link is invalid.",
+        )
+    sessions = getattr(request.app.state, "request_sessions", None)
+    if sessions is None:
+        raise AuthFailure(
+            status=503,
+            code="NOTIFICATIONS_UNAVAILABLE",
+            title="Notifications unavailable",
+            detail="Email preferences are not configured.",
+        )
+    async with sessions() as session, session.begin():
+        if await session.get(User, user_id) is None:
+            return Response(status_code=204)
+        row = await session.get(NotificationEmailPreference, user_id)
+        if row is None:
+            session.add(NotificationEmailPreference(user_id=user_id, delivery_mode="off"))
+        else:
+            row.delivery_mode = EmailDeliveryMode.OFF.value
+            row.updated_at = datetime.now(UTC)
+    return Response(status_code=204)

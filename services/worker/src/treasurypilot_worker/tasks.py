@@ -9,6 +9,7 @@ from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
+from treasurypilot_worker.notify.delivery import deliver_pending_emails
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -71,6 +72,39 @@ class _PublisherRuntime:
 _publisher = _PublisherRuntime()
 
 
+class _EmailDeliveryRuntime:
+    """Reuse an async pool and event loop for scheduled email delivery."""
+
+    def __init__(self) -> None:
+        self._pid: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._pool: Any = None
+
+    def deliver(self, cadence: str) -> dict[str, int]:
+        settings = get_settings()
+        if not settings.database_url:
+            raise RuntimeError("DATABASE_URL is required for notification email delivery")
+        if self._pid != os.getpid() or self._loop is None:
+            self._pid, self._loop, self._pool = os.getpid(), asyncio.new_event_loop(), None
+        loop = self._loop
+
+        async def run() -> dict[str, int]:
+            if self._pool is None:
+                self._pool = await create_worker_pool(settings.database_url, min_size=1, max_size=2)
+            return await deliver_pending_emails(self._pool, settings=settings, cadence=cadence)
+
+        try:
+            return loop.run_until_complete(run())
+        except Exception:
+            if self._pool is not None:
+                pool, self._pool = self._pool, None
+                loop.run_until_complete(pool.close())
+            raise
+
+
+_email_delivery = _EmailDeliveryRuntime()
+
+
 @app.task(name="treasurypilot.notifications.publish-domain-events", queue="core")
 def publish_domain_events() -> dict[str, int]:
     """Materialize pending in-app notifications from the PostgreSQL outbox."""
@@ -108,3 +142,15 @@ def deliver_webhooks() -> dict[str, int]:
             await pool.close()
 
     return {"delivered": asyncio.run(deliver())}
+
+
+@app.task(name="treasurypilot.notifications.send-emails", queue="core")
+def send_notification_emails() -> dict[str, int]:
+    """Deliver immediate and mandatory notification mail."""
+    return _email_delivery.deliver("immediate")
+
+
+@app.task(name="treasurypilot.notifications.send-daily-digests", queue="core")
+def send_daily_notification_digests() -> dict[str, int]:
+    """Deliver 08:00 UTC digests to users who selected daily email."""
+    return _email_delivery.deliver("daily")

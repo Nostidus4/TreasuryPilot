@@ -98,15 +98,17 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 
 ## 9. Configuration
 
-Publisher interval 1 s; SSE heartbeat 15 s; Telegram link code 10 min; Telegram retries 3 with backoff.
+Publisher interval 1 s; SSE heartbeat 15 s; Telegram link code 10 min; Telegram retries 3 with backoff. Immediate email polling runs each 60 s; daily digests run at 08:00 UTC.
+
+Email cadence is per user (`immediate`, `daily`, or `off`), defaulting to `immediate`. `CRITICAL` events are always sent through the immediate path regardless of cadence or unsubscribe state. `GET`/`PUT /v1/me/notifications/email` read or update the cadence. The signed `POST /v1/me/notifications/email/unsubscribe?user_id=…&signature=…` endpoint powers List-Unsubscribe; it only disables non-critical mail.
 
 ## 10. Security
 
-Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from Telegram; chat ids encrypted (Confidential).
+Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from Telegram; chat ids encrypted (Confidential). Email templates use only the existing notification title, body and internal link (no event payload, amount or address). Unsubscribe signatures are HMAC-SHA256 under the shared `TP_SESSION_SECRET`.
 
 ## 11. Failure scenarios
 
-Telegram down → in-app still delivered, retries; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates).
+Telegram down → in-app still delivered, retries; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates). Email provider failure releases a claim for retry; a worker crash after provider acceptance but before recording success can cause at-least-once duplicate email after the 10 min claim expires.
 
 ## 12. Test plan
 

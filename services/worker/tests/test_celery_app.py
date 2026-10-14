@@ -58,6 +58,17 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["options"] == {"queue": "core", "expires": 2}
 
 
+def test_notification_email_tasks_have_immediate_and_daily_schedules() -> None:
+    immediate = app.conf.beat_schedule["send-notification-emails"]
+    daily = app.conf.beat_schedule["send-daily-notification-digests"]
+
+    assert immediate["task"] == "treasurypilot.notifications.send-emails"
+    assert immediate["schedule"] == timedelta(seconds=60)
+    assert daily["task"] == "treasurypilot.notifications.send-daily-digests"
+    assert daily["schedule"].hour == {8}
+    assert daily["schedule"].minute == {0}
+
+
 def test_idempotency_key_is_stable_and_namespaced() -> None:
     first = make_idempotency_key("execute-plan", "plan-1", 2)
     redelivery = make_idempotency_key("execute-plan", "plan-1", 2)

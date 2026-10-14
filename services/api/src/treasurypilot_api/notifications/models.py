@@ -35,6 +35,31 @@ class NotificationSeverity(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+class EmailDeliveryMode(StrEnum):
+    IMMEDIATE = "immediate"
+    DAILY = "daily"
+    OFF = "off"
+
+
+class NotificationEmailPreference(Base):
+    """Email cadence selection, separate from channel/category preferences."""
+
+    __tablename__ = "notification_email_preferences"
+    __table_args__ = (
+        CheckConstraint(
+            "delivery_mode IN ('immediate', 'daily', 'off')",
+            name="ck_notification_email_preferences_mode",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    delivery_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'immediate'")
+    )
+
+
 class WebhookEndpoint(Base):
     """An organization-owned callback destination and encrypted signing key."""
 
@@ -133,6 +158,12 @@ class Notification(Base):
         UniqueConstraint("user_id", "event_id", name="uq_notifications_user_event"),
         Index("ix_notifications_org_created", "org_id", "created_at"),
         Index(
+            "ix_notifications_email_pending",
+            "created_at",
+            "id",
+            postgresql_where=text("email_sent_at IS NULL"),
+        ),
+        Index(
             "ix_notifications_user_unread",
             "user_id",
             "org_id",
@@ -156,6 +187,8 @@ class Notification(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class NotificationPreference(Base):

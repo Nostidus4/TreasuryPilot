@@ -15,6 +15,18 @@
 
 > **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
 
+### Proposed split and re-estimate (before scheduling)
+
+Break the original M-sized estimate into three independently reviewable deliveries. Keep all three Later until their dependencies and deployment configuration are accepted:
+
+| Proposed slice | Scope | Estimate | Dependency |
+|---|---|---:|---|
+| NTF-L01A · Email preference and unsubscribe | Preference persistence/API, signed unsubscribe, mandatory-event invariant | S | NTF-001 |
+| NTF-L01B · Immediate email channel | Safe templates, provider adapter, retryable worker delivery | M | NTF-L01A, NTF-001 |
+| NTF-L01C · Daily digests | Daily scheduler, grouped rendering, delivery-state handling | S | NTF-L01B |
+
+The slices are an implementation/review plan for the currently assigned #187 work; they do not reschedule or change the source ticket's Later phase.
+
 ## Context
 
 This ticket belongs to the epic **Notifications**. It supports:

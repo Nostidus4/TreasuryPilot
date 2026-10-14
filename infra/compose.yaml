@@ -179,6 +179,11 @@ services:
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
       TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+      TP_RESEND_API_KEY: ${TP_RESEND_API_KEY:-}
+      TP_RESEND_FROM_EMAIL: ${TP_RESEND_FROM_EMAIL:-}
+      TP_SESSION_SECRET: ${TP_SESSION_SECRET:-treasurypilot-local-development-only-session-secret}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
+      TP_PUBLIC_API_BASE_URL: ${TP_PUBLIC_API_BASE_URL:-http://localhost:8000}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
     secrets: [policy_keystore, policy_keystore_password, field_key]
     tmpfs: [/tmp/prometheus]
