@@ -10,7 +10,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
 from pydantic import Field, ValidationError, model_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +21,11 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.invoices.anomalies import (
+    InvoiceRevisionSignals,
+    PaidInvoice,
+    evaluate_anomalies,
+)
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
     compute_fingerprint,
@@ -44,7 +49,7 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.near_duplicates import find_near_duplicates
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
 from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
-from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
+from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.engine import InvalidTerms, validate_terms
 from treasurypilot_core.fingerprint import normalize
@@ -474,54 +479,98 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
-    flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
     today = datetime.now(UTC).date()
-    if row.due_at is None or row.issue_date is None:  # unconfirmed upload draft
-        return []
-    if row.due_at < today:
-        flags.append(
-            ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
+    if row.due_at is None or row.issue_date is None or row.amount is None or row.payee_id is None:
+        return []  # unconfirmed upload draft
+    # shortcut: updated_at stands in for the paid date (any later write to a Paid row shifts it),
+    # and every Paid row in the window is loaded for the median; revisit when paid_at exists.
+    history_rows = await session.execute(
+        select(
+            PaymentRequest.amount, PaymentRequest.updated_at, PaymentRequest.payee_id, Payee.address
         )
-    if row.due_at > row.issue_date + timedelta(days=120):
-        flags.append(
-            (
-                "DUE_DATE_FAR",
-                RequestFlagSeverity.LOW,
-                {"dueDate": row.due_at.isoformat(), "thresholdDays": 120},
-            )
-        )
-    paid_to_payee = await session.scalar(
-        select(PaymentRequest.id)
-        .where(
-            PaymentRequest.payee_id == row.payee_id,
-            PaymentRequest.status == RequestStatus.PAID.value,
-        )
-        .limit(1)
-    )
-    if paid_to_payee is None:
-        flags.append(
-            ("FIRST_PAYMENT_TO_PAYEE", RequestFlagSeverity.LOW, {"payeeId": str(row.payee_id)})
-        )
-    paid_count = await session.scalar(
-        select(func.count())
-        .select_from(PaymentRequest)
+        .join(Payee, Payee.id == PaymentRequest.payee_id)
         .where(
             PaymentRequest.vendor_id == row.vendor_id,
+            # Amounts are raw base units, so only compare within the same asset (decimals).
+            PaymentRequest.asset_id == row.asset_id,
             PaymentRequest.status == RequestStatus.PAID.value,
+            PaymentRequest.updated_at
+            >= datetime.combine(today - timedelta(days=365), datetime.min.time(), UTC),
         )
+        .order_by(PaymentRequest.updated_at.desc())
     )
-    if (paid_count or 0) < 5:
-        flags.append(("NO_BASELINE", RequestFlagSeverity.LOW, {"minimumHistory": 5}))
+    history = tuple(
+        PaidInvoice(int(amount), updated_at.date(), payee_id, address)
+        for amount, updated_at, payee_id, address in history_rows
+        if amount is not None and payee_id is not None  # Paid rows always have both
+    )
+    previous_paid_row = (
+        await session.execute(
+            select(PaymentRequest.payee_id, Payee.address)
+            .join(Payee, Payee.id == PaymentRequest.payee_id)
+            .where(
+                PaymentRequest.vendor_id == row.vendor_id,
+                PaymentRequest.status == RequestStatus.PAID.value,
+            )
+            .order_by(PaymentRequest.updated_at.desc())
+            .limit(1)
+        )
+    ).first()
+    prior_paid_to_payee = (
+        await session.scalar(
+            select(PaymentRequest.id)
+            .where(
+                PaymentRequest.payee_id == row.payee_id,
+                PaymentRequest.status == RequestStatus.PAID.value,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+    payee_address = await session.scalar(
+        select(Payee.address).where(Payee.id == row.payee_id, Payee.vendor_id == row.vendor_id)
+    )
+    asset_symbol = await session.scalar(select(Asset.symbol).where(Asset.id == row.asset_id))
+    chain_name = await session.scalar(select(Chain.name).where(Chain.chain_id == row.chain_id))
+    registered_addresses = tuple(
+        await session.scalars(select(Payee.address).where(Payee.vendor_id == row.vendor_id))
+    )
+    if payee_address is None:
+        raise _fail(
+            422, "PAYEE_UNKNOWN", "Payee unknown", "The payee is not registered for this vendor."
+        )
+    if asset_symbol is None or chain_name is None:  # unreachable: FK-enforced
+        raise RuntimeError("Request anomaly inputs are incomplete")
+    # Only payee id and address are read; the amount and date are placeholders (not windowed).
+    previous_paid = (
+        PaidInvoice(0, today, previous_paid_row[0], previous_paid_row[1])
+        if previous_paid_row is not None and previous_paid_row[0] is not None
+        else None
+    )
+    anomaly_flags = evaluate_anomalies(
+        InvoiceRevisionSignals(
+            issue_date=row.issue_date,
+            due_date=row.due_at,
+            amount=int(row.amount),
+            payee_id=row.payee_id,
+            payee_address=payee_address,
+            asset_symbol=asset_symbol,
+            chain_name=chain_name,
+        ),
+        history,
+        registered_addresses=registered_addresses,
+        prior_paid_to_payee=prior_paid_to_payee,
+        previous_paid=previous_paid,
+        today=today,
+    )
+    flags = [(anomaly.code, anomaly.severity, anomaly.evidence) for anomaly in anomaly_flags]
     for duplicate in await find_near_duplicates(session, row):
         flags.append(
-            (
-                "POSSIBLE_DUPLICATE",
-                RequestFlagSeverity(duplicate.severity),
-                duplicate.evidence(row.invoice_no or ""),
-            )
+            ("POSSIBLE_DUPLICATE", duplicate.severity, duplicate.evidence(row.invoice_no or ""))
         )
     result: list[dict[str, object]] = []
-    for code, severity, evidence in flags:
+    for code, raw_severity, evidence in flags:
+        severity = RequestFlagSeverity(raw_severity)
         flag = RequestFlag(
             id=uuid7(),
             request_id=row.id,
