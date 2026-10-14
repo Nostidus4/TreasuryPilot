@@ -6,7 +6,7 @@
 | **Epic** | M15 · Audit & Evidence |
 | **Module** | `audit` ([spec](../../../docs/modules/audit/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | S (≤ 0.5 day) |
+| **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | — |
@@ -31,7 +31,9 @@ External tamper evidence.
 
 ## Scope
 
-- Daily job publishing the org chain head hash
+- Contract and deployment: store one authorized immutable root per organization and UTC day
+- Publisher and configuration: capture org heads in one repeatable-read snapshot and publish the exact captured hashes with a dedicated publisher
+- Integration acceptance: run PostgreSQL plus Anvil and prove the on-chain root equals the captured audit head
 
 ## Out of scope
 
@@ -39,7 +41,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Re-estimate: L total (1.5–2 days), split into three sequential, reviewable S slices: contract/deployment, publisher/configuration, and live integration acceptance. Do not mark complete or deploy before a reviewed contract address, configured publisher identity, and passing PostgreSQL/Anvil proof are available.
 
 ## Dependencies
 
@@ -47,11 +49,15 @@ Follow the module spec and the relevant ADRs.
 
 ## Acceptance criteria
 
-- [ ] The anchored hash matches the log head at that time
+- [ ] The anchored hash matches audit_heads.last_hash from the recorded database snapshot
+- [ ] A PostgreSQL/Anvil integration test proves the captured head is stored on-chain
+- [ ] The deployment chain, contract address, and dedicated publisher identity are verified
 
 ## Testing requirements
 
-- Integration
+- Contract unit tests
+- Worker unit tests
+- PostgreSQL + Anvil integration
 
 ## Definition of Done
 
