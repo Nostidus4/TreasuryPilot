@@ -27,6 +27,7 @@ F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (
 | **Audit record** | `{seq, org_id, at, actor_type (USER, SYSTEM, AI, CONTRACT), actor_id, action, entity_type, entity_id, data, prev_hash, hash}`; `hash = sha256(prev_hash ‖ canonical_json(record without hash))`. |
 | **Audited action** | Anything that affects money or authority: approvals, governance txs and signatures, mandate activation, payee changes, exceptions, plan attestations, operations, pause/resume, role changes, wallet links, solo mode, fee acceptance, review actions, exports. |
 | **Evidence bundle** | JSON `evidence-bundle.v1` + optional attachments (document hash, report), sha256-sealed. |
+| **Daily audit anchor** | One immutable SHA-256 chain head per organization and UTC day, published by an authorized platform account to `AuditRootAnchor`. |
 
 ## 4. Data model
 
@@ -95,3 +96,18 @@ AUD-001 → AUD-002 → AUD-004 → AUD-003. Later AUD-L01.
 | M15-D7 | Coverage object on every status DTO. |
 | M15-D8 | Audit retention forever in M1. |
 | M15-D9 | Bundle exclude Confidential data except vendor display name. |
+
+### Later · AUD-L01 anchoring boundary
+
+`contracts/src/AuditRootAnchor.sol` is the on-chain registry for daily roots. The
+contract accepts one root per opaque organization identifier and UTC day, rejects
+future dates and overwrites, and restricts publication to the configured publisher
+for that organization. The root must be the `audit_heads.last_hash` captured from a
+single consistent database snapshot; publisher retries must read `rootAt` first and
+only treat an identical existing root as success. A different existing root is an
+integrity incident and must never be overwritten.
+
+The contract is not deployed by the current deployment scripts. A production daily
+publisher, its transaction signer and the chain-specific contract address remain
+required to complete AUD-L01's end-to-end acceptance test. Do not configure a worker
+with a general purpose treasury signing key for this task.
