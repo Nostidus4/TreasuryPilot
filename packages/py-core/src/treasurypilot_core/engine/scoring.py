@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
@@ -38,29 +38,32 @@ def _plan_items(plan: Plan) -> tuple[ScheduledItem, ...]:
     return tuple(plan.items if isinstance(plan, Schedule) else plan)
 
 
-def _validated_items(
+def _walk_plan(
     plan: Plan,
-    requests: Sequence[ApprovedRequest],
+    ordered: Sequence[ApprovedRequest],
     snapshot: Snapshot,
     policy: PolicyView,
-) -> tuple[int, dict[str, ScheduledItem]]:
-    ordered = _ordered_requests(requests, snapshot)
+) -> Iterator[tuple[ScheduledItem, ApprovedRequest | None, _SimulationState, bool]]:
+    """Replay a plan day by day, yielding ``(item, request, state_before, is_valid)``.
+
+    ``request`` is None for unknown, duplicate or out-of-horizon items (never valid). The
+    simulation only advances for valid items. ``state_before`` must not be mutated.
+    """
+
     by_id = {request.id: request for request in ordered}
     state = _SimulationState(dict(snapshot.operational), snapshot.source)
     items = sorted(enumerate(_plan_items(plan)), key=lambda indexed: (indexed[1].day, indexed[0]))
-    valid: dict[str, ScheduledItem] = {}
-    violations = 0
     current_day: int | None = None
     seen: set[str] = set()
 
     for _index, item in items:
         request = by_id.get(item.request_id)
         if request is None or item.request_id in seen:
-            violations += 1
+            yield item, None, state, False
             continue
         seen.add(item.request_id)
         if item.day < snapshot.day or item.day >= snapshot.day + HORIZON_DAYS:
-            violations += 1
+            yield item, None, state, False
             continue
         if current_day != item.day:
             state.start_day(item.day, snapshot)
@@ -80,13 +83,24 @@ def _validated_items(
             if expected is not None and expected.refill == item.refill:
                 accepted_state = trial
                 break
-        if accepted_state is None:
+        yield item, request, state, accepted_state is not None
+        if accepted_state is not None:
+            state = accepted_state
+
+
+def _validated_items(
+    plan: Plan,
+    ordered: Sequence[ApprovedRequest],
+    snapshot: Snapshot,
+    policy: PolicyView,
+) -> tuple[int, dict[str, ScheduledItem]]:
+    valid: dict[str, ScheduledItem] = {}
+    violations = 0
+    for item, _request, _state, is_valid in _walk_plan(plan, ordered, snapshot, policy):
+        if is_valid:
+            valid[item.request_id] = item
+        else:
             violations += 1
-            continue
-
-        state = accepted_state
-        valid[item.request_id] = item
-
     return violations, valid
 
 
@@ -144,28 +158,20 @@ def binding_constraints(
     snapshot: Snapshot,
     policy: PolicyView,
 ) -> tuple[BindingConstraintDetail, ...]:
-    """Report plan constraints reached or exceeded, with the observed and allowed values."""
+    """Report plan constraints reached or exceeded, with the observed and allowed values.
+
+    Constraints are measured against the state produced by earlier *valid* items only: an
+    invalid item is not executed, so it does not consume caps for later items. A request
+    blocked by the per-request cap is an invalid item (a violation in ``score``) and is
+    reported by ``exception_values`` instead of here.
+    """
 
     ordered = _ordered_requests(requests, snapshot)
-    by_id = {request.id: request for request in ordered}
-    state = _SimulationState(dict(snapshot.operational), snapshot.source)
-    items = sorted(enumerate(_plan_items(plan)), key=lambda indexed: (indexed[1].day, indexed[0]))
     details: list[BindingConstraintDetail] = []
-    valid_ids: set[str] = set()
-    current_day: int | None = None
-    seen: set[str] = set()
 
-    for _index, item in items:
-        request = by_id.get(item.request_id)
-        if request is None or item.request_id in seen:
+    for item, request, state, _is_valid in _walk_plan(plan, ordered, snapshot, policy):
+        if request is None:
             continue
-        seen.add(item.request_id)
-        if item.day < snapshot.day or item.day >= snapshot.day + HORIZON_DAYS:
-            continue
-        if current_day != item.day:
-            state.start_day(item.day, snapshot)
-            current_day = item.day
-
         amount = int(pay_amount(request, item.day))
         active_day = snapshot.payee_active_day.get(request.payee)
         if active_day is not None and item.day < active_day:
@@ -248,26 +254,6 @@ def binding_constraints(
                 )
             )
 
-        accepted_state: _SimulationState | None = None
-        for minimal_refill in (False, True):
-            trial = state.copy()
-            expected, _reason = _try_schedule_request(
-                request,
-                item.day,
-                snapshot,
-                policy,
-                trial,
-                minimal_refill=minimal_refill,
-            )
-            if expected is not None and expected.refill == item.refill:
-                accepted_state = trial
-                break
-        if accepted_state is not None:
-            state = accepted_state
-            valid_ids.add(item.request_id)
-
-    # Keep repeated explanations deterministic while retaining separate requests that bind
-    # the same daily constraint.
     return tuple(details)
 
 
@@ -279,7 +265,8 @@ def exception_values(
     """Return potential value for requests blocked by the per-request cap.
 
     The valuation uses the first day on which the payee is active and the request can be
-    planned, matching the scheduler's M07-D9 report.
+    planned, matching the EDF scheduler's M07-D9 report (the oracle checks every horizon
+    day instead; the two differ only if ``pay_amount`` varies by day).
     """
 
     ordered = _ordered_requests(requests, snapshot)
