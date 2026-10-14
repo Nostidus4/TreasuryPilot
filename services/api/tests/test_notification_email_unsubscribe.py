@@ -48,7 +48,9 @@ def _client(secret: str | None) -> tuple[TestClient, _Session]:
     app = FastAPI()
     session = _Session()
     app.state.request_sessions = lambda: session
-    app.state.settings = SimpleNamespace(session_secret=SecretStr(secret) if secret else None)
+    app.state.settings = SimpleNamespace(
+        email_unsubscribe_key=SecretStr(secret) if secret else None
+    )
     app.include_router(email_router)
 
     @app.exception_handler(AuthFailure)

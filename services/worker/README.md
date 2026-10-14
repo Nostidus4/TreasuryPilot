@@ -30,7 +30,7 @@ finish before the context exits.
 
 ## Notification email delivery
 
-The `worker-webhooks` worker (egress) sends immediate notifications once per minute and daily digests at 08:00 UTC. Configure it with `DATABASE_URL`, `TP_RESEND_API_KEY` and `TP_RESEND_FROM_EMAIL` (unset means email is off), `TP_SESSION_SECRET` (at least 32 bytes, matching the API) to sign unsubscribe links, `TP_APP_BASE_URL` and `TP_PUBLIC_API_BASE_URL`.
+The `worker-webhooks` worker (egress) sends immediate notifications once per minute and daily digests at 08:00 UTC. Configure it with `DATABASE_URL`, `TP_RESEND_API_KEY` and `TP_RESEND_FROM_EMAIL` (unset means email is off), `TP_EMAIL_UNSUBSCRIBE_KEY` (a dedicated key of at least 32 bytes, matching the API) to sign unsubscribe links (the egress worker never gets the session secret), `TP_APP_BASE_URL` and `TP_PUBLIC_API_BASE_URL`.
 
 Users pick `immediate`, `daily` or `off` via `GET`/`PUT /v1/me/notifications/email`, or unsubscribe from the email's List-Unsubscribe URL. Mandatory events (`CRITICAL` or a mandatory category) are always sent immediately. Failed sends back off and stop after 5 attempts (4xx is permanent); sends carry an `Idempotency-Key`.
 

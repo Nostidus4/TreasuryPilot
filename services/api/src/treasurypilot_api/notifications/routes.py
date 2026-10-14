@@ -435,9 +435,9 @@ def _invalid_unsubscribe_token() -> AuthFailure:
 @email_router.post("/email/unsubscribe", status_code=204, response_class=Response)
 async def unsubscribe_email(request: Request, user_id: uuid.UUID, signature: str) -> Response:
     """Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory."""
-    secret = getattr(request.app.state.settings, "session_secret", None)
+    secret = getattr(request.app.state.settings, "email_unsubscribe_key", None)
     try:
-        # No local-development fallback: a known default secret would make links forgeable.
+        # No default key: a known fallback would make links forgeable.
         expected = unsubscribe_signature(
             user_id, secret.get_secret_value() if secret is not None else ""
         )

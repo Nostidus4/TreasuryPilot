@@ -294,6 +294,10 @@ def _deliver_emails(cadence: str) -> dict[str, int]:
     key = settings.resend_api_key
     if key is None or not key.get_secret_value().strip() or not settings.resend_from_email:
         return {"sent": 0}  # email is optional: no provider configured, no channel
+    unsubscribe_key = settings.email_unsubscribe_key
+    if unsubscribe_key is None or len(unsubscribe_key.get_secret_value().encode()) < 32:
+        logger.error("email_delivery_disabled_no_unsubscribe_key")
+        return {"sent": 0}
     database_url = settings.database_url
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for notification email delivery")

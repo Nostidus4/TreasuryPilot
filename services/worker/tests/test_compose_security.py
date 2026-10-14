@@ -66,6 +66,9 @@ def test_email_credentials_live_only_in_the_egress_worker() -> None:
     compose = (Path(__file__).resolve().parents[3] / "infra" / "compose.yaml").read_text()
     webhook_worker = _service_block(compose, "worker-webhooks", "beat")
 
-    for name in ("TP_RESEND_API_KEY", "TP_RESEND_FROM_EMAIL", "TP_SESSION_SECRET"):
+    for name in ("TP_RESEND_API_KEY", "TP_RESEND_FROM_EMAIL"):
         assert f"{name}:" in webhook_worker
         assert compose.count(f"\n      {name}:") == 1  # not in the core, AI or beat services
+    # The unsubscribe key is shared with the API only; the session secret never reaches egress.
+    assert "TP_EMAIL_UNSUBSCRIBE_KEY:" in webhook_worker
+    assert "TP_SESSION_SECRET" not in webhook_worker

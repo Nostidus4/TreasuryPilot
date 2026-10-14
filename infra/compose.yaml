@@ -136,6 +136,8 @@ services:
       TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
       TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
       TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
+      TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -260,11 +262,11 @@ services:
       # Telegram delivery (optional) also needs egress, so it runs here, not on the core worker.
       TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
       TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
-      # Notification email (optional) calls Resend, so it also runs here. The session secret only
-      # signs List-Unsubscribe links and must match the API's.
+      # Notification email (optional) calls Resend, so it also runs here. The dedicated key only
+      # signs List-Unsubscribe links and must match the API's; never share the session secret.
       TP_RESEND_API_KEY: ${TP_RESEND_API_KEY:-}
       TP_RESEND_FROM_EMAIL: ${TP_RESEND_FROM_EMAIL:-}
-      TP_SESSION_SECRET: ${TP_SESSION_SECRET:-}
+      TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
       TP_PUBLIC_API_BASE_URL: ${TP_PUBLIC_API_BASE_URL:-http://localhost:8000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}

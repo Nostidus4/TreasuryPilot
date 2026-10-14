@@ -120,9 +120,11 @@ def _validate(settings: Settings, cadence: str) -> tuple[str, str, str]:
         raise RuntimeError(
             "TP_RESEND_API_KEY and TP_RESEND_FROM_EMAIL are required for notification email delivery"
         )
-    secret = settings.session_secret.get_secret_value() if settings.session_secret else ""
+    secret = (
+        settings.email_unsubscribe_key.get_secret_value() if settings.email_unsubscribe_key else ""
+    )
     if len(secret.encode()) < MIN_UNSUBSCRIBE_SECRET_BYTES:
-        raise RuntimeError("TP_SESSION_SECRET must contain at least 32 bytes")
+        raise RuntimeError("TP_EMAIL_UNSUBSCRIBE_KEY must contain at least 32 bytes")
     if settings.environment.casefold() != "local":
         if not settings.app_base_url.startswith("https://"):
             raise RuntimeError("TP_APP_BASE_URL must use HTTPS outside the local environment")

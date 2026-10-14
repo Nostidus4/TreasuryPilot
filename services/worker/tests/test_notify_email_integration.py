@@ -27,7 +27,7 @@ SETTINGS = SimpleNamespace(
     resend_api_key=SimpleNamespace(get_secret_value=lambda: "key"),
     resend_from_email="notify@example.test",
     environment="local",
-    session_secret=SimpleNamespace(get_secret_value=lambda: "x" * 32),
+    email_unsubscribe_key=SimpleNamespace(get_secret_value=lambda: "x" * 32),
     app_base_url="http://localhost:5173",
     public_api_base_url="http://localhost:8000",
 )

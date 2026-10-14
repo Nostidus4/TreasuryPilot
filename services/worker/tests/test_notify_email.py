@@ -152,7 +152,7 @@ def _settings(**overrides: Any) -> Any:
         "resend_api_key": SimpleNamespace(get_secret_value=lambda: "key"),
         "resend_from_email": "notify@example.test",
         "environment": "local",
-        "session_secret": SimpleNamespace(get_secret_value=lambda: SECRET),
+        "email_unsubscribe_key": SimpleNamespace(get_secret_value=lambda: SECRET),
         "app_base_url": "http://localhost:5173",
         "public_api_base_url": "http://localhost:8000",
     }
@@ -308,11 +308,11 @@ def test_run_stops_starting_new_users_after_its_time_budget(
 
 def test_delivery_requires_a_strong_signing_secret_in_every_environment() -> None:
     for secret in (None, SimpleNamespace(get_secret_value=lambda: "short")):
-        with pytest.raises(RuntimeError, match="TP_SESSION_SECRET"):
+        with pytest.raises(RuntimeError, match="TP_EMAIL_UNSUBSCRIBE_KEY"):
             asyncio.run(
                 delivery.deliver_pending_emails(
                     _Pool(_Connection([])),
-                    settings=_settings(session_secret=secret),
+                    settings=_settings(email_unsubscribe_key=secret),
                     cadence="immediate",
                 )
             )
@@ -433,3 +433,20 @@ def test_failed_pool_close_does_not_mask_the_original_task_error() -> None:
     with pytest.raises(ValueError, match="original"):
         runtime.run("postgresql://unused", work)
     assert runtime._pool is None
+
+
+@pytest.mark.parametrize("key", [None, "short"])
+def test_email_task_is_a_logged_no_op_without_a_strong_unsubscribe_key(
+    key: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic import SecretStr
+
+    from treasurypilot_worker import tasks
+
+    settings = _settings(
+        resend_api_key=SecretStr("key"),
+        email_unsubscribe_key=SecretStr(key) if key else None,
+    )
+    monkeypatch.setattr(tasks, "get_settings", lambda: settings)
+
+    assert tasks.send_notification_emails() == {"sent": 0}

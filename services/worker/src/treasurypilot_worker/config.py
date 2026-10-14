@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
     # Shared with the API: signs List-Unsubscribe links (at least 32 bytes).
-    session_secret: SecretStr | None = None
+    email_unsubscribe_key: SecretStr | None = None
     public_api_base_url: str = "http://localhost:8000"
     log_level: str = "INFO"
     log_format: LogFormat = "json"
