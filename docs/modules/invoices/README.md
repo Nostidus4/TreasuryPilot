@@ -21,6 +21,32 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 
 **Who decides what:** the Operator enters data; the AI suggests fields (M09); the **Approver decides whether to pay** by signing; the engine and agent decide how and when; the contract enforces.
 
+### Fiat-denominated requests (INV-L04)
+
+A request may include `fiatAmountMinorUnits` (a positive integer string) and
+`fiatCurrency` (uppercase ISO currency code). Both are required together. The
+existing `amount` remains an exact stablecoin base-unit value; for a fiat request
+it is the approver's **maximum stablecoin amount**, also returned as
+`maxStablecoinAmount`. The API captures a source quote at request creation or any
+bound edit that changes the fiat value, currency, asset or amount, stores it in the request revision, and includes the fiat value, rate,
+source, observation time, tolerance, and cap in the invoice hash. A change to any
+of these invalidates prior approvals.
+
+The approval typed data's `amount` field signs that maximum. At payment planning,
+the caller must use `propose_request_payment` with a fresh quote and configured
+`FxPolicy`. The pure core guard checks source and pair, quote age, FX drift and
+stablecoin peg, then converts with integer ceiling division. A blocked quote yields
+no amount; the caller must not clamp an over-cap amount or reuse the reference
+quote. `FxQuoteProvider` is the adapter boundary; adapters report transient
+provider failures as `FxProviderUnavailable`. Hashes of non-fiat requests keep the
+original encoding; the four fiat fields are appended only when `fiatCurrency` is set.
+
+Configuration: fiat requests are enabled only when `TP_FX_SOURCE_ID` and
+`TP_FX_TOLERANCE_BPS` (0..10000) are set (optional `TP_FX_MAX_QUOTE_AGE_SECONDS`,
+default 60, and `TP_FX_DEPEG_THRESHOLD_BPS`, default 100) **and** an `FxQuoteProvider`
+is passed to `create_app(fx_quote_provider=...)`. No provider adapter ships yet, so
+until one is wired in fiat requests return `503 FX_UNAVAILABLE`.
+
 ## 2. Features, requirements and rules
 
 | Feature | FR | BR |
@@ -145,6 +171,8 @@ stateDiagram-v2
 | POST | `/orgs/{o}/recurring-payment-schedules` | OPR, ADM | template → `{schedule}` | validates treasury, vendor, registered active payee, asset precision, cadence, and dates |
 | GET/PATCH | `/orgs/{o}/recurring-payment-schedules[/{s}]` | OPR, ADM | list or `If-Match` template update → `{schedules[]}` / `{schedule}` | 404, 409 completed, 412 stale version |
 | POST | `/orgs/{o}/recurring-payment-schedules/{s}/periods/{date}/skip` | OPR, ADM | → `{period: Skipped, schedule}` | 404, 409 `PERIOD_NOT_CURRENT` |
+| POST | `/orgs/{o}/requests/bulk` 🔁 | OPR or `invoices:create` key | `{requests:[...]}` + `Idempotency-Key` → `{items, created, total}` | row-level create errors |
+| GET/POST/DELETE | `/orgs/{o}/api-keys[/{keyId}]` | ADM | Create/list/revoke scoped integration keys; secret is returned only at creation | 403 `API_KEY_SCOPE_REQUIRED` |
 
 Terms submitted with a draft are provisional. The confirmation endpoint validates the
 ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
@@ -307,6 +335,14 @@ M1 needs **one** valid Approver signature (M05-D1, BR-007).
 | Expiry sweep | every 5 minutes |
 
 ## 10. Security
+
+Inbound integration keys are organization-scoped, stored only as SHA-256 token hashes,
+and shown once when created. OrgAdmins can issue and revoke keys; the only grantable
+scope is `invoices:create`, with a 90-day default expiry and a maximum 365-day lifetime.
+The key authorizes draft creation only. It cannot satisfy membership role checks for
+approval or other request state transitions. Key-authenticated create calls are rate
+limited per key to 60 requests per minute and require an `Idempotency-Key`; bulk calls
+derive a stable per-row idempotency key from the supplied bulk key and row index.
 
 | Threat | Control | Test |
 |---|---|---|

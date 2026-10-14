@@ -207,7 +207,13 @@ async def _insert_period(
         "issueDate": period_date.isoformat(),
         "dueDate": due_date.isoformat(),
         "amount": str(amount),
+        "maxStablecoinAmount": str(amount),
         "assetId": str(schedule["asset_id"]),
+        # Recurring drafts are never fiat; keys mirror the API's _snapshot.
+        "fiatAmountMinorUnits": None,
+        "fiatCurrency": None,
+        "fxReferenceQuote": None,
+        "fxToleranceBps": None,
         "payingWalletId": str(schedule["paying_wallet_id"])
         if schedule["paying_wallet_id"]
         else None,

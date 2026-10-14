@@ -10,8 +10,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 41 |
-| **All** | | | | **247** |
+| Later | – | – | – | 48 |
+| **All** | | | | **254** |
 
 ## Epics
 
@@ -19,18 +19,18 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 |---|---|---:|---:|---|
 | M19 · Developer Experience & Quality | `devex` | 12 | 0 | [`issues/devex/`](issues/devex/) |
 | M04 · Smart Contracts | `contracts` | 26 | 6 | [`issues/contracts/`](issues/contracts/) |
-| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 3 | [`issues/financial-engine/`](issues/financial-engine/) |
+| M07 · Financial Engine (py-core) | `financial-engine` | 14 | 5 | [`issues/financial-engine/`](issues/financial-engine/) |
 | M08 · Policy Engine & Attestation | `policy-engine` | 7 | 0 | [`issues/policy-engine/`](issues/policy-engine/) |
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 1 | [`issues/mandate/`](issues/mandate/) |
-| M05 · Invoices & Payment Requests | `invoices` | 12 | 7 | [`issues/invoices/`](issues/invoices/) |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 9 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 0 | [`issues/recovery/`](issues/recovery/) |
-| M13 · Notifications | `notifications` | 3 | 4 | [`issues/notifications/`](issues/notifications/) |
+| M13 · Notifications | `notifications` | 3 | 7 | [`issues/notifications/`](issues/notifications/) |
 | M14 · Compliance | `compliance` | 3 | 4 | [`issues/compliance/`](issues/compliance/) |
 | M15 · Audit & Evidence | `audit` | 4 | 1 | [`issues/audit/`](issues/audit/) |
 | M16 · Web Application | `web` | 27 | 0 | [`issues/web/`](issues/web/) |
@@ -92,6 +92,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | ENG-011 | financial-engine | M07 | [Implement the 7-day liquidity forecast](issues/financial-engine/011-implement-the-7-day-liquidity-forecast.md) | F-058 | M1 | P2 | S | After submission | ENG-003 | Ready for Assignment |
 | ENG-L01 | financial-engine | M07 | [Plan refills from other operational wallets](issues/financial-engine/l01-plan-refills-from-other-operational-wallets.md) | F-059 | Later | - | M | After submission | ENG-007, SC-L06 | Accepted |
 | ENG-L02 | financial-engine | M07 | [Add FX conversion and depeg checks for fiat invoices](issues/financial-engine/l02-add-fx-conversion-and-depeg-checks-for-fiat-invoices.md) | F-041 | Later | - | M | After submission | ENG-005 | Accepted |
+| ENG-015 | financial-engine | M07 | [Model fiat FX approvals, rates and quote policy](issues/financial-engine/015-model-fiat-fx-approvals-rates-and-quote-policy.md) | F-041 | Later | - | S | After submission | ENG-001, ENG-005 | Accepted |
+| ENG-016 | financial-engine | M07 | [Guard fiat conversion against FX drift, depeg and approved caps](issues/financial-engine/016-guard-fiat-conversion-against-fx-drift-depeg-and-approved-ca.md) | F-041 | Later | - | S | After submission | ENG-015, ENG-005 | Accepted |
 | ENG-L03 | financial-engine | M07 | [Extend the scheduler to multiple assets](issues/financial-engine/l03-extend-the-scheduler-to-multiple-assets.md) | F-015 | Later | - | M | After submission | ENG-007 | Accepted |
 | POL-001 | policy-engine | M08 | [Define the reason-code catalogue and decision model](issues/policy-engine/001-define-the-reason-code-catalogue-and-decision-model.md) | F-055 | M1 | P0 | S | A | ENG-001 | Ready for Assignment |
 | POL-002 | policy-engine | M08 | [Validate approval, mandate and payee conditions](issues/policy-engine/002-validate-approval-mandate-and-payee-conditions.md) | F-055 | M1 | P0 | M | A | POL-001, ENG-010 | Ready for Assignment |
@@ -141,12 +143,14 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-010 | invoices | M05 | [Implement approval typed data and signature verification](issues/invoices/010-implement-approval-typed-data-and-signature-verification.md) | F-038 | M1 | P0 | M | A | INV-009, ENG-010, IDN-008 | Ready for Assignment |
 | INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022, MDT-009 | Ready for Assignment |
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
-| INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | M | After submission | INV-003 | Accepted |
+| INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | L | After submission | INV-003 | Accepted |
 | INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | L | After submission | INV-003 | Accepted |
 | INV-L03A | invoices | M05 | [Create recurring schedule templates](issues/invoices/l03a-create-recurring-schedule-templates.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
 | INV-L03B | invoices | M05 | [Generate recurring payment drafts](issues/invoices/l03b-generate-recurring-payment-drafts.md) | F-040 | Later | - | M | After submission | INV-L03A | Accepted |
 | INV-L03C | invoices | M05 | [Skip a recurring payment period](issues/invoices/l03c-skip-a-recurring-payment-period.md) | F-040 | Later | - | S | After submission | INV-L03A | Accepted |
-| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-003, ENG-L02 | Accepted |
+| INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-015, INV-016 | Accepted |
+| INV-015 | invoices | M05 | [Model fiat invoice amounts and approval caps](issues/invoices/015-model-fiat-invoice-amounts-and-approval-caps.md) | F-041 | Later | - | S | After submission | INV-003, ENG-015 | Accepted |
+| INV-016 | invoices | M05 | [Guard fiat invoice payment against FX drift and depeg](issues/invoices/016-guard-fiat-invoice-payment-against-fx-drift-and-depeg.md) | F-041 | Later | - | S | After submission | INV-015, ENG-016 | Accepted |
 | CHR-001 | chain-reader | M06 | [Build the RPC client with failover](issues/chain-reader/001-build-the-rpc-client-with-failover.md) | F-050 | M1 | P0 | M | A | TRS-002 | Ready for Assignment |
 | CHR-002 | chain-reader | M06 | [Implement block-consistent snapshots](issues/chain-reader/002-implement-block-consistent-snapshots.md) | F-050 | M1 | P0 | M | A | CHR-001, TRS-004 | Ready for Assignment |
 | CHR-003 | chain-reader | M06 | [Implement the transaction tracker](issues/chain-reader/003-implement-the-transaction-tracker.md) | F-070 | M1 | P0 | M | A | CHR-001, EXE-001 | Ready for Assignment |
@@ -204,7 +208,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | NTF-003 | notifications | M13 | [Add Telegram linking and delivery](issues/notifications/003-add-telegram-linking-and-delivery.md) | F-101 | M1 | P2 | M | After submission | NTF-001 | Ready for Assignment |
 | NTF-L01 | notifications | M13 | [Add email notifications and digests](issues/notifications/l01-add-email-notifications-and-digests.md) | F-102 | Later | - | M | After submission | NTF-001 | Accepted |
 | NTF-L02 | notifications | M13 | [Add outbound webhooks](issues/notifications/l02-add-outbound-webhooks.md) | F-103 | Later | - | M | After submission | NTF-001 | Accepted |
-| NTF-L03 | notifications | M13 | [Add Slack, Lark and WeCom channels](issues/notifications/l03-add-slack-lark-and-wecom-channels.md) | F-104 | Later | - | L | After submission | NTF-001 | Accepted |
+| NTF-L03 | notifications | M13 | [Build secure chat-channel registration and delivery](issues/notifications/l03-build-secure-chat-channel-registration-and-delivery.md) | F-104 | Later | - | M | After submission | NTF-001, NTF-003 | Accepted |
+| NTF-L03a | notifications | M13 | [Add Slack notification adapter](issues/notifications/l03a-add-slack-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03b | notifications | M13 | [Add Lark notification adapter](issues/notifications/l03b-add-lark-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03c | notifications | M13 | [Add WeCom notification adapter](issues/notifications/l03c-add-wecom-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
 | NTF-L04 | notifications | M13 | [Add notification preferences](issues/notifications/l04-add-notification-preferences.md) | F-105 | Later | - | S | After submission | NTF-002 | Accepted |
 | CMP-001 | compliance | M14 | [Build the screening adapter and fixture provider](issues/compliance/001-build-the-screening-adapter-and-fixture-provider.md) | F-110 | M1 | P1 | S | A | MDT-001 | Ready for Assignment |
 | CMP-002 | compliance | M14 | [Screen payees before each PAY](issues/compliance/002-screen-payees-before-each-pay.md) | F-110 | M1 | P1 | S | After submission | CMP-001, POL-003 | Ready for Assignment |

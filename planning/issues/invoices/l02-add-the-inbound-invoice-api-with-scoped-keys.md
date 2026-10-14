@@ -6,7 +6,7 @@
 | **Epic** | M05 · Invoices & Payment Requests |
 | **Module** | `invoices` ([spec](../../../docs/modules/invoices/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | M (~1 day) |
+| **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-309 |
@@ -31,8 +31,9 @@ Let other systems create drafts.
 
 ## Scope
 
-- API keys with scopes
-- idempotent create and bulk endpoints
+- Issue, list and revoke organization-scoped API keys with invoices:create only
+- hash secrets and enforce expiry and per-key rate limits
+- Add key-authenticated idempotent single and bulk draft creation with per-row results
 
 ## Out of scope
 
@@ -40,7 +41,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Re-estimate L (~1.5–2 days). Before scheduling, split into key lifecycle and authorization (S), then inbound create and bulk ingestion (M).
 
 ## Dependencies
 
@@ -50,6 +51,8 @@ Follow the module spec and the relevant ADRs.
 
 - [ ] A key without invoices:create is refused
 - [ ] Keys cannot approve
+- [ ] Retries with identical idempotency keys return the original row
+- [ ] One invalid or conflicting bulk row does not prevent later rows from receiving a result
 
 ## Testing requirements
 

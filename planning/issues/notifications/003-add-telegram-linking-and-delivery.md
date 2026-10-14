@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Ready for Assignment |
 | **Traces to** | FR-902, M13-D7 |
-| **Blocks** | — |
+| **Blocks** | NTF-L03 |
 | **Submission cut** | After submission |
 
 ## Context

@@ -12,7 +12,12 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.common.repository import OrgScopedRepository
-from treasurypilot_api.identity.api import ApiModel, _authenticated, _wallet_service
+from treasurypilot_api.identity.api import (
+    ApiModel,
+    _authenticated,
+    _require_unscoped,
+    _wallet_service,
+)
 from treasurypilot_api.identity.auth import AuthFailure, SessionAccess
 from treasurypilot_api.identity.models import (
     Membership,
@@ -378,6 +383,7 @@ async def create_organization(
     payload: CreateOrganizationRequest, request: Request, response: Response
 ) -> OrganizationResponse:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     organization = await _repository(request).create(
         user_id=_current_user(access),
         name=payload.name,

@@ -53,6 +53,14 @@ FROM unnest($8::uuid[], $9::timestamptz[]) AS d(user_id, deliver_at)
 ON CONFLICT (user_id, event_id) DO NOTHING
 """
 
+_ENQUEUE_WEBHOOK_DELIVERIES = """
+INSERT INTO webhook_deliveries (id, org_id, endpoint_id, event_id)
+SELECT gen_random_uuid(), $1, endpoint.id, $2
+FROM webhook_endpoints AS endpoint
+WHERE endpoint.org_id = $1 AND endpoint.enabled AND $3 = ANY(endpoint.event_types)
+ON CONFLICT (endpoint_id, event_id) DO NOTHING
+"""
+
 _MARK_PUBLISHED = """
 UPDATE domain_events
 SET published_at = now()
@@ -222,6 +230,12 @@ async def publish_pending_events(connection: asyncpg.Connection, *, batch_size: 
         events = await connection.fetch(_CLAIM_EVENTS, batch_size)
         for event in events:
             try:
+                # Webhooks need no recipients or routing policy, so a routing failure
+                # must not drop them: enqueue in its own savepoint first.
+                async with connection.transaction():
+                    await connection.execute(
+                        _ENQUEUE_WEBHOOK_DELIVERIES, event["org_id"], event["id"], event["type"]
+                    )
                 async with connection.transaction():
                     await _route(connection, event)
             except (ValueError, asyncpg.PostgresError) as error:
