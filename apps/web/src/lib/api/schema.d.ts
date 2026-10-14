@@ -140,25 +140,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/me/channels/{kind}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        kind: 'slack' | 'lark' | 'wecom';
-      };
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Connect Chat Channel */
-    post: operations['connect_chat_channel_v1_me_channels__kind__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/v1/me/channels/{channel_id}': {
     parameters: {
       query?: never;
@@ -175,6 +156,23 @@ export interface paths {
     head?: never;
     /** Update Channel */
     patch: operations['update_channel_v1_me_channels__channel_id__patch'];
+    trace?: never;
+  };
+  '/v1/me/channels/{kind}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect Chat Channel */
+    post: operations['connect_chat_channel_v1_me_channels__kind__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/v1/orgs': {
@@ -374,11 +372,6 @@ export interface components {
        * Format: date-time
        */
       verifiedAt: string;
-    };
-    /** WebhookChannelCreate */
-    WebhookChannelCreate: {
-      /** Webhookurl */
-      webhookUrl: string;
     };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
@@ -773,6 +766,11 @@ export interface components {
        */
       linkedAt: string;
     };
+    /** WebhookChannelCreate */
+    WebhookChannelCreate: {
+      /** Webhookurl */
+      webhookUrl: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -964,41 +962,6 @@ export interface operations {
       };
     };
   };
-  connect_chat_channel_v1_me_channels__kind__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        kind: 'slack' | 'lark' | 'wecom';
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WebhookChannelCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChannelView'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   delete_channel_v1_me_channels__channel_id__delete: {
     parameters: {
       query?: never;
@@ -1040,6 +1003,41 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['ChannelPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  connect_chat_channel_v1_me_channels__kind__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kind: 'slack' | 'lark' | 'wecom';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebhookChannelCreate'];
       };
     };
     responses: {
