@@ -22,15 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices import documents
 from treasurypilot_api.invoices.models import (
     InvoiceInboundEmail,
-    RequestFlag,
     RequestFlagSeverity,
     RequestFlagSource,
-    RequestFlagStatus,
 )
 from treasurypilot_api.treasury.models import Treasury
 
@@ -390,35 +388,23 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
             document=inspected,
             idempotency_key=f"email-{message_digest}-{index}",
             uploaded_by=None,
+            initial_flags=(
+                documents.InitialRequestFlag(
+                    code="INBOUND_EMAIL_SENDER_UNVERIFIED",
+                    severity=RequestFlagSeverity.HIGH,
+                    evidence={
+                        "spf": message.authentication_results.spf or "missing",
+                        "spfDomain": message.authentication_results.spf_domain,
+                        "dkim": message.authentication_results.dkim or "missing",
+                        "dkimDomain": message.authentication_results.dkim_domain,
+                        "senderDomain": sender_domain,
+                    },
+                    source=RequestFlagSource.DETERMINISTIC,
+                ),
+            )
+            if not sender_verified
+            else (),
         )
-        if not sender_verified:
-            async with factory() as session, session.begin():
-                existing_flag = await session.scalar(
-                    select(RequestFlag).where(
-                        RequestFlag.request_id == result.request_id,
-                        RequestFlag.revision == 1,
-                        RequestFlag.code == "INBOUND_EMAIL_SENDER_UNVERIFIED",
-                    )
-                )
-                if existing_flag is None:
-                    session.add(
-                        RequestFlag(
-                            id=uuid7(),
-                            request_id=result.request_id,
-                            revision=1,
-                            code="INBOUND_EMAIL_SENDER_UNVERIFIED",
-                            severity=RequestFlagSeverity.HIGH.value,
-                            evidence={
-                                "spf": message.authentication_results.spf or "missing",
-                                "spfDomain": message.authentication_results.spf_domain,
-                                "dkim": message.authentication_results.dkim or "missing",
-                                "dkimDomain": message.authentication_results.dkim_domain,
-                                "senderDomain": sender_domain,
-                            },
-                            source=RequestFlagSource.DETERMINISTIC.value,
-                            status=RequestFlagStatus.OPEN.value,
-                        )
-                    )
         receipts.append(
             InboundEmailAttachmentReceipt(
                 request_id=result.request_id,

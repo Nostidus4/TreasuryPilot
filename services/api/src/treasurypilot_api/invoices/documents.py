@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from typing import Protocol, cast
@@ -75,6 +76,16 @@ class ObjectStorage(Protocol):
 
 class ExtractionQueue(Protocol):
     def enqueue(self, request_id: uuid.UUID, document_id: uuid.UUID, job_id: str) -> str: ...
+
+
+@dataclass(frozen=True)
+class InitialRequestFlag:
+    """A deterministic risk flag to commit atomically with a newly uploaded draft."""
+
+    code: str
+    severity: RequestFlagSeverity
+    evidence: dict[str, object]
+    source: RequestFlagSource
 
 
 class MinioObjectStorage:
@@ -313,6 +324,7 @@ async def create_invoice_document_draft(
     document: tuple[bytes, str, int],
     idempotency_key: str,
     uploaded_by: uuid.UUID | None,
+    initial_flags: tuple[InitialRequestFlag, ...] = (),
 ) -> UploadResponse:
     """Store an already-inspected document and enqueue the existing extraction path."""
     body, mime, pages = document
@@ -404,7 +416,26 @@ async def create_invoice_document_draft(
         )
         try:
             async with factory() as write_session, write_session.begin():
-                write_session.add_all([row, revision, document_row])
+                write_session.add_all(
+                    [
+                        row,
+                        revision,
+                        document_row,
+                        *(
+                            RequestFlag(
+                                id=uuid7(),
+                                request_id=request_id,
+                                revision=1,
+                                code=flag.code,
+                                severity=flag.severity.value,
+                                evidence=flag.evidence,
+                                source=flag.source.value,
+                                status=RequestFlagStatus.OPEN.value,
+                            )
+                            for flag in initial_flags
+                        ),
+                    ]
+                )
         except Exception as error:
             try:
                 await run_in_threadpool(storage.delete, object_key)
