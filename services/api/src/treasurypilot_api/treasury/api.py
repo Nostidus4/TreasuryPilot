@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import datetime
 from typing import Annotated, cast
@@ -13,7 +14,13 @@ from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.treasury.config import PlatformConfiguration
 from treasurypilot_api.treasury.models import Coverage, TreasuryStatus, WalletRole
-from treasurypilot_api.treasury.safe import RpcUnavailable
+from treasurypilot_api.treasury.safe import (
+    RpcUnavailable,
+    SafeDeploymentUnavailable,
+    build_safe_deployment_transaction,
+    safe_deployment_available,
+    verify_safe_deployment_code,
+)
 from treasurypilot_api.treasury.service import (
     TreasuryNotFound,
     TreasuryRecord,
@@ -37,10 +44,28 @@ class ChainView(ApiModel):
     name: str
     explorer_url: str
     assets: list[AssetView]
+    safe_deployment_available: bool
 
 
 class ChainsResponse(ApiModel):
     chains: list[ChainView]
+
+
+class SafeDeploymentRequest(ApiModel):
+    chain_id: int = Field(gt=0)
+    owners: list[str] = Field(min_length=1, max_length=10)
+    threshold: int = Field(gt=0, le=10)
+
+
+class SafeDeploymentTransaction(ApiModel):
+    to: str
+    data: str
+    value: str
+
+
+class SafeDeploymentResponse(ApiModel):
+    chain_id: int
+    transaction: SafeDeploymentTransaction
 
 
 router = APIRouter(prefix="/v1", tags=["treasury"])
@@ -68,10 +93,76 @@ async def list_chains(request: Request) -> ChainsResponse:
                     )
                     for asset in chain.assets
                 ],
+                safe_deployment_available=safe_deployment_available(configuration, chain.chain_id),
             )
             for chain in configuration.chains
             if chain.enabled
         ]
+    )
+
+
+@router.post(
+    "/orgs/{organization_id}/safes/deploy-tx",
+    response_model=SafeDeploymentResponse,
+)
+async def safe_deployment_transaction(
+    organization_id: uuid.UUID,
+    payload: SafeDeploymentRequest,
+    request: Request,
+    member: Annotated[
+        MemberAccess,
+        Depends(require_role(OrganizationRole.OWNER, OrganizationRole.ORG_ADMIN)),
+    ],
+) -> SafeDeploymentResponse:
+    # The organization ID is deliberately bound by require_role; the transaction itself
+    # contains no organization data and all signing/broadcasting remains with the owner.
+    if organization_id != member.organization_id:
+        raise AuthFailure(
+            status=404,
+            code="ORG_NOT_FOUND",
+            title="Organization not found",
+            detail="The organization does not exist.",
+        )
+    configuration: PlatformConfiguration = request.app.state.platform_configuration
+    try:
+        await verify_safe_deployment_code(configuration, payload.chain_id)
+        transaction = build_safe_deployment_transaction(
+            configuration,
+            payload.chain_id,
+            payload.owners,
+            payload.threshold,
+            secrets.randbits(256),
+        )
+    except SafeDeploymentUnavailable:
+        raise AuthFailure(
+            status=503,
+            code="SAFE_DEPLOYMENT_UNAVAILABLE",
+            title="Safe deployment unavailable",
+            detail=(
+                "This chain has no verified Safe proxy factory, v1.4.1 singleton, and "
+                "fallback handler configured. Use an existing Safe until those deployments "
+                "are recorded and verified."
+            ),
+            retry_after=60,
+        ) from None
+    except RpcUnavailable:
+        raise AuthFailure(
+            status=503,
+            code="RPC_UNAVAILABLE",
+            title="Chain RPC unavailable",
+            detail="Safe deployment addresses could not be checked against the configured chain RPCs.",
+            retry_after=5,
+        ) from None
+    except ValueError as exc:
+        raise AuthFailure(
+            status=422,
+            code="INVALID_SAFE_CONFIGURATION",
+            title="Safe configuration rejected",
+            detail=str(exc),
+        ) from None
+    return SafeDeploymentResponse(
+        chain_id=payload.chain_id,
+        transaction=SafeDeploymentTransaction(**transaction),
     )
 
 

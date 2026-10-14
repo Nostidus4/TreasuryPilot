@@ -88,6 +88,7 @@ export interface Chain {
   chainId: number;
   name: string;
   explorerUrl: string;
+  safeDeploymentAvailable: boolean;
   assets: Asset[];
 }
 
