@@ -3,13 +3,14 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import AwareDatetime, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import AwareDatetime, Field, computed_field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,6 +25,8 @@ from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.treasury.models import Treasury
 
 logger = logging.getLogger(__name__)
+
+_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 class TenantView(ApiModel):
@@ -54,9 +57,9 @@ class SupportGrantRequest(ApiModel):
     @field_validator("staff_user")
     @classmethod
     def normalize_staff_user(cls, value: str) -> str:
-        clean = value.strip()
-        if not clean:
-            raise ValueError("staff_user must not be empty")
+        clean = value.strip().lower()  # staff ids are matched case-insensitively
+        if not _EMAIL.fullmatch(clean):
+            raise ValueError("staff_user must be an email address")
         return clean
 
 
@@ -69,6 +72,13 @@ class SupportGrantView(ApiModel):
     granted_by: uuid.UUID
     created_at: AwareDatetime
     revoked_at: AwareDatetime | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def status(self) -> Literal["active", "expired", "revoked"]:
+        if self.revoked_at is not None:
+            return "revoked"
+        return "expired" if self.expires_at <= datetime.now(UTC) else "active"
 
 
 class SupportSummary(ApiModel):
@@ -228,7 +238,7 @@ def create_admin_router(
                 select(SupportGrant)
                 .where(
                     SupportGrant.org_id == tenant_id,
-                    SupportGrant.staff_user == actor,
+                    func.lower(SupportGrant.staff_user) == actor.strip().lower(),
                     SupportGrant.scope == "read",
                     SupportGrant.revoked_at.is_(None),
                     SupportGrant.expires_at > now,
@@ -253,6 +263,14 @@ def create_admin_router(
                         "source_ip": request.client.host if request.client else None,
                     },
                 )
+            )
+            await write_audit(
+                session,
+                org_id=tenant_id,
+                actor=AuditActor(AuditActorType.SYSTEM, actor),
+                action="platform.support.read",
+                entity=AuditEntity("support_grant", grant.id),
+                data={"staff_user": actor, "grant_id": str(grant.id), "scope": grant.scope},
             )
             result = SupportSummary(tenant=_view(org, members, treasuries), grant_id=grant.id)
         logger.info(
@@ -287,17 +305,37 @@ def create_support_grant_router(
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> SupportGrantView:
         now = datetime.now(UTC)
-        grant = SupportGrant(
-            id=uuid.uuid4(),
-            org_id=member.organization_id,
-            staff_user=payload.staff_user,
-            scope="read",
-            expires_at=now + timedelta(hours=payload.duration_hours),
-            granted_by=member.user_id,
-            created_at=now,
-        )
+        expires_at = now + timedelta(hours=payload.duration_hours)
         async with db_sessions() as session, session.begin():
-            session.add(grant)
+            # Idempotent: reuse (and at most extend) the active grant for this staff member.
+            # shortcut: no unique index, so two concurrent first-time POSTs can still both insert.
+            grant = await session.scalar(
+                select(SupportGrant)
+                .where(
+                    SupportGrant.org_id == member.organization_id,
+                    func.lower(SupportGrant.staff_user) == payload.staff_user,
+                    SupportGrant.revoked_at.is_(None),
+                    SupportGrant.expires_at > now,
+                )
+                .order_by(SupportGrant.expires_at.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            if grant is None:
+                grant = SupportGrant(
+                    id=uuid.uuid4(),
+                    org_id=member.organization_id,
+                    staff_user=payload.staff_user,
+                    scope="read",
+                    expires_at=expires_at,
+                    granted_by=member.user_id,
+                    created_at=now,
+                )
+                session.add(grant)
+            elif expires_at > grant.expires_at:
+                grant.expires_at = expires_at
+            else:
+                return SupportGrantView.model_validate(grant, from_attributes=True)
             await write_audit(
                 session,
                 org_id=member.organization_id,
@@ -314,7 +352,7 @@ def create_support_grant_router(
 
     @router.get("", response_model=list[SupportGrantView])
     async def list_support_grants(
-        organization_id: uuid.UUID,
+        limit: int = Query(default=50, ge=1, le=100),  # noqa: B008
         member: MemberAccess = consent_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> list[SupportGrantView]:
@@ -323,6 +361,7 @@ def create_support_grant_router(
                 select(SupportGrant)
                 .where(SupportGrant.org_id == member.organization_id)
                 .order_by(SupportGrant.created_at.desc(), SupportGrant.id)
+                .limit(limit)
             )
             return [
                 SupportGrantView.model_validate(grant, from_attributes=True) for grant in grants
@@ -331,7 +370,6 @@ def create_support_grant_router(
     @router.delete("/{grant_id}", status_code=204)
     async def revoke_support_grant(
         grant_id: uuid.UUID,
-        organization_id: uuid.UUID,
         member: MemberAccess = consent_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> Response:

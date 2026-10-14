@@ -2999,6 +2999,12 @@
           "staffUser": {
             "title": "Staffuser",
             "type": "string"
+          },
+          "status": {
+            "enum": ["active", "expired", "revoked"],
+            "readOnly": true,
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
@@ -3009,7 +3015,8 @@
           "expiresAt",
           "grantedBy",
           "createdAt",
-          "revokedAt"
+          "revokedAt",
+          "status"
         ],
         "title": "SupportGrantView",
         "type": "object"
@@ -6872,6 +6879,18 @@
               "format": "uuid",
               "title": "Organization Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],

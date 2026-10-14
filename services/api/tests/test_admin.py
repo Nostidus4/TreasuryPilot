@@ -214,8 +214,8 @@ def test_migration_creates_read_only_support_grants() -> None:
     config.set_main_option("sqlalchemy.url", "postgresql+asyncpg://offline/offline")
     config.output_buffer = output
 
-    command.upgrade(config, "20261014_0021:20261014_0022", sql=True)
-    command.downgrade(config, "20261014_0022:20261014_0021", sql=True)
+    command.upgrade(config, "20261014_0025:20261014_0026", sql=True)
+    command.downgrade(config, "20261014_0026:20261014_0025", sql=True)
 
     sql = output.getvalue()
     assert "CREATE TABLE support_grants" in sql
@@ -276,7 +276,15 @@ def test_support_grant_requires_org_admin_or_owner() -> None:
     assert response.status_code == 403
 
 
-def test_support_read_requires_matching_active_grant_and_is_audited() -> None:
+def test_support_read_requires_matching_active_grant_and_is_audited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit_calls: list[dict[str, object]] = []
+
+    async def capture_audit(*_args: object, **kwargs: object) -> None:
+        audit_calls.append(kwargs)
+
+    monkeypatch.setattr(admin_api, "write_audit", capture_audit)
     now = datetime.now(UTC)
     grant = SupportGrant(
         id=uuid.uuid4(),
@@ -300,6 +308,46 @@ def test_support_read_requires_matching_active_grant_and_is_audited() -> None:
         "ops@example.test",
         "read",
     )
+    assert audit_calls[0]["action"] == "platform.support.read"
+    assert audit_calls[0]["org_id"] == ORG_ID
+
+
+def test_repeated_grant_is_idempotent_and_normalizes_staff_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(UTC)
+    grant = SupportGrant(
+        id=uuid.uuid4(),
+        org_id=ORG_ID,
+        staff_user="ops@example.test",
+        scope="read",
+        expires_at=now + timedelta(hours=48),
+        granted_by=uuid.uuid4(),
+        created_at=now - timedelta(hours=1),
+    )
+    client, added = _admin_client(_org(), grant=grant)
+    member = MemberAccess(
+        access=SessionAccess(
+            user=UserRecord(uuid.uuid4(), "owner@example.test", "Owner", "active"),
+            session_id=uuid.uuid4(),
+        ),
+        organization_id=ORG_ID,
+        roles=frozenset({OrganizationRole.ORG_ADMIN.value}),
+    )
+    client.app.dependency_overrides[require_member] = lambda: member
+
+    async def no_audit(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(admin_api, "write_audit", no_audit)
+    url = f"/v1/orgs/{ORG_ID}/support-grants"
+    again = client.post(url, json={"staffUser": " OPS@Example.test ", "durationHours": 1})
+    bad = client.post(url, json={"staffUser": "not-an-email"})
+
+    assert again.status_code == 201
+    assert again.json()["id"] == str(grant.id) and again.json()["status"] == "active"
+    assert added == []
+    assert bad.status_code == 422
 
 
 def test_expired_or_missing_support_grant_denies_staff_access() -> None:

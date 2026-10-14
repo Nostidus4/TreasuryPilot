@@ -1,7 +1,7 @@
 """add consented, time-limited read support grants
 
-Revision ID: 20261014_0022
-Revises: 20261014_0021
+Revision ID: 20261014_0026
+Revises: 20261014_0025
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0022"
-down_revision: str | None = "20261014_0021"
+revision: str = "20261014_0026"
+down_revision: str | None = "20261014_0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -2430,6 +2430,11 @@ export interface components {
       scope: 'read';
       /** Staffuser */
       staffUser: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      readonly status: 'active' | 'expired' | 'revoked';
     };
     /** SupportSummary */
     SupportSummary: {
@@ -4632,7 +4637,9 @@ export interface operations {
   };
   list_support_grants_v1_orgs__organization_id__support_grants_get: {
     parameters: {
-      query?: never;
+      query?: {
+        limit?: number;
+      };
       header?: never;
       path: {
         organization_id: string;
