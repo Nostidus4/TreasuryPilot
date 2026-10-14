@@ -52,11 +52,19 @@ from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
+from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
+from treasurypilot_api.mandate.payees import router as payees_router
 from treasurypilot_api.mandate.routes import (
     MandateRepository,
     SqlAlchemyMandateRepository,
 )
 from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.mandate.vendors import (
+    FieldCipher,
+    SqlAlchemyVendorRepository,
+    VendorRepository,
+)
+from treasurypilot_api.mandate.vendors import router as vendors_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -183,6 +191,9 @@ def create_app(
     audit_repository: AuditRepository | None = None,
     admin_sessions: async_sessionmaker[AsyncSession] | None = None,
     screening_service: ScreeningService | None = None,
+    vendor_repository: VendorRepository | None = None,
+    payee_repository: PayeeRepository | None = None,
+    field_cipher: FieldCipher | None = None,
     mandate_repository: MandateRepository | None = None,
     treasury_service: TreasuryService | None = None,
     governance_service: GovernanceService | None = None,
@@ -234,6 +245,10 @@ def create_app(
         membership_repository = SqlAlchemyMembershipRepository(
             async_sessionmaker(engine, expire_on_commit=False)
         )
+    if vendor_repository is None and sessions is not None:
+        vendor_repository = SqlAlchemyVendorRepository(sessions)
+    if payee_repository is None and sessions is not None:
+        payee_repository = SqlAlchemyPayeeRepository(sessions)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -288,6 +303,9 @@ def create_app(
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
+    app.state.vendor_repository = vendor_repository
+    app.state.payee_repository = payee_repository
+    app.state.field_cipher = field_cipher
     app.state.mandate_repository = mandate_repository
     app.state.review_sessions = (
         async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
@@ -326,6 +344,8 @@ def create_app(
     app.include_router(governance_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(mandate_router)
+    app.include_router(vendors_router)
+    app.include_router(payees_router)
     app.include_router(review_router)
 
     return app

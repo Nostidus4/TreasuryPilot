@@ -704,6 +704,112 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Payees */
+    get: operations['list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get'];
+    put?: never;
+    /** Propose Payee */
+    post: operations['propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Payee */
+    get: operations['get_payee_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/registration-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Build Registration Tx */
+    post: operations['build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/verify-oob': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify Oob */
+    post: operations['verify_oob_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__verify_oob_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/vendors': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Vendors */
+    get: operations['list_vendors_v1_orgs__organization_id__vendors_get'];
+    put?: never;
+    /** Create Vendor */
+    post: operations['create_vendor_v1_orgs__organization_id__vendors_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/vendors/{vendor_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Vendor */
+    get: operations['get_vendor_v1_orgs__organization_id__vendors__vendor_id__get'];
+    put?: never;
+    post?: never;
+    /** Delete Vendor */
+    delete: operations['delete_vendor_v1_orgs__organization_id__vendors__vendor_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Vendor */
+    patch: operations['update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch'];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1328,6 +1434,17 @@ export interface components {
        */
       validFrom: string;
     };
+    /**
+     * OobMethod
+     * @enum {string}
+     */
+    OobMethod: 'PHONE' | 'IN_PERSON' | 'SIGNED_LETTER' | 'OTHER';
+    /** OobVerification */
+    OobVerification: {
+      method: components['schemas']['OobMethod'];
+      /** Note */
+      note: string;
+    };
     /** OrganizationChecklist */
     OrganizationChecklist: {
       /** Membercount */
@@ -1392,6 +1509,69 @@ export interface components {
       name: string;
       /** Solomode */
       soloMode: boolean;
+    };
+    /** PayeeCreate */
+    PayeeCreate: {
+      /** Address */
+      address: string;
+      /** Label */
+      label: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** PayeeListResponse */
+    PayeeListResponse: {
+      /** Items */
+      items: components['schemas']['PayeeView'][];
+    };
+    /** PayeeResponse */
+    PayeeResponse: {
+      payee: components['schemas']['PayeeView'];
+    };
+    /** PayeeView */
+    PayeeView: {
+      /** Activefrom */
+      activeFrom: string | null;
+      /** Address */
+      address: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Label */
+      label: string;
+      /** Oobmethod */
+      oobMethod: string | null;
+      /** Oobnote */
+      oobNote: string | null;
+      /** Oobverifiedat */
+      oobVerifiedAt: string | null;
+      /** Oobverifiedby */
+      oobVerifiedBy: string | null;
+      /** Registrationtxid */
+      registrationTxId: string | null;
+      screening: components['schemas']['ScreeningView'] | null;
+      /** Status */
+      status: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
     };
     /** PlanEvidence */
     PlanEvidence: {
@@ -1479,6 +1659,22 @@ export interface components {
       to: string;
       /** Value */
       value: string;
+    };
+    /** ScreeningView */
+    ScreeningView: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Provider */
+      provider: string;
+      /** Result */
+      result: string;
+      /** Sourceref */
+      sourceRef: string | null;
+      /** Ttluntil */
+      ttlUntil: string | null;
     };
     /** SignatureRequest */
     SignatureRequest: {
@@ -1637,6 +1833,62 @@ export interface components {
       reasonCodes?: string[];
       /** Stage */
       stage: string;
+    };
+    /** VendorCreate */
+    VendorCreate: {
+      /** Contact */
+      contact?: string | null;
+      /** Name */
+      name: string;
+      /** Notes */
+      notes?: string | null;
+      /** Suppliercode */
+      supplierCode?: string | null;
+      /** Taxid */
+      taxId?: string | null;
+    };
+    /** VendorListResponse */
+    VendorListResponse: {
+      /** Items */
+      items: components['schemas']['VendorView'][];
+    };
+    /** VendorPatch */
+    VendorPatch: {
+      /** Contact */
+      contact?: string | null;
+      /** Name */
+      name?: string | null;
+      /** Notes */
+      notes?: string | null;
+      /** Taxid */
+      taxId?: string | null;
+    };
+    /** VendorResponse */
+    VendorResponse: {
+      vendor: components['schemas']['VendorView'];
+    };
+    /** VendorView */
+    VendorView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Hascontact */
+      hasContact: boolean;
+      /** Hastaxid */
+      hasTaxId: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Normalizedref */
+      normalizedRef: string;
+      /** Notes */
+      notes: string | null;
     };
     /** VerificationEvidence */
     VerificationEvidence: {
@@ -3105,6 +3357,341 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  propose_payee_v1_orgs__organization_id__treasuries__treasury_id__payees_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PayeeCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_payee_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  verify_oob_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__verify_oob_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        payee_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OobVerification'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_vendors_v1_orgs__organization_id__vendors_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_vendor_v1_orgs__organization_id__vendors_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VendorCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_vendor_v1_orgs__organization_id__vendors__vendor_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_vendor_v1_orgs__organization_id__vendors__vendor_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_vendor_v1_orgs__organization_id__vendors__vendor_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        vendor_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VendorPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['VendorResponse'];
         };
       };
       /** @description Validation Error */
