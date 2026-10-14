@@ -44,13 +44,24 @@ No new business tables: metrics are computed from `request_status_events`, `plan
 |---|---|---|
 | GET | `/orgs/{o}/metrics/operations?from=&to=&treasuryId=` | OWN, FIN, ADM, Auditor |
 | GET | `/orgs/{o}/metrics/savings?from=&to=` → `{total, byRequest[], methodology}` | OWN, FIN |
-| GET | `/metrics` (Prometheus, internal network only) | infra |
+| GET | `/metrics` (Prometheus, served by each worker on `:9100`, internal network only) | infra |
 
 Prometheus series: `tp_queue_depth{queue}`, `tp_rpc_errors_total{provider}`, `tp_rpc_latency_seconds`, `tp_llm_latency_seconds{task}`, `tp_llm_cost_usd_total{task}`, `tp_tx_status_total{status}`, `tp_validation_decisions_total{decision,code}`, `tp_unknown_operations`, `tp_executor_gas_eth{key}`, `tp_circuit_trips_total{rule}`.
 
+OBS-003 ships `tp_queue_depth` (read from the broker at scrape time), `tp_llm_latency_seconds` and `tp_llm_cost_usd_total` (recorded by the AI adapter), and declares `tp_rpc_errors_total` and `tp_tx_status_total` in `treasurypilot_worker.metrics` for the chain and tracker tickets to increment. The other series land with the tickets that own their events.
+
 ## 7. Flows
 
-Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context; Celery headers carry them; the signer receives them in a header. Traces exported via OTLP to the collector (compose service, console exporter locally).
+Every request/task binds `correlation_id`, `org_id`, `request_id`, `plan_id`, `operation_id` into structlog context (`treasurypilot_core.observability`); Celery headers carry them; the signer receives them in headers. Traces are exported via OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (locally: `--profile observability` starts Jaeger, endpoint `http://jaeger:4318`, UI on `127.0.0.1:16686`); unset, spans are still created but not exported. Every log line inside a span carries its `trace_id`.
+
+- **Tracing (OBS-002):** FastAPI (api, signer), Celery (worker, through task headers), `httpx2` (worker → signer) and SQLAlchemy (api) are instrumented, so one api request and the tasks and signer calls it causes form one trace. A process that publishes Celery tasks must install `CeleryInstrumentor` (the api does not publish yet), and the signer client must use `httpx2`, or the trace breaks at that hop.
+
+- **HTTP (api, signer):** `X-Request-ID` is the request id and also the `correlation_id`; `X-Org-ID`, `X-Plan-ID`, `X-Operation-ID` bind the matching fields. Each value must match `^[A-Za-z0-9._:-]{8,64}$` and survive redaction unchanged (e.g. not a bare 64-hex string or `token:...`), so it stays searchable. An invalid `X-Request-ID` is replaced by a fresh uuid; other invalid headers are dropped and logged as `invalid_context_header` (header names only). The response always carries `X-Request-ID` (exposed to the web app via CORS).
+- **Claimed, not authenticated:** org/plan/operation ids from headers are client-declared log context. Once auth exists, the authenticated org must overwrite the header value.
+- **Celery:** `SafeTask` publishes `x_correlation_id` and an `x_log_context` dict (all five ids); a delivery binds them for its lifetime and child tasks inherit them. Ids passed explicitly in `x_log_context` override the publisher's; invalid ids (and a non-dict header) are dropped. A task called directly without headers keeps the caller's `correlation_id`. (`correlation_id` is not used as a header name because Celery overwrites it with the task id.)
+- **Signer:** the worker must forward the same headers when it calls the signer (wired in EXE-005).
+- **Errors (OBS-003):** api, worker and signer report unhandled exceptions (API 500s, failed tasks) to Sentry. The bound ids become Sentry tags, so a `correlation_id` search finds the event. Events pass the same redaction as logs, carry no local variables, and log records are not sent (their message is the unredacted event dict). HTTP breadcrumbs keep only scheme and host, because RPC and bot URLs embed keys in the path. An unhandled exception also posts the service, error type, `correlation_id` and Sentry event id to Telegram (no message text), at most once per service and error type every 5 minutes. The alert runs inside Sentry's `before_send`, so it needs a DSN; Telegram set without one logs `telegram_alerts_need_sentry_dsn` at startup. The web app reports browser errors to Sentry when built with `VITE_SENTRY_DSN`, with query strings and fragments stripped from page, referer and breadcrumb URLs (magic-link tokens).
+- **Stdlib logs:** uvicorn, Celery (worker and beat) and library logs go through the same root handler, so they are JSON, redacted and carry the bound context. An unhandled request error is logged as `unhandled_exception` with the request context, and the 500 still carries `X-Request-ID`.
 
 ## 8. Algorithms
 
@@ -58,7 +69,7 @@ Savings counterfactual: for each executed batch day, re-run `schedule_edf` on th
 
 ## 9. Configuration
 
-Log level INFO (DEBUG locally); sampling: 100 % traces in M1 (low volume); Sentry DSN per service from secrets; Telegram alert hook for Sentry critical errors (reuses M13).
+Log level INFO (DEBUG locally) via `TP_LOG_LEVEL`; `TP_LOG_FORMAT` is `json` (default) or `console` (local reading, still redacted); sampling: 100 % traces in M1 (low volume; standard `OTEL_TRACES_SAMPLER*` variables override); OTLP endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT`; Sentry DSN per service from secrets (`SENTRY_DSN` in each container, from `SENTRY_DSN_API` / `_WORKER` / `_SIGNER`; empty disables reporting); Telegram alert on unhandled errors via `TP_TELEGRAM_BOT_TOKEN` + `TP_TELEGRAM_ALERT_CHAT_ID`, which requires that service's Sentry DSN (direct Bot API call until M13 exists; not given to `worker-ai`); worker metrics via `TP_METRICS_PORT` (unset = off) and `PROMETHEUS_MULTIPROC_DIR` (tmpfs) for the prefork pool.
 
 ## 10. Security
 

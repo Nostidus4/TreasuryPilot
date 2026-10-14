@@ -40,7 +40,7 @@ members = [
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"
-testpaths = ["packages", "services"]
+testpaths = ["packages", "services", "infra/scripts/tests"]
 markers = ["integration: requires a live infrastructure dependency"]
 
 [tool.ruff]

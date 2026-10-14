@@ -279,18 +279,16 @@ function LiquidityHeader({ state }: { state: TreasuryState }) {
             </dd>
           </div>
         )}
-        {state.borrowProposalId && (
-          <div className="self-end">
-            <Link
-              to={`${scope.tBase}/borrow/${state.borrowProposalId}`}
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              {t('Withdraw vs borrow')}
-              <ArrowRight className="size-3.5" aria-hidden="true" />
-            </Link>
-          </div>
-        )}
       </dl>
+      {state.borrowProposalId && (
+        <Link
+          to={`${scope.tBase}/borrow/${state.borrowProposalId}`}
+          className="inline-flex items-center gap-1 self-end text-sm text-primary hover:underline"
+        >
+          {t('Withdraw vs borrow')}
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </Link>
+      )}
     </div>
   );
 }

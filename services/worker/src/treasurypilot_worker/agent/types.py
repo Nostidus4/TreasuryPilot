@@ -88,6 +88,8 @@ class ProviderResponse:
 
 
 class Provider(Protocol):
+    name: str
+
     def complete(self, request: ProviderRequest, *, timeout_s: float) -> ProviderResponse:
         """Run one model turn. Raises `AiTimeout` or `AiUnavailable` on failure."""
         ...
@@ -116,6 +118,7 @@ class ToolCallRecord:
 @dataclass(frozen=True)
 class AiResult[T: BaseModel]:
     output: T
+    ai_call_id: str
     task: str
     model: str
     prompt_version: str

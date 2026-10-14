@@ -88,6 +88,7 @@ export interface Chain {
   chainId: number;
   name: string;
   explorerUrl: string;
+  safeDeploymentAvailable: boolean;
   assets: Asset[];
 }
 
@@ -121,6 +122,7 @@ export interface Coverage {
   status: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN';
   acknowledged: boolean;
   details: string[];
+  executionAllowed?: boolean;
 }
 
 export interface Budget {
@@ -338,6 +340,8 @@ export interface TxCall {
   to: Hex;
   data: Hex;
   value?: string;
+  /** When set, the wallet must be on this chain or the send is rejected. */
+  chainId?: number;
 }
 
 /* ───────────── Invoices & requests ───────────── */
