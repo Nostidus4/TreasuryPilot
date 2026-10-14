@@ -36,6 +36,8 @@ import type {
   Vendor,
 } from '@/lib/api/types';
 
+import { APPROVER, SEEDED_PAYMENT_INVOICE, SEEDED_PLAN_ID } from './seeded';
+
 export const usdc = (whole: number, cents = 0) =>
   (BigInt(whole) * 1_000_000n + BigInt(cents) * 10_000n).toString();
 
@@ -525,7 +527,7 @@ export function seed(): Db {
     }),
     request({
       id: 'req_219',
-      invoiceNumber: 'BP-2026-219',
+      invoiceNumber: SEEDED_PAYMENT_INVOICE,
       vendorId: 'vnd_brightpath',
       vendorName: 'Brightpath Design',
       amount: usdc(640),
@@ -618,7 +620,7 @@ export function seed(): Db {
 
   const plans: PlanDetail[] = [
     {
-      id: 'pln_0421',
+      id: SEEDED_PLAN_ID,
       treasuryId: 'trs_main',
       createdAt: iso(-12 * MIN),
       status: 'Validated',
@@ -1101,9 +1103,9 @@ export function seed(): Db {
         joinedAt: iso(-40 * DAY),
       },
       {
-        userId: 'usr_an',
-        name: 'An Nguyen',
-        email: 'an@northwind.test',
+        userId: APPROVER.id,
+        name: APPROVER.name,
+        email: APPROVER.email,
         roles: ['OWN', 'APR'],
         wallet: ADDR.an,
         status: 'Active',
