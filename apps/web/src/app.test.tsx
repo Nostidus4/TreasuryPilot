@@ -48,6 +48,9 @@ test('an expired sign-in link explains itself', async () => {
 });
 
 test('plan timeline shows partial completion, verification evidence and unknown safely', async () => {
+  renderApp(`${T}/plans/pln_0421`);
+
+  // renderApp resets the mock database, so set up execution evidence after it.
   const plan = db.plans.find((item) => item.id === 'pln_0421')!;
   plan.status = 'PartiallyCompleted';
   Object.assign(plan.steps[0], {
@@ -61,8 +64,6 @@ test('plan timeline shows partial completion, verification evidence and unknown 
     txHash: `0x${'b'.repeat(64)}`,
   });
   plan.steps[2].status = 'Dropped';
-
-  renderApp(`${T}/plans/pln_0421`);
 
   expect(await screen.findByText('Partially completed')).toBeInTheDocument();
   expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
