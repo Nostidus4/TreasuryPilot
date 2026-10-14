@@ -70,9 +70,13 @@ def test_repay_authorization_keeps_proposal_values_exact() -> None:
     [
         ({"plan_id": b"short"}, "bytes32"),
         ({"amount": 0}, "positive"),
+        ({"amount": 1 << 256}, "uint256"),
         ({"expiry": 0}, "uint64"),
+        ({"expiry": 1 << 64}, "uint64"),
         ({"min_health_factor": 0}, "positive"),
+        ({"min_health_factor": 1 << 256}, "uint256"),
         ({"max_rate_ray": 0}, "positive"),
+        ({"max_rate_ray": 1 << 256}, "uint256"),
     ],
 )
 def test_borrow_authorization_rejects_invalid_values(
@@ -89,6 +93,26 @@ def test_borrow_authorization_rejects_invalid_values(
 
     with pytest.raises(ValueError, match=message):
         build_borrow_authorization_call(TARGET_A, **values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"plan_id": b"short"}, "bytes32"),
+        ({"amount": 0}, "positive"),
+        ({"amount": 1 << 256}, "uint256"),
+        ({"expiry": 0}, "uint64"),
+        ({"expiry": 1 << 64}, "uint64"),
+    ],
+)
+def test_repay_authorization_rejects_invalid_values(
+    kwargs: dict[str, object], message: str
+) -> None:
+    values: dict[str, object] = {"plan_id": PLAN, "amount": 1, "expiry": 1}
+    values.update(kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        build_repay_authorization_call(TARGET_B, **values)  # type: ignore[arg-type]
 
 
 def test_direct_call_keeps_safe_call_fields() -> None:
