@@ -22,9 +22,12 @@ from treasurypilot_api.compliance.screening import (
     UnconfiguredScreeningProvider,
     build_screening_service,
     normalize_address,
+    screen_plan_before_pay,
 )
 from treasurypilot_api.identity.models import Organization
 from treasurypilot_api.mandate.models import ScreeningResult
+from treasurypilot_core.money import BaseUnits
+from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep, ValidationContext
 
 API_ROOT = Path(__file__).parents[1]
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
@@ -153,6 +156,89 @@ def test_cached_result_is_recorded_for_the_requesting_payee() -> None:
     assert fixture.calls == 1
     assert reused.payee_id == payee_b
     assert reused.checked_at == repo.rows[0].checked_at
+
+
+def _plan(*payees: str) -> ExecutionPlan:
+    return ExecutionPlan(
+        request_id=b"\x01" * 32,
+        treasury="0x" + "11" * 20,
+        chain_id=1,
+        steps=[
+            PlanStep(
+                seq=i,
+                step_id=bytes([i + 1]) * 32,
+                action=Action.PAY,
+                from_wallet="0x" + "22" * 20,
+                to=payee,
+                asset="0x" + "55" * 20,
+                amount=BaseUnits(1),
+            )
+            for i, payee in enumerate(payees)
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+
+
+def _screen_plan(plan: ExecutionPlan, screening: ScreeningService) -> ValidationContext:
+    # Real frozen model; only the screening fields matter here, so skip validating the rest.
+    context = ValidationContext.model_construct(screening_hit=False)
+    return asyncio.run(
+        screen_plan_before_pay(plan, context, service=screening, organization_id=ORG_ID)
+    )
+
+
+def test_plan_screening_refreshes_a_stale_clear_before_validation() -> None:
+    repository = MemoryRepository()
+    old = NOW - timedelta(hours=25)
+    repository.rows.append(
+        ScreeningRecord(
+            id=uuid.uuid4(),
+            organization_id=ORG_ID,
+            payee_id=None,
+            address=normalize_address(LISTED),
+            chain_id=1,
+            provider="fixture-test",
+            result=ScreeningResult.CLEAR,
+            source_ref=None,
+            checked_at=old,
+            ttl_until=old + timedelta(hours=24),
+        )
+    )
+    provider = CountingProvider()
+
+    context = _screen_plan(_plan(LISTED), service(provider, repository))
+
+    assert provider.calls == 1
+    assert context.screening_hit is True
+    assert context.screening_clear is False
+
+
+def test_plan_screening_marks_provider_failure_as_not_clear() -> None:
+    context = _screen_plan(_plan(CLEAN), service(UnconfiguredScreeningProvider()))
+
+    assert context.screening_hit is False
+    assert context.screening_clear is False
+
+
+def test_plan_screening_is_clear_only_after_a_valid_clear() -> None:
+    context = _screen_plan(_plan(CLEAN), service(CountingProvider()))
+
+    assert context.screening_hit is False
+    assert context.screening_clear is True
+
+
+def test_plan_screening_reports_a_hit_even_when_another_payee_errors() -> None:
+    class HitOrError(CountingProvider):
+        async def screen(self, *, address: bytes, chain_id: int) -> ProviderResult:
+            if address == normalize_address(LISTED):
+                return await super().screen(address=address, chain_id=chain_id)
+            raise RuntimeError("provider down")
+
+    context = _screen_plan(_plan(CLEAN, LISTED), service(HitOrError()))
+
+    assert context.screening_hit is True
+    assert context.screening_clear is False
 
 
 def test_expired_cache_is_refreshed() -> None:

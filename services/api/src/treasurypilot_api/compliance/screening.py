@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.compliance.models import ScreeningListEntry
 from treasurypilot_api.mandate.models import Screening, ScreeningResult, uuid7
+
+if TYPE_CHECKING:
+    from treasurypilot_core.policy.context import ExecutionPlan, ValidationContext
 
 SCREENING_TTL = timedelta(hours=24)
 # M14-D7: a refresh before PAY waits at most this long, then fails closed.
@@ -299,6 +302,44 @@ class ScreeningService:
         if record.result != ScreeningResult.CLEAR:
             raise ScreeningBlocked(code="DATA_MISSING", record=record)
         return record
+
+
+async def screen_plan_before_pay(
+    plan: ExecutionPlan,
+    context: ValidationContext,
+    *,
+    service: ScreeningService,
+    organization_id: uuid.UUID,
+) -> ValidationContext:
+    """Refresh every PAY destination before policy validation and encode failures in context.
+
+    ``ScreeningService.require_clear`` reuses only the latest unexpired CLEAR/HIT result;
+    stale results are synchronously refreshed under its five-second provider timeout.
+    The policy validator then turns HIT into SCREENING_HIT and unavailable/error outcomes
+    into DATA_MISSING. Plans without a PAY step are returned unchanged; the validator rejects
+    them as PLAN_MALFORMED, so ``screening_clear`` is never relied on there.
+    """
+    pay_steps = [step for step in plan.steps if step.action == "PAY"]
+    if not pay_steps:
+        return context
+
+    hit = False
+    clear = True
+    for step in pay_steps:
+        try:
+            await service.require_clear(
+                organization_id=organization_id,
+                address=step.to,
+                chain_id=plan.chain_id,
+            )
+        except ScreeningBlocked as blocked:
+            hit = hit or blocked.code == "SCREENING_HIT"
+            clear = False
+        except Exception:
+            # Repository/configuration failures are also an unavailable screening result.
+            logger.exception("screening_validation_failed")
+            clear = False
+    return context.model_copy(update={"screening_hit": hit, "screening_clear": clear})
 
 
 def build_screening_service(

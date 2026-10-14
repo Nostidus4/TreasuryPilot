@@ -207,5 +207,6 @@ class ValidationContext(FrozenModel):
     pause_requested: bool
     circuit_open: bool
     screening_hit: bool
+    screening_clear: bool = False
     policy_state: PolicyState | None = None
     config: PolicyConfig = PolicyConfig()
