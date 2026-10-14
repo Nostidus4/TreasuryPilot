@@ -115,6 +115,8 @@ stateDiagram-v2
 
 **Cancellation (M05-D4, BR-077):** cancel is immediate off-chain (validator code `REQUEST_CANCELLED`, signer refuses). If the request ever had a `Valid` approval, `cancel_onchain = Pending` and the UI shows **"Cancel on-chain"**: any Approver signs a transaction `module.cancelRequest(requestId)` from their own wallet, or the Owner submits it through Safe T. When `RequestCancelled` is observed, `cancel_onchain = Confirmed`. A Pending on-chain cancel is a visible to-do on the dashboard until confirmed.
 
+**INV-011 implementation boundary:** rejection, cancellation state changes, approval expiry, and renewal are persisted by the API/worker. The cancellation transaction builder and `RequestCancelled` event consumer remain unavailable until the module contract ABI/deployment and chain event indexer are present; the API returns `ONCHAIN_CANCEL_UNAVAILABLE` and leaves the cancellation visibly `Pending` in the meantime. Do not treat this state as an on-chain cancellation.
+
 ## 6. API (changes to API_SPEC §4)
 
 | Method | Endpoint | Perm | Request → Response | Errors |

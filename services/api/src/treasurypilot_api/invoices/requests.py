@@ -39,6 +39,7 @@ from treasurypilot_api.invoices.approval import (
 )
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
+    assert_no_active_duplicate,
     compute_fingerprint,
     find_active_duplicate,
 )
@@ -67,6 +68,7 @@ from treasurypilot_api.invoices.state_machine import (
     SqlAlchemyPayOperationGuard,
     TransitionAction,
     TransitionActor,
+    validate_transition,
 )
 from treasurypilot_api.mandate.models import (
     MandateVersion,
@@ -88,6 +90,11 @@ from treasurypilot_core.policy.context import RequestView
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
 _require_approver = require_role(OrganizationRole.APPROVER)
+_require_canceller = require_role(
+    OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER
+)
+_require_renewer = require_role(OrganizationRole.OPERATOR)
+_require_cancel_tx_actor = require_role(OrganizationRole.APPROVER, OrganizationRole.OWNER)
 
 CSV_REQUIRED_COLUMNS = (
     "vendor_ref",
@@ -165,6 +172,10 @@ class ConfirmTermsRequest(ApiModel):
 
 class RequestReason(ApiModel):
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class RenewRequest(ApiModel):
+    due_date: date | None = None
 
 
 class FlagAcknowledgment(ApiModel):
@@ -2490,3 +2501,179 @@ async def approve_request(
         ) from error
     response.headers["ETag"] = f'"{version}"'
     return result
+
+
+@router.post("/{request_id}/reject", openapi_extra={"x-organization-scoped": True})
+async def reject_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.REJECT,
+        target=RequestStatus.REJECTED,
+        expected_version=_expected_version(if_match),
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/cancel", openapi_extra={"x-organization-scoped": True})
+async def cancel_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_canceller),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.CANCEL,
+        target=RequestStatus.CANCELLED,
+        expected_version=_expected_version(if_match),
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/renew", openapi_extra={"x-organization-scoped": True})
+async def renew_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RenewRequest,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_renewer),  # noqa: B008
+) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
+        try:
+            validate_transition(
+                source=row.status,
+                target=RequestStatus.DRAFT,
+                actor=TransitionActor(
+                    StatusEventActorType.USER,
+                    TransitionAction.RENEW,
+                    member.user_id,
+                    frozenset(role for role in OrganizationRole if role.value in member.roles),
+                ),
+                created_by=row.created_by,
+                last_edited_by=row.last_edited_by,
+            )
+        except RequestTransitionError as error:
+            raise _fail(
+                error.status_code, error.code, "Request cannot be renewed", error.detail
+            ) from error
+        today = datetime.now(UTC).date()
+        if payload.due_date is not None and payload.due_date < today:
+            raise _fail(
+                422,
+                "DUE_DATE_IN_PAST",
+                "Due date invalid",
+                "The renewed due date cannot be in the past.",
+            )
+        row.current_revision += 1
+        row.due_at = payload.due_date or max(row.due_at or today, today + timedelta(days=1))
+        vendor_ref, asset_address = (
+            await session.execute(
+                select(Vendor.normalized_ref, Asset.address)
+                .join(Asset, Asset.id == row.asset_id)
+                .where(Vendor.id == row.vendor_id)
+            )
+        ).one()
+        # due_at is part of invoice_hash; the active-duplicate check also revives the fingerprint.
+        _hashes(row, vendor_ref, asset_address or b"")
+        await assert_no_active_duplicate(session, row)
+        # Flip the status only after the check: Draft is active, so autoflush would hit the index.
+        previous = row.status
+        row.status = RequestStatus.DRAFT.value
+        row.last_edited_by = member.user_id
+        row.terms_hash = None
+        row.terms_confirmed_by = None
+        row.terms_confirmed_at = None
+        session.add(
+            RequestRevision(
+                id=uuid7(),
+                request_id=row.id,
+                revision=row.current_revision,
+                snapshot=_snapshot(row),
+                edited_by=member.user_id,
+                reason="renewed after expiry",
+            )
+        )
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=member.user_id,
+                reason="request renewed after expiry",
+            )
+        )
+        await session.flush()
+        await session.refresh(row)
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.get("/{request_id}/cancel-tx", openapi_extra={"x-organization-scoped": True})
+async def get_cancel_transaction(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(_require_cancel_tx_actor),  # noqa: B008
+) -> dict[str, object]:
+    # The repository has no deployed module ABI/event indexer or Safe governance builder yet.
+    # Never return calldata that could be mistaken for a confirmed supported contract call.
+    async with _sessions(request)() as session:
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        if row.cancel_onchain != "Pending":
+            raise _fail(
+                409,
+                "CANCEL_NOT_NEEDED",
+                "On-chain cancel not needed",
+                "This request has no pending on-chain cancellation.",
+            )
+        if row.onchain_request_id is None:
+            raise _fail(
+                503,
+                "ONCHAIN_CANCEL_UNAVAILABLE",
+                "On-chain cancellation unavailable",
+                "The request has no on-chain identifier; cancellation remains Pending.",
+            )
+    raise _fail(
+        503,
+        "ONCHAIN_CANCEL_UNAVAILABLE",
+        "On-chain cancellation unavailable",
+        "Contract support and the Safe transaction builder are not configured; cancellation remains Pending.",
+    )
