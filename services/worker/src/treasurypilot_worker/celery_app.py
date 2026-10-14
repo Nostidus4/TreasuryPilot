@@ -53,6 +53,11 @@ def create_celery_app() -> Celery:
                 "schedule": crontab(minute="*/10"),
                 "options": {"queue": "core"},
             },
+            "expire-invoice-approvals": {
+                "task": "treasurypilot.invoices.expire_approvals",
+                "schedule": timedelta(minutes=5),
+                "options": {"queue": "core"},
+            },
             "publish-domain-events": {
                 "task": "treasurypilot.notifications.publish-domain-events",
                 "schedule": timedelta(seconds=1),
@@ -63,6 +68,11 @@ def create_celery_app() -> Celery:
             "generate-recurring-payment-drafts": {
                 "task": "treasurypilot.invoices.generate-recurring-drafts",
                 "schedule": crontab(minute=5, hour=0),
+                "options": {"queue": "core"},
+            },
+            "publish-daily-audit-roots": {
+                "task": "treasurypilot.audit.publish-daily-roots",
+                "schedule": crontab(hour=0, minute=5),
                 "options": {"queue": "core"},
             },
         },

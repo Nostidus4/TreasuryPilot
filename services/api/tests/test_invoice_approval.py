@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from treasurypilot_api.invoices.approval import build_approval_typed_data
+from treasurypilot_api.invoices.approval import ApprovalExpiryError, build_approval_typed_data
 from treasurypilot_core.eip712 import PAYMENT_APPROVAL_TYPE
 from treasurypilot_core.policy.context import RequestView
 
@@ -124,3 +124,25 @@ def test_grace_window_boundary() -> None:
     build_approval_typed_data(_request(), now=deadline_end - 1, **args)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="approval window has closed"):
         build_approval_typed_data(_request(), now=deadline_end, **args)  # type: ignore[arg-type]
+
+
+def _build_pinned(expiry: int, now: int = 1_800_000_100) -> dict[str, object]:
+    return build_approval_typed_data(
+        _request(),
+        chain_id=84532,
+        module_address=MODULE,
+        now=now,
+        approval_max_age=86_400,
+        asset=ASSET,
+        expiry=expiry,
+    )
+
+
+def test_pinned_expiry_is_signed_as_issued_even_after_now_moves() -> None:
+    assert _build_pinned(1_800_086_500) == _build_pinned(1_800_086_500, now=1_800_000_200)
+
+
+@pytest.mark.parametrize("expiry", [1_800_000_100, 1_800_086_501, 0, True])
+def test_pinned_expiry_outside_window_is_rejected(expiry: int) -> None:
+    with pytest.raises(ApprovalExpiryError):
+        _build_pinned(expiry)

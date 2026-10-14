@@ -108,6 +108,29 @@
         "title": "ApprovalEvidence",
         "type": "object"
       },
+      "ApproveRequest": {
+        "properties": {
+          "expiry": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expiry",
+            "type": "integer"
+          },
+          "revision": {
+            "exclusiveMinimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "signature": {
+            "maxLength": 8192,
+            "minLength": 2,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["signature", "revision", "expiry"],
+        "title": "ApproveRequest",
+        "type": "object"
+      },
       "AssetView": {
         "properties": {
           "address": {
@@ -308,6 +331,23 @@
         },
         "required": ["status", "checked", "brokenAt"],
         "title": "AuditVerifyResponse",
+        "type": "object"
+      },
+      "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "treasury_id": {
+            "format": "uuid",
+            "title": "Treasury Id",
+            "type": "string"
+          }
+        },
+        "required": ["treasury_id", "file"],
+        "title": "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
         "type": "object"
       },
       "BundleRequest": {
@@ -654,6 +694,137 @@
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
+      "CsvImportCreated": {
+        "properties": {
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "invoiceNumber": {
+            "title": "Invoicenumber",
+            "type": "string"
+          },
+          "requestId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          }
+        },
+        "required": ["row", "requestId", "invoiceNumber", "flags"],
+        "title": "CsvImportCreated",
+        "type": "object"
+      },
+      "CsvImportResponse": {
+        "properties": {
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/CsvImportCreated"
+            },
+            "title": "Created",
+            "type": "array"
+          },
+          "dryRun": {
+            "title": "Dryrun",
+            "type": "boolean"
+          },
+          "errorReportUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorreporturl"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/CsvImportRowError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "importId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importid"
+          }
+        },
+        "required": [
+          "importId",
+          "dryRun",
+          "created",
+          "errors",
+          "errorReportUrl"
+        ],
+        "title": "CsvImportResponse",
+        "type": "object"
+      },
+      "CsvImportRowError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["row", "field", "code", "message", "value"],
+        "title": "CsvImportRowError",
+        "type": "object"
+      },
+      "DocumentUrlResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "expiresAt"],
+        "title": "DocumentUrlResponse",
+        "type": "object"
+      },
       "EvidenceBundle": {
         "additionalProperties": false,
         "properties": {
@@ -815,6 +986,71 @@
         },
         "required": ["organizationId", "request", "generatedAt", "appVersion"],
         "title": "EvidenceBundle",
+        "type": "object"
+      },
+      "ExtractionConfirmation": {
+        "properties": {
+          "amount": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Amount",
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "title": "Duedate",
+            "type": "string"
+          },
+          "invoiceCountInDocument": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Invoicecountindocument",
+            "type": "integer"
+          },
+          "invoiceNo": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Invoiceno",
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "title": "Issuedate",
+            "type": "string"
+          },
+          "payeeId": {
+            "format": "uuid",
+            "title": "Payeeid",
+            "type": "string"
+          },
+          "vendorId": {
+            "format": "uuid",
+            "title": "Vendorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendorId",
+          "payeeId",
+          "invoiceNo",
+          "issueDate",
+          "dueDate",
+          "amount"
+        ],
+        "title": "ExtractionConfirmation",
+        "type": "object"
+      },
+      "FlagAcknowledgment": {
+        "properties": {
+          "note": {
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": ["note"],
+        "title": "FlagAcknowledgment",
         "type": "object"
       },
       "FlagEvidence": {
@@ -2420,6 +2656,24 @@
         "title": "RefillPath",
         "type": "object"
       },
+      "RenewRequest": {
+        "properties": {
+          "dueDate": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          }
+        },
+        "title": "RenewRequest",
+        "type": "object"
+      },
       "RequestCreate": {
         "properties": {
           "amount": {
@@ -2699,6 +2953,19 @@
         "title": "RequestPatch",
         "type": "object"
       },
+      "RequestReason": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "RequestReason",
+        "type": "object"
+      },
       "ReviewAction": {
         "enum": [
           "RETRY",
@@ -2937,6 +3204,110 @@
         "title": "SubmittedRequest",
         "type": "object"
       },
+      "SupportGrantRequest": {
+        "properties": {
+          "durationHours": {
+            "default": 24,
+            "maximum": 72.0,
+            "minimum": 1.0,
+            "title": "Durationhours",
+            "type": "integer"
+          },
+          "staffUser": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Staffuser",
+            "type": "string"
+          }
+        },
+        "required": ["staffUser"],
+        "title": "SupportGrantRequest",
+        "type": "object"
+      },
+      "SupportGrantView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "grantedBy": {
+            "format": "uuid",
+            "title": "Grantedby",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revokedat"
+          },
+          "scope": {
+            "const": "read",
+            "title": "Scope",
+            "type": "string"
+          },
+          "staffUser": {
+            "title": "Staffuser",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "expired", "revoked"],
+            "readOnly": true,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "staffUser",
+          "scope",
+          "expiresAt",
+          "grantedBy",
+          "createdAt",
+          "revokedAt",
+          "status"
+        ],
+        "title": "SupportGrantView",
+        "type": "object"
+      },
+      "SupportSummary": {
+        "properties": {
+          "grantId": {
+            "format": "uuid",
+            "title": "Grantid",
+            "type": "string"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantView"
+          }
+        },
+        "required": ["tenant", "grantId"],
+        "title": "SupportSummary",
+        "type": "object"
+      },
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -3145,6 +3516,27 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "properties": {
+          "documentId": {
+            "format": "uuid",
+            "title": "Documentid",
+            "type": "string"
+          },
+          "extractionJobId": {
+            "title": "Extractionjobid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "title": "Requestid",
+            "type": "string"
+          }
+        },
+        "required": ["requestId", "documentId", "extractionJobId"],
+        "title": "UploadResponse",
         "type": "object"
       },
       "UserView": {
@@ -3712,6 +4104,47 @@
           }
         },
         "summary": "Tenant Health",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/tenants/{tenant_id}/support": {
+      "get": {
+        "operationId": "support_summary_admin_tenants__tenant_id__support_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Summary",
         "tags": ["platform-admin"]
       }
     },
@@ -5373,6 +5806,205 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/import-csv": {
+      "post": {
+        "operationId": "import_requests_csv_v1_orgs__organization_id__requests_import_csv_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dryrun",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "treasuryId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": ["file", "treasuryId"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "description": "CSV file exceeds the upload limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Requests Csv",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv": {
+      "get": {
+        "operationId": "download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Csv Import Errors",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/upload": {
+      "post": {
+        "operationId": "upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Invoice Document",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}": {
       "patch": {
         "operationId": "edit_request_v1_orgs__organization_id__requests__request_id__patch",
@@ -5453,6 +6085,338 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data": {
+      "get": {
+        "operationId": "get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Approval Typed Data V1 Orgs  Organization Id  Requests  Request Id  Approval Typed Data Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Approval Typed Data",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/approve": {
+      "post": {
+        "operationId": "approve_request_v1_orgs__organization_id__requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Request V1 Orgs  Organization Id  Requests  Request Id  Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancel_request_v1_orgs__organization_id__requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestReason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Request V1 Orgs  Organization Id  Requests  Request Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/cancel-tx": {
+      "get": {
+        "operationId": "get_cancel_transaction_v1_orgs__organization_id__requests__request_id__cancel_tx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Cancel Transaction V1 Orgs  Organization Id  Requests  Request Id  Cancel Tx Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cancel Transaction",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/documents/{document_id}/url": {
+      "get": {
+        "operationId": "document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Read Url",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}/evidence": {
       "get": {
         "operationId": "get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get",
@@ -5502,6 +6466,455 @@
         },
         "summary": "Get Request Evidence",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm": {
+      "post": {
+        "description": "Apply operator-reviewed extraction fields to the current upload draft.",
+        "operationId": "confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractionConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Extraction V1 Orgs  Organization Id  Requests  Request Id  Extraction Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Extraction",
+        "tags": ["invoice documents"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/flags/{flag_id}/ack": {
+      "post": {
+        "operationId": "acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "flag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Flag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagAcknowledgment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Acknowledge Flag V1 Orgs  Organization Id  Requests  Request Id  Flags  Flag Id  Ack Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Flag",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/reject": {
+      "post": {
+        "operationId": "reject_request_v1_orgs__organization_id__requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestReason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reject Request V1 Orgs  Organization Id  Requests  Request Id  Reject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/renew": {
+      "post": {
+        "operationId": "renew_request_v1_orgs__organization_id__requests__request_id__renew_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Renew Request V1 Orgs  Organization Id  Requests  Request Id  Renew Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Renew Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/request-changes": {
+      "post": {
+        "operationId": "request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestReason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Changes V1 Orgs  Organization Id  Requests  Request Id  Request Changes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Changes",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/submit": {
+      "post": {
+        "operationId": "submit_request_v1_orgs__organization_id__requests__request_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Submit Request V1 Orgs  Organization Id  Requests  Request Id  Submit Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/requests/{request_id}/terms/confirm": {
@@ -5580,6 +6993,76 @@
           }
         },
         "summary": "Confirm Request Terms",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/withdraw": {
+      "post": {
+        "operationId": "withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Withdraw Request V1 Orgs  Organization Id  Requests  Request Id  Withdraw Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Request",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
@@ -5894,6 +7377,156 @@
         },
         "summary": "Update Organization Settings",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants": {
+      "get": {
+        "operationId": "list_support_grants_v1_orgs__organization_id__support_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportGrantView"
+                  },
+                  "title": "Response List Support Grants V1 Orgs  Organization Id  Support Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Support Grants",
+        "tags": ["support"]
+      },
+      "post": {
+        "operationId": "grant_support_v1_orgs__organization_id__support_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Support",
+        "tags": ["support"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants/{grant_id}": {
+      "delete": {
+        "operationId": "revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Support Grant",
+        "tags": ["support"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries": {

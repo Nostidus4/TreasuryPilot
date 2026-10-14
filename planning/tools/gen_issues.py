@@ -70,9 +70,14 @@ def render(t):
         )
     elif t["id"] in {"INV-L03A", "INV-L03B", "INV-L03C"}:
         later_note = "\n> **Phase: Later.** This is a separately estimated delivery slice.\n"
-    else:
+    elif t["phase"] != "M1" and t.get("split_plan"):
+        later_note = ("\n> **Phase: Later.** Re-estimated as L (2 days) and split before scheduling:\n>\n"
+                      + "\n".join(f"> - {part}" for part in t["split_plan"]) + "\n")
+    elif t["phase"] != "M1":
         later_note = ("\n> **Phase: Later.** This ticket is intentionally coarser than M1 tickets. "
-                      "It must be re-estimated and split before it is scheduled.\n") if t["phase"] != "M1" else ""
+                      "It must be re-estimated and split before it is scheduled.\n")
+    else:
+        later_note = ""
     return f"""# {title(t)}
 
 | Field | Value |

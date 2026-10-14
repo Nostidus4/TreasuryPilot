@@ -106,6 +106,8 @@ stateDiagram-v2
 | Transition | Who | Guard (error) |
 |---|---|---|
 | submit | OPR, ADM | payee exists and not Deactivated (`PAYEE_UNKNOWN`); asset = treasury stablecoin (`ASSET_NOT_PAYMENT_STABLECOIN`); no other active request with the same fingerprint (`DUPLICATE_FINGERPRINT`); extracted fields confirmed if source = UPLOAD (`EXTRACTION_UNCONFIRMED`); extracted terms confirmed or none (`TERMS_UNCONFIRMED`) |
+| acknowledge flag | APR | request is AwaitingApproval (`NOT_AWAITING_APPROVAL`); flag is Open on the current revision (`FLAG_SUPERSEDED`); note has at least 10 non-whitespace characters; the creator cannot acknowledge, and maker-checker applies to the last editor unless solo mode is on (`MAKER_CHECKER`) |
+| serve approval typed data | APR | request is AwaitingApproval (`NOT_AWAITING_APPROVAL`); every HIGH flag on the current revision is acknowledged (`HIGH_FLAGS_UNACKED`) |
 | approve | APR with linked wallet | §8.6 (all errors listed there) |
 | edit bound field | OPR, ADM | status ∈ {Draft, AwaitingApproval→withdraw first, Approved} and no operation in flight (`PAYMENT_IN_FLIGHT`); `If-Match` (412) |
 | cancel | OPR (own drafts), OWN, ADM | no PAY operation NotSubmitted/Submitted/Pending/Unknown (`PAYMENT_IN_FLIGHT`, BR-060) |
@@ -116,6 +118,8 @@ stateDiagram-v2
 
 **Cancellation (M05-D4, BR-077):** cancel is immediate off-chain (validator code `REQUEST_CANCELLED`, signer refuses). If the request ever had a `Valid` approval, `cancel_onchain = Pending` and the UI shows **"Cancel on-chain"**: any Approver signs a transaction `module.cancelRequest(requestId)` from their own wallet, or the Owner submits it through Safe T. When `RequestCancelled` is observed, `cancel_onchain = Confirmed`. A Pending on-chain cancel is a visible to-do on the dashboard until confirmed.
 
+**INV-011 implementation boundary:** rejection, cancellation state changes, approval expiry, and renewal are persisted by the API/worker. The cancellation transaction builder and `RequestCancelled` event consumer remain unavailable until the module contract ABI/deployment and chain event indexer are present; the API returns `ONCHAIN_CANCEL_UNAVAILABLE` and leaves the cancellation visibly `Pending` in the meantime. Do not treat this state as an on-chain cancellation.
+
 ## 6. API (changes to API_SPEC §4)
 
 | Method | Endpoint | Perm | Request → Response | Errors |
@@ -124,15 +128,16 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | OPR | multipart `file`, `treasuryId` → `202 {requestId, extractionJobId}` | 413, 415, 422 `MULTI_INVOICE_DOCUMENT` |
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
-| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |
+| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart `file`, `treasuryId`, `?dryRun=true` → `{importId, dryRun, created[], errors[{row, field, code, message, value}], errorReportUrl}` | 413 `CSV_TOO_LARGE`; 422 `CSV_HEADER_INVALID`, `CSV_ENCODING`, `CSV_ROW_LIMIT` |
+| GET | `/orgs/{o}/requests/import-csv/{importId}/errors.csv` | OPR | downloadable, formula-neutralized error report | 404 `REQUEST_NOT_FOUND` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
 | POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`, 412, 422 `TERMS_INVALID` |
-| POST | `/…/{r}/submit` | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED` |
-| POST | `/…/{r}/withdraw` | OPR | → Draft | |
-| POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
-| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER` |
+| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`, `REQUEST_FIELDS_INCOMPLETE`; 412 |
+| POST | `/…/{r}/withdraw` | OPR | `If-Match` → Draft | 409 `INVALID_REQUEST_TRANSITION`; 412 |
+| POST | `/…/{r}/request-changes` | APR | `If-Match` + `{reason}` → Draft | 409 `INVALID_REQUEST_TRANSITION`, `MAKER_CHECKER`; 412 |
+| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER`, `NOT_AWAITING_APPROVAL` |
 | GET | `/…/{r}/approval-typed-data` | APR | → `{domain, types, primaryType, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED`, `NOT_AWAITING_APPROVAL` |
-| POST | `/…/{r}/approve` 🔁 | APR | `{signature, revision}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
+| POST | `/…/{r}/approve` 🔁 | APR | `Idempotency-Key` + `{signature, revision, expiry}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
 | POST | `/…/{r}/reject` | APR | `{reason}` → Rejected | |
 | POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
@@ -193,7 +198,7 @@ sequenceDiagram
 
 ### 7.2 CSV import
 
-Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. Steps: encoding UTF-8 (BOM allowed) → header exact match → per row: vendor by `normalized_ref`, payee address must belong to that vendor (no auto-creation), amount decimal string with ≤ asset decimals, dates ISO → fingerprint vs DB **and** vs earlier rows in the file → flags → Draft. `dryRun=true` returns the same report without writing. Error report CSV escapes cells starting with `= + - @ \t \r` by prefixing `'` (FR-307).
+Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. UTF-8 (BOM allowed), an exact ordered header (optional columns may be omitted), and at most 1,000 data rows / 5 MiB are accepted. Each row resolves a vendor by `normalized_ref`, requires a registered non-deactivated payee address belonging to that vendor, parses amount without rounding, validates ISO dates, and checks its fingerprint against active requests and earlier valid rows in the file. Valid rows become Draft requests with revisions, status events and deterministic flags; invalid rows stay in the report and do not prevent other valid rows from importing. `dryRun=true` returns the prospective valid rows and row errors without creating an import record or any requests. Cells containing NUL characters are rejected per row as `CSV_NUL_BYTE`. The endpoint takes no `Idempotency-Key`; a retry never creates duplicate requests (the active-fingerprint index holds) but re-reports the rows as `DUPLICATE_FINGERPRINT` under a new `importId`. A completed import with errors exposes `errorReportUrl`; its CSV download prefixes an apostrophe to cells starting with `= + - @ \t \r` (FR-307).
 
 ### 7.3 Recurring payment schedules (F-040, Later)
 
@@ -278,7 +283,7 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
 
-`services/api/src/treasurypilot_api/invoices/approval.py` is the server-side typed-data builder for INV-010. It accepts the current normalized request view and on-chain module context, derives expiry from the due deadline and mandate `approvalMaxAge`, and delegates the exact 13-field EIP-712/domain encoding to `treasurypilot_core.eip712`. The INV-010 API routes must call it after loading the latest request revision; route, persistence, linked-wallet authorization, and signature submission wiring remain part of the invoice approval endpoint implementation.
+`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 13-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

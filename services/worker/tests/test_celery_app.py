@@ -17,6 +17,7 @@ from treasurypilot_worker.tasks import (
     ai_probe,
     core_probe,
     generate_recurring_drafts_task,
+    publish_daily_audit_roots_task,
     publish_domain_events,
 )
 
@@ -55,6 +56,8 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert publish_domain_events.queue == "core"
     assert isinstance(generate_recurring_drafts_task, SafeTask)
     assert generate_recurring_drafts_task.queue == "core"
+    assert isinstance(publish_daily_audit_roots_task, SafeTask)
+    assert publish_daily_audit_roots_task.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -72,6 +75,15 @@ def test_recurring_draft_generation_is_scheduled_shortly_after_midnight_utc() ->
     assert entry["schedule"].minute == {5}
     assert entry["schedule"].hour == {0}
     assert entry["options"]["queue"] == "core"
+
+
+def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
+    entry = app.conf.beat_schedule["publish-daily-audit-roots"]
+
+    assert entry["task"] == "treasurypilot.audit.publish-daily-roots"
+    assert entry["schedule"].hour == {0}
+    assert entry["schedule"].minute == {5}
+    assert entry["options"] == {"queue": "core"}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

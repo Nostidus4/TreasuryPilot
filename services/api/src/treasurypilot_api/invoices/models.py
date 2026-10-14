@@ -147,6 +147,16 @@ class PaymentRequest(Base):
             "extraction_confirmed_by IS NULL OR extraction_confirmed_at IS NOT NULL",
             name="ck_payment_requests_extraction_confirmation_pair",
         ),
+        CheckConstraint(
+            "status = 'Draft' OR (vendor_id IS NOT NULL AND payee_id IS NOT NULL AND "
+            "invoice_no IS NOT NULL AND issue_date IS NOT NULL AND due_at IS NOT NULL "
+            "AND amount IS NOT NULL)",
+            name="ck_payment_requests_complete_before_transition",
+        ),
+        CheckConstraint(
+            "source != 'UPLOAD' OR status = 'Draft' OR extraction_confirmed_by IS NOT NULL",
+            name="ck_upload_request_confirmed_before_transition",
+        ),
         ForeignKeyConstraint(
             ["treasury_id", "org_id"],
             ["treasuries.id", "treasuries.org_id"],
@@ -197,6 +207,7 @@ class PaymentRequest(Base):
         ),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
+        Index("ix_payment_requests_vendor_amount_issue_date", "vendor_id", "amount", "issue_date"),
         Index(
             "uq_payment_requests_active_fingerprint",
             "treasury_id",
@@ -212,12 +223,12 @@ class PaymentRequest(Base):
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    payee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    invoice_no: Mapped[str] = mapped_column(String(200), nullable=False)
-    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
-    due_at: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    payee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    invoice_no: Mapped[str | None] = mapped_column(String(200))
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_at: Mapped[date | None] = mapped_column(Date)
+    amount: Mapped[int | None] = mapped_column(Numeric(78, 0))
     asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)
@@ -363,6 +374,7 @@ class RecurringPaymentSchedule(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="Active", server_default="Active"
     )
+    pause_reason: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     last_edited_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
@@ -379,10 +391,13 @@ class RecurringPaymentPeriod(Base):
     __table_args__ = (
         UniqueConstraint("schedule_id", "period_date", name="uq_recurring_period_schedule_date"),
         UniqueConstraint("request_id", name="uq_recurring_period_request"),
-        CheckConstraint("status IN ('Generated', 'Skipped')", name="ck_recurring_period_status"),
+        CheckConstraint(
+            "status IN ('Generated', 'Skipped', 'Failed')", name="ck_recurring_period_status"
+        ),
         CheckConstraint(
             "(status = 'Generated' AND request_id IS NOT NULL AND skipped_by IS NULL AND skipped_at IS NULL) OR "
-            "(status = 'Skipped' AND request_id IS NULL AND skipped_by IS NOT NULL AND skipped_at IS NOT NULL)",
+            "(status = 'Skipped' AND request_id IS NULL AND skipped_by IS NOT NULL AND skipped_at IS NOT NULL) OR "
+            "(status = 'Failed' AND request_id IS NULL AND skipped_by IS NULL AND skipped_at IS NULL AND reason IS NOT NULL)",
             name="ck_recurring_period_outcome",
         ),
         ForeignKeyConstraint(
@@ -399,6 +414,7 @@ class RecurringPaymentPeriod(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     skipped_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -508,6 +524,10 @@ class PaymentApproval(Base):
         CheckConstraint("jsonb_typeof(typed_data) = 'object'", name="ck_approvals_typed_data"),
         CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
+        CheckConstraint(
+            "idempotency_key_hash IS NULL OR octet_length(idempotency_key_hash) = 32",
+            name="ck_approvals_idempotency_key_hash",
+        ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(
             ["request_id", "revision"],
@@ -527,7 +547,15 @@ class PaymentApproval(Base):
             unique=True,
             postgresql_where=text("status = 'Valid'"),
         ),
+        UniqueConstraint(
+            "request_id", "idempotency_key_hash", name="uq_approvals_request_idempotency_key"
+        ),
         Index("ix_approvals_request_revision", "request_id", "revision"),
+        Index(
+            "ix_approvals_valid_expiry",
+            "expires_at",
+            postgresql_where=text("status = 'Valid'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -535,6 +563,7 @@ class PaymentApproval(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     approver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     approver_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    idempotency_key_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     typed_data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     acknowledged_flag_ids: Mapped[list[uuid.UUID]] = mapped_column(

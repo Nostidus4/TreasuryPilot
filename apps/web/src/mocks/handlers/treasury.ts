@@ -10,7 +10,6 @@ import type {
   MandateVersion,
   Payee,
   TreasuryState,
-  WalletRole,
 } from '@/lib/api/types';
 import {
   ADDR,
@@ -171,7 +170,11 @@ export const treasuryHandlers = [
     name?: string;
     chainId: number;
     assetId: string;
-    wallets: Array<{ role: WalletRole; safeAddress: string; label: string }>;
+    wallets: Array<{
+      role: 'SOURCE' | 'OPERATIONAL';
+      safeAddress: string;
+      label: string;
+    }>;
   }>(
     'post',
     '/orgs/:orgId/treasuries',
@@ -186,7 +189,7 @@ export const treasuryHandlers = [
           'This chain and asset are not supported.',
         );
       const errors = body.wallets.flatMap((wallet) => {
-        const field = `wallets.${wallet.role}`;
+        const field = `wallets.${wallet.label}`;
         if (!isAddress(wallet.safeAddress))
           return [
             { field, message: 'Enter a 0x address with 40 hex characters.' },
@@ -227,10 +230,20 @@ export const treasuryHandlers = [
           status: 'Setup',
         },
         wallets: body.wallets.map((wallet) => ({
-          role: wallet.role,
-          label: wallet.label,
+          role:
+            wallet.role === 'SOURCE'
+              ? 'T'
+              : wallet.label === 'O2'
+                ? 'O2'
+                : 'O1',
+          label:
+            wallet.role === 'SOURCE'
+              ? 'Treasury Safe'
+              : wallet.label === 'O2'
+                ? 'Second operational Safe'
+                : 'Payments Safe',
           safeAddress: wallet.safeAddress as Hex,
-          balance: wallet.role === 'T' ? usdc(25000) : '0',
+          balance: wallet.role === 'SOURCE' ? usdc(25000) : '0',
           buffer: '0',
           target: '0',
           threshold: 1,
@@ -282,44 +295,67 @@ export const treasuryHandlers = [
 
   route('post', `${T}/module/deploy-tx`, ({ params }) => {
     requireTreasury(params);
-    const existing = db.governance.find(
+    const state = db.treasuries[params.tId];
+    let txs = db.governance.filter(
       (tx) => tx.treasuryId === params.tId && tx.kind === 'DEPLOY_MODULE',
     );
-    if (existing) return { governanceTx: governanceView(existing) };
-    const state = db.treasuries[params.tId];
-    const tx = createGovernanceTx({
-      kind: 'DEPLOY_MODULE',
-      title: 'Deploy and enable the TreasuryPilot module',
-      summary:
-        'Deploys the module for this treasury and enables it on the Treasury Safe. Until a mandate is activated the module cannot move any funds.',
-      treasuryId: params.tId,
-      calls: [
-        {
-          to: state.wallets[0].safeAddress,
-          toLabel: 'Treasury Safe (T)',
-          value: '0',
-          operation: 0,
-          method: 'enableModule',
-          params: [
-            {
-              name: 'module',
-              type: 'address',
-              value: state.treasury.moduleAddress,
+    if (txs.length === 0) {
+      txs = state.wallets
+        .filter((safe) => ['T', 'O1', 'O2'].includes(safe.role))
+        .map((safe) =>
+          createGovernanceTx({
+            kind: 'DEPLOY_MODULE',
+            title:
+              safe.role === 'T'
+                ? 'Deploy and enable the TreasuryPilot module'
+                : `Enable the TreasuryPilot module on ${safe.role}`,
+            summary:
+              safe.role === 'T'
+                ? 'Deploys the module and enables it on the Treasury Safe.'
+                : `Enables the deployed module on ${safe.role}.`,
+            treasuryId: params.tId,
+            safeRole: safe.role as 'T' | 'O1' | 'O2',
+            calls: [
+              {
+                to: safe.safeAddress,
+                toLabel: `${safe.label} (${safe.role})`,
+                value: '0',
+                operation: 0,
+                method: 'enableModule',
+                params: [
+                  {
+                    name: 'module',
+                    type: 'address',
+                    value: state.treasury.moduleAddress,
+                  },
+                ],
+                data: `0x610b5925${'0'.repeat(24)}${state.treasury.moduleAddress.slice(2)}`,
+              },
+            ],
+            effect: () => {
+              const enabled = (db.moduleEnabled[params.tId] ??= []);
+              if (!enabled.includes(safe.role)) enabled.push(safe.role);
             },
-          ],
-          data: `0x610b5925${'0'.repeat(24)}${state.treasury.moduleAddress.slice(2)}`,
-        },
-      ],
-      effect: () => {
-        db.moduleEnabled[params.tId] = true;
-      },
-    });
-    return { governanceTx: governanceView(tx) };
+          }),
+        );
+    }
+    return {
+      governanceTx: governanceView(txs.find((tx) => tx.safeLabel.endsWith('(T)'))!),
+      operationalGovernanceTxs: txs
+        .filter((tx) => !tx.safeLabel.endsWith('(T)'))
+        .map(governanceView),
+      predictedModuleAddress: state.treasury.moduleAddress,
+      status: 'ModulePending',
+    };
   }),
 
   route('post', `${T}/coverage/refresh`, ({ params }) => {
     const state = requireTreasury(params);
-    if (!db.moduleEnabled[params.tId])
+    if (
+      !state.wallets
+        .filter((wallet) => ['T', 'O1', 'O2'].includes(wallet.role))
+        .every((wallet) => db.moduleEnabled[params.tId]?.includes(wallet.role))
+    )
       fail(
         409,
         'MODULE_NOT_ENABLED',

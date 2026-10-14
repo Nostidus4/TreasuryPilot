@@ -74,6 +74,9 @@ async def request_fingerprint(session: AsyncSession, request: PaymentRequest) ->
             .where(Vendor.id == request.vendor_id)
         )
     ).one()
+    if request.invoice_no is None or request.amount is None:
+        # ck_payment_requests_complete_before_transition keeps upload drafts in Draft.
+        raise ValueError("request has unconfirmed invoice fields")
     value = compute_fingerprint(vendor_ref, request.invoice_no, int(request.amount), asset_address)
     request.fingerprint = value
     return value
