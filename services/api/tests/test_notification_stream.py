@@ -8,9 +8,9 @@ from datetime import UTC, datetime, timedelta
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from treasurypilot_api.identity.access import MemberContext, not_found, require_member
 from treasurypilot_api.identity.api import problem_response
-from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.auth import AuthFailure, SessionAccess, UserRecord
+from treasurypilot_api.identity.rbac import MemberAccess, organization_not_found, require_member
 from treasurypilot_api.notifications.models import Notification
 from treasurypilot_api.notifications.routes import router
 from treasurypilot_api.notifications.stream import (
@@ -189,12 +189,17 @@ def _client(source: _Source, *, member: bool = True) -> TestClient:
     app.state.stream_options = FAST
     app.add_exception_handler(AuthFailure, problem_response)
 
-    def non_member() -> MemberContext:
-        raise not_found()
+    def non_member() -> MemberAccess:
+        raise organization_not_found()
 
-    app.dependency_overrides[require_member] = (
-        (lambda: MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))) if member else non_member
-    )
+    def granted() -> MemberAccess:
+        access = SessionAccess(
+            user=UserRecord(USER_ID, "operator@example.test", None, "active"),
+            session_id=uuid.UUID(int=1),
+        )
+        return MemberAccess(access=access, organization_id=ORG_ID, roles=frozenset({"Operator"}))
+
+    app.dependency_overrides[require_member] = granted if member else non_member
     return TestClient(app)
 
 

@@ -13,12 +13,7 @@ from treasurypilot_worker.runtime import (
     current_correlation_id,
     make_idempotency_key,
 )
-from treasurypilot_worker.tasks import (
-    ai_probe,
-    core_probe,
-    escalate_overdue_review_items,
-    publish_domain_events,
-)
+from treasurypilot_worker.tasks import ai_probe, core_probe, publish_domain_events
 
 
 def test_worker_uses_safe_delivery_settings() -> None:
@@ -35,6 +30,14 @@ def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
 
 
+def test_safe_config_refresh_is_scheduled_every_ten_minutes() -> None:
+    entry = app.conf.beat_schedule["refresh-safe-config-snapshots"]
+
+    assert entry["task"] == "treasurypilot.treasury.refresh_safe_config_snapshots"
+    assert entry["schedule"].minute == {0, 10, 20, 30, 40, 50}
+    assert entry["options"]["queue"] == "core"
+
+
 def test_registered_tasks_inherit_safe_base() -> None:
     assert isinstance(core_probe, SafeTask)
     assert core_probe.acks_late is True
@@ -45,8 +48,6 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert ai_probe.queue == "ai"
     assert isinstance(publish_domain_events, SafeTask)
     assert publish_domain_events.queue == "core"
-    assert isinstance(escalate_overdue_review_items, SafeTask)
-    assert escalate_overdue_review_items.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -55,14 +56,6 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
     assert entry["schedule"] == timedelta(seconds=1)
     assert entry["options"] == {"queue": "core", "expires": 2}
-
-
-def test_overdue_review_escalation_is_scheduled_every_minute() -> None:
-    entry = app.conf.beat_schedule["escalate-overdue-review-items"]
-
-    assert entry["task"] == "treasurypilot.recovery.escalate-overdue-review-items"
-    assert entry["schedule"] == timedelta(seconds=60)
-    assert entry["options"] == {"queue": "core", "expires": 30}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

@@ -40,11 +40,18 @@ Payee screening: `Screening → CLEAR | HIT | ERROR`; re-screen when TTL expires
 
 ## 6. Interfaces
 
-Internal `screen(address, chain) → ScreeningResult`; `encrypt(value, cls)` / `decrypt`; structlog processors. API: `GET /orgs/{o}/payees/{id}/screenings` (OWN, ADM, Auditor).
+Internal `screen(org_id, address, chain) → ScreeningResult`; `encrypt(value, cls)` / `decrypt`; structlog processors. API: `GET /orgs/{o}/payees/{id}/screenings` (OWN, ADM, Auditor).
 
 ## 7. Flows
 
 Payee proposal → screen → CLEAR → Owner may register (M03). Before each PAY (validator, M08): latest screening ≤ 24 h old? CLEAR → pass; stale → refresh synchronously (timeout 5 s); HIT or ERROR → BLOCK `SCREENING_HIT` / `DATA_MISSING` (fail closed, BR-085).
+
+The execution caller runs `screen_plan_before_pay()` before policy validation. It screens
+each PAY step's destination with the plan chain id, then sets `screening_hit` and
+`screening_clear` in `ValidationContext`. `screening_clear` defaults to false, so a
+missing screening result blocks with `DATA_MISSING`; a fresh or refreshed HIT blocks
+with `SCREENING_HIT` only (not also `DATA_MISSING`). No PAY executor is currently wired in the repository, so this is
+the integration seam that future execution code must call before `validate_plan()`.
 
 ## 8. Algorithms
 
@@ -54,6 +61,32 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 ## 9. Configuration
 
 Screening TTL 24 h; provider `fixture` in M1; encryption key from Docker secret `field_key`; redaction on in all environments.
+
+The API exposes the screening adapter through `app.state.screening_service` for
+payee-registration and pre-PAY callers. `screen(org_id, address, chain_id)` persists each
+result with its `chain_id` and provider, and reuses a CLEAR/HIT record for 24 hours
+only for the same address, chain and provider; a reused result is also recorded for
+the requesting payee so its screening history is complete; that copy keeps the original
+`checked_at`/`ttl_until` (when the provider answered, not when the payee relied on it).
+A cached result cannot be force-refreshed within its 24-hour window, and concurrent
+cache misses may each insert a row. Address matching ignores
+case and checksum (`0x`/`0X` or bare hex). The provider call has a 5-second timeout
+(M14-D7). A timeout or provider error (`ScreeningProviderError`, network errors) is
+logged and persisted as ERROR without a cache lifetime; `require_clear()` raises
+`DATA_MISSING` for ERROR and `SCREENING_HIT` for HIT (fail closed, BR-085). Invalid
+input (address, `chain_id <= 0`, a naive clock) raises instead of being recorded.
+
+The fixture provider reads the `screening_lists` table (TEST DATA rows seeded by
+migration `20261014_0013`, including a sample from the
+[OFAC SDN-list update on 2026-03-12](https://ofac.treasury.gov/recent-actions/20260312))
+and is only used when `TP_ENVIRONMENT` is exactly `local`, `test` or `demo`
+(case-insensitive; `dev`/`development` are not accepted and fail closed). The seed runs
+in every environment, so production must delete those TEST DATA rows before a real list
+reader is pointed at the table. The fixture matches on address only and ignores
+`chain_id`, so one list entry yields a separate HIT row per chain screened. In any other
+environment no real provider exists yet, so screening fails closed (every check is
+ERROR → `DATA_MISSING`) and startup logs `screening_provider_unconfigured`.
+The fixture is not a live sanctions list and must not be used for real screening.
 
 The `field_key` secret contains a base64-encoded 32-byte key. Services load it from
 `/run/secrets/field_key` by default; managed environments may inject
@@ -93,3 +126,37 @@ CMP-001 → CMP-003 → CMP-002. Later CMP-L01…L04.
 | M14-D7 | Synchronous refresh before PAY with 5 s timeout. |
 | M14-D8 | Addresses and tx hashes are not redacted (needed for audit). |
 | M14-D9 | Encryption key from Docker secret; rotation is Later. |
+
+## 15. Retention and deletion (CMP-L03)
+
+Retention is disabled until an organization has a `retention_policies` row with
+`invite_retention_days` set. The period starts when an invitation expires. An
+organization legal hold overrides deletion, and policy changes serialize with the
+deletion worker through a row lock. Administrators must set a period that satisfies
+their applicable legal minimum; the application does not invent a jurisdictional
+default. The period is limited to 0-36500 days (database check and validation).
+A failure in one organization is logged and does not stop the others; the command
+then exits non-zero. A dry run takes no write locks. A real run also locks the
+organization's audit head, which every audit writer holds until commit, so an
+audit entry cannot reference an invitation between the check and the deletion.
+The audit reference check is a text search over the organization's audit rows; an
+indexed structured reference is a follow-up that needs an audit schema change.
+Use `configure_policy()` in the same transaction as the authorized policy
+change. A `None` period disables scheduled deletion.
+
+Run `python -m treasurypilot_api.compliance.retention` to preview a bounded batch;
+pass `--execute` to delete it. Schedule that command under an operational identity
+with database access. Each deleted invitation leaves a `deletion_receipts` row with
+only a SHA-256 digest of its random UUID, a record type and deletion timestamp.
+The digest is never computed from email, a name, or a token. The worker skips an
+invitation referenced by the immutable audit log, because deleting the source
+cannot remove personal data from that hash chain; email matches ignore case. Those records require a separate
+legal review before a broader erasure workflow is enabled. Session and magic-link
+retention are separate follow-up scopes because they are user-wide rather than
+organization-scoped; no policy here silently deletes them.
+
+The original one-day CMP-L03 estimate covers only the invitation slice (about half
+a day). Follow-up work is estimated at another 2–3 days: user-wide session and
+magic-link retention, subject-level deletion requests and holds, and a policy for
+financial records and immutable audit evidence after their storage models land.
+Until those slices are designed and implemented, CMP-L03 remains open.

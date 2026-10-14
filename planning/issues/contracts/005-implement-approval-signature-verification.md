@@ -50,7 +50,7 @@ Reject signatures for another chain or contract through the domain separator.
 ## Acceptance criteria
 
 - [ ] Valid signature by a current approver passes
-- [ ] A changed field, wrong chain, wrong contract, removed approver or expired approval each revert with a distinct error
+- [ ] Changed fields, wrong chain and wrong contract revert ApprovalInvalid per M04 section 6.4; removed approver reverts NotApprover and expired approval reverts ApprovalExpired
 
 ## Testing requirements
 

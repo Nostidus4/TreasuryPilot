@@ -8,6 +8,11 @@ Human authority (approve, grant exception) and system authority (validated plan)
 `OneTimeException` and the duplicate-override flag are **no longer EIP-712 signatures**. The Owner (Safe T) grants them with governance transactions `grantException(...)` and `allowDuplicate(...)` (M04-D3). On-chain, only `PaymentApproval` remains a typed signature in M1; `PlanAttestation` stays signer-side.
 
 ## Original decision
+
+The current PaymentApproval has 13 fields per ADR-019. Signer-side
+PlanAttestation uses the separate `TreasuryPilot Policy` domain defined in M08
+section 6.3; SC-017 publishes vectors for it. The original signatures below are
+historical, including the superseded on-chain exception and duplicate flag.
 Three typed structs, each under the domain `{name: "TreasuryPilot", version: "1", chainId, verifyingContract: module}`:
 - `PaymentApproval{requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, overrideDuplicate, expiry}`. Signed by an Approver; verified on-chain.
 - `OneTimeException{requestId, mandateVersion, payingWallet, payee, asset, amount, expiry, nonce}`. Signed by the Owner; verified on-chain, consumed once.

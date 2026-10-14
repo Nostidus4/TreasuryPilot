@@ -14,9 +14,9 @@ from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.events.models import DomainEvent
-from treasurypilot_api.identity.access import MemberContext, require_member
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.notifications.models import Notification
 from treasurypilot_api.notifications.stream import (
     EVENT_STREAM_TYPES,
@@ -259,7 +259,7 @@ async def list_notifications(
     request: Request,
     unread: bool = False,
     limit: int = Query(default=50, ge=1, le=100),  # noqa: B008
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> NotificationList:
     rows, unread_count = await _repository(request).list_notifications(
         organization_id=member.organization_id,
@@ -280,7 +280,7 @@ async def list_notifications(
 async def mark_notifications_read(
     payload: MarkReadRequest,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> MarkReadResponse:
     updated = await _repository(request).mark_read(
         organization_id=member.organization_id,
@@ -298,7 +298,7 @@ async def mark_notifications_read(
 async def mark_notification_read(
     notification_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> MarkReadResponse:
     """Mark one notification read; idempotent for the owner, 404 for anyone else."""
     updated = await _repository(request).mark_read(
@@ -324,7 +324,7 @@ async def mark_notification_read(
 async def stream_events(
     request: Request,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),  # noqa: B008
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
     options: StreamOptions = Depends(stream_options),  # noqa: B008
 ) -> StreamingResponse:
     """Server-sent events for this organization; resume with ``Last-Event-ID``."""
