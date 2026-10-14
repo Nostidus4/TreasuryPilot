@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
+from eth_abi import decode as abi_decode
+from eth_utils import keccak
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
@@ -22,6 +24,7 @@ from treasurypilot_api.identity import rbac
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Membership, Organization, User
+from treasurypilot_api.treasury import safe as safe_module
 from treasurypilot_api.treasury.api import router
 from treasurypilot_api.treasury.config import (
     AssetConfig,
@@ -40,7 +43,15 @@ from treasurypilot_api.treasury.models import (
     TreasuryWallet,
     WalletRole,
 )
-from treasurypilot_api.treasury.safe import RpcUnavailable, SafeInfo, SafeVerificationError
+from treasurypilot_api.treasury.safe import (
+    RpcUnavailable,
+    SafeDeploymentCodeMismatch,
+    SafeInfo,
+    SafeVerificationError,
+    UnsupportedChain,
+    build_safe_deployment_transaction,
+    verify_safe_deployment_code,
+)
 from treasurypilot_api.treasury.service import (
     TreasuryNotFound,
     TreasuryRecord,
@@ -141,6 +152,7 @@ def _client(
     app.include_router(router)
     app.state.organization_repository = Roles(roles)
     app.state.treasury_service = service
+    app.state.platform_configuration = _configuration()
 
     @app.exception_handler(AuthFailure)
     async def handler(request: Any, exc: AuthFailure) -> Any:
@@ -177,6 +189,148 @@ def test_non_members_get_404(monkeypatch: pytest.MonkeyPatch) -> None:
         client.get(f"/v1/orgs/{ORG}/treasuries/{uuid.uuid4()}"),
     ):
         assert (response.status_code, response.json()["code"]) == (404, "ORG_NOT_FOUND")
+
+
+def test_safe_deployment_endpoint_fails_closed_without_verified_deployments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _client(monkeypatch, {"Owner"}, FakeService()).post(
+        f"/v1/orgs/{ORG}/safes/deploy-tx",
+        json={"chainId": CHAIN_ID, "owners": OWNERS[:2], "threshold": 2},
+    )
+    assert (response.status_code, response.json()["code"]) == (
+        503,
+        "SAFE_DEPLOYMENT_UNAVAILABLE",
+    )
+
+
+def test_safe_deployment_endpoint_requires_owner_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = _client(monkeypatch, {"Finance"}, FakeService()).post(
+        f"/v1/orgs/{ORG}/safes/deploy-tx",
+        json={"chainId": CHAIN_ID, "owners": OWNERS[:2], "threshold": 2},
+    )
+    assert (response.status_code, response.json()["code"]) == (403, "FORBIDDEN")
+
+
+def test_safe_deployment_transaction_uses_manifest_factory_and_safe_setup() -> None:
+    base = _configuration()
+    current = base.manifests[0]
+    deployments = (
+        *current.deployments,
+        *(
+            DeploymentConfig(
+                name=name,
+                address="0x" + f"{index:040x}",
+                code_hash="0x" + f"{index:064x}",
+                version="1.4.1",
+            )
+            for name, index in (
+                ("SAFE_SINGLETON_L1", 0x601),
+                ("SAFE_PROXY_FACTORY", 0x602),
+                ("SAFE_FALLBACK_HANDLER", 0x603),
+            )
+        ),
+    )
+    configuration = PlatformConfiguration(
+        chains=base.chains,
+        manifests=(DeploymentManifest(chain_id=CHAIN_ID, deployments=deployments),),
+    )
+    transaction = build_safe_deployment_transaction(configuration, CHAIN_ID, OWNERS[:2], 2, 123)
+    assert transaction["to"] == "0x" + f"{0x602:040x}"
+    assert transaction["value"] == "0"
+    factory_call = bytes.fromhex(transaction["data"][2:])
+    assert factory_call[:4] == keccak(text="createProxyWithNonce(address,bytes,uint256)")[:4]
+    singleton, setup_data, salt_nonce = abi_decode(
+        ["address", "bytes", "uint256"], factory_call[4:]
+    )
+    assert singleton == "0x" + f"{0x601:040x}"
+    assert salt_nonce == 123
+    assert (
+        setup_data[:4]
+        == keccak(text="setup(address[],uint256,address,bytes,address,address,uint256,address)")[:4]
+    )
+    owners, threshold, _, _, fallback_handler, _, _, _ = abi_decode(
+        ["address[]", "uint256", "address", "bytes", "address", "address", "uint256", "address"],
+        setup_data[4:],
+    )
+    assert [owner.lower() for owner in owners] == [owner.lower() for owner in OWNERS[:2]]
+    assert threshold == 2 and fallback_handler == "0x" + f"{0x603:040x}"
+
+
+def test_safe_deployment_manifest_hashes_must_match_live_runtime_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _configuration()
+    runtime_code = b"verified Safe deployment bytecode"
+    runtime_hash = "0x" + keccak(runtime_code).hex()
+    deployment_values = (
+        ("SAFE_SINGLETON_L1", 0x601),
+        ("SAFE_PROXY_FACTORY", 0x602),
+        ("SAFE_FALLBACK_HANDLER", 0x603),
+    )
+
+    def configuration(code_hash: str) -> PlatformConfiguration:
+        entries = (
+            *base.manifests[0].deployments,
+            *(
+                DeploymentConfig(
+                    name=name,
+                    address="0x" + f"{index:040x}",
+                    code_hash=code_hash,
+                    version="1.4.1",
+                )
+                for name, index in deployment_values
+            ),
+        )
+        return PlatformConfiguration(
+            chains=base.chains,
+            manifests=(DeploymentManifest(chain_id=CHAIN_ID, deployments=entries),),
+        )
+
+    def rpc(url: str, method: str, params: list[object]) -> str:
+        if method == "eth_chainId":
+            return hex(CHAIN_ID)
+        assert method == "eth_getCode"
+        return "0x" + runtime_code.hex()
+
+    monkeypatch.setattr(safe_module, "_rpc", rpc)
+    asyncio.run(verify_safe_deployment_code(configuration(runtime_hash), CHAIN_ID, {}))
+    with pytest.raises(SafeDeploymentCodeMismatch):
+        asyncio.run(verify_safe_deployment_code(configuration("0x" + "ff" * 32), CHAIN_ID, {}))
+    with pytest.raises(UnsupportedChain):
+        asyncio.run(verify_safe_deployment_code(configuration(runtime_hash), 999, {}))
+
+
+def test_safe_deployment_prefers_l2_singleton_off_l1_chains_and_checks_owner_format() -> None:
+    base = _configuration()
+    entries = (
+        *base.manifests[0].deployments,
+        *(
+            DeploymentConfig(
+                name=name,
+                address="0x" + f"{index:040x}",
+                code_hash="0x" + f"{index:064x}",
+                version="1.4.1",
+            )
+            for name, index in (
+                ("SAFE_SINGLETON_L1", 0x601),
+                ("SAFE_SINGLETON_L2", 0x604),
+                ("SAFE_PROXY_FACTORY", 0x602),
+                ("SAFE_FALLBACK_HANDLER", 0x603),
+            )
+        ),
+    )
+    configuration = PlatformConfiguration(
+        chains=base.chains,
+        manifests=(DeploymentManifest(chain_id=CHAIN_ID, deployments=entries),),
+    )
+    data = bytes.fromhex(
+        build_safe_deployment_transaction(configuration, CHAIN_ID, OWNERS[:1], 1, 1)["data"][2:]
+    )
+    assert abi_decode(["address", "bytes", "uint256"], data[4:])[0] == "0x" + f"{0x604:040x}"
+    for bad in (OWNERS[0][2:], "0x" + "aB" * 20):
+        with pytest.raises(ValueError, match="valid Ethereum addresses"):
+            build_safe_deployment_transaction(configuration, CHAIN_ID, [bad], 1, 1)
 
 
 @pytest.mark.parametrize(
@@ -245,6 +399,20 @@ def _wallet(label: str, owners: Sequence[str], threshold: int) -> WalletRecord:
     return WalletRecord(
         uuid.uuid4(), WalletRole.OPERATIONAL, label, SAFES[0], tuple(owners), threshold
     )
+
+
+def test_generated_labels_skip_user_supplied_ones() -> None:
+    service = TreasuryService(None, None, _configuration())  # type: ignore[arg-type]
+    wallets = [
+        WalletInput(WalletRole.SOURCE, SAFES[0], "O1"),
+        WalletInput(WalletRole.OPERATIONAL, SAFES[1], None),
+        WalletInput(WalletRole.OPERATIONAL, SAFES[2], "t"),
+    ]
+    labels = [label for _, _, label in service._validate(CHAIN_ID, ASSET, wallets)]
+    assert labels == ["O1", "O2", "t"]
+    wallets[0] = WalletInput(WalletRole.SOURCE, SAFES[0], None)
+    labels = [label for _, _, label in service._validate(CHAIN_ID, ASSET, wallets)]
+    assert labels == ["T2", "O1", "t"]
 
 
 def test_differing_owner_sets_or_thresholds_warn() -> None:

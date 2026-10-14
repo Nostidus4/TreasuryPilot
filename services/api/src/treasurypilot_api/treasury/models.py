@@ -222,6 +222,8 @@ class TreasuryWallet(VersionedMixin, Base):
     __tablename__ = "treasury_wallets"
     __table_args__ = (
         UniqueConstraint("id", "org_id", name="uq_treasury_wallets_id_org"),
+        # Lets payment_requests pin its paying wallet to the request's treasury.
+        UniqueConstraint("id", "treasury_id", name="uq_treasury_wallets_id_treasury"),
         # One on-chain Safe belongs to exactly one treasury across all tenants.
         UniqueConstraint("chain_id", "safe_address", name="uq_treasury_wallets_chain_address"),
         ForeignKeyConstraint(

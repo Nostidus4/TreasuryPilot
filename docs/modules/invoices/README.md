@@ -40,7 +40,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|
 | **Vendor** | A company we pay (name, tax id, normalized reference). Has 1..n payee addresses (M03). History (amounts, addresses) is kept **per vendor** (M05-D2). |
 | **Payment request** | One invoice to be paid once, in full, from one paying wallet to one payee (M05-D9). |
-| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
+| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
 | **Free fields** | Internal note, tags, cost center, attachments other than the invoice document. Editable at any time before Paid without invalidation. |
 | **requestId (on-chain)** | `keccak256(abi.encode("TP_REQ_V1", orgId, request uuid))`. Stable across revisions so `requestPaid` blocks a second payment of any revision. |
 | **invoiceHash** | `keccak256(abi.encode(normVendorRef, normInvoiceNo, amount, asset, issueDate, dueDate, documentSha256 or 0x0))` (M05-D3). |
@@ -53,11 +53,11 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|---|
 | `vendors` | id, org_id, name, **normalized_ref** (unique per org), **tax_id** null, contact (encrypted), notes, created_by | M05-D2. `normalized_ref = norm(name or supplier code)` set once; renaming keeps it |
 | `payees` | + `vendor_id` NOT NULL | a payee always belongs to a vendor |
-| `payment_requests` | id, org_id, treasury_id, vendor_id, payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
+| `payment_requests` | id, org_id, treasury_id, chain_id (= treasury's chain, ties asset_id), vendor_id (= payee's vendor, same org), payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
 | `request_revisions` | id, request_id, revision, snapshot jsonb (all bound inputs), edited_by, at, reason | append-only |
 | `documents` | id, request_id, storage_key, sha256, mime, size, pages, uploaded_by | private bucket |
 | `flags` | id, request_id, **revision**, code, severity, evidence jsonb, source enum(DETERMINISTIC, AI), status enum(Open, Acknowledged, Superseded), acknowledged_by/at, ack_note | recomputed on every revision; old ones → Superseded |
-| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, **acknowledged_flag_ids** uuid[], **solo_mode** bool, expires_at, status enum(Valid, Invalidated, Expired, Cancelled) | immutable except status |
+| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, **acknowledged_flag_ids** uuid[], **solo_mode** bool, expires_at, status enum(Valid, Invalidated, Expired, Cancelled) | immutable except status, which only moves Valid → Invalidated/Expired/Cancelled |
 | `csv_imports` | id, org_id, treasury_id, file_sha256, rows_total, rows_created, errors jsonb, created_by, at | |
 | `request_status_events` | id, request_id, from, to, actor_type, actor_id, reason, at | append-only |
 
@@ -237,6 +237,8 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 6. Recover the signer (ECDSA) or call `isValidSignature` (ERC-1271) on the caller's linked contract wallet (`SIGNATURE_INVALID`).
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
+
+`services/api/src/treasurypilot_api/invoices/approval.py` is the server-side typed-data builder for INV-010. It accepts the current normalized request view and on-chain module context, derives expiry from the due deadline and mandate `approvalMaxAge`, and delegates the exact 13-field EIP-712/domain encoding to `treasurypilot_core.eip712`. The INV-010 API routes must call it after loading the latest request revision; route, persistence, linked-wallet authorization, and signature submission wiring remain part of the invoice approval endpoint implementation.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 
