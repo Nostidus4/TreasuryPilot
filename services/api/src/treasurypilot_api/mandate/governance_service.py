@@ -670,6 +670,8 @@ class GovernanceService:
         purpose: GovernanceTxPurpose,
         calls: list[GovernanceCall],
         safe_address: bytes | None = None,
+        entity_type: str | None = None,
+        entity_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         if safe_address is None:
             treasury, wallet = await self._source(organization_id, treasury_id)
@@ -776,6 +778,8 @@ class GovernanceService:
                 chain_id=treasury.chain_id,
                 safe_address=wallet.safe_address,
                 purpose=purpose,
+                entity_type=entity_type,
+                entity_id=entity_id,
                 calls=[item.as_json() for item in calls],
                 to=tx.to,
                 value=tx.value,

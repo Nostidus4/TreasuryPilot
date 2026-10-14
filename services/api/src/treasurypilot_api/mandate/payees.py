@@ -21,7 +21,14 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
+from treasurypilot_api.mandate.governance import (
+    GovernanceCall,
+    build_add_payee_call,
+    build_deactivate_payee_call,
+)
+from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
 from treasurypilot_api.mandate.models import (
+    GovernanceTxPurpose,
     OobMethod,
     Payee,
     PayeeStatus,
@@ -30,6 +37,7 @@ from treasurypilot_api.mandate.models import (
     Vendor,
 )
 from treasurypilot_api.treasury.models import Treasury, TreasuryWallet
+from treasurypilot_api.treasury.safe import RpcUnavailable
 
 
 class PayeeExists(Exception):
@@ -76,6 +84,7 @@ class PayeeRecord:
 class PayeeContext:
     chain_id: int
     wallet_addresses: frozenset[bytes]
+    module_address: bytes | None = None
 
 
 class PayeeRepository(Protocol):
@@ -119,6 +128,15 @@ class PayeeRepository(Protocol):
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID, payee_id: uuid.UUID
     ) -> PayeeRecord | None: ...
 
+    async def attach_registration_tx(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        governance_tx_id: uuid.UUID,
+    ) -> bool: ...
+
     async def verify_oob(
         self,
         *,
@@ -147,13 +165,14 @@ def _screening_summary(row: Screening | None) -> ScreeningSummary | None:
 
 
 def _payee_record(row: Payee, screening: Screening | None = None) -> PayeeRecord:
+    status = effective_payee_status(row.status.value, row.active_from, now=datetime.now(UTC))
     return PayeeRecord(
         id=row.id,
         treasury_id=row.treasury_id,
         vendor_id=row.vendor_id,
         label=row.label,
         address=row.address,
-        status=row.status.value,
+        status=status,
         oob_method=row.oob_method.value if row.oob_method else None,
         oob_note=row.oob_note,
         oob_verified_by=row.oob_verified_by,
@@ -164,6 +183,13 @@ def _payee_record(row: Payee, screening: Screening | None = None) -> PayeeRecord
         created_at=row.created_at,
         screening=_screening_summary(screening),
     )
+
+
+def effective_payee_status(status: str, active_from: datetime | None, *, now: datetime) -> str:
+    """Project the time-derived Cooling → Active transition without another chain event."""
+    if status == PayeeStatus.COOLING.value and active_from is not None and active_from <= now:
+        return PayeeStatus.ACTIVE.value
+    return status
 
 
 async def _latest_screening(session: AsyncSession, payee_id: uuid.UUID) -> Screening | None:
@@ -188,12 +214,13 @@ class SqlAlchemyPayeeRepository:
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
     ) -> PayeeContext | None:
         async with self._sessions() as session:
-            chain_id = await session.scalar(
-                select(Treasury.chain_id).where(
+            treasury = await session.execute(
+                select(Treasury.chain_id, Treasury.module_address).where(
                     Treasury.id == treasury_id, Treasury.org_id == organization_id
                 )
             )
-            if chain_id is None:
+            row = treasury.one_or_none()
+            if row is None:
                 return None
             wallets = await session.scalars(
                 select(TreasuryWallet.safe_address).where(
@@ -201,7 +228,13 @@ class SqlAlchemyPayeeRepository:
                     TreasuryWallet.org_id == organization_id,
                 )
             )
-            return PayeeContext(chain_id=chain_id, wallet_addresses=frozenset(wallets))
+            return PayeeContext(
+                chain_id=row.chain_id,
+                wallet_addresses=frozenset(wallets),
+                module_address=bytes(row.module_address)
+                if row.module_address is not None
+                else None,
+            )
 
     async def vendor_exists(self, *, organization_id: uuid.UUID, vendor_id: uuid.UUID) -> bool:
         async with self._sessions() as session:
@@ -337,6 +370,32 @@ class SqlAlchemyPayeeRepository:
                 return None
             return _payee_record(row, await _latest_screening(session, row.id))
 
+    async def attach_registration_tx(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        governance_tx_id: uuid.UUID,
+    ) -> bool:
+        async with self._sessions() as session, session.begin():
+            row = await session.scalar(
+                select(Payee)
+                .where(
+                    Payee.id == payee_id,
+                    Payee.treasury_id == treasury_id,
+                    Payee.org_id == organization_id,
+                )
+                .with_for_update()
+            )
+            if row is None or row.status != PayeeStatus.AWAITING_OWNER:
+                return False
+            if row.registration_tx_id not in (None, governance_tx_id):
+                return False
+            row.registration_tx_id = governance_tx_id
+            await session.flush()
+            return True
+
     async def verify_oob(
         self,
         *,
@@ -409,6 +468,21 @@ class OobVerification(ApiModel):
         if not value.strip():
             raise ValueError("must not be blank")
         return value.strip()
+
+
+class DeactivationRequest(ApiModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value.strip()
+
+
+class ReplacePayeeAddressRequest(DeactivationRequest):
+    address: str
 
 
 class ScreeningView(ApiModel):
@@ -540,6 +614,55 @@ def check_registration_gates(payee: PayeeRecord, *, now: datetime) -> AuthFailur
             detail="Record the out-of-band verification before registering this payee.",
         )
     return None
+
+
+def _governance_service(request: Request) -> GovernanceService:
+    service = getattr(request.app.state, "governance_service", None)
+    if service is None:
+        raise AuthFailure(
+            status=503,
+            code="GOVERNANCE_UNAVAILABLE",
+            title="Governance unavailable",
+            detail="Governance transaction storage or chain verification is not configured.",
+        )
+    return cast(GovernanceService, service)
+
+
+async def _build_payee_governance_tx(
+    request: Request,
+    *,
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    user_id: uuid.UUID,
+    purpose: GovernanceTxPurpose,
+    call: GovernanceCall,
+    payee_id: uuid.UUID,
+) -> dict[str, object]:
+    try:
+        return await _governance_service(request).create(
+            organization_id=organization_id,
+            treasury_id=treasury_id,
+            user_id=user_id,
+            purpose=purpose,
+            calls=[call],
+            entity_type="payee",
+            entity_id=payee_id,
+        )
+    except GovernanceFailure as exc:
+        raise AuthFailure(
+            status=exc.status,
+            code=exc.code,
+            title="Governance transaction rejected",
+            detail=exc.detail,
+        ) from None
+    except RpcUnavailable:
+        raise AuthFailure(
+            status=503,
+            code="RPC_UNAVAILABLE",
+            title="Chain RPC unavailable",
+            detail="Safe state could not be read because no RPC provider answered.",
+            retry_after=5,
+        ) from None
 
 
 router = APIRouter(
@@ -731,7 +854,7 @@ async def verify_oob(
 
 @router.post(
     "/{payee_id}/registration-tx",
-    response_model=None,
+    status_code=201,
     openapi_extra={"x-organization-scoped": True},
 )
 async def build_registration_tx(
@@ -740,7 +863,7 @@ async def build_registration_tx(
     payee_id: uuid.UUID,
     request: Request,
     member: MemberAccess = Depends(_require_owner),  # noqa: B008
-) -> Response:
+) -> dict[str, object]:
     row = await _repository(request).get_payee(
         organization_id=member.organization_id, treasury_id=treasury_id, payee_id=payee_id
     )
@@ -749,10 +872,249 @@ async def build_registration_tx(
     refusal = check_registration_gates(row, now=datetime.now(UTC))
     if refusal is not None:
         raise refusal
-    # Every gate passed; the addPayee governance bundle itself is MDT-005.
-    raise AuthFailure(
-        status=501,
-        code="NOT_IMPLEMENTED",
-        title="Registration bundle not implemented",
-        detail="Building the addPayee governance transaction is delivered by MDT-005.",
+    if row.registration_tx_id is not None:
+        raise AuthFailure(
+            status=409,
+            code="REGISTRATION_TX_EXISTS",
+            title="Registration already proposed",
+            detail="This payee already has a registration transaction in progress.",
+        )
+    context = await _repository(request).get_context(
+        organization_id=member.organization_id, treasury_id=treasury_id
     )
+    if context is None:
+        raise _not_found()
+    if context.module_address is None:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="Deploy and activate the treasury module before registering payees.",
+        )
+    try:
+        call = build_add_payee_call(context.module_address, payee=row.address)
+    except ValueError:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="The treasury module address is invalid.",
+        ) from None
+    governance_tx = await _build_payee_governance_tx(
+        request,
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        user_id=member.user_id,
+        purpose=GovernanceTxPurpose.PAYEE_ADD,
+        call=call,
+        payee_id=payee_id,
+    )
+    tx_id = governance_tx.get("id")
+    if not isinstance(tx_id, uuid.UUID):
+        try:
+            tx_id = uuid.UUID(str(tx_id))
+        except (ValueError, TypeError, AttributeError):
+            raise AuthFailure(
+                status=503,
+                code="GOVERNANCE_UNAVAILABLE",
+                title="Governance unavailable",
+                detail="The governance service returned an invalid transaction identifier.",
+            ) from None
+    linked = await _repository(request).attach_registration_tx(
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        payee_id=payee_id,
+        governance_tx_id=tx_id,
+    )
+    if not linked:
+        raise AuthFailure(
+            status=409,
+            code="PAYEE_CHANGED",
+            title="Payee registration changed",
+            detail="The payee is no longer awaiting registration; reload its current state.",
+        )
+    return {"governanceTx": governance_tx}
+
+
+@router.post(
+    "/{payee_id}/deactivation-tx",
+    status_code=201,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def build_deactivation_tx(
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    payee_id: uuid.UUID,
+    payload: DeactivationRequest,
+    request: Request,
+    member: MemberAccess = Depends(_require_owner),  # noqa: B008
+) -> dict[str, object]:
+    row = await _repository(request).get_payee(
+        organization_id=member.organization_id, treasury_id=treasury_id, payee_id=payee_id
+    )
+    if row is None:
+        raise _not_found()
+    if row.status not in (PayeeStatus.COOLING.value, PayeeStatus.ACTIVE.value):
+        raise AuthFailure(
+            status=409,
+            code="PAYEE_NOT_REGISTERED",
+            title="Payee is not registered",
+            detail="Only a registered payee can be deactivated on-chain.",
+        )
+    context = await _repository(request).get_context(
+        organization_id=member.organization_id, treasury_id=treasury_id
+    )
+    if context is None:
+        raise _not_found()
+    if context.module_address is None:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="Deploy and activate the treasury module before deactivating payees.",
+        )
+    try:
+        call = build_deactivate_payee_call(context.module_address, payee=row.address)
+    except ValueError:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="The treasury module address is invalid.",
+        ) from None
+    governance_tx = await _build_payee_governance_tx(
+        request,
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        user_id=member.user_id,
+        purpose=GovernanceTxPurpose.PAYEE_DEACTIVATE,
+        call=call,
+        payee_id=payee_id,
+    )
+    return {"governanceTx": governance_tx}
+
+
+@router.post(
+    "/{payee_id}/replace-address",
+    status_code=201,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def replace_payee_address(
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    payee_id: uuid.UUID,
+    payload: ReplacePayeeAddressRequest,
+    request: Request,
+    member: MemberAccess = Depends(_require_owner),  # noqa: B008
+) -> dict[str, object]:
+    repository = _repository(request)
+    old = await repository.get_payee(
+        organization_id=member.organization_id, treasury_id=treasury_id, payee_id=payee_id
+    )
+    if old is None:
+        raise _not_found()
+    if old.status not in (PayeeStatus.COOLING.value, PayeeStatus.ACTIVE.value):
+        raise AuthFailure(
+            status=409,
+            code="PAYEE_NOT_REGISTERED",
+            title="Payee is not registered",
+            detail="Only a registered payee address can be replaced.",
+        )
+    try:
+        address = normalize_address(payload.address)
+    except ValueError:
+        raise AuthFailure(
+            status=422,
+            code="ADDRESS_INVALID",
+            title="Address invalid",
+            detail="The replacement must be a valid EVM address.",
+        ) from None
+    if address == old.address:
+        raise AuthFailure(
+            status=409,
+            code="ADDRESS_UNCHANGED",
+            title="Address unchanged",
+            detail="Choose a different address to restart the payee cooling period.",
+        )
+    context = await repository.get_context(
+        organization_id=member.organization_id, treasury_id=treasury_id
+    )
+    if context is None:
+        raise _not_found()
+    if address in context.wallet_addresses:
+        raise AuthFailure(
+            status=422,
+            code="ADDRESS_IS_TREASURY_WALLET",
+            title="Address invalid",
+            detail="A treasury wallet cannot be registered as a payee.",
+        )
+    try:
+        new_payee = await repository.propose(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            vendor_id=old.vendor_id,
+            user_id=member.user_id,
+            label=old.label,
+            address=address,
+        )
+    except PayeeExists:
+        raise AuthFailure(
+            status=409,
+            code="PAYEE_EXISTS",
+            title="Payee already exists",
+            detail="The replacement address is already registered or under review.",
+        ) from None
+
+    record = await _screening(request).screen(
+        organization_id=member.organization_id,
+        address=address,
+        chain_id=context.chain_id,
+        payee_id=new_payee.id,
+    )
+    screened = await repository.finish_screening(
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        payee_id=new_payee.id,
+        user_id=member.user_id,
+        result=record.result,
+        provider=record.provider,
+    )
+    if screened is None:
+        raise _not_found()
+    if record.result == ScreeningResult.HIT:
+        raise AuthFailure(
+            status=422,
+            code="SCREENING_HIT",
+            title="Screening hit",
+            detail="The replacement address matched a sanctions screening list.",
+            extensions={"payeeId": str(new_payee.id), "status": screened.status},
+        )
+    if record.result != ScreeningResult.CLEAR:
+        raise AuthFailure(
+            status=503,
+            code="DATA_MISSING",
+            title="Screening could not complete",
+            detail="The replacement address is blocked until screening succeeds.",
+            extensions={"payeeId": str(new_payee.id), "status": screened.status},
+        )
+    if context.module_address is None:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="Deploy and activate the treasury module before replacing payees.",
+        )
+    call = build_deactivate_payee_call(context.module_address, payee=old.address)
+    deactivation_tx = await _build_payee_governance_tx(
+        request,
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        user_id=member.user_id,
+        purpose=GovernanceTxPurpose.PAYEE_DEACTIVATE,
+        call=call,
+        payee_id=payee_id,
+    )
+    return {
+        "payee": PayeeView.from_record(screened),
+        "deactivationGovernanceTx": deactivation_tx,
+    }

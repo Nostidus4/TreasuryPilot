@@ -42,6 +42,8 @@ _FACTORY_PREDICT_SELECTOR = keccak(b"predictDeterministicAddress(address,bytes32
 _AUTHORIZE_BORROW_SELECTOR = keccak(b"authorizeBorrow(bytes32,uint256,uint64,uint256,uint256)")[:4]
 _AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
 _CANCEL_REQUEST_SELECTOR = keccak(b"cancelRequest(bytes32)")[:4]
+_ADD_PAYEE_SELECTOR = keccak(b"addPayee(address)")[:4]
+_DEACTIVATE_PAYEE_SELECTOR = keccak(b"deactivatePayee(address)")[:4]
 
 
 def _require_positive_uint(name: str, value: int, bits: int = 256) -> None:
@@ -103,6 +105,22 @@ def build_cancel_request_call(module_address: bytes, *, request_id: bytes) -> Go
         raise ValueError("request_id must be bytes32")
     return GovernanceCall(
         module_address, 0, _CANCEL_REQUEST_SELECTOR + encode(["bytes32"], [request_id])
+    )
+
+
+def build_add_payee_call(module_address: bytes, *, payee: bytes) -> GovernanceCall:
+    """Encode the Safe-only registration call for one screened payee address."""
+    if len(module_address) != 20 or len(payee) != 20 or payee == bytes(20):
+        raise ValueError("module and payee must be nonzero EVM addresses")
+    return GovernanceCall(module_address, 0, _ADD_PAYEE_SELECTOR + encode(["address"], [payee]))
+
+
+def build_deactivate_payee_call(module_address: bytes, *, payee: bytes) -> GovernanceCall:
+    """Encode the Safe-only deactivation call for one known payee address."""
+    if len(module_address) != 20 or len(payee) != 20 or payee == bytes(20):
+        raise ValueError("module and payee must be nonzero EVM addresses")
+    return GovernanceCall(
+        module_address, 0, _DEACTIVATE_PAYEE_SELECTOR + encode(["address"], [payee])
     )
 
 
