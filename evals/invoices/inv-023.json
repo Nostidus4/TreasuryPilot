@@ -1,0 +1,16 @@
+{
+  "id": "inv-023",
+  "vendor_name": "SYNTH Vendor 023 Ltd",
+  "invoice_no": "TEST-INV-0023",
+  "issue_date": "2026-09-05",
+  "amount": "1875250000",
+  "currency": "USDC",
+  "decimals": 6,
+  "payee_address": "0x1111111111111111111111111111111111111111",
+  "due_date": "2026-10-20",
+  "terms": null,
+  "expected_flags": [],
+  "layout": "clean",
+  "language": "vi",
+  "notes": "Synthetic evaluation fixture; no real company or payment authority."
+}

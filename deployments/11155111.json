@@ -13,7 +13,7 @@
   "asset": "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8",
   "assetDecimals": 6,
   "operationalWalletCount": 1,
-  "aToken": null,
+  "aToken": "0x16dA4541aD1807f4443d92D26044C1147406EB80",
   "aavePool": "0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951",
   "eas": "0xC2679fBD37d54388Ce493F1DB75320D236e1815e",
   "easRegistry": "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0",

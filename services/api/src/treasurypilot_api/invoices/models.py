@@ -114,9 +114,10 @@ class PaymentRequest(Base):
         CheckConstraint(
             "(fiat_amount_minor_units IS NULL AND fiat_currency IS NULL AND "
             "fx_reference_quote IS NULL AND fx_tolerance_bps IS NULL) OR "
-            "(fiat_amount_minor_units > 0 AND fiat_currency ~ '^[A-Z]{3}$' AND "
-            "jsonb_typeof(fx_reference_quote) = 'object' AND "
-            "fx_tolerance_bps BETWEEN 0 AND 10000)",
+            "(fiat_amount_minor_units IS NOT NULL AND fiat_amount_minor_units > 0 AND "
+            "fiat_currency IS NOT NULL AND fiat_currency ~ '^[A-Z]{3}$' AND "
+            "fx_reference_quote IS NOT NULL AND jsonb_typeof(fx_reference_quote) = 'object' AND "
+            "fx_tolerance_bps IS NOT NULL AND fx_tolerance_bps BETWEEN 0 AND 10000)",
             name="ck_payment_requests_fiat_fx_pair",
         ),
         CheckConstraint("due_at >= issue_date", name="ck_payment_requests_due_after_issue"),
@@ -153,6 +154,16 @@ class PaymentRequest(Base):
         CheckConstraint(
             "extraction_confirmed_by IS NULL OR extraction_confirmed_at IS NOT NULL",
             name="ck_payment_requests_extraction_confirmation_pair",
+        ),
+        CheckConstraint(
+            "status = 'Draft' OR (vendor_id IS NOT NULL AND payee_id IS NOT NULL AND "
+            "invoice_no IS NOT NULL AND issue_date IS NOT NULL AND due_at IS NOT NULL "
+            "AND amount IS NOT NULL)",
+            name="ck_payment_requests_complete_before_transition",
+        ),
+        CheckConstraint(
+            "source != 'UPLOAD' OR status = 'Draft' OR extraction_confirmed_by IS NOT NULL",
+            name="ck_upload_request_confirmed_before_transition",
         ),
         ForeignKeyConstraint(
             ["treasury_id", "org_id"],
@@ -204,6 +215,7 @@ class PaymentRequest(Base):
         ),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
+        Index("ix_payment_requests_vendor_amount_issue_date", "vendor_id", "amount", "issue_date"),
         Index(
             "uq_payment_requests_active_fingerprint",
             "treasury_id",
@@ -219,12 +231,12 @@ class PaymentRequest(Base):
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    payee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    invoice_no: Mapped[str] = mapped_column(String(200), nullable=False)
-    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
-    due_at: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    payee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    invoice_no: Mapped[str | None] = mapped_column(String(200))
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_at: Mapped[date | None] = mapped_column(Date)
+    amount: Mapped[int | None] = mapped_column(Numeric(78, 0))
     asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # For fiat requests, amount is the approved maximum in stablecoin base units.
     fiat_amount_minor_units: Mapped[int | None] = mapped_column(Numeric(78, 0))
@@ -384,6 +396,10 @@ class PaymentApproval(Base):
         CheckConstraint("jsonb_typeof(typed_data) = 'object'", name="ck_approvals_typed_data"),
         CheckConstraint(f"status IN ({_APPROVAL_STATUSES})", name="ck_approvals_status"),
         CheckConstraint("length(signature) > 0", name="ck_approvals_signature"),
+        CheckConstraint(
+            "idempotency_key_hash IS NULL OR octet_length(idempotency_key_hash) = 32",
+            name="ck_approvals_idempotency_key_hash",
+        ),
         ForeignKeyConstraint(["request_id"], ["payment_requests.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(
             ["request_id", "revision"],
@@ -403,7 +419,15 @@ class PaymentApproval(Base):
             unique=True,
             postgresql_where=text("status = 'Valid'"),
         ),
+        UniqueConstraint(
+            "request_id", "idempotency_key_hash", name="uq_approvals_request_idempotency_key"
+        ),
         Index("ix_approvals_request_revision", "request_id", "revision"),
+        Index(
+            "ix_approvals_valid_expiry",
+            "expires_at",
+            postgresql_where=text("status = 'Valid'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -411,6 +435,7 @@ class PaymentApproval(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     approver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     approver_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    idempotency_key_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     typed_data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     acknowledged_flag_ids: Mapped[list[uuid.UUID]] = mapped_column(

@@ -105,7 +105,7 @@ async def propose_request_payment(
     currency = row.fiat_currency
     reference_data = row.fx_reference_quote
     tolerance_bps = row.fx_tolerance_bps
-    if fiat_amount is None and currency is None:
+    if (fiat_amount, currency, reference_data, tolerance_bps) == (None, None, None, None):
         return BaseUnits(amount)
     if fiat_amount is None or currency is None or reference_data is None or tolerance_bps is None:
         raise ValueError("fiat request is missing its captured FX approval data")

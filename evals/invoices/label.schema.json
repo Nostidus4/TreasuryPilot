@@ -1,0 +1,212 @@
+{
+  "$defs": {
+    "InvoiceLateFee": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "percent_per_period",
+          "title": "Type",
+          "type": "string"
+        },
+        "rate_bps": {
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Rate Bps",
+          "type": "integer"
+        },
+        "period_days": {
+          "minimum": 1,
+          "title": "Period Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "rate_bps",
+        "period_days"
+      ],
+      "title": "InvoiceLateFee",
+      "type": "object"
+    },
+    "InvoiceTerms": {
+      "additionalProperties": false,
+      "properties": {
+        "net_due_date": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "title": "Net Due Date",
+          "type": "string"
+        },
+        "priority_note": {
+          "title": "Priority Note",
+          "type": "string"
+        },
+        "discount_bps": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discount Bps"
+        },
+        "discount_deadline": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discount Deadline"
+        },
+        "late_fee": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InvoiceLateFee"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "net_due_date",
+        "priority_note"
+      ],
+      "title": "InvoiceTerms",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "pattern": "^inv-[0-9]{3}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "vendor_name": {
+      "minLength": 1,
+      "title": "Vendor Name",
+      "type": "string"
+    },
+    "invoice_no": {
+      "minLength": 1,
+      "title": "Invoice No",
+      "type": "string"
+    },
+    "issue_date": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "title": "Issue Date",
+      "type": "string"
+    },
+    "amount": {
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "title": "Amount",
+      "type": "string"
+    },
+    "currency": {
+      "enum": [
+        "USDC",
+        "EUR"
+      ],
+      "title": "Currency",
+      "type": "string"
+    },
+    "decimals": {
+      "const": 6,
+      "title": "Decimals",
+      "type": "integer"
+    },
+    "payee_address": {
+      "pattern": "^0x[0-9a-fA-F]{40}$",
+      "title": "Payee Address",
+      "type": "string"
+    },
+    "due_date": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "title": "Due Date",
+      "type": "string"
+    },
+    "terms": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InvoiceTerms"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expected_flags": {
+      "items": {
+        "enum": [
+          "ADDRESS_CHANGED",
+          "ADDRESS_NOT_REGISTERED",
+          "AMOUNT_OUTLIER",
+          "POSSIBLE_DUPLICATE",
+          "INSTRUCTION_TEXT",
+          "CURRENCY_MISMATCH",
+          "CHAIN_MISMATCH",
+          "DUE_DATE_PAST",
+          "DUE_DATE_FAR",
+          "DUE_BEFORE_ISSUE",
+          "NO_BASELINE",
+          "FIRST_PAYMENT_TO_PAYEE"
+        ],
+        "type": "string"
+      },
+      "title": "Expected Flags",
+      "type": "array"
+    },
+    "layout": {
+      "enum": [
+        "clean",
+        "messy",
+        "handwritten-like",
+        "multi-page"
+      ],
+      "title": "Layout",
+      "type": "string"
+    },
+    "language": {
+      "enum": [
+        "en",
+        "vi"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
+    "notes": {
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "vendor_name",
+    "invoice_no",
+    "issue_date",
+    "amount",
+    "currency",
+    "decimals",
+    "payee_address",
+    "due_date",
+    "terms",
+    "expected_flags",
+    "layout",
+    "language",
+    "notes"
+  ],
+  "title": "InvoiceLabel",
+  "type": "object"
+}

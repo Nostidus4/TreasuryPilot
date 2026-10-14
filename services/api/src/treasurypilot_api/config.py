@@ -26,6 +26,26 @@ class Settings(BaseSettings):
     )
     session_secret: SecretStr | None = None
     redis_url: SecretStr | None = None
+    s3_endpoint_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),
+    )
+    # Browser-reachable endpoint used only to presign reads; defaults to s3_endpoint_url.
+    s3_public_endpoint_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_PUBLIC_ENDPOINT_URL", "S3_PUBLIC_ENDPOINT_URL"),
+    )
+    s3_bucket: str | None = Field(
+        default=None, validation_alias=AliasChoices("TP_S3_BUCKET", "S3_BUCKET")
+    )
+    s3_access_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_ACCESS_KEY", "S3_ACCESS_KEY"),
+    )
+    s3_secret_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TP_S3_SECRET_KEY", "S3_SECRET_KEY"),
+    )
     magic_link_base_url: str = "http://localhost:5173/auth/verify"
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
@@ -37,6 +57,12 @@ class Settings(BaseSettings):
     admin_staff_token: SecretStr | None = None
     admin_staff_id: str | None = None
     admin_ip_allowlist: str = ""
+    # Fiat-denominated requests are enabled only when both fx_source_id and fx_tolerance_bps are
+    # set (and an FxQuoteProvider is passed to create_app); otherwise they return 503.
+    fx_source_id: str | None = Field(default=None, min_length=1)
+    fx_max_quote_age_seconds: int = Field(default=60, ge=0)
+    fx_depeg_threshold_bps: int = Field(default=100, ge=0, le=10_000)
+    fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
 
     @field_validator("admin_ip_allowlist")
     @classmethod
