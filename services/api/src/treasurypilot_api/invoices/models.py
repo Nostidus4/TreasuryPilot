@@ -146,6 +146,16 @@ class PaymentRequest(Base):
             "extraction_confirmed_by IS NULL OR extraction_confirmed_at IS NOT NULL",
             name="ck_payment_requests_extraction_confirmation_pair",
         ),
+        CheckConstraint(
+            "status = 'Draft' OR (vendor_id IS NOT NULL AND payee_id IS NOT NULL AND "
+            "invoice_no IS NOT NULL AND issue_date IS NOT NULL AND due_at IS NOT NULL "
+            "AND amount IS NOT NULL)",
+            name="ck_payment_requests_complete_before_transition",
+        ),
+        CheckConstraint(
+            "source != 'UPLOAD' OR status = 'Draft' OR extraction_confirmed_by IS NOT NULL",
+            name="ck_upload_request_confirmed_before_transition",
+        ),
         ForeignKeyConstraint(
             ["treasury_id", "org_id"],
             ["treasuries.id", "treasuries.org_id"],
@@ -196,6 +206,7 @@ class PaymentRequest(Base):
         ),
         Index("ix_payment_requests_org_status", "org_id", "status"),
         Index("ix_payment_requests_treasury_due", "treasury_id", "due_at"),
+        Index("ix_payment_requests_vendor_amount_issue_date", "vendor_id", "amount", "issue_date"),
         Index(
             "uq_payment_requests_active_fingerprint",
             "treasury_id",
@@ -211,12 +222,12 @@ class PaymentRequest(Base):
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    payee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    invoice_no: Mapped[str] = mapped_column(String(200), nullable=False)
-    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
-    due_at: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    payee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    invoice_no: Mapped[str | None] = mapped_column(String(200))
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_at: Mapped[date | None] = mapped_column(Date)
+    amount: Mapped[int | None] = mapped_column(Numeric(78, 0))
     asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)

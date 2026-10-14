@@ -225,7 +225,7 @@ class _Result:
 
 class _FlagSession:
     def __init__(self) -> None:
-        self.execute_results = [_Result(), _Result(first_row=None)]
+        self.execute_results = [_Result(), _Result(first_row=None), _Result()]
         self.scalar_results = [None, ADDRESS, "USDC", "Sepolia"]
         self.added: list[RequestFlag] = []
 
