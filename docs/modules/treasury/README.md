@@ -50,15 +50,17 @@ Treasury: `Draft` (Safes verified) → `ModulePending` (deploy+enable governance
 | POST | `/orgs/{o}/treasuries/{t}/module/governance-tx` | OWN | → `{governanceTx}` (factory.create + enableModule ×3 via MultiSend on T; enableModule on O1/O2 as separate Safe txs) |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/refresh` | OWN, ADM | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/acknowledge` | OWN | `{reason}`; 409 `COVERAGE_COMPLETE` |
-| POST | `/orgs/{o}/safes/deploy-tx` (P2) | OWN | `{owners, threshold}` → tx for the wallet |
+| POST | `/orgs/{o}/safes/deploy-tx` (P2) | OWN, ADM | `{chainId, owners, threshold}` → `{chainId, transaction:{to,data,value}}`; 503 `SAFE_DEPLOYMENT_UNAVAILABLE` until verified Safe deployment entries are configured |
 
 ## 7. Flows
 
-Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or deploy, P2) → verify Safes → module governance tx on T (factory.create; enable on T) → enable on O1 and O2 (each Safe signs its own `enableModule` — same owners, PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010) → mandate (M03).
+Setup wizard: choose chain (Sepolia) and asset (tUSDC or Circle USDC) → enter T/O1/O2 addresses (or request a Safe factory transaction when deployment config is verified) → verify Safes → module governance tx on T (factory.create; enable on T) → enable on O1 and O2 (each Safe signs its own `enableModule` — same owners, PH-9) → TreasuryModuleCreated observed → coverage → Guardian Safe setup (MDT-010) → mandate (M03).
 
 ## 8. Algorithms
 
 - **Safe verification:** `getCode` non-empty; proxy `masterCopy` (storage slot 0) ∈ allowlisted Safe v1.4.1 singletons (L1/L2); `VERSION() == "1.4.1"`; chain id matches. EOAs → `NOT_A_SAFE`.
+- **Safe deployment:** the deploy-tx endpoint only builds `createProxyWithNonce` calldata when the API manifest explicitly includes `SAFE_SINGLETON_L1` or `SAFE_SINGLETON_L2` (version `1.4.1`), `SAFE_PROXY_FACTORY`, and `SAFE_FALLBACK_HANDLER`, each with a non-zero address and code hash; the endpoint also verifies all three runtime code hashes against a configured RPC before returning a transaction. Legacy scalar fields in the contracts deployment manifest do not satisfy this requirement. Current Sepolia API configuration lacks these entries, so the wizard reports deployment unavailable and the endpoint returns 503; existing Safe creation remains available.
+- **Implementation (TRS-004):** `treasury/safe.py` reads the chain through the configured HTTP RPC providers (failover, all reads pinned to one block) with the Safe ABI instead of safe-eth-py, whose web3 8 / eth-account 0.13 pins cannot resolve in this workspace. The singleton allowlist is the manifest deployments `SAFE_SINGLETON_L1` and `SAFE_SINGLETON_L2` with version `1.4.1`; none configured fails closed with `SAFE_VERSION_UNSUPPORTED`. A Safe belongs to one treasury across all tenants (`DUPLICATE_WALLET`). Creation is audited as `treasury.created`. Request: `{chainId, assetId, wallets[{role, safeAddress, label?}]}` with one SOURCE and one or two OPERATIONAL wallets; `OWNER_SETS_DIFFER` is returned in `warnings`; no RPC answer gives 503 `RPC_UNAVAILABLE`.
 - **Owner sets:** T, O1, O2 should share owners and threshold (PH-9); differences produce a warning, not an error.
 - **Coverage:** for each Safe: `modules = getModulesPaginated(SENTINEL, 10)`; expect exactly `[clone]` with `clone`'s EIP-1167 target = implementation; `getStorageAt(GUARD_SLOT) == 0`; fallback handler ∈ allowlist. Result per wallet + overall (worst of three).
 - **Decimals:** `decimals()` on-chain must equal config; mismatch refuses the asset.

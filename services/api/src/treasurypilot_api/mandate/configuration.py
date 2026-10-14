@@ -157,6 +157,7 @@ def validate_mandate_config(
     environment: str,
     asset_decimals: int,
     now: datetime,
+    enforce_future_expiry: bool = True,
 ) -> None:
     required = (
         "actions",
@@ -215,7 +216,7 @@ def validate_mandate_config(
 
     if config.valid_from >= config.expires_at:
         raise MandateValidationError("EXPIRY_BEFORE_START", "expiresAt must be after validFrom.")
-    if config.expires_at <= now:
+    if enforce_future_expiry and config.expires_at <= now:
         raise MandateValidationError(
             "MANDATE_ALREADY_EXPIRED", "expiresAt must be in the future.", fields=["expiresAt"]
         )
