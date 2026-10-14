@@ -1,6 +1,6 @@
 import asyncio
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.config import get_settings
