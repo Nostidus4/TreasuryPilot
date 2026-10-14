@@ -198,7 +198,7 @@ export function LoginPage() {
             linh@northwind.test
           </button>{' '}
           {t(
-            'to open the seeded organization. Any other email starts with an empty account.',
+            'to open the seeded organization. Sign in as an@northwind.test for its seeded approver, or use any other email for an empty account.',
           )}
         </Alert>
       )}

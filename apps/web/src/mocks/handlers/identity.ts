@@ -126,15 +126,17 @@ export const identityHandlers = [
       const user =
         email === demoUser.email
           ? demoUser
-          : {
-              id: `usr_${email.replace(/[^a-z0-9]/g, '_')}`,
-              email,
-              name: email
-                .split('@')[0]
-                .split(/[._-]/)
-                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-                .join(' '),
-            };
+          : email === 'an@northwind.test'
+            ? { id: 'usr_an', email, name: 'An Nguyen' }
+            : {
+                id: `usr_${email.replace(/[^a-z0-9]/g, '_')}`,
+                email,
+                name: email
+                  .split('@')[0]
+                  .split(/[._-]/)
+                  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                  .join(' '),
+              };
       setSession(user);
       return { user };
     },
