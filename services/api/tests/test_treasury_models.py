@@ -125,6 +125,9 @@ def test_chain_and_safe_collection_columns_use_native_postgres_types() -> None:
     assert isinstance(snapshots.c.owners.type, JSONB)
     assert isinstance(snapshots.c.modules.type, ARRAY)
     assert snapshots.c.modules.type.item_type.length == 20
+    assert "fallback_handler" in snapshots.c
+    assert isinstance(snapshots.c.module_implementations.type, JSONB)
+    assert isinstance(Base.metadata.tables["treasuries"].c.coverage_details.type, JSONB)
 
 
 def test_only_one_source_wallet_is_allowed_per_treasury() -> None:

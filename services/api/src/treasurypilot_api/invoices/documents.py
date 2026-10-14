@@ -22,10 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.access import MemberContext, require_member, require_role
 from treasurypilot_api.identity.api import ApiModel
-from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.models import (
     TERMINAL_REQUEST_STATUSES,
     PaymentRequest,
@@ -41,8 +40,13 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.requests import (
     _amount,
     _bound_fields,
+    _duplicate_fingerprint,
+    _fail,
     _hashes,
+    _is_fingerprint_conflict,
     _recompute_flags,
+    _request_id,
+    _sessions,
     _validate_dates,
 )
 from treasurypilot_api.treasury.models import Asset, Treasury
@@ -153,22 +157,6 @@ def build_extraction_queue(settings: Settings) -> ExtractionQueue | None:
     if settings.redis_url is None:
         return None
     return CeleryExtractionQueue(settings.redis_url.get_secret_value())
-
-
-def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
-    return AuthFailure(status=status, code=code, title=title, detail=detail)
-
-
-def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
-    factory = getattr(request.app.state, "request_sessions", None)
-    if factory is None:
-        raise _fail(
-            503,
-            "REQUESTS_UNAVAILABLE",
-            "Requests unavailable",
-            "Request storage is not configured.",
-        )
-    return cast(async_sessionmaker[AsyncSession], factory)
 
 
 def _storage(request: Request) -> ObjectStorage:
@@ -322,12 +310,8 @@ async def upload_invoice_document(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> UploadResponse:
-    if organization_id != member.organization_id:
-        raise _fail(
-            404, "ORGANIZATION_NOT_FOUND", "Organization not found", "Organization not found."
-        )
     if idempotency_key is None:
         raise _fail(
             400,
@@ -392,7 +376,7 @@ async def upload_invoice_document(
             current_revision=1,
             created_by=member.user_id,
             last_edited_by=member.user_id,
-            onchain_request_id=_onchain_request_id(member.organization_id, request_id),
+            onchain_request_id=_request_id(member.organization_id, request_id),
             idempotency_key=idempotency_key,
             idempotency_payload_hash=payload_hash,
         )
@@ -471,22 +455,12 @@ async def confirm_extraction(
     request_id: uuid.UUID,
     payload: ExtractionConfirmation,
     request: Request,
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     """Apply operator-reviewed extraction fields to the current upload draft."""
-    if organization_id != member.organization_id:
-        raise _fail(
-            404, "ORGANIZATION_NOT_FOUND", "Organization not found", "Organization not found."
-        )
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     multi_invoice = payload.invoice_count_in_document > 1
-    duplicate_error = _fail(
-        409,
-        "DUPLICATE_FINGERPRINT",
-        "Duplicate invoice",
-        "An active request already uses this vendor, invoice number, amount and asset.",
-    )
     try:
         async with factory() as session, session.begin():
             row = await session.scalar(
@@ -575,7 +549,7 @@ async def confirm_extraction(
                     .limit(1)
                 )
                 if duplicate is not None:
-                    raise duplicate_error
+                    raise _duplicate_fingerprint()
                 await session.execute(
                     update(RequestFlag)
                     .where(
@@ -615,7 +589,9 @@ async def confirm_extraction(
                 }
     except IntegrityError as error:
         # Concurrent confirm of the same invoice lost the uq_payment_requests_active_fingerprint race.
-        raise duplicate_error from error
+        if _is_fingerprint_conflict(error):
+            raise _duplicate_fingerprint() from error
+        raise
     raise _fail(
         422,
         "MULTI_INVOICE_DOCUMENT",
@@ -633,12 +609,8 @@ async def document_read_url(
     request_id: uuid.UUID,
     document_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(require_member),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> DocumentUrlResponse:
-    if organization_id != member.organization_id:
-        raise _fail(
-            404, "ORGANIZATION_NOT_FOUND", "Organization not found", "Organization not found."
-        )
     async with _sessions(request)() as session:
         document = await session.scalar(
             select(RequestDocument)
@@ -654,14 +626,3 @@ async def document_read_url(
     signed_at = datetime.now(UTC)
     url = await run_in_threadpool(_storage(request).sign_read, document.storage_key)
     return DocumentUrlResponse(url=url, expires_at=signed_at + PRESIGNED_URL_LIFETIME)
-
-
-def _onchain_request_id(organization_id: uuid.UUID, request_id: uuid.UUID) -> bytes:
-    from eth_abi import encode
-    from eth_hash.auto import keccak
-
-    return keccak(
-        encode(
-            ["string", "bytes16", "bytes16"], ["TP_REQ_V1", organization_id.bytes, request_id.bytes]
-        )
-    )

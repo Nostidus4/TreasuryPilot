@@ -1,1 +1,1 @@
-"""Compliance providers and fail-closed screening services."""
+"""Data lifecycle controls for confidential records."""

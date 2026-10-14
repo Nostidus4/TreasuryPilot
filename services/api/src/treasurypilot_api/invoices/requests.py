@@ -9,15 +9,18 @@ from typing import cast
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
-from pydantic import Field
+from pydantic import Field, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.access import MemberContext, require_role
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices.models import (
     TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
@@ -34,8 +37,8 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
-from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
-from treasurypilot_api.mandate.models import Payee, Vendor
+from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard, TransitionAction
+from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 from treasurypilot_core.fingerprint import fingerprint, normalize
 from treasurypilot_core.money import BaseUnits
@@ -74,6 +77,30 @@ class RequestPatch(ApiModel):
     note: str | None = None
     tags: list[str] | None = Field(default=None, max_length=50)
     cost_center: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _reject_null_required_fields(self) -> RequestPatch:
+        # Only these columns accept NULL; an explicit null elsewhere would 500 downstream.
+        nullable = {"paying_wallet_id", "terms", "note", "cost_center"}
+        for name in self.model_fields_set - nullable:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
+
+
+_BOUND_FIELDS = (
+    "treasury_id",
+    "vendor_id",
+    "payee_id",
+    "invoice_no",
+    "issue_date",
+    "due_date",
+    "amount",
+    "asset_id",
+    "paying_wallet_id",
+    "terms",
+)
+_FINGERPRINT_INDEX = "uq_payment_requests_active_fingerprint"
 
 
 def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
@@ -192,12 +219,18 @@ async def _bound_fields(
     payee_id: uuid.UUID,
     asset_id: uuid.UUID,
     paying_wallet_id: uuid.UUID | None,
+    require_active_payee: bool = True,
 ) -> tuple[Treasury, Vendor, Payee, Asset]:
     treasury = await session.scalar(
         select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
     )
     if treasury is None:
-        raise _not_found()
+        raise _fail(
+            422,
+            "TREASURY_UNKNOWN",
+            "Treasury invalid",
+            "The treasury does not exist in this organization.",
+        )
     if treasury.asset_id != asset_id:
         raise _fail(
             422,
@@ -251,7 +284,7 @@ async def _bound_fields(
         raise _fail(
             422, "PAYEE_UNKNOWN", "Payee invalid", "The payee does not exist in this treasury."
         )
-    if payee.status == "Deactivated":
+    if require_active_payee and payee.status == PayeeStatus.DEACTIVATED:
         raise _fail(
             422,
             "PAYEE_UNKNOWN",
@@ -274,6 +307,36 @@ async def _bound_fields(
                 "The paying wallet does not belong to this treasury.",
             )
     return treasury, vendor, payee, asset
+
+
+async def _bound_changed(
+    session: AsyncSession, row: PaymentRequest, fields: dict[str, object]
+) -> bool:
+    """Whether the patch changes a bound field, comparing normalised stored values."""
+    values = {key: fields[key] for key in _BOUND_FIELDS if key in fields}
+    if "amount" in values:
+        asset = await session.get(Asset, values.get("asset_id", row.asset_id))
+        if asset is None:
+            return True  # _bound_fields reports the invalid asset
+        values["amount"] = _amount(str(values["amount"]), asset.decimals)
+    current = {key: getattr(row, key) for key in values if key != "due_date"}
+    current["due_date"] = row.due_at
+    if "amount" in current:
+        current["amount"] = None if row.amount is None else int(row.amount)
+    return any(current[key] != value for key, value in values.items())
+
+
+def _is_fingerprint_conflict(error: IntegrityError) -> bool:
+    return _FINGERPRINT_INDEX in str(error.orig)
+
+
+def _duplicate_fingerprint() -> AuthFailure:
+    return _fail(
+        409,
+        "DUPLICATE_FINGERPRINT",
+        "Duplicate invoice",
+        "An active request already uses this vendor, invoice number, amount and asset.",
+    )
 
 
 def _hashes(
@@ -323,14 +386,7 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
     today = datetime.now(UTC).date()
-    if (
-        row.vendor_id is None
-        or row.payee_id is None
-        or row.issue_date is None
-        or row.due_at is None
-        or row.amount is None
-        or row.invoice_no is None
-    ):
+    if row.due_at is None or row.issue_date is None:  # unconfirmed upload draft
         return []
     if row.due_at < today:
         flags.append(
@@ -421,7 +477,7 @@ async def create_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -502,12 +558,7 @@ async def create_request(
                     .limit(1)
                 )
                 if duplicate is not None:
-                    raise _fail(
-                        409,
-                        "DUPLICATE_FINGERPRINT",
-                        "Duplicate invoice",
-                        "An active request already uses this vendor, invoice number, amount and asset.",
-                    )
+                    raise _duplicate_fingerprint()
                 row.onchain_request_id = _request_id(member.organization_id, row.id)
                 row.terms_hash = (
                     keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
@@ -547,12 +598,9 @@ async def create_request(
                 )
             )
             if existing is None:
-                raise _fail(
-                    409,
-                    "DUPLICATE_FINGERPRINT",
-                    "Duplicate invoice",
-                    "An active request already uses this vendor, invoice number, amount and asset.",
-                ) from error
+                if _is_fingerprint_conflict(error):
+                    raise _duplicate_fingerprint() from error
+                raise
             if existing.idempotency_payload_hash != payload_hash:
                 raise _fail(
                     409,
@@ -574,7 +622,7 @@ async def edit_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     try:
         expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
@@ -588,211 +636,193 @@ async def edit_request(
             "Provide the current request version in If-Match.",
         )
     fields = payload.model_dump(exclude_unset=True)
-    async with _sessions(request)() as session, session.begin():
-        row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise _not_found()
-        if row.version != expected_version:
-            raise _fail(
-                412,
-                "PRECONDITION_FAILED",
-                "Request changed",
-                "The request changed since it was read; reload and try again.",
-            )
-        if row.status not in {RequestStatus.DRAFT.value, RequestStatus.APPROVED.value}:
-            raise _fail(
-                409,
-                "NOT_EDITABLE",
-                "Request cannot be edited",
-                "Withdraw a request awaiting approval before editing it.",
-            )
-        bound_names = {
-            "treasury_id",
-            "vendor_id",
-            "payee_id",
-            "invoice_no",
-            "issue_date",
-            "due_date",
-            "amount",
-            "asset_id",
-            "paying_wallet_id",
-            "terms",
-        }
-        bound_changed = any(
-            getattr(row, key_map) != value
-            for key, value in fields.items()
-            if (key_map := {"due_date": "due_at"}.get(key, key)) in bound_names
-        )
-        for key, value in fields.items():
-            if key in {"note", "tags", "cost_center"}:
-                setattr(row, key, value)
-        if bound_changed:
-            if row.source == RequestSource.UPLOAD.value and (
-                row.vendor_id is None
-                or row.payee_id is None
-                or row.invoice_no is None
-                or row.issue_date is None
-                or row.due_at is None
-                or row.amount is None
-            ):
-                raise _fail(
-                    409,
-                    "EXTRACTION_UNCONFIRMED",
-                    "Extraction not confirmed",
-                    "Use the extraction confirmation endpoint to complete uploaded invoice fields.",
-                )
-            if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
-                session=session, request_id=row.id
-            ):
-                raise _fail(
-                    409,
-                    "PAYMENT_IN_FLIGHT",
-                    "Payment in progress",
-                    "Bound fields cannot change while a PAY operation is in flight.",
-                )
-            treasury_id = fields.get("treasury_id", row.treasury_id)
-            vendor_id = fields.get("vendor_id", row.vendor_id)
-            payee_id = fields.get("payee_id", row.payee_id)
-            asset_id = fields.get("asset_id", row.asset_id)
-            wallet_id = fields.get("paying_wallet_id", row.paying_wallet_id)
-            new_issue_date = fields.get("issue_date", row.issue_date)
-            new_due_date = fields.get("due_date", row.due_at)
-            invoice_no = fields.get("invoice_no", row.invoice_no)
-            existing_amount = row.amount
-            if (
-                vendor_id is None
-                or payee_id is None
-                or new_issue_date is None
-                or new_due_date is None
-                or invoice_no is None
-                or ("amount" not in fields and existing_amount is None)
-            ):
-                raise _fail(
-                    409,
-                    "EXTRACTION_UNCONFIRMED",
-                    "Extraction not confirmed",
-                    "Complete all invoice fields before editing this request.",
-                )
-            treasury, vendor, _payee, asset = await _bound_fields(
-                session,
-                organization_id=member.organization_id,
-                treasury_id=treasury_id,
-                vendor_id=vendor_id,
-                payee_id=payee_id,
-                asset_id=asset_id,
-                paying_wallet_id=wallet_id,
-            )
-            _validate_dates(new_issue_date, new_due_date)
-            amount = (
-                _amount(fields["amount"], asset.decimals)
-                if "amount" in fields
-                else int(cast(int, existing_amount))
-            )
-            row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
-                treasury.id,
-                treasury.chain_id,
-                vendor.id,
-                payee_id,
-            )
-            row.invoice_no, row.issue_date, row.due_at = (
-                fields.get("invoice_no", row.invoice_no),
-                new_issue_date,
-                new_due_date,
-            )
-            row.amount, row.asset_id, row.paying_wallet_id = amount, asset.id, wallet_id
-            if "terms" in fields:
-                row.terms = fields["terms"]
-            row.current_revision += 1
-            row.last_edited_by = member.user_id
-            # Upload drafts must keep committing to the uploaded file in invoice_hash.
-            document_sha256 = await session.scalar(
-                select(RequestDocument.sha256).where(RequestDocument.request_id == row.id)
-            )
-            _hashes(row, vendor.normalized_ref, asset.address or b"", document_sha256 or bytes(32))
-            row.terms_hash = (
-                keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
-                if row.terms is not None
-                else None
-            )
-            duplicate = await session.scalar(
-                select(PaymentRequest.id)
+    try:
+        async with _sessions(request)() as session, session.begin():
+            row = await session.scalar(
+                select(PaymentRequest)
                 .where(
-                    PaymentRequest.treasury_id == row.treasury_id,
-                    PaymentRequest.id != row.id,
-                    PaymentRequest.fingerprint == row.fingerprint,
-                    PaymentRequest.status.not_in(
-                        [status.value for status in TERMINAL_REQUEST_STATUSES]
-                    ),
+                    PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id
                 )
-                .limit(1)
+                .with_for_update()
             )
-            if duplicate is not None:
+            if row is None:
+                raise _not_found()
+            if row.version != expected_version:
+                raise _fail(
+                    412,
+                    "PRECONDITION_FAILED",
+                    "Request changed",
+                    "The request changed since it was read; reload and try again.",
+                )
+            if row.status not in {RequestStatus.DRAFT.value, RequestStatus.APPROVED.value}:
                 raise _fail(
                     409,
-                    "DUPLICATE_FINGERPRINT",
-                    "Duplicate invoice",
-                    "An active request already uses this vendor, invoice number, amount and asset.",
+                    "NOT_EDITABLE",
+                    "Request cannot be edited",
+                    "Withdraw a request awaiting approval before editing it.",
                 )
-            previous_status = row.status
-            approval_invalidated = previous_status == RequestStatus.APPROVED.value
-            await session.execute(
-                update(PaymentApproval)
-                .where(
-                    PaymentApproval.request_id == row.id,
-                    PaymentApproval.status == ApprovalStatus.VALID.value,
+            bound_changed = await _bound_changed(session, row, fields)
+            for key, value in fields.items():
+                if key in {"note", "tags", "cost_center"}:
+                    setattr(row, key, value)
+            if bound_changed:
+                if (  # unconfirmed upload draft
+                    row.vendor_id is None
+                    or row.payee_id is None
+                    or row.invoice_no is None
+                    or row.issue_date is None
+                    or row.due_at is None
+                    or row.amount is None
+                ):
+                    raise _fail(
+                        409,
+                        "EXTRACTION_UNCONFIRMED",
+                        "Extraction not confirmed",
+                        "Use the extraction confirmation endpoint to complete uploaded invoice fields.",
+                    )
+                if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
+                    session=session, request_id=row.id
+                ):
+                    raise _fail(
+                        409,
+                        "PAYMENT_IN_FLIGHT",
+                        "Payment in progress",
+                        "Bound fields cannot change while a PAY operation is in flight.",
+                    )
+                treasury_id = fields.get("treasury_id", row.treasury_id)
+                vendor_id = fields.get("vendor_id", row.vendor_id)
+                payee_id = fields.get("payee_id", row.payee_id)
+                asset_id = fields.get("asset_id", row.asset_id)
+                wallet_id = fields.get("paying_wallet_id", row.paying_wallet_id)
+                treasury, vendor, _payee, asset = await _bound_fields(
+                    session,
+                    organization_id=member.organization_id,
+                    treasury_id=treasury_id,
+                    vendor_id=vendor_id,
+                    payee_id=payee_id,
+                    asset_id=asset_id,
+                    paying_wallet_id=wallet_id,
+                    require_active_payee=payee_id != row.payee_id,
                 )
-                .values(status=ApprovalStatus.INVALIDATED.value)
-            )
-            await session.execute(
-                update(RequestFlag)
-                .where(
-                    RequestFlag.request_id == row.id,
-                    RequestFlag.status.in_(
-                        [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
-                    ),
+                new_issue_date = fields.get("issue_date", row.issue_date)
+                new_due_date = fields.get("due_date", row.due_at)
+                _validate_dates(new_issue_date, new_due_date)
+                amount = (
+                    _amount(fields["amount"], asset.decimals)
+                    if "amount" in fields
+                    else int(row.amount)
                 )
-                .values(status=RequestFlagStatus.SUPERSEDED.value)
-            )
-            row.status = RequestStatus.DRAFT.value
-            if previous_status == RequestStatus.APPROVED.value:
+                row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
+                    treasury.id,
+                    treasury.chain_id,
+                    vendor.id,
+                    payee_id,
+                )
+                row.invoice_no, row.issue_date, row.due_at = (
+                    fields.get("invoice_no", row.invoice_no),
+                    new_issue_date,
+                    new_due_date,
+                )
+                row.amount, row.asset_id, row.paying_wallet_id = amount, asset.id, wallet_id
+                if "terms" in fields:
+                    row.terms = fields["terms"]
+                row.current_revision += 1
+                row.last_edited_by = member.user_id
+                # Upload drafts must keep committing to the uploaded file in invoice_hash.
+                document_sha256 = await session.scalar(
+                    select(RequestDocument.sha256).where(RequestDocument.request_id == row.id)
+                )
+                _hashes(
+                    row, vendor.normalized_ref, asset.address or b"", document_sha256 or bytes(32)
+                )
+                row.terms_hash = (
+                    keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
+                    if row.terms is not None
+                    else None
+                )
+                duplicate = await session.scalar(
+                    select(PaymentRequest.id)
+                    .where(
+                        PaymentRequest.treasury_id == row.treasury_id,
+                        PaymentRequest.id != row.id,
+                        PaymentRequest.fingerprint == row.fingerprint,
+                        PaymentRequest.status.not_in(
+                            [status.value for status in TERMINAL_REQUEST_STATUSES]
+                        ),
+                    )
+                    .limit(1)
+                )
+                if duplicate is not None:
+                    raise _duplicate_fingerprint()
+                previous_status = row.status
+                approval_invalidated = previous_status == RequestStatus.APPROVED.value
+                await session.execute(
+                    update(PaymentApproval)
+                    .where(
+                        PaymentApproval.request_id == row.id,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                    )
+                    .values(status=ApprovalStatus.INVALIDATED.value)
+                )
+                await session.execute(
+                    update(RequestFlag)
+                    .where(
+                        RequestFlag.request_id == row.id,
+                        RequestFlag.status.in_(
+                            [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
+                        ),
+                    )
+                    .values(status=RequestFlagStatus.SUPERSEDED.value)
+                )
+                row.status = RequestStatus.DRAFT.value
+                if previous_status == RequestStatus.APPROVED.value:
+                    session.add(
+                        RequestStatusEvent(
+                            id=uuid7(),
+                            request_id=row.id,
+                            from_status=previous_status,
+                            to_status=RequestStatus.DRAFT.value,
+                            actor_type=StatusEventActorType.USER.value,
+                            actor_id=member.user_id,
+                            reason="bound fields edited; approvals invalidated",
+                        )
+                    )
+                    await write_audit(
+                        session,
+                        org_id=member.organization_id,
+                        actor=AuditActor(AuditActorType.USER, member.user_id),
+                        action=TransitionAction.EDIT_BOUND_FIELDS.value,
+                        entity=AuditEntity("payment_request", row.id),
+                        data={"from": previous_status, "to": RequestStatus.DRAFT.value},
+                    )
                 session.add(
-                    RequestStatusEvent(
+                    RequestRevision(
                         id=uuid7(),
                         request_id=row.id,
-                        from_status=previous_status,
-                        to_status=RequestStatus.DRAFT.value,
-                        actor_type=StatusEventActorType.USER.value,
-                        actor_id=member.user_id,
-                        reason="bound fields edited; approvals invalidated",
+                        revision=row.current_revision,
+                        snapshot=_snapshot(row),
+                        edited_by=member.user_id,
+                        reason="bound fields edited",
                     )
                 )
-            session.add(
-                RequestRevision(
-                    id=uuid7(),
-                    request_id=row.id,
-                    revision=row.current_revision,
-                    snapshot=_snapshot(row),
-                    edited_by=member.user_id,
-                    reason="bound fields edited",
-                )
-            )
-            flags = await _recompute_flags(session, row)
-        elif fields:
-            row.last_edited_by = member.user_id
-            flags = []
-            approval_invalidated = False
-        else:
-            flags = []
-            approval_invalidated = False
-        await session.flush()
-        await session.refresh(row)  # reload server-generated updated_at; no lazy IO in async
-        result = _serialize(row)
-        version = row.version
-        revision = row.current_revision
+                flags = await _recompute_flags(session, row)
+            elif fields:
+                row.last_edited_by = member.user_id
+                flags = []
+                approval_invalidated = False
+            else:
+                flags = []
+                approval_invalidated = False
+            await session.flush()
+            # onupdate=func.now() expires updated_at; reload it before the sync serializer reads it.
+            await session.refresh(row)
+            result = _serialize(row)
+            version = row.version
+            revision = row.current_revision
+    except IntegrityError as error:
+        if _is_fingerprint_conflict(error):
+            raise _duplicate_fingerprint() from error
+        raise
     response.headers["ETag"] = f'"{version}"'
     return {
         "request": result,

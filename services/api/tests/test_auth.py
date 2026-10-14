@@ -1,20 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import re
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from fastapi.routing import APIRoute
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from treasurypilot_api.audit import AuditLog, ChainVerification
+from treasurypilot_api.audit.api import (
+    AuditFilters,
+    AuditNotFound,
+    AuditPage,
+    AuditPermissionDenied,
+)
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.access import MemberContext, require_member
+from treasurypilot_api.identity import wallets as wallets_module
 from treasurypilot_api.identity.auth import (
+    AuthFailure,
     AuthService,
     ConsumeResult,
     ConsumeStatus,
@@ -30,10 +41,19 @@ from treasurypilot_api.identity.organizations import (
     OnboardingChecklist,
     OrganizationNotFound,
     OrganizationOverview,
+    OrganizationPermissionDenied,
     OrganizationRecord,
 )
-from treasurypilot_api.identity.rate_limit import MemoryRateLimiter, RateLimiterUnavailable
+from treasurypilot_api.identity.rate_limit import (
+    MemoryRateLimiter,
+    RateLimiterUnavailable,
+    RateLimitResult,
+)
+from treasurypilot_api.identity.rbac import require_member
+from treasurypilot_api.identity.wallets import OwnerContext, WalletLinkService, WalletRepository
 from treasurypilot_api.main import create_app
+from treasurypilot_api.treasury.config import ChainConfig, PlatformConfiguration
+from treasurypilot_api.treasury.sync import asset_id
 
 
 class MutableClock:
@@ -210,7 +230,7 @@ class AuthHarness:
 
 
 class UnavailableRateLimiter:
-    async def hit(self, key: str, *, limit: int, window: timedelta) -> bool:
+    async def hit(self, key: str, *, limit: int, window: timedelta) -> RateLimitResult:
         raise RateLimiterUnavailable
 
 
@@ -219,6 +239,8 @@ def make_harness(
     sender_fails: bool = False,
     rate_limiter: object | None = None,
     organization_repository: object | None = None,
+    wallet_repository: object | None = None,
+    audit_repository: object | None = None,
 ) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
@@ -244,6 +266,8 @@ def make_harness(
         settings=settings,
         auth_service=service,
         organization_repository=organization_repository,  # type: ignore[arg-type]
+        wallet_repository=wallet_repository,  # type: ignore[arg-type]
+        audit_repository=audit_repository,  # type: ignore[arg-type]
     )
     return AuthHarness(
         clock=clock,
@@ -330,6 +354,9 @@ def test_me_returns_current_user_memberships_and_linked_wallets() -> None:
                 "orgId": "00000000-0000-4000-8000-000000000012",
                 "roles": ["Finance", "Auditor"],
                 "status": "active",
+                "ownerIsOnchain": False,
+                "ownerCheckedAt": None,
+                "signerRolesActive": False,
             }
         ]
         assert payload["wallets"][0]["address"] == "0x" + "11" * 20
@@ -470,7 +497,21 @@ def test_magic_link_requests_are_rate_limited_per_email_for_known_and_unknown() 
 
         limited = harness.client.post("/v1/auth/magic-link", json={"email": "PERSON@example.com"})
         assert limited.json()["code"] == "RATE_LIMITED"
+        assert limited.headers["Retry-After"] == "900"
         assert len(harness.sender.messages) == 5
+
+        # Retry-After is what is left of the fixed window, not its full length.
+        harness.clock.advance(timedelta(minutes=14, seconds=50))
+        later = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert later.status_code == 429
+        assert later.headers["Retry-After"] == "10"
+        harness.clock.advance(timedelta(seconds=10))
+        assert (
+            harness.client.post(
+                "/v1/auth/magic-link", json={"email": "person@example.com"}
+            ).status_code
+            == 202
+        )
 
         harness.clock.advance(timedelta(minutes=15))
         assert (
@@ -499,6 +540,13 @@ def test_verify_is_rate_limited_per_ip() -> None:
             for _ in range(21)
         ]
         assert statuses == [400] * 20 + [429]
+        rejected = harness.client.post("/v1/auth/magic-link/verify", json={"token": "bad"})
+        assert 1 <= int(rejected.headers["Retry-After"]) <= 900
+        # Only rate limits and outages carry Retry-After.
+        harness.clock.advance(timedelta(minutes=15))
+        invalid = harness.client.post("/v1/auth/magic-link/verify", json={"token": "bad"})
+        assert invalid.status_code == 400
+        assert "Retry-After" not in invalid.headers
 
 
 def test_auth_endpoints_fail_closed_when_the_rate_limiter_is_down() -> None:
@@ -506,6 +554,7 @@ def test_auth_endpoints_fail_closed_when_the_rate_limiter_is_down() -> None:
         response = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
         assert response.status_code == 503
         assert response.json()["code"] == "AUTH_UNAVAILABLE"
+        assert response.headers["Retry-After"] == "30"
         assert not harness.sender.messages
 
 
@@ -642,6 +691,12 @@ class MemoryOrganizationRepository:
         self.treasuries: set[uuid.UUID] = set()
         self.enabled_modules: set[uuid.UUID] = set()
 
+    async def member_roles(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None:
+        roles = self.memberships.get((organization_id, user_id))
+        return None if roles is None else frozenset(roles)
+
     async def create(
         self,
         *,
@@ -665,10 +720,11 @@ class MemoryOrganizationRepository:
         self.memberships[(organization.id, user_id)] = {"OrgAdmin"}
         return organization
 
-    async def get_for_member(self, member: MemberContext) -> OrganizationOverview:
-        organization_id = member.organization_id
+    async def get_for_member(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> OrganizationOverview:
         organization = self.organizations.get(organization_id)
-        if organization is None or (organization_id, member.user_id) not in self.memberships:
+        if organization is None or (organization_id, user_id) not in self.memberships:
             raise OrganizationNotFound
         member_count = sum(1 for org_id, _ in self.memberships if org_id == organization_id)
         return OrganizationOverview(
@@ -681,23 +737,22 @@ class MemoryOrganizationRepository:
             ),
         )
 
-    async def get_member_roles(
-        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
-    ) -> tuple[str, ...] | None:
-        roles = self.memberships.get((organization_id, user_id))
-        return tuple(roles) if roles is not None else None
-
     async def update_settings(
         self,
-        member: MemberContext,
         *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
         solo_mode: bool | None,
         auto_match: bool | None,
     ) -> OrganizationRecord:
-        organization_id = member.organization_id
         organization = self.organizations.get(organization_id)
-        if organization is None or (organization_id, member.user_id) not in self.memberships:
+        roles = self.memberships.get((organization_id, user_id))
+        if organization is None or roles is None:
             raise OrganizationNotFound
+        if solo_mode is not None and "Owner" not in roles:
+            raise OrganizationPermissionDenied
+        if auto_match is not None and not roles.intersection({"OrgAdmin", "Owner"}):
+            raise OrganizationPermissionDenied
         updated = OrganizationRecord(
             id=organization.id,
             name=organization.name,
@@ -771,20 +826,6 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         assert admin_setting.status_code == 200
         assert admin_setting.json()["org"]["autoMatch"] is False
 
-        organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {
-            "Finance"
-        }
-        role_denied = harness.client.patch(
-            f"/v1/orgs/{organization_id}/settings",
-            json={"autoMatch": True},
-            headers={"X-CSRF-Token": csrf},
-        )
-        assert role_denied.status_code == 403
-        assert role_denied.json()["code"] == "FORBIDDEN"
-
-        organizations.memberships[(organization_id, harness.repository.profile.user.id)] = {
-            "OrgAdmin"
-        }
         denied = harness.client.patch(
             f"/v1/orgs/{organization_id}/settings",
             json={"soloMode": True},
@@ -803,58 +844,18 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         assert owner_setting.json()["org"]["soloMode"] is True
 
 
-def test_every_organization_route_hides_resources_from_non_members() -> None:
+def test_governance_routes_hide_transactions_from_non_member_organizations() -> None:
     organizations = MemoryOrganizationRepository()
+    member_org = uuid.UUID("00000000-0000-4000-8000-000000000012")
+    user_id = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    organizations.memberships[(member_org, user_id)] = {"Owner"}
+
     with make_harness(organization_repository=organizations) as harness:
         harness.login()
-        csrf = harness.client.cookies.get("tp_csrf")
-        created = harness.client.post(
-            "/v1/orgs",
-            json={"name": "Acme"},
-            headers={"X-CSRF-Token": csrf},
-        )
-        organization_id = uuid.UUID(created.json()["org"]["id"])
-        organizations.memberships.clear()
+        response = harness.client.get(f"/v1/orgs/{uuid.uuid4()}/governance-txs/{uuid.uuid4()}")
 
-        def iter_api_routes(routes):
-            for route in routes:
-                if isinstance(route, APIRoute):
-                    yield route
-                    continue
-                original_router = getattr(route, "original_router", None)
-                if original_router is not None:
-                    yield from iter_api_routes(original_router.routes)
-
-        routes = [
-            route
-            for route in iter_api_routes(harness.client.app.routes)
-            if "{organization_id}" in route.path
-        ]
-        assert routes
-
-        def includes_member_guard(dependant: object) -> bool:
-            if getattr(dependant, "call", None) is require_member:
-                return True
-            return any(
-                includes_member_guard(child) for child in getattr(dependant, "dependencies", ())
-            )
-
-        for route in routes:
-            assert route.openapi_extra
-            assert route.openapi_extra.get("x-organization-scoped") is True
-            assert includes_member_guard(route.dependant)
-            path = route.path
-            for parameter in route.param_convertors:
-                path = path.replace("{" + parameter + "}", str(organization_id))
-            for method in route.methods or set():
-                if method in {"HEAD", "OPTIONS"}:
-                    continue
-                request_options: dict[str, object] = {}
-                if method in {"PATCH", "POST", "PUT", "DELETE"}:
-                    request_options["json"] = {"autoMatch": False}
-                    request_options["headers"] = {"X-CSRF-Token": csrf}
-                response = harness.client.request(method, path, **request_options)
-                assert response.status_code == 404, (method, path, response.text)
+    assert response.status_code == 404
+    assert response.json()["code"] == "ORG_NOT_FOUND"
 
 
 def test_organization_input_is_validated_and_settings_require_authentication() -> None:
@@ -882,12 +883,452 @@ def test_organization_input_is_validated_and_settings_require_authentication() -
         assert created.json()["org"]["displayTz"] == "Asia/Ho_Chi_Minh"
 
 
-def test_member_guard_authenticates_before_resolving_the_organization() -> None:
+class MemoryAuditRepository:
+    def __init__(self, rows: list[AuditLog], result: ChainVerification) -> None:
+        self.rows = rows
+        self.result = result
+        self.roles: dict[tuple[uuid.UUID, uuid.UUID], set[str]] = {}
+        self.list_calls: list[tuple[AuditFilters, int | None, int]] = []
+
+    def _check(self, organization_id: uuid.UUID, user_id: uuid.UUID, allowed: set[str]) -> None:
+        roles = self.roles.get((organization_id, user_id))
+        if roles is None:
+            raise AuditNotFound
+        if not roles & allowed:
+            raise AuditPermissionDenied
+
+    async def list(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        filters: AuditFilters,
+        cursor: int | None,
+        limit: int,
+    ) -> AuditPage:
+        self._check(organization_id, user_id, {"Auditor", "Owner", "OrgAdmin"})
+        self.list_calls.append((filters, cursor, limit))
+        return AuditPage(items=self.rows, next_cursor=self.rows[-1].seq)
+
+    async def verify(self, *, organization_id: uuid.UUID, user_id: uuid.UUID) -> ChainVerification:
+        self._check(organization_id, user_id, {"Auditor", "Owner"})
+        return self.result
+
+
+def test_audit_log_routes_return_records_and_verification_to_allowed_roles() -> None:
+    org_id = uuid.uuid4()
+    row = AuditLog(
+        seq=7,
+        org_id=org_id,
+        at=datetime(2026, 10, 13, 1, 2, 3, 456789, tzinfo=UTC),
+        actor_type="USER",
+        actor_id="u-1",
+        action="request.approve",
+        entity_type="request",
+        entity_id="r-1",
+        data={"amount": "100"},
+        prev_hash=bytes(32),
+        hash=bytes([1]) * 32,
+    )
+    audit = MemoryAuditRepository([row], ChainVerification("BROKEN", 4, 12))
+    organizations = MemoryOrganizationRepository()
+    # Shared dict: the route guard and the repository see the same memberships.
+    organizations.memberships = audit.roles
+    with make_harness(audit_repository=audit, organization_repository=organizations) as harness:
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log").status_code == 401
+        harness.login()
+        user_id = harness.repository.profile.user.id
+
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log").status_code == 404
+        audit.roles[(org_id, user_id)] = {"Finance"}
+        forbidden = harness.client.get(f"/v1/orgs/{org_id}/audit-log")
+        assert forbidden.status_code == 403
+        assert forbidden.json()["code"] == "FORBIDDEN"
+
+        audit.roles[(org_id, user_id)] = {"OrgAdmin"}
+        listed = harness.client.get(
+            f"/v1/orgs/{org_id}/audit-log",
+            params={
+                "entityType": "request",
+                "entityId": "r-1",
+                "actor": "u-1",
+                "from": "2026-10-01T00:00:00Z",
+                "to": "2026-10-14T00:00:00+07:00",
+                "cursor": "3",
+                "limit": "2",
+            },
+        )
+        assert listed.status_code == 200
+        assert listed.json() == {
+            "items": [
+                {
+                    "seq": 7,
+                    "orgId": str(org_id),
+                    "at": "2026-10-13T01:02:03.456789Z",
+                    "actorType": "USER",
+                    "actorId": "u-1",
+                    "action": "request.approve",
+                    "entityType": "request",
+                    "entityId": "r-1",
+                    "data": {"amount": "100"},
+                    "prevHash": "0x" + "00" * 32,
+                    "hash": "0x" + "01" * 32,
+                }
+            ],
+            "nextCursor": "7",
+        }
+        filters, cursor, limit = audit.list_calls[-1]
+        assert (filters.entity_type, filters.entity_id, filters.actor) == ("request", "r-1", "u-1")
+        assert filters.since == datetime(2026, 10, 1, tzinfo=UTC)
+        assert filters.until == datetime(2026, 10, 13, 17, tzinfo=UTC)
+        assert (cursor, limit) == (3, 2)
+        naive = harness.client.get(f"/v1/orgs/{org_id}/audit-log", params={"from": "2026-10-01"})
+        assert naive.status_code == 422
+
+        # OrgAdmin reads the log but only Auditor and Owner verify it.
+        assert harness.client.get(f"/v1/orgs/{org_id}/audit-log/verify").status_code == 403
+        audit.roles[(org_id, user_id)] = {"Auditor"}
+        verified = harness.client.get(f"/v1/orgs/{org_id}/audit-log/verify")
+        assert verified.status_code == 200
+        assert verified.json() == {"status": "BROKEN", "checked": 4, "brokenAt": 12}
+
+
+_ORG_PARAMS = frozenset({"organization_id", "org_id", "orgId", "organizationId"})
+
+
+def _org_scoped_routes(app: FastAPI) -> list[tuple[str, str, str]]:
+    # shortcut: routes with include_in_schema=False are invisible here; walk the router if any appear.
+    return sorted(
+        (method.upper(), path, org_param)
+        for path, operations in app.openapi()["paths"].items()
+        # Select by path parameter, not prefix, so org routes mounted anywhere are covered.
+        for org_param in re.findall(r"\{(\w+)", path)[:1]
+        if org_param in _ORG_PARAMS
+        for method in operations
+    )
+
+
+def _member_guard_reached() -> None:
+    raise HTTPException(status_code=418)
+
+
+def test_every_org_scoped_route_returns_404_to_non_members() -> None:
     organizations = MemoryOrganizationRepository()
     with make_harness(organization_repository=organizations) as harness:
-        anonymous = harness.client.get(f"/v1/orgs/{uuid.uuid4()}")
-        assert anonymous.status_code == 401
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs", json={"name": "Other org"}, headers={"X-CSRF-Token": csrf}
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+        # The org exists but belongs to someone else.
+        organizations.memberships = {(organization_id, uuid.uuid4()): {"OrgAdmin", "Owner"}}
+
+        app: FastAPI = harness.client.app  # type: ignore[assignment]
+        routes = _org_scoped_routes(app)
+        assert ("GET", "/v1/orgs/{organization_id}", "organization_id") in routes
+        assert ("PATCH", "/v1/orgs/{organization_id}/settings", "organization_id") in routes
+        for method, path, org_param in routes:
+            # Any other path parameter gets a random id; the org check must win first.
+            url = re.sub(
+                r"\{(\w+)[^}]*\}",
+                lambda m, org=org_param: str(organization_id if m[1] == org else uuid.uuid4()),
+                path,
+            )
+            response = harness.client.request(method, url, json={}, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 404, (method, path, response.text)
+            assert response.json()["code"] == "ORG_NOT_FOUND"
+
+            # A 404 alone could come from a missing row; prove require_member is wired.
+            app.dependency_overrides[require_member] = _member_guard_reached
+            try:
+                guarded = harness.client.request(
+                    method, url, json={}, headers={"X-CSRF-Token": csrf}
+                )
+            finally:
+                app.dependency_overrides.pop(require_member)
+            assert guarded.status_code == 418, (method, path, guarded.text)
+
+
+def test_member_without_required_role_gets_403_before_input_validation() -> None:
+    organizations = MemoryOrganizationRepository()
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        csrf = harness.client.cookies.get("tp_csrf")
+        created = harness.client.post(
+            "/v1/orgs", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf}
+        )
+        organization_id = uuid.UUID(created.json()["org"]["id"])
+        user_id = harness.repository.profile.user.id
+        organizations.memberships[(organization_id, user_id)] = {"Finance"}
+
+        assert harness.client.get(f"/v1/orgs/{organization_id}").status_code == 200
+        denied = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings", json={}, headers={"X-CSRF-Token": csrf}
+        )
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "FORBIDDEN"
+
+        missing_csrf = harness.client.patch(
+            f"/v1/orgs/{organization_id}/settings", json={"autoMatch": False}
+        )
+        assert missing_csrf.status_code == 403
+        assert missing_csrf.json()["code"] == "CSRF_INVALID"
+
+
+class FakeWalletRepository(WalletRepository):
+    """Owner contexts in memory; records the owner statuses the service writes."""
+
+    def __init__(self, contexts: dict[uuid.UUID, OwnerContext], roles: set[str]) -> None:
+        self.contexts = contexts
+        self.roles = frozenset(roles)
+        self.written: list[dict[uuid.UUID, bool]] = []
+
+    async def owner_contexts(self, *, user_id: uuid.UUID) -> tuple[OwnerContext, ...]:
+        return tuple(self.contexts.values())
+
+    async def membership_roles(
+        self, *, org_id: uuid.UUID, user_id: uuid.UUID
+    ) -> frozenset[str] | None:
+        return self.roles if org_id in self.contexts else None
+
+    async def update_owner_statuses(
+        self,
+        *,
+        user_id: uuid.UUID,
+        statuses: Mapping[uuid.UUID, bool],
+        checked_at: datetime,
+        started_at: datetime,
+    ) -> None:
+        self.written.append(dict(statuses))
+        for org_id, is_owner in statuses.items():
+            context = self.contexts[org_id]
+            self.contexts[org_id] = replace(
+                context, owner_is_onchain=is_owner, owner_checked_at=checked_at
+            )
+
+
+WALLET = bytes.fromhex("11" * 20)
+SAFE = bytes.fromhex("22" * 20)
+
+
+def owner_context(
+    org_id: uuid.UUID, *, wallets: tuple[bytes, ...] = (WALLET,), checked_ago: timedelta | None
+) -> OwnerContext:
+    return OwnerContext(
+        org_id=org_id,
+        wallet_addresses=wallets,
+        safe_addresses=(SAFE,),
+        owner_is_onchain=True,
+        owner_checked_at=None if checked_ago is None else datetime.now(UTC) - checked_ago,
+    )
+
+
+def org_with_wallets(
+    roles: set[str], context: OwnerContext | None = None, *, stale: bool = True
+) -> tuple[MemoryOrganizationRepository, FakeWalletRepository, AuthHarness, uuid.UUID]:
+    organizations = MemoryOrganizationRepository()
+    harness = make_harness(organization_repository=organizations)
+    harness.__enter__()
+    harness.login()
+    csrf = harness.client.cookies.get("tp_csrf")
+    created = harness.client.post("/v1/orgs", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf})
+    org_id = uuid.UUID(created.json()["org"]["id"])
+    organizations.memberships[(org_id, harness.repository.profile.user.id)] = roles
+    wallets = FakeWalletRepository(
+        {org_id: context or owner_context(org_id, checked_ago=None if stale else timedelta(0))},
+        roles,
+    )
+    harness.client.app.state.wallet_repository = wallets  # type: ignore[attr-defined]
+    return organizations, wallets, harness, org_id
+
+
+def _rpc_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(self: WalletLinkService) -> tuple[str, ...]:
+        raise AuthFailure(status=503, code="WALLET_VERIFICATION_UNAVAILABLE", title="x", detail="x")
+
+    monkeypatch.setattr(WalletLinkService, "_rpc_urls", unavailable)
+
+
+def _safe_owners(monkeypatch: pytest.MonkeyPatch, owners: set[str]) -> None:
+    monkeypatch.setattr(WalletLinkService, "_rpc_urls", lambda self: ("http://rpc.test",))
+    monkeypatch.setattr(wallets_module, "_safe_owners_sync", lambda *args, **kwargs: set(owners))
+
+
+def test_me_keeps_the_cached_owner_status_when_rpc_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rpc_down(monkeypatch)
+    _, wallets, harness, _ = org_with_wallets({"Owner"})
+    try:
+        assert harness.client.get("/v1/me").status_code == 200
+        assert wallets.written == []
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_admin_auto_match_does_not_need_the_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    _rpc_down(monkeypatch)
+    _, _, harness, org_id = org_with_wallets({"OrgAdmin", "Owner"})
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"autoMatch": False},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 200
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_solo_mode_rechecks_ownership_despite_a_fresh_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Checked 5 minutes ago as an owner, removed from the Safe since.
+    _safe_owners(monkeypatch, owners=set())
+    _, wallets, harness, org_id = org_with_wallets({"Owner"}, stale=False)
+    wallets.contexts[org_id] = owner_context(org_id, checked_ago=timedelta(minutes=5))
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "OWNER_NOT_ONCHAIN"
+        assert wallets.written == [{org_id: False}]
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_regranted_owner_without_a_wallet_cannot_enable_solo_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A stale True flag from before the role was removed must not authorize solo mode.
+    _safe_owners(monkeypatch, owners={"0x" + WALLET.hex()})
+    _, wallets, harness, org_id = org_with_wallets({"Owner"})
+    wallets.contexts[org_id] = owner_context(org_id, wallets=(), checked_ago=timedelta(0))
+    try:
+        response = harness.client.patch(
+            f"/v1/orgs/{org_id}/settings",
+            json={"soloMode": True},
+            headers={"X-CSRF-Token": harness.client.cookies.get("tp_csrf")},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "OWNER_NOT_ONCHAIN"
+    finally:
+        harness.__exit__(None, None, None)
+
+
+def test_malformed_signature_is_a_bad_request_not_an_outage() -> None:
+    service = WalletLinkService(
+        FakeWalletRepository({}, set()),
+        allowed_origins=["https://app.example.test"],
+        platform_configuration=None,
+    )
+    with pytest.raises(AuthFailure) as failure:
+        asyncio.run(
+            service.link_wallet(
+                user_id=uuid.uuid4(),
+                origin="https://app.example.test",
+                message_text="message",
+                signature="0xZZ",
+            )
+        )
+    assert (failure.value.status, failure.value.code) == (400, "SIWE_INVALID")
+
+
+def _configured_chain(chain_id: int, *, enabled: bool) -> ChainConfig:
+    return ChainConfig.model_validate(
+        {
+            "chainId": chain_id,
+            "name": f"Chain {chain_id}",
+            "isTestnet": True,
+            "confirmations": 3,
+            "explorerUrl": "https://explorer.example",
+            "rpcUrls": ["https://rpc-one.example", "https://rpc-two.example"],
+            "enabled": enabled,
+            "assets": [
+                {
+                    "address": "0x" + "AB" * 20,
+                    "symbol": "tUSDC",
+                    "decimals": 6,
+                    "issuerLabel": "TreasuryPilot test token",
+                    "isTest": True,
+                }
+            ],
+        }
+    )
+
+
+def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
+    with make_harness() as harness:
+        harness.client.app.state.platform_configuration = PlatformConfiguration(  # type: ignore[attr-defined]
+            chains=(
+                _configured_chain(11155111, enabled=True),
+                _configured_chain(1, enabled=False),
+            ),
+            manifests=(),
+        )
+        assert harness.client.get("/v1/chains").status_code == 401
 
         harness.login()
-        malformed = harness.client.get("/v1/orgs/not-a-uuid")
-        assert malformed.status_code == 422
+        response = harness.client.get("/v1/chains")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "chains": [
+                {
+                    "chainId": 11155111,
+                    "name": "Chain 11155111",
+                    "explorerUrl": "https://explorer.example/",
+                    "safeDeploymentAvailable": False,
+                    "assets": [
+                        {
+                            "id": str(asset_id(11155111, "0x" + "ab" * 20)),
+                            "symbol": "tUSDC",
+                            "decimals": 6,
+                            "address": "0x" + "ab" * 20,
+                            "isTest": True,
+                        }
+                    ],
+                }
+            ]
+        }
+
+
+def test_retry_after_is_readable_cross_origin() -> None:
+    with make_harness() as harness:
+        response = harness.client.post(
+            "/v1/auth/magic-link",
+            json={"email": "person@example.com"},
+            headers={"Origin": "http://localhost:5173"},
+        )
+        exposed = response.headers.get("Access-Control-Expose-Headers", "")
+        assert "Retry-After" in exposed
+
+
+def test_retry_after_covers_the_longest_exceeded_limit() -> None:
+    with make_harness() as harness:
+        # Exhaust the per-IP limit (20) ten minutes before the per-email limit (5).
+        for index in range(15):
+            harness.client.post("/v1/auth/magic-link", json={"email": f"u{index}@example.com"})
+        harness.clock.advance(timedelta(minutes=10))
+        for _ in range(5):
+            harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+
+        limited = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == "900"  # the email window, not the IP's 300
+
+        harness.clock.advance(timedelta(seconds=900))
+        retried = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
+        assert retried.status_code == 202
+
+
+def test_unconfigured_auth_storage_sends_retry_after() -> None:
+    app = create_app(settings=Settings(environment="local"))
+    with TestClient(app, base_url="https://app.example.test") as client:
+        response = client.post("/v1/auth/magic-link/verify", json={"token": "x" * 43})
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"

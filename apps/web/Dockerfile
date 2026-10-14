@@ -13,9 +13,11 @@ COPY apps/web apps/web
 ARG VITE_API_URL=/api
 ARG VITE_CHAIN_ID=31337
 ARG VITE_RPC_URL=http://localhost:8545
+ARG VITE_SENTRY_DSN=
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_CHAIN_ID=$VITE_CHAIN_ID \
-    VITE_RPC_URL=$VITE_RPC_URL
+    VITE_RPC_URL=$VITE_RPC_URL \
+    VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 RUN pnpm --filter @treasurypilot/web build
 
 FROM nginx:1.27.4-alpine

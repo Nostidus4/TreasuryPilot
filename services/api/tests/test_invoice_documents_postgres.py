@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx2 as httpx
 import pytest
@@ -15,14 +16,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from treasurypilot_api.identity.access import MemberContext
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices import documents, requests
 from treasurypilot_api.invoices.models import (
     PaymentRequest,
     RequestDocument,
     RequestFlag,
+    RequestRevision,
     RequestSource,
     RequestStatus,
 )
@@ -47,11 +49,11 @@ FIELDS = {
 }
 
 
-def _migrate(database_url: str) -> None:
+def _alembic(database_url: str) -> Config:
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
-    command.upgrade(config, "head")
+    return config
 
 
 async def _seed(sessions: async_sessionmaker[AsyncSession]) -> dict[str, uuid.UUID]:
@@ -71,6 +73,7 @@ async def _seed(sessions: async_sessionmaker[AsyncSession]) -> dict[str, uuid.UU
         session.add(vendor)
         await session.flush()
         ids = {"vendor": vendor.id}
+        now = datetime.now(UTC)
         for name, address, status in (
             ("active", "aa", "Active"),
             ("deactivated", "bb", "Deactivated"),
@@ -82,6 +85,12 @@ async def _seed(sessions: async_sessionmaker[AsyncSession]) -> dict[str, uuid.UU
                 label=name,
                 address=bytes.fromhex(address * 20),
                 status=status,
+                oob_verified_by=USER_ID,
+                oob_verified_at=now,
+                oob_method="PHONE",
+                oob_note="verified",
+                active_from=now,
+                deactivated_at=now if status == "Deactivated" else None,
             )
             session.add(payee)
             await session.flush()
@@ -104,12 +113,13 @@ async def _draft(sessions: async_sessionmaker[AsyncSession], source: str) -> uui
                 current_revision=1,
                 created_by=USER_ID,
                 last_edited_by=USER_ID,
-                onchain_request_id=documents._onchain_request_id(ORG_ID, request_id),
+                onchain_request_id=requests._request_id(ORG_ID, request_id),
                 idempotency_key=str(request_id),
                 idempotency_payload_hash=bytes(32),
             )
         )
         await session.flush()
+        session.add(RequestRevision(request_id=request_id, revision=1, snapshot={}))
         if source == RequestSource.UPLOAD.value:
             session.add(
                 RequestDocument(
@@ -131,9 +141,13 @@ async def _scenario(database_url: str) -> None:
     ids = await _seed(sessions)
     app = FastAPI()
     app.state.request_sessions = sessions
-    member = MemberContext(ORG_ID, USER_ID, frozenset({"Operator"}))
+    member = MemberAccess(
+        access=SimpleNamespace(user=SimpleNamespace(id=USER_ID)),  # type: ignore[arg-type]
+        organization_id=ORG_ID,
+        roles=frozenset({"Operator"}),
+    )
 
-    async def operator() -> MemberContext:
+    async def operator() -> MemberAccess:
         return member
 
     app.dependency_overrides[documents._require_operator] = operator
@@ -210,10 +224,19 @@ async def _scenario(database_url: str) -> None:
                 ).all()
             assert list(flags) == [upload]
     finally:
+        # Incomplete upload drafts would (deliberately) block the 0023 downgrade.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("TRUNCATE flags, documents, request_revisions, payment_requests CASCADE")
+            )
         await engine.dispose()
 
 
 def test_confirm_extraction_and_edit_enforce_request_invariants() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
-    _migrate(database_url)
-    asyncio.run(_scenario(database_url))
+    config = _alembic(database_url)
+    command.upgrade(config, "head")
+    try:
+        asyncio.run(_scenario(database_url))
+    finally:
+        command.downgrade(config, "base")

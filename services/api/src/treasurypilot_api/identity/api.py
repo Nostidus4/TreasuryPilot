@@ -14,8 +14,10 @@ from treasurypilot_api.identity.auth import (
     ProfileRecord,
     SessionAccess,
     UserRecord,
+    auth_unavailable,
     normalize_email,
 )
+from treasurypilot_api.identity.wallets import SIWE_CHAIN_ID, WalletLinkService, WalletRepository
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SESSION_MAX_AGE_SECONDS = 12 * 60 * 60
@@ -69,6 +71,9 @@ class MembershipView(ApiModel):
     org_id: uuid.UUID
     roles: list[str]
     status: str
+    owner_is_onchain: bool
+    owner_checked_at: datetime | None
+    signer_roles_active: bool
 
 
 class WalletView(ApiModel):
@@ -83,6 +88,19 @@ class VerifyMagicLinkResponse(ApiModel):
     # Also returned in the body because the tp_csrf cookie is host-only and is
     # unreadable from a web app served on a different origin than the API.
     csrf_token: str
+
+
+class SiweNonceResponse(ApiModel):
+    nonce: str
+    domain: str
+    scheme: str
+    chain_id: int
+    expires_at: datetime
+
+
+class LinkWalletRequest(ApiModel):
+    message: str = Field(min_length=1, max_length=4096)
+    signature: str = Field(min_length=1, max_length=4096)
 
 
 class MeResponse(ApiModel):
@@ -100,6 +118,9 @@ class MeResponse(ApiModel):
                     org_id=item.org_id,
                     roles=list(item.roles),
                     status=item.status,
+                    owner_is_onchain=item.owner_is_onchain,
+                    owner_checked_at=item.owner_checked_at,
+                    signer_roles_active=item.signer_roles_active,
                 )
                 for item in profile.memberships
             ],
@@ -116,7 +137,10 @@ class MeResponse(ApiModel):
 
 
 def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
+    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+    # Extensions first so they cannot overwrite the standard problem fields.
     content: dict[str, object] = {
+        **exc.extensions,
         "type": f"https://treasurypilot.dev/problems/{exc.code.casefold()}",
         "title": exc.title,
         "status": exc.status,
@@ -124,10 +148,10 @@ def problem_response(request: Request, exc: AuthFailure) -> JSONResponse:
         "detail": exc.detail,
         "instance": request.url.path,
     }
-    content.update(exc.extensions)
     return JSONResponse(
         status_code=exc.status,
         media_type="application/problem+json",
+        headers=headers,
         content=content,
     )
 
@@ -139,13 +163,25 @@ def _client_ip(request: Request) -> str:
 def _service(request: Request) -> AuthService:
     service = getattr(request.app.state, "auth_service", None)
     if not isinstance(service, AuthService):
+        raise auth_unavailable("Authentication is not configured.")
+    return service
+
+
+def _wallet_service(request: Request) -> WalletLinkService:
+    repository = getattr(request.app.state, "wallet_repository", None)
+    if not isinstance(repository, WalletRepository):
         raise AuthFailure(
             status=503,
-            code="AUTH_UNAVAILABLE",
-            title="Authentication unavailable",
-            detail="Authentication is not configured.",
+            code="WALLET_VERIFICATION_UNAVAILABLE",
+            title="Wallet verification unavailable",
+            detail="Wallet linking is not configured.",
         )
-    return service
+    settings = request.app.state.settings
+    return WalletLinkService(
+        repository,
+        allowed_origins=settings.cors_origin_list,
+        platform_configuration=getattr(request.app.state, "platform_configuration", None),
+    )
 
 
 def _session_cookie(request: Request) -> str | None:
@@ -163,6 +199,48 @@ async def _authenticated(request: Request, *, require_csrf: bool = False) -> Ses
 
 
 router = APIRouter(prefix="/v1", tags=["identity"])
+
+
+@router.get("/auth/siwe/nonce", response_model=SiweNonceResponse)
+async def siwe_nonce(request: Request) -> SiweNonceResponse:
+    access = await _authenticated(request)
+    service = _wallet_service(request)
+    challenge = await service.issue_nonce(
+        user_id=access.user.id,
+        origin=request.headers.get("origin"),
+    )
+    scheme, domain = service.origin_details(request.headers.get("origin"))
+    return SiweNonceResponse(
+        nonce=challenge.nonce,
+        domain=domain,
+        scheme=scheme,
+        chain_id=SIWE_CHAIN_ID,
+        expires_at=challenge.expires_at,
+    )
+
+
+@router.post("/me/wallets", status_code=201, response_model=WalletView)
+async def link_wallet(payload: LinkWalletRequest, request: Request) -> WalletView:
+    access = await _authenticated(request, require_csrf=True)
+    linked = await _wallet_service(request).link_wallet(
+        user_id=access.user.id,
+        origin=request.headers.get("origin"),
+        message_text=payload.message,
+        signature=payload.signature,
+    )
+    return WalletView(
+        address="0x" + linked.address.hex(),
+        chain_family="evm",
+        is_contract=linked.is_contract,
+        linked_at=linked.linked_at,
+    )
+
+
+@router.delete("/me/wallets/{address}", status_code=204, response_class=Response)
+async def unlink_wallet(address: str, request: Request) -> Response:
+    access = await _authenticated(request, require_csrf=True)
+    await _wallet_service(request).unlink_wallet(user_id=access.user.id, address=address)
+    return Response(status_code=204)
 
 
 @router.post("/auth/magic-link", status_code=202, response_class=Response)
@@ -252,4 +330,6 @@ async def logout(request: Request) -> Response:
 @router.get("/me", response_model=MeResponse)
 async def me(request: Request) -> MeResponse:
     access = await _authenticated(request)
+    if getattr(request.app.state, "wallet_repository", None) is not None:
+        await _wallet_service(request).refresh_owner_statuses(user_id=access.user.id)
     return MeResponse.from_record(await _service(request).profile(access))

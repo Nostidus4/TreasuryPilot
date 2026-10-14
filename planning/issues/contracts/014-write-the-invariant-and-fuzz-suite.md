@@ -33,6 +33,8 @@ Prove the nine invariants in the module spec hold under random call sequences.
 - invariants I1–I11 from docs/modules/contracts §10 (I10 = refill bound, I11 = cancelled never pays)
 - 10k-run configuration
 - invariants I12–I14 (supply floor, fixed Aave targets with zero allowance after, exact payment option)
+- P2 I15: borrow requires an unused, unexpired owner authorization
+- Handler reuses successful stepIds with fresh requests and drives owner-authorized borrow/repay
 
 ## Out of scope
 
@@ -53,6 +55,8 @@ Use ghost variables to track expected totals.
 - [ ] Each invariant is mapped to its BR in a comment
 - [ ] A deliberately broken check makes the matching invariant fail
 - [ ] I12–I14 pass at 10k runs
+- [ ] I15 passes at 10k runs when P2 borrow execution is included
+- [ ] Isolated step-guard and borrow-used-guard mutations fail I5 and I15 respectively
 
 ## Testing requirements
 

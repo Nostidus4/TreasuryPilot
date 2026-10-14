@@ -182,7 +182,11 @@ export function NotificationBell() {
     return (
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent align="end" className="w-96 overflow-hidden p-0">
+        <PopoverContent
+          align="end"
+          aria-label={t('Notifications')}
+          className="w-96 overflow-hidden p-0"
+        >
           <NotificationList onNavigate={() => setOpen(false)} />
         </PopoverContent>
       </Popover>
