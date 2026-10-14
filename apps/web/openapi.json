@@ -368,9 +368,19 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "safeDeploymentAvailable": {
+            "title": "Safedeploymentavailable",
+            "type": "boolean"
           }
         },
-        "required": ["chainId", "name", "explorerUrl", "assets"],
+        "required": [
+          "chainId",
+          "name",
+          "explorerUrl",
+          "assets",
+          "safeDeploymentAvailable"
+        ],
         "title": "ChainView",
         "type": "object"
       },
@@ -1210,6 +1220,66 @@
         },
         "required": ["roles"],
         "title": "RoleUpdateRequest",
+        "type": "object"
+      },
+      "SafeDeploymentRequest": {
+        "properties": {
+          "chainId": {
+            "exclusiveMinimum": 0.0,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Owners",
+            "type": "array"
+          },
+          "threshold": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Threshold",
+            "type": "integer"
+          }
+        },
+        "required": ["chainId", "owners", "threshold"],
+        "title": "SafeDeploymentRequest",
+        "type": "object"
+      },
+      "SafeDeploymentResponse": {
+        "properties": {
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/SafeDeploymentTransaction"
+          }
+        },
+        "required": ["chainId", "transaction"],
+        "title": "SafeDeploymentResponse",
+        "type": "object"
+      },
+      "SafeDeploymentTransaction": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data", "value"],
+        "title": "SafeDeploymentTransaction",
         "type": "object"
       },
       "SiweNonceResponse": {
@@ -2548,6 +2618,57 @@
         },
         "summary": "Get Request Evidence",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/safes/deploy-tx": {
+      "post": {
+        "operationId": "safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafeDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeDeploymentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Safe Deployment Transaction",
+        "tags": ["treasury"]
       }
     },
     "/v1/orgs/{organization_id}/settings": {

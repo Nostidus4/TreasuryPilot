@@ -346,6 +346,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/safes/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safe Deployment Transaction */
+    post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/settings': {
     parameters: {
       query?: never;
@@ -538,6 +555,8 @@ export interface components {
       explorerUrl: string;
       /** Name */
       name: string;
+      /** Safedeploymentavailable */
+      safeDeploymentAvailable: boolean;
     };
     /** ChainsResponse */
     ChainsResponse: {
@@ -884,6 +903,30 @@ export interface components {
     RoleUpdateRequest: {
       /** Roles */
       roles: components['schemas']['OrganizationRole'][];
+    };
+    /** SafeDeploymentRequest */
+    SafeDeploymentRequest: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Threshold */
+      threshold: number;
+    };
+    /** SafeDeploymentResponse */
+    SafeDeploymentResponse: {
+      /** Chainid */
+      chainId: number;
+      transaction: components['schemas']['SafeDeploymentTransaction'];
+    };
+    /** SafeDeploymentTransaction */
+    SafeDeploymentTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
     };
     /** SiweNonceResponse */
     SiweNonceResponse: {
@@ -1701,6 +1744,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SafeDeploymentRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SafeDeploymentResponse'];
         };
       };
       /** @description Validation Error */
