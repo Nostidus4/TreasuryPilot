@@ -310,36 +310,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}': {
-=======
-  '/v1/orgs/{organization_id}/invites': {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-<<<<<<< HEAD
     /** Get Governance Tx */
     get: operations['get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get'];
     put?: never;
     post?: never;
-=======
-    /** List Invites */
-    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
-    put?: never;
-    /** Create Invite */
-    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call': {
     parameters: {
       query?: never;
@@ -358,9 +345,6 @@ export interface paths {
     trace?: never;
   };
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures': {
-=======
-  '/v1/orgs/{organization_id}/invites/{invite_id}': {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -369,10 +353,58 @@ export interface paths {
     };
     get?: never;
     put?: never;
-<<<<<<< HEAD
     /** Add Governance Signature */
     post: operations['add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post'];
-=======
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report Submission */
+    post: operations['report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Invites */
+    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
+    put?: never;
+    /** Create Invite */
+    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites/{invite_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
     post?: never;
     /** Revoke Invite */
     delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
@@ -392,18 +424,13 @@ export interface paths {
     get: operations['list_members_v1_orgs__organization_id__members_get'];
     put?: never;
     post?: never;
->>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
-  '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted': {
-=======
   '/v1/orgs/{organization_id}/members/{user_id}': {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -412,10 +439,6 @@ export interface paths {
     };
     get?: never;
     put?: never;
-<<<<<<< HEAD
-    /** Report Submission */
-    post: operations['report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post'];
-=======
     post?: never;
     /** Remove Member */
     delete: operations['remove_member_v1_orgs__organization_id__members__user_id__delete'];
@@ -504,7 +527,6 @@ export interface paths {
     put?: never;
     /** Safe Deployment Transaction */
     post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
@@ -562,9 +584,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-<<<<<<< HEAD
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs': {
-=======
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Governance Tx */
+    post: operations['create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
     parameters: {
       query?: never;
@@ -584,7 +620,6 @@ export interface paths {
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}': {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -593,10 +628,6 @@ export interface paths {
     };
     get?: never;
     put?: never;
-<<<<<<< HEAD
-    /** Create Governance Tx */
-    post: operations['create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post'];
-=======
     post?: never;
     /** Discard Mandate Draft */
     delete: operations['discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete'];
@@ -616,7 +647,6 @@ export interface paths {
     put?: never;
     /** Clone Mandate Draft */
     post: operations['clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
@@ -743,24 +773,6 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
-<<<<<<< HEAD
-    /** CallInput */
-    CallInput: {
-      /** Data */
-      data: string;
-      /**
-       * Operation
-       * @default 0
-       */
-      operation: number;
-      /** To */
-      to: string;
-      /**
-       * Value
-       * @default 0
-       */
-      value: string;
-=======
     /** BundleRequest */
     BundleRequest: {
       /** Amount */
@@ -778,7 +790,23 @@ export interface components {
       invoiceHash?: string | null;
       /** Vendordisplayname */
       vendorDisplayName?: string | null;
->>>>>>> origin/feat/treasury-112-safe-snapshots
+    };
+    /** CallInput */
+    CallInput: {
+      /** Data */
+      data: string;
+      /**
+       * Operation
+       * @default 0
+       */
+      operation: number;
+      /** To */
+      to: string;
+      /**
+       * Value
+       * @default 0
+       */
+      value: string;
     };
     /** ChainView */
     ChainView: {
@@ -835,25 +863,6 @@ export interface components {
       /** Wallets */
       wallets: components['schemas']['WalletRequest'][];
     };
-<<<<<<< HEAD
-    /**
-     * GovernanceTxPurpose
-     * @enum {string}
-     */
-    GovernanceTxPurpose:
-      | 'MODULE_SETUP'
-      | 'MANDATE'
-      | 'PAYEE_ADD'
-      | 'PAYEE_DEACTIVATE'
-      | 'EXCEPTION_GRANT'
-      | 'EXCEPTION_REVOKE'
-      | 'ALLOW_DUPLICATE'
-      | 'CANCEL_REQUEST'
-      | 'PAUSE'
-      | 'RESUME'
-      | 'REVOKE'
-      | 'GUARDIAN_SETUP';
-=======
     /** EvidenceBundle */
     EvidenceBundle: {
       /** Aicalls */
@@ -933,7 +942,23 @@ export interface components {
       /** Status */
       status: string;
     };
->>>>>>> origin/feat/treasury-112-safe-snapshots
+    /**
+     * GovernanceTxPurpose
+     * @enum {string}
+     */
+    GovernanceTxPurpose:
+      | 'MODULE_SETUP'
+      | 'MANDATE'
+      | 'PAYEE_ADD'
+      | 'PAYEE_DEACTIVATE'
+      | 'EXCEPTION_GRANT'
+      | 'EXCEPTION_REVOKE'
+      | 'ALLOW_DUPLICATE'
+      | 'CANCEL_REQUEST'
+      | 'PAUSE'
+      | 'RESUME'
+      | 'REVOKE'
+      | 'GUARDIAN_SETUP';
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -1244,12 +1269,6 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
-<<<<<<< HEAD
-    /** SignatureRequest */
-    SignatureRequest: {
-      /** Signature */
-      signature: string;
-=======
     /** PlanEvidence */
     PlanEvidence: {
       /** Planhash */
@@ -1336,7 +1355,11 @@ export interface components {
       to: string;
       /** Value */
       value: string;
->>>>>>> origin/feat/treasury-112-safe-snapshots
+    };
+    /** SignatureRequest */
+    SignatureRequest: {
+      /** Signature */
+      signature: string;
     };
     /** SiweNonceResponse */
     SiweNonceResponse: {
@@ -1354,12 +1377,11 @@ export interface components {
       /** Scheme */
       scheme: string;
     };
-<<<<<<< HEAD
     /** SubmittedRequest */
     SubmittedRequest: {
       /** Transactionhash */
       transactionHash: string;
-=======
+    };
     /** TenantHealth */
     TenantHealth: {
       /** Activemembers */
@@ -1412,7 +1434,6 @@ export interface components {
       feeBaseUnits?: string | null;
       /** Txhash */
       txHash: string;
->>>>>>> origin/feat/treasury-112-safe-snapshots
     };
     /** TreasuryResponse */
     TreasuryResponse: {
@@ -2082,18 +2103,155 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
   get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get: {
-=======
-  list_invites_v1_orgs__organization_id__invites_get: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
-<<<<<<< HEAD
         governance_tx_id: string;
-=======
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: string;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SignatureRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        governance_tx_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubmittedRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_invites_v1_orgs__organization_id__invites_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
         organization_id: string;
       };
       cookie?: never;
@@ -2323,7 +2481,6 @@ export interface operations {
       };
       header?: never;
       path: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
         organization_id: string;
       };
       cookie?: never;
@@ -2352,22 +2509,13 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
-  get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get: {
-=======
   get_review_item_v1_orgs__organization_id__review_items__item_id__get: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
-<<<<<<< HEAD
-        governance_tx_id: string;
-        organization_id: string;
-=======
         organization_id: string;
         item_id: string;
->>>>>>> origin/feat/treasury-112-safe-snapshots
       };
       cookie?: never;
     };
@@ -2380,11 +2528,7 @@ export interface operations {
         };
         content: {
           'application/json': {
-<<<<<<< HEAD
-            [key: string]: string;
-=======
             [key: string]: unknown;
->>>>>>> origin/feat/treasury-112-safe-snapshots
           };
         };
       };
@@ -2399,32 +2543,19 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
-  add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post: {
-=======
   act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
-<<<<<<< HEAD
-        governance_tx_id: string;
-        organization_id: string;
-=======
         organization_id: string;
         item_id: string;
->>>>>>> origin/feat/treasury-112-safe-snapshots
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-<<<<<<< HEAD
-        'application/json': components['schemas']['SignatureRequest'];
-=======
         'application/json': components['schemas']['ReviewActionRequest'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
       };
     };
     responses: {
@@ -2450,30 +2581,18 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
-  report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post: {
-=======
   safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
-<<<<<<< HEAD
-        governance_tx_id: string;
-=======
->>>>>>> origin/feat/treasury-112-safe-snapshots
         organization_id: string;
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-<<<<<<< HEAD
-        'application/json': components['schemas']['SubmittedRequest'];
-=======
         'application/json': components['schemas']['SafeDeploymentRequest'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
       };
     };
     responses: {
@@ -2483,13 +2602,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-<<<<<<< HEAD
-          'application/json': {
-            [key: string]: unknown;
-          };
-=======
           'application/json': components['schemas']['SafeDeploymentResponse'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
         };
       };
       /** @description Validation Error */
@@ -2605,11 +2718,7 @@ export interface operations {
       };
     };
   };
-<<<<<<< HEAD
   create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post: {
-=======
-  list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -2619,7 +2728,6 @@ export interface operations {
       };
       cookie?: never;
     };
-<<<<<<< HEAD
     requestBody: {
       content: {
         'application/json': components['schemas']['CreateGovernanceTxRequest'];
@@ -2628,21 +2736,44 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       201: {
-=======
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
->>>>>>> origin/feat/treasury-112-safe-snapshots
         headers: {
           [name: string]: unknown;
         };
         content: {
-<<<<<<< HEAD
           'application/json': {
             [key: string]: unknown;
           };
-=======
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
           'application/json': components['schemas']['MandateListResponse'];
         };
       };
@@ -2744,7 +2875,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MandateDraftResponse'];
->>>>>>> origin/feat/treasury-112-safe-snapshots
         };
       };
       /** @description Validation Error */

@@ -310,38 +310,6 @@
         "title": "AuditVerifyResponse",
         "type": "object"
       },
-<<<<<<< HEAD
-      "CallInput": {
-        "properties": {
-          "data": {
-            "maxLength": 131074,
-            "pattern": "^0x(?:[0-9a-fA-F]{2})*$",
-            "title": "Data",
-            "type": "string"
-          },
-          "operation": {
-            "default": 0,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Operation",
-            "type": "integer"
-          },
-          "to": {
-            "pattern": "^0x[0-9a-fA-F]{40}$",
-            "title": "To",
-            "type": "string"
-          },
-          "value": {
-            "default": "0",
-            "maxLength": 78,
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Value",
-            "type": "string"
-          }
-        },
-        "required": ["to", "data"],
-        "title": "CallInput",
-=======
       "BundleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -394,7 +362,38 @@
         },
         "required": ["id", "amount", "currency"],
         "title": "BundleRequest",
->>>>>>> origin/feat/treasury-112-safe-snapshots
+        "type": "object"
+      },
+      "CallInput": {
+        "properties": {
+          "data": {
+            "maxLength": 131074,
+            "pattern": "^0x(?:[0-9a-fA-F]{2})*$",
+            "title": "Data",
+            "type": "string"
+          },
+          "operation": {
+            "default": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Operation",
+            "type": "integer"
+          },
+          "to": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "default": "0",
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data"],
+        "title": "CallInput",
         "type": "object"
       },
       "ChainView": {
@@ -541,25 +540,6 @@
         "title": "CreateTreasuryRequest",
         "type": "object"
       },
-<<<<<<< HEAD
-      "GovernanceTxPurpose": {
-        "enum": [
-          "MODULE_SETUP",
-          "MANDATE",
-          "PAYEE_ADD",
-          "PAYEE_DEACTIVATE",
-          "EXCEPTION_GRANT",
-          "EXCEPTION_REVOKE",
-          "ALLOW_DUPLICATE",
-          "CANCEL_REQUEST",
-          "PAUSE",
-          "RESUME",
-          "REVOKE",
-          "GUARDIAN_SETUP"
-        ],
-        "title": "GovernanceTxPurpose",
-        "type": "string"
-=======
       "EvidenceBundle": {
         "additionalProperties": false,
         "properties": {
@@ -781,7 +761,24 @@
         "required": ["id", "code", "severity", "status"],
         "title": "FlagEvidence",
         "type": "object"
->>>>>>> origin/feat/treasury-112-safe-snapshots
+      },
+      "GovernanceTxPurpose": {
+        "enum": [
+          "MODULE_SETUP",
+          "MANDATE",
+          "PAYEE_ADD",
+          "PAYEE_DEACTIVATE",
+          "EXCEPTION_GRANT",
+          "EXCEPTION_REVOKE",
+          "ALLOW_DUPLICATE",
+          "CANCEL_REQUEST",
+          "PAUSE",
+          "RESUME",
+          "REVOKE",
+          "GUARDIAN_SETUP"
+        ],
+        "title": "GovernanceTxPurpose",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1560,18 +1557,6 @@
         "title": "OrganizationView",
         "type": "object"
       },
-<<<<<<< HEAD
-      "SignatureRequest": {
-        "properties": {
-          "signature": {
-            "pattern": "^0x(?:[0-9a-fA-F]{2}){65}$",
-            "title": "Signature",
-            "type": "string"
-          }
-        },
-        "required": ["signature"],
-        "title": "SignatureRequest",
-=======
       "PlanEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -1754,7 +1739,18 @@
         },
         "required": ["to", "data", "value"],
         "title": "SafeDeploymentTransaction",
->>>>>>> origin/feat/treasury-112-safe-snapshots
+        "type": "object"
+      },
+      "SignatureRequest": {
+        "properties": {
+          "signature": {
+            "pattern": "^0x(?:[0-9a-fA-F]{2}){65}$",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["signature"],
+        "title": "SignatureRequest",
         "type": "object"
       },
       "SiweNonceResponse": {
@@ -1785,7 +1781,6 @@
         "title": "SiweNonceResponse",
         "type": "object"
       },
-<<<<<<< HEAD
       "SubmittedRequest": {
         "properties": {
           "transactionHash": {
@@ -1796,7 +1791,8 @@
         },
         "required": ["transactionHash"],
         "title": "SubmittedRequest",
-=======
+        "type": "object"
+      },
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -1925,7 +1921,6 @@
         },
         "required": ["txHash", "chainId"],
         "title": "TransactionEvidence",
->>>>>>> origin/feat/treasury-112-safe-snapshots
         "type": "object"
       },
       "TreasuryResponse": {
@@ -2991,7 +2986,6 @@
         "tags": ["audit"]
       }
     },
-<<<<<<< HEAD
     "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}": {
       "get": {
         "operationId": "get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get",
@@ -3008,14 +3002,6 @@
           },
           {
             "in": "path",
-=======
-    "/v1/orgs/{organization_id}/invites": {
-      "get": {
-        "operationId": "list_invites_v1_orgs__organization_id__invites_get",
-        "parameters": [
-          {
-            "in": "path",
->>>>>>> origin/feat/treasury-112-safe-snapshots
             "name": "organization_id",
             "required": true,
             "schema": {
@@ -3030,13 +3016,9 @@
             "content": {
               "application/json": {
                 "schema": {
-<<<<<<< HEAD
                   "additionalProperties": true,
                   "title": "Response Get Governance Tx V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Get",
                   "type": "object"
-=======
-                  "$ref": "#/components/schemas/InvitesResponse"
->>>>>>> origin/feat/treasury-112-safe-snapshots
                 }
               }
             },
@@ -3053,7 +3035,6 @@
             "description": "Validation Error"
           }
         },
-<<<<<<< HEAD
         "summary": "Get Governance Tx",
         "tags": ["governance"]
       }
@@ -3129,17 +3110,6 @@
           },
           {
             "in": "path",
-=======
-        "summary": "List Invites",
-        "tags": ["membership"],
-        "x-organization-scoped": true
-      },
-      "post": {
-        "operationId": "create_invite_v1_orgs__organization_id__invites_post",
-        "parameters": [
-          {
-            "in": "path",
->>>>>>> origin/feat/treasury-112-safe-snapshots
             "name": "organization_id",
             "required": true,
             "schema": {
@@ -3153,9 +3123,162 @@
           "content": {
             "application/json": {
               "schema": {
-<<<<<<< HEAD
                 "$ref": "#/components/schemas/SignatureRequest"
-=======
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Governance Signature V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Signatures Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Governance Signature",
+        "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted": {
+      "post": {
+        "operationId": "report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "governance_tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Governance Tx Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmittedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Report Submission V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Submitted Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Submission",
+        "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/invites": {
+      "get": {
+        "operationId": "list_invites_v1_orgs__organization_id__invites_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invites",
+        "tags": ["membership"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_invite_v1_orgs__organization_id__invites_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
                 "$ref": "#/components/schemas/InviteCreateRequest"
               }
             }
@@ -3349,7 +3472,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RoleUpdateRequest"
->>>>>>> origin/feat/treasury-112-safe-snapshots
               }
             }
           },
@@ -3360,10 +3482,6 @@
             "content": {
               "application/json": {
                 "schema": {
-<<<<<<< HEAD
-                  "additionalProperties": true,
-                  "title": "Response Add Governance Signature V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Signatures Post",
-=======
                   "$ref": "#/components/schemas/MemberResponse"
                 }
               }
@@ -3507,7 +3625,6 @@
                 "schema": {
                   "additionalProperties": true,
                   "title": "Response List Review Items V1 Orgs  Organization Id  Review Items Get",
->>>>>>> origin/feat/treasury-112-safe-snapshots
                   "type": "object"
                 }
               }
@@ -3525,23 +3642,6 @@
             "description": "Validation Error"
           }
         },
-<<<<<<< HEAD
-        "summary": "Add Governance Signature",
-        "tags": ["governance"]
-      }
-    },
-    "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted": {
-      "post": {
-        "operationId": "report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "governance_tx_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Governance Tx Id",
-=======
         "summary": "List Review Items",
         "tags": ["review-items"],
         "x-organization-scoped": true
@@ -3558,14 +3658,11 @@
             "schema": {
               "format": "uuid",
               "title": "Organization Id",
->>>>>>> origin/feat/treasury-112-safe-snapshots
               "type": "string"
             }
           },
           {
             "in": "path",
-<<<<<<< HEAD
-=======
             "name": "item_id",
             "required": true,
             "schema": {
@@ -3674,7 +3771,6 @@
         "parameters": [
           {
             "in": "path",
->>>>>>> origin/feat/treasury-112-safe-snapshots
             "name": "organization_id",
             "required": true,
             "schema": {
@@ -3688,11 +3784,7 @@
           "content": {
             "application/json": {
               "schema": {
-<<<<<<< HEAD
-                "$ref": "#/components/schemas/SubmittedRequest"
-=======
                 "$ref": "#/components/schemas/SafeDeploymentRequest"
->>>>>>> origin/feat/treasury-112-safe-snapshots
               }
             }
           },
@@ -3703,13 +3795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-<<<<<<< HEAD
-                  "additionalProperties": true,
-                  "title": "Response Report Submission V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Submitted Post",
-                  "type": "object"
-=======
                   "$ref": "#/components/schemas/SafeDeploymentResponse"
->>>>>>> origin/feat/treasury-112-safe-snapshots
                 }
               }
             },
@@ -3726,13 +3812,8 @@
             "description": "Validation Error"
           }
         },
-<<<<<<< HEAD
-        "summary": "Report Submission",
-        "tags": ["governance"]
-=======
         "summary": "Safe Deployment Transaction",
         "tags": ["treasury"]
->>>>>>> origin/feat/treasury-112-safe-snapshots
       }
     },
     "/v1/orgs/{organization_id}/settings": {
@@ -3888,11 +3969,69 @@
         "tags": ["treasury"]
       }
     },
-<<<<<<< HEAD
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs": {
       "post": {
         "operationId": "create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post",
-=======
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGovernanceTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Governance Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Governance Txs Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Governance Tx",
+        "tags": ["governance"]
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates": {
       "get": {
         "operationId": "list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get",
@@ -3946,7 +4085,6 @@
       },
       "post": {
         "operationId": "create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post",
->>>>>>> origin/feat/treasury-112-safe-snapshots
         "parameters": [
           {
             "in": "path",
@@ -3973,11 +4111,7 @@
           "content": {
             "application/json": {
               "schema": {
-<<<<<<< HEAD
-                "$ref": "#/components/schemas/CreateGovernanceTxRequest"
-=======
                 "$ref": "#/components/schemas/MandateConfig"
->>>>>>> origin/feat/treasury-112-safe-snapshots
               }
             }
           },
@@ -3988,13 +4122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-<<<<<<< HEAD
-                  "additionalProperties": true,
-                  "title": "Response Create Governance Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Governance Txs Post",
-                  "type": "object"
-=======
                   "$ref": "#/components/schemas/MandateDraftResponse"
->>>>>>> origin/feat/treasury-112-safe-snapshots
                 }
               }
             },
@@ -4011,10 +4139,6 @@
             "description": "Validation Error"
           }
         },
-<<<<<<< HEAD
-        "summary": "Create Governance Tx",
-        "tags": ["governance"]
-=======
         "summary": "Create Mandate Draft",
         "tags": ["mandates"],
         "x-organization-scoped": true
@@ -4135,7 +4259,6 @@
         "summary": "Clone Mandate Draft",
         "tags": ["mandates"],
         "x-organization-scoped": true
->>>>>>> origin/feat/treasury-112-safe-snapshots
       }
     }
   }
