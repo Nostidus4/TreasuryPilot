@@ -1,9 +1,12 @@
 # TreasuryPilot technical documentation
 
 DOM-012 / #236. Baseline: main `4b2ee5e89763450078767d564a07f73fabfe2d63`,
-2026-10-14. Status: **submission draft; feature-freeze and developer review pending**.
+2026-10-14; implementation statements re-checked against main `03ac74a`. Status:
+**submission draft; feature-freeze and developer review pending**.
 Scope: synthetic testnet treasury evaluation. This baseline is explicitly
 identified because several target workflows are still under implementation.
+The Sepolia contracts are not deployed yet; the public manifest
+(`deployments/11155111.json`) is `configured_only`.
 
 ## 1. Problem and scope
 
@@ -40,19 +43,20 @@ flowchart LR
 ```
 
 Dashed edges identify target integrations absent at this baseline. The signer
-service currently exposes health only. The core worker tasks are infrastructure
-probes; they do not implement the diagram's payment loop. The AI process has an
+service currently exposes health only. The core worker runs probes, Safe
+configuration refresh and the domain-event publisher, and has a policy-attestation
+issuer module; none implements the diagram's payment loop. The AI process has an
 explicit environment allowlist without policy/executor keys. This is a deployed
 configuration boundary, not proof against compromise of the common host.
 
-| Component | Implemented baseline                                                                                                                                         | Remaining target integration                                                                       |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Contracts | Clone/factory, governance, PAY/REFILL, budgets/floors/replay, fixed Aave supply/withdraw and owner grants for borrow/repay                                   | Public deployment/verification and application integration                                         |
-| py-core   | Strict integer money/domain models, refill formulas, EDF scheduler, payment-option/value functions, forecast, reserve/liquidity decision and borrow proposal | CP-SAT optimizer and exhaustive scheduler oracle are not on this main baseline                     |
-| API       | Session/auth and org RBAC, identity/treasury repositories/routes, asset configuration, audit primitives                                                      | Complete invoice approval, maker-checker and policy/execution/reconciliation endpoints             |
-| Worker/AI | Queue/environment separation, RPC health/pool primitives, logging/metrics/locks, model adapter/failover/budgets, input sanitization/detector                 | Full extraction/planner/tool/evaluation flow, trigger/executor/recovery and business notifications |
-| Signer    | Internal health service                                                                                                                                      | Attestation verification, fresh simulation and typed signing endpoint                              |
-| Evidence  | Verified mined-state publisher, schema/receipt helpers, local journals, static/test reports                                                                  | Public Sepolia/EASScan evidence and production reconciliation/uniqueness                           |
+| Component | Implemented baseline                                                                                                                                                                                                                        | Remaining target integration                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Contracts | Clone/factory, governance, PAY/REFILL, budgets/floors/replay, fixed Aave supply/withdraw and owner grants for borrow/repay                                                                                                                  | Public deployment/verification and application integration                                                 |
+| py-core   | Strict integer money/domain models, refill formulas, EDF scheduler, CP-SAT scheduler with EDF fallback, test-only exhaustive oracle, plan scoring, payment-option/value functions, forecast, reserve/liquidity decision and borrow proposal | Integration of the CP-SAT scheduler (ADR-015) and plan scoring into API/worker flows                       |
+| API       | In-house session/auth (ADR-009) and org RBAC, identity/treasury repositories/routes, invoice request state machine, maker-checker helper, payee screening, audit primitives                                                                 | Complete invoice approval, maker-checker wiring and policy/execution/reconciliation endpoints              |
+| Worker/AI | Queue/environment separation, RPC health/pool primitives, logging/metrics/locks, model adapter/failover/budgets, input sanitization/detector, policy-attestation issuer, in-app notification publisher                                      | Full extraction/planner/tool/evaluation flow, trigger/executor/recovery and external notification channels |
+| Signer    | Internal health service                                                                                                                                                                                                                     | Attestation verification, fresh simulation and typed signing endpoint                                      |
+| Evidence  | Verified mined-state publisher, schema/receipt helpers, local journals, static/test reports                                                                                                                                                 | Public Sepolia/EASScan evidence and production reconciliation/uniqueness                                   |
 
 See [system architecture](../SYSTEM_ARCHITECTURE.md),
 [AI design](../AI_AGENT_ARCHITECTURE.md) and the [security self-assessment](security-self-assessment.md)
@@ -113,7 +117,9 @@ EDF returns a feasible heuristic result, not a global optimum certificate.
 The older source calls it B1; ADR-019 benchmark naming is B0 manual/EDF with idle
 cash, B1 deterministic optimizer, B2 AI plus optimizer. Reports must use the
 ADR-019 labels with explicit algorithm identities and must not relabel EDF as
-implemented CP-SAT. The open optimizer/oracle work is excluded here.
+the CP-SAT scheduler. `schedule_cpsat` (ADR-015) is on main with a 5 s limit and EDF
+fallback; its code docstring calls it "B2", so state the algorithm identity
+explicitly. No benchmark result is reported here.
 
 For a confirmed early option, value is exact standard-minus-early saving less
 estimated execution fee and simple supply interest forgone until due date;
