@@ -65,7 +65,9 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   });
   plan.steps[2].status = 'Dropped';
 
-  expect(await screen.findByText('Partially completed')).toBeInTheDocument();
+  expect(
+    await screen.findByText(/steps are verified on-chain/),
+  ).toBeInTheDocument();
   expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
   const timeline = screen.getByRole('list', { name: /execution steps/i });
   expect(
