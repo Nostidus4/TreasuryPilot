@@ -31,7 +31,8 @@ export const usePlan = (orgId: string, planId: string, live = true) =>
     `/plans/${planId}`,
     {
       // The org-wide stream normally refreshes this query immediately. Keep
-      // the active timeline within WEB-012's two-second target if SSE drops.
+      // the active timeline within WEB-012's two-second target whenever SSE is
+      // not connected (initial connect, drop, or no EventSource support).
       refetchInterval: live ? false : 2_000,
     },
   );

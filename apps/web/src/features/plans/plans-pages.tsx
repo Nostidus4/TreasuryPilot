@@ -276,8 +276,12 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                     )}
                   >
                     {step.verification === 'VERIFIED'
-                      ? t('Verification passed: amount and recipient match the plan')
-                      : t('Verification mismatch: on-chain result differs from the plan')}
+                      ? t(
+                          'Verification passed: amount and recipient match the plan',
+                        )
+                      : t(
+                          'Verification mismatch: on-chain result differs from the plan',
+                        )}
                   </span>
                 )}
                 {step.status !== 'Planned' && (
@@ -337,7 +341,7 @@ export function PlanDetailPage() {
         plan &&
         t('Proposed {{when}} · live updates {{state}}', {
           when: formatRelative(plan.createdAt),
-          state: scope.live ? t('on') : t('reconnecting; refreshing every 2 seconds'),
+          state: scope.live ? t('on') : t('off, refreshing every 2 seconds'),
         })
       }
       actions={
