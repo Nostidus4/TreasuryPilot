@@ -85,7 +85,7 @@ contract TreasuryHandler {
     }
 
     function _observe(uint8 action, uint256 amount) internal {
-        bytes32 key = keccak256(abi.encode(action, block.timestamp / 1 days));
+        bytes32 key = keccak256(abi.encode(action, module.asset(), block.timestamp / 1 days));
         if (!knownKey[key]) {
             knownKey[key] = true;
             observedKeys.push(key);

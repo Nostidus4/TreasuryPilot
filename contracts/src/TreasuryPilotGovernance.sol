@@ -139,7 +139,7 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
     }
 
     /// @inheritdoc ITreasuryPilotModule
-    function setBuffer(address asset_, address wallet, uint256 buffer, uint256 target)
+    function setAssetBuffer(address asset_, address wallet, uint256 buffer, uint256 target)
         external
         onlyOwner
         nonReentrant
@@ -154,8 +154,8 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
         nonReentrant
     {
         if (
-            asset_ == address(0) || asset_.code.length == 0 || asset_ == asset
-                || pay.perRequest > pay.daily || refill.perRequest > refill.daily
+            asset_ == address(0) || asset_.code.length == 0 || asset_ == asset || pay.perRequest > pay.daily
+                || refill.perRequest > refill.daily
         ) revert E.InvalidConfiguration();
         if (!enabled) {
             _clearAsset(asset_);

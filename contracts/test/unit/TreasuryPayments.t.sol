@@ -25,10 +25,30 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         I.MandateInit memory m = config;
         m.pay = I.Limits(100e6, 100e6);
         _owner(abi.encodeCall(module.configureMandate, (m)));
-        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0));
-        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(op1), 20e6, 150e6));
-        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(op2), 10e6, 150e6));
-        _owner(abi.encodeWithSignature("setAssetPolicy(address,bool,(uint128,uint128),(uint128,uint128))", address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0)));
+        _owner(
+            abi.encodeWithSignature(
+                "setAssetBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0
+            )
+        );
+        _owner(
+            abi.encodeWithSignature(
+                "setAssetBuffer(address,address,uint256,uint256)", address(second), address(op1), 20e6, 150e6
+            )
+        );
+        _owner(
+            abi.encodeWithSignature(
+                "setAssetBuffer(address,address,uint256,uint256)", address(second), address(op2), 10e6, 150e6
+            )
+        );
+        _owner(
+            abi.encodeWithSignature(
+                "setAssetPolicy(address,bool,(uint128,uint128),(uint128,uint128))",
+                address(second),
+                true,
+                I.Limits(100e6, 100e6),
+                I.Limits(0, 0)
+            )
+        );
 
         I.PaymentApproval memory primaryFirst = _approval(501, 60e6);
         _pay(primaryFirst, bytes32(uint256(501)));
@@ -55,7 +75,11 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         vm.prank(address(treasury));
         module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
 
-        _owner(abi.encodeWithSignature("setBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0));
+        _owner(
+            abi.encodeWithSignature(
+                "setAssetBuffer(address,address,uint256,uint256)", address(second), address(treasury), 10e6, 0
+            )
+        );
         vm.expectRevert(E.AssetBufferNotConfigured.selector);
         vm.prank(address(treasury));
         module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
@@ -63,9 +87,9 @@ contract TreasuryPaymentsTest is TreasuryFixture {
 
     function _setSecondaryBuffers(TestUSDC second, uint256 floor, uint256 target) internal {
         vm.startPrank(address(treasury));
-        module.setBuffer(address(second), address(treasury), floor, 0);
-        module.setBuffer(address(second), address(op1), floor, target);
-        module.setBuffer(address(second), address(op2), floor, target);
+        module.setAssetBuffer(address(second), address(treasury), floor, 0);
+        module.setAssetBuffer(address(second), address(op1), floor, target);
+        module.setAssetBuffer(address(second), address(op2), floor, target);
         vm.stopPrank();
     }
 
@@ -113,6 +137,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         vm.expectRevert(E.ApprovalInvalid.selector);
         module.verifyApproval(ap, sig);
     }
+
     function testPayTransfersExactApprovedAmountAndSetsReplayState() external {
         I.PaymentApproval memory ap = _approval(1, 100e6);
         uint256 beforeBalance = token.balanceOf(address(op1));

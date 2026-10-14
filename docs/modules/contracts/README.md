@@ -157,7 +157,7 @@ The implementation's `initialize` is disabled in its constructor; clones are ini
 | `setApprovers(address[] add, address[] remove)` | Updates the set; must stay ≥ 1. | `NotOwner`, `NoApprovers` |
 | `setBuffer(address wallet, uint256 buffer, uint256 target)` | Sets primary-asset floor and target (compatibility form). | `NotOwner`, `UnknownWallet`, `TargetBelowBuffer` |
 | `setAssetPolicy(address asset, bool enabled, Limits pay, Limits refill)` | Enables or disables a non-primary ERC20 and its independent PAY/REFILL caps. | `NotOwner`, `InvalidConfiguration` |
-| `setBuffer(address asset, address wallet, uint256 buffer, uint256 target)` | Sets the selected asset floor and operational refill target. | `NotOwner`, `AssetNotAllowed`, `UnknownWallet`, `TargetBelowBuffer` |
+| `setAssetBuffer(address asset, address wallet, uint256 buffer, uint256 target)` | Sets the selected asset floor and operational refill target. | `NotOwner`, `AssetNotAllowed`, `UnknownWallet`, `TargetBelowBuffer` |
 | `addPayee(address payee)` | `activeFrom = now + mandate.payeeCoolingSeconds`, `active = true`. Re-adding restarts cooling. Payee must not be a treasury wallet. | `NotOwner`, `InvalidPayee` |
 | `deactivatePayee(address payee)` | `active = false`. | `NotOwner`, `UnknownPayee` |
 | `grantException(bytes32 requestId, uint128 amount, address payee, uint64 expiry)` | Stores an exception bound to the current `mandate.version`. Overwrites an unused one for the same request. M04-D3. | `NotOwner`, `ExpiryInPast`, `AlreadyPaid` |
