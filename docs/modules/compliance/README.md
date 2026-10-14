@@ -179,10 +179,24 @@ period; magic links become eligible after use or expiry plus their configured pe
 Each deleted session or magic link leaves a receipt containing only the SHA-256 digest
 of its random row UUID, type and deletion time; it never hashes or stores the email,
 token, user id, IP or user agent. The global hold is intentionally conservative;
-subject-specific deletion requests and holds remain a separate follow-up.
+it also freezes subject erasure while authentication artifacts are part of the request.
+
+`request_subject_deletion()` disables the account immediately and queues its
+profile-erasure request; `set_subject_legal_hold()` records a subject-level hold on the
+same row. The worker locks
+that row before changing identity data, so a concurrent hold cannot pass a deletion that
+already owns the lock. A held request stays pending until the hold is released. If the
+user's email appears in immutable audit evidence, the request is marked for review and
+the account is left intact; the audit chain is never rewritten. Otherwise the worker
+disables the account, replaces its email with a generated `.invalid` address, clears the
+display name, and removes current sessions, magic links, wallet/SSO/MFA credentials and
+user notification targets/preferences. It writes a `subject` receipt from the random user
+UUID, and separate hash-only receipts for deleted sessions and magic links, then removes
+the request/hold row. No original email, display name, token or user UUID is kept in a
+receipt. The UUID remains on financial and immutable audit rows where it is needed for
+historical attribution; those records are not erased by this workflow.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
-a day). This follow-up adds user-wide session and magic-link retention. Subject-level
-deletion requests and holds, and a policy for financial records and immutable audit
-evidence after their storage models land, remain out of scope. CMP-L03 remains open
-until those slices are designed and implemented.
+a day). This follow-up adds user-wide authentication retention and a bounded profile
+erasure request/hold path. A policy for financial records and immutable audit evidence
+remains out of scope, so CMP-L03 stays open for that design and its acceptance tests.

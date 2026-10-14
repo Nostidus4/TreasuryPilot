@@ -75,6 +75,26 @@ class AuthRetentionPolicy(Base):
     )
 
 
+class SubjectDeletionControl(Base):
+    """One pending profile-erasure request and hold bit per account subject."""
+
+    __tablename__ = "subject_deletion_controls"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    audit_reference_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DeletionReceipt(Base):
     """An irreversible digest of a random row id, without email, token or subject id."""
 
@@ -82,7 +102,7 @@ class DeletionReceipt(Base):
     __table_args__ = (
         CheckConstraint("octet_length(record_hash) = 32", name="ck_deletion_receipts_hash_length"),
         CheckConstraint(
-            "record_type IN ('invite', 'session', 'magic_link')",
+            "record_type IN ('invite', 'session', 'magic_link', 'subject')",
             name="ck_deletion_receipts_record_type",
         ),
     )
