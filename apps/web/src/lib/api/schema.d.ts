@@ -2001,6 +2001,10 @@ export interface components {
       details: string[];
       /** Executionallowed */
       executionAllowed: boolean;
+      /** Missing */
+      missing: string[];
+      /** Snapshotblock */
+      snapshotBlock: number | null;
       status: components['schemas']['Coverage'];
     };
     /** CreateGovernanceTxRequest */
@@ -3299,6 +3303,8 @@ export interface components {
       /** Chainname */
       chainName: string;
       coverage: components['schemas']['Coverage'];
+      /** Coveragedetails */
+      coverageDetails: string[];
       /**
        * Createdat
        * Format: date-time

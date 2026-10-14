@@ -204,6 +204,8 @@ class CoverageView(ApiModel):
     status: Coverage
     acknowledged: bool
     details: list[str]
+    missing: list[str]
+    snapshot_block: int | None
     execution_allowed: bool
     acknowledged_at: datetime | None = None
     acknowledged_by: uuid.UUID | None = None
@@ -215,6 +217,8 @@ class CoverageView(ApiModel):
             status=record.coverage,
             acknowledged=record.coverage_acknowledged,
             details=list(record.coverage_details),
+            missing=list(record.coverage_missing),
+            snapshot_block=record.snapshot_block,
             execution_allowed=coverage_allows_execution(
                 record.coverage, record.coverage_acknowledged
             ),
@@ -245,6 +249,7 @@ class TreasurySummaryView(ApiModel):
     asset_is_test: bool | None
     status: TreasuryStatus
     coverage: Coverage
+    coverage_details: list[str]
     created_at: datetime
 
 
@@ -395,6 +400,7 @@ async def list_treasuries(
                 asset_is_test=asset.is_test if asset is not None else None,
                 status=row.status,
                 coverage=row.coverage,
+                coverage_details=list(row.coverage_details),
                 created_at=row.created_at,
             )
         )

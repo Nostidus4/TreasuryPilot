@@ -87,6 +87,9 @@ class TreasuryRecord:
     coverage_acknowledged_by: uuid.UUID | None = None
     coverage_ack_reason: str | None = None
     coverage_details: tuple[str, ...] = ()
+    # Safes without a fresh snapshot, and the oldest block the verdict rests on (F-122).
+    coverage_missing: tuple[str, ...] = ()
+    snapshot_block: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +100,7 @@ class TreasurySummaryRecord:
     status: TreasuryStatus
     coverage: Coverage
     created_at: datetime
+    coverage_details: tuple[str, ...] = ()
 
 
 class _TreasuryRepository(OrgScopedRepository[Treasury]):
@@ -335,23 +339,38 @@ class TreasuryService:
                 )
             )
             latest = await _latest_snapshots(session, organization_id, wallets)
-        record = _record(treasury, wallets)
-        # Fail closed on read: a stopped worker must not leave a stored COMPLETE usable forever.
-        if record.coverage != Coverage.UNKNOWN and (
-            not wallets
-            or any(
-                wallet.id not in latest
-                or datetime.now(UTC) - latest[wallet.id].observed_at > self.SNAPSHOT_MAX_AGE
-                for wallet in wallets
-            )
-        ):
-            return replace(
-                record,
-                coverage=Coverage.UNKNOWN,
-                coverage_acknowledged=False,
-                coverage_details=("Coverage is UNKNOWN: no recent Safe configuration snapshot.",),
-            )
-        return record
+        return self._with_freshness(_record(treasury, wallets), wallets, latest)
+
+    def _with_freshness(
+        self,
+        record: TreasuryRecord,
+        wallets: Sequence[TreasuryWallet],
+        latest: Mapping[uuid.UUID, SafeConfigSnapshot],
+    ) -> TreasuryRecord:
+        """Fail closed on read: a stopped worker must not leave a stored COMPLETE usable forever."""
+
+        now = datetime.now(UTC)
+        missing = tuple(
+            wallet.label
+            for wallet in wallets
+            if wallet.id not in latest
+            or now - latest[wallet.id].observed_at > self.SNAPSHOT_MAX_AGE
+        )
+        record = replace(
+            record,
+            coverage_missing=missing,
+            snapshot_block=min(
+                (latest[w.id].block_number for w in wallets if w.id in latest), default=None
+            ),
+        )
+        if record.coverage == Coverage.UNKNOWN or (wallets and not missing):
+            return record
+        return replace(
+            record,
+            coverage=Coverage.UNKNOWN,
+            coverage_acknowledged=False,
+            coverage_details=("Coverage is UNKNOWN: no recent Safe configuration snapshot.",),
+        )
 
     async def list_for_org(
         self, *, organization_id: uuid.UUID
@@ -359,22 +378,33 @@ class TreasuryService:
         """List this organization's treasuries without combining their balances or counters."""
 
         async with self._sessions() as session:
-            rows = await session.scalars(
-                _TreasuryRepository(session, organization_id)
-                .select()
-                .order_by(Treasury.created_at, Treasury.id)
+            rows = list(
+                await session.scalars(
+                    _TreasuryRepository(session, organization_id)
+                    .select()
+                    .order_by(Treasury.created_at, Treasury.id)
+                )
             )
-            return tuple(
+            wallets = list(
+                await session.scalars(_WalletRepository(session, organization_id).select())
+            )
+            latest = await _latest_snapshots(session, organization_id, wallets)
+        summaries = []
+        for row in rows:
+            own = [w for w in wallets if w.treasury_id == row.id]
+            record = self._with_freshness(_record(row, own), own, latest)
+            summaries.append(
                 TreasurySummaryRecord(
                     id=row.id,
                     chain_id=row.chain_id,
                     asset_id=row.asset_id,
                     status=row.status,
-                    coverage=row.coverage,
+                    coverage=record.coverage,
                     created_at=row.created_at,
+                    coverage_details=record.coverage_details,
                 )
-                for row in rows
             )
+        return tuple(summaries)
 
     async def refresh_coverage(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -418,7 +448,7 @@ class TreasuryService:
             treasury.coverage = coverage
             treasury.coverage_details = list(details)
             await session.flush()
-            record = _record(treasury, wallets)
+            record = self._with_freshness(_record(treasury, wallets), wallets, latest)
             return replace(record, coverage_details=tuple(details))
 
     async def acknowledge_coverage(
