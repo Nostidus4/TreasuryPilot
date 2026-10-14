@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,10 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+from treasurypilot_api.invoices.models import PaymentRequest
+from treasurypilot_api.invoices.requests import _recompute_flags
 
 API_ROOT = Path(__file__).parents[1]
 
@@ -45,6 +49,7 @@ def test_invoice_upgrade_and_downgrade_compile_offline() -> None:
         assert f"DROP TABLE {table_name}" in sql
 
     assert "uq_payment_requests_active_fingerprint" in sql
+    assert "ix_payment_requests_vendor_amount_issue_date" in sql
     assert "status NOT IN ('Rejected', 'Cancelled', 'Expired')" in sql
     assert "CREATE TRIGGER trg_approvals_immutable" in sql
     assert "CREATE TRIGGER trg_request_revisions_append_only" in sql
@@ -61,8 +66,10 @@ async def _verify_invoice_constraints(database_url: str) -> None:
     org_id = "00000000-0000-7000-8000-000000000010"
     asset_id = "00000000-0000-7000-8000-000000000030"
     treasury_id = "00000000-0000-7000-8000-000000000040"
+    fingerprint_treasury_id = "00000000-0000-7000-8000-000000000043"
     vendor_id = "00000000-0000-7000-8000-000000000050"
     payee_id = "00000000-0000-7000-8000-000000000060"
+    fingerprint_payee_id = "00000000-0000-7000-8000-000000000062"
     request_id = "00000000-0000-7000-8000-000000000070"
     duplicate_request_id = "00000000-0000-7000-8000-000000000071"
     approval_id = "00000000-0000-7000-8000-000000000080"
@@ -104,6 +111,12 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             )
             await connection.execute(
                 text(
+                    "INSERT INTO treasuries (id, org_id, chain_id, asset_id) VALUES "
+                    f"('{fingerprint_treasury_id}', '{org_id}', 11155111, '{asset_id}')"
+                )
+            )
+            await connection.execute(
+                text(
                     "INSERT INTO vendors (id, org_id, name, normalized_ref) VALUES "
                     f"('{vendor_id}', '{org_id}', 'Invoice Vendor', 'invoice-vendor')"
                 )
@@ -118,14 +131,90 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             )
             await connection.execute(
                 text(
+                    "INSERT INTO payees "
+                    "(id, treasury_id, org_id, vendor_id, label, address, status) VALUES "
+                    f"('{fingerprint_payee_id}', '{fingerprint_treasury_id}', '{org_id}', '{vendor_id}', 'Other', "
+                    "decode(repeat('23', 20), 'hex'), 'Proposed')"
+                )
+            )
+            await connection.execute(
+                text(
                     "INSERT INTO payment_requests "
                     "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, issue_date, "
                     "due_at, amount, asset_id, fingerprint) VALUES "
                     f"('{request_id}', '{org_id}', '{treasury_id}', 11155111, '{vendor_id}', '{payee_id}', "
-                    f"'INV-001', '2026-10-01', '2026-10-31', 1000, '{asset_id}', "
+                    f"'INV-001', '2026-10-01', '2026-10-31', 1100, '{asset_id}', "
                     f"decode('{fingerprint}', 'hex'))"
                 )
             )
+            # The same invoice fingerprint is valid in a different treasury.
+            await connection.execute(
+                text(
+                    "INSERT INTO payment_requests "
+                    "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, issue_date, "
+                    "due_at, amount, asset_id, fingerprint) VALUES "
+                    f"('00000000-0000-7000-8000-000000000075', '{org_id}', '{fingerprint_treasury_id}', "
+                    f"11155111, '{vendor_id}', '{fingerprint_payee_id}', 'INV-001', '2026-10-01', "
+                    f"'2026-10-31', 1000, '{asset_id}', decode('{fingerprint}', 'hex'))"
+                )
+            )
+
+        race_barrier = asyncio.Barrier(2)
+
+        async def insert_racing_fingerprint(request_id: str) -> bool:
+            await race_barrier.wait()
+            try:
+                async with engine.begin() as connection:
+                    await connection.execute(
+                        text(
+                            "INSERT INTO payment_requests "
+                            "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, "
+                            "issue_date, due_at, amount, asset_id, fingerprint) VALUES "
+                            f"('{request_id}', '{org_id}', '{treasury_id}', 11155111, '{vendor_id}', "
+                            f"'{payee_id}', 'INV-RACE', '2026-10-01', '2026-10-31', 1000, "
+                            f"'{asset_id}', decode(repeat('cd', 32), 'hex'))"
+                        )
+                    )
+                return True
+            except IntegrityError:
+                return False
+
+        race_results = await asyncio.gather(
+            insert_racing_fingerprint("00000000-0000-7000-8000-000000000076"),
+            insert_racing_fingerprint("00000000-0000-7000-8000-000000000077"),
+        )
+        assert sorted(race_results) == [False, True]
+
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO payment_requests "
+                    "(id, org_id, treasury_id, chain_id, vendor_id, payee_id, invoice_no, "
+                    "issue_date, due_at, amount, asset_id, status, fingerprint) VALUES "
+                    + ", ".join(
+                        f"('00000000-0000-7000-8000-000000000{100 + index}', '{org_id}', "
+                        f"'{treasury_id}', 11155111, '{vendor_id}', '{payee_id}', 'PAID-{index}', "
+                        f"'2026-01-01', '2026-01-31', {amount}, '{asset_id}', 'Paid', "
+                        f"decode('{index:02x}' || repeat('cd', 31), 'hex'))"
+                        for index, amount in enumerate((1000, 1020, 980, 1010, 990))
+                    )
+                )
+            )
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+                    f"VALUES ('00000000-0000-7000-8000-000000000199', '{request_id}', 1, "
+                    "'{}'::jsonb)"
+                )
+            )
+        async with AsyncSession(engine) as session:
+            row = await session.get(PaymentRequest, uuid.UUID(request_id))
+            assert row is not None
+            flags = await _recompute_flags(session, row)
+            await session.flush()
+            assert "AMOUNT_OUTLIER" in {flag["code"] for flag in flags}
+            await session.commit()
 
         with pytest.raises(IntegrityError, match="uq_payment_requests_active_fingerprint"):
             async with engine.begin() as connection:

@@ -5,13 +5,20 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.events.writer import append_domain_event
 from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
+from treasurypilot_api.invoices.fingerprints import (
+    DenyDuplicateAllowance,
+    DuplicateAllowance,
+    assert_no_active_duplicate,
+)
 from treasurypilot_api.invoices.models import (
+    ApprovalStatus,
     CancelOnchainStatus,
+    PaymentApproval,
     PaymentRequest,
     RequestStatus,
     RequestStatusEvent,
@@ -376,10 +383,12 @@ class RequestStateMachine:
         *,
         audit: AuditAppender,
         pay_operation_guard: PayOperationGuard,
+        duplicate_allowance: DuplicateAllowance | None = None,
     ) -> None:
         self._sessions = sessions
         self._audit = audit
         self._pay_operation_guard = pay_operation_guard
+        self._duplicate_allowance = duplicate_allowance or DenyDuplicateAllowance()
 
     async def transition(
         self,
@@ -439,6 +448,13 @@ class RequestStateMachine:
                 pay_operation_in_flight=pay_operation_in_flight,
             )
 
+            if actor.action == TransitionAction.SUBMIT:
+                await assert_no_active_duplicate(
+                    session,
+                    request,
+                    allowance=self._duplicate_allowance,
+                )
+
             if target == RequestStatus.CANCELLED:
                 approved_before = source == RequestStatus.APPROVED
                 if not approved_before:
@@ -456,6 +472,22 @@ class RequestStateMachine:
                 if approved_before:
                     request.cancel_onchain = CancelOnchainStatus.PENDING.value
 
+            if target in (RequestStatus.CANCELLED, RequestStatus.REJECTED):
+                # A signature must not stay Valid once its request is cancelled or rejected.
+                await session.execute(
+                    update(PaymentApproval)
+                    .where(
+                        PaymentApproval.request_id == request_id,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                    )
+                    .values(
+                        status=(
+                            ApprovalStatus.CANCELLED
+                            if target == RequestStatus.CANCELLED
+                            else ApprovalStatus.INVALIDATED
+                        ).value
+                    )
+                )
             request.status = rule.target.value
             event = RequestStatusEvent(
                 id=uuid7(),
