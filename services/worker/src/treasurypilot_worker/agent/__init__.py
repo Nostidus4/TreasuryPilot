@@ -26,6 +26,7 @@ from treasurypilot_worker.agent.errors import (
     AiToolLimitExceeded,
     AiUnavailable,
     PromptTemplateError,
+    ToolError,
 )
 from treasurypilot_worker.agent.failover import FailoverProvider
 from treasurypilot_worker.agent.fake import FakeClock, FakeProvider, fake_text, fake_tool_use
@@ -132,6 +133,7 @@ __all__ = [
     "TaskConfig",
     "TextBlock",
     "Tool",
+    "ToolError",
     "ToolCall",
     "ToolCallRecord",
     "ToolResult",

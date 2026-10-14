@@ -22,6 +22,7 @@ from treasurypilot_worker.agent.errors import (
     AiTimeout,
     AiToolLimitExceeded,
     AiUnavailable,
+    ToolError,
 )
 from treasurypilot_worker.agent.prompts import RenderedPrompt
 from treasurypilot_worker.agent.secret_scan import SecretScanner, default_scanner
@@ -306,7 +307,10 @@ def _execute(call: ToolCall, tools_by_name: dict[str, Tool[Any]]) -> tuple[str, 
         args = tool.input_model.model_validate(call.input)
     except ValidationError as error:
         return f"Invalid input for {call.name}: {error}", True
-    result = tool.handler(args)
+    try:
+        result = tool.handler(args)
+    except ToolError as error:
+        return str(error), True
     if isinstance(result, BaseModel):
         return result.model_dump_json(), False
     return json.dumps(result), False

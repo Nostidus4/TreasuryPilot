@@ -57,3 +57,11 @@ class PromptTemplateError(ValueError):
 
     Callers map `AiError` to fallbacks; this one must surface instead.
     """
+
+
+class ToolError(Exception):
+    """A tool refused or could not serve a call. The message goes back to the model.
+
+    It must never carry data the caller may not see (a refusal reads the same for a missing
+    row and for another organisation's row).
+    """
