@@ -101,6 +101,8 @@ Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK o
 
 Ids (request, step, operation, idempotency key) never change across attempts (BR-061).
 
+Code: `treasurypilot_worker.recovery.retry`. The executor wraps each pre-broadcast step in `run_with_retry`, which passes the same frozen `OperationIds` to every attempt and returns a `Stop` with a `ReviewIntent` (type, primary code) that the executor persists via `create_for_outcome`. Exhaustion is `INFRA` / `RETRY_EXHAUSTED`; post-broadcast errors are `UNCERTAIN_TX` / `TX_UNKNOWN`; unknown errors stop as `INFRA` / `UNCLASSIFIED_ERROR` (fail closed).
+
 ### 8.3 Routing table
 
 | Type | Role | Allowed actions |
