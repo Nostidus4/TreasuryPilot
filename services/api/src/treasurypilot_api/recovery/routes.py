@@ -11,10 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.recovery.models import ReviewItem
-from treasurypilot_api.recovery.review_queue import ReviewAction, ReviewType, route_for
+from treasurypilot_api.recovery.review_queue import (
+    ReviewAction,
+    ReviewStatus,
+    ReviewType,
+    route_for,
+)
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/review-items", tags=["review-items"])
 
@@ -79,26 +85,25 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
 async def list_review_items(
     organization_id: uuid.UUID,
     request: Request,
-    status: str | None = None,
+    status: ReviewStatus | None = None,
     type: ReviewType | None = None,
-    role: str | None = None,
+    role: OrganizationRole | None = None,
     member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> dict[str, object]:
-    statement = select(ReviewItem).where(ReviewItem.org_id == member.organization_id)
+    statement = select(ReviewItem).where(
+        ReviewItem.org_id == member.organization_id,
+        ReviewItem.assigned_roles.overlap(list(member.roles)),
+    )
     if status is not None:
-        statement = statement.where(ReviewItem.status == status)
+        statement = statement.where(ReviewItem.status == status.value)
+    if role is not None:
+        statement = statement.where(ReviewItem.assigned_roles.contains([role.value]))
     if type is not None:
         statement = statement.where(ReviewItem.type == type.value)
     statement = statement.order_by(ReviewItem.sla_due_at, ReviewItem.id)
     async with _sessions(request)() as session:
         items = (await session.scalars(statement)).all()
-    return {
-        "items": [
-            _view(item, member)
-            for item in items
-            if _visible(item, member) and (role is None or role in item.assigned_roles)
-        ]
-    }
+    return {"items": [_view(item, member) for item in items]}
 
 
 @router.get("/{item_id}", openapi_extra={"x-organization-scoped": True})
@@ -146,10 +151,8 @@ async def act_on_review_item(
             .where(ReviewItem.id == item_id, ReviewItem.org_id == member.organization_id)
             .with_for_update()
         )
-        if item is None:
+        if item is None or not _visible(item, member):
             raise _failure(404, "REVIEW_ITEM_NOT_FOUND", "The review item is unavailable.")
-        if not _visible(item, member):
-            raise _failure(403, "NOT_ROUTED_ROLE", "This item is routed to another role.")
         if item.status != "Open" or item.version != payload.version:
             raise _failure(409, "STALE_ITEM", "Reload the review item before acting.")
         payment = await session.scalar(
@@ -159,7 +162,8 @@ async def act_on_review_item(
             raise _failure(409, "STALE_ITEM", "The underlying request has changed.")
         if payload.action.value not in _allowed_actions(item, member):
             raise _failure(409, "ACTION_NOT_ALLOWED", "The action is not allowed for this item.")
-        item.note = payload.note
+        if payload.note is not None:
+            item.note = payload.note
         if payload.action != ReviewAction.DEFER:
             item.status = "Resolved"
             item.resolution = payload.action.value

@@ -646,6 +646,19 @@ export interface components {
     OrganizationResponse: {
       org: components['schemas']['OrganizationView'];
     };
+    /**
+     * OrganizationRole
+     * @enum {string}
+     */
+    OrganizationRole:
+      | 'OrgAdmin'
+      | 'Owner'
+      | 'Approver'
+      | 'Operator'
+      | 'Finance'
+      | 'Guardian'
+      | 'Auditor'
+      | 'PlatformAdmin';
     /** OrganizationSettingsRequest */
     OrganizationSettingsRequest: {
       /** Automatch */
@@ -707,6 +720,11 @@ export interface components {
       /** Version */
       version: number;
     };
+    /**
+     * ReviewStatus
+     * @enum {string}
+     */
+    ReviewStatus: 'Open' | 'Resolved' | 'Dismissed';
     /**
      * ReviewType
      * @enum {string}
@@ -1187,9 +1205,9 @@ export interface operations {
   list_review_items_v1_orgs__organization_id__review_items_get: {
     parameters: {
       query?: {
-        status?: string | null;
+        status?: components['schemas']['ReviewStatus'] | null;
         type?: components['schemas']['ReviewType'] | null;
-        role?: string | null;
+        role?: components['schemas']['OrganizationRole'] | null;
       };
       header?: never;
       path: {

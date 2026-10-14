@@ -754,6 +754,20 @@
         "title": "OrganizationResponse",
         "type": "object"
       },
+      "OrganizationRole": {
+        "enum": [
+          "OrgAdmin",
+          "Owner",
+          "Approver",
+          "Operator",
+          "Finance",
+          "Guardian",
+          "Auditor",
+          "PlatformAdmin"
+        ],
+        "title": "OrganizationRole",
+        "type": "string"
+      },
       "OrganizationSettingsRequest": {
         "properties": {
           "autoMatch": {
@@ -903,6 +917,11 @@
         "required": ["action", "version"],
         "title": "ReviewActionRequest",
         "type": "object"
+      },
+      "ReviewStatus": {
+        "enum": ["Open", "Resolved", "Dismissed"],
+        "title": "ReviewStatus",
+        "type": "string"
       },
       "ReviewType": {
         "enum": [
@@ -1645,7 +1664,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ReviewStatus"
                 },
                 {
                   "type": "null"
@@ -1677,7 +1696,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OrganizationRole"
                 },
                 {
                   "type": "null"

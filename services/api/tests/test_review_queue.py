@@ -24,7 +24,12 @@ from treasurypilot_api.recovery.review_queue import (
     escalate_overdue,
     route_for,
 )
-from treasurypilot_api.recovery.routes import ReviewActionRequest, act_on_review_item
+from treasurypilot_api.recovery.routes import (
+    ReviewActionRequest,
+    _allowed_actions,
+    act_on_review_item,
+    list_review_items,
+)
 
 API_ROOT = Path(__file__).parents[1]
 USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000001")
@@ -138,7 +143,7 @@ async def _exercise_review_queue(database_url: str) -> None:
             user_id=USER_ID,
             roles=frozenset({OrganizationRole.OPERATOR.value}),
         )
-        with pytest.raises(AuthFailure, match="NOT_ROUTED_ROLE"):
+        with pytest.raises(AuthFailure, match="REVIEW_ITEM_NOT_FOUND"):
             await act_on_review_item(
                 ORG_ID,
                 item_id,
@@ -193,6 +198,10 @@ async def _exercise_review_queue(database_url: str) -> None:
             assert OrganizationRole.OWNER.value in uncertain.assigned_roles
             assert await escalate_overdue(session, now=now + timedelta(hours=2)) == 0
             uncertain_id = uncertain.id
+            # Escalated Owner can act, not only view (spec 8.3).
+            assert _allowed_actions(uncertain, owner) == []
+            uncertain.evidence_resolved = True
+            assert _allowed_actions(uncertain, owner) == ["ACKNOWLEDGE"]
             payment.version += 1
         with pytest.raises(AuthFailure, match="STALE_ITEM"):
             await act_on_review_item(
@@ -203,6 +212,61 @@ async def _exercise_review_queue(database_url: str) -> None:
                 Response(),
                 operator,
             )
+
+        async with sessions() as session, session.begin():
+            payment = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert payment is not None
+            # A producer re-run for the newer request version refreshes the open item.
+            refreshed = await create_for_outcome(
+                session,
+                request=payment,
+                outcome=ReviewType.UNCERTAIN_TX,
+                primary_code="TX_UNKNOWN",
+                now=now,
+            )
+            assert refreshed is not None and refreshed.id == uncertain_id
+            assert refreshed.request_version == payment.version
+            refreshed_version = refreshed.version
+            fee = await create_for_outcome(
+                session,
+                request=payment,
+                outcome=ReviewType.FEE_APPROVAL,
+                primary_code="FEE_HIGH",
+                last_safe_execution_at=now + timedelta(days=1),
+                now=now,
+            )
+            assert fee is not None
+            fee_id = fee.id
+        listed = await list_review_items(ORG_ID, request, None, None, None, operator)
+        assert {i["id"] for i in listed["items"]} == {str(uncertain_id), str(fee_id)}
+        acted = await act_on_review_item(
+            ORG_ID,
+            uncertain_id,
+            ReviewActionRequest(action="ACKNOWLEDGE", version=refreshed_version),
+            request,
+            Response(),
+            operator,
+        )
+        assert acted["item"]["status"] == "Resolved"
+        deferred = await act_on_review_item(
+            ORG_ID,
+            fee_id,
+            ReviewActionRequest(action="DEFER", note="waiting", version=1),
+            request,
+            Response(),
+            operator,
+        )
+        again = await act_on_review_item(
+            ORG_ID,
+            fee_id,
+            ReviewActionRequest(action="DEFER", version=deferred["item"]["version"]),
+            request,
+            Response(),
+            operator,
+        )
+        assert again["item"]["note"] == "waiting"
     finally:
         await engine.dispose()
 

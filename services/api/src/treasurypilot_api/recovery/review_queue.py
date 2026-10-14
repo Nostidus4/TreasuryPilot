@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,12 @@ class ReviewType(StrEnum):
     AI_REJECTED = "AI_REJECTED"
     INFRA = "INFRA"
     UNEXPECTED_OUTFLOW = "UNEXPECTED_OUTFLOW"
+
+
+class ReviewStatus(StrEnum):
+    OPEN = "Open"
+    RESOLVED = "Resolved"
+    DISMISSED = "Dismissed"
 
 
 class ReviewAction(StrEnum):
@@ -121,8 +127,9 @@ async def create_for_outcome(
         if last_safe_execution_at is None:
             raise ValueError("FEE_APPROVAL requires last_safe_execution_at")
         due = last_safe_execution_at
+    elif route.sla is None:
+        raise ValueError(f"{kind.value} route has no SLA")
     else:
-        assert route.sla is not None
         due = current + route.sla
     statement = (
         insert(ReviewItem)
@@ -147,20 +154,43 @@ async def create_for_outcome(
             index_where=ReviewItem.status == "Open",
         )
     )
+    # Re-point an existing open item at a newer request version so it stays actionable.
+    refresh = (
+        update(ReviewItem)
+        .where(
+            ReviewItem.request_id == request.id,
+            ReviewItem.type == kind.value,
+            ReviewItem.status == "Open",
+            ReviewItem.request_version < request.version,
+        )
+        .values(
+            request_version=request.version,
+            plan_id=plan_id,
+            version=ReviewItem.version + 1,
+        )
+    )
     await session.execute(statement)
+    await session.execute(refresh)
     item = await session.scalar(
-        select(ReviewItem).where(
+        select(ReviewItem)
+        .where(
             ReviewItem.request_id == request.id,
             ReviewItem.type == kind.value,
             ReviewItem.status == "Open",
         )
+        .execution_options(populate_existing=True)
     )
-    assert item is not None
+    if item is None:
+        raise RuntimeError("open review item missing after idempotent insert")
     return item
 
 
 async def escalate_overdue(session: AsyncSession, *, now: datetime | None = None) -> int:
-    """Add Owner visibility once to each overdue open item."""
+    """Add Owner access once to each overdue open item.
+
+    Mutates ORM state only: the caller owns the transaction and must commit. Owner-routed types
+    are unchanged and get no escalation marker. Escalated Owners may act, not just view.
+    """
     current = now or datetime.now(UTC)
     items = (
         await session.scalars(

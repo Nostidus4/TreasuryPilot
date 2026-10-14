@@ -28,6 +28,12 @@ class ReviewItem(Base):
         CheckConstraint(
             "status IN ('Open', 'Resolved', 'Dismissed')", name="ck_review_items_status"
         ),
+        CheckConstraint(
+            "type IN ("
+            "'POLICY_BLOCK', 'NEEDS_AUTHORITY', 'FEE_APPROVAL', 'UNCERTAIN_TX', "
+            "'DISCREPANCY', 'AI_REJECTED', 'INFRA', 'UNEXPECTED_OUTFLOW')",
+            name="ck_review_items_type",
+        ),
         Index(
             "uq_review_items_open_request_type",
             "request_id",

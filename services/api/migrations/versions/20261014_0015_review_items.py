@@ -62,6 +62,12 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         sa.CheckConstraint("version > 0", name="ck_review_items_version"),
         sa.CheckConstraint(
+            "type IN ("
+            "'POLICY_BLOCK', 'NEEDS_AUTHORITY', 'FEE_APPROVAL', 'UNCERTAIN_TX', "
+            "'DISCREPANCY', 'AI_REJECTED', 'INFRA', 'UNEXPECTED_OUTFLOW')",
+            name="ck_review_items_type",
+        ),
+        sa.CheckConstraint(
             "status IN ('Open', 'Resolved', 'Dismissed')", name="ck_review_items_status"
         ),
     )
