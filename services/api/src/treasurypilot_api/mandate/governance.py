@@ -34,6 +34,58 @@ _MULTISEND_SELECTOR = keccak(b"multiSend(bytes)")[:4]
 _EXEC_SELECTOR = keccak(
     b"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)"
 )[:4]
+_AUTHORIZE_BORROW_SELECTOR = keccak(b"authorizeBorrow(bytes32,uint256,uint64,uint256,uint256)")[:4]
+_AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
+
+
+def build_borrow_authorization_call(
+    module_address: bytes,
+    *,
+    plan_id: bytes,
+    amount: int,
+    expiry: int,
+    min_health_factor: int,
+    max_rate_ray: int,
+) -> GovernanceCall:
+    """Encode the exact owner authorization for one validated borrow proposal.
+
+    All numeric values are integer base units / protocol scalars. Callers must pass
+    proposal-derived values directly; this builder deliberately performs no rounding
+    or conversion from display units.
+    """
+    if len(plan_id) != 32:
+        raise ValueError("plan_id must be bytes32")
+    if amount <= 0:
+        raise ValueError("borrow amount must be positive")
+    if not 0 < expiry < 1 << 64:
+        raise ValueError("expiry must fit uint64 and be positive")
+    if min_health_factor <= 0 or max_rate_ray <= 0:
+        raise ValueError("minimum health factor and maximum rate must be positive")
+    data = _AUTHORIZE_BORROW_SELECTOR + encode(
+        ["bytes32", "uint256", "uint64", "uint256", "uint256"],
+        [plan_id, amount, expiry, min_health_factor, max_rate_ray],
+    )
+    return GovernanceCall(module_address, 0, data)
+
+
+def build_repay_authorization_call(
+    module_address: bytes,
+    *,
+    plan_id: bytes,
+    amount: int,
+    expiry: int,
+) -> GovernanceCall:
+    """Encode the exact owner authorization for one repay proposal."""
+    if len(plan_id) != 32:
+        raise ValueError("plan_id must be bytes32")
+    if amount <= 0:
+        raise ValueError("repay amount must be positive")
+    if not 0 < expiry < 1 << 64:
+        raise ValueError("expiry must fit uint64 and be positive")
+    data = _AUTHORIZE_REPAY_SELECTOR + encode(
+        ["bytes32", "uint256", "uint64"], [plan_id, amount, expiry]
+    )
+    return GovernanceCall(module_address, 0, data)
 
 
 @dataclass(frozen=True, slots=True)
