@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     session_cookie_name: str = "tp_session"
     csrf_cookie_name: str = "tp_csrf"
     csrf_header_name: str = "X-CSRF-Token"
+    telegram_bot_username: str | None = None
+    telegram_webhook_secret: SecretStr | None = None
+    # Keys the chat-uniqueness hash; must stay fixed for the life of the data.
+    telegram_chat_hash_key: SecretStr | None = None
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"
     admin_staff_token: SecretStr | None = None

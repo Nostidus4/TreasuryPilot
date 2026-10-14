@@ -65,6 +65,11 @@ def create_celery_app() -> Celery:
                 # this, a busy or stopped worker lets thousands pile up in Redis.
                 "options": {"queue": "core", "expires": 2},
             },
+            "deliver-telegram": {
+                "task": "treasurypilot.notifications.deliver-telegram",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "core", "expires": 2},
+            },
             "publish-daily-audit-roots": {
                 "task": "treasurypilot.audit.publish-daily-roots",
                 "schedule": crontab(hour=0, minute=5),

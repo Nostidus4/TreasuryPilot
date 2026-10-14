@@ -131,6 +131,11 @@ services:
       <<: *app-environment
       SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
+      # Telegram linking (optional): the API stores chat ids encrypted and verifies the webhook.
+      TP_TELEGRAM_BOT_USERNAME: ${TP_TELEGRAM_BOT_USERNAME:-}
+      TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
+      TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,6 +186,9 @@ services:
       TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+      # Telegram delivery (optional) reuses TP_TELEGRAM_BOT_TOKEN from x-app-environment.
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
     secrets: [policy_keystore, policy_keystore_password]
     tmpfs: [/tmp/prometheus]
