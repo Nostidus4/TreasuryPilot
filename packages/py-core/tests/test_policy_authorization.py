@@ -10,6 +10,8 @@ from uuid import UUID
 import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from treasurypilot_core.eip712 import ERC1271_MAGIC_VALUE, payment_approval_typed_data
 from treasurypilot_core.money import BaseUnits
@@ -735,3 +737,201 @@ def test_malformed_policy_state_fails_closed() -> None:
     result = validate_plan(_plan(), _ctx(policy_state=state))
     assert result.decision == "BLOCK"
     assert C.DATA_MISSING in result.codes
+
+
+def _pay_case(amount: int, *, exception: Any = None, cooling: bool = False, **state: Any):
+    """Context and plan for a PAY of ``amount`` (the request and its approval carry the same)."""
+    request = _request(amount=BaseUnits(amount))
+    payees = {PAYEE: PayeeView(active=True, active_from=NOW + 1 if cooling else NOW - 600)}
+    ctx = _ctx(
+        request=request,
+        approval=_approval(_typed(request)),
+        snapshot=_snapshot(payees=payees),
+        policy_state=_policy_state(
+            balances={SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(20_000)},
+            exception=exception,
+            **state,
+        ),
+    )
+    return _plan(pay=amount), ctx
+
+
+def _used(pay: int) -> dict[str, BaseUnits]:
+    return {"PAY": BaseUnits(pay), "REFILL": BaseUnits(0), "SUPPLY": BaseUnits(0)}
+
+
+def _exception(amount: int = 3_000, **update: Any):
+    from treasurypilot_core.policy import ExceptionView
+
+    fields = {"amount": BaseUnits(amount), "payee": PAYEE, "expiry": NOW + 1, "mandate_version": 1}
+    return ExceptionView.model_validate(fields | update)
+
+
+@pytest.mark.parametrize(
+    ("amount", "kwargs", "decision", "primary", "codes"),
+    [
+        (1_500, {"used_today": _used(3_000)}, "ALLOW", None, []),  # row 1
+        (3_000, {"used_today": _used(2_000)}, "NEEDS_APPROVAL", C.OVER_PER_REQUEST_LIMIT, None),
+        (  # row 3
+            3_000,
+            {"used_today": _used(8_000)},
+            "BLOCK",
+            C.OVER_DAILY_LIMIT,
+            [C.OVER_DAILY_LIMIT, C.OVER_PER_REQUEST_LIMIT],
+        ),
+        (3_000, {"exception": _exception()}, "ALLOW", None, []),  # row 4
+        (  # row 5
+            3_000,
+            {"exception": _exception(2_900)},
+            "BLOCK",
+            C.EXCEPTION_INVALID,
+            [C.EXCEPTION_INVALID, C.OVER_PER_REQUEST_LIMIT],
+        ),
+        (  # row 6
+            3_000,
+            {"cooling": True},
+            "BLOCK",
+            C.PAYEE_COOLING,
+            [C.PAYEE_COOLING, C.OVER_PER_REQUEST_LIMIT],
+        ),
+    ],
+    ids=["row-1", "row-2", "row-3", "row-4", "row-5", "row-6"],
+)
+def test_worked_examples_8_5_limits(
+    amount: int,
+    kwargs: dict[str, Any],
+    decision: str,
+    primary: PolicyReasonCode | None,
+    codes: list[PolicyReasonCode] | None,
+) -> None:
+    from treasurypilot_core.policy import validate_plan, validate_step
+
+    plan, ctx = _pay_case(amount, **kwargs)
+    for result in (validate_plan(plan, ctx), validate_step(plan, 0, ctx)):
+        assert (result.decision, result.primary) == (decision, primary)
+        assert sorted(result.codes) == sorted(codes if codes is not None else [primary])
+
+
+def test_worked_example_8_5_row_10_refill_then_owner_moves_funds() -> None:
+    from treasurypilot_core.policy import validate_plan, validate_step
+
+    request = _request(amount=BaseUnits(100))
+    plan = _plan(refill=90, pay=100)
+    balances = {SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(20)}
+    ctx = _ctx(
+        request=request,
+        approval=_approval(_typed(request)),
+        policy_state=_policy_state(balances=balances),
+    )
+    assert validate_plan(plan, ctx).decision == "ALLOW"  # 20 + 90 - 100 = buffer 10
+    # The owner moved 50 out after the refill: PAY is checked against the fresh 60.
+    moved = ctx.model_copy(
+        update={"policy_state": _policy_state(balances=balances | {O1.lower(): BaseUnits(60)})}
+    )
+    result = validate_step(plan, 1, moved)
+    assert (result.decision, result.primary) == ("BLOCK", C.BUFFER_BREACH)
+
+
+def test_a_failed_gate_skips_the_limit_checks_of_validate_plan() -> None:
+    from treasurypilot_core.policy import validate_plan, validate_step
+
+    # Row 7: the over-limit PAY is not reported because the stale snapshot cannot be trusted.
+    plan, ctx = _pay_case(3_000, used_today=_used(8_000))
+    ctx = ctx.model_copy(update={"snapshot": _snapshot(read_at=NOW - 45)})
+    for result in (validate_plan(plan, ctx), validate_step(plan, 0, ctx)):
+        assert result.codes == [C.SNAPSHOT_STALE]
+        assert result.decision == "BLOCK"
+        assert any(c.name == "policy_state" and c.skipped for c in result.checks)
+
+
+def test_gate_failures_and_unknown_operations_block_before_any_step_check() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    plan, ctx = _pay_case(1_500)
+    for update, code in [
+        ({"unknown_operations": 2}, C.UNKNOWN_OPERATION_PENDING),
+        ({"coverage": "PARTIAL"}, C.COVERAGE_INCOMPLETE),
+        ({"coverage": "PARTIAL_ACK"}, None),
+    ]:
+        result = validate_plan(plan, ctx.model_copy(update=update))
+        assert (result.decision, result.primary) == (
+            ("BLOCK", code) if code else ("ALLOW", None)
+        ), update
+
+
+def _mutations() -> dict[str, dict[str, Any]]:
+    """Dropping or staling one input of the valid PAY context; each must never ALLOW."""
+    return {
+        "no_state": {"policy_state": None},
+        "no_request": {"request": None},
+        "no_approval": {"approval": None},
+        "no_mandate": {"snapshot": _snapshot(mandate=None)},
+        "stale_age": {"snapshot": _snapshot(read_at=NOW - 31)},
+        "future_snapshot": {"snapshot": _snapshot(read_at=NOW + 5)},
+        "stale_blocks": {"head_block": 200},
+        "unknown_operations": {"unknown_operations": 1},
+        "partial_coverage": {"coverage": "PARTIAL"},
+        "screening_unknown": {"screening_clear": False},
+        "bad_state": {"policy_state": _policy_state().model_copy(update={"balances": {"x": "y"}})},
+        "empty_balances": {"policy_state": _policy_state(balances={})},
+        "empty_buffers": {"policy_state": _policy_state(buffers={})},
+        "no_payee": {"snapshot": _snapshot(payees={})},
+        "no_approvers": {"snapshot": _snapshot(approvers=[])},
+    }
+
+
+@pytest.mark.parametrize("name", list(_mutations()))
+@pytest.mark.parametrize("kind", ["plan", "step"])
+def test_missing_or_stale_input_never_yields_allow(name: str, kind: str) -> None:
+    from treasurypilot_core.policy import validate_plan, validate_step
+
+    ctx = _ctx(policy_state=_policy_state()).model_copy(update=_mutations()[name])
+    result = validate_plan(_plan(), ctx) if kind == "plan" else validate_step(_plan(), 0, ctx)
+    assert result.decision == "BLOCK", name
+    assert result.codes
+
+
+def test_the_unmodified_context_is_allowed() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    assert validate_plan(_plan(), _ctx(policy_state=_policy_state())).decision == "ALLOW"
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    amount=st.integers(1, 6_000),
+    used=st.integers(0, 12_000),
+    cooling=st.booleans(),
+    exc_amount=st.integers(1, 6_000),
+    exc_used=st.booleans(),
+    exc_expired=st.booleans(),
+    has_exception=st.booleans(),
+)
+def test_an_exception_removes_only_the_per_request_limit(
+    amount: int,
+    used: int,
+    cooling: bool,
+    exc_amount: int,
+    exc_used: bool,
+    exc_expired: bool,
+    has_exception: bool,
+) -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    exception = (
+        _exception(exc_amount, used=exc_used, expiry=NOW - 1 if exc_expired else NOW + 1)
+        if has_exception
+        else None
+    )
+    plan, ctx = _pay_case(amount, exception=exception, cooling=cooling, used_today=_used(used))
+    result = validate_plan(plan, ctx)
+    valid = has_exception and exc_amount == amount and not exc_used and not exc_expired
+    over = amount > 2_000
+    hard = cooling or used + amount > 10_000 or (has_exception and over and not valid)
+
+    assert (C.OVER_PER_REQUEST_LIMIT in result.codes) == (over and not valid)
+    assert (C.EXCEPTION_INVALID in result.codes) == (has_exception and over and not valid)
+    assert (C.PAYEE_COOLING in result.codes) == cooling
+    assert (C.OVER_DAILY_LIMIT in result.codes) == (used + amount > 10_000)
+    expected = "BLOCK" if hard else "NEEDS_APPROVAL" if over and not valid else "ALLOW"
+    assert result.decision == expected

@@ -100,6 +100,8 @@ _GATES: list[_Rule] = [
     ("asset_match", C.ASSET_MISMATCH, _assets_match),
 ]
 
+GATE_NAMES = frozenset(name for name, _, _ in _GATES)
+
 _REQUEST_RULES: list[_Rule] = [
     ("request_present", C.DATA_MISSING, lambda i: i.ctx.request is not None),
     (
