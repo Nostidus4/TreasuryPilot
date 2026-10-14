@@ -187,6 +187,17 @@ export function LoginPage() {
           {t('Send sign-in link')}
         </Button>
       </form>
+      {import.meta.env.VITE_OIDC_ENABLED === 'true' && (
+        <div className="mt-4 border-t border-border pt-4">
+          <Button asChild size="lg" className="w-full">
+            <a
+              href={`${(import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')}/v1/auth/oidc/start`}
+            >
+              {t('Continue with company SSO')}
+            </a>
+          </Button>
+        </div>
+      )}
       {mockApiEnabled && (
         <Alert tone="neutral" className="mt-6" title={t('Demo data')}>
           {t('Sign in as')}{' '}

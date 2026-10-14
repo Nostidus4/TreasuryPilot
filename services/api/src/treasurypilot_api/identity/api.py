@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from datetime import datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from treasurypilot_api.identity.auth import (
@@ -17,6 +20,14 @@ from treasurypilot_api.identity.auth import (
     auth_unavailable,
     normalize_email,
 )
+from treasurypilot_api.identity.oidc import (
+    OIDCClient,
+    OIDCFailure,
+    decode_state,
+    encode_state,
+    new_state,
+)
+from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.wallets import SIWE_CHAIN_ID, WalletLinkService, WalletRepository
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -188,14 +199,30 @@ def _session_cookie(request: Request) -> str | None:
     return request.cookies.get(request.app.state.settings.session_cookie_name)
 
 
-async def _authenticated(request: Request, *, require_csrf: bool = False) -> SessionAccess:
+async def _authenticated(
+    request: Request, *, require_csrf: bool = False, allow_scoped: bool = False
+) -> SessionAccess:
     settings = request.app.state.settings
-    return await _service(request).authenticate(
+    access = await _service(request).authenticate(
         session_token=_session_cookie(request),
         csrf_cookie=request.cookies.get(settings.csrf_cookie_name),
         csrf_header=request.headers.get(settings.csrf_header_name),
         require_csrf=require_csrf,
     )
+    # Organization-scoped (SSO) sessions are denied unless the route opts in.
+    if not allow_scoped:
+        _require_unscoped(access)
+    return access
+
+
+def _require_unscoped(access: SessionAccess) -> None:
+    if access.organization_scope_id is not None:
+        raise AuthFailure(
+            status=403,
+            code="FORBIDDEN",
+            title="Forbidden",
+            detail="This action is unavailable to organization-scoped sessions.",
+        )
 
 
 router = APIRouter(prefix="/v1", tags=["identity"])
@@ -204,6 +231,7 @@ router = APIRouter(prefix="/v1", tags=["identity"])
 @router.get("/auth/siwe/nonce", response_model=SiweNonceResponse)
 async def siwe_nonce(request: Request) -> SiweNonceResponse:
     access = await _authenticated(request)
+    _require_unscoped(access)
     service = _wallet_service(request)
     challenge = await service.issue_nonce(
         user_id=access.user.id,
@@ -222,6 +250,7 @@ async def siwe_nonce(request: Request) -> SiweNonceResponse:
 @router.post("/me/wallets", status_code=201, response_model=WalletView)
 async def link_wallet(payload: LinkWalletRequest, request: Request) -> WalletView:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     linked = await _wallet_service(request).link_wallet(
         user_id=access.user.id,
         origin=request.headers.get("origin"),
@@ -239,8 +268,160 @@ async def link_wallet(payload: LinkWalletRequest, request: Request) -> WalletVie
 @router.delete("/me/wallets/{address}", status_code=204, response_class=Response)
 async def unlink_wallet(address: str, request: Request) -> Response:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     await _wallet_service(request).unlink_wallet(user_id=access.user.id, address=address)
     return Response(status_code=204)
+
+
+def _oidc_client(settings: Any) -> OIDCClient:
+    return OIDCClient(
+        issuer=settings.oidc_issuer or "",
+        client_id=settings.oidc_client_id or "",
+        client_secret=settings.oidc_client_secret.get_secret_value(),
+        redirect_uri=settings.oidc_redirect_uri or "",
+        allow_local_http=settings.environment.casefold() == "local",
+    )
+
+
+@router.get("/auth/oidc/start", response_class=RedirectResponse)
+async def oidc_start(request: Request) -> RedirectResponse:
+    settings = request.app.state.settings
+    if not settings.oidc_configured:
+        raise AuthFailure(
+            status=404,
+            code="OIDC_NOT_CONFIGURED",
+            title="SSO unavailable",
+            detail="Enterprise sign-in is not configured.",
+        )
+    client = _oidc_client(settings)
+    state = new_state()
+    try:
+        location = await client.authorization_url(state=state)
+    except OIDCFailure:
+        raise auth_unavailable("Enterprise sign-in is temporarily unavailable.") from None
+    response = RedirectResponse(location, status_code=302)
+    secret = _oidc_state_secret(settings)
+    response.set_cookie(
+        "tp_oidc_state",
+        encode_state(state, secret),
+        max_age=600,
+        path="/v1/auth/oidc/callback",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@router.get("/auth/oidc/callback", response_class=RedirectResponse)
+async def oidc_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> Response:
+    settings = request.app.state.settings
+    if not settings.oidc_configured:
+        raise AuthFailure(
+            status=404,
+            code="OIDC_NOT_CONFIGURED",
+            title="SSO unavailable",
+            detail="Enterprise sign-in is not configured.",
+        )
+    if error is not None or code is None or state is None:
+        # The provider refused or aborted sign-in (e.g. access_denied).
+        return _oidc_failure(request)
+    try:
+        oidc_state = decode_state(
+            request.cookies.get("tp_oidc_state"), state, _oidc_state_secret(settings)
+        )
+        claims = await _oidc_client(settings).exchange(code=code, state=oidc_state)
+        group_map = json.loads(settings.oidc_group_role_map)
+        if not isinstance(group_map, dict) or any(
+            not isinstance(group, str)
+            or not isinstance(roles, list)
+            or any(not isinstance(role, str) for role in roles)
+            for group, roles in group_map.items()
+        ):
+            raise ValueError("invalid configured group role mapping")
+        repository = getattr(request.app.state, "oidc_repository", None)
+        if not isinstance(repository, OIDCIdentityRepository):
+            raise OIDCFailure("OIDC provisioning is not configured")
+        user = await repository.provision(
+            issuer=settings.oidc_issuer or "",
+            subject=claims.subject,
+            email=claims.email,
+            display_name=claims.display_name,
+            organization_id=uuid.UUID(settings.oidc_organization_id or ""),
+            groups=claims.groups,
+            group_role_map={group: tuple(roles) for group, roles in group_map.items()},
+        )
+        verified = await _service(request).create_oidc_session(
+            user=user,
+            organization_id=uuid.UUID(settings.oidc_organization_id or ""),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", "unknown"),
+        )
+    except (OIDCFailure, ValueError):
+        return _oidc_failure(request)
+    destination = settings.web_app_url or (
+        settings.cors_origin_list[0] if settings.cors_origin_list else "/"
+    )
+    response = RedirectResponse(destination, status_code=303)
+    response.set_cookie(
+        settings.session_cookie_name,
+        verified.session_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    response.set_cookie(
+        settings.csrf_cookie_name,
+        verified.csrf_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=False,
+        samesite="lax",
+    )
+    _clear_oidc_state_cookie(response)
+    return response
+
+
+def _oidc_failure(request: Request) -> Response:
+    failure = problem_response(
+        request,
+        AuthFailure(
+            status=401,
+            code="OIDC_AUTHENTICATION_FAILED",
+            title="Sign-in failed",
+            detail="The identity provider could not authenticate this account.",
+        ),
+    )
+    _clear_oidc_state_cookie(failure)  # the state is single-use
+    return failure
+
+
+def _clear_oidc_state_cookie(response: Response) -> None:
+    response.delete_cookie(
+        "tp_oidc_state",
+        path="/v1/auth/oidc/callback",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _oidc_state_secret(settings: object) -> bytes:
+    configured = getattr(settings, "session_secret", None)
+    if configured is not None:
+        return cast(str, configured.get_secret_value()).encode("utf-8")
+    secret = getattr(settings, "oidc_client_secret", None)
+    if secret is None:
+        raise ValueError("OIDC state secret is not configured")
+    return hashlib.sha256(cast(str, secret.get_secret_value()).encode("utf-8")).digest()
 
 
 @router.post("/auth/magic-link", status_code=202, response_class=Response)
@@ -329,7 +510,10 @@ async def logout(request: Request) -> Response:
 
 @router.get("/me", response_model=MeResponse)
 async def me(request: Request) -> MeResponse:
-    access = await _authenticated(request)
-    if getattr(request.app.state, "wallet_repository", None) is not None:
+    access = await _authenticated(request, allow_scoped=True)
+    if (
+        access.organization_scope_id is None
+        and getattr(request.app.state, "wallet_repository", None) is not None
+    ):
         await _wallet_service(request).refresh_owner_statuses(user_id=access.user.id)
     return MeResponse.from_record(await _service(request).profile(access))

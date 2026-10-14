@@ -14,7 +14,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.api import ApiModel, _authenticated
+from treasurypilot_api.identity.api import ApiModel, _authenticated, _require_unscoped
 from treasurypilot_api.identity.auth import AuthFailure, normalize_email
 from treasurypilot_api.identity.models import (
     Invite,
@@ -606,6 +606,7 @@ async def create_invite(
 @router.post("/invites/{token}/accept", response_model=MemberResponse)
 async def accept_invite(token: str, request: Request) -> MemberResponse:
     access = await _authenticated(request, require_csrf=True)
+    _require_unscoped(access)
     if not token or len(token) > 128:
         raise _api_failure(
             400, "INVITE_INVALID", "Invalid invitation", "The invitation token is invalid."
