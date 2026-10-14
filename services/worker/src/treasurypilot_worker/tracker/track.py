@@ -2,7 +2,8 @@
 
 Only chain facts move a transaction. A transaction is ``Confirmed``/``Reverted`` at 3
 confirmations once the secondary provider agrees; silence for 10 minutes makes it ``Unknown``
-(never a failure, BR-060). Reorg demotion is CHR-004.
+(never a failure, BR-060). ``Confirmed``/``Reverted`` rows are re-checked by block hash until
+they are ``REORG_WINDOW`` blocks deep and demoted to ``Pending`` when the block changed (CHR-004).
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ CONFIRMATIONS: Final = 3
 UNKNOWN_AFTER: Final = timedelta(minutes=10)
 # Unknown stays tracked so a later sighting can move it back to Pending.
 TRACKED: Final = ["Submitted", "Pending", "Unknown"]
+FINAL: Final = ["Confirmed", "Reverted"]
+# shortcut: a reorg deeper than this is not handled here, M11 reconciliation flags it.
+REORG_WINDOW: Final = 64
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +52,12 @@ async def track_transactions(
     try:
         rows = await pool.fetch(
             "SELECT t.*, c.rpc_urls FROM transactions t JOIN chains c USING (chain_id) "
-            "WHERE t.status = ANY($1::transaction_status[]) ORDER BY t.submitted_at",
+            "WHERE t.status = ANY($1::transaction_status[]) "
+            "OR (t.status = ANY($2::transaction_status[]) AND t.confirmations < $3) "
+            "ORDER BY t.submitted_at",
             TRACKED,
+            FINAL,
+            REORG_WINDOW,
         )
         clients: dict[str, RpcClient] = {}
         changed = 0
@@ -94,7 +102,26 @@ async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, no
     # The clock runs from the last time the transaction was legitimately still in flight.
     expired = now - (row["last_seen_pending_at"] or row["submitted_at"]) >= UNKNOWN_AFTER
     receipt = await rpc.call("eth_getTransactionReceipt", [tx_hash])
-    if receipt:
+    final = row["status"] in FINAL
+    same_block = bool(receipt) and bytes.fromhex(receipt["blockHash"][2:]) == row["block_hash"]
+    if final and not same_block:
+        logger.warning("reorg: transaction %s left block %s", row["id"], row["block_number"])
+        # Re-evaluated from scratch below; the Unknown clock restarts because it was in flight.
+        new |= {
+            "status": "Pending",
+            "block_number": None,
+            "block_hash": None,
+            "confirmations": 0,
+            "revert_selector": None,
+            "confirmed_at": None,
+            "crosscheck": "NotRun",
+            "last_seen_pending_at": now,
+        }
+        expired = False
+    if final and same_block:
+        head = int(await rpc.call("eth_blockNumber", []), 16)
+        new["confirmations"] = max(head - row["block_number"] + 1, 1)
+    elif receipt:
         number = int(receipt["blockNumber"], 16)
         head = int(await rpc.call("eth_blockNumber", []), 16)
         confirmations = max(head - number + 1, 1)
@@ -159,7 +186,8 @@ async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, no
             "last_error = COALESCE($2, o.last_error) FROM (SELECT status FROM transactions "
             "WHERE operation_id = $1 AND status <> 'Dropped' "
             "ORDER BY submitted_at DESC, id DESC LIMIT 1) t "
-            "WHERE o.id = $1 AND o.status IN ('Submitted', 'Pending', 'Unknown')",
+            "WHERE o.id = $1 AND o.status IN "
+            "('Submitted', 'Pending', 'Unknown', 'Confirmed', 'Reverted')",
             row["operation_id"],
             last_error,
         )
