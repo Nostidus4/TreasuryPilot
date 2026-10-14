@@ -86,13 +86,12 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   expect(
     within(timeline).getByText('Dropped by the network'),
   ).toBeInTheDocument();
-  expect(
-    await within(timeline).findByRole('link', {
+  const explorerLinks = await within(timeline).findAllByRole('link', {
       name: 'Open transaction in the block explorer',
-    }),
-  ).toHaveAttribute(
+  });
+  expect(explorerLinks[1]).toHaveAttribute(
     'href',
-    `https://sepolia.etherscan.io/tx/${'b'.repeat(64)}`,
+    `https://sepolia.etherscan.io/tx/0x${'b'.repeat(64)}`,
   );
 });
 
