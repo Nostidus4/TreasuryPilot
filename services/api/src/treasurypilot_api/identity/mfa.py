@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from treasurypilot_api.identity.auth import (
     AuthFailure,
-    hash_token,
+    hash_client_value,
     require_aware_utc,
     utc_now,
 )
@@ -35,6 +35,8 @@ from treasurypilot_core.privacy import FieldCipher
 TOTP_STEP = 30
 TOTP_DIGITS = 6
 CHALLENGE_LIFETIME = timedelta(minutes=5)
+PENDING_FACTOR_LIFETIME = timedelta(minutes=10)
+CBOR_MAX_DEPTH = 8
 RECOVERY_CODE_COUNT = 10
 # Brute force bound: 20 attempts x 3 accepted time steps / 10^6 codes per 15 minutes.
 STEP_UP_ATTEMPT_LIMIT = 20
@@ -97,11 +99,18 @@ def totp_uri(secret: bytes, *, account: str, issuer: str = "TreasuryPilot") -> s
 
 
 def new_recovery_codes() -> list[str]:
-    return [f"{(raw := secrets.token_hex(5))[:5]}-{raw[5:]}" for _ in range(RECOVERY_CODE_COUNT)]
+    """80 bits each, as four groups of five hex digits."""
+
+    return [
+        "-".join(raw[i : i + 5] for i in range(0, 20, 5))
+        for raw in (secrets.token_hex(10) for _ in range(RECOVERY_CODE_COUNT))
+    ]
 
 
-def hash_recovery_code(code: str) -> bytes:
-    return hash_token(code.strip().lower().replace("-", ""))
+def hash_recovery_code(code: str, secret: bytes) -> bytes:
+    """Keyed so a leaked table cannot be brute forced without the server secret."""
+
+    return hash_client_value(code.strip().lower().replace("-", ""), secret)
 
 
 # --- WebAuthn -------------------------------------------------------------------------------
@@ -126,7 +135,9 @@ def new_challenge(secret: bytes, purpose: Purpose, user_id: uuid.UUID, now: date
     authenticators without counters must be supported.
     """
 
-    body = secrets.token_bytes(16) + struct.pack(">Q", int(now.timestamp()) + 300)
+    body = secrets.token_bytes(16) + struct.pack(
+        ">Q", int(now.timestamp()) + int(CHALLENGE_LIFETIME.total_seconds())
+    )
     return b64u_encode(body + _challenge_mac(secret, purpose, user_id, body))
 
 
@@ -154,6 +165,15 @@ def check_challenge(
 def _cbor(data: bytes, i: int = 0) -> tuple[Any, int]:
     """Decode the CBOR subset WebAuthn uses: ints, bytes, text, arrays, maps, simple values."""
 
+    try:
+        return _cbor_item(data, i, 0)
+    except (RecursionError, TypeError):  # TypeError: unhashable map key
+        raise MfaError("bad CBOR") from None
+
+
+def _cbor_item(data: bytes, i: int, depth: int) -> tuple[Any, int]:
+    if depth > CBOR_MAX_DEPTH:
+        raise MfaError("CBOR too deep")
     if i >= len(data):
         raise MfaError("truncated CBOR")
     major, info = data[i] >> 5, data[i] & 0x1F
@@ -180,14 +200,14 @@ def _cbor(data: bytes, i: int = 0) -> tuple[Any, int]:
     if major == 4:
         items = []
         for _ in range(arg):
-            item, i = _cbor(data, i)
+            item, i = _cbor_item(data, i, depth + 1)
             items.append(item)
         return items, i
     if major == 5:
         mapping: dict[Any, Any] = {}
         for _ in range(arg):
-            key, i = _cbor(data, i)
-            mapping[key], i = _cbor(data, i)
+            key, i = _cbor_item(data, i, depth + 1)
+            mapping[key], i = _cbor_item(data, i, depth + 1)
         return mapping, i
     if major == 7 and info in (20, 21, 22):
         return {20: False, 21: True, 22: None}[info], i
@@ -317,6 +337,10 @@ class MfaRepository(Protocol):
 
     async def confirm_factor(self, *, factor_id: uuid.UUID, now: datetime) -> None: ...
 
+    async def delete_pending_factors(self, *, user_id: uuid.UUID, before: datetime) -> None:
+        """Drop unconfirmed factors created before ``before``."""
+        ...
+
     async def delete_factor(self, *, user_id: uuid.UUID, factor_id: uuid.UUID) -> bool: ...
 
     async def advance_totp_counter(self, *, factor_id: uuid.UUID, counter: int) -> bool:
@@ -384,6 +408,9 @@ class MfaService:
             created_at=self._now(),
             confirmed_at=None,
         )
+        await self._repository.delete_pending_factors(
+            user_id=user_id, before=self._now() - PENDING_FACTOR_LIFETIME
+        )
         await self._repository.add_factor(factor)
         return factor, totp_uri(secret, account=email)
 
@@ -403,7 +430,11 @@ class MfaService:
         await self._limit(user_id)
         existing = await self._repository.list_factors(user_id)
         factor = next((f for f in existing if f.id == factor_id and f.kind == "totp"), None)
-        if factor is None or factor.confirmed_at is not None:
+        if (
+            factor is None
+            or factor.confirmed_at is not None
+            or self._now() - factor.created_at > PENDING_FACTOR_LIFETIME
+        ):
             raise mfa_failure(404, "MFA_FACTOR_NOT_FOUND", "No pending authenticator app.")
         counter = match_totp(self._totp_secret(factor), code, self._now())
         if counter is None or not await self._repository.advance_totp_counter(
@@ -469,7 +500,7 @@ class MfaService:
         codes = new_recovery_codes()
         await self._repository.replace_recovery_codes(
             user_id=user_id,
-            code_hashes=[hash_recovery_code(code) for code in codes],
+            code_hashes=[hash_recovery_code(code, self._secret) for code in codes],
             now=self._now(),
         )
         return codes
@@ -518,7 +549,7 @@ class MfaService:
                     ok = True
         elif recovery_code is not None:
             ok = await self._repository.consume_recovery_code(
-                user_id=user_id, code_hash=hash_recovery_code(recovery_code), now=now
+                user_id=user_id, code_hash=hash_recovery_code(recovery_code, self._secret), now=now
             )
         elif assertion is not None:
             ok = await self._verify_assertion(

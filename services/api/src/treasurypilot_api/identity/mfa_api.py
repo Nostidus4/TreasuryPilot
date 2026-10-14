@@ -59,7 +59,7 @@ class LabelRequest(ApiModel):
 
 
 class TotpConfirm(ApiModel):
-    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
 
 
 class ChallengeRequest(ApiModel):
@@ -86,7 +86,7 @@ class WebAuthnAssertion(ApiModel):
 
 
 class StepUpRequest(ApiModel):
-    code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    code: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     recovery_code: str | None = Field(default=None, max_length=32)
     webauthn: WebAuthnAssertion | None = None
 
@@ -158,7 +158,8 @@ async def start_totp(payload: LabelRequest, request: Request) -> TotpStart:
 
 @router.post("/totp/{factor_id}/confirm", response_model=EnrolmentResult)
 async def confirm_totp(factor_id: str, payload: TotpConfirm, request: Request) -> EnrolmentResult:
-    access = await _session(request)
+    # Once enrolled, a pending factor (possibly planted earlier) only counts after a fresh step-up.
+    access = await _session(request, enrolled_step_up=True)
     factor, codes = await _mfa(request).confirm_totp(
         user_id=access.user.id,
         session_id=access.session_id,

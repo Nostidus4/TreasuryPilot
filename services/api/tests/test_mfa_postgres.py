@@ -108,7 +108,7 @@ async def _scenario(database_url: str) -> None:
         assert listed[webauthn.id].sign_count == 5
 
         # Recovery codes are single use and replaced as a set.
-        codes = [hash_recovery_code(f"code-{i}") for i in range(3)]
+        codes = [hash_recovery_code(f"code-{i}", b"secret") for i in range(3)]
         await mfa.replace_recovery_codes(user_id=user_id, code_hashes=codes, now=NOW)
         assert await mfa.count_recovery_codes(user_id) == 3
         assert await mfa.consume_recovery_code(user_id=user_id, code_hash=codes[0], now=NOW)
@@ -122,6 +122,23 @@ async def _scenario(database_url: str) -> None:
 
         assert await mfa.delete_factor(user_id=user_id, factor_id=totp.id)
         assert not await mfa.delete_factor(user_id=user_id, factor_id=totp.id)
+
+        # Only unconfirmed factors older than the cutoff are dropped.
+        pending = _factor(
+            user_id,
+            kind="totp",
+            secret="envelope",
+            credential_id=None,
+            public_key=None,
+            confirmed_at=None,
+        )
+        assert await mfa.add_factor(pending)
+        await mfa.delete_pending_factors(user_id=user_id, before=NOW)
+        await mfa.delete_pending_factors(user_id=uuid.uuid4(), before=NOW + timedelta(hours=1))
+        assert pending.id in {f.id for f in await mfa.list_factors(user_id)}
+        await mfa.delete_pending_factors(user_id=user_id, before=NOW + timedelta(hours=1))
+        assert pending.id not in {f.id for f in await mfa.list_factors(user_id)}
+        assert webauthn.id in {f.id for f in await mfa.list_factors(user_id)}
     finally:
         await engine.dispose()
 

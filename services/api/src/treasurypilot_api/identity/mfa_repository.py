@@ -66,6 +66,16 @@ class SqlAlchemyMfaRepository:
                 update(MfaFactor).where(MfaFactor.id == factor_id).values(confirmed_at=now)
             )
 
+    async def delete_pending_factors(self, *, user_id: uuid.UUID, before: datetime) -> None:
+        async with self._sessions() as session, session.begin():
+            await session.execute(
+                delete(MfaFactor).where(
+                    MfaFactor.user_id == user_id,
+                    MfaFactor.confirmed_at.is_(None),
+                    MfaFactor.created_at < before,
+                )
+            )
+
     async def delete_factor(self, *, user_id: uuid.UUID, factor_id: uuid.UUID) -> bool:
         async with self._sessions() as session, session.begin():
             result = await session.execute(

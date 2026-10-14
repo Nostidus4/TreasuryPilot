@@ -27,10 +27,12 @@ from treasurypilot_api.identity.mfa import (
     MfaService,
     hash_recovery_code,
     match_totp,
+    new_recovery_codes,
     totp_code,
     verify_assertion,
     verify_registration,
 )
+from treasurypilot_api.identity.mfa import _cbor as _cbor_decode
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rate_limit import MemoryRateLimiter
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
@@ -93,6 +95,13 @@ class MemoryStore:
 
     async def confirm_factor(self, *, factor_id: uuid.UUID, now: datetime) -> None:
         await self._update(factor_id, confirmed_at=now)
+
+    async def delete_pending_factors(self, *, user_id: uuid.UUID, before: datetime) -> None:
+        self.factors = [
+            f
+            for f in self.factors
+            if not (f.user_id == user_id and f.confirmed_at is None and f.created_at < before)
+        ]
 
     async def delete_factor(self, *, user_id: uuid.UUID, factor_id: uuid.UUID) -> bool:
         before = len(self.factors)
@@ -286,8 +295,79 @@ def test_recovery_code_is_single_use() -> None:
     assert h.post("/v1/me/mfa/step-up", {"recoveryCode": codes[0]}).status_code == 204
     h.clock.now += timedelta(minutes=11)
     assert h.post("/v1/me/mfa/step-up", {"recoveryCode": codes[0]}).status_code == 400
-    assert hash_recovery_code(codes[0].upper()) == hash_recovery_code(codes[0].replace("-", ""))
+    assert hash_recovery_code(codes[0].upper(), SECRET) == hash_recovery_code(
+        codes[0].replace("-", ""), SECRET
+    )
     assert h.client.get("/v1/me/mfa").json()["recoveryCodesRemaining"] == 9
+
+
+def _plant_pending_totp(h: Harness) -> tuple[bytes, str]:
+    started = h.post("/v1/me/mfa/totp", {"label": "Attacker"})
+    assert started.status_code == 201
+    factor = h.store.factors[-1]
+    secret = base64.b32decode(
+        h.mfa._cipher.decrypt_text(factor.secret, context="mfa_factors.secret")  # type: ignore[union-attr,arg-type]
+    )
+    return secret, started.json()["factorId"]
+
+
+def test_pending_totp_planted_before_enrolment_cannot_step_up_later() -> None:
+    h = make_harness()
+    # Attacker session starts enrolment while the user has no factor and keeps the secret.
+    attacker_secret, planted = _plant_pending_totp(h)
+    # The real user then enrols a factor of their own (the attacker's row stays pending).
+    started = h.post("/v1/me/mfa/totp", {"label": "Phone"})
+    genuine = h.store.factors[-1]
+    secret = base64.b32decode(
+        h.mfa._cipher.decrypt_text(genuine.secret, context="mfa_factors.secret")  # type: ignore[union-attr,arg-type]
+    )
+    code = totp_code(secret, int(h.clock.now.timestamp()) // 30)
+    confirmed = h.post(f"/v1/me/mfa/totp/{started.json()['factorId']}/confirm", {"code": code})
+    assert confirmed.status_code == 200
+    h.clock.now += timedelta(minutes=2)  # still inside the pending lifetime, step-up has lapsed
+    h.store.step_up.clear()
+
+    attack = h.post(
+        f"/v1/me/mfa/totp/{planted}/confirm",
+        {"code": totp_code(attacker_secret, int(h.clock.now.timestamp()) // 30)},
+    )
+    assert attack.status_code == 403
+    assert attack.json()["code"] == "STEP_UP_REQUIRED"
+    assert h.post(f"/v1/orgs/{ORG_ID}/probe").status_code == 403
+
+
+def test_pending_totp_expires_and_is_cleaned_up_by_next_start() -> None:
+    h = make_harness()
+    secret, stale = _plant_pending_totp(h)
+    h.clock.now += timedelta(minutes=11)
+    code = totp_code(secret, int(h.clock.now.timestamp()) // 30)
+    assert h.post(f"/v1/me/mfa/totp/{stale}/confirm", {"code": code}).status_code == 404
+    _plant_pending_totp(h)
+    assert [str(f.id) for f in h.store.factors if f.confirmed_at is None] != [stale]
+    assert len(h.store.factors) == 1
+
+
+def test_recovery_codes_have_80_bits_and_are_keyed() -> None:
+    codes = new_recovery_codes()
+    assert all(len(code.replace("-", "")) == 20 for code in codes)
+    assert hash_recovery_code(codes[0], SECRET) != hash_recovery_code(codes[0], b"other-secret!!")
+
+
+def test_totp_code_must_be_ascii_digits() -> None:
+    h = make_harness()
+    started = h.post("/v1/me/mfa/totp", {"label": "Phone"}).json()
+    assert (
+        h.post(f"/v1/me/mfa/totp/{started['factorId']}/confirm", {"code": "١٢٣٤٥٦"}).status_code
+        == 422
+    )
+    assert h.post("/v1/me/mfa/step-up", {"code": "١٢٣٤٥٦"}).status_code == 422
+
+
+def test_cbor_rejects_deep_nesting_and_unhashable_keys() -> None:
+    with pytest.raises(MfaError):
+        _cbor_decode(b"\x81" * 5000 + b"\x00")
+    with pytest.raises(MfaError):
+        _cbor_decode(b"\xa1\x81\x00\x00")  # map keyed by an array
 
 
 def test_step_up_attempts_are_rate_limited() -> None:
