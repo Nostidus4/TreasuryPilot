@@ -133,6 +133,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER`, `OOB_ALREADY_VERIFIED` (evidence is recorded once) |
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
+| POST | `/…/payees/{id}/replace-address` | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `PAYEE_NOT_REGISTERED`, `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT`; 503 `DATA_MISSING` |
 | GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |
 | POST | `/orgs/{o}/requests/{r}/exception/grant-tx` | OWN | `{expiryHours?: 72}` → `{governanceTx}` | 409 `NOT_OVER_CAP`, `DAILY_LIMIT_WOULD_EXCEED`, `PAYEE_NOT_ACTIVE` |
 | POST | `/orgs/{o}/requests/{r}/exception/reject` | OWN | `{reason}` → `{exception: Rejected}` | |
@@ -207,7 +208,9 @@ sequenceDiagram
 
 ### 7.3 Payee onboarding
 
-Propose (vendor, label, address) → screening (CLEAR within TTL) → Owner calls/meets the vendor and records `verify-oob` → registration bundle → owners sign → executed → `PayeeAdded(activeFrom)` → Cooling (demo 5 min, prod 24 h) → Active.
+Propose (vendor, label, address) → screening (CLEAR within 24 h) → Owner calls/meets the vendor and records `verify-oob` → registration bundle → owners sign → executed → `PayeeAdded(activeFrom)` → Cooling (demo 5 min, prod 24 h) → Active at `activeFrom`. The API stores `activeFrom` from the indexed event and projects Cooling as Active once that timestamp passes.
+
+An address replacement creates a separate payee record for the same vendor and starts the full screening and out-of-band verification flow again. The Owner receives a deactivation governance transaction for the old address; once that transaction is executed, `PayeeDeactivated` marks only the old record Deactivated. Registering the new address starts a fresh cooling period from its own `PayeeAdded(activeFrom)` event; the old payee address is never overwritten in place.
 
 ### 7.4 Exception (UC-06)
 

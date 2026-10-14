@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
+from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.audit.events import AuditEvent
@@ -21,7 +22,13 @@ from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.auth import SessionAccess, UserRecord
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.main import create_app
-from treasurypilot_api.mandate.models import OobMethod, PayeeStatus, ScreeningResult
+from treasurypilot_api.mandate.governance import GovernanceCall
+from treasurypilot_api.mandate.models import (
+    GovernanceTxPurpose,
+    OobMethod,
+    PayeeStatus,
+    ScreeningResult,
+)
 from treasurypilot_api.mandate.payees import (
     NotAwaitingOwner,
     OobAlreadyVerified,
@@ -30,6 +37,7 @@ from treasurypilot_api.mandate.payees import (
     PayeeRecord,
     ScreeningSummary,
     check_registration_gates,
+    effective_payee_status,
 )
 from treasurypilot_api.mandate.vendors import (
     VendorHasPayees,
@@ -44,8 +52,25 @@ TREASURY_ID = uuid.UUID("00000000-0000-4000-8000-000000000222")
 USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000333")
 CHAIN_ID = 11155111
 SAFE = bytes.fromhex("11" * 20)
+MODULE = bytes.fromhex("22" * 20)
 CLEAN = "0x" + "ab" * 20
 LISTED = "0x000000000000000000000000000000000000dEaD"
+
+
+class FakeGovernanceService:
+    def __init__(self) -> None:
+        self.created: list[dict[str, object]] = []
+
+    async def create(self, **fields: object) -> dict[str, object]:
+        tx_id = uuid.uuid4()
+        self.created.append(fields)
+        calls = cast(list[GovernanceCall], fields["calls"])
+        return {
+            "id": tx_id,
+            "purpose": cast(GovernanceTxPurpose, fields["purpose"]).value,
+            "decodedCalls": [call.as_json() for call in calls],
+            "status": "Collecting",
+        }
 
 
 class MemoryScreeningRepository:
@@ -159,7 +184,9 @@ class MemoryStore:
     ) -> PayeeContext | None:
         if (organization_id, treasury_id) != (ORG_ID, TREASURY_ID):
             return None
-        return PayeeContext(chain_id=CHAIN_ID, wallet_addresses=frozenset({SAFE}))
+        return PayeeContext(
+            chain_id=CHAIN_ID, wallet_addresses=frozenset({SAFE}), module_address=MODULE
+        )
 
     async def vendor_exists(self, *, organization_id: uuid.UUID, vendor_id: uuid.UUID) -> bool:
         return (
@@ -238,6 +265,22 @@ class MemoryStore:
             return None
         return self._with_screening(row)
 
+    async def attach_registration_tx(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        governance_tx_id: uuid.UUID,
+    ) -> bool:
+        row = self.payees.get(payee_id)
+        if row is None or row.status != PayeeStatus.AWAITING_OWNER.value:
+            return False
+        if row.registration_tx_id not in (None, governance_tx_id):
+            return False
+        self.payees[payee_id] = replace(row, registration_tx_id=governance_tx_id)
+        return True
+
     async def verify_oob(
         self,
         *,
@@ -287,6 +330,7 @@ def make_client(
     provider: object | None = None,
     roles: frozenset[str] = frozenset({"Owner"}),
     cipher: bool = True,
+    governance_service: object | None = None,
 ) -> tuple[TestClient, MemoryStore]:
     screenings = MemoryScreeningRepository()
     store = MemoryStore(screenings)
@@ -297,6 +341,7 @@ def make_client(
         vendor_repository=cast(object, store),
         payee_repository=cast(object, store),
         screening_service=service,
+        governance_service=cast(object, governance_service) if governance_service else None,
         field_cipher=FakeCipher() if cipher else None,
     )
 
@@ -517,7 +562,8 @@ def test_proposing_requires_operator_admin_or_owner_and_screening() -> None:
 
 
 def test_registration_refused_until_oob_recorded_owner_only_and_audited() -> None:
-    owner, store = make_client()
+    governance = FakeGovernanceService()
+    owner, store = make_client(governance_service=governance)
     operator, _ = make_client(roles=frozenset({"Operator"}))
     with owner:
         vendor_id = new_vendor(owner)
@@ -549,7 +595,14 @@ def test_registration_refused_until_oob_recorded_owner_only_and_audited() -> Non
     assert verified.json()["payee"]["oobMethod"] == "PHONE"
     assert verified.json()["payee"]["oobVerifiedBy"] == str(USER_ID)
     assert again.status_code == 409 and again.json()["code"] == "OOB_ALREADY_VERIFIED"
-    assert after.status_code == 501  # all gates passed; the bundle is MDT-005
+    assert after.status_code == 201
+    tx = after.json()["governanceTx"]
+    assert tx["purpose"] == "PAYEE_ADD"
+    assert tx["decodedCalls"][0]["to"] == "0x" + MODULE.hex()
+    assert tx["decodedCalls"][0]["data"].startswith("0x" + keccak(b"addPayee(address)").hex()[:8])
+    assert store.payees[uuid.UUID(payee_id)].registration_tx_id == uuid.UUID(tx["id"])
+    assert governance.created[-1]["entity_type"] == "payee"
+    assert governance.created[-1]["entity_id"] == uuid.UUID(payee_id)
     assert denied.status_code == 403 and denied_tx.status_code == 403
     assert [e.action for e in store.audit if e.action == "payee.oob_verified"] == [
         "payee.oob_verified"
@@ -570,6 +623,81 @@ def test_registration_gates_screening_expiry() -> None:
     assert expired is not None and expired.code == "SCREENING_EXPIRED"
     unscreened = check_registration_gates(replace(payee, screening=None), now=now)
     assert unscreened is not None and unscreened.code == "SCREENING_NOT_CLEAR"
+
+
+def test_cooling_becomes_active_after_active_from_without_another_event() -> None:
+    active_from = datetime(2026, 10, 15, 12, tzinfo=UTC)
+    assert (
+        effective_payee_status("Cooling", active_from, now=active_from - timedelta(seconds=1))
+        == "Cooling"
+    )
+    assert effective_payee_status("Cooling", active_from, now=active_from) == "Active"
+
+
+def test_deactivation_builds_governance_transaction_for_registered_payee() -> None:
+    governance = FakeGovernanceService()
+    owner, store = make_client(governance_service=governance)
+    with owner:
+        vendor_id = new_vendor(owner)
+        payee = owner.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Main account", "address": CLEAN}
+        ).json()["payee"]
+        payee_id = uuid.UUID(payee["id"])
+        store.payees[payee_id] = replace(store.payees[payee_id], status=PayeeStatus.ACTIVE.value)
+
+        response = owner.post(
+            f"{PAYEES}/{payee_id}/deactivation-tx", json={"reason": "Vendor requested"}
+        )
+
+    assert response.status_code == 201, response.text
+    tx = response.json()["governanceTx"]
+    assert tx["purpose"] == "PAYEE_DEACTIVATE"
+    call = tx["decodedCalls"][0]
+    assert call["to"] == "0x" + MODULE.hex()
+    assert call["data"].startswith("0x" + keccak(b"deactivatePayee(address)").hex()[:8])
+    assert call["data"][-40:].lower() == CLEAN[2:]
+    assert governance.created[-1]["entity_type"] == "payee"
+    assert governance.created[-1]["entity_id"] == payee_id
+
+
+def test_replacing_address_creates_new_payee_and_deactivation_governance_tx() -> None:
+    governance = FakeGovernanceService()
+    owner, store = make_client(governance_service=governance)
+    replacement = "0x" + "cd" * 20
+    with owner:
+        vendor_id = new_vendor(owner)
+        old = owner.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Main account", "address": CLEAN}
+        ).json()["payee"]
+        old_id = uuid.UUID(old["id"])
+        store.payees[old_id] = replace(
+            store.payees[old_id], status=PayeeStatus.ACTIVE.value, active_from=datetime.now(UTC)
+        )
+
+        response = owner.post(
+            f"{PAYEES}/{old_id}/replace-address",
+            json={"address": replacement, "reason": "Vendor bank account changed"},
+        )
+        new = response.json()["payee"]
+        new_id = uuid.UUID(new["id"])
+        verified = owner.post(
+            f"{PAYEES}/{new_id}/verify-oob", json={"method": "PHONE", "note": "confirmed"}
+        )
+        registered = owner.post(f"{PAYEES}/{new_id}/registration-tx")
+
+    assert response.status_code == 201, response.text
+    assert new_id != old_id
+    assert new["address"] == replacement
+    assert new["status"] == "AwaitingOwner"
+    assert response.json()["deactivationGovernanceTx"]["purpose"] == "PAYEE_DEACTIVATE"
+    assert store.payees[old_id].status == PayeeStatus.ACTIVE.value
+    assert verified.status_code == 200
+    assert registered.status_code == 201
+    assert registered.json()["governanceTx"]["purpose"] == "PAYEE_ADD"
+    assert (
+        registered.json()["governanceTx"]["decodedCalls"][0]["data"][-40:].lower()
+        == replacement[2:]
+    )
 
 
 def test_list_and_get_payee() -> None:
