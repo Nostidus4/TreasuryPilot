@@ -12,7 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
-from treasurypilot_api.admin.api import create_admin_router
+from treasurypilot_api.admin.api import create_admin_router, create_support_grant_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
@@ -376,6 +376,7 @@ def create_app(
     app.include_router(treasury_router)
     app.include_router(governance_router)
     app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)
     app.include_router(vendors_router)
     app.include_router(payees_router)

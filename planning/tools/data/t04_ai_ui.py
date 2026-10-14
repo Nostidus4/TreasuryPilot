@@ -179,6 +179,14 @@ T("OBS-005","Compute the savings report","M1","P1","M","F-141","FR-922","OBS-004
   "", "", "Savings for a seeded batch equal a hand-computed value;Negative savings are reported as negative", "Integration")
 
 # ───────────── ADM · Platform Admin & Billing (Later) ─────────────
-T("ADM-L01","Build the platform admin console","Later","-","L","F-150","FR-924, BR-094","IDN-006", "Operate tenants.", "Tenant list, suspend, health;read-only support access with consent and audit", "", "", "No admin endpoint can move funds or sign", "Security review")
+T("ADM-L01","Build the platform admin console","Later","-","L","F-150","FR-924, BR-094","IDN-006",
+  "Operate tenants and provide bounded, consented support access.",
+  "Slice A (M, ~1 day): tenant list, health and suspend endpoints with append-only staff events;Slice B (M, ~1 day, after A): tenant-admin consent and revocation for time-limited read scope;staff support summary requires a matching live grant and writes an access event",
+  "",
+  "Platform admin access stays on a separate staff credential and socket-peer IP allowlist;support reads expose tenant metadata and health counts only;customer fund movement and signing remain unavailable",
+  "No admin endpoint can move funds or sign;No support read succeeds without tenant consent;Expired or revoked grants deny access;Grant and support-read actions are auditable",
+  "Security tests for route surface and grant expiry;API tests for consent and support access",
+  split_plan=("Slice A — tenant operations and staff audit (M, ~1 day)",
+              "Slice B — consented read support and audit (M, ~1 day; depends on A)"))
 T("ADM-L02","Meter usage for billing","Later","-","M","F-152","FR-926","OBS-004", "Usage numbers per org.", "Metering from events (paid requests, volume)", "", "", "Usage reconciles with the event store", "Integration")
 T("ADM-L03","Add subscriptions and customer invoicing","Later","-","L","F-152","FR-926, BR-091","ADM-L02", "Charge customers.", "Plans;invoices;payment collection outside customer treasuries", "", "", "No fee is ever deducted from a customer treasury", "Integration")
