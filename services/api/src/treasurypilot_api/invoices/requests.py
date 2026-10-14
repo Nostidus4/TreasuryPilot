@@ -2594,7 +2594,7 @@ async def renew_request(
                 "The renewed due date cannot be in the past.",
             )
         row.current_revision += 1
-        row.due_at = payload.due_date or max(row.due_at, today + timedelta(days=1))
+        row.due_at = payload.due_date or max(row.due_at or today, today + timedelta(days=1))
         vendor_ref, asset_address = (
             await session.execute(
                 select(Vendor.normalized_ref, Asset.address)
