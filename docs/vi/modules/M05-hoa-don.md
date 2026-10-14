@@ -79,7 +79,7 @@ M05 biến một hóa đơn thành **yêu cầu chi** được người duyệt 
 | Method | Endpoint | Quyền | Lỗi chính |
 |---|---|---|---|
 | GET/POST/PATCH | `/orgs/{o}/vendors` | thành viên / OPR, ADM | `VENDOR_REF_EXISTS` |
-| POST | `/orgs/{o}/requests` | OPR, ADM | `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
+| POST | `/orgs/{o}/requests` | OPR, ADM | `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE` |
 | POST | `/requests/upload` | OPR | 413, 415, `MULTI_INVOICE_DOCUMENT` |
 | POST | `/requests/{r}/extraction/confirm` | OPR | `EXTRACTION_PENDING` |
 | POST | `/requests/import-csv` (`dryRun`) | OPR | `CSV_HEADER_INVALID`, `CSV_ENCODING` |

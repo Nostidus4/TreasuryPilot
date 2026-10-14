@@ -268,3 +268,17 @@ def test_persisted_flags_are_revision_scoped_and_do_not_change_request() -> None
     assert all(flag.revision == 3 for flag in session.added)
     assert all(flag.source == "DETERMINISTIC" for flag in session.added)
     assert (row.status, row.amount, row.invoice_no, row.due_at) == initial_fields
+
+
+def test_even_sized_history_uses_lower_middle_median() -> None:
+    flags = evaluate_anomalies(
+        revision(amount=1100),
+        paid_history((1000, 1010, 1020, 1030, 1040, 1050)),
+        registered_addresses=(ADDRESS,),
+        prior_paid_to_payee=True,
+        previous_paid=None,
+        today=TODAY,
+    )
+    outlier = {flag.code: flag for flag in flags}["AMOUNT_OUTLIER"]
+    assert outlier.evidence["median"] == 1020
+    assert outlier.evidence["mad"] == 10

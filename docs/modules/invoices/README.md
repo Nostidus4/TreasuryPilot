@@ -118,7 +118,7 @@ stateDiagram-v2
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET/POST/PATCH | `/orgs/{o}/vendors[/{vId}]` | ANY / OPR, ADM | `{name, taxId?, contact?}` → `{vendor}` | 409 `VENDOR_REF_EXISTS` |
-| POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
+| POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | OPR | multipart `file`, `treasuryId` → `202 {requestId, extractionJobId}` | 413, 415, 422 `MULTI_INVOICE_DOCUMENT` |
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |

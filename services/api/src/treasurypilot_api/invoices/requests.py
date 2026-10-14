@@ -321,6 +321,8 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     today = datetime.now(UTC).date()
+    # shortcut: updated_at stands in for the paid date (any later write to a Paid row shifts it),
+    # and every Paid row in the window is loaded for the median; revisit when paid_at exists.
     history_rows = await session.execute(
         select(
             PaymentRequest.amount, PaymentRequest.updated_at, PaymentRequest.payee_id, Payee.address
@@ -328,6 +330,8 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
         .join(Payee, Payee.id == PaymentRequest.payee_id)
         .where(
             PaymentRequest.vendor_id == row.vendor_id,
+            # Amounts are raw base units, so only compare within the same asset (decimals).
+            PaymentRequest.asset_id == row.asset_id,
             PaymentRequest.status == RequestStatus.PAID.value,
             PaymentRequest.updated_at
             >= datetime.combine(today - timedelta(days=365), datetime.min.time(), UTC),
@@ -369,8 +373,13 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
     registered_addresses = tuple(
         await session.scalars(select(Payee.address).where(Payee.vendor_id == row.vendor_id))
     )
-    if payee_address is None or asset_symbol is None or chain_name is None:
+    if payee_address is None:
+        raise _fail(
+            422, "PAYEE_UNKNOWN", "Payee unknown", "The payee is not registered for this vendor."
+        )
+    if asset_symbol is None or chain_name is None:  # unreachable: FK-enforced
         raise RuntimeError("Request anomaly inputs are incomplete")
+    # Only payee id and address are read; the amount and date are placeholders (not windowed).
     previous_paid = (
         PaidInvoice(0, today, previous_paid_row[0], previous_paid_row[1])
         if previous_paid_row is not None

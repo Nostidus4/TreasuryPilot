@@ -4,6 +4,7 @@ import asyncio
 import io
 import os
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -205,6 +206,14 @@ async def _verify_invoice_constraints(database_url: str) -> None:
             await session.flush()
             assert "AMOUNT_OUTLIER" in {flag["code"] for flag in flags}
             await session.commit()
+
+        async with AsyncSession(engine) as session:
+            row = await session.get(PaymentRequest, uuid.UUID(request_id))
+            assert row is not None
+            row.due_at = row.issue_date - timedelta(days=1)
+            flags = await _recompute_flags(session, row)
+            assert "DUE_BEFORE_ISSUE" in {flag["code"] for flag in flags}
+            await session.rollback()
 
         with pytest.raises(IntegrityError, match="uq_payment_requests_active_fingerprint"):
             async with engine.begin() as connection:
