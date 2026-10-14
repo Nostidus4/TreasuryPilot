@@ -51,6 +51,22 @@
         "title": "AICallEvidence",
         "type": "object"
       },
+      "ActionLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "daily": {
+            "title": "Daily",
+            "type": "string"
+          },
+          "perRequest": {
+            "title": "Perrequest",
+            "type": "string"
+          }
+        },
+        "required": ["perRequest", "daily"],
+        "title": "ActionLimits",
+        "type": "object"
+      },
       "ApprovalEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -883,6 +899,303 @@
         "title": "MagicLinkRequest",
         "type": "object"
       },
+      "MandateConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": ["REFILL", "PAY", "SUPPLY", "SWAP"],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
+          "approvalMaxAge": {
+            "default": 1209600,
+            "minimum": 1.0,
+            "title": "Approvalmaxage",
+            "type": "integer"
+          },
+          "approvers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvers"
+          },
+          "buffers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WalletBuffer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buffers"
+          },
+          "executor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "gasFundingCapWei": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gasfundingcapwei"
+          },
+          "guardian": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guardian"
+          },
+          "limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ActionLimits"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limits"
+          },
+          "minSupply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minsupply"
+          },
+          "payeeCoolingSeconds": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payeecoolingseconds"
+          },
+          "refillPaths": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RefillPath"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refillpaths"
+          },
+          "reserveHorizonDays": {
+            "default": 30,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Reservehorizondays",
+            "type": "integer"
+          },
+          "supplyLimits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "swap": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap"
+          },
+          "validFrom": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validfrom"
+          }
+        },
+        "title": "MandateConfig",
+        "type": "object"
+      },
+      "MandateDraftResponse": {
+        "properties": {
+          "bundlePreview": {
+            "additionalProperties": true,
+            "title": "Bundlepreview",
+            "type": "object"
+          },
+          "diff": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/MandateView"
+          },
+          "requiresConfirmation": {
+            "title": "Requiresconfirmation",
+            "type": "boolean"
+          },
+          "summary": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Summary",
+            "type": "array"
+          }
+        },
+        "required": [
+          "draft",
+          "summary",
+          "diff",
+          "requiresConfirmation",
+          "bundlePreview"
+        ],
+        "title": "MandateDraftResponse",
+        "type": "object"
+      },
+      "MandateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MandateView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "MandateListResponse",
+        "type": "object"
+      },
+      "MandateView": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "configHash": {
+            "title": "Confighash",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "version",
+          "status",
+          "config",
+          "configHash",
+          "createdAt"
+        ],
+        "title": "MandateView",
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "memberships": {
@@ -1204,6 +1517,22 @@
         },
         "required": ["plannerSource"],
         "title": "PlanEvidence",
+        "type": "object"
+      },
+      "RefillPath": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": ["from", "to"],
+        "title": "RefillPath",
         "type": "object"
       },
       "RoleUpdateRequest": {
@@ -1589,6 +1918,33 @@
         },
         "required": ["user", "csrfToken"],
         "title": "VerifyMagicLinkResponse",
+        "type": "object"
+      },
+      "WalletBuffer": {
+        "additionalProperties": false,
+        "properties": {
+          "minimum": {
+            "title": "Minimum",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "wallet": {
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": ["wallet", "minimum"],
+        "title": "WalletBuffer",
         "type": "object"
       },
       "WalletRequest": {
@@ -2822,6 +3178,235 @@
         },
         "summary": "Get Treasury",
         "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates": {
+      "get": {
+        "operationId": "list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mandates",
+        "tags": ["mandates"],
+        "x-organization-scoped": true
+      },
+      "post": {
+        "operationId": "create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MandateConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Mandate Draft",
+        "tags": ["mandates"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}": {
+      "delete": {
+        "operationId": "discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mandate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mandate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Mandate Draft",
+        "tags": ["mandates"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/clone": {
+      "post": {
+        "operationId": "clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mandate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mandate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MandateDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clone Mandate Draft",
+        "tags": ["mandates"],
+        "x-organization-scoped": true
       }
     }
   }

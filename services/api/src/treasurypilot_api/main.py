@@ -48,6 +48,11 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.mandate.routes import (
+    MandateRepository,
+    SqlAlchemyMandateRepository,
+)
+from treasurypilot_api.mandate.routes import router as mandate_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
@@ -171,6 +176,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    mandate_repository: MandateRepository | None = None,
     treasury_service: TreasuryService | None = None,
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
@@ -201,6 +207,10 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if mandate_repository is None and engine is not None:
+        mandate_repository = SqlAlchemyMandateRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     if membership_repository is None and engine is not None:
         membership_repository = SqlAlchemyMembershipRepository(
@@ -253,6 +263,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.mandate_repository = mandate_repository
     app.state.treasury_service = treasury_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
@@ -283,6 +294,7 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(mandate_router)
 
     return app
 
