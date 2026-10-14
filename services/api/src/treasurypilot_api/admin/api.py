@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import cast
@@ -16,6 +17,8 @@ from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import Membership, Organization
 from treasurypilot_api.treasury.models import Treasury
+
+logger = logging.getLogger(__name__)
 
 
 class TenantView(ApiModel):
@@ -40,42 +43,61 @@ class TenantHealth(ApiModel):
 
 
 def _staff_auth(settings: Settings) -> Callable[[Request], Awaitable[str]]:
+    networks = settings.admin_networks  # parsed once; validated by Settings at startup
+
     async def authorize(request: Request) -> str:
         configured = settings.admin_staff_token
         staff_id = settings.admin_staff_id
-        try:
-            networks = [
-                ipaddress.ip_network(value.strip(), strict=False)
-                for value in settings.admin_ip_allowlist.split(",")
-                if value.strip()
-            ]
-        except ValueError:
-            networks = []
-        if (
-            configured is None
-            or len(configured.get_secret_value().encode()) < 32
-            or not staff_id
-            or not networks
-        ):
+        if not settings.admin_configured or configured is None or not staff_id:
             raise HTTPException(status_code=503, detail="Platform admin is not configured")
-        authorization = request.headers.get("authorization", "")
-        scheme, _, supplied = authorization.partition(" ")
-        if scheme.casefold() != "bearer" or not supplied:
-            raise HTTPException(status_code=401, detail="Staff authentication required")
-        if not hmac.compare_digest(supplied, configured.get_secret_value()):
-            raise HTTPException(status_code=401, detail="Staff authentication required")
         # Deliberately use the socket peer. Forwarded headers are untrusted unless
-        # a separately configured trusted-proxy chain is introduced.
+        # a separately configured trusted-proxy chain is introduced. The network check
+        # runs first so a disallowed caller learns nothing about token validity.
         peer = request.client.host if request.client else None
         try:
             address = ipaddress.ip_address(peer or "")
         except ValueError:
-            raise HTTPException(status_code=403, detail="Source address is not allowed") from None
-        if not any(address in network for network in networks):
+            address = None
+        if address is None or not any(address in network for network in networks):
+            logger.warning("admin.auth_denied", extra={"reason": "source_address", "peer": peer})
             raise HTTPException(status_code=403, detail="Source address is not allowed")
+        authorization = request.headers.get("authorization", "")
+        scheme, _, supplied = authorization.partition(" ")
+        # Encode: compare_digest raises TypeError on non-ASCII str (headers decode as latin-1).
+        if (
+            scheme.casefold() != "bearer"
+            or not supplied
+            or not hmac.compare_digest(supplied.encode(), configured.get_secret_value().encode())
+        ):
+            logger.warning("admin.auth_denied", extra={"reason": "token", "peer": peer})
+            raise HTTPException(status_code=401, detail="Staff authentication required")
         return staff_id
 
     return authorize
+
+
+async def _counts(session: AsyncSession, tenant_id: uuid.UUID) -> tuple[int, int]:
+    members = await session.scalar(
+        select(func.count(Membership.user_id)).where(
+            Membership.org_id == tenant_id, Membership.status == "active"
+        )
+    )
+    treasuries = await session.scalar(
+        select(func.count(Treasury.id)).where(Treasury.org_id == tenant_id)
+    )
+    return members or 0, treasuries or 0
+
+
+def _view(org: Organization, members: int, treasuries: int) -> TenantView:
+    return TenantView(
+        id=org.id,
+        name=org.name,
+        country=org.country,
+        created_at=org.created_at,
+        status=org.platform_status,
+        active_members=members,
+        treasuries=treasuries,
+    )
 
 
 def create_admin_router(
@@ -94,7 +116,7 @@ def create_admin_router(
 
     @router.get("/tenants", response_model=TenantList)
     async def tenants(
-        _: str = staff_dependency,
+        actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> TenantList:
         async with db_sessions() as session:
@@ -112,45 +134,21 @@ def create_admin_router(
                 ).order_by(Organization.created_at.desc(), Organization.id)
             )
             rows = cast(list[tuple[Organization, int, int]], result.all())
-        return TenantList(
-            items=[
-                TenantView(
-                    id=org.id,
-                    name=org.name,
-                    country=org.country,
-                    created_at=org.created_at,
-                    status=org.platform_status,
-                    active_members=members,
-                    treasuries=treasuries,
-                )
-                for org, members, treasuries in rows
-            ]
-        )
+        logger.info("admin.tenants_listed", extra={"actor": actor})
+        return TenantList(items=[_view(org, m, t) for org, m, t in rows])
 
     @router.get("/tenants/{tenant_id}/health", response_model=TenantHealth)
     async def tenant_health(
         tenant_id: uuid.UUID,
-        _: str = staff_dependency,
+        actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> TenantHealth:
         async with db_sessions() as session:
             org = await session.get(Organization, tenant_id)
             if org is None:
                 raise HTTPException(status_code=404, detail="Tenant not found")
-            members = (
-                await session.scalar(
-                    select(func.count(Membership.user_id)).where(
-                        Membership.org_id == tenant_id, Membership.status == "active"
-                    )
-                )
-                or 0
-            )
-            treasuries = (
-                await session.scalar(
-                    select(func.count(Treasury.id)).where(Treasury.org_id == tenant_id)
-                )
-                or 0
-            )
+            members, treasuries = await _counts(session, tenant_id)
+        logger.info("admin.tenant_health_read", extra={"actor": actor, "tenant_id": str(tenant_id)})
         return TenantHealth(
             tenant_id=tenant_id,
             status=org.platform_status,
@@ -169,38 +167,18 @@ def create_admin_router(
             org = await session.get(Organization, tenant_id, with_for_update=True)
             if org is None:
                 raise HTTPException(status_code=404, detail="Tenant not found")
-            org.platform_status = "suspended"
-            members = (
-                await session.scalar(
-                    select(func.count(Membership.user_id)).where(
-                        Membership.org_id == tenant_id, Membership.status == "active"
+            # Idempotent: a retry must not write another audit event.
+            if org.platform_status != "suspended":
+                org.platform_status = "suspended"
+                session.add(
+                    PlatformAdminEvent(
+                        org_id=tenant_id,
+                        actor_id=actor,
+                        action="tenant.suspended",
+                        data={"source_ip": request.client.host if request.client else None},
                     )
                 )
-                or 0
-            )
-            treasuries = (
-                await session.scalar(
-                    select(func.count(Treasury.id)).where(Treasury.org_id == tenant_id)
-                )
-                or 0
-            )
-            session.add(
-                PlatformAdminEvent(
-                    org_id=tenant_id,
-                    actor_id=actor,
-                    action="tenant.suspended",
-                    data={"source_ip": request.client.host if request.client else None},
-                )
-            )
-            response = TenantView(
-                id=org.id,
-                name=org.name,
-                country=org.country,
-                created_at=org.created_at,
-                status=org.platform_status,
-                active_members=members,
-                treasuries=treasuries,
-            )
+            response = _view(org, *await _counts(session, tenant_id))
         return response
 
     return router

@@ -172,7 +172,7 @@ def create_app(
     configure_error_tracking("api")
     engine: AsyncEngine | None = None
     admin_engine: AsyncEngine | None = None
-    if admin_sessions is None and settings.database_url is not None:
+    if admin_sessions is None and settings.admin_configured and settings.database_url is not None:
         admin_engine, admin_sessions = create_session_factory(
             settings.database_url.get_secret_value()
         )

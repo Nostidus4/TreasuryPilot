@@ -1,7 +1,8 @@
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from treasurypilot_core.observability import LogFormat
@@ -36,6 +37,32 @@ class Settings(BaseSettings):
     admin_staff_token: SecretStr | None = None
     admin_staff_id: str | None = None
     admin_ip_allowlist: str = ""
+
+    @field_validator("admin_ip_allowlist")
+    @classmethod
+    def _validate_admin_ip_allowlist(cls, value: str) -> str:
+        # Fail at startup on a malformed CIDR instead of silently disabling admin.
+        for item in value.split(","):
+            if item.strip():
+                ipaddress.ip_network(item.strip(), strict=False)
+        return value
+
+    @property
+    def admin_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        return [
+            ipaddress.ip_network(item.strip(), strict=False)
+            for item in self.admin_ip_allowlist.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def admin_configured(self) -> bool:
+        return (
+            self.admin_staff_token is not None
+            and len(self.admin_staff_token.get_secret_value().encode()) >= 32
+            and bool(self.admin_staff_id)
+            and bool(self.admin_networks)
+        )
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -37,7 +37,7 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 ## 6. Interfaces (Later)
 
-`/admin/tenants`, `/admin/tenants/{id}/health`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with a staff bearer credential and socket-peer IP allowlist. It fails closed when any required credential or allowlist setting is missing. The initial implementation exposes tenant metadata and health counts and persists suspension with a platform event. Planning enforcement must be connected when planning routes and workers are implemented; staff SSO and read-only support sessions remain future work.
+`/admin/tenants`, `/admin/tenants/{id}/health`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with a staff bearer credential and socket-peer IP allowlist. It fails closed when any required credential or allowlist setting is missing. The initial implementation exposes tenant metadata and health counts and persists suspension with a platform event. Planning enforcement must be connected when planning routes and workers are implemented; staff SSO and read-only support sessions remain future work. The IP allowlist matches the TCP peer address, so behind a reverse proxy it sees the proxy address; run the admin API without a proxy hop or add a trusted-proxy setting first. `suspend` is idempotent (one event per transition); an unsuspend route is not yet implemented. Failed staff auth and admin reads are logged, not yet written to `platform_admin_events`.
 
 ## 7–8. Flows and algorithms
 
