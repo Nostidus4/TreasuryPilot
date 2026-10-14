@@ -4,6 +4,18 @@
 # Per-organisation monthly cap (M09-D10). Over budget -> AiBudgetExceeded -> task fallback.
 monthly_budget_usd_micros: 20_000_000  # 20 USD
 
+# Provider failover order (AGT-017, FR-808). Every call goes to the first provider; when it is
+# unavailable (outage, 5xx, rate limit, revoked key) the same turn moves to the next one within
+# the task deadline. model_prefix maps a task model to the provider's model id. A provider whose
+# credentials are unset is skipped with a warning: ANTHROPIC_API_KEY for anthropic,
+# AWS_BEARER_TOKEN_BEDROCK and AWS_REGION for bedrock.
+# shortcut: Bedrock spend is counted at the first-party prices below; add per-provider prices
+# if Bedrock pricing diverges or failover traffic becomes significant.
+providers:
+  - name: anthropic
+  - name: bedrock
+    model_prefix: anthropic.
+
 # USD micros per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing
 # (checked 2026-10-11). cache_write is the 5-minute cache write price.
 prices:

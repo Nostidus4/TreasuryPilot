@@ -15,7 +15,7 @@ The engine is the **only place where amounts and schedules are computed** (BR-03
 | Liquidity calculator: Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity, Cap, refill decision | Deciding *whether* a step is allowed (M08 validator does that, using engine numbers) |
 | Payment-terms model and value function (discounts, late fees) | Extracting terms from text (M09) |
 | Scheduler: B1 baseline (EDF) and B2 optimizer (CP-SAT) + exhaustive oracle for tests | Calling the LLM; the AI proposes orderings that the engine scores (M09 → M07) |
-| Plan scoring, binding constraints, infeasibility reasons | FX / depeg (F-041, Later), multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
+| Plan scoring, binding constraints, infeasibility reasons; pure FX conversion and depeg guard (F-041) | Multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
 | 7-day forecast (P2) | |
 
 ## 2. Features, requirements and rules
@@ -96,14 +96,19 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `preferred_refill(w, demand, protected_other) → BaseUnits` | `max(0, P_o + D + H − B)` | |
 | `source_capacity(source, protected_other) → BaseUnits` | `max(0, B_T − R_T − L_T − F_T)` | gas term = 0 in M1 (M04-D10) |
 | `decide_refill(req, wallet, source, policy, used_today, protected_other, *, source_protected) → RefillDecision` | see §8.1 | applies the contract bound (M07-D4); `source_protected` = `R_T + L_T` |
+| `liquidity_position(snapshot, requests, schedule, policy) → LiquidityPosition` | payment reserve, Safe floor, holds and available liquidity | approved unpaid requests due, or scheduled to be paid, on or before `today + reserve_horizon_days` (1–30, inclusive); `snapshot.source` must be Safe T (`source.balance == safe_usdc`) |
+| `decide_liquidity(snapshot, requests, schedule, policy) → LiquidityDecision` | `NONE`, `SUPPLY`, `WITHDRAW`, or `INSUFFICIENT_LIQUIDITY` | `min_supply` is compared with AvailableForSupply, then the supply caps (`used_today["supply"]`) bound the amount; never a zero SUPPLY/WITHDRAW; no SUPPLY on a day with a WITHDRAW (`used_today["withdraw"]`); borrow is never authorized here |
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
-| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, N ≤ 8 | **tests only** |
-| `score(plan, requests, snapshot, policy) → objective` | lexicographic tuple | used to compare AI proposals (AGT-009) |
-| `binding_constraints(plan, …) → list` | which limits bind and by how much | shown in the "Why" panel |
+| `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
+| `score(plan, requests, snapshot, policy) → (violations, missed_deadlines, −value, tx_count)` | lexicographic tuple, lower is better; values are recomputed from confirmed terms | shared by deterministic schedules and AI proposals (AGT-009) |
+| `compare_plans(left, right, …) → -1, 0, or 1` | deterministic comparison using `score` | choose between proposals |
+| `binding_constraints(plan, …) → BindingConstraintDetail[]` | constraint name, request, day, observed value and limit | shown in the "Why" panel |
+| `exception_values(requests, snapshot, policy) → ExceptionValue[]` | potential request value when the Owner grants the required per-request exception | M07-D9 exception drafts |
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
+| `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
 
 Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
 Pydantic raises `ValidationError` while constructing input models; engine entry points defensively
@@ -181,7 +186,7 @@ value(p) = discount(p) − late(p)
 
 ### 8.3 Baseline B1 — EDF
 
-Sort by `(net_due_day, approved_seq)`. For each day from today, take requests in order while: payee active that day, per-request cap respected (or exception granted), daily pay cap not exceeded, refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day; anything not placed in the horizon is `Infeasible` with its first blocking reason.
+Sort by `(net_due_day, approved_seq, id)` (the id keeps ties deterministic, M07-D7). For each day of the 30-day rolling horizon from today, take requests in order while: payee known (else `PAYEE_UNKNOWN`) and active that day, per-request cap respected for the amount actually paid that day, i.e. `pay_amount(r, d)` with early or legacy-discount amounts (or exception granted, else `NEEDS_EXCEPTION`), daily pay cap not exceeded (`OVER_DAILY_LIMIT`), refill feasible (§8.1) with the cumulative source drawdown. Unplaced requests roll to the next day, including past their due day; anything not placed in the horizon is `Infeasible` with its first blocking reason. The objective's second term counts only deadlines some schedule could meet: payee known and active by the due day, due day not already past, and no exception needed.
 
 ### 8.4 Optimizer B2 — CP-SAT model (M07-D5)
 
@@ -205,11 +210,49 @@ Sort by `(net_due_day, approved_seq)`. For each day from today, take requests in
 
 Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a share of the time limit (default 5 s total). **Determinism:** `num_workers = 1`, fixed `random_seed`, inputs sorted by id (M07-D7). **Fallback:** status `UNKNOWN`/error/no solution in time ⇒ return EDF with `status = FALLBACK` and log it.
 
-**Oracle (tests):** enumerate all day assignments for N ≤ 8 requests and horizon ≤ 5 days; CP-SAT must match its objective on generated cases (hypothesis).
+**Implementation notes (ENG-007, `engine/cpsat.py`):** payments are ordered into slots (days non-decreasing, order inside a day free) so wallet balances, the daily pay/refill counters and the source drawdown are exact. `ref[r]` is restricted to the two BR-032 outcomes, the shortage or the bounded top-up to target when the refill caps allow it, which is the oracle's search space, so objectives match it exactly. Inputs whose magnitudes could overflow 64 bits, solver errors, an exhausted `time_limit_seconds` (budget for the whole call, split evenly over the four stages), or a result worse than EDF return the EDF schedule with `FALLBACK`; a stage that stops with a solution that is not proven optimal yields `FEASIBLE`. Optional `fee_in_asset` / `fee_hold_today` implement the fee term of section 8.2. The approval-order tie-break uses exact lexicographic weights and degrades to a linear rank when they would not fit in 64 bits (approval-order dominance is then no longer strict). The slot model has O(N^2) booleans and constraints, so large batches are expected to exhaust the time limit and return the EDF fallback.
+
+**Oracle (tests and benchmarks):** search, with memoized dynamic programming, every assignment of at most 8 requests to a day through the latest due or payee activation day (maximum 5 days) or to the unscheduled set, every same-day payment order, and for each payment both BR-032 refill outcomes (`preferred` top-up or `shortage` only). Refill amounts between those two (for example pre-funding a later request) are not searched. Inputs outside either bound are rejected. The oracle shares EDF's payment feasibility transition and BR-052 scoring helper. Reusable bounded Hypothesis inputs for the oracle and ENG-007 equivalence tests live in `packages/py-core/tests/strategies/financial_engine.py`; the oracle is never called from production paths.
 
 ### 8.5 Fingerprint
 
 `normalize(s) = s.strip().casefold()` then remove Unicode whitespace and `-`, `_`, `/`, `.`, `#`. Leading zeros are preserved. `fingerprint = keccak256(abi.encode(normalize(vendor_id), normalize(invoice_no), amount, asset))`, where `amount` is integer base units encoded as `uint256` and `asset` is an EVM `address`. Vectors are shared with the contracts (SC-017) and the web.
+
+### 8.7 Fiat FX safety core (ENG-L02)
+
+`FiatApproval` binds the fiat amount in minor units, the reference `FxRate`, the
+maximum stablecoin amount in token base units and the tolerated rate deviation in
+basis points. `FxRate` is an exact rational number of stablecoin base units per fiat
+minor unit. `FxPolicy` names the configured source, maximum quote age and USD peg
+deviation. `FxQuote` supplies that source's observed rate, timestamp and stablecoin
+USD price in microdollars per whole token (1,000,000 = $1).
+
+At the execution boundary, the caller obtains a fresh quote and invokes
+`propose_fiat_payment`. It rejects a mismatched source/pair, future or stale quote,
+rate outside `abs(execution_rate / approved_rate - 1) ≤ tolerance_bps / 10000`,
+and `abs(USD price - $1) > depeg_threshold_bps / 10000`. Rational comparison uses
+integer cross multiplication. Conversion is `ceil(fiat_minor_amount × quote_rate)`
+to token base units. If that exceeds the approved token maximum, the function
+raises `FiatPaymentBlocked(APPROVED_MAX_EXCEEDED)` instead of clipping the payment.
+The caller must route any block to review, bind the returned token amount to the
+approval, and repeat this check immediately before PAY. Wrong argument types raise
+`TypeError` and malformed values raise `ValidationError`/`ValueError`;
+`FiatPaymentBlocked` is not a `ValueError`, so callers can tell bad input from a review
+block. The depeg guard assumes a USD-pegged stablecoin (USDC). Invoice persistence,
+approval signing and payment orchestration belong to INV-L04.
+
+### 8.6 Seven-day liquidity forecast
+
+`forecast(snapshot, requests, policy, days=7)` runs the deterministic EDF schedule and
+replays its payments and refills in scheduler order. It returns each wallet's end-of-day
+balance, days when a wallet is below its buffer, and the refills selected by the same
+source-buffer, refill-bound, per-request, and daily-limit rules as scheduling. The
+window can be set from 1 to 30 days. Approved obligations that remain unpaid after
+their due day are reported as `unpaid_due` (`amount_due`: the payable amount plus any
+accrued late fee) and `shortfall_days`, and count against their paying wallet when
+deciding buffer hits, so a wallet that cannot cover an upcoming invoice shows up even
+though the scheduler never plans that payment. `snapshot.source` must be Safe T; scheduled payments
+outside the requested window are listed in `deferred_request_ids`.
 
 ## 9. Configuration and defaults
 
@@ -253,6 +296,7 @@ Stage *k* adds the optimum of stage *k−1* as a constraint. Each stage gets a s
 | Determinism | identical input ⇒ identical output | ENG-007 |
 | Timeout/fallback | forced tiny limit ⇒ FALLBACK = EDF | ENG-007 |
 | Vectors | fingerprint matches Solidity | ENG-009 |
+| Forecast | hand-computed balances; refills within source buffer and refill limits | ENG-011 |
 | Coverage | ≥ 85 % lines (NFR-MAINT-03) | CI |
 
 ## 13. Tickets (order of work)
@@ -299,6 +343,6 @@ Example: Safe 6,000, aUSDC 0, floor 1,000, approved unpaid 2,000 → Required 3,
 
 **Value of paying on day p (replaces §8.2's discount term):** `saving(p) = amount − pay_amount(p)` (exact, from the approval) minus late fees; early payment is preferred only if `saving − fee_in_asset − lost_supply_interest > 0`, where `lost_supply_interest = floor(pay_amount × supply_rate_bps × days_earlier / (10000 × 365))`. The CP-SAT objective keeps its order (deadlines → value → transactions → approval order) with value now = savings − late fees − gas − lost interest + expected supply interest of the cash kept supplied.
 
-**Borrow proposal (F-069):** `propose_borrow(snapshot, deficit, until_day)` → amount, borrow cost to repayment `= amount × borrow_rate_bps × days / (10000 × 365)`, withdraw cost (lost interest), health factor before/after (from Aave account data), reason. Never part of an executable plan without authorization (BR-044).
+**Borrow proposal (F-069):** `propose_borrow(snapshot, deficit, until_day)` returns a `BorrowProposal` with amount, borrow cost to repayment `= amount × borrow_rate_bps × days / (10000 × 365)`, estimated supply interest lost by withdrawing the same amount, and the health factor before/after borrowing. Health factor after borrowing is estimated as `health_factor_before × debt / (debt + amount)` when an existing debt position is present; otherwise it stays unknown. The reason always states whether borrowing costs less or more than withdrawing, then adds a note when the health factor after borrowing is unknown, below 1.0 (risk review required), or below 1.1 (advisory liquidation-risk warning; it changes no decision). The proposal is a separate analysis model and cannot be inserted into `Schedule.items`; it never creates a transaction. Borrow execution requires a separate owner authorization (BR-044).
 
 **Tickets:** ENG-013 reserve and liquidity decision, ENG-014 borrow proposal; ENG-001/005/007/011 revised.

@@ -8,6 +8,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.invoices.models import (
     TERMINAL_REQUEST_STATUSES,
     PaymentRequest,
@@ -18,17 +19,18 @@ from treasurypilot_core.fingerprint import fingerprint
 from treasurypilot_core.money import BaseUnits
 
 
-class DuplicateFingerprintConflict(Exception):
+class DuplicateFingerprintConflict(AuthFailure):
     """An active request in the same treasury already uses this fingerprint."""
 
-    status_code = 409
-    code = "DUPLICATE_FINGERPRINT"
-
     def __init__(self, existing_request_id: uuid.UUID) -> None:
+        super().__init__(
+            status=409,
+            code="DUPLICATE_FINGERPRINT",
+            title="Duplicate invoice",
+            detail="An active request already uses this invoice fingerprint.",
+            extensions={"existingRequestId": str(existing_request_id)},
+        )
         self.existing_request_id = existing_request_id
-        self.existingRequestId = existing_request_id
-        self.detail = "An active payment request already uses this invoice fingerprint."
-        super().__init__(self.detail)
 
 
 class DuplicateAllowance(Protocol):
@@ -54,6 +56,15 @@ class DenyDuplicateAllowance:
         return False
 
 
+def compute_fingerprint(
+    vendor_ref: str, invoice_no: str, amount: int, asset_address: bytes | None
+) -> bytes:
+    """Single source of the canonical fingerprint for create, edit and submit."""
+    if asset_address is None or len(asset_address) != 20:
+        raise ValueError("Invoice fingerprints require an ERC-20 asset address.")
+    return fingerprint(vendor_ref, invoice_no, BaseUnits(amount), "0x" + asset_address.hex())
+
+
 async def request_fingerprint(session: AsyncSession, request: PaymentRequest) -> bytes:
     """Recompute the canonical fingerprint from the request's current bound fields."""
     vendor_ref, asset_address = (
@@ -63,14 +74,7 @@ async def request_fingerprint(session: AsyncSession, request: PaymentRequest) ->
             .where(Vendor.id == request.vendor_id)
         )
     ).one()
-    if asset_address is None or len(asset_address) != 20:
-        raise ValueError("Invoice fingerprints require an ERC-20 asset address.")
-    value = fingerprint(
-        vendor_ref,
-        request.invoice_no,
-        BaseUnits(int(request.amount)),
-        "0x" + asset_address.hex(),
-    )
+    value = compute_fingerprint(vendor_ref, request.invoice_no, int(request.amount), asset_address)
     request.fingerprint = value
     return value
 

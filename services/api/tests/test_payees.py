@@ -18,7 +18,8 @@ from treasurypilot_api.compliance.screening import (
     normalize_address,
 )
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.access import MemberContext, require_member
+from treasurypilot_api.identity.auth import SessionAccess, UserRecord
+from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.main import create_app
 from treasurypilot_api.mandate.models import OobMethod, PayeeStatus, ScreeningResult
 from treasurypilot_api.mandate.payees import (
@@ -52,12 +53,13 @@ class MemoryScreeningRepository:
         self.rows: list[ScreeningRecord] = []
 
     async def latest(
-        self, *, address: bytes, chain_id: int, provider: str
+        self, *, organization_id: uuid.UUID, address: bytes, chain_id: int, provider: str
     ) -> ScreeningRecord | None:
         matches = [
             r
             for r in self.rows
-            if (r.address, r.chain_id, r.provider) == (address, chain_id, provider)
+            if (r.organization_id, r.address, r.chain_id, r.provider)
+            == (organization_id, address, chain_id, provider)
         ]
         return matches[-1] if matches else None
 
@@ -272,6 +274,14 @@ class FakeCipher:
         return ciphertext.decode()[::-1]
 
 
+def _member_access(organization_id: uuid.UUID, roles: frozenset[str]) -> MemberAccess:
+    access = SessionAccess(
+        user=UserRecord(USER_ID, "member@example.test", None, "active"),
+        session_id=uuid.UUID("00000000-0000-4000-8000-000000000444"),
+    )
+    return MemberAccess(access=access, organization_id=organization_id, roles=roles)
+
+
 def make_client(
     *,
     provider: object | None = None,
@@ -290,8 +300,8 @@ def make_client(
         field_cipher=FakeCipher() if cipher else None,
     )
 
-    async def member_override(organization_id: uuid.UUID) -> MemberContext:
-        return MemberContext(organization_id, USER_ID, roles)
+    async def member_override(organization_id: uuid.UUID) -> MemberAccess:
+        return _member_access(organization_id, roles)
 
     app.dependency_overrides[require_member] = member_override
     return TestClient(app), store
@@ -495,8 +505,8 @@ def test_proposing_requires_operator_admin_or_owner_and_screening() -> None:
         payee_repository=cast(object, MemoryStore(MemoryScreeningRepository())),
     )
 
-    async def member(organization_id: uuid.UUID) -> MemberContext:
-        return MemberContext(organization_id, USER_ID, frozenset({"Owner"}))
+    async def member(organization_id: uuid.UUID) -> MemberAccess:
+        return _member_access(organization_id, frozenset({"Owner"}))
 
     unscreened.dependency_overrides[require_member] = member
     with TestClient(unscreened) as client:
