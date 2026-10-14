@@ -77,8 +77,22 @@ class _BrokenLimiter:
         raise OSError("limiter is down")
 
 
-def _request(session: _Session, limiter: object | None = _Limiter()) -> Request:
-    state = SimpleNamespace(request_sessions=_SessionFactory(session), api_key_rate_limiter=limiter)
+class _Members:
+    def __init__(self, roles: frozenset[str] | None = frozenset({"OrgAdmin"})) -> None:
+        self.roles = roles
+
+    async def member_roles(self, **_: object) -> frozenset[str] | None:
+        return self.roles
+
+
+def _request(
+    session: _Session, limiter: object | None = _Limiter(), members: _Members | None = None
+) -> Request:
+    state = SimpleNamespace(
+        request_sessions=_SessionFactory(session),
+        api_key_rate_limiter=limiter,
+        organization_repository=members or _Members(),
+    )
     return cast(Request, SimpleNamespace(app=SimpleNamespace(state=state)))
 
 
@@ -146,7 +160,7 @@ def test_api_key_auth_is_org_scoped_and_create_only() -> None:
                 uuid.uuid4(), _request(_Session(key)), authorization=f"Bearer {raw}"
             )
         )
-    assert error.value.code == "API_KEY_ORG_MISMATCH"
+    assert error.value.code == "API_KEY_INVALID"  # wrong org must not reveal a valid key
 
     key.scopes = ["invoices:approve"]
     with pytest.raises(AuthFailure) as error:
@@ -154,6 +168,48 @@ def test_api_key_auth_is_org_scoped_and_create_only() -> None:
             require_invoice_create(_ORG, _request(_Session(key)), authorization=f"Bearer {raw}")
         )
     assert error.value.code == "API_KEY_SCOPE_REQUIRED"
+
+
+def test_api_key_stops_working_when_creator_is_no_longer_an_admin() -> None:
+    raw = "tp_live_creator_gone"
+    key = InvoiceApiKey(
+        id=uuid7(),
+        org_id=_ORG,
+        name="AP",
+        prefix=raw[:16],
+        token_hash=hashlib.sha256(raw.encode()).digest(),
+        scopes=[CREATE_SCOPE],
+        created_by=_USER,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    for roles in (None, frozenset({"Operator"})):
+        with pytest.raises(AuthFailure) as error:
+            asyncio.run(
+                require_invoice_create(
+                    _ORG,
+                    _request(_Session(key), members=_Members(roles)),
+                    authorization=f"Bearer {raw}",
+                )
+            )
+        assert error.value.code == "API_KEY_INVALID"
+
+
+def test_last_used_at_is_only_written_once_a_minute() -> None:
+    raw = "tp_live_throttle"
+    key = InvoiceApiKey(
+        id=uuid7(),
+        org_id=_ORG,
+        name="AP",
+        prefix=raw[:16],
+        token_hash=hashlib.sha256(raw.encode()).digest(),
+        scopes=[CREATE_SCOPE],
+        created_by=_USER,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+        last_used_at=datetime.now(UTC) - timedelta(seconds=5),
+    )
+    session = _Session(key)
+    asyncio.run(require_invoice_create(_ORG, _request(session), authorization=f"Bearer {raw}"))
+    assert session.committed is False
 
 
 def test_api_key_auth_rejects_expired_key() -> None:
@@ -219,6 +275,54 @@ def test_api_key_auth_fails_closed_when_the_rate_limiter_raises() -> None:
             )
         )
     assert error.value.code == "RATE_LIMITER_UNAVAILABLE"
+
+
+def test_bulk_consumes_a_rate_limit_token_per_row_and_survives_unexpected_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = RequestBulkCreate(
+        requests=[
+            RequestCreate(
+                treasury_id=uuid7(),
+                vendor_id=uuid7(),
+                payee_id=uuid7(),
+                invoice_no=number,
+                issue_date=date(2026, 10, 1),
+                due_date=date(2026, 10, 31),
+                amount="10",
+                asset_id=uuid7(),
+            )
+            for number in ("INV-1", "INV-2", "INV-3")
+        ]
+    )
+    hits: list[object] = []
+
+    class _CountingLimiter:
+        async def hit(self, key: object, **_: object) -> RateLimitResult:
+            hits.append(key)
+            return RateLimitResult(allowed=False, retry_after=1)
+
+    async def fake_create_request(**kwargs: object) -> dict[str, object]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(invoice_requests, "create_request", fake_create_request)
+    results = asyncio.run(
+        invoice_requests.create_requests_bulk(
+            _ORG,
+            payload,
+            _request(_Session(), limiter=_CountingLimiter()),
+            idempotency_key="k" * 255,
+            member=invoice_requests.InvoiceCreateAccess(_ORG, _USER, uuid7()),
+        )
+    )
+    view = cast(dict[str, Any], results)
+    assert len(hits) == 2  # row 0 was paid for by the dependency
+    assert [item["status"] for item in view["items"]] == [500, 429, 429]
+
+
+def test_derived_idempotency_keys_fit_the_column() -> None:
+    assert len(invoice_requests._scoped_key("api", "id", "k" * 255)) <= 255
+    assert invoice_requests._scoped_key("short", "1") == "short:1"
 
 
 def test_bulk_returns_each_row_result_after_database_conflict(

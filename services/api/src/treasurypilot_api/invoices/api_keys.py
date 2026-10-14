@@ -15,10 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
-from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
+from treasurypilot_api.identity.rbac import MemberAccess, _lookup, require_member, require_role
 from treasurypilot_api.invoices.models import InvoiceApiKey
 
 CREATE_SCOPE = "invoices:create"
+KEY_PREFIX = "tp_live_"
 router = APIRouter(prefix="/v1/orgs/{organization_id}/api-keys", tags=["invoice API keys"])
 _require_admin = require_role(OrganizationRole.ORG_ADMIN)
 
@@ -52,13 +53,48 @@ def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
     return cast(async_sessionmaker[AsyncSession], sessions)
 
 
+async def hit_api_key_rate_limit(request: Request, key_id: uuid.UUID) -> None:
+    """Consume one rate-limit token for the key; bulk callers hit once per row."""
+    limiter = getattr(request.app.state, "api_key_rate_limiter", None)
+    if limiter is None:
+        raise _fail(
+            503,
+            "RATE_LIMITER_UNAVAILABLE",
+            "Service unavailable",
+            "Request rate limiting is unavailable.",
+        )
+    try:
+        result = await limiter.hit(
+            f"invoice-api-key:{key_id}", limit=60, window=timedelta(minutes=1)
+        )
+    except Exception:
+        # Do not allow an integration key to bypass its rate limit when the
+        # configured limiter fails for any reason.
+        raise _fail(
+            503,
+            "RATE_LIMITER_UNAVAILABLE",
+            "Service unavailable",
+            "Request rate limiting is unavailable.",
+        ) from None
+    if not result.allowed:
+        raise AuthFailure(
+            status=429,
+            code="RATE_LIMITED",
+            title="Too many requests",
+            detail="This API key exceeded its request rate limit.",
+            retry_after=result.retry_after,
+        )
+
+
 async def require_invoice_create(
     organization_id: uuid.UUID,
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> InvoiceCreateAccess:
     """Accept an operator session or a narrowly scoped inbound key."""
-    if authorization is None:
+    # Only `Bearer tp_live_...` takes the API-key path; anything else is session auth.
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.casefold() != "bearer" or not token.startswith(KEY_PREFIX):
         member = await require_member(organization_id, request)
         allowed = {OrganizationRole.OPERATOR.value, OrganizationRole.ORG_ADMIN.value}
         if not member.roles.intersection(allowed):
@@ -70,23 +106,19 @@ async def require_invoice_create(
             )
         return InvoiceCreateAccess(member.organization_id, member.user_id)
 
-    scheme, _, token = authorization.partition(" ")
-    if scheme.casefold() != "bearer" or not token.startswith("tp_live_"):
-        raise _fail(401, "API_KEY_INVALID", "API key invalid", "The bearer credential is invalid.")
     digest = hashlib.sha256(token.encode()).digest()
     async with _sessions(request)() as session:
         key = await session.scalar(select(InvoiceApiKey).where(InvoiceApiKey.token_hash == digest))
         now = datetime.now(UTC)
-        if key is None or key.revoked_at is not None or (key.expires_at and key.expires_at <= now):
+        # A wrong-org key gets the same answer as an unknown one so validity never leaks.
+        if (
+            key is None
+            or key.org_id != organization_id
+            or key.revoked_at is not None
+            or (key.expires_at and key.expires_at <= now)
+        ):
             raise _fail(
                 401, "API_KEY_INVALID", "API key invalid", "The bearer credential is invalid."
-            )
-        if key.org_id != organization_id:
-            raise _fail(
-                403,
-                "API_KEY_ORG_MISMATCH",
-                "API key organization mismatch",
-                "This key is not valid for this organization.",
             )
         if CREATE_SCOPE not in key.scopes:
             raise _fail(
@@ -95,39 +127,20 @@ async def require_invoice_create(
                 "API key scope required",
                 "The key lacks invoices:create.",
             )
-        limiter = getattr(request.app.state, "api_key_rate_limiter", None)
-        if limiter is None:
+        # The key acts as its creator, so it dies with the creator's admin membership.
+        roles = await _lookup(request).member_roles(
+            organization_id=key.org_id, user_id=key.created_by
+        )
+        if roles is None or OrganizationRole.ORG_ADMIN.value not in roles:
             raise _fail(
-                503,
-                "RATE_LIMITER_UNAVAILABLE",
-                "Service unavailable",
-                "Request rate limiting is unavailable.",
+                401, "API_KEY_INVALID", "API key invalid", "The bearer credential is invalid."
             )
-        try:
-            result = await limiter.hit(
-                f"invoice-api-key:{key.id}", limit=60, window=timedelta(minutes=1)
-            )
-        except Exception:
-            # Do not allow an integration key to bypass its rate limit when the
-            # configured limiter fails for any reason.
-            raise _fail(
-                503,
-                "RATE_LIMITER_UNAVAILABLE",
-                "Service unavailable",
-                "Request rate limiting is unavailable.",
-            ) from None
-        if not result.allowed:
-            raise AuthFailure(
-                status=429,
-                code="RATE_LIMITED",
-                title="Too many requests",
-                detail="This API key exceeded its request rate limit.",
-                retry_after=result.retry_after,
-            )
-        key.last_used_at = now
-        access = InvoiceCreateAccess(key.org_id, key.created_by, key.id)
-        await session.commit()
-        return access
+        await hit_api_key_rate_limit(request, key.id)
+        # Throttled so a busy integration does not write on every request.
+        if key.last_used_at is None or now - key.last_used_at >= timedelta(minutes=1):
+            key.last_used_at = now
+            await session.commit()
+        return InvoiceCreateAccess(key.org_id, key.created_by, key.id)
 
 
 class ApiKeyView(ApiModel):

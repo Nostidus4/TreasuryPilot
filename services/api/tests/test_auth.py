@@ -252,19 +252,21 @@ def make_harness(
     repository = MemoryAuthRepository(user)
     sender = CaptureSender(fail=sender_fails)
     secret = b"deterministic-test-secret-value!"
+    limiter = rate_limiter or MemoryRateLimiter(clock)
     service = AuthService(
         repository=repository,
         sender=sender,
         token_codec=SessionTokenCodec(secret),
         client_hash_secret=secret,
         magic_link_base_url="https://app.example.test/auth/verify",
-        rate_limiter=rate_limiter or MemoryRateLimiter(clock),  # type: ignore[arg-type]
+        rate_limiter=limiter,  # type: ignore[arg-type]
         clock=clock,
     )
     settings = Settings(environment="test", session_secret=secret.decode())
     app = create_app(
         settings=settings,
         auth_service=service,
+        rate_limiter=limiter,  # type: ignore[arg-type]
         organization_repository=organization_repository,  # type: ignore[arg-type]
         wallet_repository=wallet_repository,  # type: ignore[arg-type]
         audit_repository=audit_repository,  # type: ignore[arg-type]

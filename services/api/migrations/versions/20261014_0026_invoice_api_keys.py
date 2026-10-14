@@ -6,8 +6,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0022"
-down_revision: str | None = "20261014_0021"
+revision: str = "20261014_0026"
+down_revision: str | None = "20261014_0025"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
@@ -42,8 +42,24 @@ def upgrade() -> None:
         sa.UniqueConstraint("token_hash", name="uq_invoice_api_keys_token_hash"),
     )
     op.create_index("ix_invoice_api_keys_org", "invoice_api_keys", ["org_id"])
+    op.add_column(
+        "payment_requests",
+        sa.Column("created_via_api_key_id", postgresql.UUID(as_uuid=True)),
+    )
+    op.create_foreign_key(
+        "fk_payment_requests_created_via_api_key",
+        "payment_requests",
+        "invoice_api_keys",
+        ["created_via_api_key_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint(
+        "fk_payment_requests_created_via_api_key", "payment_requests", type_="foreignkey"
+    )
+    op.drop_column("payment_requests", "created_via_api_key_id")
     op.drop_index("ix_invoice_api_keys_org", table_name="invoice_api_keys")
     op.drop_table("invoice_api_keys")

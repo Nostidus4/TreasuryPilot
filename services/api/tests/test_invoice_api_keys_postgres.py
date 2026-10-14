@@ -44,6 +44,11 @@ class _Clock:
         return datetime.now(UTC)
 
 
+class _Members:
+    async def member_roles(self, **_: object) -> frozenset[str]:
+        return frozenset({"OrgAdmin"})
+
+
 @pytest.fixture(scope="module")
 def database_sessions() -> Iterator[async_sessionmaker[AsyncSession]]:
     if "TP_TEST_DATABASE_URL" not in os.environ:
@@ -132,7 +137,9 @@ def test_api_key_scope_and_approval_boundary_with_postgres(
         SimpleNamespace(
             app=SimpleNamespace(
                 state=SimpleNamespace(
-                    request_sessions=database_sessions, api_key_rate_limiter=limiter
+                    request_sessions=database_sessions,
+                    api_key_rate_limiter=limiter,
+                    organization_repository=_Members(),
                 )
             )
         ),
