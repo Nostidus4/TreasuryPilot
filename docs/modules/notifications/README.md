@@ -11,10 +11,11 @@ M13 makes sure **the right person learns about the right event quickly, without 
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Domain event bus (outbox table + publisher) | Email notifications, webhooks, Slack/Lark/WeCom, preferences (Later NTF-L01…L04) |
+| Domain event bus (outbox table + publisher) | Email notifications, webhooks, Slack/Lark/WeCom |
 | Routing event → roles, dedup by event id | |
 | In-app notifications + SSE stream for live status | |
 | Telegram channel with linking, minimal content, opt-in amounts (P2) | |
+| Per-user channel/category preferences and quiet hours (Later NTF-L04) | |
 
 ## 2. Features, requirements and rules
 
@@ -36,6 +37,7 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 | `notifications` | id, org_id, user_id, event_id, type, title, body, link, severity enum(INFO, ACTION, CRITICAL), read_at — unique(user_id, event_id) |
 | `notification_channels` | id, user_id, kind enum(TELEGRAM), target (encrypted chat id), verified_at, show_amounts bool |
 | `telegram_link_codes` | code_hash, user_id, expires_at, used_at |
+| `notification_preferences` | user_id, channels jsonb, categories jsonb, quiet_hours_start, quiet_hours_end, timezone |
 
 ## 5. Routing table (M1)
 
@@ -67,6 +69,7 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 | POST | `/me/channels/telegram/link-code` → `{code, botUrl}` | auth |
 | POST | `/integrations/telegram/webhook` (secret header) | Telegram |
 | PATCH | `/me/channels/{id}` `{showAmounts}` | auth |
+| GET/PUT | `/me/notification-preferences` | auth |
 
 SSE event types: `request.status`, `plan.status`, `operation.status`, `review.created`, `notification.created`, `treasury.status`.
 
@@ -82,6 +85,7 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 - `NeedsReview:<Role>` encodes the routed M12 role in the event type (for example, `NeedsReview:Finance`); event payloads still contain IDs only.
 - If `ownerUserIds` is missing or empty, the event goes to every Owner and a warning is logged, so a pending signature never reaches nobody.
 - `ApprovalNeeded` carries `excludeUserIds` (the request's creator and last editor) unless the org has solo mode on, so people maker-checker forbids from approving get no action item.
+- Preferences default to enabled. The `mandatory` category (pause, unexpected outflow, discrepancy, coverage drop, unknown operation, and circuit breaker events) always delivers even if a channel is disabled. Unknown event types default to mandatory until explicitly classified. Quiet hours defer non-mandatory in-app inbox rows until the next quiet-hours end in the user's IANA timezone. Category/channel preferences currently apply to in-app notifications; email and Telegram toggles are persisted for their later senders.
 - **SSE stream (NTF-002):** `GET /v1/orgs/{o}/events` is authenticated and org-scoped (404 for non-members). It polls the `domain_events` and `notifications` tables every 1 s from a resumable cursor, so delivery does not depend on Redis and a status change reaches a connected client well inside 2 s. Each frame's `id` is the cursor `<event uuid7>.<notification micros>.<notification uuid>`; a client reconnecting with `Last-Event-ID` receives everything after it, and a fresh connection starts at "now" (history comes from `GET /notifications`). Frames: `request.status` (payment_request), `plan.status`, `operation.status`, `review.created`, `treasury.status` (by event `entity_type`) and `notification.created` (the caller's own rows only). Data is ids only (`eventId`, `eventType`, `entityType`, `entityId`, `treasuryId`, `requestId`/`planId`/`operationId`/`reviewItemId`, `at`); recipient lists such as `excludeUserIds` and `creatorId` are never forwarded. Heartbeat comment every 15 s; a connection ends after 15 min and `retry: 2000` makes the browser resume. Clients whose stream fails fall back to polling `GET /notifications?unread=true` every 10 s (M13-D8). **Decision: the stream keeps DB polling and does not use Redis pub/sub.** It meets the 2 s target and survives restarts and missed messages; Redis may later be added only as a wake-up signal (to poll sooner), never as the source of truth. **Out-of-order commits:** concurrent transactions can commit after a later-keyed row was already streamed, so each poll re-queries from a look-back window (5 s) behind the cursor and skips ids already sent on that connection (bounded in-memory set, 1000 ids per source). The cursor never moves backwards and its format is unchanged. A fresh connection marks rows inside the window as already seen; a resumed connection (`Last-Event-ID`) starts with an empty set, so it may re-send up to 5 s of frames. Frame payload ids (`eventId`, `notificationId`, entity ids) are stable, so the web client must de-duplicate on them.
 - `POST /notifications/read {ids}` (up to 100) and `POST /notifications/{id}/read` only touch the caller's own rows in that org; ids that are not theirs match nothing (404 for the single-id form).
 - The publisher (beat, every 1 s, task expiry 2 s) routes each event in its own savepoint with one `INSERT … SELECT` per event. An event that cannot be routed is dead-lettered (`failed_at`, `last_error`) and logged instead of blocking the outbox; unknown event types or review roles fall back to the CRITICAL policy with a warning, and an event with no recipients is logged. Each worker process reuses one connection pool.

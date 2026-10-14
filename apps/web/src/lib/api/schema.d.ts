@@ -225,6 +225,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/notification-preferences': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Notification Preferences */
+    get: operations['get_notification_preferences_v1_me_notification_preferences_get'];
+    /** Put Notification Preferences */
+    put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/wallets': {
     parameters: {
       query?: never;
@@ -1989,12 +2007,39 @@ export interface components {
        */
       validFrom: string;
     };
+    /**
+     * NotificationCategory
+     * @enum {string}
+     */
+    NotificationCategory: 'mandatory' | 'approvals' | 'payments' | 'operations';
+    /**
+     * NotificationChannel
+     * @enum {string}
+     */
+    NotificationChannel: 'in_app' | 'email' | 'telegram';
     /** NotificationList */
     NotificationList: {
       /** Items */
       items: components['schemas']['NotificationView'][];
       /** Unreadcount */
       unreadCount: number;
+    };
+    /** NotificationPreferencesView */
+    NotificationPreferencesView: {
+      /** Categories */
+      categories: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd: string | null;
+      /** Quiethoursstart */
+      quietHoursStart: string | null;
+      /** Timezone */
+      timezone: string;
     };
     /** NotificationView */
     NotificationView: {
@@ -2535,6 +2580,30 @@ export interface components {
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
     };
+    /**
+     * UpdateNotificationPreferences
+     * @description PUT body. Omitted fields keep their stored value (the defaults below only
+     *     describe the schema); send ``null`` quiet hours to clear them.
+     */
+    UpdateNotificationPreferences: {
+      /** Categories */
+      categories?: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels?: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd?: string | null;
+      /** Quiethoursstart */
+      quietHoursStart?: string | null;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone: string;
+    };
     /** UploadResponse */
     UploadResponse: {
       /**
@@ -3068,6 +3137,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  get_notification_preferences_v1_me_notification_preferences_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+    };
+  };
+  put_notification_preferences_v1_me_notification_preferences_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotificationPreferences'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
