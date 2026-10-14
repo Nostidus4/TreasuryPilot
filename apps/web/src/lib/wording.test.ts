@@ -1,94 +1,55 @@
 import { expect, test } from 'vitest';
 
 import '@/lib/i18n';
+import type { StepStatus } from '@/lib/api/types';
 import {
   governanceStatus,
+  governanceStatuses,
   mandateStatus,
+  mandateStatuses,
   payeeStatus,
+  payeeStatuses,
   planStatus,
+  planStatuses,
   requestStatus,
+  requestStatuses,
   stepStatus,
   treasuryStatus,
+  treasuryStatuses,
 } from '@/lib/status';
 
 /**
  * Status-wording checklist (docs/modules/web §5, M16-D4, NFR-UX-04), signed
  * off in docs/modules/web/wording-checklist.md. Every status label the UI can
- * show is checked, not only the on-chain step states.
+ * show is checked, not only the on-chain step states. The lists are derived
+ * from the exhaustive status tables, so a new state is covered automatically.
  */
-const labels = (list: Array<{ label: string; tone: string }>) => list;
+const keysOf = <S extends string>(table: Record<S, unknown>) =>
+  Object.keys(table) as S[];
+
+// `stepStatus` is a switch, so the compiler enforces this list is complete.
+const stepStates = Object.keys({
+  Planned: 0,
+  Submitted: 0,
+  Pending: 0,
+  Confirmed: 0,
+  Verified: 0,
+  Final: 0,
+  Dropped: 0,
+  Replaced: 0,
+  Unknown: 0,
+  Failed: 0,
+  Skipped: 0,
+} satisfies Record<StepStatus, 0>) as StepStatus[];
 
 const all = {
-  step: labels(
-    [
-      'Planned',
-      'Submitted',
-      'Pending',
-      'Confirmed',
-      'Verified',
-      'Final',
-      'Dropped',
-      'Replaced',
-      'Unknown',
-      'Failed',
-      'Skipped',
-    ].map((s) => stepStatus(s as Parameters<typeof stepStatus>[0], 3)),
-  ),
-  request: labels(
-    [
-      'Extracting',
-      'Draft',
-      'AwaitingApproval',
-      'ChangesRequested',
-      'Approved',
-      'Scheduled',
-      'InFlight',
-      'Paid',
-      'Rejected',
-      'Cancelled',
-    ].map((s) => requestStatus(s as Parameters<typeof requestStatus>[0])),
-  ),
-  governance: labels(
-    [
-      'AwaitingSignatures',
-      'ReadyToExecute',
-      'Executing',
-      'Executed',
-      'Failed',
-      'Superseded',
-    ].map((s) => governanceStatus(s as Parameters<typeof governanceStatus>[0])),
-  ),
-  plan: labels(
-    [
-      'Proposed',
-      'Validated',
-      'Executing',
-      'Completed',
-      'PartiallyCompleted',
-      'Rejected',
-    ].map((s) => planStatus(s as Parameters<typeof planStatus>[0])),
-  ),
-  payee: labels(
-    [
-      'Screening',
-      'ScreeningHit',
-      'AwaitingVerification',
-      'AwaitingRegistration',
-      'Cooling',
-      'Active',
-      'Deactivated',
-    ].map((s) => payeeStatus(s as Parameters<typeof payeeStatus>[0])),
-  ),
-  mandate: labels(
-    ['Draft', 'PendingActivation', 'Active', 'Superseded', 'Expired'].map((s) =>
-      mandateStatus(s as Parameters<typeof mandateStatus>[0]),
-    ),
-  ),
-  treasury: labels(
-    ['Setup', 'Active', 'PauseRequested', 'Paused'].map((s) =>
-      treasuryStatus(s as Parameters<typeof treasuryStatus>[0]),
-    ),
-  ),
+  step: stepStates.map((s) => stepStatus(s, 3)),
+  request: keysOf(requestStatuses).map(requestStatus),
+  governance: keysOf(governanceStatuses).map(governanceStatus),
+  plan: keysOf(planStatuses).map(planStatus),
+  payee: keysOf(payeeStatuses).map(payeeStatus),
+  mandate: keysOf(mandateStatuses).map(mandateStatus),
+  treasury: keysOf(treasuryStatuses).map(treasuryStatus),
 };
 
 test('no status label anywhere claims safe, done or guaranteed', () => {
@@ -122,4 +83,9 @@ test('in-flight request and governance states do not claim payment', () => {
   );
   expect(requestStatus('Approved').label).not.toMatch(/paid/i);
   expect(requestStatus('Scheduled').label).not.toMatch(/paid/i);
+});
+
+test('Unknown is never styled as a failure', () => {
+  expect(stepStatus('Unknown').tone).not.toBe('danger');
+  expect(stepStatus('Unknown').label).not.toMatch(/fail|error|revert/i);
 });

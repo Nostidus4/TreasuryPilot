@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 
-import { describeViolations, axeViolations } from '@/test/axe';
+import { describeViolations, seriousViolations } from '@/test/axe';
 import { renderApp } from '@/test/render';
 
 const BASE = '/o/org_northwind';
@@ -11,26 +11,19 @@ const T = `${BASE}/t/trs_main`;
 // WEB-022 (#228): no critical axe violations on the three core flows.
 const flows = [
   ['dashboard', T, 'Liquidity'],
-  ['approve', `${BASE}/approvals/req_288`, null],
-  ['exceptions', `${BASE}/review`, null],
+  ['approve', `${BASE}/approvals/req_288`, 'Fields'],
+  ['exceptions', `${BASE}/review`, 'Select an item'],
 ] as const;
 
-for (const [name, path, heading] of flows) {
+for (const [name, path, ready] of flows) {
   test(`the ${name} flow has no critical or serious axe violations`, async () => {
     renderApp(path, { demoWallet: true });
-    if (heading) {
-      await screen.findByRole('heading', { name: heading });
-    } else {
-      await screen.findAllByRole('heading', { level: 1 });
-    }
+    // Wait for content that only exists once the data has loaded.
+    await screen.findAllByText(ready);
     await waitFor(() =>
       expect(document.querySelector('[aria-busy="true"]')).toBeNull(),
     );
-    const serious = (await axeViolations()).filter(
-      (violation) =>
-        violation.impact === 'critical' || violation.impact === 'serious',
-    );
-    expect(describeViolations(serious)).toBe('');
+    expect(describeViolations(await seriousViolations())).toBe('');
   });
 }
 
@@ -41,11 +34,7 @@ test('the notification list passes axe', async () => {
     await screen.findByRole('button', { name: /^notifications/i }),
   );
   await screen.findByText(/mark all read/i);
-  const serious = (await axeViolations()).filter(
-    (violation) =>
-      violation.impact === 'critical' || violation.impact === 'serious',
-  );
-  expect(describeViolations(serious)).toBe('');
+  expect(describeViolations(await seriousViolations())).toBe('');
 });
 
 /** Makes `matchMedia` answer as a 390 px wide phone. */
@@ -84,11 +73,7 @@ test('at 390 px the notifications open as a named bottom sheet that passes axe',
     expect(
       await screen.findByRole('dialog', { name: 'Notifications' }),
     ).toBeInTheDocument();
-    const serious = (await axeViolations()).filter(
-      (violation) =>
-        violation.impact === 'critical' || violation.impact === 'serious',
-    );
-    expect(describeViolations(serious)).toBe('');
+    expect(describeViolations(await seriousViolations())).toBe('');
   } finally {
     restore();
   }
@@ -105,11 +90,7 @@ test('at 390 px the approval screen shows one pane with a way back to the list',
     expect(
       await screen.findByRole('link', { name: /back to the list/i }),
     ).toHaveAttribute('href', `${BASE}/approvals`);
-    const serious = (await axeViolations()).filter(
-      (violation) =>
-        violation.impact === 'critical' || violation.impact === 'serious',
-    );
-    expect(describeViolations(serious)).toBe('');
+    expect(describeViolations(await seriousViolations())).toBe('');
   } finally {
     restore();
   }
@@ -123,7 +104,7 @@ test('keyboard: the skip link is the first stop and jumps to the main region', a
   const skip = screen.getByRole('link', { name: /skip to content/i });
   expect(skip).toHaveFocus();
   await user.keyboard('{Enter}');
-  expect(skip).toHaveAttribute('href', '#main');
+  expect(window.location.hash).toBe('#main');
 });
 
 test('keyboard: the notification popover opens with Enter and closes with Escape, returning focus', async () => {
@@ -149,9 +130,13 @@ test('keyboard: Ctrl+K opens the command menu and Escape closes it', async () =>
   renderApp(T);
   await screen.findByRole('heading', { name: 'Liquidity' });
   await user.keyboard('{Control>}k{/Control}');
-  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(
+    await screen.findByRole('dialog', { name: 'Command menu' }),
+  ).toBeInTheDocument();
   await user.keyboard('{Escape}');
   await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByRole('dialog', { name: 'Command menu' }),
+    ).not.toBeInTheDocument(),
   );
 });
