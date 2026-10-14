@@ -51,7 +51,7 @@ assumptions:
 expected:
   value: '0'
   transaction_count: 0
-  missed_deadlines: 0
+  missed_deadlines: 1
   refills: []
   balances_after:
     T: '1050000000'
@@ -67,7 +67,7 @@ expected:
 expected_b0:
   value: '0'
   transaction_count: 0
-  missed_deadlines: 0
+  missed_deadlines: 1
   refills: []
   balances_after:
     T: '1050000000'

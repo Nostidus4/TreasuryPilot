@@ -124,6 +124,10 @@ def replay(s: dict, steps: list[tuple[int, dict]]) -> dict | None:
         total_value += value(r, day, s["rates"]["supply_rate_bps"])
         txs += 1 + int(refill > 0)
         missed += int(offset(r["due"]) >= 0 and day > offset(r["due"]))
+    # Unserved requests whose deadline has not passed are missed deadlines too, so
+    # the metric is comparable between planners that omit different requests.
+    served = {r["id"] for _, r in steps}
+    missed += sum(1 for r in s["requests"] if r["id"] not in served and offset(r["due"]) >= 0)
     return {
         "value": str(total_value),
         "transaction_count": txs,
@@ -260,19 +264,23 @@ def build(family: str, variant: int, identifier: str) -> dict:
         elif variant == 2:
             t["balances"]["T"] = money(1_200)  # minimum fits; preferred does not
         elif variant == 3:
-            t["limits"]["refill"]["daily"] = money(400)
+            t["limits"]["refill"].update(daily=money(400), per_request=money(400))
             t["used_today"]["refill"] = money(380)  # next-day reset
         s["requests"] = [r1]
     elif family == "discount-vs-deadline":
-        r1["due"], r2["due"] = iso(1), iso(3)
+        r1["due"], r2["due"] = iso(0), iso(3)
         r2.update(early_amount=str(int(r2["amount"]) * 9_000 // 10_000), early_pay_by=iso(0))
         r2["terms"] = {"discount_bps": 1_000, "discount_deadline": iso(0)}
         s["rates"]["supply_rate_bps"] = 500 if variant >= 2 else 0
-        t["limits"]["pay"]["daily"] = r2["early_amount"]
+        # Cap admits r1 or discounted r2 on the discount day, never both; r1 is
+        # due that day. Face-value r2 stays within per_request (no exception).
+        t["limits"]["pay"].update(daily=r2["amount"], per_request=r2["amount"])
         s["requests"] = [r1, r2]
     elif family == "daily-cap-spill":
         r1["due"], r2["due"] = iso(0), iso(1)
-        t["limits"]["pay"]["daily"] = money(350 + variant * 50)
+        t["limits"]["pay"].update(
+            daily=money(350 + variant * 50), per_request=money(350 + variant * 50)
+        )
         t["used_today"]["pay"] = money(250 + variant * 50)
         s["requests"] = [r1, r2]
     elif family == "source-shortage":
@@ -306,13 +314,17 @@ def build(family: str, variant: int, identifier: str) -> dict:
             r2["terms"]["late_fee"]["cap"] = money(2)
         elif variant == 3:
             r1["terms"]["late_fee"] = {"type": "fixed", "amount": money(5)}
-        t["limits"]["pay"]["daily"] = money(350 + variant * 50)
+        t["limits"]["pay"].update(
+            daily=money(350 + variant * 50), per_request=money(350 + variant * 50)
+        )
         s["requests"] = [r1, r2]
     elif family == "ambiguous-priority":
         r1["due"], r2["due"] = iso(1), iso(1)
         r1["terms"]["priority_note"] = "Critical vendor; please prioritize."
         r2["terms"]["priority_note"] = "Urgent: standard service invoice."
-        t["limits"]["pay"]["daily"] = money(350 + variant * 50)
+        t["limits"]["pay"].update(
+            daily=money(350 + variant * 50), per_request=money(350 + variant * 50)
+        )
         s["requests"] = [r1, r2]  # text conveys no new permission/numeric objective
     else:
         s["requests"] = [] if family == "idle-cash-supply" and variant < 2 else [r1]
@@ -349,7 +361,16 @@ def build(family: str, variant: int, identifier: str) -> dict:
             if available >= 500 * UNIT
             else "NONE"
         )
-        amount = withdrawal if deficit else min(available, 5_000 * UNIT) if kind == "SUPPLY" else 0
+        supply_cap = min(
+            int(s["liquidity"]["supply"]["per_request"]), int(s["liquidity"]["supply"]["daily"])
+        )
+        amount = withdrawal if deficit else min(available, supply_cap) if kind == "SUPPLY" else 0
+        s["assumptions"]["liquidity_model"] = (
+            "Withdrawal is capped by a_usdc and pool_available, and a partial withdrawal is "
+            "still executed when it cannot cover the deficit (INSUFFICIENT_LIQUIDITY; requests "
+            "stay blocked, e.g. sc-112). Supply is capped by supply.per_request/daily; "
+            "pool_available is a withdrawal-side limit only and does not bound SUPPLY."
+        )
         s["expected_liquidity"] = {
             "kind": kind,
             "amount": str(amount),
@@ -357,10 +378,10 @@ def build(family: str, variant: int, identifier: str) -> dict:
             "payment_reserve": str(payment_reserve),
             "required_safe_reserve": str(required),
         }
-    # Real mandate configuration requires per-request <= daily, including small
-    # synthetic daily-cap fixtures. These cases must be deployable policies.
-    for limits in t["limits"].values():
-        limits["per_request"] = str(min(int(limits["per_request"]), int(limits["daily"])))
+    # Real mandate configuration requires per-request <= daily. Each family must
+    # choose deployable limits explicitly; nothing is clamped silently.
+    for name, limits in t["limits"].items():
+        assert int(limits["per_request"]) <= int(limits["daily"]), (identifier, name)
     oracle_input = json.loads(json.dumps(s))
     if s.get("expected_liquidity", {}).get("kind") in {"WITHDRAW", "INSUFFICIENT_LIQUIDITY"}:
         oracle_input["treasury"]["balances"]["T"] = str(

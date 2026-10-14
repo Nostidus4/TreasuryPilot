@@ -37,11 +37,19 @@ Required expected fields follow M20. Extensions `approved_seq`, `early_amount`,
 `expected_liquidity` and `expected_b0` make v0.3 options and modelling assumptions
 explicit. Each family includes a boundary/blocking variant, not only easy success.
 
+`missed_deadlines` counts requests paid after a non-past due date plus requests left
+unscheduled whose due date is on/after `as_of`, so omitting a request is never
+scored better than paying it late. Already-late omitted requests are not counted.
+
 Run authoring with `uv run python evals/scenarios/author.py`. It regenerates the
 committed cases deterministically; label changes require review. Numeric examples
 are synthetic, not recommendations for live treasury policy.
 
 ## Exposure and review
+
+`evals/validate.py` regenerates every label with this same `author.py` and compares,
+so green CI detects drift between YAML and author code, not oracle errors. Labels are
+not independently verified; they await second-person review.
 
 These cases were authored by the same AI assistant and are public. `heldout` is
 a family partition for a harness, **not a claim of independent authorship or an
