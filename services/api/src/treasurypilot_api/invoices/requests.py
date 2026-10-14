@@ -43,7 +43,13 @@ from treasurypilot_api.invoices.models import (
     RequestStatusEvent,
     StatusEventActorType,
 )
-from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
+from treasurypilot_api.invoices.state_machine import (
+    RequestTransitionError,
+    SqlAlchemyPayOperationGuard,
+    TransitionAction,
+    TransitionActor,
+    validate_transition,
+)
 from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus, Payee, Vendor
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet, WalletRole
 from treasurypilot_core.domain import PaymentTerms
@@ -57,6 +63,10 @@ from treasurypilot_core.policy.context import RequestView
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
 _require_approver = require_role(OrganizationRole.APPROVER)
+_require_canceller = require_role(
+    OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER
+)
+_require_cancel_tx_actor = require_role(OrganizationRole.APPROVER, OrganizationRole.OWNER)
 
 
 class RequestCreate(ApiModel):
@@ -97,6 +107,10 @@ class ConfirmTermsRequest(ApiModel):
 
 class RequestReason(ApiModel):
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class RenewRequest(ApiModel):
+    due_date: date | None = None
 
 
 class FlagAcknowledgment(ApiModel):
@@ -1092,6 +1106,263 @@ async def request_changes(
         actor=member,
         reason=payload.reason,
         require_checker=True,
+    )
+
+
+async def _lifecycle_transition(
+    *,
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    expected_version: int,
+    member: MemberContext,
+    target: RequestStatus,
+    action: TransitionAction,
+    reason: str,
+) -> dict[str, object]:
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
+        roles = frozenset(role for role in OrganizationRole if role.value in member.roles)
+        solo = bool(
+            await session.scalar(
+                select(Organization.solo_mode).where(Organization.id == organization_id)
+            )
+        )
+        try:
+            rule = validate_transition(
+                source=row.status,
+                target=target,
+                actor=TransitionActor(StatusEventActorType.USER, action, member.user_id, roles),
+                created_by=row.created_by,
+                last_edited_by=row.last_edited_by,
+                solo_mode=solo,
+                pay_operation_in_flight=(
+                    target == RequestStatus.CANCELLED
+                    and await SqlAlchemyPayOperationGuard().has_in_flight_pay(
+                        session=session, request_id=request_id
+                    )
+                ),
+            )
+        except RequestTransitionError as error:
+            raise _fail(
+                error.status_code, error.code, "Request transition refused", error.detail
+            ) from error
+        if target == RequestStatus.CANCELLED:
+            approved_before = (
+                row.status == RequestStatus.APPROVED.value
+                or await session.scalar(
+                    select(RequestStatusEvent.id)
+                    .where(
+                        RequestStatusEvent.request_id == row.id,
+                        RequestStatusEvent.to_status == RequestStatus.APPROVED.value,
+                    )
+                    .limit(1)
+                )
+                is not None
+            )
+            if approved_before:
+                row.cancel_onchain = "Pending"
+            await session.execute(
+                update(PaymentApproval)
+                .where(
+                    PaymentApproval.request_id == row.id,
+                    PaymentApproval.status == ApprovalStatus.VALID.value,
+                )
+                .values(status=ApprovalStatus.CANCELLED.value)
+            )
+        if target == RequestStatus.REJECTED:
+            await session.execute(
+                update(PaymentApproval)
+                .where(
+                    PaymentApproval.request_id == row.id,
+                    PaymentApproval.status == ApprovalStatus.VALID.value,
+                )
+                .values(status=ApprovalStatus.CANCELLED.value)
+            )
+        previous = row.status
+        row.status = rule.target.value
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=member.user_id,
+                reason=reason,
+            )
+        )
+        await session.flush()
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.post("/{request_id}/reject", openapi_extra={"x-organization-scoped": True})
+async def reject_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    return await _lifecycle_transition(
+        organization_id=organization_id,
+        request_id=request_id,
+        request=request,
+        response=response,
+        expected_version=_expected_version(if_match),
+        member=member,
+        target=RequestStatus.REJECTED,
+        action=TransitionAction.REJECT,
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/cancel", openapi_extra={"x-organization-scoped": True})
+async def cancel_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_canceller),  # noqa: B008
+) -> dict[str, object]:
+    return await _lifecycle_transition(
+        organization_id=organization_id,
+        request_id=request_id,
+        request=request,
+        response=response,
+        expected_version=_expected_version(if_match),
+        member=member,
+        target=RequestStatus.CANCELLED,
+        action=TransitionAction.CANCEL,
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/renew", openapi_extra={"x-organization-scoped": True})
+async def renew_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RenewRequest,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberContext = Depends(_require_operator),  # noqa: B008
+) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
+        try:
+            rule = validate_transition(
+                source=row.status,
+                target=RequestStatus.DRAFT,
+                actor=TransitionActor(
+                    StatusEventActorType.USER,
+                    TransitionAction.RENEW,
+                    member.user_id,
+                    frozenset(role for role in OrganizationRole if role.value in member.roles),
+                ),
+                created_by=row.created_by,
+                last_edited_by=row.last_edited_by,
+            )
+        except RequestTransitionError as error:
+            raise _fail(
+                error.status_code, error.code, "Request cannot be renewed", error.detail
+            ) from error
+        previous = row.status
+        row.status = rule.target.value
+        row.current_revision += 1
+        row.due_at = payload.due_date or max(
+            row.due_at, datetime.now(UTC).date() + timedelta(days=1)
+        )
+        row.last_edited_by = member.user_id
+        row.terms_confirmed_by = None
+        row.terms_confirmed_at = None
+        session.add(
+            RequestRevision(
+                id=uuid7(),
+                request_id=row.id,
+                revision=row.current_revision,
+                snapshot=_snapshot(row),
+                edited_by=member.user_id,
+                reason="renewed after expiry",
+            )
+        )
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=member.user_id,
+                reason="request renewed after expiry",
+            )
+        )
+        await session.flush()
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.get("/{request_id}/cancel-tx", openapi_extra={"x-organization-scoped": True})
+async def get_cancel_transaction(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    member: MemberContext = Depends(_require_cancel_tx_actor),  # noqa: B008
+) -> dict[str, object]:
+    # The repository has no deployed module ABI/event indexer or Safe governance builder yet.
+    # Never return calldata that could be mistaken for a confirmed supported contract call.
+    async with _sessions(request)() as session:
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        if row.cancel_onchain != "Pending":
+            raise _fail(
+                409,
+                "CANCEL_NOT_NEEDED",
+                "On-chain cancel not needed",
+                "This request has no pending on-chain cancellation.",
+            )
+        if row.onchain_request_id is None:
+            raise _fail(
+                503,
+                "ONCHAIN_CANCEL_UNAVAILABLE",
+                "On-chain cancellation unavailable",
+                "The request has no on-chain identifier; cancellation remains Pending.",
+            )
+    raise _fail(
+        503,
+        "ONCHAIN_CANCEL_UNAVAILABLE",
+        "On-chain cancellation unavailable",
+        "Contract support and the Safe transaction builder are not configured; cancellation remains Pending.",
     )
 
 

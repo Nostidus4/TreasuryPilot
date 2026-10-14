@@ -38,6 +38,13 @@ def create_celery_app() -> Celery:
         worker_prefetch_multiplier=1,
         timezone="UTC",
         enable_utc=True,
+        beat_schedule={
+            "expire-invoice-approvals-every-five-minutes": {
+                "task": "treasurypilot.invoices.expire_approvals",
+                "schedule": 300.0,
+                "options": {"queue": "core"},
+            }
+        },
     )
     return app
 
