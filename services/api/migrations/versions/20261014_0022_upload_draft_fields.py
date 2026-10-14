@@ -1,6 +1,6 @@
 """allow incomplete upload drafts until operator confirms extraction fields
 
-Revision ID: 20261014_0023
+Revision ID: 20261014_0022
 Revises: 20261014_0021
 Create Date: 2026-10-14 00:00:00
 """
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import context, op
 
-revision: str = "20261014_0023"
+revision: str = "20261014_0022"
 down_revision: str | None = "20261014_0021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
