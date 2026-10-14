@@ -42,10 +42,10 @@ export const usdc = (whole: number, cents = 0) =>
   (BigInt(whole) * 1_000_000n + BigInt(cents) * 10_000n).toString();
 
 const now = () => Date.now();
-const iso = (offsetMs = 0) => new Date(now() + offsetMs).toISOString();
+export const iso = (offsetMs = 0) => new Date(now() + offsetMs).toISOString();
 const MIN = 60_000;
 const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
+export const DAY = 24 * HOUR;
 const dayIso = (days: number) => {
   const date = new Date(now() + days * DAY);
   date.setUTCHours(23, 59, 59, 0);
