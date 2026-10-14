@@ -1,16 +1,23 @@
-"""Server-side construction of invoice approval signatures (INV-010).
-
-The API routes and database approval lifecycle are implemented with INV-009 and
-INV-010. This module is the single builder those routes should use; callers must
-load the current request revision and chain configuration before invoking it.
-"""
+"""Server-side typed-data construction and chain reader interface for INV-010."""
 
 from __future__ import annotations
+
+from typing import Protocol, cast
 
 from treasurypilot_core.eip712 import payment_approval_typed_data
 from treasurypilot_core.policy.context import RequestView
 
 _MAX_DEADLINE_GRACE_SECONDS = 14 * 24 * 60 * 60
+
+
+class ApprovalChainReader(Protocol):
+    """Read current module approval state and ERC-1271 signatures from the chain."""
+
+    async def is_approver(self, *, chain_id: int, module: str, signer: str) -> bool: ...
+
+    async def is_valid_erc1271_signature(
+        self, *, chain_id: int, wallet: str, digest: bytes, signature: bytes
+    ) -> bool: ...
 
 
 def build_approval_typed_data(
@@ -58,6 +65,7 @@ def build_approval_typed_data(
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": expiry,
     }
-    return payment_approval_typed_data(
-        message, chain_id=chain_id, verifying_contract=module_address
+    return cast(
+        dict[str, object],
+        payment_approval_typed_data(message, chain_id=chain_id, verifying_contract=module_address),
     )
