@@ -173,8 +173,8 @@ class Vendor(VersionedMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     normalized_ref: Mapped[str] = mapped_column(String(200), nullable=False)
-    tax_id: Mapped[str | None] = mapped_column(String(64))
     # Confidential PII (F-113): ciphertext only, never plaintext.
+    tax_id_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     contact_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     notes: Mapped[str | None] = mapped_column(Text)
 
