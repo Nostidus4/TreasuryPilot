@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from eth_hash.auto import keccak
 
 from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
+    BorrowAuthorizationProposal,
     GovernanceCall,
     build_allow_duplicate_call,
     build_borrow_authorization_call,
@@ -49,14 +51,14 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
     minimum_health_factor = 1_350_000_000_000_000_000
     maximum_rate_ray = 512_000_000_000_000_000_000_000_000
 
-    call = build_borrow_authorization_call(
-        TARGET_A,
+    proposal = BorrowAuthorizationProposal(
         plan_id=PLAN,
         amount=amount,
         expiry=expiry,
         min_health_factor=minimum_health_factor,
         max_rate_ray=maximum_rate_ray,
     )
+    call = build_borrow_authorization_call(TARGET_A, proposal=proposal)
 
     assert call.to == TARGET_A
     assert call.value == 0
@@ -68,6 +70,26 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
         minimum_health_factor,
         maximum_rate_ray,
     )
+
+    # The exact proposal call is retained in both the governance record and the Safe
+    # transaction data that owners sign.
+    row = GovernanceTx(purpose=GovernanceTxPurpose.MANDATE, calls=[call.as_json()])
+    assert row.calls == [
+        {
+            "to": "0x" + TARGET_A.hex(),
+            "value": "0",
+            "data": "0x" + call.data.hex(),
+            "operation": 0,
+        }
+    ]
+    typed_message = build_safe_transaction([call]).typed_data(
+        chain_id=11155111, safe_address=SAFE, nonce=7
+    )["message"]
+    assert typed_message["to"] == "0x" + TARGET_A.hex()
+    assert typed_message["data"] == "0x" + call.data.hex()
+
+    with pytest.raises(FrozenInstanceError):
+        setattr(proposal, "amount", amount + 1)
 
 
 def test_cancel_request_call_encodes_module_selector_and_request_id() -> None:
@@ -162,7 +184,8 @@ def test_borrow_authorization_rejects_invalid_values(
     values.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        build_borrow_authorization_call(TARGET_A, **values)  # type: ignore[arg-type]
+        proposal = BorrowAuthorizationProposal(**values)  # type: ignore[arg-type]
+        build_borrow_authorization_call(TARGET_A, proposal=proposal)
 
 
 @pytest.mark.parametrize(

@@ -61,28 +61,48 @@ def _require_authorization(kind: str, plan_id: bytes, amount: int, expiry: int) 
     _require_positive_uint("expiry", expiry, 64)
 
 
+@dataclass(frozen=True, slots=True)
+class BorrowAuthorizationProposal:
+    """Exact integer terms captured for one owner-authorized borrow proposal."""
+
+    plan_id: bytes
+    amount: int
+    expiry: int
+    min_health_factor: int
+    max_rate_ray: int
+
+    def __post_init__(self) -> None:
+        # A frozen dataclass is only deeply immutable when its fields are immutable too.
+        if not isinstance(self.plan_id, bytes):
+            raise ValueError("plan_id must be bytes32")
+        _require_authorization("borrow", self.plan_id, self.amount, self.expiry)
+        _require_positive_uint("minimum health factor", self.min_health_factor)
+        _require_positive_uint("maximum rate", self.max_rate_ray)
+
+
 def build_borrow_authorization_call(
     module_address: bytes,
     *,
-    plan_id: bytes,
-    amount: int,
-    expiry: int,
-    min_health_factor: int,
-    max_rate_ray: int,
+    proposal: BorrowAuthorizationProposal,
 ) -> GovernanceCall:
     """Encode the exact owner authorization for one borrow proposal.
 
-    Only shape and range are checked here; linking the values to a proposal is the
-    caller's responsibility. All numeric values are integer base units / protocol scalars. Callers must pass
-    proposal-derived values directly; this builder deliberately performs no rounding
-    or conversion from display units.
+    The amount, expiry, minimum health factor and maximum rate travel together in one
+    immutable proposal object, so a caller cannot supply a different set of values to
+    the encoder. All values are protocol integers; no display-unit conversion occurs.
     """
-    _require_authorization("borrow", plan_id, amount, expiry)
-    _require_positive_uint("minimum health factor", min_health_factor)
-    _require_positive_uint("maximum rate", max_rate_ray)
+    _require_authorization("borrow", proposal.plan_id, proposal.amount, proposal.expiry)
+    _require_positive_uint("minimum health factor", proposal.min_health_factor)
+    _require_positive_uint("maximum rate", proposal.max_rate_ray)
     data = _AUTHORIZE_BORROW_SELECTOR + encode(
         ["bytes32", "uint256", "uint64", "uint256", "uint256"],
-        [plan_id, amount, expiry, min_health_factor, max_rate_ray],
+        [
+            proposal.plan_id,
+            proposal.amount,
+            proposal.expiry,
+            proposal.min_health_factor,
+            proposal.max_rate_ray,
+        ],
     )
     return GovernanceCall(module_address, 0, data)
 
