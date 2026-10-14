@@ -252,19 +252,21 @@ def make_harness(
     repository = MemoryAuthRepository(user)
     sender = CaptureSender(fail=sender_fails)
     secret = b"deterministic-test-secret-value!"
+    limiter = rate_limiter or MemoryRateLimiter(clock)
     service = AuthService(
         repository=repository,
         sender=sender,
         token_codec=SessionTokenCodec(secret),
         client_hash_secret=secret,
         magic_link_base_url="https://app.example.test/auth/verify",
-        rate_limiter=rate_limiter or MemoryRateLimiter(clock),  # type: ignore[arg-type]
+        rate_limiter=limiter,  # type: ignore[arg-type]
         clock=clock,
     )
     settings = Settings(environment="test", session_secret=secret.decode())
     app = create_app(
         settings=settings,
         auth_service=service,
+        rate_limiter=limiter,  # type: ignore[arg-type]
         organization_repository=organization_repository,  # type: ignore[arg-type]
         wallet_repository=wallet_repository,  # type: ignore[arg-type]
         audit_repository=audit_repository,  # type: ignore[arg-type]
@@ -1038,6 +1040,22 @@ def test_every_org_scoped_route_returns_404_to_non_members() -> None:
             response = harness.client.request(method, url, json={}, headers={"X-CSRF-Token": csrf})
             assert response.status_code == 404, (method, path, response.text)
             assert response.json()["code"] == "ORG_NOT_FOUND"
+
+            # Invoice creation also accepts org-scoped API keys. Its dependency
+            # authenticates either a key or a member at runtime, so overriding
+            # require_member cannot intercept the member-only branch here.
+            if (method, path) in {
+                ("POST", "/v1/orgs/{organization_id}/requests"),
+                ("POST", "/v1/orgs/{organization_id}/requests/bulk"),
+            }:
+                invalid_key = harness.client.request(
+                    method,
+                    url,
+                    json={},
+                    headers={"Authorization": "Bearer tp_live_invalid", "X-CSRF-Token": csrf},
+                )
+                assert invalid_key.status_code in {401, 503}
+                continue
 
             # A 404 alone could come from a missing row; prove require_member is wired.
             app.dependency_overrides[require_member] = _member_guard_reached

@@ -32,6 +32,11 @@ from treasurypilot_api.invoices.anomalies import (
     PaidInvoice,
     evaluate_anomalies,
 )
+from treasurypilot_api.invoices.api_keys import (
+    InvoiceCreateAccess,
+    hit_api_key_rate_limit,
+    require_invoice_create,
+)
 from treasurypilot_api.invoices.approval import (
     ApprovalChainReader,
     ApprovalExpiryError,
@@ -149,6 +154,10 @@ class RequestPatch(ApiModel):
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
+
+
+class RequestBulkCreate(ApiModel):
+    requests: list[RequestCreate] = Field(min_length=1, max_length=100)
 
 
 _BOUND_FIELDS = (
@@ -657,6 +666,12 @@ def _request_id(org_id: uuid.UUID, request_id: uuid.UUID) -> bytes:
     return keccak(
         encode(["string", "bytes16", "bytes16"], ["TP_REQ_V1", org_id.bytes, request_id.bytes])
     )
+
+
+def _scoped_key(*parts: str) -> str:
+    """Join key parts, hashing the result when it would overflow the 255-char column."""
+    key = ":".join(parts)
+    return key if len(key) <= 255 else "sha256:" + hashlib.sha256(key.encode()).hexdigest()
 
 
 def _payload_hash(payload: RequestCreate) -> bytes:
@@ -1448,7 +1463,7 @@ async def create_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess | InvoiceCreateAccess = Depends(require_invoice_create),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -1458,6 +1473,9 @@ async def create_request(
             "Provide an Idempotency-Key for this create request.",
         )
     _validate_dates(payload.issue_date, payload.due_date)
+    api_key_id = getattr(member, "api_key_id", None)
+    if api_key_id is not None:
+        idempotency_key = _scoped_key("api", str(api_key_id), idempotency_key)
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
     scope: tuple[uuid.UUID, bytes] | None = None
@@ -1510,8 +1528,11 @@ async def create_request(
                     source=RequestSource.MANUAL.value,
                     status=RequestStatus.DRAFT.value,
                     current_revision=1,
-                    created_by=member.user_id,
-                    last_edited_by=member.user_id,
+                    # An API key is not its creator: leave the human actors empty so
+                    # maker-checker never treats the request as the admin's own.
+                    created_by=None if api_key_id else member.user_id,
+                    last_edited_by=None if api_key_id else member.user_id,
+                    created_via_api_key_id=api_key_id,
                     note=payload.note,
                     tags=payload.tags,
                     cost_center=payload.cost_center,
@@ -1534,7 +1555,7 @@ async def create_request(
                         request_id=row.id,
                         revision=1,
                         snapshot=_snapshot(row),
-                        edited_by=member.user_id,
+                        edited_by=None if api_key_id else member.user_id,
                     )
                 )
                 session.add(
@@ -1543,9 +1564,13 @@ async def create_request(
                         request_id=row.id,
                         from_status=None,
                         to_status=RequestStatus.DRAFT.value,
-                        actor_type=StatusEventActorType.USER.value,
-                        actor_id=member.user_id,
-                        reason="manual request created",
+                        actor_type=(
+                            StatusEventActorType.SYSTEM if api_key_id else StatusEventActorType.USER
+                        ).value,
+                        actor_id=None if api_key_id else member.user_id,
+                        reason="API key request created"
+                        if api_key_id
+                        else "manual request created",
                     )
                 )
                 flags = await _recompute_flags(session, row)
@@ -1572,6 +1597,75 @@ async def create_request(
             flags = await _flag_views(session, row)
     response.headers["ETag"] = f'"{row.version}"'
     return {"request": _serialize(row), "flags": flags}
+
+
+@router.post("/bulk", status_code=200, openapi_extra={"x-organization-scoped": True})
+async def create_requests_bulk(
+    organization_id: uuid.UUID,
+    payload: RequestBulkCreate,
+    request: Request,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=255
+    ),
+    member: InvoiceCreateAccess = Depends(require_invoice_create),  # noqa: B008
+) -> dict[str, object]:
+    if idempotency_key is None:
+        raise _fail(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Idempotency key required",
+            "Provide an Idempotency-Key for this bulk request.",
+        )
+    items: list[dict[str, object]] = []
+    for index, item in enumerate(payload.requests):
+        response = Response()
+        row_key = _scoped_key(idempotency_key, str(index))
+        try:
+            if index and member.api_key_id is not None:  # the dependency consumed row 0
+                await hit_api_key_rate_limit(request, member.api_key_id)
+            result = await create_request(
+                organization_id=organization_id,
+                payload=item,
+                request=request,
+                response=response,
+                idempotency_key=row_key,
+                member=member,
+            )
+        except AuthFailure as error:
+            items.append(
+                {
+                    "index": index,
+                    "status": error.status,
+                    "code": error.code,
+                    "detail": error.detail,
+                    **error.extensions,
+                }
+            )
+        except IntegrityError:
+            items.append(
+                {
+                    "index": index,
+                    "status": 409,
+                    "code": "REQUEST_CONFLICT",
+                    "detail": "The row conflicts with an existing request or database constraint.",
+                }
+            )
+        except Exception:  # each row commits on its own; report it and keep going
+            items.append(
+                {
+                    "index": index,
+                    "status": 500,
+                    "code": "REQUEST_FAILED",
+                    "detail": "The row could not be created.",
+                }
+            )
+        else:
+            items.append({"index": index, "status": 201, **result})
+    return {
+        "items": items,
+        "created": sum(item["status"] == 201 for item in items),
+        "total": len(items),
+    }
 
 
 @router.patch("/{request_id}", openapi_extra={"x-organization-scoped": True})
