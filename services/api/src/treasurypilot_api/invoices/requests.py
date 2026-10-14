@@ -1173,7 +1173,9 @@ async def _import_csv_rows(
                 )
                 .group_by(PaymentRequest.vendor_id)
             )
-            paid_by_vendor = {vendor_id: count for vendor_id, count in counts if vendor_id is not None}
+            paid_by_vendor = {
+                vendor_id: count for vendor_id, count in counts if vendor_id is not None
+            }
 
         if dry_run:
             return {
