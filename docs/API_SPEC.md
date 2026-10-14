@@ -174,6 +174,9 @@
 | PATCH | `/me/channels/{id}` | Opt in to amounts/addresses | auth | `{showAmounts}` |
 | POST | `/integrations/telegram/webhook` | Bot webhook | Telegram secret header | internal |
 | GET | `/platform/chains` · PUT `/platform/chains/{id}` | Chain/asset config (M1: seed-driven) | PlatformAdmin | Later UI |
+| GET | `/admin/tenants` | Tenant metadata and active member/treasury counts | staff bearer + source IP allowlist | Platform admin router; requires `TP_ADMIN_STAFF_TOKEN` (≥32 bytes), `TP_ADMIN_STAFF_ID`, and `TP_ADMIN_IP_ALLOWLIST`; missing or invalid configuration fails closed |
+| GET | `/admin/tenants/{tenantId}/health` | Tenant status and basic health counts | staff bearer + source IP allowlist | Metadata only |
+| POST | `/admin/tenants/{tenantId}/suspend` | Suspend a tenant for platform operations | staff bearer + source IP allowlist | Persists status and records a platform admin event; cannot sign or move funds |
 
 ### Internal (not public): signer service
 
