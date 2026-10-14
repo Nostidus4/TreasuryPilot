@@ -71,7 +71,7 @@ M03 là **phòng điều khiển của Owner**. Nó biến điều Owner muốn 
 
 ## 6. API (API_SPEC §3, đã sửa)
 
-**Mandate:** GET/POST `/…/treasuries/{t}/mandates` (OWN tạo; lỗi `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `COOLING_OUT_OF_RANGE`, `NO_APPROVERS`, `AMOUNT_PRECISION`…), `/mandates/{v}/clone`, `/mandates/{v}/governance-tx`, DELETE bản nháp.
+**Mandate:** GET/POST `/…/treasuries/{t}/mandates` (OWN tạo; lỗi `MANDATE_INCOMPLETE`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `NO_APPROVERS`, `AMOUNT_PRECISION`…), `/mandates/{v}/clone`, `/mandates/{v}/governance-tx`, DELETE bản nháp.
 
 **Payee, ngoại lệ, trùng, pause:**
 
@@ -106,9 +106,9 @@ M03 là **phòng điều khiển của Owner**. Nó biến điều Owner muốn 
 
 ## 8. Thuật toán
 
-**8.1 Kiểm mandate (BR-014):** bắt buộc actions ⊆ {REFILL, PAY} (SWAP chỉ khi P2 bật kèm router, cặp, trượt giá, tuổi quote); executor ≠ 0; có guardian; ≥ 1 approver; `validFrom < expiresAt`, thời hạn ≤ 365 ngày; cooling 1 giờ–7 ngày (demo 60 giây–1 giờ); mỗi action `0 ≤ perRequest ≤ daily`; mỗi ví vận hành `0 ≤ buffer ≤ target`; có buffer cho Safe T; `approvalMaxAge` 1–60 ngày; mọi số là số nguyên base unit, nhập quá số lẻ của tài sản thì từ chối. Hạn mức 0 được phép kèm cảnh báo "action bị tắt".
+**8.1 Kiểm mandate (BR-014):** bắt buộc actions ⊆ {REFILL, PAY, SUPPLY} (SWAP chỉ khi P2 bật kèm router, cặp, trượt giá, tuổi quote); executor ≠ 0; có guardian; ≥ 1 approver; `validFrom < expiresAt`, thời hạn ≤ 365 ngày; cooling 1 giờ–7 ngày (demo 60 giây–1 giờ); mỗi action `0 ≤ perRequest ≤ daily`, trong đó SUPPLY dùng trường riêng `supplyLimits`; mỗi ví vận hành `0 ≤ buffer ≤ target`; có buffer cho Safe T; `approvalMaxAge` 1–60 ngày; mọi số tiền là chuỗi số nguyên base unit. `minSupply` bắt buộc ở production, demo mặc định 500 đơn vị token; khi bật SUPPLY, giá trị này phải dương và nằm trong cả hai hạn mức SUPPLY; `reserveHorizonDays` mặc định 30. Hạn mức 0 được phép kèm cảnh báo "action bị tắt".
 
-**8.2 Tóm tắt và diff:** mỗi luật một dòng, hiện cả đơn vị hiển thị và base unit, ví dụ: *"Agent được trả vendor tối đa **2.000,00 tUSDC** mỗi hóa đơn và **10.000,00 tUSDC** mỗi ngày UTC (2000000000 / 10000000000 base unit)."* Diff từng trường cũ → mới, đánh dấu ▲ lỏng hơn (tăng hạn mức, giảm buffer, rút ngắn cooling, kéo dài hạn, thêm approver) / ▼ chặt hơn. Thay đổi lỏng hơn có dấu đỏ và phải tick xác nhận.
+**8.2 Tóm tắt và diff:** mỗi luật một dòng, hiện cả đơn vị hiển thị và base unit, ví dụ: *"Agent được trả vendor tối đa **2.000,00 tUSDC** mỗi hóa đơn và **10.000,00 tUSDC** mỗi ngày UTC (2000000000 / 10000000000 base unit)."* Diff từng trường cũ → mới, đánh dấu ▲ lỏng hơn (tăng hạn mức, giảm buffer, rút ngắn cooling, bắt đầu sớm hơn, kéo dài hạn, thêm action/approver) / ▼ chặt hơn. Thay đổi lỏng hơn có dấu đỏ và phải tick xác nhận.
 
 **8.3 Tạo gói:** trường mandate đổi → `configureMandate`; approver thêm/bớt → `setApprovers(add, remove)`; ví nào đổi → `setBuffer`. Một lệnh → gọi thẳng; nhiều lệnh → `MultiSendCallOnly` v1.4.1 (operation = 1). `safe_nonce` = max(nonce on-chain, nonce mở cao nhất + 1).
 
@@ -224,4 +224,4 @@ Snapshot của M08 đổi thành **≤ 30 giây và chậm ≤ 2 block** trên S
 
 ## 15. Thay đổi theo v0.3 (ADR-019)
 
-Mandate thêm hạn mức supply (mỗi lần, mỗi ngày); sàn Safe = buffer của Safe T; cài đặt treasury `min_supply` (demo 500) và tầm dự trữ 30 ngày. Pool Aave và aToken cố định khi tạo module. P2: `authorizeBorrow` / `authorizeRepay` (MDT-011). Cấu hình demo: trả 2.000/10.000; refill 2.500/12.000; supply 5.000/20.000; sàn 1.000; min_supply 500; một ví vận hành O1.
+Mandate thêm hạn mức supply (mỗi lần, mỗi ngày); sàn Safe = buffer của Safe T; cài đặt treasury `minSupply` (demo 500 đơn vị token) và tầm dự trữ 30 ngày. Pool Aave và aToken cố định khi tạo module. P2: `authorizeBorrow` / `authorizeRepay` (MDT-011). Cấu hình demo: trả 2.000/10.000; refill 2.500/12.000; supply 5.000/20.000; sàn 1.000; minSupply 500; một ví vận hành O1.

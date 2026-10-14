@@ -76,6 +76,13 @@ class HangingProvider:
         raise AssertionError("unreachable")
 
 
+class BrokenProvider:
+    name = "broken"
+
+    async def screen(self, *, address: bytes, chain_id: int) -> ProviderResult:
+        raise ValueError("malformed provider response")
+
+
 def service(
     provider: object, repo: MemoryRepository | None = None, **kw: object
 ) -> ScreeningService:
@@ -102,6 +109,18 @@ def test_provider_timeout_fails_closed() -> None:
     slow = service(HangingProvider(), timeout=timedelta(milliseconds=20))
     with pytest.raises(ScreeningBlocked, match="DATA_MISSING"):
         asyncio.run(slow.require_clear(organization_id=ORG_ID, address=CLEAN, chain_id=1))
+
+
+def test_unexpected_provider_failure_persists_an_error_row() -> None:
+    repo = MemoryRepository()
+    with pytest.raises(ScreeningBlocked, match="DATA_MISSING") as blocked:
+        asyncio.run(
+            service(BrokenProvider(), repo).require_clear(
+                organization_id=ORG_ID, address=CLEAN, chain_id=1
+            )
+        )
+    assert blocked.value.record.result == ScreeningResult.ERROR
+    assert len(repo.rows) == 1
 
 
 def test_cache_is_scoped_to_chain_and_provider() -> None:

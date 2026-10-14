@@ -1,7 +1,11 @@
 """scope screenings by chain and store fixture screening lists
 
-Revision ID: 20261014_0013
-Revises: 20261013_0012
+The seeded screening_lists rows are TEST DATA (incl. OFAC sample addresses) and are
+inserted in every environment. Production uses UnconfiguredScreeningProvider, so they
+are inert, but production must delete them before any real list reader uses this table.
+
+Revision ID: 20261014_0016
+Revises: 20261014_0015
 Create Date: 2026-10-13 00:00:00
 
 """
@@ -13,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0013"
-down_revision: str | None = "20261013_0012"
+revision: str = "20261014_0016"
+down_revision: str | None = "20261014_0015"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -50,7 +54,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_screenings_lookup",
         "screenings",
-        ["address", "chain_id", "provider", sa.text("checked_at DESC")],
+        ["org_id", "address", "chain_id", "provider", sa.text("checked_at DESC")],
     )
 
     op.create_table(

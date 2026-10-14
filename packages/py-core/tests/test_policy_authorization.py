@@ -620,3 +620,118 @@ def test_invalid_exception_does_not_mask_daily_limit_failure() -> None:
     assert C.EXCEPTION_INVALID in result.codes
     assert C.OVER_DAILY_LIMIT in result.codes
     assert result.decision == "BLOCK"
+
+
+def _liquidity_plan(action: Action = Action.SUPPLY, from_wallet: str = SAFE_T) -> ExecutionPlan:
+    step = PlanStep(
+        seq=0,
+        step_id=b"\x0d" * 32,
+        action=action,
+        from_wallet=from_wallet,
+        to=SAFE_T,
+        asset=ASSET,
+        amount=BaseUnits(100),
+    )
+    return _plan().model_copy(update={"steps": [step]})
+
+
+def test_liquidity_plans_keep_mandate_executor_and_screening_checks() -> None:
+    for action in (Action.SUPPLY, Action.WITHDRAW):
+        plan = _liquidity_plan(action)
+        assert _failing(authorization_checks(plan, _ctx(request=None, approval=None))) == []
+        bad = {
+            C.MANDATE_REVOKED: {"snapshot": _snapshot(mandate=_mandate(status="Revoked"))},
+            C.MANDATE_PAUSED: {"snapshot": _snapshot(mandate=_mandate(status="Paused"))},
+            C.MANDATE_EXPIRED: {"snapshot": _snapshot(mandate=_mandate(expires_at=NOW - 1))},
+            C.MANDATE_NOT_ACTIVE: {"snapshot": _snapshot(mandate=_mandate(valid_from=NOW + 1))},
+            C.EXECUTOR_MISMATCH: {"executor": "0x" + "77" * 20},
+            C.SCREENING_HIT: {"screening_hit": True},
+        }
+        for code, update in bad.items():
+            ctx = _ctx(request=None, approval=None, **update)
+            assert _failing(authorization_checks(plan, ctx)) == [code], (action, code)
+
+
+def test_liquidity_plan_without_mandate_is_data_missing() -> None:
+    ctx = _ctx(request=None, approval=None, snapshot=_snapshot(mandate=None))
+    assert C.DATA_MISSING in _failing(authorization_checks(_liquidity_plan(), ctx))
+
+
+def test_supply_must_spend_from_safe_t_and_step_ids_are_unique() -> None:
+    ctx = _ctx(request=None, approval=None)
+    wrong_source = _liquidity_plan(from_wallet="0x" + "aa" * 20)
+    assert _failing(authorization_checks(wrong_source, ctx)) == [C.PLAN_MALFORMED]
+    # WITHDRAW comes from the pool, so its source is not pinned to Safe T.
+    pool_withdraw = _liquidity_plan(Action.WITHDRAW, "0x" + "aa" * 20)
+    assert _failing(authorization_checks(pool_withdraw, ctx)) == []
+    supply, withdraw = _liquidity_plan().steps[0], _liquidity_plan(Action.WITHDRAW).steps[0]
+    dup = _plan().model_copy(update={"steps": [supply, withdraw.model_copy(update={"seq": 1})]})
+    assert _failing(authorization_checks(dup, ctx)) == [C.PLAN_MALFORMED]
+
+
+def test_withdraw_step_of_a_request_plan_keeps_request_and_mandate_checks() -> None:
+    from treasurypilot_core.policy import validate_step
+
+    plan = _withdraw_plan()
+    cases = {
+        C.MANDATE_REVOKED: _ctx(snapshot=_snapshot(mandate=_mandate(status="Revoked"))),
+        C.REQUEST_CANCELLED: _ctx(snapshot=_snapshot(request_cancelled=True)),
+        C.APPROVAL_EXPIRED: _ctx(approval=_approval(_typed(_request(), expiry=NOW - 1))),
+        C.NOT_APPROVED: _ctx(approval=None),
+        C.DATA_MISSING: _ctx(request=None),
+    }
+    for code, ctx in cases.items():
+        assert code in _failing(authorization_checks(plan, ctx, seq=0)), code
+
+    state = _policy_state(a_token_balance=BaseUnits(1_000), pool_liquidity=BaseUnits(1_000))
+    revoked = _ctx(snapshot=_snapshot(mandate=_mandate(status="Revoked")), policy_state=state)
+    result = validate_step(plan, 0, revoked)
+    assert result.decision == "BLOCK"
+    assert C.MANDATE_REVOKED in result.codes
+    cancelled = _ctx(snapshot=_snapshot(request_cancelled=True), policy_state=state)
+    assert C.REQUEST_CANCELLED in validate_step(plan, 0, cancelled).codes
+
+
+def test_stale_exception_is_ignored_while_within_the_per_request_limit() -> None:
+    from treasurypilot_core.policy import ExceptionView, validate_plan
+
+    state = _policy_state(
+        exception=ExceptionView(
+            amount=BaseUnits(9_999), payee=PAYEE, expiry=NOW - 1, mandate_version=0, used=True
+        )
+    )
+    result = validate_plan(_plan(), _ctx(policy_state=state))
+    assert result.decision == "ALLOW", result.codes
+
+
+def test_validate_step_and_plan_agree_on_late_pay_but_not_for_liquidity() -> None:
+    from treasurypilot_core.policy import validate_plan, validate_step
+
+    request = _request(deadline=NOW - 1)
+    ctx = _ctx(request=request, approval=_approval(_typed(request)), policy_state=_policy_state())
+    assert validate_step(_plan(), 0, ctx).warnings == [C.DEADLINE_MISSED]
+    assert validate_plan(_plan(), ctx).warnings == [C.DEADLINE_MISSED]
+
+    liquidity = _ctx(request=request, approval=None, policy_state=_policy_state())
+    assert validate_plan(_liquidity_plan(), liquidity).warnings == []
+
+
+def test_liquidity_figures_are_projected_across_steps() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    withdraw = _liquidity_plan(Action.WITHDRAW).steps[0]
+    again = withdraw.model_copy(update={"seq": 1, "step_id": b"\x0e" * 32})
+    twice = _plan().model_copy(update={"steps": [withdraw, again]})
+    state = _policy_state(a_token_balance=BaseUnits(150), pool_liquidity=BaseUnits(150))
+    result = validate_plan(twice, _ctx(request=None, approval=None, policy_state=state))
+    assert C.INSUFFICIENT_A_TOKEN in result.codes
+    assert C.INSUFFICIENT_POOL_LIQUIDITY in result.codes
+
+
+def test_malformed_policy_state_fails_closed() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    state = _policy_state().model_copy(update={"balances": {SAFE_T.lower(): "x"}})
+    result = validate_plan(_plan(), _ctx(policy_state=state))
+    assert result.decision == "BLOCK"
+    assert C.DATA_MISSING in result.codes
