@@ -184,12 +184,8 @@ interface ITreasuryPilotModule {
     /// @notice Safe T or a current approver may permanently cancel an unpaid request.
     function cancelRequest(bytes32 requestId) external;
     /// @notice Pay the proposed amount, bounded by the signed amount or active early-payment amount.
-    function pay(
-        PaymentApproval calldata ap,
-        bytes calldata approverSig,
-        bytes32 stepId,
-        uint256 paymentAmount
-    ) external;
+    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 paymentAmount)
+        external;
     /// @notice Executor refills only the approved operational wallet, once per request.
     function refill(
         PaymentApproval calldata ap,

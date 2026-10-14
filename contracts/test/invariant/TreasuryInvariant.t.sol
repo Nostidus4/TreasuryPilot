@@ -123,7 +123,6 @@ contract TreasuryHandler {
         bool exceptionValid =
             exAmount == amount && block.timestamp <= exExpiry && exVersion == m.version && exPayee == vendor && !exUsed;
         vm.prank(executor);
-        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
         try module.pay(ap, sig, step, amount) {
             ++successes;
             _flag(1, !proofValid || !module.isApprover(approver)); // BR-001/003/004

@@ -17,12 +17,11 @@ interface ITestRouter {
 /// @notice Executes fixed ERC20 and Aave calls through Safes, within signed and owner-set rules.
 contract TreasuryPilotModule is TreasuryPilotGovernance {
     /// @inheritdoc ITreasuryPilotModule
-    function pay(
-        PaymentApproval calldata ap,
-        bytes calldata approverSig,
-        bytes32 stepId,
-        uint256 paymentAmount
-    ) external onlyExecutor nonReentrant {
+    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 paymentAmount)
+        external
+        onlyExecutor
+        nonReentrant
+    {
         verifyApproval(ap, approverSig);
         if (!isOperational[ap.payingWallet]) revert E.NotOperationalWallet();
         _requireActivePayee(ap.payee);
@@ -61,15 +60,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
             revert E.BufferBreach();
         }
         emit PaymentExecuted(
-            ap.requestId,
-            stepId,
-            ap.fingerprint,
-            ap.payingWallet,
-            ap.payee,
-            paymentAmount,
-            day,
-            usedException,
-            early
+            ap.requestId, stepId, ap.fingerprint, ap.payingWallet, ap.payee, paymentAmount, day, usedException, early
         );
     }
 
