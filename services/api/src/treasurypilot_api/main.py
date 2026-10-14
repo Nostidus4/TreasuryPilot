@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
+from treasurypilot_api.audit.evidence import EvidenceRepository
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -160,6 +161,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    evidence_repository: EvidenceRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -228,6 +230,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.evidence_repository = evidence_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

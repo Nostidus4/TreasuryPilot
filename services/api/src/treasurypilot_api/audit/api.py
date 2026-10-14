@@ -12,6 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.chain import ChainVerification, verify_chain
+from treasurypilot_api.audit.evidence import (
+    EvidenceBundle,
+    EvidenceBundleInvalid,
+    EvidenceForbidden,
+    EvidenceNotFound,
+    EvidenceRepository,
+)
 from treasurypilot_api.audit.models import AuditHead, AuditLog
 from treasurypilot_api.audit.writer import AuditHeadMissing
 from treasurypilot_api.identity.api import ApiModel
@@ -194,6 +201,18 @@ def _repository(request: Request) -> AuditRepository:
     return cast(AuditRepository, repository)
 
 
+def _evidence_repository(request: Request) -> EvidenceRepository:
+    repository = getattr(request.app.state, "evidence_repository", None)
+    if repository is None:
+        raise AuthFailure(
+            status=503,
+            code="EVIDENCE_UNAVAILABLE",
+            title="Evidence export unavailable",
+            detail="Request evidence storage and chain verification are not configured.",
+        )
+    return cast(EvidenceRepository, repository)
+
+
 def _forbidden() -> AuthFailure:
     return AuthFailure(
         status=403,
@@ -249,3 +268,34 @@ async def verify_audit_log(
     except AuditPermissionDenied:
         raise _forbidden() from None
     return AuditVerifyResponse.from_result(result)
+
+
+@router.get(
+    "/{organization_id}/requests/{request_id}/evidence",
+    response_model=EvidenceBundle,
+    response_model_exclude_none=True,
+)
+async def get_request_evidence(
+    request: Request,
+    member: Annotated[
+        MemberAccess,
+        Depends(require_role(*_READ, OrganizationRole.FINANCE)),
+    ],
+    request_id: uuid.UUID,
+) -> EvidenceBundle:
+    try:
+        return await _evidence_repository(request).export_request(
+            organization_id=member.organization_id,
+            request_id=request_id,
+        )
+    except EvidenceNotFound:
+        raise organization_not_found() from None
+    except EvidenceForbidden:
+        raise _forbidden() from None
+    except EvidenceBundleInvalid as exc:
+        raise AuthFailure(
+            status=409,
+            code="EVIDENCE_INVALID",
+            title="Evidence bundle is invalid",
+            detail="At least one transaction hash did not resolve; the bundle was withheld.",
+        ) from exc
