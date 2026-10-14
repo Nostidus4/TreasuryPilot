@@ -13,6 +13,7 @@ from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     build_borrow_authorization_call,
+    build_cancel_request_call,
     build_repay_authorization_call,
     build_safe_transaction,
     decode_multisend_calls,
@@ -58,6 +59,16 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
         minimum_health_factor,
         maximum_rate_ray,
     )
+
+
+def test_cancel_request_call_encodes_module_selector_and_request_id() -> None:
+    call = build_cancel_request_call(TARGET_A, request_id=PLAN)
+
+    assert (call.to, call.value, call.operation) == (TARGET_A, 0, 0)
+    assert call.data[:4] == keccak(b"cancelRequest(bytes32)")[:4]
+    assert decode(["bytes32"], call.data[4:]) == (PLAN,)
+    with pytest.raises(ValueError, match="bytes32"):
+        build_cancel_request_call(TARGET_A, request_id=b"short")
 
 
 def test_repay_authorization_keeps_proposal_values_exact() -> None:

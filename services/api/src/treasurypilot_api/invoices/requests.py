@@ -80,7 +80,12 @@ from treasurypilot_api.invoices.state_machine import (
     TransitionActor,
     validate_transition,
 )
+from treasurypilot_api.mandate.governance import build_cancel_request_call
+from treasurypilot_api.mandate.governance_service import GovernanceFailure
 from treasurypilot_api.mandate.models import (
+    GovernanceTx,
+    GovernanceTxPurpose,
+    GovernanceTxStatus,
     MandateVersion,
     MandateVersionStatus,
     Payee,
@@ -89,6 +94,7 @@ from treasurypilot_api.mandate.models import (
 )
 from treasurypilot_api.mandate.vendors import normalize_vendor_ref
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
+from treasurypilot_api.treasury.safe import RpcUnavailable
 from treasurypilot_core.domain import FxPolicy, PaymentTerms
 from treasurypilot_core.eip712 import digest as eip712_digest
 from treasurypilot_core.eip712 import verify_signature
@@ -3056,8 +3062,6 @@ async def get_cancel_transaction(
     request: Request,
     member: MemberAccess = Depends(_require_cancel_tx_actor),  # noqa: B008
 ) -> dict[str, object]:
-    # The repository has no deployed module ABI/event indexer or Safe governance builder yet.
-    # Never return calldata that could be mistaken for a confirmed supported contract call.
     async with _sessions(request)() as session:
         row = await session.scalar(
             select(PaymentRequest).where(
@@ -3080,9 +3084,63 @@ async def get_cancel_transaction(
                 "On-chain cancellation unavailable",
                 "The request has no on-chain identifier; cancellation remains Pending.",
             )
-    raise _fail(
-        503,
-        "ONCHAIN_CANCEL_UNAVAILABLE",
-        "On-chain cancellation unavailable",
-        "Contract support and the Safe transaction builder are not configured; cancellation remains Pending.",
-    )
+        module = await session.scalar(
+            select(Treasury.module_address).where(Treasury.id == row.treasury_id)
+        )
+        if module is None:
+            raise _fail(
+                503,
+                "ONCHAIN_CANCEL_UNAVAILABLE",
+                "On-chain cancellation unavailable",
+                "The treasury has no deployed module; cancellation remains Pending.",
+            )
+        call = build_cancel_request_call(module, request_id=row.onchain_request_id)
+        treasury_id = row.treasury_id
+        if OrganizationRole.OWNER.value not in member.roles:
+            return {"to": "0x" + call.to.hex(), "data": "0x" + call.data.hex()}
+        # Repeated GETs reuse the open Safe transaction instead of burning a Safe nonce each time.
+        open_tx = await session.scalar(
+            select(GovernanceTx.id).where(
+                GovernanceTx.org_id == organization_id,
+                GovernanceTx.treasury_id == treasury_id,
+                GovernanceTx.purpose == GovernanceTxPurpose.CANCEL_REQUEST,
+                GovernanceTx.to == call.to,
+                GovernanceTx.data == call.data,
+                GovernanceTx.status.in_(
+                    [
+                        GovernanceTxStatus.COLLECTING,
+                        GovernanceTxStatus.READY,
+                        GovernanceTxStatus.SUBMITTED,
+                    ]
+                ),
+            )
+        )
+    service = getattr(request.app.state, "governance_service", None)
+    if service is None:
+        raise _fail(
+            503,
+            "GOVERNANCE_UNAVAILABLE",
+            "Governance unavailable",
+            "Governance storage is not configured.",
+        )
+    try:
+        if open_tx is not None:
+            safe_tx = await service.get(organization_id=organization_id, governance_tx_id=open_tx)
+        else:
+            safe_tx = await service.create(
+                organization_id=organization_id,
+                treasury_id=treasury_id,
+                user_id=member.user_id,
+                purpose=GovernanceTxPurpose.CANCEL_REQUEST,
+                calls=[call],
+            )
+    except GovernanceFailure as exc:
+        raise _fail(exc.status, exc.code, "Governance request rejected", exc.detail) from None
+    except RpcUnavailable:
+        raise _fail(
+            503,
+            "RPC_UNAVAILABLE",
+            "Chain RPC unavailable",
+            "Safe state could not be read because no RPC provider answered.",
+        ) from None
+    return {"safeTx": safe_tx}

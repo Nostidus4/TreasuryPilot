@@ -41,6 +41,7 @@ _FACTORY_CREATE_SELECTOR = keccak(
 _FACTORY_PREDICT_SELECTOR = keccak(b"predictDeterministicAddress(address,bytes32)")[:4]
 _AUTHORIZE_BORROW_SELECTOR = keccak(b"authorizeBorrow(bytes32,uint256,uint64,uint256,uint256)")[:4]
 _AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
+_CANCEL_REQUEST_SELECTOR = keccak(b"cancelRequest(bytes32)")[:4]
 
 
 def _require_positive_uint(name: str, value: int, bits: int = 256) -> None:
@@ -94,6 +95,15 @@ def build_repay_authorization_call(
         ["bytes32", "uint256", "uint64"], [plan_id, amount, expiry]
     )
     return GovernanceCall(module_address, 0, data)
+
+
+def build_cancel_request_call(module_address: bytes, *, request_id: bytes) -> GovernanceCall:
+    """Encode `module.cancelRequest(requestId)` for an approver wallet or a Safe T transaction."""
+    if len(request_id) != 32:
+        raise ValueError("request_id must be bytes32")
+    return GovernanceCall(
+        module_address, 0, _CANCEL_REQUEST_SELECTOR + encode(["bytes32"], [request_id])
+    )
 
 
 @dataclass(frozen=True, slots=True)

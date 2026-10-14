@@ -144,7 +144,7 @@ stateDiagram-v2
 
 **Cancellation (M05-D4, BR-077):** cancel is immediate off-chain (validator code `REQUEST_CANCELLED`, signer refuses). If the request ever had a `Valid` approval, `cancel_onchain = Pending` and the UI shows **"Cancel on-chain"**: any Approver signs a transaction `module.cancelRequest(requestId)` from their own wallet, or the Owner submits it through Safe T. When `RequestCancelled` is observed, `cancel_onchain = Confirmed`. A Pending on-chain cancel is a visible to-do on the dashboard until confirmed.
 
-**INV-011 implementation boundary:** rejection, cancellation state changes, approval expiry, and renewal are persisted by the API/worker. The cancellation transaction builder and `RequestCancelled` event consumer remain unavailable until the module contract ABI/deployment and chain event indexer are present; the API returns `ONCHAIN_CANCEL_UNAVAILABLE` and leaves the cancellation visibly `Pending` in the meantime. Do not treat this state as an on-chain cancellation.
+**INV-011 implementation boundary:** rejection, cancellation state changes, approval expiry, and renewal are persisted by the API/worker. `GET cancel-tx` builds `cancelRequest(requestId)` against the treasury's module: an Approver gets `{to, data}` for their own wallet, the Owner gets `{safeTx}` (a `CANCEL_REQUEST` governance transaction, reused while open). It returns 503 `ONCHAIN_CANCEL_UNAVAILABLE` while the request has no on-chain id or the treasury has no module. `confirm_onchain_cancel` (`invoices/onchain_cancel.py`) moves `Pending` to `Confirmed` for an observed `RequestCancelled`; no chain event indexer exists yet (CHN-005), so it must be called from that indexer once built.
 
 ## 6. API (changes to API_SPEC §4)
 
