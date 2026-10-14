@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import html
 import json
 import urllib.error
@@ -11,6 +9,8 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from urllib.parse import quote
+
+from treasurypilot_core.notifications import unsubscribe_signature
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +64,8 @@ def render_notification_email(
     )
 
 
-def unsubscribe_signature(user_id: uuid.UUID, secret: str) -> str:
-    if len(secret.encode()) < 32:
-        raise ValueError("notification email signing secret must contain at least 32 bytes")
-    return hmac.new(secret.encode(), str(user_id).encode(), hashlib.sha256).hexdigest()
+class PermanentEmailError(RuntimeError):
+    """The provider rejected the request itself; retrying the same message cannot succeed."""
 
 
 def unsubscribe_url(*, api_base_url: str, user_id: uuid.UUID, secret: str) -> str:
@@ -85,6 +83,7 @@ def send_resend_email(
     recipient: str,
     message: RenderedEmail,
     unsubscribe_url_value: str,
+    idempotency_key: str,
     timeout_seconds: float = 10.0,
 ) -> None:
     """Send through Resend. Provider error bodies are deliberately not surfaced/logged."""
@@ -109,6 +108,8 @@ def send_resend_email(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Resend dedupes by key, so a retry after a lost mark-sent cannot double-send.
+            "Idempotency-Key": idempotency_key,
             "User-Agent": "TreasuryPilot/1",
         },
         method="POST",
@@ -117,5 +118,10 @@ def send_resend_email(
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             if not 200 <= response.status < 300:
                 raise RuntimeError("Resend rejected the email request")
-    except (OSError, urllib.error.HTTPError, urllib.error.URLError) as exc:
+    except urllib.error.HTTPError as exc:
+        # 4xx means the request is bad (except timeout/rate limit); 5xx and network errors retry.
+        if 400 <= exc.code < 500 and exc.code not in {408, 429}:
+            raise PermanentEmailError("Resend notification delivery rejected") from exc
+        raise RuntimeError("Resend notification delivery failed") from exc
+    except OSError as exc:  # URLError is an OSError
         raise RuntimeError("Resend notification delivery failed") from exc

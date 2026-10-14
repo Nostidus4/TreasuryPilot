@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import uuid
 from collections.abc import AsyncIterator
@@ -35,6 +34,7 @@ from treasurypilot_api.notifications.stream import (
     event_stream,
     parse_cursor,
 )
+from treasurypilot_core.notifications import unsubscribe_signature
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _NIL_UUID = uuid.UUID(int=0)
@@ -122,11 +122,11 @@ class SqlAlchemyNotificationRepository:
     ) -> tuple[tuple[Notification, ...], int]:
         scope = (Notification.org_id == organization_id, Notification.user_id == user_id)
         async with self._sessions() as session:
-            statement = select(Notification).where(*scope, Notification.created_at <= func.now())
+            statement = select(Notification).where(*scope, Notification.deliver_at <= func.now())
             if unread:
                 statement = statement.where(Notification.read_at.is_(None))
             rows = await session.scalars(
-                statement.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(
+                statement.order_by(Notification.deliver_at.desc(), Notification.id.desc()).limit(
                     limit
                 )
             )
@@ -136,7 +136,7 @@ class SqlAlchemyNotificationRepository:
                 .where(
                     *scope,
                     Notification.read_at.is_(None),
-                    Notification.created_at <= func.now(),
+                    Notification.deliver_at <= func.now(),
                 )
             )
             return tuple(rows), int(unread_count or 0)
@@ -153,6 +153,8 @@ class SqlAlchemyNotificationRepository:
                     Notification.id.in_(ids),
                     Notification.org_id == organization_id,
                     Notification.user_id == user_id,
+                    # Deferred (quiet hours) rows are unseen, so they cannot be read yet.
+                    Notification.deliver_at <= func.now(),
                 )
                 # Idempotent: an already-read row keeps its first read time.
                 .values(read_at=func.coalesce(Notification.read_at, func.now()))
@@ -173,13 +175,13 @@ class SqlAlchemyNotificationRepository:
             )
             last_notification = (
                 await session.execute(
-                    select(Notification.created_at, Notification.id)
+                    select(Notification.deliver_at, Notification.id)
                     .where(
                         Notification.org_id == organization_id,
                         Notification.user_id == user_id,
-                        Notification.created_at <= func.now(),
+                        Notification.deliver_at <= func.now(),
                     )
-                    .order_by(Notification.created_at.desc(), Notification.id.desc())
+                    .order_by(Notification.deliver_at.desc(), Notification.id.desc())
                     .limit(1)
                 )
             ).first()
@@ -216,11 +218,11 @@ class SqlAlchemyNotificationRepository:
                     .where(
                         Notification.org_id == organization_id,
                         Notification.user_id == user_id,
-                        Notification.created_at <= func.now(),
-                        tuple_(Notification.created_at, Notification.id)
+                        Notification.deliver_at <= func.now(),
+                        tuple_(Notification.deliver_at, Notification.id)
                         > tuple_(cursor.notification_at, cursor.notification_id),
                     )
-                    .order_by(Notification.created_at, Notification.id)
+                    .order_by(Notification.deliver_at, Notification.id)
                     .limit(limit)
                 )
             ).all()
@@ -245,7 +247,7 @@ class SqlAlchemyNotificationRepository:
                 StreamedNotification(
                     id=row.id,
                     event_id=row.event_id,
-                    created_at=row.created_at,
+                    created_at=row.deliver_at,  # cursor position: see Notification.deliver_at
                     severity=row.severity,
                 )
                 for row in notifications
@@ -380,9 +382,7 @@ async def stream_events(
     )
 
 
-@email_router.get("/email", response_model=EmailPreferenceView)
-async def get_email_preference(request: Request) -> EmailPreferenceView:
-    access = await _authenticated(request)
+def _email_sessions(request: Request) -> async_sessionmaker[AsyncSession]:
     sessions = getattr(request.app.state, "request_sessions", None)
     if sessions is None:
         raise AuthFailure(
@@ -391,7 +391,13 @@ async def get_email_preference(request: Request) -> EmailPreferenceView:
             title="Notifications unavailable",
             detail="Email preferences are not configured.",
         )
-    async with sessions() as session:
+    return cast(async_sessionmaker[AsyncSession], sessions)
+
+
+@email_router.get("/email", response_model=EmailPreferenceView)
+async def get_email_preference(request: Request) -> EmailPreferenceView:
+    access = await _authenticated(request)
+    async with _email_sessions(request)() as session:
         row = await session.get(NotificationEmailPreference, access.user.id)
     return EmailPreferenceView(
         delivery_mode=EmailDeliveryMode(row.delivery_mode) if row else EmailDeliveryMode.IMMEDIATE
@@ -403,54 +409,49 @@ async def set_email_preference(
     payload: EmailPreferenceRequest, request: Request
 ) -> EmailPreferenceView:
     access = await _authenticated(request, require_csrf=True)
-    sessions = getattr(request.app.state, "request_sessions", None)
-    if sessions is None:
-        raise AuthFailure(
-            status=503,
-            code="NOTIFICATIONS_UNAVAILABLE",
-            title="Notifications unavailable",
-            detail="Email preferences are not configured.",
-        )
-    async with sessions() as session, session.begin():
+    async with _email_sessions(request)() as session, session.begin():
         row = await session.get(NotificationEmailPreference, access.user.id)
         if row is None:
-            row = NotificationEmailPreference(
-                user_id=access.user.id, delivery_mode=payload.delivery_mode.value
+            session.add(
+                NotificationEmailPreference(
+                    user_id=access.user.id, delivery_mode=payload.delivery_mode.value
+                )
             )
-            session.add(row)
         else:
             row.delivery_mode = payload.delivery_mode.value
             row.updated_at = datetime.now(UTC)
     return EmailPreferenceView(delivery_mode=payload.delivery_mode)
 
 
+def _invalid_unsubscribe_token() -> AuthFailure:
+    return AuthFailure(
+        status=400,
+        code="INVALID_UNSUBSCRIBE_TOKEN",
+        title="Invalid unsubscribe link",
+        detail="This unsubscribe link is invalid.",
+    )
+
+
 @email_router.post("/email/unsubscribe", status_code=204, response_class=Response)
 async def unsubscribe_email(request: Request, user_id: uuid.UUID, signature: str) -> Response:
     """Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory."""
-    settings = request.app.state.settings
-    secret_value = getattr(settings, "session_secret", None)
-    secret = (
-        secret_value.get_secret_value().encode()
-        if secret_value and secret_value.get_secret_value()
-        else b"treasurypilot-local-development-only-session-secret"
-    )
-    expected = hmac.new(secret, str(user_id).encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(signature, expected):
-        raise AuthFailure(
-            status=400,
-            code="INVALID_UNSUBSCRIBE_TOKEN",
-            title="Invalid unsubscribe link",
-            detail="This unsubscribe link is invalid.",
+    secret = getattr(request.app.state.settings, "session_secret", None)
+    try:
+        # No local-development fallback: a known default secret would make links forgeable.
+        expected = unsubscribe_signature(
+            user_id, secret.get_secret_value() if secret is not None else ""
         )
-    sessions = getattr(request.app.state, "request_sessions", None)
-    if sessions is None:
+    except ValueError:
         raise AuthFailure(
             status=503,
             code="NOTIFICATIONS_UNAVAILABLE",
             title="Notifications unavailable",
-            detail="Email preferences are not configured.",
-        )
-    async with sessions() as session, session.begin():
+            detail="Unsubscribe links are not configured.",
+        ) from None
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str.
+    if not hmac.compare_digest(signature.encode(), expected.encode()):
+        raise _invalid_unsubscribe_token()
+    async with _email_sessions(request)() as session, session.begin():
         if await session.get(User, user_id) is None:
             return Response(status_code=204)
         row = await session.get(NotificationEmailPreference, user_id)

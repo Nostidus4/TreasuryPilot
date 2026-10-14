@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import uuid
 from collections.abc import Mapping
 from enum import StrEnum
 
@@ -34,6 +37,32 @@ MANDATORY_EVENT_TYPES = frozenset(
 _REVIEW_ROLES = frozenset(
     {"OrgAdmin", "Owner", "Approver", "Operator", "Finance", "Guardian", "Auditor"}
 )
+_APPROVAL_EVENT_TYPES = frozenset(
+    {
+        "ApprovalNeeded",
+        "HighFlagRaised",
+        "ExceptionNeeded",
+        "GovernanceSignatureNeeded",
+        "FeeAcceptanceNeeded",
+    }
+)
+_PAYMENT_EVENT_TYPES = frozenset({"PaymentDone"})
+_OPERATION_EVENT_TYPES = frozenset(
+    {"LowGas", "MandateExpiring", "OperationConfirmed", "PlanUpdated", "PlanCompleted"}
+)
+
+
+def is_known_event_type(event_type: str) -> bool:
+    """True for event types the platform emits, including ``NeedsReview:<role>``."""
+
+    role = event_type.partition(":")[2] if event_type.startswith("NeedsReview:") else None
+    return (
+        event_type in MANDATORY_EVENT_TYPES
+        or event_type in _APPROVAL_EVENT_TYPES
+        or event_type in _PAYMENT_EVENT_TYPES
+        or event_type in _OPERATION_EVENT_TYPES
+        or role in _REVIEW_ROLES
+    )
 
 
 def category_for_event(event_type: str) -> NotificationCategory:
@@ -48,23 +77,11 @@ def category_for_event(event_type: str) -> NotificationCategory:
             if role in _REVIEW_ROLES
             else NotificationCategory.MANDATORY
         )
-    if event_type in {
-        "ApprovalNeeded",
-        "HighFlagRaised",
-        "ExceptionNeeded",
-        "GovernanceSignatureNeeded",
-        "FeeAcceptanceNeeded",
-    }:
+    if event_type in _APPROVAL_EVENT_TYPES:
         return NotificationCategory.APPROVALS
-    if event_type == "PaymentDone":
+    if event_type in _PAYMENT_EVENT_TYPES:
         return NotificationCategory.PAYMENTS
-    if event_type in {
-        "LowGas",
-        "MandateExpiring",
-        "OperationConfirmed",
-        "PlanUpdated",
-        "PlanCompleted",
-    }:
+    if event_type in _OPERATION_EVENT_TYPES:
         return NotificationCategory.OPERATIONS
     # New event types must be reviewed and categorized before users can suppress them.
     return NotificationCategory.MANDATORY
@@ -83,3 +100,15 @@ def preference_allows(
     if category is NotificationCategory.MANDATORY:
         return True
     return channels.get(channel.value, True) and categories.get(category.value, True)
+
+
+MIN_UNSUBSCRIBE_SECRET_BYTES = 32
+
+
+def unsubscribe_signature(user_id: uuid.UUID, secret: str | bytes) -> str:
+    """HMAC for the email unsubscribe link, shared by the signing worker and the API."""
+
+    key = secret.encode() if isinstance(secret, str) else secret
+    if len(key) < MIN_UNSUBSCRIBE_SECRET_BYTES:
+        raise ValueError("notification email signing secret must contain at least 32 bytes")
+    return hmac.new(key, f"notification-unsubscribe:{user_id}".encode(), hashlib.sha256).hexdigest()

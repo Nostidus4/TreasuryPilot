@@ -68,15 +68,21 @@ T("INV-011","Implement reject, cancel, invalidation and expiry","M1","P0","S","F
 T("INV-L01","Add the email-forwarding invoice inbox","Later","-","L","F-033","FR-308","INV-004 AGT-004",
   "Create drafts from forwarded emails.", "Per-org inbound address;SPF/DKIM checks;attachment extraction into the upload pipeline", "", "",
   "A spoofed sender is flagged;No draft is auto-approved", "Integration")
-T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","M","F-034","FR-309","INV-003",
-  "Let other systems create drafts.", "API keys with scopes;idempotent create and bulk endpoints", "", "",
-  "A key without invoices:create is refused;Keys cannot approve", "Integration")
+T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","L","F-034","FR-309","INV-003",
+  "Let other systems create drafts.", "Issue, list and revoke organization-scoped API keys with invoices:create only;hash secrets and enforce expiry and per-key rate limits;Add key-authenticated idempotent single and bulk draft creation with per-row results", "", "Re-estimate L (~1.5–2 days). Before scheduling, split into key lifecycle and authorization (S), then inbound create and bulk ingestion (M).",
+  "A key without invoices:create is refused;Keys cannot approve;Retries with identical idempotency keys return the original row;One invalid or conflicting bulk row does not prevent later rows from receiving a result", "Integration")
 T("INV-L03","Add recurring payment schedules","Later","-","M","F-040","FR-321, BR-002","INV-003",
   "Generate periodic drafts.", "Schedule templates;draft generation job;skip a period", "", "",
   "Generated drafts require approval every period", "Integration")
-T("INV-L04","Support fiat-denominated invoices","Later","-","L","F-041","FR-322","INV-003 ENG-L02",
-  "Accept invoices in fiat with FX conversion.", "Fiat amount and currency on requests;approval binds max stablecoin amount;FX source adapter", "", "",
+T("INV-L04","Support fiat-denominated invoices","Later","-","L","F-041","FR-322","INV-015 INV-016",
+  "Accept invoices in fiat with FX conversion.", "Two independently schedulable pieces: persist and approve a fiat invoice cap, then safely obtain and validate a fresh execution quote", "", "",
   "Payment never exceeds the approved maximum stablecoin amount", "Integration")
+T("INV-015","Model fiat invoice amounts and approval caps","Later","-","S","F-041","FR-322","INV-003 ENG-015",
+  "Represent the invoice's fiat value and the approver's stablecoin ceiling in the request revision.", "Fiat minor-unit amount and ISO currency fields;capture and persist a reference FX quote;include all FX approval inputs in revision snapshots and invoice hash;expose the stablecoin ceiling explicitly", "", "",
+  "Changing fiat value, currency, reference quote or cap creates a revision and invalidates prior approvals;approval typed data binds the maximum stablecoin base units", "Integration")
+T("INV-016","Guard fiat invoice payment against FX drift and depeg","Later","-","S","F-041","FR-322","INV-015 ENG-016",
+  "Recompute the payable stablecoin amount from a fresh quote immediately before execution.", "FX provider boundary;freshness, source, pair, drift and USD peg checks;integer ceiling conversion;block above approved max", "", "",
+  "Stale, mismatched, depegged or over-cap quotes return no payment amount;safe proposals never exceed the approved maximum", "Integration")
 
 # ───────────── CHR · Chain Reader & Tx Tracking ─────────────
 T("CHR-001","Build the RPC client with failover","M1","P0","M","F-050","NFR-REL-04","TRS-002",

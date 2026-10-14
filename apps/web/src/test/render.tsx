@@ -9,9 +9,14 @@ import { AppProviders } from '@/providers/app-providers';
 /** Renders the whole app against the mock API at `path`. */
 export function renderApp(
   path: string,
-  options: { signedIn?: boolean; demoWallet?: boolean } = {},
+  options: {
+    signedIn?: boolean;
+    demoWallet?: boolean;
+    beforeRender?: () => void;
+  } = {},
 ) {
   resetDb({ timeScale: 0, signedIn: options.signedIn ?? true });
+  options.beforeRender?.();
   if (options.demoWallet) {
     window.sessionStorage.setItem('treasurypilot.demo-wallet', 'on');
   }

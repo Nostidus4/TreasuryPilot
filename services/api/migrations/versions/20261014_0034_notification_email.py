@@ -1,7 +1,7 @@
-"""add user email cadence and delivery claims for notification mail
+"""add user email cadence, delivery claims and retry state for notification mail
 
-Revision ID: 20261014_0024
-Revises: 20261014_0023
+Revision ID: 20261014_0034
+Revises: 20261014_0033
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0024"
-down_revision: str | None = "20261014_0023"
+revision: str = "20261014_0034"
+down_revision: str | None = "20261014_0033"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -43,16 +43,26 @@ def upgrade() -> None:
     op.add_column(
         "notifications", sa.Column("email_claimed_at", sa.DateTime(timezone=True), nullable=True)
     )
+    op.add_column(
+        "notifications",
+        sa.Column("email_attempts", sa.Integer(), server_default="0", nullable=False),
+    )
+    op.add_column(
+        "notifications",
+        sa.Column("email_next_attempt_at", sa.DateTime(timezone=True), nullable=True),
+    )
     op.create_index(
         "ix_notifications_email_pending",
         "notifications",
-        ["created_at", "id"],
+        ["deliver_at", "id"],
         postgresql_where=sa.text("email_sent_at IS NULL"),
     )
 
 
 def downgrade() -> None:
     op.drop_index("ix_notifications_email_pending", table_name="notifications")
+    op.drop_column("notifications", "email_next_attempt_at")
+    op.drop_column("notifications", "email_attempts")
     op.drop_column("notifications", "email_claimed_at")
     op.drop_column("notifications", "email_sent_at")
     op.drop_table("notification_email_preferences")

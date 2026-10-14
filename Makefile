@@ -14,7 +14,7 @@ export COREPACK_HOME
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap check-env dev infra down logs ps smoke openapi web-dev \
+.PHONY: help bootstrap check-env dev infra down logs ps smoke openapi config-check web-dev \
 	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local
 
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "  make down            Stop the local stack"
 	@echo "  make smoke           Check every exposed local service"
 	@echo "  make openapi         Regenerate the typed web API client"
+	@echo "  make config-check    Verify Sepolia config against live chain state"
 	@echo "  make web-dev         Start the Vite development server"
 	@echo "  make test            Run Python, web and contract tests"
 	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
@@ -65,6 +66,9 @@ openapi:
 	uv run python -m treasurypilot_api.export_openapi --output apps/web/openapi.json
 	$(PNPM) --dir apps/web generate:api
 	$(PNPM) exec prettier --write apps/web/openapi.json apps/web/src/lib/api/schema.d.ts
+
+config-check:
+	uv run python infra/scripts/config_check.py
 
 web-dev:
 	$(PNPM) --dir apps/web dev

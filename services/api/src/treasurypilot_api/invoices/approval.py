@@ -7,6 +7,8 @@ load the current request revision and chain configuration before invoking it.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from pydantic import TypeAdapter
 
 from treasurypilot_api.invoices.models import RequestStatus
@@ -22,6 +24,20 @@ _UINT64_MAX = 2**64 - 1
 _ADDRESS: TypeAdapter[str] = TypeAdapter(Address)
 
 
+class ApprovalExpiryError(ValueError):
+    """The client-pinned approval expiry is outside the allowed window."""
+
+
+class ApprovalChainReader(Protocol):
+    """Read current module approval state and ERC-1271 signatures from the chain."""
+
+    async def is_approver(self, *, chain_id: int, module: str, signer: str) -> bool: ...
+
+    async def is_valid_erc1271_signature(
+        self, *, chain_id: int, wallet: str, digest: bytes, signature: bytes
+    ) -> bool: ...
+
+
 def build_approval_typed_data(
     request: RequestView,
     *,
@@ -30,12 +46,15 @@ def build_approval_typed_data(
     now: int,
     approval_max_age: int,
     asset: str,
+    expiry: int | None = None,
 ) -> dict[str, object]:
     """Build exactly the contract's 13-field PaymentApproval for a current request.
 
     ``request_id`` must be the stable on-chain ID, not the database UUID. Early
     payment fields are already normalized and bound to the confirmed request
-    terms by the invoice request service.
+    terms by the invoice request service. ``expiry`` pins the signed expiry to the
+    value issued by the typed-data endpoint; it must be in ``(now, cap]`` where
+    ``cap = min(deadline + 14d, now + approval_max_age)``. Without it the cap is used.
     """
     if request.status != RequestStatus.AWAITING_APPROVAL:
         raise ValueError("request must be AwaitingApproval")
@@ -55,9 +74,13 @@ def build_approval_typed_data(
     _ADDRESS.validate_python(module_address)
     _ADDRESS.validate_python(asset)
 
-    expiry = min(request.deadline + _MAX_DEADLINE_GRACE_SECONDS, now + approval_max_age)
-    if expiry <= now:
+    cap = min(request.deadline + _MAX_DEADLINE_GRACE_SECONDS, now + approval_max_age)
+    if cap <= now:
         raise ValueError("approval window has closed")
+    if expiry is None:
+        expiry = cap
+    elif isinstance(expiry, bool) or not now < expiry <= cap:
+        raise ApprovalExpiryError("expiry is outside the allowed approval window")
     if max(request.early_pay_by, request.deadline, expiry) > _UINT64_MAX:
         raise ValueError("timestamps must fit in uint64")
 

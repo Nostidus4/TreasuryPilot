@@ -8,12 +8,17 @@ x-app-environment: &app-environment
   TP_REDIS_URL: redis://redis:6379/0
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
   S3_ENDPOINT_URL: http://minio:9000
+  # Browser-reachable endpoint used only to presign document reads.
+  S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
   S3_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
   # Empty: spans are created (trace_id in logs) but not exported.
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
   # Unhandled errors also ping Telegram when both are set and SENTRY_DSN is too (OBS-003).
   TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
   TP_TELEGRAM_ALERT_CHAT_ID: ${TP_TELEGRAM_ALERT_CHAT_ID:-}
+  # Local-only: reuses the MinIO root credentials. Deployments must set dedicated app keys.
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
 
 services:
   postgres:
@@ -126,8 +131,11 @@ services:
       <<: *app-environment
       SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
-      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
-    secrets: [field_key]
+      # Telegram linking (optional): the API stores chat ids encrypted and verifies the webhook.
+      TP_TELEGRAM_BOT_USERNAME: ${TP_TELEGRAM_BOT_USERNAME:-}
+      TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
+      TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,15 +185,9 @@ services:
       # Core-only credentials are deliberately not part of x-app-environment.
       TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
-      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
-      TP_RESEND_API_KEY: ${TP_RESEND_API_KEY:-}
-      TP_RESEND_FROM_EMAIL: ${TP_RESEND_FROM_EMAIL:-}
-      TP_SESSION_SECRET: ${TP_SESSION_SECRET:-treasurypilot-local-development-only-session-secret}
-      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
-      TP_PUBLIC_API_BASE_URL: ${TP_PUBLIC_API_BASE_URL:-http://localhost:8000}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
-    secrets: [policy_keystore, policy_keystore_password, field_key]
+    secrets: [policy_keystore, policy_keystore_password]
     tmpfs: [/tmp/prometheus]
     depends_on:
       postgres:
@@ -193,9 +195,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    # The core worker sends HTTPS webhooks. Its resolver rejects non-public
-    # addresses and redirects are disabled by the sender.
-    networks: [internal, public]
+    networks: [internal]
 
   worker-ai:
     build:
@@ -226,6 +226,48 @@ services:
       TP_METRICS_PORT: '9100'
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
     tmpfs: [/tmp/prometheus]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public, internal]
+
+  # Sends signed webhooks, Telegram messages and notification email to external HTTPS endpoints,
+  # so it is the only worker besides worker-ai on the public network. Explicit allowlist: no
+  # policy keystore, signer secret or object-store credentials; the webhook sender rejects
+  # non-public addresses.
+  worker-webhooks:
+    build:
+      <<: *python-build
+      dockerfile: services/worker/Dockerfile
+    command:
+      [
+        'celery',
+        '-A',
+        'treasurypilot_worker.celery_app:app',
+        'worker',
+        '--loglevel=INFO',
+        '--queues=webhooks',
+        '--hostname=webhooks@%h',
+      ]
+    environment:
+      TP_ENVIRONMENT: local
+      TP_REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Telegram delivery (optional) also needs egress, so it runs here, not on the core worker.
+      TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
+      TP_APP_BASE_URL: ${TP_APP_BASE_URL:-http://localhost:5173}
+      # Notification email (optional) calls Resend, so it also runs here. The session secret only
+      # signs List-Unsubscribe links and must match the API's.
+      TP_RESEND_API_KEY: ${TP_RESEND_API_KEY:-}
+      TP_RESEND_FROM_EMAIL: ${TP_RESEND_FROM_EMAIL:-}
+      TP_SESSION_SECRET: ${TP_SESSION_SECRET:-}
+      TP_PUBLIC_API_BASE_URL: ${TP_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -316,8 +358,6 @@ services:
     networks: [public, internal]
 
 secrets:
-  field_key:
-    file: ${TP_FIELD_ENCRYPTION_KEY_FILE:-/dev/null}
   # Unset paths mount /dev/null: the worker starts, but attest fails closed (no policy key).
   policy_keystore:
     file: ${TP_POLICY_KEYSTORE_FILE:-/dev/null}

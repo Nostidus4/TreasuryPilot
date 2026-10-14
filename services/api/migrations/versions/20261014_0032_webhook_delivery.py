@@ -1,7 +1,7 @@
 """add outbound webhook endpoints and delivery state
 
-Revision ID: 20261014_0023
-Revises: 20261014_0022
+Revision ID: 20261014_0032
+Revises: 20261014_0031
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0023"
-down_revision: str | None = "20261014_0022"
+revision: str = "20261014_0032"
+down_revision: str | None = "20261014_0031"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 

@@ -13,16 +13,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TP_", case_sensitive=False)
 
     redis_url: str = "redis://localhost:6379/0"
-    environment: str = "local"
     visibility_timeout_seconds: int = 3600
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
     # Compose sets DATABASE_URL unprefixed; empty means this process has no DB access.
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
-    resend_api_key: SecretStr | None = Field(default=None, validation_alias="TP_RESEND_API_KEY")
-    resend_from_email: str | None = Field(default=None, validation_alias="TP_RESEND_FROM_EMAIL")
-    session_secret: SecretStr | None = Field(default=None, validation_alias="TP_SESSION_SECRET")
-    app_base_url: str = "http://localhost:5173"
+    # Environment-only credentials for notification email, held by the egress worker.
+    environment: str = "local"
+    resend_api_key: SecretStr | None = None
+    resend_from_email: str | None = None
+    # Shared with the API: signs List-Unsubscribe links (at least 32 bytes).
+    session_secret: SecretStr | None = None
     public_api_base_url: str = "http://localhost:8000"
     log_level: str = "INFO"
     log_format: LogFormat = "json"
@@ -31,6 +32,18 @@ class Settings(BaseSettings):
     # Docker secrets in the core worker only; unset means no attestation can be issued.
     policy_keystore_path: Path | None = None
     policy_keystore_password_file: Path | None = None
+    # Telegram bot token: environment only, never logged (SecretStr masks repr).
+    telegram_bot_token: SecretStr | None = None
+    # Base of the deep links sent in notifications; the app enforces login and permissions.
+    app_base_url: str = "http://localhost:5173"
+    # Separate publisher identity; configure only in the core worker after its
+    # address has been allowlisted by AuditRootAnchor.setPublisher.
+    audit_anchor_rpc_url: str | None = None
+    audit_anchor_chain_id: int | None = None
+    audit_anchor_contract_address: str | None = None
+    audit_anchor_private_key: SecretStr | None = Field(
+        default=None, validation_alias="TP_AUDIT_ANCHOR_PRIVATE_KEY"
+    )
 
 
 @lru_cache

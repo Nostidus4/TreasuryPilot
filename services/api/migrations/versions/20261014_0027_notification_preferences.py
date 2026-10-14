@@ -1,7 +1,7 @@
-"""add per-user notification preferences
+"""add per-user notification preferences and notifications.deliver_at
 
-Revision ID: 20261014_0022
-Revises: 20261014_0021
+Revision ID: 20261014_0027
+Revises: 20261014_0026
 Create Date: 2026-10-13 00:00:00
 """
 
@@ -11,13 +11,23 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0022"
-down_revision: str | None = "20261014_0021"
+revision: str = "20261014_0027"
+down_revision: str | None = "20261014_0026"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "notifications",
+        sa.Column(
+            "deliver_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+    )
+    op.execute("UPDATE notifications SET deliver_at = created_at")
+    op.create_index(
+        "ix_notifications_user_deliver", "notifications", ["user_id", "org_id", "deliver_at"]
+    )
     op.create_table(
         "notification_preferences",
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -50,3 +60,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("notification_preferences")
+    op.drop_index("ix_notifications_user_deliver", table_name="notifications")
+    op.drop_column("notifications", "deliver_at")

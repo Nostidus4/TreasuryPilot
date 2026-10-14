@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.events.writer import append_domain_event
@@ -16,7 +16,9 @@ from treasurypilot_api.invoices.fingerprints import (
     assert_no_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
+    ApprovalStatus,
     CancelOnchainStatus,
+    PaymentApproval,
     PaymentRequest,
     RequestStatus,
     RequestStatusEvent,
@@ -470,6 +472,22 @@ class RequestStateMachine:
                 if approved_before:
                     request.cancel_onchain = CancelOnchainStatus.PENDING.value
 
+            if target in (RequestStatus.CANCELLED, RequestStatus.REJECTED):
+                # A signature must not stay Valid once its request is cancelled or rejected.
+                await session.execute(
+                    update(PaymentApproval)
+                    .where(
+                        PaymentApproval.request_id == request_id,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                    )
+                    .values(
+                        status=(
+                            ApprovalStatus.CANCELLED
+                            if target == RequestStatus.CANCELLED
+                            else ApprovalStatus.INVALIDATED
+                        ).value
+                    )
+                )
             request.status = rule.target.value
             event = RequestStatusEvent(
                 id=uuid7(),

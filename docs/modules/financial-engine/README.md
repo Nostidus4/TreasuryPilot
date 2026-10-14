@@ -101,6 +101,7 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `request_value(req, pay_day, *, fee_in_asset=0, supply_rate_bps=0) → int` | exact saving − late fee − early-payment costs | §8.2, §15 |
 | `schedule_edf(requests, snapshot, policy) → Schedule` | B1 baseline | |
 | `schedule_optimal(requests, snapshot, policy, time_limit_s=5) → Schedule` | B2 via CP-SAT | falls back to EDF on solver error/timeout without solution |
+| `schedule_cpsat_multi_asset({asset_id: AssetScheduleInput}) → Schedule` | Independent B2 run per asset | Each input owns its balances, usage counters, and policy; scheduled and infeasible results carry `asset_id` |
 | `schedule_oracle(requests, snapshot, policy) → Schedule` | exhaustive, ≤ 8 requests and a ≤ 5-day horizon (through the latest due or payee activation day) | **tests and benchmarks only** |
 | `score(plan, requests, snapshot, policy) → (violations, missed_deadlines, −value, tx_count)` | lexicographic tuple, lower is better; values are recomputed from confirmed terms | shared by deterministic schedules and AI proposals (AGT-009) |
 | `compare_plans(left, right, …) → -1, 0, or 1` | deterministic comparison using `score` | choose between proposals |
@@ -109,6 +110,8 @@ The engine is stateless. Inputs fully determine outputs; identical inputs ⇒ by
 | `forecast(snapshot, requests, policy, days=7) → Forecast` | daily projections, buffer-hit days, suggested refills | P2 |
 | `fingerprint(vendor_id, invoice_no, amount, asset) → bytes32` | §8.5 | must equal the contract's value |
 | `propose_fiat_payment(approval, quote, policy, now_timestamp) → BaseUnits` | §8.7 | blocks stale/out-of-tolerance/depegged quotes or amounts above the approved maximum |
+
+The multi-asset entry point optimizes each asset independently, so balances and limits cannot cross assets. `AssetScheduleInput.objective_value_scale` converts native base-unit savings into a common integer unit for the combined objective (for example, scale a 6-decimal stablecoin by `10**12` to report in 18-decimal units). The caller must use one common target unit for every asset. Cross-asset conversion, FX, and depeg checks remain out of scope.
 
 Errors are typed (`InvalidTerms`, `InvalidSnapshot`, `NegativeAmount`) and never return partial results.
 Pydantic raises `ValidationError` while constructing input models; engine entry points defensively

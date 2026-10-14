@@ -38,6 +38,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/admin/tenants/{tenant_id}/support': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Support Summary */
+    get: operations['support_summary_admin_tenants__tenant_id__support_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/tenants/{tenant_id}/suspend': {
     parameters: {
       query?: never;
@@ -117,6 +134,40 @@ export interface paths {
     put?: never;
     /** Verify Magic Link */
     post: operations['verify_magic_link_v1_auth_magic_link_verify_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/oidc/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Oidc Callback */
+    get: operations['oidc_callback_v1_auth_oidc_callback_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/oidc/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Oidc Start */
+    get: operations['oidc_start_v1_auth_oidc_start_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -208,6 +259,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/channels': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Channels */
+    get: operations['list_channels_v1_me_channels_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/channels/telegram/link-code': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Link Code */
+    post: operations['create_link_code_v1_me_channels_telegram_link_code_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/channels/{channel_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Channel */
+    delete: operations['delete_channel_v1_me_channels__channel_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Channel */
+    patch: operations['update_channel_v1_me_channels__channel_id__patch'];
+    trace?: never;
+  };
   '/v1/me/notification-preferences': {
     parameters: {
       query?: never;
@@ -220,44 +323,6 @@ export interface paths {
     /** Put Notification Preferences */
     put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/v1/me/notifications/email': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Email Preference */
-    get: operations['get_email_preference_v1_me_notifications_email_get'];
-    /** Set Email Preference */
-    put: operations['set_email_preference_v1_me_notifications_email_put'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/v1/me/notifications/email/unsubscribe': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Unsubscribe Email
-     * @description Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory.
-     */
-    post: operations['unsubscribe_email_v1_me_notifications_email_unsubscribe_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -327,6 +392,41 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/api-keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Api Keys */
+    get: operations['list_api_keys_v1_orgs__organization_id__api_keys_get'];
+    put?: never;
+    /** Create Api Key */
+    post: operations['create_api_key_v1_orgs__organization_id__api_keys_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/api-keys/{key_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Api Key */
+    delete: operations['revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -595,6 +695,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/bulk': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Requests Bulk */
+    post: operations['create_requests_bulk_v1_orgs__organization_id__requests_bulk_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/import-csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Import Requests Csv */
+    post: operations['import_requests_csv_v1_orgs__organization_id__requests_import_csv_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Download Csv Import Errors */
+    get: operations['download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload Invoice Document */
+    post: operations['upload_invoice_document_v1_orgs__organization_id__requests_upload_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}': {
     parameters: {
       query?: never;
@@ -610,6 +778,91 @@ export interface paths {
     head?: never;
     /** Edit Request */
     patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Approval Typed Data */
+    get: operations['get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Request */
+    post: operations['approve_request_v1_orgs__organization_id__requests__request_id__approve_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Request */
+    post: operations['cancel_request_v1_orgs__organization_id__requests__request_id__cancel_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/cancel-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Cancel Transaction */
+    get: operations['get_cancel_transaction_v1_orgs__organization_id__requests__request_id__cancel_tx_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/documents/{document_id}/url': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Document Read Url */
+    get: operations['document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
@@ -629,6 +882,111 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Extraction
+     * @description Apply operator-reviewed extraction fields to the current upload draft.
+     */
+    post: operations['confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/flags/{flag_id}/ack': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Acknowledge Flag */
+    post: operations['acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Request */
+    post: operations['reject_request_v1_orgs__organization_id__requests__request_id__reject_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/renew': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew Request */
+    post: operations['renew_request_v1_orgs__organization_id__requests__request_id__renew_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/request-changes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request Changes */
+    post: operations['request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/submit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit Request */
+    post: operations['submit_request_v1_orgs__organization_id__requests__request_id__submit_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}/terms/confirm': {
     parameters: {
       query?: never;
@@ -640,6 +998,23 @@ export interface paths {
     put?: never;
     /** Confirm Request Terms */
     post: operations['confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/withdraw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Withdraw Request */
+    post: operations['withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -731,7 +1106,25 @@ export interface paths {
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
     trace?: never;
   };
-  '/v1/orgs/{organization_id}/treasuries': {
+  '/v1/orgs/{organization_id}/support-grants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Support Grants */
+    get: operations['list_support_grants_v1_orgs__organization_id__support_grants_get'];
+    put?: never;
+    /** Grant Support */
+    post: operations['grant_support_v1_orgs__organization_id__support_grants_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/support-grants/{grant_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -739,6 +1132,24 @@ export interface paths {
       cookie?: never;
     };
     get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Support Grant */
+    delete: operations['revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Treasuries */
+    get: operations['list_treasuries_v1_orgs__organization_id__treasuries_get'];
     put?: never;
     /** Create Treasury */
     post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
@@ -1088,6 +1499,15 @@ export interface components {
       /** Perrequest */
       perRequest: string;
     };
+    /** ApiKeyCreate */
+    ApiKeyCreate: {
+      /** Expiresat */
+      expiresAt?: string | null;
+      /** Name */
+      name: string;
+      /** Scopes */
+      scopes: string[];
+    };
     /** ApprovalEvidence */
     ApprovalEvidence: {
       /** Signaturehash */
@@ -1098,6 +1518,15 @@ export interface components {
       typedData?: {
         [key: string]: unknown;
       } | null;
+    };
+    /** ApproveRequest */
+    ApproveRequest: {
+      /** Expiry */
+      expiry: number;
+      /** Revision */
+      revision: number;
+      /** Signature */
+      signature: string;
     };
     /** AssetView */
     AssetView: {
@@ -1181,6 +1610,16 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+    /** Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post */
+    Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post: {
+      /** File */
+      file: string;
+      /**
+       * Treasury Id
+       * Format: uuid
+       */
+      treasury_id: string;
+    };
     /** BundleRequest */
     BundleRequest: {
       /** Amount */
@@ -1233,6 +1672,39 @@ export interface components {
     ChainsResponse: {
       /** Chains */
       chains: components['schemas']['ChainView'][];
+    };
+    /**
+     * ChannelKind
+     * @enum {string}
+     */
+    ChannelKind: 'TELEGRAM';
+    /** ChannelList */
+    ChannelList: {
+      /** Items */
+      items: components['schemas']['ChannelView'][];
+    };
+    /** ChannelPatch */
+    ChannelPatch: {
+      /** Showamounts */
+      showAmounts: boolean;
+    };
+    /** ChannelView */
+    ChannelView: {
+      /** Active */
+      active: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      kind: components['schemas']['ChannelKind'];
+      /** Showamounts */
+      showAmounts: boolean;
+      /**
+       * Verifiedat
+       * Format: date-time
+       */
+      verifiedAt: string;
     };
     /** ConfirmTermsRequest */
     ConfirmTermsRequest: {
@@ -1316,18 +1788,52 @@ export interface components {
       /** Url */
       url: string;
     };
-    /**
-     * EmailDeliveryMode
-     * @enum {string}
-     */
-    EmailDeliveryMode: 'immediate' | 'daily' | 'off';
-    /** EmailPreferenceRequest */
-    EmailPreferenceRequest: {
-      deliveryMode: components['schemas']['EmailDeliveryMode'];
+    /** CsvImportCreated */
+    CsvImportCreated: {
+      /** Flags */
+      flags: string[];
+      /** Invoicenumber */
+      invoiceNumber: string;
+      /** Requestid */
+      requestId: string | null;
+      /** Row */
+      row: number;
     };
-    /** EmailPreferenceView */
-    EmailPreferenceView: {
-      deliveryMode: components['schemas']['EmailDeliveryMode'];
+    /** CsvImportResponse */
+    CsvImportResponse: {
+      /** Created */
+      created: components['schemas']['CsvImportCreated'][];
+      /** Dryrun */
+      dryRun: boolean;
+      /** Errorreporturl */
+      errorReportUrl: string | null;
+      /** Errors */
+      errors: components['schemas']['CsvImportRowError'][];
+      /** Importid */
+      importId: string | null;
+    };
+    /** CsvImportRowError */
+    CsvImportRowError: {
+      /** Code */
+      code: string;
+      /** Field */
+      field: string;
+      /** Message */
+      message: string;
+      /** Row */
+      row: number;
+      /** Value */
+      value: string;
+    };
+    /** DocumentUrlResponse */
+    DocumentUrlResponse: {
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /** Url */
+      url: string;
     };
     /** EvidenceBundle */
     EvidenceBundle: {
@@ -1387,6 +1893,43 @@ export interface components {
       validations?: components['schemas']['ValidationEvidence'][];
       /** Verifications */
       verifications?: components['schemas']['VerificationEvidence'][];
+    };
+    /** ExtractionConfirmation */
+    ExtractionConfirmation: {
+      /** Amount */
+      amount: string;
+      /**
+       * Duedate
+       * Format: date
+       */
+      dueDate: string;
+      /**
+       * Invoicecountindocument
+       * @default 1
+       */
+      invoiceCountInDocument: number;
+      /** Invoiceno */
+      invoiceNo: string;
+      /**
+       * Issuedate
+       * Format: date
+       */
+      issueDate: string;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** FlagAcknowledgment */
+    FlagAcknowledgment: {
+      /** Note */
+      note: string;
     };
     /** FlagEvidence */
     FlagEvidence: {
@@ -1506,6 +2049,18 @@ export interface components {
     InvitesResponse: {
       /** Invites */
       invites: components['schemas']['InviteView'][];
+    };
+    /** LinkCodeIssued */
+    LinkCodeIssued: {
+      /** Boturl */
+      botUrl: string;
+      /** Code */
+      code: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
     };
     /** LinkWalletRequest */
     LinkWalletRequest: {
@@ -1943,6 +2498,16 @@ export interface components {
       /** To */
       to: string;
     };
+    /** RenewRequest */
+    RenewRequest: {
+      /** Duedate */
+      dueDate?: string | null;
+    };
+    /** RequestBulkCreate */
+    RequestBulkCreate: {
+      /** Requests */
+      requests: components['schemas']['RequestCreate'][];
+    };
     /** RequestCreate */
     RequestCreate: {
       /** Amount */
@@ -1959,6 +2524,10 @@ export interface components {
        * Format: date
        */
       dueDate: string;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo: string;
       /**
@@ -2002,6 +2571,10 @@ export interface components {
       costCenter?: string | null;
       /** Duedate */
       dueDate?: string | null;
+      /** Fiatamountminorunits */
+      fiatAmountMinorUnits?: string | null;
+      /** Fiatcurrency */
+      fiatCurrency?: string | null;
       /** Invoiceno */
       invoiceNo?: string | null;
       /** Issuedate */
@@ -2022,6 +2595,11 @@ export interface components {
       treasuryId?: string | null;
       /** Vendorid */
       vendorId?: string | null;
+    };
+    /** RequestReason */
+    RequestReason: {
+      /** Reason */
+      reason: string;
     };
     /**
      * ReviewAction
@@ -2134,6 +2712,67 @@ export interface components {
       /** Transactionhash */
       transactionHash: string;
     };
+    /** SupportGrantRequest */
+    SupportGrantRequest: {
+      /**
+       * Durationhours
+       * @default 24
+       */
+      durationHours: number;
+      /** Staffuser */
+      staffUser: string;
+    };
+    /** SupportGrantView */
+    SupportGrantView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Grantedby
+       * Format: uuid
+       */
+      grantedBy: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Revokedat */
+      revokedAt: string | null;
+      /**
+       * Scope
+       * @constant
+       */
+      scope: 'read';
+      /** Staffuser */
+      staffUser: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      readonly status: 'active' | 'expired' | 'revoked';
+    };
+    /** SupportSummary */
+    SupportSummary: {
+      /**
+       * Grantid
+       * Format: uuid
+       */
+      grantId: string;
+      tenant: components['schemas']['TenantView'];
+    };
     /** TenantHealth */
     TenantHealth: {
       /** Activemembers */
@@ -2187,6 +2826,11 @@ export interface components {
       /** Txhash */
       txHash: string;
     };
+    /** TreasuriesResponse */
+    TreasuriesResponse: {
+      /** Items */
+      items: components['schemas']['TreasurySummaryView'][];
+    };
     /** TreasuryResponse */
     TreasuryResponse: {
       treasury: components['schemas']['TreasuryView'];
@@ -2200,6 +2844,36 @@ export interface components {
      * @enum {string}
      */
     TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasurySummaryView */
+    TreasurySummaryView: {
+      /** Assetdecimals */
+      assetDecimals: number | null;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Assetistest */
+      assetIsTest: boolean | null;
+      /** Assetsymbol */
+      assetSymbol: string;
+      /** Chainid */
+      chainId: number;
+      /** Chainname */
+      chainName: string;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      status: components['schemas']['TreasuryStatus'];
+    };
     /** TreasuryView */
     TreasuryView: {
       /**
@@ -2224,7 +2898,11 @@ export interface components {
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
     };
-    /** UpdateNotificationPreferences */
+    /**
+     * UpdateNotificationPreferences
+     * @description PUT body. Omitted fields keep their stored value (the defaults below only
+     *     describe the schema); send ``null`` quiet hours to clear them.
+     */
     UpdateNotificationPreferences: {
       /** Categories */
       categories?: {
@@ -2248,6 +2926,21 @@ export interface components {
     UpdateWebhookRequest: {
       /** Enabled */
       enabled: boolean;
+    };
+    /** UploadResponse */
+    UploadResponse: {
+      /**
+       * Documentid
+       * Format: uuid
+       */
+      documentId: string;
+      /** Extractionjobid */
+      extractionJobId: string;
+      /**
+       * Requestid
+       * Format: uuid
+       */
+      requestId: string;
     };
     /** UserView */
     UserView: {
@@ -2548,6 +3241,37 @@ export interface operations {
       };
     };
   };
+  support_summary_admin_tenants__tenant_id__support_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportSummary'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   suspend_tenant_admin_tenants__tenant_id__suspend_post: {
     parameters: {
       query?: never;
@@ -2681,6 +3405,55 @@ export interface operations {
       };
     };
   };
+  oidc_callback_v1_auth_oidc_callback_get: {
+    parameters: {
+      query?: {
+        code?: string | null;
+        state?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  oidc_start_v1_auth_oidc_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   siwe_nonce_v1_auth_siwe_nonce_get: {
     parameters: {
       query?: never;
@@ -2792,6 +3565,110 @@ export interface operations {
       };
     };
   };
+  list_channels_v1_me_channels_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelList'];
+        };
+      };
+    };
+  };
+  create_link_code_v1_me_channels_telegram_link_code_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LinkCodeIssued'];
+        };
+      };
+    };
+  };
+  delete_channel_v1_me_channels__channel_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        channel_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_channel_v1_me_channels__channel_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        channel_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChannelPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_notification_preferences_v1_me_notification_preferences_get: {
     parameters: {
       query?: never;
@@ -2833,89 +3710,6 @@ export interface operations {
         content: {
           'application/json': components['schemas']['NotificationPreferencesView'];
         };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_email_preference_v1_me_notifications_email_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['EmailPreferenceView'];
-        };
-      };
-    };
-  };
-  set_email_preference_v1_me_notifications_email_put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['EmailPreferenceRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['EmailPreferenceView'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  unsubscribe_email_v1_me_notifications_email_unsubscribe_post: {
-    parameters: {
-      query: {
-        user_id: string;
-        signature: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -3041,6 +3835,110 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_api_keys_v1_orgs__organization_id__api_keys_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_api_key_v1_orgs__organization_id__api_keys_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApiKeyCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        key_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -3598,6 +4496,7 @@ export interface operations {
       query?: never;
       header?: {
         'Idempotency-Key'?: string | null;
+        authorization?: string | null;
       };
       path: {
         organization_id: string;
@@ -3619,6 +4518,164 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_requests_bulk_v1_orgs__organization_id__requests_bulk_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+        authorization?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestBulkCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  import_requests_csv_v1_orgs__organization_id__requests_import_csv_post: {
+    parameters: {
+      query?: {
+        dryRun?: boolean;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+          /** Format: uuid */
+          treasuryId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CsvImportResponse'];
+        };
+      };
+      /** @description CSV file exceeds the upload limit */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        import_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  upload_invoice_document_v1_orgs__organization_id__requests_upload_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': components['schemas']['Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadResponse'];
         };
       };
       /** @description Validation Error */
@@ -3672,6 +4729,187 @@ export interface operations {
       };
     };
   };
+  get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  approve_request_v1_orgs__organization_id__requests__request_id__approve_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cancel_request_v1_orgs__organization_id__requests__request_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_cancel_transaction_v1_orgs__organization_id__requests__request_id__cancel_tx_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  document_read_url_v1_orgs__organization_id__requests__request_id__documents__document_id__url_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DocumentUrlResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get: {
     parameters: {
       query?: never;
@@ -3704,6 +4942,239 @@ export interface operations {
       };
     };
   };
+  confirm_extraction_v1_orgs__organization_id__requests__request_id__extraction_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ExtractionConfirmation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  acknowledge_flag_v1_orgs__organization_id__requests__request_id__flags__flag_id__ack_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+        flag_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FlagAcknowledgment'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reject_request_v1_orgs__organization_id__requests__request_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  renew_request_v1_orgs__organization_id__requests__request_id__renew_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RenewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  request_changes_v1_orgs__organization_id__requests__request_id__request_changes_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestReason'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  submit_request_v1_orgs__organization_id__requests__request_id__submit_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post: {
     parameters: {
       query?: never;
@@ -3721,6 +5192,42 @@ export interface operations {
         'application/json': components['schemas']['ConfirmTermsRequest'];
       };
     };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  withdraw_request_v1_orgs__organization_id__requests__request_id__withdraw_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -3910,6 +5417,135 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_support_grants_v1_orgs__organization_id__support_grants_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportGrantView'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  grant_support_v1_orgs__organization_id__support_grants_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SupportGrantRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportGrantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        grant_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_treasuries_v1_orgs__organization_id__treasuries_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuriesResponse'];
         };
       };
       /** @description Validation Error */

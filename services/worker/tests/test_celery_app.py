@@ -13,18 +13,24 @@ from treasurypilot_worker.runtime import (
     current_correlation_id,
     make_idempotency_key,
 )
-from treasurypilot_worker.tasks import ai_probe, core_probe, publish_domain_events
+from treasurypilot_worker.tasks import (
+    ai_probe,
+    core_probe,
+    publish_daily_audit_roots_task,
+    publish_domain_events,
+)
 
 
 def test_worker_uses_safe_delivery_settings() -> None:
     assert app.conf.task_acks_late is True
     assert app.conf.task_reject_on_worker_lost is True
     queues = {queue.name: queue for queue in app.conf.task_queues}
-    assert set(queues) == {"ai", "core"}
+    assert set(queues) == {"ai", "core", "webhooks"}
     assert queues["core"].exchange.name == "core"
     assert queues["core"].routing_key == "core"
     assert queues["ai"].exchange.name == "ai"
     assert queues["ai"].routing_key == "ai"
+    assert queues["webhooks"].routing_key == "webhooks"
     assert app.conf.task_default_queue == "core"
     assert app.conf.worker_prefetch_multiplier == 1
     assert app.conf.broker_transport_options["visibility_timeout"] == 3600
@@ -48,6 +54,8 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert ai_probe.queue == "ai"
     assert isinstance(publish_domain_events, SafeTask)
     assert publish_domain_events.queue == "core"
+    assert isinstance(publish_daily_audit_roots_task, SafeTask)
+    assert publish_daily_audit_roots_task.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -58,15 +66,31 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["options"] == {"queue": "core", "expires": 2}
 
 
-def test_notification_email_tasks_have_immediate_and_daily_schedules() -> None:
-    immediate = app.conf.beat_schedule["send-notification-emails"]
-    daily = app.conf.beat_schedule["send-daily-notification-digests"]
+def test_webhook_delivery_runs_on_its_own_queue_not_core() -> None:
+    from treasurypilot_worker.tasks import deliver_webhooks
 
-    assert immediate["task"] == "treasurypilot.notifications.send-emails"
-    assert immediate["schedule"] == timedelta(seconds=60)
-    assert daily["task"] == "treasurypilot.notifications.send-daily-digests"
-    assert daily["schedule"].hour == {8}
-    assert daily["schedule"].minute == {0}
+    entry = app.conf.beat_schedule["deliver-webhooks"]
+
+    assert entry["options"] == {"queue": "webhooks", "expires": 2}
+    assert deliver_webhooks.queue == "webhooks"
+
+
+def test_telegram_delivery_runs_on_the_egress_worker_queue() -> None:
+    from treasurypilot_worker.tasks import deliver_telegram
+
+    entry = app.conf.beat_schedule["deliver-telegram"]
+
+    assert entry["options"] == {"queue": "webhooks", "expires": 2}
+    assert deliver_telegram.queue == "webhooks"
+
+
+def test_daily_audit_root_publisher_is_scheduled_at_utc_0005() -> None:
+    entry = app.conf.beat_schedule["publish-daily-audit-roots"]
+
+    assert entry["task"] == "treasurypilot.audit.publish-daily-roots"
+    assert entry["schedule"].hour == {0}
+    assert entry["schedule"].minute == {5}
+    assert entry["options"] == {"queue": "core"}
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:
@@ -207,3 +231,19 @@ def test_real_delivery_preserves_parent_correlation_id_header() -> None:
             broker_url=original_broker_url,
             result_backend=original_result_backend,
         )
+
+
+def test_notification_email_runs_on_the_egress_queue_not_core() -> None:
+    from treasurypilot_worker.tasks import send_daily_notification_digests, send_notification_emails
+
+    immediate = app.conf.beat_schedule["send-notification-emails"]
+    daily = app.conf.beat_schedule["send-daily-notification-digests"]
+
+    assert immediate["task"] == "treasurypilot.notifications.send-emails"
+    assert immediate["schedule"] == timedelta(seconds=60)
+    assert immediate["options"] == {"queue": "webhooks", "expires": 55}
+    assert daily["task"] == "treasurypilot.notifications.send-daily-digests"
+    assert daily["schedule"].hour == {8} and daily["schedule"].minute == {0}
+    assert daily["options"]["queue"] == "webhooks"
+    assert send_notification_emails.queue == "webhooks"
+    assert send_daily_notification_digests.queue == "webhooks"

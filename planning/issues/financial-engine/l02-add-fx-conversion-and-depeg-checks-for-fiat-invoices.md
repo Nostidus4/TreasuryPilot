@@ -10,7 +10,7 @@
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-322 |
-| **Blocks** | INV-L04 |
+| **Blocks** | — |
 | **Submission cut** | After submission |
 
 > **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
@@ -27,21 +27,20 @@ Problem behind this work (from `docs/FEATURES.md`):
 
 ## Objective
 
-Schedule and pay fiat-denominated invoices safely.
+Parent ticket for the fiat FX safety work; keep unscheduled until ENG-015 and ENG-016 are estimated and complete.
 
 ## Scope
 
-- FX rate model with tolerance
-- max stablecoin amount
-- depeg threshold check
+- Track the two child tickets: ENG-015 models immutable fiat approvals, rational FX rates, quotes and source/depeg policy (S, ≤0.5 day)
+- ENG-016 implements fail-closed quote validation, exact conversion and the approved maximum guard with boundary/property tests (S, ≤0.5 day)
 
 ## Out of scope
 
-Nothing specific beyond the scope above.
+Invoice storage, approval signing and payment orchestration (INV-L04)
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Split before scheduling: deliver the pure models first, then the pure conversion/check function. Child work totals S + S (≤1 day); preserve this accepted parent as the traceability link for FR-322.
 
 ## Dependencies
 
@@ -50,10 +49,11 @@ Follow the module spec and the relevant ADRs.
 ## Acceptance criteria
 
 - [ ] Never proposes more than the approved maximum stablecoin amount
+- [ ] Stale, mismatched, out-of-tolerance or depegged quotes are blocked
 
 ## Testing requirements
 
-- Unit
+- Unit + property
 
 ## Definition of Done
 

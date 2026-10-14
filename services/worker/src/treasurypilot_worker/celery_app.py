@@ -18,6 +18,7 @@ def create_celery_app() -> Celery:
     settings = get_settings()
     core_exchange = Exchange("core", type="direct")
     ai_exchange = Exchange("ai", type="direct")
+    webhooks_exchange = Exchange("webhooks", type="direct")
     app = Celery(
         "treasurypilot",
         broker=settings.redis_url,
@@ -33,6 +34,7 @@ def create_celery_app() -> Celery:
         task_queues=(
             Queue("core", exchange=core_exchange, routing_key="core"),
             Queue("ai", exchange=ai_exchange, routing_key="ai"),
+            Queue("webhooks", exchange=webhooks_exchange, routing_key="webhooks"),
         ),
         task_reject_on_worker_lost=True,
         task_ignore_result=True,
@@ -53,6 +55,11 @@ def create_celery_app() -> Celery:
                 "schedule": crontab(minute="*/10"),
                 "options": {"queue": "core"},
             },
+            "expire-invoice-approvals": {
+                "task": "treasurypilot.invoices.expire_approvals",
+                "schedule": timedelta(minutes=5),
+                "options": {"queue": "core"},
+            },
             "publish-domain-events": {
                 "task": "treasurypilot.notifications.publish-domain-events",
                 "schedule": timedelta(seconds=1),
@@ -60,20 +67,30 @@ def create_celery_app() -> Celery:
                 # this, a busy or stopped worker lets thousands pile up in Redis.
                 "options": {"queue": "core", "expires": 2},
             },
-            "deliver-webhooks": {
-                "task": "treasurypilot.notifications.deliver-webhooks",
+            "deliver-telegram": {
+                "task": "treasurypilot.notifications.deliver-telegram",
                 "schedule": timedelta(seconds=1),
-                "options": {"queue": "core", "expires": 2},
+                "options": {"queue": "webhooks", "expires": 2},
+            },
+            "publish-daily-audit-roots": {
+                "task": "treasurypilot.audit.publish-daily-roots",
+                "schedule": crontab(hour=0, minute=5),
+                "options": {"queue": "core"},
             },
             "send-notification-emails": {
                 "task": "treasurypilot.notifications.send-emails",
                 "schedule": timedelta(seconds=60),
-                "options": {"queue": "core", "expires": 55},
+                "options": {"queue": "webhooks", "expires": 55},
             },
             "send-daily-notification-digests": {
                 "task": "treasurypilot.notifications.send-daily-digests",
                 "schedule": crontab(minute=0, hour=8),
-                "options": {"queue": "core", "expires": 3600},
+                "options": {"queue": "webhooks", "expires": 3600},
+            },
+            "deliver-webhooks": {
+                "task": "treasurypilot.notifications.deliver-webhooks",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "webhooks", "expires": 2},
             },
         },
     )
