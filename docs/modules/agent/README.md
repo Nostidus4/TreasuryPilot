@@ -142,6 +142,8 @@ Extract all numbers from text (`\d[\d,._]*`), normalize, check each against the 
 
 Template plan used only when: AI unavailable/timeout **and** snapshot complete **and** template matches (pay direct / refill-then-pay / swap-then-pay P2) **and** no Unknown **and** no safety alert. Recorded RULE_BASED.
 
+**Implementation (AGT-010).** Code in `agent/fallback.py`. `plan_fallback(ctx, error)` takes the validator's `ValidationContext` and the `AiError` that ended the AI path, and returns a `FallbackPlan(template, plan)` with `planner_source="RULE_BASED"`, or `FallbackRefused(reason)`, which the caller sends to NeedsReview. Order of checks: the error must be an outage (`AiTimeout`, `AiUnavailable`, `AiBudgetExceeded`, `AiSchemaError`, `AiToolLimitExceeded`; an `AiInputRejected` is not) → `NOT_AN_OUTAGE`; `unknown_operations > 0` → `UNKNOWN_OPERATION` (AD-03); `pause_requested`, `circuit_open`, `screening_hit` or any HIGH flag → `SAFETY_ALERT`; coverage other than `COMPLETE`, or a missing request, approval, mandate, policy state, screening result or paying-wallet balance/buffer/target → `DATA_INCOMPLETE`. Templates, tried in order, each accepted only if `validate_plan` returns ALLOW: `PAY_DIRECT` (the wallet already holds amount + buffer); `REFILL_THEN_PAY` (BR-032: top up to the target bounded by BR-036, else just the shortage). The PAY amount is the early amount inside the early window. No template passing → `NO_TEMPLATE`. Swap-then-pay is not built: it is P2 and the validator has no SWAP rule or module code yet. Wiring into the plan pipeline waits for the planner (AGT-008/009).
+
 ## 9. Configuration and defaults (`config/ai.yaml`)
 
 | Task | Model | Timeout | Max tokens out |
