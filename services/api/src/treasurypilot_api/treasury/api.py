@@ -106,6 +106,20 @@ class CoverageView(ApiModel):
     acknowledged_by: uuid.UUID | None = None
     acknowledgment_reason: str | None = None
 
+    @classmethod
+    def from_record(cls, record: TreasuryRecord) -> CoverageView:
+        return cls(
+            status=record.coverage,
+            acknowledged=record.coverage_acknowledged,
+            details=list(record.coverage_details),
+            execution_allowed=coverage_allows_execution(
+                record.coverage, record.coverage_acknowledged
+            ),
+            acknowledged_at=record.coverage_acknowledged_at,
+            acknowledged_by=record.coverage_acknowledged_by,
+            acknowledgment_reason=record.coverage_ack_reason,
+        )
+
 
 class TreasuryView(ApiModel):
     id: uuid.UUID
@@ -144,17 +158,7 @@ class TreasuryResponse(ApiModel):
                 chain_id=record.chain_id,
                 asset_id=record.asset_id,
                 status=record.status,
-                coverage=CoverageView(
-                    status=record.coverage,
-                    acknowledged=record.coverage_acknowledged,
-                    details=list(record.coverage_details),
-                    execution_allowed=coverage_allows_execution(
-                        record.coverage, record.coverage_acknowledged
-                    ),
-                    acknowledged_at=record.coverage_acknowledged_at,
-                    acknowledged_by=record.coverage_acknowledged_by,
-                    acknowledgment_reason=record.coverage_ack_reason,
-                ),
+                coverage=CoverageView.from_record(record),
                 module_address=record.module_address,
                 created_at=record.created_at,
             ),
@@ -265,19 +269,7 @@ async def refresh_coverage(
             title="Treasury not found",
             detail="The treasury does not exist in this organization.",
         ) from None
-    return CoverageResponse(
-        coverage=CoverageView(
-            status=record.coverage,
-            acknowledged=record.coverage_acknowledged,
-            details=list(record.coverage_details),
-            execution_allowed=coverage_allows_execution(
-                record.coverage, record.coverage_acknowledged
-            ),
-            acknowledged_at=record.coverage_acknowledged_at,
-            acknowledged_by=record.coverage_acknowledged_by,
-            acknowledgment_reason=record.coverage_ack_reason,
-        )
-    )
+    return CoverageResponse(coverage=CoverageView.from_record(record))
 
 
 @router.post(
@@ -312,16 +304,4 @@ async def acknowledge_coverage(
             title="Coverage acknowledgment rejected",
             detail=exc.detail,
         ) from None
-    return CoverageResponse(
-        coverage=CoverageView(
-            status=record.coverage,
-            acknowledged=record.coverage_acknowledged,
-            details=list(record.coverage_details),
-            execution_allowed=coverage_allows_execution(
-                record.coverage, record.coverage_acknowledged
-            ),
-            acknowledged_at=record.coverage_acknowledged_at,
-            acknowledged_by=record.coverage_acknowledged_by,
-            acknowledgment_reason=record.coverage_ack_reason,
-        )
-    )
+    return CoverageResponse(coverage=CoverageView.from_record(record))

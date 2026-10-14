@@ -233,6 +233,32 @@ def test_safe_config_change_detection_detects_security_configuration_changes() -
     assert safe_config_changed(previous, changed)
 
 
+def test_pre_0013_snapshot_row_does_not_report_a_spurious_change() -> None:
+    row = {
+        "owners": [SAFE, GUARD],
+        "threshold": 2,
+        "modules": [bytes.fromhex("11" * 20)],
+        "guard": None,
+        "fallback_handler": None,
+        "module_implementations": {},
+    }
+    current = SafeConfig(
+        11,
+        OTHER_BLOCK,
+        (SAFE, GUARD),
+        2,
+        ("0x" + "11" * 20,),
+        None,
+        "0x" + "22" * 20,
+        8,
+        ("0x" + "33" * 20,),
+    )
+
+    assert not safe_config_changed(row, current)
+    row["module_implementations"] = {"0x" + "11" * 20: None}
+    assert safe_config_changed(row, current)
+
+
 def test_eip1167_runtime_extracts_only_the_canonical_clone_target() -> None:
     prefix = bytes.fromhex("363d3d373d3d3d363d73")
     suffix = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")

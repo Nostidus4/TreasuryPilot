@@ -123,7 +123,8 @@ def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeC
         modules = previous.modules
         guard = previous.guard
         fallback_handler = previous.fallback_handler
-        module_implementations = previous.module_implementations
+        implementations = dict(zip(modules, previous.module_implementations, strict=False))
+        legacy = False
     else:
         owners = tuple(str(owner).lower() for owner in previous["owners"])
         threshold = int(previous["threshold"])
@@ -139,19 +140,23 @@ def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeC
         )
         implementations_value = previous["module_implementations"]
         if isinstance(implementations_value, str):
-            import json
-
             implementations_value = json.loads(implementations_value)
-        module_implementations = tuple(
-            implementations_value.get(module, None) for module in modules
-        )
-    return (
+        implementations = {module: implementations_value.get(module) for module in modules}
+        # Pre-0013 rows hold no fallback handler or implementations; do not report them as a change.
+        legacy = any(module not in implementations_value for module in modules)
+    changed = (
         set(owners) != set(current.owners)
         or threshold != current.threshold
         or set(modules) != set(current.modules)
         or guard != current.guard
+    )
+    if legacy:
+        return changed
+    return (
+        changed
         or fallback_handler != current.fallback_handler
-        or module_implementations != current.module_implementations
+        or implementations
+        != dict(zip(current.modules, current.module_implementations, strict=False))
     )
 
 
@@ -217,13 +222,12 @@ class RpcClient:
                 break
         else:
             raise RpcError(f"{safe}: getModulesPaginated did not end after {len(modules)} modules")
-        implementations_list: list[str | None] = []
-        for module in modules:
-            runtime = await self.call("eth_getCode", [module, block])
-            implementations_list.append(
-                _eip1167_implementation(bytes.fromhex(str(runtime).removeprefix("0x")))
-            )
-        implementations = tuple(implementations_list)
+        # modules is bounded by SAFE_MODULES_MAX_PAGES * SAFE_MODULES_PAGE_SIZE above.
+        runtimes = await asyncio.gather(*(self.call("eth_getCode", [m, block]) for m in modules))
+        implementations = tuple(
+            _eip1167_implementation(bytes.fromhex(str(runtime).removeprefix("0x")))
+            for runtime in runtimes
+        )
         return SafeConfig(
             block_number=int(head["number"], 16),
             block_hash=str(head["hash"]).lower(),

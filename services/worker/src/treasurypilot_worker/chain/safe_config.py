@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -13,12 +14,13 @@ import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.chain.rpc import (
     RpcClient,
-    RpcError,
     SafeConfig,
     build_rpc_client,
     safe_config_changed,
 )
 from treasurypilot_worker.locks import create_worker_pool
+
+logger = logging.getLogger(__name__)
 
 SafeConfigReader = Callable[[Sequence[str]], RpcClient]
 EventPublisher = Callable[[asyncpg.Connection, Mapping[str, Any]], Awaitable[None]]
@@ -72,13 +74,15 @@ async def refresh_safe_config_snapshots(
                 rpc = reader_factory(wallet["rpc_urls"])
                 safe_address = "0x" + bytes(wallet["safe_address"]).hex()
                 safe_config = await rpc.safe_config(safe_address)
-            except (RpcError, OSError, ValueError):
+                snapshots_written += await _store_snapshot(
+                    pool, wallet, safe_config, event_publisher=event_publisher
+                )
+            except Exception:
+                # Malformed provider data (KeyError/TypeError) must also close the gate.
+                logger.exception("safe config refresh failed for wallet %s", wallet["wallet_id"])
                 await _mark_coverage_unknown(pool, wallet["treasury_id"])
                 failed_treasuries.add(wallet["treasury_id"])
                 continue
-            snapshots_written += await _store_snapshot(
-                pool, wallet, safe_config, event_publisher=event_publisher
-            )
         # A later Safe can refresh after an earlier RPC failure and recompute from its
         # prior successful snapshot. Re-apply UNKNOWN at the end of the polling cycle.
         for treasury_id in failed_treasuries:
@@ -162,6 +166,8 @@ async def _store_snapshot(
             ),
         )
         if result.endswith(" 0"):
+            # Same block re-delivered: no new snapshot, but staleness must still be re-evaluated.
+            await _refresh_coverage(connection, wallet["treasury_id"])
             return 0
 
         if previous is not None and safe_config_changed(previous, config):
@@ -189,12 +195,17 @@ async def _refresh_coverage(connection: asyncpg.Connection, treasury_id: uuid.UU
                s.modules, s.guard, s.fallback_handler AS observed_fallback,
                s.module_implementations, s.observed_at
         FROM treasuries AS t
-        LEFT JOIN deployments AS implementation
-          ON implementation.chain_id = t.chain_id
-         AND implementation.name = 'TREASURY_MODULE_IMPLEMENTATION'
-        LEFT JOIN deployments AS fallback
-          ON fallback.chain_id = t.chain_id
-         AND fallback.name = 'SAFE_FALLBACK_HANDLER'
+        -- Newest registration wins so several versions of one deployment name never fan out rows.
+        LEFT JOIN LATERAL (
+            SELECT address FROM deployments
+            WHERE chain_id = t.chain_id AND name = 'TREASURY_MODULE_IMPLEMENTATION'
+            ORDER BY id DESC LIMIT 1
+        ) AS implementation ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT address FROM deployments
+            WHERE chain_id = t.chain_id AND name = 'SAFE_FALLBACK_HANDLER'
+            ORDER BY id DESC LIMIT 1
+        ) AS fallback ON TRUE
         LEFT JOIN treasury_wallets AS w ON w.treasury_id = t.id
         LEFT JOIN LATERAL (
             SELECT modules, guard, fallback_handler, module_implementations, observed_at
@@ -208,25 +219,33 @@ async def _refresh_coverage(connection: asyncpg.Connection, treasury_id: uuid.UU
         """,
         treasury_id,
     )
+    if not rows:
+        return
+    module_address = rows[0]["module_address"]
+    expected_module = bytes(module_address) if module_address else None
+    wallet_rows = [row for row in rows if row["wallet_id"] is not None]
+    expected_implementation = (
+        bytes(rows[0]["module_implementation"]) if rows[0]["module_implementation"] else None
+    )
+    expected_fallback = bytes(rows[0]["fallback_handler"]) if rows[0]["fallback_handler"] else None
     details: list[str] = []
-    all_complete = bool(rows) and rows[0]["module_address"] is not None
-    any_unknown = not rows
+    all_complete = expected_module is not None
+    any_unknown = not wallet_rows or expected_module is None
+    if not wallet_rows:
+        details.append("Coverage is UNKNOWN: the treasury has no registered Safes.")
+    if expected_module is None:
+        details.append("Coverage is UNKNOWN: the treasury module is not deployed yet.")
+    if expected_implementation is None or expected_fallback is None:
+        any_unknown = True
+        missing = (
+            "TREASURY_MODULE_IMPLEMENTATION"
+            if expected_implementation is None
+            else "SAFE_FALLBACK_HANDLER"
+        )
+        details.append(f"Coverage is UNKNOWN: {missing} is not configured for this chain.")
     now = datetime.now(UTC)
     max_age = timedelta(minutes=12)
-    for row in rows:
-        expected_module = bytes(row["module_address"]) if row["module_address"] else None
-        expected_implementation = (
-            bytes(row["module_implementation"]) if row["module_implementation"] else None
-        )
-        expected_fallback = bytes(row["fallback_handler"]) if row["fallback_handler"] else None
-        if expected_implementation is None or expected_fallback is None:
-            any_unknown = True
-            missing = (
-                "TREASURY_MODULE_IMPLEMENTATION"
-                if expected_implementation is None
-                else "SAFE_FALLBACK_HANDLER"
-            )
-            details.append(f"Coverage is UNKNOWN: {missing} is not configured for this chain.")
+    for row in wallet_rows:
         modules = row["modules"]
         if modules is None or row["observed_at"] is None or now - row["observed_at"] > max_age:
             any_unknown = True
@@ -247,7 +266,10 @@ async def _refresh_coverage(connection: asyncpg.Connection, treasury_id: uuid.UU
             and clone_target != "0x" + expected_implementation.hex()
         ):
             all_complete = False
-            details.append(f"{row['label']}: treasury module is not the configured EIP-1167 clone.")
+            details.append(
+                f"{row['label']}: treasury module is not an EIP-1167 clone of the configured "
+                "implementation."
+            )
         if row["guard"] is not None:
             all_complete = False
             details.append(f"{row['label']}: an unexpected guard is enabled.")
@@ -270,13 +292,16 @@ async def _refresh_coverage(connection: asyncpg.Connection, treasury_id: uuid.UU
         """
         UPDATE treasuries
         SET coverage = $2::treasury_coverage, coverage_details = $3::jsonb,
-            coverage_ack_by = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_by ELSE NULL END,
-            coverage_ack_at = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_at ELSE NULL END,
-            coverage_ack_reason = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_reason ELSE NULL END,
+            -- An acknowledgment covers exactly the reviewed deviations: any change clears it.
+            coverage_ack_by = CASE WHEN $2 = 'PARTIAL' AND coverage_details = $3::jsonb
+                                   THEN coverage_ack_by ELSE NULL END,
+            coverage_ack_at = CASE WHEN $2 = 'PARTIAL' AND coverage_details = $3::jsonb
+                                   THEN coverage_ack_at ELSE NULL END,
+            coverage_ack_reason = CASE WHEN $2 = 'PARTIAL' AND coverage_details = $3::jsonb
+                                       THEN coverage_ack_reason ELSE NULL END,
             updated_at = now(), version = version + 1
         WHERE id = $1 AND (coverage IS DISTINCT FROM $2::treasury_coverage
-          OR coverage_details IS DISTINCT FROM $3::jsonb
-          OR ($2 <> 'PARTIAL' AND coverage_ack_by IS NOT NULL))
+          OR coverage_details IS DISTINCT FROM $3::jsonb)
         """,
         treasury_id,
         status,

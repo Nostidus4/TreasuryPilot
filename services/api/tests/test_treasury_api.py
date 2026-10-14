@@ -4,7 +4,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,7 +14,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from treasurypilot_api.audit.models import AuditLog
 from treasurypilot_api.database import create_session_factory
@@ -462,6 +462,39 @@ async def _exercise(database_url: str) -> None:
             )
         assert len(coverage_audits) == 1
         assert coverage_audits[0].data["reason"] == "Reviewed the extra module risk"
+
+        # A new deviation (rogue guard) changes the details: the acknowledgment must not carry over.
+        async with sessions() as session, session.begin():
+            session.add(
+                SafeConfigSnapshot(
+                    org_id=org_a.id,
+                    wallet_id=treasury_wallets[0].id,
+                    block_number=102,
+                    block_hash=bytes.fromhex("bb" * 32),
+                    owners=list(OWNERS),
+                    threshold=2,
+                    modules=[module, extra_module],
+                    guard=bytes.fromhex("99" * 20),
+                    fallback_handler=fallback,
+                    module_implementations={
+                        "0x" + module.hex(): "0x" + implementation.hex(),
+                        "0x" + extra_module.hex(): None,
+                    },
+                )
+            )
+        changed = await service.refresh_coverage(organization_id=org_a.id, treasury_id=created.id)
+        assert changed.coverage is Coverage.PARTIAL
+        assert not changed.coverage_acknowledged
+
+        # Reads fail closed when snapshots go stale, even if the stored coverage is not UNKNOWN.
+        async with sessions() as session, session.begin():
+            await session.execute(
+                update(SafeConfigSnapshot).values(
+                    observed_at=datetime.now(UTC) - timedelta(minutes=30)
+                )
+            )
+        stale = await service.get(organization_id=org_a.id, treasury_id=created.id)
+        assert stale.coverage is Coverage.UNKNOWN
 
         # Tenant isolation: another org cannot read it.
         with pytest.raises(TreasuryNotFound):

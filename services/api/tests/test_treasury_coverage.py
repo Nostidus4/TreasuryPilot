@@ -101,3 +101,18 @@ def test_execution_gate_fails_closed_for_unknown_and_unacknowledged_partial() ->
     assert not coverage_allows_execution(Coverage.PARTIAL, acknowledged=False)
     assert coverage_allows_execution(Coverage.PARTIAL, acknowledged=True)
     assert coverage_allows_execution(Coverage.COMPLETE, acknowledged=False)
+
+
+def test_treasury_without_a_module_is_unknown_so_it_cannot_be_acknowledged() -> None:
+    wallets, snapshots = _fixture()
+
+    result, _ = evaluate_coverage(
+        wallets,
+        snapshots,
+        now=NOW,
+        module_address=None,
+        module_implementation=IMPLEMENTATION,
+        fallback_handler=FALLBACK,
+    )
+
+    assert result is Coverage.UNKNOWN

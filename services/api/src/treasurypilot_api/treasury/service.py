@@ -315,7 +315,24 @@ class TreasuryService:
                     .where(TreasuryWallet.treasury_id == treasury_id)
                 )
             )
-        return _record(treasury, wallets)
+            latest = await _latest_snapshots(session, organization_id, wallets)
+        record = _record(treasury, wallets)
+        # Fail closed on read: a stopped worker must not leave a stored COMPLETE usable forever.
+        if record.coverage != Coverage.UNKNOWN and (
+            not wallets
+            or any(
+                wallet.id not in latest
+                or datetime.now(UTC) - latest[wallet.id].observed_at > self.SNAPSHOT_MAX_AGE
+                for wallet in wallets
+            )
+        ):
+            return replace(
+                record,
+                coverage=Coverage.UNKNOWN,
+                coverage_acknowledged=False,
+                coverage_details=("Coverage is UNKNOWN: no recent Safe configuration snapshot.",),
+            )
+        return record
 
     async def refresh_coverage(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -324,7 +341,7 @@ class TreasuryService:
 
         now = datetime.now(UTC)
         async with self._sessions() as session, session.begin():
-            treasury = await _TreasuryRepository(session, organization_id).get(treasury_id)
+            treasury = await _locked_treasury(session, organization_id, treasury_id)
             if treasury is None:
                 raise TreasuryNotFound
             wallets = list(
@@ -340,22 +357,7 @@ class TreasuryService:
             fallback_handler = _deployment_address(
                 self._configuration, treasury.chain_id, "SAFE_FALLBACK_HANDLER"
             )
-            snapshots = list(
-                await session.scalars(
-                    select(SafeConfigSnapshot)
-                    .where(
-                        SafeConfigSnapshot.org_id == organization_id,
-                        SafeConfigSnapshot.wallet_id.in_([wallet.id for wallet in wallets]),
-                    )
-                    .order_by(
-                        SafeConfigSnapshot.block_number.desc(),
-                        SafeConfigSnapshot.observed_at.desc(),
-                    )
-                )
-            )
-            latest: dict[uuid.UUID, SafeConfigSnapshot] = {}
-            for snapshot in snapshots:
-                latest.setdefault(snapshot.wallet_id, snapshot)
+            latest = await _latest_snapshots(session, organization_id, wallets)
 
             coverage, details = evaluate_coverage(
                 wallets,
@@ -366,12 +368,13 @@ class TreasuryService:
                 fallback_handler=fallback_handler,
                 max_snapshot_age=self.SNAPSHOT_MAX_AGE,
             )
-            treasury.coverage = coverage
-            treasury.coverage_details = list(details)
-            if coverage != Coverage.PARTIAL:
+            # An acknowledgment covers exactly the deviations the Owner reviewed.
+            if coverage != Coverage.PARTIAL or list(details) != list(treasury.coverage_details):
                 treasury.coverage_ack_by = None
                 treasury.coverage_ack_at = None
                 treasury.coverage_ack_reason = None
+            treasury.coverage = coverage
+            treasury.coverage_details = list(details)
             await session.flush()
             record = _record(treasury, wallets)
             return replace(record, coverage_details=tuple(details))
@@ -390,7 +393,7 @@ class TreasuryService:
                 "INVALID_REASON", "Provide a reason for accepting partial coverage."
             )
         async with self._sessions() as session, session.begin():
-            treasury = await _TreasuryRepository(session, organization_id).get(treasury_id)
+            treasury = await _locked_treasury(session, organization_id, treasury_id)
             if treasury is None:
                 raise TreasuryNotFound
             if treasury.coverage == Coverage.COMPLETE:
@@ -441,6 +444,37 @@ class TreasuryService:
             )
 
 
+async def _locked_treasury(
+    session: AsyncSession, organization_id: uuid.UUID, treasury_id: uuid.UUID
+) -> Treasury | None:
+    """Row-lock the treasury so API writes serialize with the worker's coverage UPDATE."""
+
+    row: Treasury | None = await session.scalar(
+        _TreasuryRepository(session, organization_id)
+        .select()
+        .where(Treasury.id == treasury_id)
+        .with_for_update()
+    )
+    return row
+
+
+async def _latest_snapshots(
+    session: AsyncSession, organization_id: uuid.UUID, wallets: Sequence[TreasuryWallet]
+) -> dict[uuid.UUID, SafeConfigSnapshot]:
+    snapshots = await session.scalars(
+        select(SafeConfigSnapshot)
+        .where(
+            SafeConfigSnapshot.org_id == organization_id,
+            SafeConfigSnapshot.wallet_id.in_([wallet.id for wallet in wallets]),
+        )
+        .order_by(SafeConfigSnapshot.block_number.desc(), SafeConfigSnapshot.observed_at.desc())
+    )
+    latest: dict[uuid.UUID, SafeConfigSnapshot] = {}
+    for snapshot in snapshots:
+        latest.setdefault(snapshot.wallet_id, snapshot)
+    return latest
+
+
 def _deployment_address(
     configuration: PlatformConfiguration, chain_id: int, name: str
 ) -> bytes | None:
@@ -467,7 +501,9 @@ def evaluate_coverage(
 
     details: list[str] = []
     all_complete = module_address is not None
-    any_unknown = not wallets
+    any_unknown = not wallets or module_address is None
+    if module_address is None:
+        details.append("Coverage is UNKNOWN: the treasury module is not deployed yet.")
     if not wallets:
         details.append("Coverage is UNKNOWN: the treasury has no registered Safes.")
     if module_implementation is None or fallback_handler is None:
