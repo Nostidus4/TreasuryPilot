@@ -556,6 +556,40 @@ export interface paths {
     patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Approval Typed Data */
+    get: operations['get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Request */
+    post: operations['approve_request_v1_orgs__organization_id__requests__request_id__approve_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
     parameters: {
       query?: never;
@@ -1040,6 +1074,15 @@ export interface components {
       typedData?: {
         [key: string]: unknown;
       } | null;
+    };
+    /** ApproveRequest */
+    ApproveRequest: {
+      /** Expiry */
+      expiry: number;
+      /** Revision */
+      revision: number;
+      /** Signature */
+      signature: string;
     };
     /** AssetView */
     AssetView: {
@@ -3339,6 +3382,80 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['RequestPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  approve_request_v1_orgs__organization_id__requests__request_id__approve_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveRequest'];
       };
     };
     responses: {
