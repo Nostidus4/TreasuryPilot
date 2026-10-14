@@ -64,9 +64,8 @@ test('plan timeline shows partial completion, verification evidence and unknown 
 
   renderApp(`${T}/plans/pln_0421`);
 
-  expect(
-    await screen.findByText(/1 of 3 steps are verified on-chain/),
-  ).toBeInTheDocument();
+  expect(await screen.findByText('Partially completed')).toBeInTheDocument();
+  expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
   const timeline = screen.getByRole('list', { name: /execution steps/i });
   expect(
     within(timeline).getByText('Paid · 3 confirmations'),
