@@ -383,3 +383,89 @@ def test_reverted_transaction_stores_the_decoded_revert_selector(
         assert PolicyReasonCode.SIMULATION_REVERTED in error and code in error
 
     asyncio.run(scenario())
+
+
+def test_reorg_that_removes_a_confirmed_transaction_demotes_it_to_pending(
+    anvil_url: str, database_url: str
+) -> None:
+    async def scenario() -> None:
+        snapshot = _rpc(anvil_url, "evm_snapshot")
+        nonce = _nonce(anvil_url)
+        tx_hash = _send(anvil_url, nonce=hex(nonce))
+        tx_id, operation_id = await _register(database_url, tx_hash, nonce)
+        _mine(anvil_url, 2)
+        client = _client(anvil_url)
+        await _track(database_url, client)
+        row = await _tx(database_url, tx_id)
+        assert row["status"] == "Confirmed" and row["confirmed_at"] is not None
+        assert await _operation_status(database_url, operation_id) == "Confirmed"
+
+        # Nothing changed on chain: a re-scan leaves the final state alone but keeps counting.
+        _mine(anvil_url)
+        await _track(database_url, client)
+        row = await _tx(database_url, tx_id)
+        assert (row["status"], row["confirmations"]) == ("Confirmed", 4)
+
+        assert _rpc(anvil_url, "evm_revert", [snapshot]) is True
+        _mine(anvil_url, 4)  # the canonical chain is now longer, without the transaction
+        await _track(database_url, client)
+        row = await _tx(database_url, tx_id)
+        assert row["status"] == "Pending"
+        assert row["confirmed_at"] is None
+        assert await _operation_status(database_url, operation_id) == "Pending"
+
+    asyncio.run(scenario())
+
+
+def test_reorg_that_remines_the_transaction_in_another_block_changes_the_block_hash(
+    anvil_url: str, database_url: str
+) -> None:
+    async def scenario() -> None:
+        snapshot = _rpc(anvil_url, "evm_snapshot")
+        nonce = _nonce(anvil_url)
+        fees = {"gas": hex(21_000), "maxFeePerGas": hex(10**10), "maxPriorityFeePerGas": hex(1)}
+        tx_hash = _send(anvil_url, nonce=hex(nonce), **fees)
+        tx_id, operation_id = await _register(database_url, tx_hash, nonce)
+        _mine(anvil_url, 2)
+        client = _client(anvil_url)
+        await _track(database_url, client)
+        before = await _tx(database_url, tx_id)
+        assert before["status"] == "Confirmed"
+
+        _rpc(anvil_url, "evm_revert", [snapshot])
+        _mine(anvil_url)  # a different block now sits where the old one was
+        assert _send(anvil_url, nonce=hex(nonce), **fees) == tx_hash  # same transaction, new block
+        await _track(database_url, client)
+        after = await _tx(database_url, tx_id)
+        assert after["block_hash"] != before["block_hash"]
+        assert (after["status"], after["confirmations"]) == ("Pending", 1)
+        assert after["confirmed_at"] is None
+        assert await _operation_status(database_url, operation_id) == "Pending"
+
+        _mine(anvil_url, 2)  # the new inclusion confirms on its own
+        await _track(database_url, client)
+        assert (await _tx(database_url, tx_id))["status"] == "Confirmed"
+        assert await _operation_status(database_url, operation_id) == "Confirmed"
+
+    asyncio.run(scenario())
+
+
+def test_transactions_deeper_than_the_reorg_window_are_no_longer_rescanned(
+    anvil_url: str, database_url: str
+) -> None:
+    async def scenario() -> None:
+        nonce = _nonce(anvil_url)
+        tx_hash = _send(anvil_url, nonce=hex(nonce))
+        tx_id, _ = await _register(database_url, tx_hash, nonce)
+        _mine(anvil_url, 2)
+        client = _client(anvil_url)
+        await _track(database_url, client)
+        _mine(anvil_url, 64)
+        await _track(database_url, client)  # last scan: confirmations now past the window
+        frozen = (await _tx(database_url, tx_id))["confirmations"]
+        assert frozen >= 64
+        _mine(anvil_url)
+        await _track(database_url, client)
+        assert (await _tx(database_url, tx_id))["confirmations"] == frozen
+
+    asyncio.run(scenario())

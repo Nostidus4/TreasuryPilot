@@ -67,6 +67,8 @@ stateDiagram-v2
   Unknown --> Pending: later seen
 ```
 
+Reorg detection (CHR-004): `Confirmed`/`Reverted` rows stay in the tracker's query until `confirmations` reaches 64; each cycle the receipt's block hash is compared with the stored `block_hash`. A different hash or a missing receipt demotes the row to `Pending` (block fields, `confirmed_at` and `revert_selector` cleared) and the operation follows it; the normal rules then re-confirm it. Event removal (`observed_events.removed`) belongs to the indexer (CHR-005). Moving a `Paid` request back is not done here: no request transition out of `Paid` exists yet.
+
 There is no `Failed`. `Unknown` blocks the treasury (BR-060) until M11 resolves it from receipts and the module's `requestPaid` / `stepUsed`.
 
 ## 6. Interfaces (internal Python API used by worker/api)
