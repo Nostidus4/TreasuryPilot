@@ -46,7 +46,7 @@ Local deployment must not depend on DOM-001; testnet deployment does.
 
 - SC-010: Implement pause, resume, revoke and guardian
 - SC-021: Implement the module factory with EIP-1167 clones
-- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Phúc)
+- DOM-001: Verify Ethereum Sepolia infrastructure (owner: Nostidus4)
 
 ## Acceptance criteria
 

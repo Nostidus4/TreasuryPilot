@@ -25,7 +25,7 @@ Trưởng nhóm phân người qua trường **Owner** trên GitHub Project. G�
 | **Cố vấn blockchain / bảo mật** | Kiểm chain và token (cùng anh Phúc), hóa đơn red-team, mô hình đe dọa, rủi ro, tự đánh giá bảo mật | DOM-001*, 002*, 006, 009, 011 |
 | **Cố vấn nghiên cứu / truyền thông** | Email ban tổ chức, phỏng vấn, ghi chú tuân thủ, giấy phép, tài liệu kỹ thuật, deck, video, FigJam | DOM-003, 010, 012, 013, 014, 015, 016, 017 |
 
-\* DOM-001 và DOM-002 do **anh Phúc** phụ trách. Quyết định đã chốt ngày 11/10/2026 (Ethereum Sepolia; tUSDC + một lượt Circle USDC, PH-1/PH-2); hai ticket giờ là kiểm hạ tầng và chuẩn bị token.
+\* DOM-001 (#70) do **@Nostidus4 (Tân)** phụ trách từ 14/10/2026, theo bàn giao hạ tầng của anh Phúc. Chủ repo xử lý quyền truy cập RPC/API/dịch vụ, kiểm hạ tầng và ghi bằng chứng giao dịch Safe; **@longhuynh55 (anh Phúc)** hỗ trợ tích hợp contract. DOM-002 vẫn do anh Phúc phụ trách. Quyết định đã chốt ngày 11/10/2026 (Ethereum Sepolia; tUSDC + một lượt Circle USDC, PH-1/PH-2); hai ticket giờ là kiểm hạ tầng và chuẩn bị token.
 
 ## 3. Ticket và sản phẩm
 

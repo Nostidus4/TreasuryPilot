@@ -247,7 +247,7 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 | WEB-021 | web | Build the runway forecast chart | F-058 | M1 | P2 | S | After submission | WEB-010, ENG-011 | Sẵn sàng phân công |
 | WEB-022 | web | Run the accessibility and responsive pass | F-130–F-135 | M1 | P1 | S | After submission | WEB-014 | Sẵn sàng phân công |
 | WEB-023 | web | Write the Playwright end-to-end happy path | F-161 | M1 | P1 | M | After submission | WEB-012 | Sẵn sàng phân công |
-| DOM-001 | domain-evidence | Verify Ethereum Sepolia infrastructure (owner: Phúc) | F-010, F-151 | M1 | P0 | S | A | — | Sẵn sàng phân công |
+| DOM-001 | domain-evidence | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | F-010, F-151 | M1 | P0 | S | A | — | Sẵn sàng phân công |
 | DOM-002 | domain-evidence | Set up tUSDC and the Circle USDC evidence run (owner: Phúc) | F-013 | M1 | P0 | S | A | DOM-001 | Sẵn sàng phân công |
 | DOM-003 | domain-evidence | Ask the organizers whether testnet evidence is accepted | — | M1 | P1 | S | A | — | Sẵn sàng phân công |
 | DOM-004 | domain-evidence | Author the labelled invoice dataset (30) | F-092 | M1 | P0 | M | B | — | Sẵn sàng phân công |
