@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from celery import Celery, signals
 from celery.schedules import crontab
 from kombu import Exchange, Queue
@@ -50,7 +52,14 @@ def create_celery_app() -> Celery:
                 "task": "treasurypilot.treasury.refresh_safe_config_snapshots",
                 "schedule": crontab(minute="*/10"),
                 "options": {"queue": "core"},
-            }
+            },
+            "publish-domain-events": {
+                "task": "treasurypilot.notifications.publish-domain-events",
+                "schedule": timedelta(seconds=1),
+                # A run nobody picked up within 2 s is superseded by the next one; without
+                # this, a busy or stopped worker lets thousands pile up in Redis.
+                "options": {"queue": "core", "expires": 2},
+            },
         },
     )
     return app

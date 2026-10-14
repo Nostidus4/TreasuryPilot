@@ -65,6 +65,11 @@ from treasurypilot_api.mandate.vendors import (
     VendorRepository,
 )
 from treasurypilot_api.mandate.vendors import router as vendors_router
+from treasurypilot_api.notifications.routes import (
+    NotificationRepository,
+    SqlAlchemyNotificationRepository,
+)
+from treasurypilot_api.notifications.routes import router as notifications_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -199,6 +204,7 @@ def create_app(
     governance_service: GovernanceService | None = None,
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
+    notification_repository: NotificationRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -243,6 +249,10 @@ def create_app(
 
     if membership_repository is None and engine is not None:
         membership_repository = SqlAlchemyMembershipRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if notification_repository is None and engine is not None:
+        notification_repository = SqlAlchemyNotificationRepository(
             async_sessionmaker(engine, expire_on_commit=False)
         )
     if vendor_repository is None and sessions is not None:
@@ -314,6 +324,7 @@ def create_app(
     app.state.governance_service = governance_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
+    app.state.notification_repository = notification_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -347,6 +358,7 @@ def create_app(
     app.include_router(vendors_router)
     app.include_router(payees_router)
     app.include_router(review_router)
+    app.include_router(notifications_router)
 
     return app
 
