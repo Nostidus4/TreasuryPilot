@@ -87,7 +87,7 @@ test('plan timeline shows partial completion, verification evidence and unknown 
     within(timeline).getByText('Dropped by the network'),
   ).toBeInTheDocument();
   expect(
-    within(timeline).getByRole('link', {
+    await within(timeline).findByRole('link', {
       name: 'Open transaction in the block explorer',
     }),
   ).toHaveAttribute(
