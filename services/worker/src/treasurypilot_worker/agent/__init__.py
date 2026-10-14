@@ -29,6 +29,13 @@ from treasurypilot_worker.agent.errors import (
 )
 from treasurypilot_worker.agent.failover import FailoverProvider
 from treasurypilot_worker.agent.fake import FakeClock, FakeProvider, fake_text, fake_tool_use
+from treasurypilot_worker.agent.fallback import (
+    FallbackPlan,
+    FallbackRefusal,
+    FallbackRefused,
+    FallbackTemplate,
+    plan_fallback,
+)
 from treasurypilot_worker.agent.instruction_detector import (
     INSTRUCTION_MATCH_WINDOW,
     INSTRUCTION_REASON_CODE,
@@ -73,6 +80,11 @@ from treasurypilot_worker.agent.untrusted import (
 )
 
 __all__ = [
+    "FallbackPlan",
+    "FallbackRefusal",
+    "FallbackRefused",
+    "FallbackTemplate",
+    "plan_fallback",
     "INSTRUCTION_MATCH_WINDOW",
     "INSTRUCTION_REASON_CODE",
     "INSTRUCTION_SEVERITY",
