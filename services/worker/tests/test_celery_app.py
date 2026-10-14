@@ -259,3 +259,11 @@ def test_notification_email_runs_on_the_egress_queue_not_core() -> None:
     assert daily["options"]["queue"] == "webhooks"
     assert send_notification_emails.queue == "webhooks"
     assert send_daily_notification_digests.queue == "webhooks"
+
+
+def test_transaction_tracker_is_scheduled_every_six_seconds_on_core_queue() -> None:
+    entry = app.conf.beat_schedule["track-transactions"]
+
+    assert entry["task"] == "treasurypilot.chain.track-transactions"
+    assert entry["schedule"] == timedelta(seconds=6)
+    assert entry["options"]["queue"] == "core"

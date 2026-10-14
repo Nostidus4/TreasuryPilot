@@ -55,9 +55,11 @@ class RpcUnavailable(RpcError):
 class RpcResponseError(RpcError):
     """Every provider answered with a JSON-RPC error (e.g. the call reverts)."""
 
-    def __init__(self, code: int | None, message: str) -> None:
+    def __init__(self, code: int | None, message: str, data: Any = None) -> None:
         super().__init__(f"JSON-RPC error {code}: {message}")
         self.code = code
+        # Revert data of a failed eth_call, when the node returns it.
+        self.data = data
 
 
 class Transport(Protocol):
@@ -317,7 +319,7 @@ class RpcClient:
                 failure = response["error"] or {}
                 code = failure.get("code")
                 await self._record(provider, started, ok=False, error=f"JSON-RPC {code}")
-                raise RpcResponseError(code, str(failure.get("message")))
+                raise RpcResponseError(code, str(failure.get("message")), failure.get("data"))
             await self._record(provider, started, ok=True, head=_head(method, response))
             return response.get("result")
         raise RpcUnavailable(f"{provider.name}: {method} failed ({error})")

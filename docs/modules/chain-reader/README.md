@@ -123,7 +123,8 @@ Per treasury: `asset.balanceOf(T, O1, O2)`; `asset.decimals()` (cached, verified
 - Poll every 6 s (half a block). Confirmed at 3 confirmations **and** secondary cross-check Match (M06-D1). Unavailable secondary → retry until 10 min, then Unknown.
 - Replacement: when another tx with the same `(from, nonce)` is mined, the original becomes `Dropped` and links `replaced_by`; the operation follows the mined one.
 - Revert: decode the selector with POL-001 `decode_revert`.
-- Day attribution: the UTC day of the **mined block timestamp** (BR-026).
+- Day attribution: the UTC day of the **mined block timestamp** (BR-026); the tracker stores that timestamp in `confirmed_at` for Confirmed and Reverted rows.
+- The 10-minute Unknown clock runs from `last_seen_pending_at` (last mempool sighting or receipt below 3 confirmations), else `submitted_at`. Unknown rows stay tracked so a later sighting returns them to Pending. The operation follows its newest non-Dropped transaction; a revert writes the decoded reason codes to `operations.last_error`.
 
 ### 8.3 Indexer with reorg handling (PH-6)
 

@@ -24,6 +24,7 @@ from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
+from treasurypilot_worker.tracker import track_transactions_sync
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -94,6 +95,16 @@ def refresh_safe_config_task() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for Safe configuration refresh")
     return {"snapshots_written": refresh_safe_config_snapshots_sync(database_url)}
+
+
+@app.task(name="treasurypilot.chain.track-transactions", queue="core")
+def track_transactions_task() -> dict[str, int]:
+    """Advance every Submitted/Pending/Unknown transaction from chain facts (CHR-003)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for transaction tracking")
+    return track_transactions_sync(database_url)
 
 
 # Sequential receipt waits (up to 120s per organization); stays under the broker visibility timeout.
