@@ -5,17 +5,22 @@ import ipaddress
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import cast
+from datetime import UTC, datetime, timedelta
+from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import AwareDatetime
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import AwareDatetime, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.admin.models import PlatformAdminEvent
+from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
-from treasurypilot_api.identity.models import Membership, Organization
+from treasurypilot_api.identity.models import Membership, Organization, OrganizationRole
+from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.treasury.models import Treasury
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,35 @@ class TenantHealth(ApiModel):
     status: str
     active_members: int
     treasuries: int
+
+
+class SupportGrantRequest(ApiModel):
+    staff_user: str = Field(min_length=1, max_length=200)
+    duration_hours: int = Field(default=24, ge=1, le=72)
+
+    @field_validator("staff_user")
+    @classmethod
+    def normalize_staff_user(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("staff_user must not be empty")
+        return clean
+
+
+class SupportGrantView(ApiModel):
+    id: uuid.UUID
+    org_id: uuid.UUID
+    staff_user: str
+    scope: Literal["read"]
+    expires_at: AwareDatetime
+    granted_by: uuid.UUID
+    created_at: AwareDatetime
+    revoked_at: AwareDatetime | None
+
+
+class SupportSummary(ApiModel):
+    tenant: TenantView
+    grant_id: uuid.UUID
 
 
 def _staff_auth(settings: Settings) -> Callable[[Request], Awaitable[str]]:
@@ -180,5 +214,147 @@ def create_admin_router(
                 )
             response = _view(org, *await _counts(session, tenant_id))
         return response
+
+    @router.get("/tenants/{tenant_id}/support", response_model=SupportSummary)
+    async def support_summary(
+        tenant_id: uuid.UUID,
+        request: Request,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> SupportSummary:
+        now = datetime.now(UTC)
+        async with db_sessions() as session, session.begin():
+            grant = await session.scalar(
+                select(SupportGrant)
+                .where(
+                    SupportGrant.org_id == tenant_id,
+                    SupportGrant.staff_user == actor,
+                    SupportGrant.scope == "read",
+                    SupportGrant.revoked_at.is_(None),
+                    SupportGrant.expires_at > now,
+                )
+                .order_by(SupportGrant.expires_at.desc())
+                .limit(1)
+            )
+            if grant is None:
+                raise HTTPException(status_code=403, detail="Active support consent is required")
+            org = await session.get(Organization, tenant_id)
+            if org is None:
+                raise HTTPException(status_code=404, detail="Tenant not found")
+            members, treasuries = await _counts(session, tenant_id)
+            session.add(
+                PlatformAdminEvent(
+                    org_id=tenant_id,
+                    actor_id=actor,
+                    action="support.read",
+                    data={
+                        "grant_id": str(grant.id),
+                        "scope": grant.scope,
+                        "source_ip": request.client.host if request.client else None,
+                    },
+                )
+            )
+            result = SupportSummary(tenant=_view(org, members, treasuries), grant_id=grant.id)
+        logger.info(
+            "admin.support_read",
+            extra={"actor": actor, "tenant_id": str(tenant_id), "grant_id": str(grant.id)},
+        )
+        return result
+
+    return router
+
+
+def create_support_grant_router(
+    sessions: async_sessionmaker[AsyncSession] | None,
+) -> APIRouter:
+    """Expose tenant-consented support grants to tenant administrators only."""
+
+    router = APIRouter(prefix="/v1/orgs/{organization_id}/support-grants", tags=["support"])
+    consent = require_role(OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER)
+
+    def require_sessions() -> async_sessionmaker[AsyncSession]:
+        if sessions is None:
+            raise HTTPException(status_code=503, detail="Support grant storage is unavailable")
+        return sessions
+
+    consent_dependency = Depends(consent)
+    sessions_dependency = Depends(require_sessions)
+
+    @router.post("", response_model=SupportGrantView, status_code=201)
+    async def grant_support(
+        payload: SupportGrantRequest,
+        member: MemberAccess = consent_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> SupportGrantView:
+        now = datetime.now(UTC)
+        grant = SupportGrant(
+            id=uuid.uuid4(),
+            org_id=member.organization_id,
+            staff_user=payload.staff_user,
+            scope="read",
+            expires_at=now + timedelta(hours=payload.duration_hours),
+            granted_by=member.user_id,
+            created_at=now,
+        )
+        async with db_sessions() as session, session.begin():
+            session.add(grant)
+            await write_audit(
+                session,
+                org_id=member.organization_id,
+                actor=AuditActor(AuditActorType.USER, member.user_id),
+                action="platform.support.granted",
+                entity=AuditEntity("support_grant", grant.id),
+                data={
+                    "staff_user": grant.staff_user,
+                    "scope": grant.scope,
+                    "expires_at": grant.expires_at,
+                },
+            )
+        return SupportGrantView.model_validate(grant, from_attributes=True)
+
+    @router.get("", response_model=list[SupportGrantView])
+    async def list_support_grants(
+        organization_id: uuid.UUID,
+        member: MemberAccess = consent_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> list[SupportGrantView]:
+        async with db_sessions() as session:
+            grants = await session.scalars(
+                select(SupportGrant)
+                .where(SupportGrant.org_id == member.organization_id)
+                .order_by(SupportGrant.created_at.desc(), SupportGrant.id)
+            )
+            return [SupportGrantView.model_validate(grant, from_attributes=True) for grant in grants]
+
+    @router.delete("/{grant_id}", status_code=204)
+    async def revoke_support_grant(
+        grant_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        member: MemberAccess = consent_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> Response:
+        now = datetime.now(UTC)
+        async with db_sessions() as session, session.begin():
+            grant = await session.scalar(
+                select(SupportGrant)
+                .where(
+                    SupportGrant.id == grant_id,
+                    SupportGrant.org_id == member.organization_id,
+                )
+                .with_for_update()
+            )
+            if grant is None:
+                raise HTTPException(status_code=404, detail="Support grant not found")
+            if grant.revoked_at is None:
+                grant.revoked_at = now
+                await write_audit(
+                    session,
+                    org_id=member.organization_id,
+                    actor=AuditActor(AuditActorType.USER, member.user_id),
+                    action="platform.support.revoked",
+                    entity=AuditEntity("support_grant", grant.id),
+                    data={"staff_user": grant.staff_user, "scope": grant.scope},
+                )
+        return Response(status_code=204)
 
     return router
