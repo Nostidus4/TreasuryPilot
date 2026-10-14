@@ -9,7 +9,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
@@ -29,6 +29,11 @@ from treasurypilot_api.identity.auth import (
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.memberships import (
+    MembershipRepository,
+    SqlAlchemyMembershipRepository,
+)
+from treasurypilot_api.identity.memberships import router as memberships_router
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
     SqlAlchemyOrganizationRepository,
@@ -161,6 +166,7 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -187,6 +193,11 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+
+    if membership_repository is None and engine is not None:
+        membership_repository = SqlAlchemyMembershipRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -230,6 +241,7 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
     app.add_middleware(
         CORSMiddleware,
@@ -255,6 +267,7 @@ def create_app(
 
     app.include_router(identity_router)
     app.include_router(organizations_router)
+    app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
 

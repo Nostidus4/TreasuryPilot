@@ -123,6 +123,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/invites/{token}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Invite */
+    post: operations['accept_invite_v1_invites__token__accept_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me': {
     parameters: {
       query?: never;
@@ -240,6 +257,76 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Invites */
+    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
+    put?: never;
+    /** Create Invite */
+    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invites/{invite_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Invite */
+    delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Members */
+    get: operations['list_members_v1_orgs__organization_id__members_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members/{user_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Member */
+    delete: operations['remove_member_v1_orgs__organization_id__members__user_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Member */
+    patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
     trace?: never;
   };
   '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
@@ -530,6 +617,74 @@ export interface components {
       /** Version */
       version: string;
     };
+    /** InviteCreateRequest */
+    InviteCreateRequest: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** InviteCreatedResponse */
+    InviteCreatedResponse: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+      /** Token */
+      token: string;
+    };
+    /** InviteView */
+    InviteView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+    };
+    /** InvitesResponse */
+    InvitesResponse: {
+      /** Invites */
+      invites: components['schemas']['InviteView'][];
+    };
     /** LinkWalletRequest */
     LinkWalletRequest: {
       /** Message */
@@ -549,6 +704,31 @@ export interface components {
       user: components['schemas']['UserView'];
       /** Wallets */
       wallets: components['schemas']['WalletView'][];
+    };
+    /** MemberResponse */
+    MemberResponse: {
+      member: components['schemas']['MemberView'];
+    };
+    /** MemberView */
+    MemberView: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
+      /** Status */
+      status: string;
+      /**
+       * Userid
+       * Format: uuid
+       */
+      userId: string;
+    };
+    /** MembersResponse */
+    MembersResponse: {
+      /** Members */
+      members: components['schemas']['MemberView'][];
     };
     /** MembershipView */
     MembershipView: {
@@ -593,6 +773,19 @@ export interface components {
     OrganizationResponse: {
       org: components['schemas']['OrganizationView'];
     };
+    /**
+     * OrganizationRole
+     * @enum {string}
+     */
+    OrganizationRole:
+      | 'OrgAdmin'
+      | 'Owner'
+      | 'Approver'
+      | 'Operator'
+      | 'Finance'
+      | 'Guardian'
+      | 'Auditor'
+      | 'PlatformAdmin';
     /** OrganizationSettingsRequest */
     OrganizationSettingsRequest: {
       /** Automatch */
@@ -635,6 +828,11 @@ export interface components {
       steps?: {
         [key: string]: unknown;
       }[];
+    };
+    /** RoleUpdateRequest */
+    RoleUpdateRequest: {
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
     };
     /** SiweNonceResponse */
     SiweNonceResponse: {
@@ -917,6 +1115,37 @@ export interface operations {
       };
     };
   };
+  accept_invite_v1_invites__token__accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   me_v1_me_get: {
     parameters: {
       query?: never;
@@ -1120,6 +1349,199 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['AuditVerifyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_invites_v1_orgs__organization_id__invites_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvitesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_invite_v1_orgs__organization_id__invites_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['InviteCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteCreatedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_invite_v1_orgs__organization_id__invites__invite_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        invite_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_members_v1_orgs__organization_id__members_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MembersResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  remove_member_v1_orgs__organization_id__members__user_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_member_v1_orgs__organization_id__members__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RoleUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
         };
       };
       /** @description Validation Error */
