@@ -71,7 +71,9 @@ def _lookup(request: Request) -> MembershipLookup:
 
 
 async def require_member(organization_id: uuid.UUID, request: Request) -> MemberAccess:
-    access = await _authenticated(request, require_csrf=request.method not in _SAFE_METHODS)
+    access = await _authenticated(
+        request, require_csrf=request.method not in _SAFE_METHODS, allow_scoped=True
+    )
     if access.organization_scope_id is not None and access.organization_scope_id != organization_id:
         raise organization_not_found()
     roles = await _lookup(request).member_roles(

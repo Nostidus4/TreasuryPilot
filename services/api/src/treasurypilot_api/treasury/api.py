@@ -75,7 +75,8 @@ router = APIRouter(prefix="/v1", tags=["treasury"])
 
 @router.get("/chains", response_model=ChainsResponse)
 async def list_chains(request: Request) -> ChainsResponse:
-    await _authenticated(request)
+    # Read-only platform metadata, safe for organization-scoped SSO sessions.
+    await _authenticated(request, allow_scoped=True)
     # Served from the startup configuration: config is read-only at runtime (M02-D8)
     # and startup fails unless every asset was synced with verified decimals.
     configuration: PlatformConfiguration = request.app.state.platform_configuration

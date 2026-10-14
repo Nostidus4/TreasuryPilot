@@ -144,8 +144,10 @@ class Roles:
 def _client(
     monkeypatch: pytest.MonkeyPatch, roles: set[str] | None, service: FakeService
 ) -> TestClient:
-    async def authenticated(request: Any, require_csrf: bool = False) -> Any:
-        return SimpleNamespace(user=SimpleNamespace(id=USER))
+    async def authenticated(
+        request: Any, require_csrf: bool = False, allow_scoped: bool = False
+    ) -> Any:
+        return SimpleNamespace(user=SimpleNamespace(id=USER), organization_scope_id=None)
 
     monkeypatch.setattr(rbac, "_authenticated", authenticated)
     app = FastAPI()

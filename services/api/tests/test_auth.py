@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Self
+from typing import Any, Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -258,6 +258,7 @@ def make_harness(
     organization_repository: object | None = None,
     wallet_repository: object | None = None,
     audit_repository: object | None = None,
+    **settings_kwargs: Any,
 ) -> AuthHarness:
     clock = MutableClock()
     user = UserRecord(
@@ -278,7 +279,9 @@ def make_harness(
         rate_limiter=rate_limiter or MemoryRateLimiter(clock),  # type: ignore[arg-type]
         clock=clock,
     )
-    settings = Settings(environment="test", session_secret=secret.decode())
+    settings = Settings(
+        **{"environment": "test", "session_secret": secret.decode(), **settings_kwargs}
+    )
     app = create_app(
         settings=settings,
         auth_service=service,
@@ -1085,7 +1088,9 @@ def test_oidc_scoped_session_cannot_use_matching_email_membership_in_another_org
         method="GET", app=SimpleNamespace(state=SimpleNamespace(organization_repository=lookup))
     )
 
-    async def authenticated(_request: object, *, require_csrf: bool = False) -> SessionAccess:
+    async def authenticated(
+        _request: object, *, require_csrf: bool = False, allow_scoped: bool = False
+    ) -> SessionAccess:
         return access
 
     monkeypatch.setattr(rbac, "_authenticated", authenticated)
@@ -1093,6 +1098,52 @@ def test_oidc_scoped_session_cannot_use_matching_email_membership_in_another_org
         asyncio.run(rbac.require_member(unrelated_org, request))  # type: ignore[arg-type]
     assert error.value.code == "ORG_NOT_FOUND"
     assert lookup.memberships[(unrelated_org, user.id)] == {"OrgAdmin"}
+
+
+def test_scoped_sessions_are_denied_unless_the_route_opts_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from treasurypilot_api.identity import api as identity_api
+
+    user = UserRecord(uuid.uuid4(), "person@example.com", "Person", "active")
+    access = SessionAccess(user, uuid.uuid4(), uuid.uuid4())
+
+    class Service:
+        async def authenticate(self, **_kwargs: object) -> SessionAccess:
+            return access
+
+    request = SimpleNamespace(
+        cookies={},
+        headers={},
+        app=SimpleNamespace(state=SimpleNamespace(settings=Settings(environment="test"))),
+    )
+    monkeypatch.setattr(identity_api, "_service", lambda _request: Service())
+    with pytest.raises(AuthFailure) as error:
+        asyncio.run(identity_api._authenticated(request))  # type: ignore[arg-type]
+    assert error.value.status == 403
+    allowed = asyncio.run(identity_api._authenticated(request, allow_scoped=True))  # type: ignore[arg-type]
+    assert allowed is access
+
+
+def test_oidc_callback_provider_error_returns_401_and_clears_state_cookie() -> None:
+    oidc_settings = {
+        "oidc_issuer": "https://id.example",
+        "oidc_client_id": "client",
+        "oidc_client_secret": "secret",
+        "oidc_redirect_uri": "https://app.example.test/v1/auth/oidc/callback",
+        "oidc_organization_id": str(uuid.uuid4()),
+    }
+    with make_harness(**oidc_settings) as harness:
+        harness.client.cookies.set("tp_oidc_state", "stale", path="/v1/auth/oidc/callback")
+        response = harness.client.get(
+            "/v1/auth/oidc/callback?error=access_denied", follow_redirects=False
+        )
+    assert response.status_code == 401
+    assert response.json()["code"] == "OIDC_AUTHENTICATION_FAILED"
+    assert "tp_oidc_state=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
 
 
 def test_member_without_required_role_gets_403_before_input_validation() -> None:

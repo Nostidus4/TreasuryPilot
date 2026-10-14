@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import secrets
 import time
@@ -28,10 +29,12 @@ def _unb64url(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def _https_or_local(url: str) -> bool:
+def _https_or_local(url: str, *, allow_local: bool = True) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" or (
-        parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        allow_local
+        and parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
     )
 
 
@@ -44,7 +47,7 @@ class OIDCClaims:
     subject: str
     email: str
     display_name: str | None
-    groups: tuple[str, ...]
+    groups: tuple[str, ...] | None  # None: the provider sent no groups claim
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,12 +157,17 @@ def verify_id_token(
             or "@" not in email
         ):
             raise ValueError
-        groups = claims.get("groups", [])
-        if not isinstance(groups, list) or any(not isinstance(group, str) for group in groups):
-            groups = []
+        groups = claims.get("groups")
+        if groups is not None and (
+            not isinstance(groups, list) or any(not isinstance(group, str) for group in groups)
+        ):
+            raise ValueError
         name = claims.get("name")
         return OIDCClaims(
-            subject, email.strip().lower(), name if isinstance(name, str) else None, tuple(groups)
+            subject,
+            email.strip().lower(),
+            name if isinstance(name, str) else None,
+            None if groups is None else tuple(groups),
         )
     except Exception as exc:
         if isinstance(exc, OIDCFailure):
@@ -190,13 +198,13 @@ async def _fetch_json(
                 if response.status != 200:
                     raise OIDCFailure("OIDC provider request failed")
                 body = response.read(1_000_001)
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
             raise OIDCFailure("OIDC provider unavailable") from None
         if len(body) > 1_000_000:
             raise OIDCFailure("OIDC provider response too large")
         try:
             parsed = json.loads(body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (ValueError, RecursionError):
             raise OIDCFailure("invalid OIDC provider response") from None
         if not isinstance(parsed, dict):
             raise OIDCFailure("invalid OIDC provider response")
@@ -207,9 +215,18 @@ async def _fetch_json(
 
 class OIDCClient:
     def __init__(
-        self, *, issuer: str, client_id: str, client_secret: str, redirect_uri: str
+        self,
+        *,
+        issuer: str,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        allow_local_http: bool = False,
     ) -> None:
-        if not _https_or_local(issuer) or not _https_or_local(redirect_uri):
+        self._allow_local = allow_local_http
+        if not _https_or_local(issuer, allow_local=allow_local_http) or not _https_or_local(
+            redirect_uri, allow_local=allow_local_http
+        ):
             raise ValueError("OIDC issuer and redirect URI must use HTTPS")
         self.issuer = issuer
         self.client_id = client_id
@@ -269,7 +286,9 @@ class OIDCClient:
         if metadata.get("issuer") != self.issuer:
             raise OIDCFailure("OIDC issuer does not match discovery metadata")
         for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
-            if not isinstance(metadata.get(key), str) or not _https_or_local(metadata[key]):
+            if not isinstance(metadata.get(key), str) or not _https_or_local(
+                metadata[key], allow_local=self._allow_local
+            ):
                 raise OIDCFailure("invalid OIDC discovery metadata")
         return metadata
 

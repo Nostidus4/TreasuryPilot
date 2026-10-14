@@ -21,8 +21,16 @@ def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
+_MISSING = object()
+
+
 def _token(
-    *, nonce: str = "expected", audience: str = "client", algorithm: str = "RS256", exp: int = 200
+    *,
+    nonce: str = "expected",
+    audience: str = "client",
+    algorithm: str = "RS256",
+    exp: int = 200,
+    groups: object = ("finance",),
 ) -> tuple[str, dict[str, object]]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = key.public_key().public_numbers()
@@ -38,23 +46,20 @@ def _token(
         ]
     }
     header = _b64(json.dumps({"alg": algorithm, "kid": "key-1"}, separators=(",", ":")).encode())
-    payload = _b64(
-        json.dumps(
-            {
-                "iss": "https://id.example",
-                "aud": audience,
-                "sub": "subject-1",
-                "iat": 100,
-                "exp": exp,
-                "nonce": nonce,
-                "email": "person@example.com",
-                "email_verified": True,
-                "name": "Person",
-                "groups": ["finance"],
-            },
-            separators=(",", ":"),
-        ).encode()
-    )
+    claims: dict[str, object] = {
+        "iss": "https://id.example",
+        "aud": audience,
+        "sub": "subject-1",
+        "iat": 100,
+        "exp": exp,
+        "nonce": nonce,
+        "email": "person@example.com",
+        "email_verified": True,
+        "name": "Person",
+    }
+    if groups is not _MISSING:
+        claims["groups"] = groups
+    payload = _b64(json.dumps(claims, separators=(",", ":")).encode())
     signing_input = f"{header}.{payload}".encode()
     signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
     return f"{header}.{payload}.{_b64(signature)}", jwks
@@ -203,3 +208,80 @@ def test_oidc_session_is_limited_to_five_minutes() -> None:
         minutes=5
     )  # type: ignore[operator]
     assert repository.created["organization_scope_id"] == organization_id
+
+
+def test_oidc_groups_claim_missing_is_none_and_malformed_is_rejected() -> None:
+    def verify(groups: object) -> object:
+        token, jwks = _token(groups=groups)
+        return verify_id_token(
+            token,
+            jwks=jwks,
+            issuer="https://id.example",
+            audience="client",
+            nonce="expected",
+            now=150,
+        )
+
+    assert verify(_MISSING).groups is None  # type: ignore[attr-defined]
+    assert verify([]).groups == ()  # type: ignore[attr-defined]
+    for malformed in ("finance", {"a": 1}, ["finance", 7], 5):
+        with pytest.raises(OIDCFailure):
+            verify(malformed)
+
+
+def test_oidc_discovery_endpoints_must_be_https_outside_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from treasurypilot_api.identity import oidc
+
+    async def fake_fetch(url: str, **_kwargs: object) -> dict[str, object]:
+        return {
+            "issuer": "https://id.example",
+            "authorization_endpoint": "https://id.example/authorize",
+            "token_endpoint": "http://127.0.0.1:8080/token",
+            "jwks_uri": "https://id.example/jwks",
+        }
+
+    monkeypatch.setattr(oidc, "_fetch_json", fake_fetch)
+    kwargs = {
+        "issuer": "https://id.example",
+        "client_id": "client",
+        "client_secret": "secret",
+        "redirect_uri": "https://app.example/cb",
+    }
+    state = OIDCState("s", "n", "v", 100)
+    with pytest.raises(OIDCFailure):
+        asyncio.run(oidc.OIDCClient(**kwargs).authorization_url(state=state))
+    asyncio.run(oidc.OIDCClient(**kwargs, allow_local_http=True).authorization_url(state=state))
+
+
+def test_oidc_fetch_wraps_http_protocol_errors_and_bad_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import http.client
+    import urllib.request
+
+    from treasurypilot_api.identity import oidc
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise http.client.IncompleteRead(b"")
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", broken)
+    with pytest.raises(OIDCFailure):
+        asyncio.run(oidc._fetch_json("https://id.example/jwks"))
+
+    class Response:
+        status = 200
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _size: int) -> bytes:
+            return b"[" * 100_000
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", lambda *_a, **_k: Response())
+    with pytest.raises(OIDCFailure):
+        asyncio.run(oidc._fetch_json("https://id.example/jwks"))

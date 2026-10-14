@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Mapping
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.auth import UserRecord
@@ -15,11 +16,15 @@ from treasurypilot_api.identity.models import (
     User,
     UserStatus,
 )
+from treasurypilot_api.identity.oidc import OIDCFailure
 from treasurypilot_core.ids import uuid7
 
 # SSO group claims may grant work roles, never organization ownership, approval,
 # guardian, or platform administration privileges.
 OIDC_ASSIGNABLE_ROLES = frozenset({"Operator", "Finance", "Auditor"})
+# Membership rule: SSO manages only OIDC_ASSIGNABLE_ROLES. Any other role an existing
+# member holds (Owner, Approver, ...) is preserved, so SSO can never demote or suspend
+# an owner. SSO never re-activates a suspended membership: login is rejected instead.
 
 
 class OIDCIdentityRepository:
@@ -34,13 +39,14 @@ class OIDCIdentityRepository:
         email: str,
         display_name: str | None,
         organization_id: uuid.UUID,
-        groups: tuple[str, ...],
+        groups: tuple[str, ...] | None,
         group_role_map: Mapping[str, tuple[str, ...]],
     ) -> UserRecord:
-        roles = sorted({role for group in groups for role in group_role_map.get(group, ())})
+        # groups is None when the provider sent no groups claim: keep existing roles.
+        roles = sorted({role for group in groups or () for role in group_role_map.get(group, ())})
         if any(role not in OIDC_ASSIGNABLE_ROLES for role in roles):
             raise ValueError("OIDC identity has an invalid mapped organization role")
-        if not roles:
+        if groups is not None and not roles:
             # A live identity with no mapped groups is deprovisioned from this
             # organization immediately; existing sessions cannot access its routes.
             async with self._sessions() as session, session.begin():
@@ -59,7 +65,11 @@ class OIDCIdentityRepository:
                         .with_for_update()
                     )
                     if membership is not None:
-                        membership.status = MembershipStatus.SUSPENDED
+                        kept = [r for r in membership.roles if r not in OIDC_ASSIGNABLE_ROLES]
+                        if kept:
+                            membership.roles = kept
+                        else:
+                            membership.status = MembershipStatus.SUSPENDED
             raise ValueError("OIDC identity has no allowed mapped organization role")
         async with self._sessions() as session, session.begin():
             organization = await session.scalar(
@@ -87,17 +97,29 @@ class OIDCIdentityRepository:
                 )
                 if user is not None and user.status != UserStatus.ACTIVE:
                     raise ValueError("OIDC account is disabled")
-                if user is None:
-                    user = User(id=uuid7(), email=email, display_name=display_name)
-                    session.add(user)
+                try:
+                    if user is None:
+                        user = User(id=uuid7(), email=email, display_name=display_name)
+                        session.add(user)
+                        await session.flush()
+                    elif await session.scalar(
+                        select(OIDCIdentity.subject).where(
+                            OIDCIdentity.user_id == user.id, OIDCIdentity.issuer == issuer
+                        )
+                    ):
+                        raise ValueError("OIDC account is already linked to another identity")
+                    session.add(OIDCIdentity(issuer=issuer, subject=subject, user_id=user.id))
                     await session.flush()
-                session.add(OIDCIdentity(issuer=issuer, subject=subject, user_id=user.id))
+                except IntegrityError:
+                    raise OIDCFailure("OIDC identity could not be linked") from None
             membership = await session.scalar(
                 select(Membership)
                 .where(Membership.org_id == organization_id, Membership.user_id == user.id)
                 .with_for_update()
             )
             if membership is None:
+                if not roles:
+                    raise ValueError("OIDC identity has no allowed mapped organization role")
                 membership = Membership(
                     id=uuid7(),
                     org_id=organization_id,
@@ -106,10 +128,11 @@ class OIDCIdentityRepository:
                     status=MembershipStatus.ACTIVE,
                 )
                 session.add(membership)
-            else:
-                # The provider's current group claim is authoritative for the
-                # SSO-managed organization membership.
-                membership.roles = roles
-                membership.status = MembershipStatus.ACTIVE
+            elif membership.status != MembershipStatus.ACTIVE:
+                raise ValueError("OIDC membership is not active")
+            elif groups is not None:
+                # The provider's group claim is authoritative for SSO-managed roles only.
+                kept = [r for r in membership.roles if r not in OIDC_ASSIGNABLE_ROLES]
+                membership.roles = sorted({*kept, *roles})
             await session.flush()
             return UserRecord(user.id, str(user.email), user.display_name, user.status)
