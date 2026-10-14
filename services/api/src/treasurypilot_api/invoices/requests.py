@@ -304,11 +304,7 @@ async def _capture_fiat_reference(
             "The configured FX quote source is temporarily unavailable.",
         ) from None
     except FiatPaymentBlocked as error:
-        code = (
-            "FX_MAX_EXCEEDED"
-            if error.reason == "APPROVED_MAX_EXCEEDED"
-            else "FX_QUOTE_INVALID"
-        )
+        code = "FX_MAX_EXCEEDED" if error.reason == "APPROVED_MAX_EXCEEDED" else "FX_QUOTE_INVALID"
         raise _fail(422, code, "Fiat quote invalid", error.reason) from None
     return quote.model_dump(mode="json"), tolerance_bps
 
@@ -738,7 +734,9 @@ async def create_request(
                     fiat_amount_minor_units=fiat_amount_minor_units,
                     max_stablecoin_amount=amount,
                     stablecoin_asset=(
-                        asset_key(asset.address or b"") if fiat_amount_minor_units is not None else ""
+                        asset_key(asset.address or b"")
+                        if fiat_amount_minor_units is not None
+                        else ""
                     ),
                 )
                 row = PaymentRequest(
@@ -881,12 +879,8 @@ async def edit_request(
                 if row.fiat_amount_minor_units is not None
                 else None,
             )
-            fiat_amount_minor_units = _fiat_amount(
-                cast(str | None, fiat_amount_value)
-            )
-            fiat_currency = cast(
-                str | None, fields.get("fiat_currency", row.fiat_currency)
-            )
+            fiat_amount_minor_units = _fiat_amount(cast(str | None, fiat_amount_value))
+            fiat_currency = cast(str | None, fields.get("fiat_currency", row.fiat_currency))
             if (fiat_amount_minor_units is None) != (fiat_currency is None):
                 raise _fail(
                     422,

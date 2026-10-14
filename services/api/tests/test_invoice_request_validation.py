@@ -62,9 +62,7 @@ def test_fiat_fields_must_be_supplied_as_a_pair_and_use_minor_units() -> None:
 
 
 def test_fiat_patch_can_clear_both_fields_together() -> None:
-    patch = RequestPatch.model_validate(
-        {"fiat_currency": None, "fiat_amount_minor_units": None}
-    )
+    patch = RequestPatch.model_validate({"fiat_currency": None, "fiat_amount_minor_units": None})
     assert patch.model_dump(exclude_unset=True) == {
         "fiat_currency": None,
         "fiat_amount_minor_units": None,

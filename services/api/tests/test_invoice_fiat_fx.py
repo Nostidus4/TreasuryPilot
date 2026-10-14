@@ -74,8 +74,10 @@ def test_payment_proposal_blocks_stale_quote_instead_of_returning_old_amount() -
     with pytest.raises(FiatPaymentBlocked, match="STALE_FX_QUOTE"):
         asyncio.run(
             propose_request_payment(
-                _FiatRequest(), _Provider(_quote(100, observed_at=1)),
-                policy=POLICY, now_timestamp=110,
+                _FiatRequest(),
+                _Provider(_quote(100, observed_at=1)),
+                policy=POLICY,
+                now_timestamp=110,
             )
         )
 
@@ -83,8 +85,10 @@ def test_payment_proposal_blocks_stale_quote_instead_of_returning_old_amount() -
 def test_approval_model_records_fiat_and_maximum_in_one_bound_object() -> None:
     reference = _quote(100).rate
     approval = FiatApproval(
-        fiat_amount=BaseUnits(100), reference_rate=reference,
-        max_stablecoin_amount=BaseUnits(120), fx_tolerance_bps=500,
+        fiat_amount=BaseUnits(100),
+        reference_rate=reference,
+        max_stablecoin_amount=BaseUnits(120),
+        fx_tolerance_bps=500,
     )
     assert approval.fiat_amount == 100
     assert approval.max_stablecoin_amount == 120

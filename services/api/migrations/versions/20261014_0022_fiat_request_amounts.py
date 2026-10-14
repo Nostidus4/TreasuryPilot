@@ -39,9 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "ck_payment_requests_fiat_fx_pair", "payment_requests", type_="check"
-    )
+    op.drop_constraint("ck_payment_requests_fiat_fx_pair", "payment_requests", type_="check")
     op.drop_column("payment_requests", "fx_tolerance_bps")
     op.drop_column("payment_requests", "fx_reference_quote")
     op.drop_column("payment_requests", "fiat_currency")
