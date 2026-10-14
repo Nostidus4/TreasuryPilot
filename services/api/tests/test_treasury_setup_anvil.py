@@ -123,6 +123,19 @@ def _deploy_fixture(anvil_url: str) -> dict[str, str]:
         "SETUP_FIXTURE_PATH": relative_path,
     }
     try:
+        artifacts = subprocess.run(
+            ["forge", "build", "script/SafeArtifactBundle.s.sol"],
+            cwd=REPO_ROOT / "contracts",
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        if artifacts.returncode != 0:
+            raise AssertionError(
+                f"forge Safe artifact build failed:\n{artifacts.stdout}\n{artifacts.stderr}"
+            )
         result = subprocess.run(
             [
                 "forge",
