@@ -157,6 +157,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/import-csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Import Requests Csv */
+    post: operations['import_requests_csv_v1_orgs__organization_id__requests_import_csv_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Download Csv Import Errors */
+    get: operations['download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}': {
     parameters: {
       query?: never;
@@ -373,6 +407,43 @@ export interface components {
       legalName?: string | null;
       /** Name */
       name: string;
+    };
+    /** CsvImportCreated */
+    CsvImportCreated: {
+      /** Flags */
+      flags: string[];
+      /** Invoicenumber */
+      invoiceNumber: string;
+      /** Requestid */
+      requestId: string | null;
+      /** Row */
+      row: number;
+    };
+    /** CsvImportResponse */
+    CsvImportResponse: {
+      /** Created */
+      created: components['schemas']['CsvImportCreated'][];
+      /** Dryrun */
+      dryRun: boolean;
+      /** Errorreporturl */
+      errorReportUrl: string | null;
+      /** Errors */
+      errors: components['schemas']['CsvImportRowError'][];
+      /** Importid */
+      importId: string | null;
+    };
+    /** CsvImportRowError */
+    CsvImportRowError: {
+      /** Code */
+      code: string;
+      /** Field */
+      field: string;
+      /** Message */
+      message: string;
+      /** Row */
+      row: number;
+      /** Value */
+      value: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -1100,6 +1171,87 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  import_requests_csv_v1_orgs__organization_id__requests_import_csv_post: {
+    parameters: {
+      query?: {
+        dryRun?: boolean;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+          /** Format: uuid */
+          treasuryId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CsvImportResponse'];
+        };
+      };
+      /** @description CSV file exceeds the upload limit */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        import_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
         };
       };
       /** @description Validation Error */

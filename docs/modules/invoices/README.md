@@ -121,7 +121,8 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | OPR | multipart `file`, `treasuryId` → `202 {requestId, extractionJobId}` | 413, 415, 422 `MULTI_INVOICE_DOCUMENT` |
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
-| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |
+| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart `file`, `treasuryId`, `?dryRun=true` → `{importId, dryRun, created[], errors[{row, field, code, message, value}], errorReportUrl}` | 413 `CSV_TOO_LARGE`; 422 `CSV_HEADER_INVALID`, `CSV_ENCODING`, `CSV_ROW_LIMIT` |
+| GET | `/orgs/{o}/requests/import-csv/{importId}/errors.csv` | OPR | downloadable, formula-neutralized error report | 404 `REQUEST_NOT_FOUND` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
 | POST | `/…/{r}/terms/confirm` | OPR | `{terms}` → `{request}` | 422 `TERMS_INVALID` |
 | POST | `/…/{r}/submit` | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED` |
@@ -178,7 +179,7 @@ sequenceDiagram
 
 ### 7.2 CSV import
 
-Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. Steps: encoding UTF-8 (BOM allowed) → header exact match → per row: vendor by `normalized_ref`, payee address must belong to that vendor (no auto-creation), amount decimal string with ≤ asset decimals, dates ISO → fingerprint vs DB **and** vs earlier rows in the file → flags → Draft. `dryRun=true` returns the same report without writing. Error report CSV escapes cells starting with `= + - @ \t \r` by prefixing `'` (FR-307).
+Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. UTF-8 (BOM allowed), an exact ordered header (optional columns may be omitted), and at most 1,000 data rows / 5 MiB are accepted. Each row resolves a vendor by `normalized_ref`, requires a registered non-deactivated payee address belonging to that vendor, parses amount without rounding, validates ISO dates, and checks its fingerprint against active requests and earlier valid rows in the file. Valid rows become Draft requests with revisions, status events and deterministic flags; invalid rows stay in the report and do not prevent other valid rows from importing. `dryRun=true` returns the prospective valid rows and row errors without creating an import record or any requests. A completed import with errors exposes `errorReportUrl`; its CSV download prefixes an apostrophe to cells starting with `= + - @ \t \r` (FR-307).
 
 ## 8. Algorithms
 

@@ -61,6 +61,121 @@
         "title": "CreateOrganizationRequest",
         "type": "object"
       },
+      "CsvImportCreated": {
+        "properties": {
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "invoiceNumber": {
+            "title": "Invoicenumber",
+            "type": "string"
+          },
+          "requestId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          }
+        },
+        "required": ["row", "requestId", "invoiceNumber", "flags"],
+        "title": "CsvImportCreated",
+        "type": "object"
+      },
+      "CsvImportResponse": {
+        "properties": {
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/CsvImportCreated"
+            },
+            "title": "Created",
+            "type": "array"
+          },
+          "dryRun": {
+            "title": "Dryrun",
+            "type": "boolean"
+          },
+          "errorReportUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorreporturl"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/CsvImportRowError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "importId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importid"
+          }
+        },
+        "required": [
+          "importId",
+          "dryRun",
+          "created",
+          "errors",
+          "errorReportUrl"
+        ],
+        "title": "CsvImportResponse",
+        "type": "object"
+      },
+      "CsvImportRowError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["row", "field", "code", "message", "value"],
+        "title": "CsvImportRowError",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1777,6 +1892,135 @@
           }
         },
         "summary": "Create Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/import-csv": {
+      "post": {
+        "operationId": "import_requests_csv_v1_orgs__organization_id__requests_import_csv_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dryrun",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "treasuryId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": ["file", "treasuryId"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "description": "CSV file exceeds the upload limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Requests Csv",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv": {
+      "get": {
+        "operationId": "download_csv_import_errors_v1_orgs__organization_id__requests_import_csv__import_id__errors_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Csv Import Errors",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
