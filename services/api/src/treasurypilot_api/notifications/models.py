@@ -54,8 +54,8 @@ class Notification(Base):
         Index("ix_notifications_org_created", "org_id", "created_at"),
         Index("ix_notifications_user_deliver", "user_id", "org_id", "deliver_at"),
         Index(
-            "ix_notifications_actionable_created",
-            "created_at",
+            "ix_notifications_actionable_deliver",
+            "deliver_at",
             postgresql_where=text("severity IN ('ACTION', 'CRITICAL')"),
         ),
         Index(

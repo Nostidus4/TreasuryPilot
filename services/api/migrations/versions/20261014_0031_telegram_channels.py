@@ -105,15 +105,15 @@ def upgrade() -> None:
 
     # Serves the per-second enqueue scan over recent ACTION/CRITICAL notifications.
     op.create_index(
-        "ix_notifications_actionable_created",
+        "ix_notifications_actionable_deliver",
         "notifications",
-        ["created_at"],
+        ["deliver_at"],
         postgresql_where=sa.text("severity IN ('ACTION', 'CRITICAL')"),
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_notifications_actionable_created", table_name="notifications")
+    op.drop_index("ix_notifications_actionable_deliver", table_name="notifications")
     op.drop_index("ix_telegram_deliveries_pending", table_name="telegram_deliveries")
     op.drop_table("telegram_deliveries")
     op.drop_index("ix_telegram_link_codes_user", table_name="telegram_link_codes")

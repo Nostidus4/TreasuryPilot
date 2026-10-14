@@ -21,7 +21,9 @@ from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.notifications import NotificationChannel, preference_allows
 from treasurypilot_core.privacy import DecryptionError, FieldCipher
+from treasurypilot_worker.notify.publisher import _json_object
 from treasurypilot_worker.notify.telegram import (
     TelegramBotBlocked,
     TelegramClient,
@@ -37,21 +39,38 @@ MAX_ATTEMPTS = 3
 RETRY_BACKOFF = (timedelta(seconds=5), timedelta(seconds=20))
 BACKLOG_WINDOW = timedelta(hours=1)
 CHANNELS_PER_RUN = 50
+ENQUEUE_BATCH = 500
 # A run stops starting new channels after this long; sends are sequential and each can take
 # up to the client timeout, and the next scheduled run must not pile up behind this one.
 RUN_BUDGET_SECONDS = 20.0
 _PREFIX = "[TreasuryPilot]"
 _VENDOR_LIMIT = 60
 
-_ENQUEUE = """
-INSERT INTO telegram_deliveries (id, notification_id, channel_id, next_attempt_at)
-SELECT gen_random_uuid(), n.id, c.id, $1
+# Notifications that are due (deliver_at has passed, so quiet hours are honoured) and have no
+# delivery row yet. Preferences are applied in Python with the shared preference_allows.
+_DUE = """
+SELECT n.id AS notification_id, n.type, c.id AS channel_id, p.channels, p.categories
 FROM notifications AS n
 JOIN notification_channels AS c
   ON c.user_id = n.user_id AND c.kind = 'TELEGRAM' AND c.active
+LEFT JOIN notification_preferences AS p ON p.user_id = n.user_id
 WHERE n.severity IN ('ACTION', 'CRITICAL')
   AND n.created_at >= c.verified_at
-  AND n.created_at > $1::timestamptz - $2::interval
+  AND n.deliver_at <= $1 AND n.deliver_at > $1::timestamptz - $2::interval
+  AND NOT EXISTS (
+    SELECT 1 FROM telegram_deliveries AS d
+    WHERE d.notification_id = n.id AND d.channel_id = c.id
+  )
+ORDER BY n.deliver_at
+LIMIT $3
+"""
+
+# Opted-out pairs are recorded as FAILED so they are not selected again.
+_ENQUEUE = """
+INSERT INTO telegram_deliveries (id, notification_id, channel_id, status, last_error, next_attempt_at)
+SELECT gen_random_uuid(), d.notification_id, d.channel_id, d.status, d.last_error, $1
+FROM unnest($2::uuid[], $3::uuid[], $4::text[], $5::text[])
+  AS d(notification_id, channel_id, status, last_error)
 ON CONFLICT (notification_id, channel_id) DO NOTHING
 """
 
@@ -270,6 +289,25 @@ async def _deliver_channel(
     return True
 
 
+async def _enqueue_due(connection: asyncpg.Connection, now: datetime) -> None:
+    due = await connection.fetch(_DUE, now, BACKLOG_WINDOW, ENQUEUE_BATCH)
+    if not due:
+        return
+    notification_ids, channel_ids, statuses, errors = [], [], [], []
+    for row in due:
+        allowed = preference_allows(
+            row["type"],
+            NotificationChannel.TELEGRAM,
+            channels=_json_object(row["channels"]),
+            categories=_json_object(row["categories"]),
+        )
+        notification_ids.append(row["notification_id"])
+        channel_ids.append(row["channel_id"])
+        statuses.append("PENDING" if allowed else "FAILED")
+        errors.append(None if allowed else "preference_opt_out")
+    await connection.execute(_ENQUEUE, now, notification_ids, channel_ids, statuses, errors)
+
+
 async def deliver_pending(
     pool: asyncpg.Pool,
     *,
@@ -291,7 +329,7 @@ async def deliver_pending(
     clock: Callable[[], datetime] = (lambda: now) if now else (lambda: datetime.now(UTC))
     deadline = time.monotonic() + budget_seconds
     async with pool.acquire() as connection:
-        await connection.execute(_ENQUEUE, clock(), BACKLOG_WINDOW)
+        await _enqueue_due(connection, clock())
         candidates: list[Any] = await connection.fetch(
             _CANDIDATE_CHANNELS, clock(), CHANNELS_PER_RUN, MIN_INTERVAL
         )
