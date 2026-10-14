@@ -1180,7 +1180,9 @@ export interface operations {
   confirm_request_terms_v1_orgs__organization_id__requests__request_id__terms_confirm_post: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
       path: {
         organization_id: string;
         request_id: string;

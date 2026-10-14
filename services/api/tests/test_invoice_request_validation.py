@@ -45,10 +45,12 @@ def test_onchain_request_id_is_stable_bytes32_for_org_and_request() -> None:
 
 
 def test_confirmed_discount_terms_derive_exact_integer_approval_option() -> None:
-    stored, digest, early_amount, early_pay_by = _validated_terms(
+    stored, digest, early = _validated_terms(
         {"netDueDay": 21_000, "discountBps": 250, "discountDeadlineDay": 20_990},
         1_001,
     )
+    assert early is not None
+    early_amount, early_pay_by = early
     assert stored["net_due_day"] == 21_000
     assert len(digest) == 32
     assert early_amount == 976  # 1001 - floor(1001 * 250 / 10000)
@@ -68,7 +70,7 @@ def test_invalid_terms_return_domain_error() -> None:
 
 
 def test_camel_case_late_fee_is_validated_by_engine_model() -> None:
-    stored, _, early_amount, _ = _validated_terms(
+    stored, _, early = _validated_terms(
         {
             "netDueDay": 21_000,
             "lateFee": {"kind": "percent_per_period", "rateBps": 100, "periodDays": 7},
@@ -76,7 +78,16 @@ def test_camel_case_late_fee_is_validated_by_engine_model() -> None:
         1_000,
     )
     assert stored["late_fee"]["period_days"] == 7
-    assert early_amount == 0
+    assert early is None
+
+
+def test_late_fee_amount_accepts_decimal_string() -> None:
+    stored, _, _ = _validated_terms(
+        {"netDueDay": 21_000, "lateFee": {"kind": "fixed", "amount": "12345678901234567890"}},
+        1_000,
+    )
+    # BaseUnits accepts canonical integer strings and stores them as strings (JS-safe).
+    assert stored["late_fee"]["amount"] == "12345678901234567890"
 
 
 def test_scheduler_only_sees_confirmed_terms() -> None:

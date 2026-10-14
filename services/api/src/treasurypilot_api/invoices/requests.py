@@ -90,9 +90,18 @@ _TERMS_KEYS = {
 }
 
 
+def _early_option(terms: PaymentTerms, amount: int) -> tuple[int, int] | None:
+    if terms.discount_deadline_day is None:
+        return None
+    return (
+        amount - amount * terms.discount_bps // 10_000,
+        terms.discount_deadline_day * 86_400 + 86_399,
+    )
+
+
 def _validated_terms(
     raw: dict[str, object], amount: int
-) -> tuple[dict[str, object], bytes, int, int]:
+) -> tuple[dict[str, object], bytes, tuple[int, int] | None]:
     normalized = {_TERMS_KEYS.get(key, key): value for key, value in raw.items()}
     if isinstance(normalized.get("late_fee"), dict):
         late_fee = cast(dict[str, object], normalized["late_fee"])
@@ -107,19 +116,15 @@ def _validated_terms(
         raise _fail(422, "TERMS_INVALID", "Payment terms invalid", str(error)) from None
     stored = terms.model_dump(mode="json", exclude_none=True)
     digest = keccak(json.dumps(stored, sort_keys=True, separators=(",", ":")).encode())
-    early_amount = 0
-    early_pay_by = 0
-    if terms.discount_deadline_day is not None:
-        early_amount = amount - amount * terms.discount_bps // 10_000
-        if early_amount <= 0:
-            raise _fail(
-                422,
-                "TERMS_INVALID",
-                "Payment terms invalid",
-                "A discount must leave a positive early payment amount.",
-            )
-        early_pay_by = terms.discount_deadline_day * 86_400 + 86_399
-    return stored, digest, early_amount, early_pay_by
+    early = _early_option(terms, amount)
+    if early is not None and early[0] <= 0:
+        raise _fail(
+            422,
+            "TERMS_INVALID",
+            "Payment terms invalid",
+            "A discount must leave a positive early payment amount.",
+        )
+    return stored, digest, early
 
 
 def confirmed_payment_terms(row: PaymentRequest) -> PaymentTerms | None:
@@ -190,10 +195,11 @@ def _validate_dates(issue_date: date, due_date: date) -> None:
 
 
 def _serialize(row: PaymentRequest) -> dict[str, object]:
-    early_amount = 0
-    early_pay_by = 0
-    if confirmed_payment_terms(row) is not None:
-        _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
+    try:
+        terms = confirmed_payment_terms(row)
+    except ValidationError:  # stored terms no longer match the model; do not break reads
+        terms = None
+    early = _early_option(terms, int(row.amount)) if terms is not None else None
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
@@ -210,8 +216,8 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "termsHash": "0x" + row.terms_hash.hex() if row.terms_hash else None,
         "termsConfirmedBy": str(row.terms_confirmed_by) if row.terms_confirmed_by else None,
         "termsConfirmedAt": row.terms_confirmed_at.isoformat() if row.terms_confirmed_at else None,
-        "earlyAmount": str(early_amount),
-        "earlyPayBy": early_pay_by,
+        "earlyAmount": str(early[0]) if early else None,
+        "earlyPayBy": early[1] if early else None,
         "fingerprint": "0x" + row.fingerprint.hex() if row.fingerprint else None,
         "invoiceHash": "0x" + row.invoice_hash.hex() if row.invoice_hash else None,
         "onchainRequestId": "0x" + row.onchain_request_id.hex() if row.onchain_request_id else None,
@@ -806,8 +812,20 @@ async def confirm_request_terms(
     payload: ConfirmTermsRequest,
     request: Request,
     response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     member: MemberContext = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
+    try:
+        expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
+    except ValueError:
+        expected_version = None
+    if expected_version is None:
+        raise _fail(
+            412,
+            "PRECONDITION_FAILED",
+            "Request changed",
+            "Provide the current request version in If-Match.",
+        )
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
             select(PaymentRequest)
@@ -816,12 +834,26 @@ async def confirm_request_terms(
         )
         if row is None:
             raise _not_found()
+        if row.version != expected_version:
+            raise _fail(
+                412,
+                "PRECONDITION_FAILED",
+                "Request changed",
+                "The request changed since it was read; reload and try again.",
+            )
         if row.status != RequestStatus.DRAFT.value:
             raise _fail(
                 409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
             )
-        stored, digest, _, _ = _validated_terms(payload.terms, int(row.amount))
-        if row.terms != stored:
+        stored, digest, _ = _validated_terms(payload.terms, int(row.amount))
+        # Provisional terms are stored raw; compare in canonical form so an equivalent
+        # spelling (camelCase, omitted defaults) does not bump the revision.
+        try:
+            current = _validated_terms(row.terms, int(row.amount))[0] if row.terms else None
+        except AuthFailure:
+            current = row.terms
+        row.terms = stored
+        if current != stored:
             await session.execute(
                 update(RequestFlag)
                 .where(
@@ -832,7 +864,6 @@ async def confirm_request_terms(
                 )
                 .values(status=RequestFlagStatus.SUPERSEDED.value)
             )
-            row.terms = stored
             row.current_revision += 1
             row.last_edited_by = member.user_id
             session.add(
@@ -847,8 +878,10 @@ async def confirm_request_terms(
             )
             await _recompute_flags(session, row)
         row.terms_hash = digest
-        row.terms_confirmed_by = member.user_id
-        row.terms_confirmed_at = datetime.now(UTC)
+        if row.terms_confirmed_by is None or current != stored:
+            # Re-confirming identical terms keeps the original confirmer.
+            row.terms_confirmed_by = member.user_id
+            row.terms_confirmed_at = datetime.now(UTC)
         await session.flush()
         await session.refresh(row)
         result = _serialize(row)

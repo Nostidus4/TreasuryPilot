@@ -82,6 +82,7 @@ async def _confirm_in_postgres(database_url: str) -> None:
             ),
             request,
             response,
+            "1",
             member,
         )
         assert result["request"]["earlyAmount"] == "976"
@@ -94,6 +95,27 @@ async def _confirm_in_postgres(database_url: str) -> None:
             assert row.terms_confirmed_by == USER_ID
             assert row.terms_hash is not None and len(row.terms_hash) == 32
             assert row.current_revision == 2
+            confirmed_at = row.terms_confirmed_at
+
+        # An equivalent re-confirmation keeps the original confirmer and revision.
+        await confirm_request_terms(
+            ORG_ID,
+            REQUEST_ID,
+            ConfirmTermsRequest(
+                terms={"net_due_day": 21_000, "discount_bps": 250, "discount_deadline_day": 20_990}
+            ),
+            request,
+            response,
+            response.headers["ETag"],
+            member,
+        )
+        async with sessions() as session:
+            row = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert row is not None
+            assert row.current_revision == 2
+            assert row.terms_confirmed_at == confirmed_at
     finally:
         await engine.dispose()
 
