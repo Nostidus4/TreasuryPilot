@@ -69,7 +69,9 @@ class ModuleMandateInput(ApiModel):
     refill: ModuleLimitInput
     supply: ModuleLimitInput
     approval_max_age: int = Field(alias="approvalMaxAge", ge=1, le=2**32 - 1)
-    approvers: list[str] = Field(min_length=1, max_length=32)
+    approvers: list[Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]] = Field(
+        min_length=1, max_length=32
+    )
 
     @field_validator("executor", "guardian")
     @classmethod
@@ -86,8 +88,6 @@ class ModuleMandateInput(ApiModel):
     @field_validator("approvers")
     @classmethod
     def normalize_approvers(cls, values: list[str]) -> list[str]:
-        if any(not __import__("re").fullmatch(r"0x[0-9a-fA-F]{40}", item) for item in values):
-            raise ValueError("approvers must be EVM addresses")
         normalized = [item.lower() for item in values]
         if len(set(normalized)) != len(normalized) or "0x" + "00" * 20 in normalized:
             raise ValueError("approvers must be unique and nonzero")
@@ -137,6 +137,13 @@ class ModuleBufferInput(ApiModel):
 class CreateModuleSetupRequest(ApiModel):
     mandate: ModuleMandateInput
     buffers: list[ModuleBufferInput] = Field(min_length=2, max_length=3)
+
+    @field_validator("buffers")
+    @classmethod
+    def unique_wallets(cls, values: list[ModuleBufferInput]) -> list[ModuleBufferInput]:
+        if len({item.wallet for item in values}) != len(values):
+            raise ValueError("buffers must list each wallet once")
+        return values
 
 
 def _service(request: Request) -> GovernanceService:

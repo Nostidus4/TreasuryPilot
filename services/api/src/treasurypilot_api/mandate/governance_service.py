@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from eth_abi import encode
@@ -51,6 +52,8 @@ from treasurypilot_api.treasury.safe import (
     SafeVerificationError,
     _rpc,
 )
+
+logger = logging.getLogger(__name__)
 
 _NONCE_SELECTOR = "0xaffed0e0"  # nonce()
 _EXECUTION_EVENTS = {
@@ -165,6 +168,29 @@ class GovernanceService:
                 continue
         raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
 
+    async def _rpc_first(
+        self,
+        chain: Any,
+        method: str,
+        params: list[Any],
+        parse: Callable[[Any], Any] = lambda result: result,
+    ) -> Any:
+        """Return the first non-None parsed answer across HTTP providers, else None."""
+        for template in chain.rpc_urls:
+            if not template.startswith(("http://", "https://")):
+                continue
+            try:
+                result = parse(
+                    await asyncio.to_thread(
+                        _rpc, resolve_rpc_url(template, self._environ), method, params
+                    )
+                )
+            except Exception:
+                continue
+            if result is not None:
+                return result
+        return None
+
     async def predict_module_address(
         self, *, chain_id: int, safe: bytes, factory: bytes, salt: bytes
     ) -> bytes:
@@ -179,37 +205,27 @@ class GovernanceService:
         if chain is None:
             raise GovernanceFailure("WRONG_CHAIN", 422, "The treasury chain is not enabled.")
         data = module_factory_predict_data(safe_t=safe, salt=salt)
-        for template in chain.rpc_urls:
-            if not template.startswith(("http://", "https://")):
-                continue
-            try:
-                result = await asyncio.to_thread(
-                    _rpc,
-                    resolve_rpc_url(template, self._environ),
-                    "eth_call",
-                    [{"to": _address(factory), "data": _hex(data)}, "latest"],
-                )
-                predicted = bytes.fromhex(str(result).removeprefix("0x"))
-                if len(predicted) != 32 or not any(predicted[-20:]):
-                    continue
-                address = predicted[-20:]
-                code = await asyncio.to_thread(
-                    _rpc,
-                    resolve_rpc_url(template, self._environ),
-                    "eth_getCode",
-                    [_address(address), "latest"],
-                )
-                if str(code) != "0x":
+
+        def parse_address(result: Any) -> bytes | None:
+            predicted = bytes.fromhex(str(result).removeprefix("0x"))
+            return predicted[-20:] if len(predicted) == 32 and any(predicted[-20:]) else None
+
+        address: bytes | None = await self._rpc_first(
+            chain,
+            "eth_call",
+            [{"to": _address(factory), "data": _hex(data)}, "latest"],
+            parse_address,
+        )
+        if address is not None:
+            code = await self._rpc_first(chain, "eth_getCode", [_address(address), "latest"], str)
+            if code is not None:
+                if code != "0x":
                     raise GovernanceFailure(
                         "MODULE_ALREADY_DEPLOYED",
                         409,
                         "The deterministic module address already has code.",
                     )
                 return address
-            except GovernanceFailure:
-                raise
-            except Exception:
-                continue
         raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
 
     async def _verified_deployment(self, chain_id: int, name: str, version: str) -> Any:
@@ -240,24 +256,43 @@ class GovernanceService:
         )
         if chain is None:
             raise GovernanceFailure("WRONG_CHAIN", 422, "The treasury chain is not enabled.")
-        for template in chain.rpc_urls:
-            if not template.startswith(("http://", "https://")):
-                continue
-            try:
-                code = await asyncio.to_thread(
-                    _rpc,
-                    resolve_rpc_url(template, self._environ),
-                    "eth_getCode",
-                    [_address(deployment.address_bytes), "latest"],
-                )
-                raw = bytes.fromhex(str(code).removeprefix("0x"))
-                if raw and keccak(raw) == deployment.code_hash_bytes:
-                    return deployment
-            except Exception:
-                continue
+        verified = await self._rpc_first(
+            chain,
+            "eth_getCode",
+            [_address(deployment.address_bytes), "latest"],
+            lambda code: (
+                True
+                if (raw := bytes.fromhex(str(code).removeprefix("0x")))
+                and keccak(raw) == deployment.code_hash_bytes
+                else None
+            ),
+        )
+        if verified:
+            return deployment
         raise RpcUnavailable(f"configured {name} code could not be verified on chain {chain_id}")
 
     async def create_module_setup(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        user_id: uuid.UUID,
+        setup: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        # Serialize per treasury so the open-setup check and the row creation are atomic.
+        async with self._sessions() as lock_session, lock_session.begin():
+            await lock_session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"module-setup:{treasury_id}"},
+            )
+            return await self._create_module_setup(
+                organization_id=organization_id,
+                treasury_id=treasury_id,
+                user_id=user_id,
+                setup=setup,
+            )
+
+    async def _create_module_setup(
         self,
         *,
         organization_id: uuid.UUID,
@@ -362,6 +397,13 @@ class GovernanceService:
             )
             for wallet in [source, *operational]
         ]
+        for buffer_wallet, minimum, target in buffers:
+            if buffer_wallet != source.safe_address and target < minimum:
+                raise GovernanceFailure(
+                    "BUFFER_TARGET_BELOW_MINIMUM",
+                    422,
+                    "An operational Safe buffer target must not be below its minimum.",
+                )
         supply_per_request, supply_daily = limit("supply")
         aave = None
         manifest = next(
@@ -414,11 +456,15 @@ class GovernanceService:
                     )
                 )
         except Exception:
-            async with self._sessions() as session, session.begin():
-                for created_tx in created:
-                    row = await self._row(session, organization_id, created_tx["id"], lock=True)
-                    if row.status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
-                        row.status = GovernanceTxStatus.CANCELLED
+            for created_tx in created:
+                # A failed cleanup must not mask the original error or skip the other rows.
+                try:
+                    async with self._sessions() as session, session.begin():
+                        row = await self._row(session, organization_id, created_tx["id"], lock=True)
+                        if row.status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
+                            row.status = GovernanceTxStatus.CANCELLED
+                except Exception:
+                    logger.exception("module setup rollback failed for %s", created_tx["id"])
             raise
         async with self._sessions() as session, session.begin():
             row = await session.scalar(
@@ -500,6 +546,7 @@ class GovernanceService:
             row.purpose != GovernanceTxPurpose.MODULE_SETUP
             or row.status != GovernanceTxStatus.EXECUTED
             or treasury is None
+            or treasury.status == TreasuryStatus.READY
             or asset is None
             or asset.address is None
             or row.exec_tx_hash is None
@@ -542,35 +589,27 @@ class GovernanceService:
         module = treasury.module_address
         if module is None and row.safe_address == source.safe_address:
             expected_topic = _hex(keccak(b"TreasuryModuleCreated(address,address,address)"))
-            for template in chain.rpc_urls:
-                if not template.startswith(("http://", "https://")):
-                    continue
-                try:
-                    receipt = await asyncio.to_thread(
-                        _rpc,
-                        resolve_rpc_url(template, self._environ),
-                        "eth_getTransactionReceipt",
-                        [_hex(row.exec_tx_hash)],
-                    )
-                    if receipt is None:
-                        continue
-                    for log in receipt.get("logs", []):
-                        topics = [str(item).lower() for item in log.get("topics", [])]
-                        if (
-                            str(log.get("address", "")).lower()
-                            == _address(factory.address_bytes).lower()
-                            and len(topics) == 3
-                            and topics[0] == expected_topic.lower()
-                            and topics[1] == "0x" + source.safe_address.hex().rjust(64, "0")
-                            and topics[2] != "0x" + "0" * 64
-                            and str(log.get("data", "")).lower()
-                            == "0x" + "0" * 24 + asset.address.hex()
-                        ):
-                            module = bytes.fromhex(topics[2][2:])[-20:]
-                            break
-                    break
-                except Exception:
-                    continue
+            asset_address = asset.address
+
+            def parse_module(receipt: Any) -> bytes | None:
+                for log in (receipt or {}).get("logs", []):
+                    topics = [str(item).lower() for item in log.get("topics", [])]
+                    if (
+                        str(log.get("address", "")).lower()
+                        == _address(factory.address_bytes).lower()
+                        and len(topics) == 3
+                        and topics[0] == expected_topic.lower()
+                        and topics[1] == "0x" + source.safe_address.hex().rjust(64, "0")
+                        and topics[2] != "0x" + "0" * 64
+                        and str(log.get("data", "")).lower()
+                        == "0x" + "0" * 24 + asset_address.hex()
+                    ):
+                        return bytes.fromhex(topics[2][2:])[-20:]
+                return None
+
+            module = await self._rpc_first(
+                chain, "eth_getTransactionReceipt", [_hex(row.exec_tx_hash)], parse_module
+            )
             if module is None:
                 return
             expected_runtime = (
@@ -578,22 +617,16 @@ class GovernanceService:
                 + implementation.address_bytes
                 + bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
             )
-            valid_clone = False
-            for template in chain.rpc_urls:
-                if not template.startswith(("http://", "https://")):
-                    continue
-                try:
-                    code = await asyncio.to_thread(
-                        _rpc,
-                        resolve_rpc_url(template, self._environ),
-                        "eth_getCode",
-                        [_address(module), "latest"],
-                    )
-                    if bytes.fromhex(str(code).removeprefix("0x")) == expected_runtime:
-                        valid_clone = True
-                        break
-                except Exception:
-                    continue
+            valid_clone = await self._rpc_first(
+                chain,
+                "eth_getCode",
+                [_address(module), "latest"],
+                lambda code: (
+                    True
+                    if bytes.fromhex(str(code).removeprefix("0x")) == expected_runtime
+                    else None
+                ),
+            )
             if not valid_clone:
                 return
             async with self._sessions() as session, session.begin():
@@ -610,28 +643,19 @@ class GovernanceService:
         enabled_selector = keccak(b"isModuleEnabled(address)")[:4]
         all_enabled = True
         for wallet in wallets:
-            enabled = False
-            for template in chain.rpc_urls:
-                if not template.startswith(("http://", "https://")):
-                    continue
-                try:
-                    result = await asyncio.to_thread(
-                        _rpc,
-                        resolve_rpc_url(template, self._environ),
-                        "eth_call",
-                        [
-                            {
-                                "to": _address(wallet.safe_address),
-                                "data": _hex(enabled_selector + encode(["address"], [module])),
-                            },
-                            "latest",
-                        ],
-                    )
-                    enabled = int(str(result), 16) == 1
-                    break
-                except Exception:
-                    continue
-            all_enabled = all_enabled and enabled
+            enabled = await self._rpc_first(
+                chain,
+                "eth_call",
+                [
+                    {
+                        "to": _address(wallet.safe_address),
+                        "data": _hex(enabled_selector + encode(["address"], [module])),
+                    },
+                    "latest",
+                ],
+                lambda result: int(str(result), 16) == 1,
+            )
+            all_enabled = all_enabled and bool(enabled)
         if all_enabled:
             async with self._sessions() as session, session.begin():
                 current = await session.scalar(
@@ -887,7 +911,7 @@ class GovernanceService:
         async with self._sessions() as session:
             row = await self._row(session, organization_id, governance_tx_id)
             chain_id, safe = row.chain_id, row.safe_address
-            nonce, status = row.safe_nonce, row.status
+            nonce, status, purpose = row.safe_nonce, row.status, row.purpose
             submitted_hash, signed_hash = row.exec_tx_hash, row.safe_tx_hash
         next_status: GovernanceTxStatus | None = None
         if status == GovernanceTxStatus.SUBMITTED and submitted_hash is not None:
@@ -897,6 +921,9 @@ class GovernanceService:
         elif status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
             if await self._nonce(chain_id, safe) > nonce:
                 next_status = GovernanceTxStatus.SUPERSEDED
+        elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MODULE_SETUP:
+            # Retry the module reconciliation if a transient RPC failure skipped it earlier.
+            await self._record_module_event(organization_id=organization_id, tx_id=governance_tx_id)
         if next_status is not None:
             async with self._sessions() as session, session.begin():
                 row = await self._row(session, organization_id, governance_tx_id)

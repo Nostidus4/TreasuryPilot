@@ -8,6 +8,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
 
+from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     build_safe_transaction,
@@ -212,3 +213,53 @@ def test_signature_from_non_owner_is_rejected() -> None:
             [bytes.fromhex(owner.address[2:])],
             1,
         )
+
+
+def _setup_payload(buffers: list[dict[str, str]], approvers: list[str] | None = None) -> dict:
+    limit = {"perRequest": "1", "daily": "2"}
+    return {
+        "mandate": {
+            "validFrom": "2030-01-01T00:00:00Z",
+            "expiresAt": "2031-01-01T00:00:00Z",
+            "payeeCoolingSeconds": 60,
+            "executor": "0x" + "77" * 20,
+            "pay": limit,
+            "refill": limit,
+            "supply": {"perRequest": "0", "daily": "0"},
+            "approvalMaxAge": 60,
+            "approvers": approvers or ["0x" + "99" * 20],
+        },
+        "buffers": buffers,
+    }
+
+
+def test_module_setup_request_rejects_duplicate_buffer_wallets_and_bad_approvers() -> None:
+    wallet = {"wallet": "0x" + "AA" * 20, "minimum": "1", "target": "2"}
+    other = {"wallet": "0x" + "bb" * 20, "minimum": "1", "target": "2"}
+
+    CreateModuleSetupRequest.model_validate(_setup_payload([wallet, other]))
+    with pytest.raises(ValueError, match="each wallet once"):
+        CreateModuleSetupRequest.model_validate(
+            _setup_payload([wallet, {**wallet, "wallet": wallet["wallet"].lower()}, other])
+        )
+    with pytest.raises(ValueError, match="String should match pattern"):
+        CreateModuleSetupRequest.model_validate(_setup_payload([wallet, other], ["0x12"]))
+
+
+def test_rpc_first_skips_failing_providers_and_unparseable_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = {"http://a": RuntimeError("down"), "http://b": None, "http://c": "0x01"}
+
+    def fake_rpc(url: str, method: str, params: list) -> object:
+        answer = answers[url]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr("treasurypilot_api.mandate.governance_service._rpc", fake_rpc)
+    service = GovernanceService(None, None, PlatformConfiguration(chains=(), manifests=()))
+    chain = type("Chain", (), {"rpc_urls": ("ws://x", "http://a", "http://b", "http://c")})()
+
+    assert asyncio.run(service._rpc_first(chain, "eth_call", [])) == "0x01"
+    assert asyncio.run(service._rpc_first(chain, "eth_call", [], lambda _: None)) is None
