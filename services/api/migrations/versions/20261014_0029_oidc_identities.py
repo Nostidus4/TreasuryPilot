@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261014_0026"
-down_revision: str | None = "20261014_0025"
+revision: str = "20261014_0029"
+down_revision: str | None = "20261014_0028"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
