@@ -58,6 +58,11 @@ function normalizeTreasurySetup(
   const asset = chain?.assets.find(
     (item) => item.id === data.treasury.assetId,
   );
+  if (!chain || !asset) {
+    throw new Error(
+      `Could not resolve asset ${data.treasury.assetId} on chain ${data.treasury.chainId}. Treasury setup cannot continue safely.`,
+    );
+  }
   let operationalIndex = 0;
   const wallets = data.wallets.map((item) => {
     const role: WalletRole =
@@ -79,20 +84,13 @@ function normalizeTreasurySetup(
       owners: item.owners,
     };
   });
-  const normalizedAsset = asset ?? {
-    id: data.treasury.assetId,
-    symbol: 'USDC',
-    decimals: 6,
-    address: `0x${'0'.repeat(40)}`,
-    isTest: true,
-  };
   return {
     treasury: {
       id: data.treasury.id,
       name: 'Operating treasury',
       chainId: data.treasury.chainId,
-      chainName: chain?.name ?? `Chain ${data.treasury.chainId}`,
-      asset: normalizedAsset,
+      chainName: chain.name,
+      asset,
       moduleAddress: data.treasury.moduleAddress ?? `0x${'0'.repeat(40)}`,
       status: data.treasury.moduleAddress ? 'Active' : 'Setup',
     },
