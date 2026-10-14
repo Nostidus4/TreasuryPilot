@@ -60,6 +60,11 @@ def create_celery_app() -> Celery:
                 # this, a busy or stopped worker lets thousands pile up in Redis.
                 "options": {"queue": "core", "expires": 2},
             },
+            "deliver-webhooks": {
+                "task": "treasurypilot.notifications.deliver-webhooks",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "core", "expires": 2},
+            },
         },
     )
     return app

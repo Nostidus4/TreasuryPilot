@@ -41,6 +41,7 @@ def test_only_the_core_worker_mounts_the_policy_keystore() -> None:
     core_worker = _service_block(compose, "worker", "worker-ai")
 
     assert "TP_ATTESTATION_PRIVATE_KEY" not in compose
-    assert "secrets: [policy_keystore, policy_keystore_password]" in core_worker
+    assert "secrets: [policy_keystore, policy_keystore_password, field_key]" in core_worker
     assert "TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore" in core_worker
-    assert compose.count("policy_keystore_password]") == 1
+    assert compose.count("policy_keystore_password, field_key]") == 1
+    assert "field_key" not in _service_block(compose, "worker-ai", "beat")

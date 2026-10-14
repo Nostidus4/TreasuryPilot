@@ -126,6 +126,8 @@ services:
       <<: *app-environment
       SENTRY_DSN: ${SENTRY_DSN_API:-}
       TP_CORS_ORIGINS: ${TP_CORS_ORIGINS:-http://localhost:5173}
+      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
+    secrets: [field_key]
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,9 +177,10 @@ services:
       # Core-only credentials are deliberately not part of x-app-environment.
       TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
+      TP_FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_key
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
-    secrets: [policy_keystore, policy_keystore_password]
+    secrets: [policy_keystore, policy_keystore_password, field_key]
     tmpfs: [/tmp/prometheus]
     depends_on:
       postgres:
@@ -185,7 +188,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    networks: [internal]
+    # The core worker sends HTTPS webhooks. Its resolver rejects non-public
+    # addresses and redirects are disabled by the sender.
+    networks: [internal, public]
 
   worker-ai:
     build:
@@ -306,6 +311,8 @@ services:
     networks: [public, internal]
 
 secrets:
+  field_key:
+    file: ${TP_FIELD_ENCRYPTION_KEY_FILE:-/dev/null}
   # Unset paths mount /dev/null: the worker starts, but attest fails closed (no policy key).
   policy_keystore:
     file: ${TP_POLICY_KEYSTORE_FILE:-/dev/null}

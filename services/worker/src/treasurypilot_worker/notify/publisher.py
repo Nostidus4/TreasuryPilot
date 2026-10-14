@@ -64,6 +64,14 @@ WHERE m.org_id = $1
 ON CONFLICT (user_id, event_id) DO NOTHING
 """
 
+_ENQUEUE_WEBHOOK_DELIVERIES = """
+INSERT INTO webhook_deliveries (id, org_id, endpoint_id, event_id)
+SELECT gen_random_uuid(), $1, endpoint.id, $2
+FROM webhook_endpoints AS endpoint
+WHERE endpoint.org_id = $1 AND endpoint.enabled AND $3 = ANY(endpoint.event_types)
+ON CONFLICT (endpoint_id, event_id) DO NOTHING
+"""
+
 _MARK_PUBLISHED = """
 UPDATE domain_events
 SET published_at = now()
@@ -150,6 +158,9 @@ async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
             "notification_without_recipients",
             extra={"event_id": str(event["id"]), "type": event["type"]},
         )
+    await connection.execute(
+        _ENQUEUE_WEBHOOK_DELIVERIES, event["org_id"], event["id"], event["type"]
+    )
     await connection.execute(_MARK_PUBLISHED, event["id"])
 
 

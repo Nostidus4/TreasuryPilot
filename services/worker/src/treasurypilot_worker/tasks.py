@@ -2,11 +2,13 @@ import asyncio
 import os
 from typing import Any
 
+from treasurypilot_core.privacy import FieldEncryptionKey
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
+from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -77,3 +79,32 @@ def publish_domain_events() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for domain-event publishing")
     return {"published": _publisher.publish(database_url)}
+
+
+@app.task(name="treasurypilot.notifications.deliver-webhooks", queue="core")
+def deliver_webhooks() -> dict[str, int]:
+    """Deliver due webhook attempts; endpoints and payloads stay org-scoped in SQL."""
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for webhook delivery")
+
+    async def deliver() -> int:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            async with pool.acquire() as connection:
+                pending = await connection.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM webhook_deliveries AS delivery "
+                    "JOIN webhook_endpoints AS endpoint ON endpoint.id=delivery.endpoint_id "
+                    "AND endpoint.org_id=delivery.org_id WHERE endpoint.enabled "
+                    "AND delivery.status IN ('pending', 'retrying') "
+                    "AND delivery.next_attempt_at <= now())"
+                )
+                if not pending:
+                    return 0
+                encryption_key = FieldEncryptionKey.from_environment()
+                return await deliver_pending_webhooks(connection, encryption_key=encryption_key)
+        finally:
+            await pool.close()
+
+    return {"delivered": asyncio.run(deliver())}

@@ -92,6 +92,8 @@ class _FakeConnection:
         return [event for event in self.events if not event["published"] and not event["failed"]]
 
     async def execute(self, query: str, *args: object) -> str:
+        if "INSERT INTO webhook_deliveries" in query:
+            return "INSERT 0 0"
         if "ON CONFLICT (user_id, event_id) DO NOTHING" in query:
             self.insert_query = query
             org_id, event_id = args[0], args[1]

@@ -76,6 +76,7 @@ from treasurypilot_api.notifications.routes import (
     SqlAlchemyNotificationRepository,
 )
 from treasurypilot_api.notifications.routes import router as notifications_router
+from treasurypilot_api.notifications.webhook_api import router as webhook_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -372,6 +373,7 @@ def create_app(
     app.include_router(payees_router)
     app.include_router(review_router)
     app.include_router(notifications_router)
+    app.include_router(webhook_router)
     app.include_router(requests_router)
     app.include_router(notification_preferences_router)
 
