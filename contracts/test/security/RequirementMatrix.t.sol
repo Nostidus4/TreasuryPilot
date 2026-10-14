@@ -69,7 +69,7 @@ contract RequirementMatrixTest is TreasuryFixture {
         bytes memory signature = _sign(ap);
         vm.warp((previousDay + 1) * 1 days);
         vm.prank(executor);
-        module.pay(ap, signature, bytes32(uint256(2)));
+        module.pay(ap, signature, bytes32(uint256(2)), ap.amount);
         require(module.usedToday(module.PAY()) == 100e6, "execution day cap");
         require(
             module.usedOn(keccak256(abi.encode(module.PAY(), address(token), previousDay))) == 100e6,

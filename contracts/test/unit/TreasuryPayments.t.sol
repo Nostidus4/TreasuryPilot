@@ -24,7 +24,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         bytes memory signature = _sign(ap);
 
         vm.prank(executor);
-        module.payWithAmount(ap, signature, bytes32(uint256(500)), 101e6);
+        module.pay(ap, signature, bytes32(uint256(500)), 101e6);
 
         require(token.balanceOf(vendor) == 101e6, "did not pay proposed amount");
         require(module.usedToday(module.PAY()) == 101e6, "counter did not track proposed amount");
@@ -34,9 +34,9 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         I.PaymentApproval memory ap = _approval(501, 100e6);
         bytes memory signature = _sign(ap);
 
-        vm.expectRevert(E.PaymentAmountExceedsApproval.selector);
+        vm.expectRevert(E.WrongPaymentOption.selector);
         vm.prank(executor);
-        module.payWithAmount(ap, signature, bytes32(uint256(501)), 101e6);
+        module.pay(ap, signature, bytes32(uint256(501)), 101e6);
 
         require(token.balanceOf(vendor) == 0, "over-cap transfer occurred");
     }
@@ -47,7 +47,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
 
         vm.expectRevert(E.InvalidAmount.selector);
         vm.prank(executor);
-        module.payWithAmount(ap, signature, bytes32(uint256(502)), 0);
+        module.pay(ap, signature, bytes32(uint256(502)), 0);
     }
 
     function testAssetAllowlistAndDailyCountersAreIndependent() external {
@@ -187,7 +187,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         bytes memory sig = _sign(second);
         vm.expectRevert(E.StepAlreadyExecuted.selector);
         vm.prank(executor);
-        module.pay(second, sig, bytes32(uint256(1)));
+        module.pay(second, sig, bytes32(uint256(1)), second.amount);
     }
 
     function testPayOnlyOperationalWalletAndExecutor() external {
@@ -197,7 +197,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         ap.payingWallet = address(op1);
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.NotExecutor.selector);
-        module.pay(ap, sig, bytes32(uint256(1)));
+        module.pay(ap, sig, bytes32(uint256(1)), ap.amount);
     }
 
     function testChangedFieldWrongChainWrongTreasuryAndMalformedSignatureAreRejected() external {
@@ -243,7 +243,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         contractApprover.setDigest(module.hashApproval(ap));
         bytes memory sig = abi.encode(address(contractApprover), hex"123456");
         vm.prank(executor);
-        module.pay(ap, sig, bytes32(uint256(1)));
+        module.pay(ap, sig, bytes32(uint256(1)), ap.amount);
         require(module.requestPaid(ap.requestId), "contract approver");
     }
 

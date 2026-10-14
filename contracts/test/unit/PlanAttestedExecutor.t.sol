@@ -50,9 +50,10 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         internal
     {
         bytes memory approverSig = _sign(ap);
+        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
         if (err != bytes4(0)) vm.expectRevert(err);
         vm.prank(executor);
-        gate.pay(ap, approverSig, PAY_STEP, att, sig);
+        gate.pay(ap, approverSig, PAY_STEP, amount, att, sig);
     }
 
     function testSteppedPlanSharesOneAttestation() external {
@@ -64,7 +65,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory approverSig = _sign(ap);
         vm.startPrank(executor);
         gate.refill(ap, approverSig, REFILL_STEP, address(op1), 100e6, att, sig);
-        gate.pay(ap, approverSig, PAY_STEP, att, sig);
+        gate.pay(ap, approverSig, PAY_STEP, ap.amount, att, sig);
         vm.stopPrank();
         require(token.balanceOf(vendor) == 100e6, "paid");
         require(gate.nonceBoundTo(1) == att.planHash, "nonce bound");
@@ -77,7 +78,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory approverSig = _sign(ap);
 
         vm.prank(executor);
-        gate.payWithAmount(ap, approverSig, PAY_STEP, 75e6, att, attSig);
+        gate.pay(ap, approverSig, PAY_STEP, 75e6, att, attSig);
 
         require(token.balanceOf(vendor) == 75e6, "fresh quote amount not paid");
         require(module.usedToday(module.PAY()) == 75e6, "counter not updated by actual amount");
@@ -89,9 +90,9 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory attSig = _sign(att);
         bytes memory approverSig = _sign(ap);
 
-        vm.expectRevert(E.PaymentAmountExceedsApproval.selector);
+        vm.expectRevert(E.WrongPaymentOption.selector);
         vm.prank(executor);
-        gate.payWithAmount(ap, approverSig, PAY_STEP, 101e6, att, attSig);
+        gate.pay(ap, approverSig, PAY_STEP, 101e6, att, attSig);
 
         require(token.balanceOf(vendor) == 0, "over-cap payment was transferred");
     }
@@ -101,7 +102,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory approverSig = _sign(ap);
         vm.expectRevert(E.NotExecutor.selector);
         vm.prank(executor);
-        module.pay(ap, approverSig, PAY_STEP);
+        module.pay(ap, approverSig, PAY_STEP, ap.amount);
     }
 
     function testExpiredAttestationReverts() external {
@@ -174,7 +175,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory sig = _sign(att);
         bytes memory approverSig = _sign(ap);
         vm.expectRevert(E.NotExecutor.selector);
-        gate.pay(ap, approverSig, PAY_STEP, att, sig);
+        gate.pay(ap, approverSig, PAY_STEP, ap.amount, att, sig);
         vm.expectRevert(E.NotExecutor.selector);
         gate.borrow(bytes32(uint256(1)));
     }

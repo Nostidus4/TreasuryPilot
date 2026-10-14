@@ -129,7 +129,7 @@ def no_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("action", "selector"),
     [
-        (Action.PAY, "c44ed64e"),
+        (Action.PAY, "c52dea67"),
         (Action.REFILL, "a374bbfd"),
         (Action.WITHDRAW, "869d5613"),
         (Action.SUPPLY, "add183e5"),

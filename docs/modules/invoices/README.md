@@ -43,7 +43,7 @@ original encoding; the four fiat fields are appended only when `fiatCurrency` is
 
 The returned base-unit amount is the fiat request's PAY step amount; it must stay
 separate from the signed maximum in the approval. Worker pre-sign simulation encodes
-that amount in `payWithAmount`, and the module rejects zero or any amount above the
+that amount in the PAY call, and the module rejects zero or any amount above the
 selected signed limit (the early-payment amount while its option is open, otherwise
 the normal maximum). The module's daily counters and emitted payment amount record
 the amount actually transferred. Plan policy keeps non-fiat PAY steps equal to their

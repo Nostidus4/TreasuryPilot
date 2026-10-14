@@ -183,11 +183,8 @@ interface ITreasuryPilotModule {
     function revoke() external;
     /// @notice Safe T or a current approver may permanently cancel an unpaid request.
     function cancelRequest(bytes32 requestId) external;
-    /// @notice Executor pays exactly the signed payment option via the operational Safe.
-    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId) external;
-
-    /// @notice Execute a payment whose amount may be below the signed maximum, but never above it.
-    function payWithAmount(
+    /// @notice Pay the proposed amount, bounded by the signed amount or active early-payment amount.
+    function pay(
         PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,

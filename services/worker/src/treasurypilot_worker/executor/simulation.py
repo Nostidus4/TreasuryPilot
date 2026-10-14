@@ -85,7 +85,7 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
         raise ValueError(f"{step.action} steps cannot be simulated")
     types = [*types, _ATTESTATION, "bytes"]
     args = [*args, attestation, ctx.attestation_signature]
-    name = "payWithAmount" if step.action is Action.PAY else step.action.lower()
+    name = step.action.lower()
     return error_selector(f"{name}({','.join(types)})") + encode(types, args)
 
 

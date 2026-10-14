@@ -123,7 +123,8 @@ contract TreasuryHandler {
         bool exceptionValid =
             exAmount == amount && block.timestamp <= exExpiry && exVersion == m.version && exPayee == vendor && !exUsed;
         vm.prank(executor);
-        try module.pay(ap, sig, step) {
+        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
+        try module.pay(ap, sig, step, amount) {
             ++successes;
             _flag(1, !proofValid || !module.isApprover(approver)); // BR-001/003/004
             _flag(2, !payeeActive || block.timestamp < activeFrom); // BR-013/017
@@ -278,7 +279,8 @@ contract TreasuryHandler {
         bytes memory signature = _signature(ap);
         ++replayAttempts;
         vm.prank(executor);
-        try module.pay(ap, signature, step) {
+        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
+        try module.pay(ap, signature, step, amount) {
             _flag(5, true); // BR-061: the oracle remembers this step independently of stepUsed.
             _observe(module.PAY(), 1);
         } catch {

@@ -47,7 +47,6 @@ library TreasuryPilotErrors {
     error BufferBreach();
     error WrongPaymentOption();
     error InvalidAmount();
-    error PaymentAmountExceedsApproval();
     error SupplyFloorBreach();
     error OverSupplyPerTx();
     error OverSupplyDaily();

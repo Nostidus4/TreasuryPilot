@@ -17,27 +17,12 @@ interface ITestRouter {
 /// @notice Executes fixed ERC20 and Aave calls through Safes, within signed and owner-set rules.
 contract TreasuryPilotModule is TreasuryPilotGovernance {
     /// @inheritdoc ITreasuryPilotModule
-    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId)
-        external
-        onlyExecutor
-        nonReentrant
-    {
-        bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
-        _pay(ap, approverSig, stepId, early ? ap.earlyAmount : ap.amount);
-    }
-
-    /// @notice Executes a fresh-quote amount under the approver's signed maximum.
-    /// @dev The selected approval amount is the early amount while that option is open.
-    function payWithAmount(
+    function pay(
         PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,
         uint256 paymentAmount
     ) external onlyExecutor nonReentrant {
-        _pay(ap, approverSig, stepId, paymentAmount);
-    }
-
-    function _pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 amount) internal {
         verifyApproval(ap, approverSig);
         if (!isOperational[ap.payingWallet]) revert E.NotOperationalWallet();
         _requireActivePayee(ap.payee);
@@ -49,15 +34,15 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         }
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
         uint256 approvedAmount = early ? ap.earlyAmount : ap.amount;
-        if (amount == 0) revert E.InvalidAmount();
-        if (amount > approvedAmount) revert E.PaymentAmountExceedsApproval();
+        if (paymentAmount == 0) revert E.InvalidAmount();
+        if (paymentAmount > approvedAmount) revert E.WrongPaymentOption();
         bool usedException = false;
         Limits storage limits = _assetPolicies[ap.asset].pay;
-        if (amount > limits.perRequest) {
+        if (paymentAmount > limits.perRequest) {
             Exception storage ex = exceptions[ap.requestId];
             if (ex.amount == 0) revert E.OverPerRequestLimit();
             if (
-                ex.amount != amount || ex.payee != ap.payee || ex.used || block.timestamp > ex.expiry
+                ex.amount != paymentAmount || ex.payee != ap.payee || ex.used || block.timestamp > ex.expiry
                     || ex.mandateVersion != _mandate.version
             ) revert E.ExceptionInvalid();
             ex.used = true;
@@ -65,18 +50,26 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         }
         uint256 day = block.timestamp / 1 days;
         bytes32 key = _counterKey(PAY, ap.asset, day);
-        if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverDailyLimit();
-        _requireFloor(ap.asset, ap.payingWallet, amount, false);
+        if (_exceedsDaily(usedOn[key], paymentAmount, limits.daily)) revert E.OverDailyLimit();
+        _requireFloor(ap.asset, ap.payingWallet, paymentAmount, false);
         requestPaid[ap.requestId] = true;
         stepUsed[stepId] = true;
         fingerprintPaid[ap.fingerprint] = true;
-        usedOn[key] += amount;
-        _transfer(ap.asset, ap.payingWallet, ap.payee, amount);
+        usedOn[key] += paymentAmount;
+        _transfer(ap.asset, ap.payingWallet, ap.payee, paymentAmount);
         if (_balance(ap.asset, ap.payingWallet) < bufferOf(ap.asset, ap.payingWallet)) {
             revert E.BufferBreach();
         }
         emit PaymentExecuted(
-            ap.requestId, stepId, ap.fingerprint, ap.payingWallet, ap.payee, amount, day, usedException, early
+            ap.requestId,
+            stepId,
+            ap.fingerprint,
+            ap.payingWallet,
+            ap.payee,
+            paymentAmount,
+            day,
+            usedException,
+            early
         );
     }
 
