@@ -55,6 +55,11 @@ from treasurypilot_api.identity.rate_limit import (
     RedisRateLimiter,
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
+from treasurypilot_api.identity.scim import (
+    ScimIdentityRepository,
+    SqlAlchemyScimIdentityRepository,
+)
+from treasurypilot_api.identity.scim import router as scim_router
 from treasurypilot_api.identity.wallets import WalletRepository
 from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.invoices.documents import (
@@ -249,6 +254,7 @@ def create_app(
     fx_quote_provider: FxQuoteProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
     mfa_service: MfaService | None = None,
+    scim_repository: ScimIdentityRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -364,6 +370,9 @@ def create_app(
             rate_limiter=rate_limiter,
         )
 
+    if scim_repository is None and settings.scim_configured and sessions is not None:
+        scim_repository = SqlAlchemyScimIdentityRepository(sessions)
+
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         configuration = PlatformConfiguration.load(
@@ -459,6 +468,7 @@ def create_app(
     )
     app.state.telegram_repository = telegram_repository
     app.state.mfa_service = mfa_service
+    app.state.scim_repository = scim_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -482,6 +492,7 @@ def create_app(
         return problem_response(request, exc)
 
     app.include_router(identity_router)
+    app.include_router(scim_router)
     app.include_router(mfa_router)
     app.include_router(organizations_router)
     app.include_router(memberships_router)

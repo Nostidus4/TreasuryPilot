@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     oidc_redirect_uri: str | None = None
     oidc_organization_id: str | None = None
     oidc_group_role_map: str = "{}"
+    # SCIM is a single-tenant, bearer-authenticated deprovisioning integration.
+    scim_bearer_token: SecretStr | None = None
+    scim_organization_id: uuid.UUID | None = None
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
     session_cookie_name: str = "tp_session"
@@ -168,6 +171,17 @@ class Settings(BaseSettings):
             raise ValueError("Travel Rule gateway API key cannot be blank")
         return self
 
+    @model_validator(mode="after")
+    def _validate_scim_configuration(self) -> "Settings":
+        if (self.scim_bearer_token is None) != (self.scim_organization_id is None):
+            raise ValueError("SCIM requires both a bearer token and organization ID")
+        if (
+            self.scim_bearer_token is not None
+            and len(self.scim_bearer_token.get_secret_value().encode("utf-8")) < 32
+        ):
+            raise ValueError("TP_SCIM_BEARER_TOKEN must contain at least 32 bytes")
+        return self
+
     @field_validator("admin_ip_allowlist")
     @classmethod
     def _validate_admin_ip_allowlist(cls, value: str) -> str:
@@ -252,6 +266,10 @@ class Settings(BaseSettings):
             and self.inbound_email_webhook_secret
             and len(self.inbound_email_webhook_secret.get_secret_value().encode()) >= 32
         )
+
+    @property
+    def scim_configured(self) -> bool:
+        return self.scim_bearer_token is not None and self.scim_organization_id is not None
 
     @property
     def cors_origin_list(self) -> list[str]:
