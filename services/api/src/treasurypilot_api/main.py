@@ -305,6 +305,12 @@ def create_app(
             async_sessionmaker(engine, expire_on_commit=False),
             thresholds_json=settings.travel_rule_thresholds,
             cipher=travel_rule_cipher,
+            provider_url=settings.travel_rule_provider_url,
+            provider_api_key=(
+                settings.travel_rule_provider_api_key.get_secret_value()
+                if settings.travel_rule_provider_api_key is not None
+                else None
+            ),
         )
 
     if mandate_repository is None and engine is not None:

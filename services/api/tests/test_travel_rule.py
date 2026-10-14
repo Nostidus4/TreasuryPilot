@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from dataclasses import replace
+from urllib.request import Request as HttpRequest
 
 import pytest
 from pydantic import ValidationError
@@ -10,6 +12,7 @@ from pydantic import ValidationError
 from treasurypilot_api.compliance.travel_rule import (
     CounterpartyAssessment,
     CounterpartyKind,
+    HttpTravelRuleProvider,
     TravelRuleBlocked,
     TravelRuleOutcome,
     TravelRuleParty,
@@ -172,6 +175,23 @@ def test_threshold_configuration_requires_country_currency_and_integer_amounts()
         Settings(travel_rule_thresholds='{"US":{"USD":30000.5}}')
 
 
+def test_travel_rule_http_provider_configuration_requires_paired_https_credentials() -> None:
+    with pytest.raises(ValidationError):
+        Settings(travel_rule_provider_url="https://gateway.example")
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="production",
+            travel_rule_provider_url="http://gateway.example",
+            travel_rule_provider_api_key="provider-secret",
+        )
+    configured = Settings(
+        environment="production",
+        travel_rule_provider_url="https://gateway.example/api/",
+        travel_rule_provider_api_key="provider-secret",
+    )
+    assert configured.travel_rule_provider_url == "https://gateway.example/api/"
+
+
 def test_pending_exchange_holds_until_provider_confirms_completion() -> None:
     repository = MemoryRepository()
     provider = FakeProvider(
@@ -217,6 +237,58 @@ def test_provider_failure_and_missing_encryption_fail_closed() -> None:
             )
         )
     assert no_cipher_repository.rows == {}
+
+
+def test_configured_http_provider_holds_then_releases_only_after_completion() -> None:
+    calls: list[tuple[str, str, str | None, dict[str, object] | None]] = []
+    exchange_started = False
+
+    def send(request: HttpRequest, timeout: float) -> bytes:
+        nonlocal exchange_started
+        body = json.loads(request.data) if request.data is not None else None
+        calls.append(
+            (
+                request.get_method(),
+                request.full_url.removeprefix("https://gateway.example"),
+                request.get_header("Idempotency-key"),
+                body,
+            )
+        )
+        assert request.get_header("Authorization") == "Bearer test-secret"
+        assert timeout == 5
+        if request.full_url.endswith("/v1/counterparties/classify"):
+            response = {"kind": "VASP"}
+        elif request.full_url.endswith("/v1/exchanges"):
+            exchange_started = True
+            response = {"status": "PENDING", "providerRef": "case-123"}
+        elif request.full_url.endswith("/v1/exchanges/case-123") and exchange_started:
+            response = {"status": "COMPLETED", "providerRef": "case-123"}
+        else:
+            raise AssertionError(f"unexpected gateway request: {request.full_url}")
+        return json.dumps(response).encode()
+
+    repository = MemoryRepository()
+    gateway = HttpTravelRuleProvider(
+        base_url="https://gateway.example", api_key="test-secret", request_sender=send
+    )
+    travel_service = service(gateway, repository)
+    with pytest.raises(TravelRuleBlocked):
+        asyncio.run(
+            travel_service.require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
+        )
+    assert next(iter(repository.rows.values())).status == TravelRuleStatus.PENDING
+
+    completed = asyncio.run(
+        travel_service.require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
+    )
+    assert completed is not None and completed.status == TravelRuleStatus.COMPLETED
+    assert [call[:2] for call in calls] == [
+        ("POST", "/v1/counterparties/classify"),
+        ("POST", "/v1/exchanges"),
+        ("GET", "/v1/exchanges/case-123"),
+    ]
+    assert calls[1][2]
+    assert calls[1][3] == transfer().payload()
 
 
 def test_below_threshold_does_not_require_party_data_but_qualifying_transfer_does() -> None:

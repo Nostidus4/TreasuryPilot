@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
     # JSON jurisdiction -> currency -> integer minor-unit threshold. No legal default is assumed.
     travel_rule_thresholds: str = "{}"
+    # Optional vendor-neutral Travel Rule gateway. Credentials are secrets and are never logged.
+    travel_rule_provider_url: str | None = Field(default=None, min_length=1)
+    travel_rule_provider_api_key: SecretStr | None = None
     inbound_email_domain: str | None = None
     inbound_email_webhook_secret: SecretStr | None = None
 
@@ -136,6 +139,33 @@ class Settings(BaseSettings):
                 for group, roles in role_map.items()
             ):
                 raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_travel_rule_provider(self) -> "Settings":
+        provider_url = self.travel_rule_provider_url
+        api_key = self.travel_rule_provider_api_key
+        if (provider_url is None) != (api_key is None):
+            raise ValueError("Travel Rule gateway URL and API key must be configured together")
+        if provider_url is None:
+            return self
+        parsed = urlparse(provider_url)
+        is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if (
+            parsed.scheme not in {"https", "http"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or (
+                parsed.scheme != "https"
+                and not (self.environment.casefold() == "local" and is_loopback)
+            )
+        ):
+            raise ValueError("Travel Rule gateway URL must use HTTPS (except local loopback)")
+        if api_key is None or not api_key.get_secret_value().strip():
+            raise ValueError("Travel Rule gateway API key cannot be blank")
         return self
 
     @field_validator("admin_ip_allowlist")

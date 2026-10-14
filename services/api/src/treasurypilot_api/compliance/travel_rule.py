@@ -6,6 +6,9 @@ import asyncio
 import json
 import logging
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -380,6 +383,163 @@ class UnconfiguredTravelRuleProvider:
         raise TravelRuleProviderError("no Travel Rule provider is configured")
 
 
+class HttpTravelRuleProvider:
+    """Vendor-neutral adapter for a configured Travel Rule gateway.
+
+    The gateway contract is deliberately small and versioned: classify a counterparty,
+    create an idempotent exchange, then poll its provider reference until it completes.
+    """
+
+    name = "http-travel-rule"
+    _MAX_RESPONSE_BYTES = 1_000_000
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        timeout_seconds: float = 5,
+        request_sender: Callable[[urllib.request.Request, float], bytes] | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
+        self._timeout_seconds = timeout_seconds
+        self._request_sender = request_sender
+
+    async def classify_counterparty(
+        self, *, chain_id: int, address: bytes, jurisdiction: str
+    ) -> CounterpartyAssessment:
+        payload = await self._request(
+            "POST",
+            "/v1/counterparties/classify",
+            body={
+                "chainId": chain_id,
+                "address": "0x" + address.hex(),
+                "jurisdiction": jurisdiction.upper(),
+            },
+        )
+        try:
+            kind = CounterpartyKind(payload["kind"])
+            attestation_verified = payload.get("attestationVerified", False)
+        except (KeyError, ValueError, TypeError):
+            raise TravelRuleProviderError("invalid counterparty response") from None
+        if not isinstance(attestation_verified, bool):
+            raise TravelRuleProviderError("invalid counterparty attestation response")
+        if kind != CounterpartyKind.SELF_HOSTED and attestation_verified:
+            raise TravelRuleProviderError("unexpected self-hosted attestation")
+        return CounterpartyAssessment(kind, attestation_verified)
+
+    async def exchange(
+        self, *, idempotency_key: str, transfer: TravelRuleTransfer
+    ) -> TravelRuleOutcome:
+        if not idempotency_key:
+            raise TravelRuleProviderError("exchange idempotency key is required")
+        payload = await self._request(
+            "POST",
+            "/v1/exchanges",
+            body=transfer.payload(),
+            extra_headers={"Idempotency-Key": idempotency_key},
+        )
+        return self._outcome(payload)
+
+    async def status(self, *, provider_ref: str) -> TravelRuleOutcome:
+        if not provider_ref:
+            raise TravelRuleProviderError("provider reference is required")
+        encoded_ref = urllib.parse.quote(provider_ref, safe="")
+        payload = await self._request("GET", f"/v1/exchanges/{encoded_ref}")
+        returned_ref = payload.get("providerRef")
+        if returned_ref is not None and returned_ref != provider_ref:
+            raise TravelRuleProviderError("provider status reference does not match")
+        outcome = self._outcome(payload)
+        return TravelRuleOutcome(outcome.status, provider_ref)
+
+    def _outcome(self, payload: dict[str, object]) -> TravelRuleOutcome:
+        try:
+            status = TravelRuleStatus(payload["status"])
+        except (KeyError, ValueError, TypeError):
+            raise TravelRuleProviderError("invalid exchange response") from None
+        # A self-hosted classification must come from classify_counterparty(), where
+        # its attestation is explicitly verified. Exchange/status replies cannot clear it.
+        if status == TravelRuleStatus.SELF_HOSTED:
+            raise TravelRuleProviderError("exchange response cannot attest a self-hosted wallet")
+        provider_ref = payload.get("providerRef")
+        if provider_ref is not None and (
+            not isinstance(provider_ref, str) or not provider_ref.strip()
+        ):
+            raise TravelRuleProviderError("invalid exchange provider reference")
+        if status == TravelRuleStatus.PENDING and provider_ref is None:
+            raise TravelRuleProviderError("pending exchange response requires a provider reference")
+        return TravelRuleOutcome(status, provider_ref)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, object] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
+        }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        headers.update(extra_headers or {})
+        encoded_body = (
+            json.dumps(body, separators=(",", ":")).encode("utf-8") if body is not None else None
+        )
+        request = urllib.request.Request(
+            f"{self._base_url}{path}", data=encoded_body, headers=headers, method=method
+        )
+        try:
+            if self._request_sender is None:
+                payload = await asyncio.to_thread(self._read_response, request)
+            else:
+                payload = await asyncio.to_thread(
+                    self._request_sender, request, self._timeout_seconds
+                )
+        except Exception as error:
+            logger.warning(
+                "travel_rule_http_request_failed",
+                extra={"method": method, "path": path, "error": type(error).__name__},
+            )
+            raise TravelRuleProviderError("Travel Rule gateway request failed") from None
+        try:
+            decoded = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise TravelRuleProviderError("Travel Rule gateway returned invalid JSON") from None
+        if not isinstance(decoded, dict):
+            raise TravelRuleProviderError("Travel Rule gateway response must be an object")
+        return decoded
+
+    def _read_response(self, request: urllib.request.Request) -> bytes:
+        opener = urllib.request.build_opener(_RejectRedirects())
+        try:
+            with opener.open(request, timeout=self._timeout_seconds) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise TravelRuleProviderError("Travel Rule gateway returned an error")
+                payload = response.read(self._MAX_RESPONSE_BYTES + 1)
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise TravelRuleProviderError("Travel Rule gateway is unavailable") from error
+        if len(payload) > self._MAX_RESPONSE_BYTES:
+            raise TravelRuleProviderError("Travel Rule gateway response is too large")
+        return payload
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        return None
+
+
 class FixtureTravelRuleProvider:
     """TEST DATA adapter; unknown counterparties and exchanges remain pending by default."""
 
@@ -643,10 +803,14 @@ def build_travel_rule_service(
     *,
     thresholds_json: str,
     cipher: FieldCipher | None,
+    provider_url: str | None = None,
+    provider_api_key: str | None = None,
 ) -> TravelRuleService:
     provider: TravelRuleProvider
     if environment.casefold() in FIXTURE_ENVIRONMENTS:
         provider = FixtureTravelRuleProvider()
+    elif provider_url is not None and provider_api_key is not None:
+        provider = HttpTravelRuleProvider(base_url=provider_url, api_key=provider_api_key)
     else:
         logger.error("travel_rule_provider_unconfigured", extra={"environment": environment})
         provider = UnconfiguredTravelRuleProvider()
