@@ -257,6 +257,50 @@ async def _scenario(database_url: str) -> None:
                     )
                 ).all()
             assert list(flags) == [upload]
+
+            # The worker's HIGH INSTRUCTION_TEXT flag (revision 1) survives confirm and edit.
+            injected = await _draft(sessions, RequestSource.UPLOAD.value)
+            async with sessions() as session, session.begin():
+                session.add(
+                    RequestFlag(
+                        request_id=injected,
+                        revision=1,
+                        code="INSTRUCTION_TEXT",
+                        severity="HIGH",
+                        evidence={"matches": []},
+                        source="AI",
+                    )
+                )
+            response = await client.post(
+                f"{base}/{injected}/extraction/confirm",
+                json={**confirm, "invoiceNo": "INV-2"},
+            )
+            assert response.status_code == 200, response.text
+            for expected_revision in (2, 3):
+                async with sessions() as session:
+                    row = await session.get(PaymentRequest, injected)
+                    assert row is not None and row.current_revision == expected_revision
+                    live = (
+                        await session.scalars(
+                            select(RequestFlag).where(
+                                RequestFlag.request_id == injected,
+                                RequestFlag.code == "INSTRUCTION_TEXT",
+                                RequestFlag.status != "Superseded",
+                            )
+                        )
+                    ).all()
+                    assert [(f.revision, f.status) for f in live] == [(expected_revision, "Open")]
+                    with pytest.raises(AuthFailure) as unacked:
+                        await requests.assert_high_flags_acknowledged(session, row)
+                    assert unacked.value.code == "HIGH_FLAGS_UNACKED"
+                    version = row.version
+                if expected_revision == 2:
+                    response = await client.patch(
+                        f"{base}/{injected}",
+                        json={"amount": "300.00"},
+                        headers={"If-Match": f'"{version}"'},
+                    )
+                    assert response.status_code == 200, response.text
     finally:
         # Incomplete upload drafts would (deliberately) block the 0023 downgrade.
         async with engine.begin() as connection:

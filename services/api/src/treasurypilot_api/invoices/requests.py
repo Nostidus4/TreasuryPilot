@@ -540,6 +540,59 @@ def _expected_version(if_match: str | None) -> int:
     return version
 
 
+INSTRUCTION_TEXT_CODE = "INSTRUCTION_TEXT"  # written by the worker (M09); carried across revisions
+
+
+async def carry_forward_instruction_flags(session: AsyncSession, row: PaymentRequest) -> None:
+    """Re-open the worker's INSTRUCTION_TEXT flag on the current revision; it never supersedes."""
+    await session.flush()  # fk_flags_request_revision needs the new revision row
+    old_flags = (
+        await session.scalars(
+            select(RequestFlag).where(
+                RequestFlag.request_id == row.id,
+                RequestFlag.revision < row.current_revision,
+                RequestFlag.code == INSTRUCTION_TEXT_CODE,
+                RequestFlag.status.in_(
+                    [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
+                ),
+            )
+        )
+    ).all()
+    for old in old_flags:
+        old.status = RequestFlagStatus.SUPERSEDED.value
+        session.add(
+            RequestFlag(
+                id=uuid7(),
+                request_id=row.id,
+                revision=row.current_revision,
+                code=old.code,
+                severity=old.severity,
+                evidence=old.evidence,
+                source=old.source,
+            )
+        )
+
+
+async def supersede_open_flags(
+    session: AsyncSession, row: PaymentRequest, *, keep: tuple[str, ...] = ()
+) -> None:
+    """Supersede earlier-revision flags after the new RequestRevision was added to the session."""
+    await session.flush()
+    await session.execute(
+        update(RequestFlag)
+        .where(
+            RequestFlag.request_id == row.id,
+            RequestFlag.revision < row.current_revision,
+            RequestFlag.code.not_in((INSTRUCTION_TEXT_CODE, *keep)),
+            RequestFlag.status.in_(
+                [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
+            ),
+        )
+        .values(status=RequestFlagStatus.SUPERSEDED.value)
+    )
+    await carry_forward_instruction_flags(session, row)
+
+
 async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequest) -> None:
     """Reject approval signing while a HIGH flag on this revision remains open."""
     unacknowledged = await session.scalar(
@@ -2067,16 +2120,6 @@ async def edit_request(
                     )
                     .values(status=ApprovalStatus.INVALIDATED.value)
                 )
-                await session.execute(
-                    update(RequestFlag)
-                    .where(
-                        RequestFlag.request_id == row.id,
-                        RequestFlag.status.in_(
-                            [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
-                        ),
-                    )
-                    .values(status=RequestFlagStatus.SUPERSEDED.value)
-                )
                 row.status = RequestStatus.DRAFT.value
                 if previous_status == RequestStatus.APPROVED.value:
                     session.add(
@@ -2108,6 +2151,7 @@ async def edit_request(
                         reason="bound fields edited",
                     )
                 )
+                await supersede_open_flags(session, row)
                 flags = await _recompute_flags(session, row)
             elif fields:
                 row.last_edited_by = member.user_id
@@ -2180,16 +2224,6 @@ async def confirm_request_terms(
             current = row.terms
         row.terms = stored
         if current != stored:
-            await session.execute(
-                update(RequestFlag)
-                .where(
-                    RequestFlag.request_id == row.id,
-                    RequestFlag.status.in_(
-                        [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
-                    ),
-                )
-                .values(status=RequestFlagStatus.SUPERSEDED.value)
-            )
             row.current_revision += 1
             row.last_edited_by = member.user_id
             session.add(
@@ -2202,6 +2236,7 @@ async def confirm_request_terms(
                     reason="payment terms confirmed",
                 )
             )
+            await supersede_open_flags(session, row)
             await _recompute_flags(session, row)
         row.terms_hash = digest
         if row.terms_confirmed_by is None or current != stored:
@@ -3038,6 +3073,7 @@ async def renew_request(
                 reason="renewed after expiry",
             )
         )
+        await carry_forward_instruction_flags(session, row)
         session.add(
             RequestStatusEvent(
                 id=uuid7(),
