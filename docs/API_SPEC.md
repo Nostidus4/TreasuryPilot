@@ -102,6 +102,10 @@
 | Method | Endpoint | Purpose | Perm | Request → Response | Errors |
 |---|---|---|---|---|---|
 | POST | `/orgs/{o}/requests` 🔁 | Manual draft | OPR, ADM | `RequestInput` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `AMOUNT_PRECISION` |
+| POST | `/orgs/{o}/recurring-payment-schedules` | Create a recurring obligation template | OPR, ADM | `RecurringScheduleInput` → `201 {schedule}` | 422 invalid treasury, payee, asset, amount, cadence, or date |
+| GET | `/orgs/{o}/recurring-payment-schedules` | List recurring templates | OPR, ADM | → `{schedules[]}` | |
+| PATCH | `/orgs/{o}/recurring-payment-schedules/{sId}` | Edit future periods or pause/resume | OPR, ADM | `If-Match` + template fields → `{schedule}` | 404, 409 completed, 412 version conflict |
+| POST | `/orgs/{o}/recurring-payment-schedules/{sId}/periods/{date}/skip` | Skip exactly the next active period | OPR, ADM | → `{period: Skipped, schedule}` | 404, 409 `PERIOD_NOT_CURRENT` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | Upload PDF/image → extraction job | OPR | multipart `file` → `202 {requestId, extractionJobId}` | 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_TYPE` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | CSV import | OPR | multipart → `{created[], errors[]}` | 422 `CSV_HEADER_INVALID` |
 | GET | `/orgs/{o}/requests` | List or filter | ANY | `?status=&dueBefore=&treasuryId=` → `{items}` | |

@@ -40,6 +40,8 @@ def test_invoice_upgrade_and_downgrade_compile_offline() -> None:
         "approvals",
         "csv_imports",
         "request_status_events",
+        "recurring_payment_schedules",
+        "recurring_payment_periods",
     ):
         assert f"CREATE TABLE {table_name}" in sql
         assert f"DROP TABLE {table_name}" in sql
@@ -54,6 +56,9 @@ def test_invoice_upgrade_and_downgrade_compile_offline() -> None:
     assert "fk_exceptions_request_treasury" in sql
     assert "ix_payees_treasury_status" in sql
     assert "uq_treasury_wallets_id_treasury" in sql
+    assert "uq_recurring_period_schedule_date" in sql
+    assert "ck_recurring_period_outcome" in sql
+    assert "'RECURRING'" in sql
 
 
 async def _verify_invoice_constraints(database_url: str) -> None:

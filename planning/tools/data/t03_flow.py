@@ -71,9 +71,27 @@ T("INV-L01","Add the email-forwarding invoice inbox","Later","-","L","F-033","FR
 T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","M","F-034","FR-309","INV-003",
   "Let other systems create drafts.", "API keys with scopes;idempotent create and bulk endpoints", "", "",
   "A key without invoices:create is refused;Keys cannot approve", "Integration")
-T("INV-L03","Add recurring payment schedules","Later","-","M","F-040","FR-321, BR-002","INV-003",
-  "Generate periodic drafts.", "Schedule templates;draft generation job;skip a period", "", "",
+T("INV-L03","Add recurring payment schedules","Later","-","L","F-040","FR-321, BR-002","INV-003",
+  "Generate periodic drafts.", "Schedule templates;draft generation job;skip a period", "", "Re-estimated from M to L and split into template, generation, and skip work before scheduling.",
   "Generated drafts require approval every period", "Integration")
+T("INV-L03A","Create recurring schedule templates","Later","-","M","F-040","FR-321, BR-002","INV-003",
+  "Operators can define and maintain a recurring obligation template.",
+  "Recurring schedule schema and API;validate treasury, vendor, payee, asset, wallet, amount and dates;cadence and invoice-number period token;pause and resume;edits affect future periods only",
+  "Draft generation and skipping periods.", "No template action approves a request.",
+  "Invalid payee or asset cannot be saved;Template updates affect only future drafts;Creator and last editor cannot approve generated requests",
+  "Integration with PostgreSQL")
+T("INV-L03B","Generate recurring payment drafts","Later","-","M","F-040","FR-321, BR-002","INV-L03A",
+  "Due periods create exactly one ordinary payment request draft.",
+  "Daily UTC worker job;transactional schedule-period claim;idempotent generated request, revision, status event and deterministic flags;integer base-unit amounts",
+  "Automatic submit, approval, planning or payment.", "Generated source and period provenance are stored.",
+  "Repeated delivery creates one Draft;No approval or payment is created;A changed template payee is used by the next period",
+  "Integration with PostgreSQL and worker task")
+T("INV-L03C","Skip a recurring payment period","Later","-","S","F-040","FR-321, BR-002","INV-L03A",
+  "An Operator can skip the next period while preserving the schedule history.",
+  "Org-scoped skip endpoint;record the actor and period;advance the anchored cadence;complete schedules after their end date",
+  "Skipping already generated periods.", "Skip leaves no payment request to approve.",
+  "Only the next active period can be skipped;A skipped period never generates a request;The following period remains on the original cadence",
+  "Integration with PostgreSQL")
 T("INV-L04","Support fiat-denominated invoices","Later","-","L","F-041","FR-322","INV-003 ENG-L02",
   "Accept invoices in fiat with FX conversion.", "Fiat amount and currency on requests;approval binds max stablecoin amount;FX source adapter", "", "",
   "Payment never exceeds the approved maximum stablecoin amount", "Integration")

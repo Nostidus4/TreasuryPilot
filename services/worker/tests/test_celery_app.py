@@ -13,7 +13,12 @@ from treasurypilot_worker.runtime import (
     current_correlation_id,
     make_idempotency_key,
 )
-from treasurypilot_worker.tasks import ai_probe, core_probe, publish_domain_events
+from treasurypilot_worker.tasks import (
+    ai_probe,
+    core_probe,
+    generate_recurring_drafts_task,
+    publish_domain_events,
+)
 
 
 def test_worker_uses_safe_delivery_settings() -> None:
@@ -48,6 +53,8 @@ def test_registered_tasks_inherit_safe_base() -> None:
     assert ai_probe.queue == "ai"
     assert isinstance(publish_domain_events, SafeTask)
     assert publish_domain_events.queue == "core"
+    assert isinstance(generate_recurring_drafts_task, SafeTask)
+    assert generate_recurring_drafts_task.queue == "core"
 
 
 def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> None:
@@ -56,6 +63,15 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["task"] == "treasurypilot.notifications.publish-domain-events"
     assert entry["schedule"] == timedelta(seconds=1)
     assert entry["options"] == {"queue": "core", "expires": 2}
+
+
+def test_recurring_draft_generation_is_scheduled_shortly_after_midnight_utc() -> None:
+    entry = app.conf.beat_schedule["generate-recurring-payment-drafts"]
+
+    assert entry["task"] == "treasurypilot.invoices.generate-recurring-drafts"
+    assert entry["schedule"].minute == {5}
+    assert entry["schedule"].hour == {0}
+    assert entry["options"]["queue"] == "core"
 
 
 def test_idempotency_key_is_stable_and_namespaced() -> None:

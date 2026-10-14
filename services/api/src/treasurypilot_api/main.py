@@ -50,6 +50,7 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
@@ -362,6 +363,7 @@ def create_app(
     app.include_router(review_router)
     app.include_router(notifications_router)
     app.include_router(requests_router)
+    app.include_router(recurring_schedules_router)
 
     return app
 

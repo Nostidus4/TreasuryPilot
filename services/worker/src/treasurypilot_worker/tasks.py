@@ -5,6 +5,7 @@ from typing import Any
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
 
@@ -77,3 +78,22 @@ def publish_domain_events() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for domain-event publishing")
     return {"published": _publisher.publish(database_url)}
+
+
+@app.task(name="treasurypilot.invoices.generate-recurring-drafts", queue="core")
+def generate_recurring_drafts_task() -> dict[str, int]:
+    """Generate due payment drafts from active recurring templates."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for recurring draft generation")
+
+    async def run() -> dict[str, int]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            async with pool.acquire() as connection:
+                return await generate_due_recurring_drafts(connection)
+        finally:
+            await pool.close()
+
+    return asyncio.run(run())
