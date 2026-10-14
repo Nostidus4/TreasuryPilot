@@ -179,7 +179,12 @@ def safe_provider(*, guard: str | None, next_module: str = SENTINEL) -> FakeProv
         return "0x" + "00" * 12 + value.removeprefix("0x")
 
     return FakeProvider(
-        {"eth_getBlockByNumber": HEAD, "eth_call": eth_call, "eth_getStorageAt": storage}
+        {
+            "eth_getBlockByNumber": HEAD,
+            "eth_call": eth_call,
+            "eth_getStorageAt": storage,
+            "eth_getCode": "0x",
+        }
     )
 
 
@@ -195,6 +200,7 @@ def test_safe_config_reads_one_block() -> None:
         guard=GUARD,
         fallback_handler=None,
         nonce=7,
+        module_implementations=(None,),
     )
 
 
@@ -225,6 +231,15 @@ def test_safe_config_change_detection_detects_security_configuration_changes() -
     changed = SafeConfig(11, OTHER_BLOCK, (SAFE, "0x" + "33" * 20), 1, (), SAFE, None, 8)
 
     assert safe_config_changed(previous, changed)
+
+
+def test_eip1167_runtime_extracts_only_the_canonical_clone_target() -> None:
+    prefix = bytes.fromhex("363d3d373d3d3d363d73")
+    suffix = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
+    target = bytes.fromhex("44" * 20)
+
+    assert rpc_module._eip1167_implementation(prefix + target + suffix) == "0x" + "44" * 20
+    assert rpc_module._eip1167_implementation(prefix + target + suffix + b"\x00") is None
 
 
 class Erroring(FakeProvider):

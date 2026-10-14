@@ -293,6 +293,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Acknowledge Coverage */
+    post: operations['acknowledge_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_acknowledge_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Refresh Coverage */
+    post: operations['refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -389,6 +423,31 @@ export interface components {
      * @enum {string}
      */
     Coverage: 'UNKNOWN' | 'PARTIAL' | 'COMPLETE';
+    /** CoverageAcknowledgeRequest */
+    CoverageAcknowledgeRequest: {
+      /** Reason */
+      reason: string;
+    };
+    /** CoverageResponse */
+    CoverageResponse: {
+      coverage: components['schemas']['CoverageView'];
+    };
+    /** CoverageView */
+    CoverageView: {
+      /** Acknowledged */
+      acknowledged: boolean;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Acknowledgmentreason */
+      acknowledgmentReason?: string | null;
+      /** Details */
+      details: string[];
+      /** Executionallowed */
+      executionAllowed: boolean;
+      status: components['schemas']['Coverage'];
+    };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
       /** Country */
@@ -562,7 +621,7 @@ export interface components {
       assetId: string;
       /** Chainid */
       chainId: number;
-      coverage: components['schemas']['Coverage'];
+      coverage: components['schemas']['CoverageView'];
       /**
        * Createdat
        * Format: date-time
@@ -1144,6 +1203,74 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  acknowledge_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_acknowledge_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CoverageAcknowledgeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CoverageResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CoverageResponse'];
         };
       };
       /** @description Validation Error */

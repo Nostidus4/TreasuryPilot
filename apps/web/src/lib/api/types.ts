@@ -121,6 +121,7 @@ export interface Coverage {
   status: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN';
   acknowledged: boolean;
   details: string[];
+  executionAllowed?: boolean;
 }
 
 export interface Budget {

@@ -11,7 +11,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -110,6 +110,8 @@ class SafeConfig:
     guard: str | None
     fallback_handler: str | None
     nonce: int
+    # EIP-1167 implementation for each listed module; None means non-clone or unreadable.
+    module_implementations: tuple[str | None, ...] = ()
 
 
 def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeConfig) -> bool:
@@ -120,6 +122,8 @@ def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeC
         threshold = previous.threshold
         modules = previous.modules
         guard = previous.guard
+        fallback_handler = previous.fallback_handler
+        module_implementations = previous.module_implementations
     else:
         owners = tuple(str(owner).lower() for owner in previous["owners"])
         threshold = int(previous["threshold"])
@@ -129,11 +133,25 @@ def safe_config_changed(previous: SafeConfig | Mapping[str, Any], current: SafeC
         )
         guard_value = previous["guard"]
         guard = "0x" + bytes(guard_value).hex() if guard_value is not None else None
+        fallback_value = previous["fallback_handler"]
+        fallback_handler = (
+            "0x" + bytes(fallback_value).hex() if fallback_value is not None else None
+        )
+        implementations_value = previous["module_implementations"]
+        if isinstance(implementations_value, str):
+            import json
+
+            implementations_value = json.loads(implementations_value)
+        module_implementations = tuple(
+            implementations_value.get(module, None) for module in modules
+        )
     return (
         set(owners) != set(current.owners)
         or threshold != current.threshold
         or set(modules) != set(current.modules)
         or guard != current.guard
+        or fallback_handler != current.fallback_handler
+        or module_implementations != current.module_implementations
     )
 
 
@@ -199,6 +217,13 @@ class RpcClient:
                 break
         else:
             raise RpcError(f"{safe}: getModulesPaginated did not end after {len(modules)} modules")
+        implementations_list: list[str | None] = []
+        for module in modules:
+            runtime = await self.call("eth_getCode", [module, block])
+            implementations_list.append(
+                _eip1167_implementation(bytes.fromhex(str(runtime).removeprefix("0x")))
+            )
+        implementations = tuple(implementations_list)
         return SafeConfig(
             block_number=int(head["number"], 16),
             block_hash=str(head["hash"]).lower(),
@@ -208,6 +233,7 @@ class RpcClient:
             guard=await self._storage_address(safe, SAFE_GUARD_SLOT, block),
             fallback_handler=await self._storage_address(safe, SAFE_FALLBACK_HANDLER_SLOT, block),
             nonce=nonce,
+            module_implementations=implementations,
         )
 
     async def _safe_view(
@@ -222,7 +248,9 @@ class RpcClient:
         data = Web3.keccak(text=signature)[:4] + encode(list(input_types), list(args))
         raw = await self.call("eth_call", [{"to": safe, "data": "0x" + data.hex()}, block])
         try:
-            return decode(output_types, bytes.fromhex(str(raw).removeprefix("0x")))
+            return cast(
+                tuple[Any, ...], decode(output_types, bytes.fromhex(str(raw).removeprefix("0x")))
+            )
         except (DecodingError, ValueError):
             raise RpcError(f"{safe} is not a Safe: {signature} returned {raw!r}") from None
 
@@ -312,6 +340,22 @@ class RpcClient:
         except Exception:
             # Health is telemetry: losing a sample must not fail a chain read.
             logger.warning("rpc health sample dropped", exc_info=True)
+
+
+_CLONE_PREFIX = bytes.fromhex("363d3d373d3d3d363d73")
+_CLONE_SUFFIX = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
+
+
+def _eip1167_implementation(runtime: bytes) -> str | None:
+    """Return the target only for the canonical 45-byte EIP-1167 runtime."""
+
+    if (
+        len(runtime) != 45
+        or runtime[: len(_CLONE_PREFIX)] != _CLONE_PREFIX
+        or runtime[-len(_CLONE_SUFFIX) :] != _CLONE_SUFFIX
+    ):
+        return None
+    return "0x" + runtime[len(_CLONE_PREFIX) : -len(_CLONE_SUFFIX)].hex()
 
 
 def rpc_health_sink(pool: asyncpg.Pool) -> HealthSink:

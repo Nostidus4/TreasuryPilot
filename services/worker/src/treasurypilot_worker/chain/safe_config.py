@@ -6,12 +6,14 @@ import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.chain.rpc import (
     RpcClient,
+    RpcError,
     SafeConfig,
     build_rpc_client,
     safe_config_changed,
@@ -64,16 +66,45 @@ async def refresh_safe_config_snapshots(
             )
 
         snapshots_written = 0
+        failed_treasuries: set[uuid.UUID] = set()
         for wallet in wallets:
-            rpc = reader_factory(wallet["rpc_urls"])
-            safe_address = "0x" + bytes(wallet["safe_address"]).hex()
-            safe_config = await rpc.safe_config(safe_address)
+            try:
+                rpc = reader_factory(wallet["rpc_urls"])
+                safe_address = "0x" + bytes(wallet["safe_address"]).hex()
+                safe_config = await rpc.safe_config(safe_address)
+            except (RpcError, OSError, ValueError):
+                await _mark_coverage_unknown(pool, wallet["treasury_id"])
+                failed_treasuries.add(wallet["treasury_id"])
+                continue
             snapshots_written += await _store_snapshot(
                 pool, wallet, safe_config, event_publisher=event_publisher
             )
+        # A later Safe can refresh after an earlier RPC failure and recompute from its
+        # prior successful snapshot. Re-apply UNKNOWN at the end of the polling cycle.
+        for treasury_id in failed_treasuries:
+            await _mark_coverage_unknown(pool, treasury_id)
         return snapshots_written
     finally:
         await pool.close()
+
+
+async def _mark_coverage_unknown(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> None:
+    """Close the execution gate immediately when any registered Safe cannot be read."""
+
+    async with pool.acquire() as connection, connection.transaction():
+        await connection.execute(
+            """
+            UPDATE treasuries
+            SET coverage = 'UNKNOWN'::treasury_coverage,
+                coverage_details = $2::jsonb,
+                coverage_ack_by = NULL, coverage_ack_at = NULL, coverage_ack_reason = NULL,
+                updated_at = now(), version = version + 1
+            WHERE id = $1 AND (coverage IS DISTINCT FROM 'UNKNOWN'::treasury_coverage
+              OR coverage_details IS DISTINCT FROM $2::jsonb OR coverage_ack_by IS NOT NULL)
+            """,
+            treasury_id,
+            json.dumps(["Coverage is UNKNOWN: a Safe configuration RPC read failed."]),
+        )
 
 
 async def _store_snapshot(
@@ -91,7 +122,8 @@ async def _store_snapshot(
         )
         previous = await connection.fetchrow(
             """
-            SELECT owners, threshold, modules, guard, block_number, block_hash
+            SELECT owners, threshold, modules, guard, fallback_handler,
+                   module_implementations, block_number, block_hash
             FROM safe_config_snapshots
             WHERE wallet_id = $1 AND org_id = $2
             ORDER BY block_number DESC, observed_at DESC
@@ -104,8 +136,8 @@ async def _store_snapshot(
             """
             INSERT INTO safe_config_snapshots
                 (id, org_id, wallet_id, block_number, block_hash, owners, threshold,
-                 modules, guard)
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+                 modules, guard, fallback_handler, module_implementations)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb)
             ON CONFLICT (wallet_id, block_number, block_hash) DO NOTHING
             """,
             uuid.uuid4(),
@@ -117,6 +149,17 @@ async def _store_snapshot(
             config.threshold,
             [bytes.fromhex(module.removeprefix("0x")) for module in config.modules],
             bytes.fromhex(config.guard.removeprefix("0x")) if config.guard else None,
+            bytes.fromhex(config.fallback_handler.removeprefix("0x"))
+            if config.fallback_handler
+            else None,
+            json.dumps(
+                {
+                    module: implementation
+                    for module, implementation in zip(
+                        config.modules, config.module_implementations, strict=True
+                    )
+                }
+            ),
         )
         if result.endswith(" 0"):
             return 0
@@ -132,7 +175,113 @@ async def _store_snapshot(
                     "blockNumber": config.block_number,
                 },
             )
+        await _refresh_coverage(connection, wallet["treasury_id"])
         return 1
+
+
+async def _refresh_coverage(connection: asyncpg.Connection, treasury_id: uuid.UUID) -> None:
+    """Recompute a treasury after each successful snapshot (including 10-minute polling)."""
+
+    rows = await connection.fetch(
+        """
+        SELECT t.module_address, implementation.address AS module_implementation,
+               fallback.address AS fallback_handler, w.id AS wallet_id, w.label,
+               s.modules, s.guard, s.fallback_handler AS observed_fallback,
+               s.module_implementations, s.observed_at
+        FROM treasuries AS t
+        LEFT JOIN deployments AS implementation
+          ON implementation.chain_id = t.chain_id
+         AND implementation.name = 'TREASURY_MODULE_IMPLEMENTATION'
+        LEFT JOIN deployments AS fallback
+          ON fallback.chain_id = t.chain_id
+         AND fallback.name = 'SAFE_FALLBACK_HANDLER'
+        LEFT JOIN treasury_wallets AS w ON w.treasury_id = t.id
+        LEFT JOIN LATERAL (
+            SELECT modules, guard, fallback_handler, module_implementations, observed_at
+            FROM safe_config_snapshots
+            WHERE wallet_id = w.id AND org_id = w.org_id
+            ORDER BY block_number DESC, observed_at DESC
+            LIMIT 1
+        ) AS s ON TRUE
+        WHERE t.id = $1
+        ORDER BY w.id
+        """,
+        treasury_id,
+    )
+    details: list[str] = []
+    all_complete = bool(rows) and rows[0]["module_address"] is not None
+    any_unknown = not rows
+    now = datetime.now(UTC)
+    max_age = timedelta(minutes=12)
+    for row in rows:
+        expected_module = bytes(row["module_address"]) if row["module_address"] else None
+        expected_implementation = (
+            bytes(row["module_implementation"]) if row["module_implementation"] else None
+        )
+        expected_fallback = bytes(row["fallback_handler"]) if row["fallback_handler"] else None
+        if expected_implementation is None or expected_fallback is None:
+            any_unknown = True
+            missing = (
+                "TREASURY_MODULE_IMPLEMENTATION"
+                if expected_implementation is None
+                else "SAFE_FALLBACK_HANDLER"
+            )
+            details.append(f"Coverage is UNKNOWN: {missing} is not configured for this chain.")
+        modules = row["modules"]
+        if modules is None or row["observed_at"] is None or now - row["observed_at"] > max_age:
+            any_unknown = True
+            all_complete = False
+            details.append(f"{row['label']}: no recent Safe configuration snapshot.")
+            continue
+        modules = [bytes(module) for module in modules]
+        implementations = row["module_implementations"] or {}
+        if isinstance(implementations, str):
+            implementations = json.loads(implementations)
+        module_key = "0x" + expected_module.hex() if expected_module else ""
+        clone_target = implementations.get(module_key)
+        if expected_module is None or modules != [expected_module]:
+            all_complete = False
+            details.append(f"{row['label']}: enabled modules do not equal the treasury module.")
+        elif (
+            expected_implementation is not None
+            and clone_target != "0x" + expected_implementation.hex()
+        ):
+            all_complete = False
+            details.append(f"{row['label']}: treasury module is not the configured EIP-1167 clone.")
+        if row["guard"] is not None:
+            all_complete = False
+            details.append(f"{row['label']}: an unexpected guard is enabled.")
+        if expected_fallback is not None and row["observed_fallback"] != expected_fallback:
+            all_complete = False
+            details.append(
+                f"{row['label']}: fallback handler is not the configured canonical handler."
+            )
+
+    if any_unknown:
+        status = "UNKNOWN"
+    elif all_complete:
+        status = "COMPLETE"
+        details.append("All registered Safes match the configured TreasuryPilot module policy.")
+    else:
+        status = "PARTIAL"
+        if not details:
+            details.append("Safe configuration does not satisfy the coverage policy.")
+    await connection.execute(
+        """
+        UPDATE treasuries
+        SET coverage = $2::treasury_coverage, coverage_details = $3::jsonb,
+            coverage_ack_by = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_by ELSE NULL END,
+            coverage_ack_at = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_at ELSE NULL END,
+            coverage_ack_reason = CASE WHEN $2 = 'PARTIAL' THEN coverage_ack_reason ELSE NULL END,
+            updated_at = now(), version = version + 1
+        WHERE id = $1 AND (coverage IS DISTINCT FROM $2::treasury_coverage
+          OR coverage_details IS DISTINCT FROM $3::jsonb
+          OR ($2 <> 'PARTIAL' AND coverage_ack_by IS NOT NULL))
+        """,
+        treasury_id,
+        status,
+        json.dumps(details),
+    )
 
 
 def refresh_safe_config_snapshots_sync(database_url: str) -> int:

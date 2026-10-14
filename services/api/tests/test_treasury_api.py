@@ -30,7 +30,16 @@ from treasurypilot_api.treasury.config import (
     DeploymentManifest,
     PlatformConfiguration,
 )
-from treasurypilot_api.treasury.models import Asset, Chain, Coverage, TreasuryStatus, WalletRole
+from treasurypilot_api.treasury.models import (
+    Asset,
+    Chain,
+    Coverage,
+    SafeConfigSnapshot,
+    Treasury,
+    TreasuryStatus,
+    TreasuryWallet,
+    WalletRole,
+)
 from treasurypilot_api.treasury.safe import RpcUnavailable, SafeInfo, SafeVerificationError
 from treasurypilot_api.treasury.service import (
     TreasuryNotFound,
@@ -90,6 +99,8 @@ class FakeService:
     def __init__(self) -> None:
         self.error: Exception | None = None
         self.created: list[dict[str, Any]] = []
+        self.coverage_refreshes: list[dict[str, Any]] = []
+        self.coverage_acknowledgments: list[dict[str, Any]] = []
 
     async def create(self, **kwargs: Any) -> TreasuryRecord:
         if self.error is not None:
@@ -101,6 +112,14 @@ class FakeService:
         if self.error is not None:
             raise self.error
         return _record(treasury_id)
+
+    async def refresh_coverage(self, **kwargs: Any) -> TreasuryRecord:
+        self.coverage_refreshes.append(kwargs)
+        return _record(kwargs["treasury_id"])
+
+    async def acknowledge_coverage(self, **kwargs: Any) -> TreasuryRecord:
+        self.coverage_acknowledgments.append(kwargs)
+        return _record(kwargs["treasury_id"])
 
 
 class Roles:
@@ -192,6 +211,36 @@ def test_unknown_treasury_is_404_and_bad_input_is_422(monkeypatch: pytest.Monkey
     assert client.post(f"/v1/orgs/{ORG}/treasuries", json=_payload(SAFES[:1])).status_code == 422
 
 
+def test_coverage_refresh_is_available_to_owner_and_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = FakeService()
+    response = _client(monkeypatch, {"OrgAdmin"}, service).post(
+        f"/v1/orgs/{ORG}/treasuries/{uuid.uuid4()}/coverage/refresh"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["coverage"]["status"] == "UNKNOWN"
+    assert response.json()["coverage"]["executionAllowed"] is False
+    assert service.coverage_refreshes[0]["organization_id"] == ORG
+
+
+def test_only_owner_can_acknowledge_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = FakeService()
+    treasury_id = uuid.uuid4()
+    denied = _client(monkeypatch, {"OrgAdmin"}, service).post(
+        f"/v1/orgs/{ORG}/treasuries/{treasury_id}/coverage/acknowledge",
+        json={"reason": "Reviewed the Safe setup"},
+    )
+    assert (denied.status_code, denied.json()["code"]) == (403, "FORBIDDEN")
+    assert service.coverage_acknowledgments == []
+
+    accepted = _client(monkeypatch, {"Owner"}, service).post(
+        f"/v1/orgs/{ORG}/treasuries/{treasury_id}/coverage/acknowledge",
+        json={"reason": "Reviewed the Safe setup"},
+    )
+    assert accepted.status_code == 200
+    assert service.coverage_acknowledgments[0]["user_id"] == USER
+
+
 def _wallet(label: str, owners: Sequence[str], threshold: int) -> WalletRecord:
     return WalletRecord(
         uuid.uuid4(), WalletRole.OPERATIONAL, label, SAFES[0], tuple(owners), threshold
@@ -259,6 +308,12 @@ def _configuration() -> PlatformConfiguration:
                 address="0x" + "11" * 20,
                 code_hash="0x" + "22" * 32,
                 version="1",
+            ),
+            DeploymentConfig(
+                name="SAFE_FALLBACK_HANDLER",
+                address="0x" + "33" * 20,
+                code_hash="0x" + "44" * 32,
+                version="1.4.1",
             ),
         ),
     )
@@ -334,6 +389,79 @@ async def _exercise(database_url: str) -> None:
         (entry,) = [e for e in entries if e.action == "treasury.created"]
         assert entry.entity_id == str(created.id) and entry.actor_id == str(user.id)
         assert entry.data["wallets"][0]["safeVersion"] == "1.4.1"
+
+        module = bytes.fromhex("55" * 20)
+        implementation = bytes.fromhex("11" * 20)
+        fallback = bytes.fromhex("33" * 20)
+        async with sessions() as session, session.begin():
+            treasury_row = await session.get(Treasury, created.id)
+            assert treasury_row is not None
+            treasury_row.module_address = module
+            treasury_wallets = list(
+                await session.scalars(
+                    select(TreasuryWallet).where(TreasuryWallet.treasury_id == created.id)
+                )
+            )
+            for index, wallet in enumerate(treasury_wallets):
+                session.add(
+                    SafeConfigSnapshot(
+                        org_id=org_a.id,
+                        wallet_id=wallet.id,
+                        block_number=100,
+                        block_hash=bytes([index + 1]) * 32,
+                        owners=list(OWNERS),
+                        threshold=2,
+                        modules=[module],
+                        guard=None,
+                        fallback_handler=fallback,
+                        module_implementations={"0x" + module.hex(): "0x" + implementation.hex()},
+                    )
+                )
+        complete = await service.refresh_coverage(organization_id=org_a.id, treasury_id=created.id)
+        assert complete.coverage is Coverage.COMPLETE
+        assert not complete.coverage_acknowledged
+
+        extra_module = bytes.fromhex("66" * 20)
+        async with sessions() as session, session.begin():
+            first_wallet = treasury_wallets[0]
+            session.add(
+                SafeConfigSnapshot(
+                    org_id=org_a.id,
+                    wallet_id=first_wallet.id,
+                    block_number=101,
+                    block_hash=bytes.fromhex("aa" * 32),
+                    owners=list(OWNERS),
+                    threshold=2,
+                    modules=[module, extra_module],
+                    guard=None,
+                    fallback_handler=fallback,
+                    module_implementations={
+                        "0x" + module.hex(): "0x" + implementation.hex(),
+                        "0x" + extra_module.hex(): None,
+                    },
+                )
+            )
+        partial = await service.refresh_coverage(organization_id=org_a.id, treasury_id=created.id)
+        assert partial.coverage is Coverage.PARTIAL
+        acknowledged = await service.acknowledge_coverage(
+            organization_id=org_a.id,
+            treasury_id=created.id,
+            user_id=user.id,
+            reason="Reviewed the extra module risk",
+        )
+        assert acknowledged.coverage_acknowledged
+        assert acknowledged.coverage_ack_reason == "Reviewed the extra module risk"
+        async with sessions() as session:
+            coverage_audits = list(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.org_id == org_a.id,
+                        AuditLog.action == "treasury.coverage.acknowledged",
+                    )
+                )
+            )
+        assert len(coverage_audits) == 1
+        assert coverage_audits[0].data["reason"] == "Reviewed the extra module risk"
 
         # Tenant isolation: another org cannot read it.
         with pytest.raises(TreasuryNotFound):
