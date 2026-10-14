@@ -466,7 +466,14 @@ class Screening(Base):
         Index("ix_screenings_address_checked", "address", desc("checked_at")),
         Index("ix_screenings_org_payee", "org_id", "payee_id"),
         CheckConstraint("chain_id IS NULL OR chain_id > 0", name="ck_screenings_chain_id"),
-        Index("ix_screenings_lookup", "address", "chain_id", "provider", desc("checked_at")),
+        Index(
+            "ix_screenings_lookup",
+            "org_id",
+            "address",
+            "chain_id",
+            "provider",
+            desc("checked_at"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)

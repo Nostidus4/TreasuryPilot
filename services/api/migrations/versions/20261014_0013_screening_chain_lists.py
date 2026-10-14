@@ -1,5 +1,9 @@
 """scope screenings by chain and store fixture screening lists
 
+The seeded screening_lists rows are TEST DATA (incl. OFAC sample addresses) and are
+inserted in every environment. Production uses UnconfiguredScreeningProvider, so they
+are inert, but production must delete them before any real list reader uses this table.
+
 Revision ID: 20261014_0013
 Revises: 20261013_0012
 Create Date: 2026-10-13 00:00:00
@@ -50,7 +54,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_screenings_lookup",
         "screenings",
-        ["address", "chain_id", "provider", sa.text("checked_at DESC")],
+        ["org_id", "address", "chain_id", "provider", sa.text("checked_at DESC")],
     )
 
     op.create_table(

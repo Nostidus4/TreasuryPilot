@@ -233,6 +233,11 @@ class ScreeningService:
             if payee_id is None or cached.payee_id == payee_id:
                 return cached
             # Record the reused result against this payee so its history shows the check.
+            # checked_at/ttl_until are deliberately copied from the original check: they
+            # describe when the provider answered, not when this payee relied on it (see
+            # the row's created time via its uuid7 id).
+            # shortcut: a CLEAR is served for the full TTL with no force-refresh; add a
+            # force_refresh option if the pre-PAY path needs to bypass the cache.
             return await self._repository.record(
                 organization_id=organization_id,
                 payee_id=payee_id,
@@ -245,12 +250,15 @@ class ScreeningService:
                 ttl_until=cached.ttl_until,
             )
 
+        # shortcut: concurrent calls that both miss the cache each call the provider and
+        # insert a row; latest() is stable by (checked_at, id), so duplicates are harmless.
         try:
             async with asyncio.timeout(self._timeout.total_seconds()):
                 outcome = await self._provider.screen(address=normalized, chain_id=chain_id)
             result = ScreeningResult(outcome.result)
             source_ref = outcome.source_ref
-        except (ScreeningProviderError, TimeoutError, OSError) as error:
+        except Exception as error:
+            # Any provider failure fails closed with an ERROR row; CancelledError still propagates.
             # Fail closed (BR-085), but leave a trace: ops must see why payments block.
             logger.warning(
                 "screening_provider_failed",
