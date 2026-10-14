@@ -1,8 +1,11 @@
 import ipaddress
+import json
+import uuid
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from treasurypilot_core.observability import LogFormat
@@ -47,6 +50,14 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TP_S3_SECRET_KEY", "S3_SECRET_KEY"),
     )
     magic_link_base_url: str = "http://localhost:5173/auth/verify"
+    # Where the browser lands after SSO sign-in; falls back to the first CORS origin.
+    web_app_url: str | None = None
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: SecretStr | None = None
+    oidc_redirect_uri: str | None = None
+    oidc_organization_id: str | None = None
+    oidc_group_role_map: str = "{}"
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
     session_cookie_name: str = "tp_session"
@@ -61,6 +72,46 @@ class Settings(BaseSettings):
     admin_staff_token: SecretStr | None = None
     admin_staff_id: str | None = None
     admin_ip_allowlist: str = ""
+
+    @model_validator(mode="after")
+    def _validate_oidc_configuration(self) -> "Settings":
+        oidc_values = (
+            self.oidc_issuer,
+            self.oidc_client_id,
+            self.oidc_client_secret,
+            self.oidc_redirect_uri,
+            self.oidc_organization_id,
+        )
+        if any(oidc_values) and not all(oidc_values):
+            raise ValueError(
+                "OIDC requires issuer, client ID/secret, redirect URI and organization ID"
+            )
+        if all(oidc_values):
+            for value in (self.oidc_issuer, self.oidc_redirect_uri):
+                parsed = urlparse(value or "")
+                is_loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                if parsed.scheme != "https" and not (
+                    self.environment.casefold() == "local"
+                    and parsed.scheme == "http"
+                    and is_loopback
+                ):
+                    raise ValueError("OIDC issuer and redirect URI must use HTTPS")
+            try:
+                uuid.UUID(self.oidc_organization_id or "")
+                role_map = json.loads(self.oidc_group_role_map)
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise ValueError("invalid OIDC organization ID or group role map") from exc
+            if not isinstance(role_map, dict) or any(
+                not isinstance(group, str)
+                or not isinstance(roles, list)
+                or any(
+                    not isinstance(role, str) or role not in {"Operator", "Finance", "Auditor"}
+                    for role in roles
+                )
+                for group, roles in role_map.items()
+            ):
+                raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
+        return self
 
     @field_validator("admin_ip_allowlist")
     @classmethod
@@ -86,6 +137,18 @@ class Settings(BaseSettings):
             and len(self.admin_staff_token.get_secret_value().encode()) >= 32
             and bool(self.admin_staff_id)
             and bool(self.admin_networks)
+        )
+
+    @property
+    def oidc_configured(self) -> bool:
+        return all(
+            (
+                self.oidc_issuer,
+                self.oidc_client_id,
+                self.oidc_client_secret,
+                self.oidc_redirect_uri,
+                self.oidc_organization_id,
+            )
         )
 
     @property

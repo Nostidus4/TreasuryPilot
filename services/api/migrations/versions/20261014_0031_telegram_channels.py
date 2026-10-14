@@ -1,7 +1,7 @@
 """add Telegram notification channels, link codes and deliveries
 
-Revision ID: 20261014_0027
-Revises: 20261014_0026
+Revision ID: 20261014_0031
+Revises: 20261014_0030
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0027"
-down_revision: str | None = "20261014_0026"
+revision: str = "20261014_0031"
+down_revision: str | None = "20261014_0030"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

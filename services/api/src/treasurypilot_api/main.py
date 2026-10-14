@@ -36,6 +36,7 @@ from treasurypilot_api.identity.memberships import (
     SqlAlchemyMembershipRepository,
 )
 from treasurypilot_api.identity.memberships import router as memberships_router
+from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
     SqlAlchemyOrganizationRepository,
@@ -50,6 +51,7 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.invoices.documents import (
     ExtractionQueue,
     ObjectStorage,
@@ -73,6 +75,11 @@ from treasurypilot_api.mandate.vendors import (
     VendorRepository,
 )
 from treasurypilot_api.mandate.vendors import router as vendors_router
+from treasurypilot_api.notifications.preferences import (
+    NotificationPreferencesRepository,
+    SqlAlchemyNotificationPreferencesRepository,
+)
+from treasurypilot_api.notifications.preferences import router as notification_preferences_router
 from treasurypilot_api.notifications.routes import (
     NotificationRepository,
     SqlAlchemyNotificationRepository,
@@ -125,6 +132,7 @@ def _auth_service(
     WalletRepository | None,
     AuditRepository | None,
     async_sessionmaker[AsyncSession] | None,
+    RateLimiter,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -199,6 +207,7 @@ def _auth_service(
         wallet_repository,
         audit_repository,
         sessions,
+        rate_limiter,
     )
 
 
@@ -206,6 +215,7 @@ def create_app(
     *,
     settings: Settings | None = None,
     auth_service: AuthService | None = None,
+    rate_limiter: RateLimiter | None = None,
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
@@ -220,6 +230,7 @@ def create_app(
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
     notification_repository: NotificationRepository | None = None,
+    notification_preferences_repository: NotificationPreferencesRepository | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
     telegram_repository: TelegramRepository | None = None,
@@ -248,6 +259,7 @@ def create_app(
             default_wallets,
             default_audit,
             sessions,
+            rate_limiter,
         ) = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
@@ -255,6 +267,8 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if rate_limiter is None:
+        raise ValueError("rate_limiter is required when auth_service is injected")
     if screening_service is None and engine is not None:
         screening_service = build_screening_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
@@ -291,6 +305,8 @@ def create_app(
         vendor_repository = SqlAlchemyVendorRepository(sessions)
     if payee_repository is None and sessions is not None:
         payee_repository = SqlAlchemyPayeeRepository(sessions)
+    if notification_preferences_repository is None and sessions is not None:
+        notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -341,7 +357,13 @@ def create_app(
     )
     app.state.settings = settings
     app.state.auth_service = auth_service
+    app.state.api_key_rate_limiter = rate_limiter
     app.state.organization_repository = organization_repository
+    app.state.oidc_repository = (
+        OIDCIdentityRepository(sessions)
+        if settings.oidc_configured and sessions is not None
+        else None
+    )
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
@@ -358,6 +380,7 @@ def create_app(
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.state.telegram_repository = telegram_repository
@@ -397,6 +420,8 @@ def create_app(
     app.include_router(review_router)
     app.include_router(notifications_router)
     app.include_router(requests_router)
+    app.include_router(invoice_api_keys_router)
+    app.include_router(notification_preferences_router)
     app.include_router(invoice_documents_router)
     app.include_router(telegram_router)
 

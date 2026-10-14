@@ -140,6 +140,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/auth/oidc/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Oidc Callback */
+    get: operations['oidc_callback_v1_auth_oidc_callback_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/auth/oidc/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Oidc Start */
+    get: operations['oidc_start_v1_auth_oidc_start_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/auth/siwe/nonce': {
     parameters: {
       query?: never;
@@ -277,6 +311,24 @@ export interface paths {
     patch: operations['update_channel_v1_me_channels__channel_id__patch'];
     trace?: never;
   };
+  '/v1/me/notification-preferences': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Notification Preferences */
+    get: operations['get_notification_preferences_v1_me_notification_preferences_get'];
+    /** Put Notification Preferences */
+    put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/wallets': {
     parameters: {
       query?: never;
@@ -340,6 +392,41 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/api-keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Api Keys */
+    get: operations['list_api_keys_v1_orgs__organization_id__api_keys_get'];
+    put?: never;
+    /** Create Api Key */
+    post: operations['create_api_key_v1_orgs__organization_id__api_keys_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/api-keys/{key_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Api Key */
+    delete: operations['revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -602,6 +689,23 @@ export interface paths {
     put?: never;
     /** Create Request */
     post: operations['create_request_v1_orgs__organization_id__requests_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/bulk': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Requests Bulk */
+    post: operations['create_requests_bulk_v1_orgs__organization_id__requests_bulk_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1044,7 +1148,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** List Treasuries */
+    get: operations['list_treasuries_v1_orgs__organization_id__treasuries_get'];
     put?: never;
     /** Create Treasury */
     post: operations['create_treasury_v1_orgs__organization_id__treasuries_post'];
@@ -1323,6 +1428,15 @@ export interface components {
       daily: string;
       /** Perrequest */
       perRequest: string;
+    };
+    /** ApiKeyCreate */
+    ApiKeyCreate: {
+      /** Expiresat */
+      expiresAt?: string | null;
+      /** Name */
+      name: string;
+      /** Scopes */
+      scopes: string[];
     };
     /** ApprovalEvidence */
     ApprovalEvidence: {
@@ -2086,12 +2200,39 @@ export interface components {
        */
       validFrom: string;
     };
+    /**
+     * NotificationCategory
+     * @enum {string}
+     */
+    NotificationCategory: 'mandatory' | 'approvals' | 'payments' | 'operations';
+    /**
+     * NotificationChannel
+     * @enum {string}
+     */
+    NotificationChannel: 'in_app' | 'email' | 'telegram';
     /** NotificationList */
     NotificationList: {
       /** Items */
       items: components['schemas']['NotificationView'][];
       /** Unreadcount */
       unreadCount: number;
+    };
+    /** NotificationPreferencesView */
+    NotificationPreferencesView: {
+      /** Categories */
+      categories: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd: string | null;
+      /** Quiethoursstart */
+      quietHoursStart: string | null;
+      /** Timezone */
+      timezone: string;
     };
     /** NotificationView */
     NotificationView: {
@@ -2284,6 +2425,11 @@ export interface components {
     RenewRequest: {
       /** Duedate */
       dueDate?: string | null;
+    };
+    /** RequestBulkCreate */
+    RequestBulkCreate: {
+      /** Requests */
+      requests: components['schemas']['RequestCreate'][];
     };
     /** RequestCreate */
     RequestCreate: {
@@ -2595,6 +2741,11 @@ export interface components {
       /** Txhash */
       txHash: string;
     };
+    /** TreasuriesResponse */
+    TreasuriesResponse: {
+      /** Items */
+      items: components['schemas']['TreasurySummaryView'][];
+    };
     /** TreasuryResponse */
     TreasuryResponse: {
       treasury: components['schemas']['TreasuryView'];
@@ -2608,6 +2759,36 @@ export interface components {
      * @enum {string}
      */
     TreasuryStatus: 'Draft' | 'ModulePending' | 'Ready' | 'Paused' | 'Revoked';
+    /** TreasurySummaryView */
+    TreasurySummaryView: {
+      /** Assetdecimals */
+      assetDecimals: number | null;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      /** Assetistest */
+      assetIsTest: boolean | null;
+      /** Assetsymbol */
+      assetSymbol: string;
+      /** Chainid */
+      chainId: number;
+      /** Chainname */
+      chainName: string;
+      coverage: components['schemas']['Coverage'];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      status: components['schemas']['TreasuryStatus'];
+    };
     /** TreasuryView */
     TreasuryView: {
       /**
@@ -2631,6 +2812,30 @@ export interface components {
       /** Moduleaddress */
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
+    };
+    /**
+     * UpdateNotificationPreferences
+     * @description PUT body. Omitted fields keep their stored value (the defaults below only
+     *     describe the schema); send ``null`` quiet hours to clear them.
+     */
+    UpdateNotificationPreferences: {
+      /** Categories */
+      categories?: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels?: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd?: string | null;
+      /** Quiethoursstart */
+      quietHoursStart?: string | null;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone: string;
     };
     /** UploadResponse */
     UploadResponse: {
@@ -3058,6 +3263,55 @@ export interface operations {
       };
     };
   };
+  oidc_callback_v1_auth_oidc_callback_get: {
+    parameters: {
+      query?: {
+        code?: string | null;
+        state?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  oidc_start_v1_auth_oidc_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   siwe_nonce_v1_auth_siwe_nonce_get: {
     parameters: {
       query?: never;
@@ -3273,6 +3527,59 @@ export interface operations {
       };
     };
   };
+  get_notification_preferences_v1_me_notification_preferences_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+    };
+  };
+  put_notification_preferences_v1_me_notification_preferences_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotificationPreferences'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   link_wallet_v1_me_wallets_post: {
     parameters: {
       query?: never;
@@ -3386,6 +3693,110 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OrganizationDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_api_keys_v1_orgs__organization_id__api_keys_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_api_key_v1_orgs__organization_id__api_keys_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApiKeyCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_api_key_v1_orgs__organization_id__api_keys__key_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        key_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -3943,6 +4354,7 @@ export interface operations {
       query?: never;
       header?: {
         'Idempotency-Key'?: string | null;
+        authorization?: string | null;
       };
       path: {
         organization_id: string;
@@ -3957,6 +4369,46 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_requests_bulk_v1_orgs__organization_id__requests_bulk_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+        authorization?: string | null;
+      };
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestBulkCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
         headers: {
           [name: string]: unknown;
         };
@@ -4922,6 +5374,37 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_treasuries_v1_orgs__organization_id__treasuries_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TreasuriesResponse'];
+        };
       };
       /** @description Validation Error */
       422: {
