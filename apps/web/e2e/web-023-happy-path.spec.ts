@@ -149,7 +149,9 @@ test('create a request, approve it, run its automatic plan, and match that payme
   const submittedAt = Date.now();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(
-    timeline.getByText('Submitted', { exact: true }).first(),
+    timeline
+      .getByText('Sent — waiting for the network', { exact: true })
+      .first(),
   ).toBeVisible({ timeout: 2_000 });
   expect(Date.now() - submittedAt).toBeLessThan(2_000);
   await submittedPlanResponse;
