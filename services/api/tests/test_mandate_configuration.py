@@ -414,7 +414,13 @@ def test_secondary_asset_limits_are_chain_scoped_and_buffers_complete() -> None:
         asset_metadata=metadata,
     )
     methods = [call["method"] for call in preview["calls"]]
-    assert methods[-3:] == ["setBuffer", "setBuffer", "setAssetPolicy"]
+    assert methods[-3:] == ["setAssetBuffer", "setAssetBuffer", "setAssetPolicy"]
+    assert preview["calls"][-3]["arguments"] == {
+        "asset": "0x" + "33" * 20,
+        "wallet": SAFE_T,
+        "minimum": "2000000000",
+        "target": "0",
+    }
     assert preview["calls"][-1]["arguments"]["enabled"] is True
     assert preview["calls"][-1]["arguments"]["asset"] == "0x" + "33" * 20
 
@@ -501,4 +507,4 @@ def test_mandate_reconfiguration_reenables_unchanged_secondary_policies() -> Non
         call["method"]
         for call in build_bundle_preview(previous, current, asset_metadata=metadata)["calls"]
     ]
-    assert methods == ["configureMandate", "setBuffer", "setBuffer", "setAssetPolicy"]
+    assert methods == ["configureMandate", "setAssetBuffer", "setAssetBuffer", "setAssetPolicy"]

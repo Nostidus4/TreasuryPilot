@@ -902,8 +902,14 @@ def build_bundle_preview(
         for item in _object_list(policy.get("buffers", [])):
             calls.append(
                 {
-                    "method": "setBuffer",
-                    "arguments": {"asset": asset_address, **item},
+                    "method": "setAssetBuffer",
+                    # Matches setAssetBuffer(asset, wallet, buffer, target); Safe T has no target.
+                    "arguments": {
+                        "asset": asset_address,
+                        "wallet": item.get("wallet"),
+                        "minimum": item.get("minimum"),
+                        "target": item.get("target", "0"),
+                    },
                 }
             )
         calls.append(
