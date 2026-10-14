@@ -169,6 +169,7 @@ class SqlAlchemyOrganizationRepository:
                     org_id=organization.id,
                     user_id=user_id,
                     roles=[OrganizationRole.ORG_ADMIN.value],
+                    manual_roles=[OrganizationRole.ORG_ADMIN.value],
                     status=MembershipStatus.ACTIVE,
                     created_by=user_id,
                     updated_by=user_id,

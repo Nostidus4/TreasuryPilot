@@ -17,6 +17,10 @@ from treasurypilot_api.identity.models import (
     UserStatus,
 )
 from treasurypilot_api.identity.oidc import OIDCFailure
+from treasurypilot_api.identity.role_grants import (
+    recompute_membership_roles,
+    seed_legacy_role_sources,
+)
 from treasurypilot_core.ids import uuid7
 
 # SSO group claims may grant work roles, never organization ownership, approval,
@@ -65,11 +69,9 @@ class OIDCIdentityRepository:
                         .with_for_update()
                     )
                     if membership is not None:
-                        kept = [r for r in membership.roles if r not in OIDC_ASSIGNABLE_ROLES]
-                        if kept:
-                            membership.roles = kept
-                        else:
-                            membership.status = MembershipStatus.SUSPENDED
+                        seed_legacy_role_sources(membership, oidc_identity_linked=True)
+                        membership.oidc_roles = []
+                        recompute_membership_roles(membership)
             raise ValueError("OIDC identity has no allowed mapped organization role")
         async with self._sessions() as session, session.begin():
             organization = await session.scalar(
@@ -82,6 +84,7 @@ class OIDCIdentityRepository:
                 .where(OIDCIdentity.issuer == issuer, OIDCIdentity.subject == subject)
                 .with_for_update()
             )
+            identity_was_existing = identity is not None
             user = None
             if identity is not None:
                 user = await session.scalar(
@@ -125,6 +128,7 @@ class OIDCIdentityRepository:
                     org_id=organization_id,
                     user_id=user.id,
                     roles=roles,
+                    oidc_roles=roles,
                     status=MembershipStatus.ACTIVE,
                 )
                 session.add(membership)
@@ -132,7 +136,8 @@ class OIDCIdentityRepository:
                 raise ValueError("OIDC membership is not active")
             elif groups is not None:
                 # The provider's group claim is authoritative for SSO-managed roles only.
-                kept = [r for r in membership.roles if r not in OIDC_ASSIGNABLE_ROLES]
-                membership.roles = sorted({*kept, *roles})
+                seed_legacy_role_sources(membership, oidc_identity_linked=identity_was_existing)
+                membership.oidc_roles = roles
+                recompute_membership_roles(membership)
             await session.flush()
             return UserRecord(user.id, str(user.email), user.display_name, user.status)

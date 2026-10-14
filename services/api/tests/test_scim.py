@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -11,7 +13,12 @@ from pydantic import SecretStr, ValidationError
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.memberships import LastAdministrator, LastOwner
 from treasurypilot_api.identity.scim import (
+    SCIM_GROUP_SCHEMA,
     SCIM_PATCH_SCHEMA,
+    ScimGroupConflict,
+    ScimGroupInvalidMember,
+    ScimGroupNotAllowed,
+    ScimGroupRecord,
     ScimUserRecord,
 )
 from treasurypilot_api.main import create_app
@@ -35,6 +42,7 @@ class MemoryScimRepository:
         self.list_arguments: dict[str, object] | None = None
         self.deactivation_arguments: dict[str, object] | None = None
         self.deactivation_error: Exception | None = None
+        self.groups: dict[uuid.UUID, ScimGroupRecord] = {}
 
     async def list_users(
         self,
@@ -75,16 +83,110 @@ class MemoryScimRepository:
         self.user = replace(self.user, active=False, last_modified=now)
         return self.user
 
+    async def list_groups(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        display_name: str | None,
+        start_index: int,
+        count: int,
+    ) -> tuple[int, tuple[ScimGroupRecord, ...]]:
+        records = tuple(
+            sorted(
+                (
+                    group
+                    for group in self.groups.values()
+                    if display_name is None or group.display_name == display_name
+                ),
+                key=lambda item: (item.display_name, str(item.id)),
+            )
+        )
+        return len(records), records[start_index - 1 : start_index - 1 + count]
+
+    async def get_group(
+        self, *, organization_id: uuid.UUID, group_id: uuid.UUID
+    ) -> ScimGroupRecord | None:
+        return self.groups.get(group_id)
+
+    async def create_group(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        display_name: str,
+        member_ids: tuple[uuid.UUID, ...],
+        role_map: Mapping[str, list[str]],
+        now: datetime,
+    ) -> ScimGroupRecord:
+        if display_name not in role_map:
+            raise ScimGroupNotAllowed
+        if any(group.display_name == display_name for group in self.groups.values()):
+            raise ScimGroupConflict
+        if not set(member_ids) <= {self.user.id}:
+            raise ScimGroupInvalidMember
+        record = ScimGroupRecord(
+            uuid.uuid4(), display_name, tuple(sorted(set(member_ids), key=str)), now, now
+        )
+        self.groups[record.id] = record
+        return record
+
+    async def patch_group_members(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        group_id: uuid.UUID,
+        add_member_ids: tuple[uuid.UUID, ...],
+        remove_member_ids: tuple[uuid.UUID, ...] | None,
+        role_map: Mapping[str, list[str]],
+        now: datetime,
+    ) -> ScimGroupRecord | None:
+        record = self.groups.get(group_id)
+        if record is None:
+            return None
+        if record.display_name not in role_map:
+            raise ScimGroupNotAllowed
+        if not set(add_member_ids) <= {self.user.id}:
+            raise ScimGroupInvalidMember
+        member_ids = set(record.member_ids)
+        if remove_member_ids is None:
+            member_ids.clear()
+        else:
+            member_ids.difference_update(remove_member_ids)
+        member_ids.update(add_member_ids)
+        updated = replace(record, member_ids=tuple(sorted(member_ids, key=str)), last_modified=now)
+        self.groups[group_id] = updated
+        return updated
+
+    async def delete_group(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        group_id: uuid.UUID,
+        role_map: Mapping[str, list[str]],
+        now: datetime,
+    ) -> bool:
+        return self.groups.pop(group_id, None) is not None
+
+    async def reconcile_group_roles(
+        self,
+        *,
+        organization_id: uuid.UUID | None,
+        role_map: Mapping[str, list[str]],
+        now: datetime,
+    ) -> None:
+        return None
+
 
 def _client(
     repository: MemoryScimRepository | None = None,
     *,
     configured: bool = True,
+    group_role_map: dict[str, list[str]] | None = None,
 ) -> TestClient:
     settings = Settings(
         environment="local",
         scim_bearer_token=SecretStr(TOKEN) if configured else None,
         scim_organization_id=ORG_ID if configured else None,
+        scim_group_role_map=json.dumps(group_role_map or {}),
     )
     app = create_app(settings=settings, scim_repository=repository)
     return TestClient(app)
@@ -109,6 +211,25 @@ def test_scim_configuration_requires_a_long_paired_token_and_organization() -> N
             environment="local",
             scim_bearer_token=SecretStr("too-short"),
             scim_organization_id=ORG_ID,
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="local",
+            scim_bearer_token=SecretStr(TOKEN),
+            scim_organization_id=ORG_ID,
+            scim_group_role_map='{"Owners": ["Owner"]}',
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="local",
+            scim_bearer_token=SecretStr(TOKEN),
+            scim_organization_id=ORG_ID,
+            scim_group_role_map='{"Ops": ["Operator"], "ops": ["Finance"]}',
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="local",
+            scim_group_role_map='{"Ops": ["Operator"]}',
         )
 
 
@@ -212,3 +333,108 @@ def test_scim_cannot_deprovision_the_last_privileged_member(
     assert response.status_code == 409
     assert response.json()["scimType"] == "mutability"
     assert detail in response.json()["detail"]
+
+
+def test_scim_groups_are_allowlisted_tenant_scoped_and_members_can_be_updated() -> None:
+    repository = MemoryScimRepository()
+    role_map = {"Treasury Operators": ["Operator"], "Finance Team": ["Finance"]}
+    with _client(repository, group_role_map=role_map) as client:
+        hidden = client.get("/scim/v2/Groups", headers=_auth())
+        assert hidden.status_code == 200
+        assert hidden.json()["totalResults"] == 0
+
+        invalid = client.post(
+            "/scim/v2/Groups",
+            json={"schemas": [SCIM_GROUP_SCHEMA], "displayName": "Owners"},
+            headers=_auth(),
+        )
+        assert invalid.status_code == 400
+        assert invalid.json()["scimType"] == "invalidValue"
+
+        created = client.post(
+            "/scim/v2/Groups",
+            json={
+                "schemas": [SCIM_GROUP_SCHEMA],
+                "displayName": "Treasury Operators",
+                "members": [{"value": str(USER_ID), "type": "User"}],
+            },
+            headers=_auth(),
+        )
+        assert created.status_code == 201
+        assert created.headers["content-type"].startswith("application/scim+json")
+        group = created.json()
+        group_id = group["id"]
+        assert group["members"][0]["value"] == str(USER_ID)
+
+        filtered = client.get(
+            "/scim/v2/Groups",
+            params={"filter": 'displayName eq "Treasury Operators"'},
+            headers=_auth(),
+        )
+        assert filtered.json()["totalResults"] == 1
+
+        invalid_member = client.patch(
+            f"/scim/v2/Groups/{group_id}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [
+                    {
+                        "op": "add",
+                        "path": "members",
+                        "value": [{"value": str(uuid.uuid4()), "type": "User"}],
+                    }
+                ],
+            },
+            headers=_auth(),
+        )
+        assert invalid_member.status_code == 400
+
+        removed = client.patch(
+            f"/scim/v2/Groups/{group_id}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "remove", "path": f'members[value eq "{USER_ID}"]'}],
+            },
+            headers=_auth(),
+        )
+        assert removed.status_code == 200
+        assert removed.json()["members"] == []
+
+        assert client.delete(f"/scim/v2/Groups/{group_id}", headers=_auth()).status_code == 204
+        assert client.get(f"/scim/v2/Groups/{group_id}", headers=_auth()).status_code == 404
+
+
+def test_scim_group_patch_rejects_nested_and_role_changes() -> None:
+    repository = MemoryScimRepository()
+    with _client(repository, group_role_map={"Treasury Operators": ["Operator"]}) as client:
+        nested = client.post(
+            "/scim/v2/Groups",
+            json={
+                "schemas": [SCIM_GROUP_SCHEMA],
+                "displayName": "Treasury Operators",
+                "members": [{"value": str(USER_ID), "type": "Group"}],
+            },
+            headers=_auth(),
+        )
+        assert nested.status_code == 400
+
+        created = client.post(
+            "/scim/v2/Groups",
+            json={"schemas": [SCIM_GROUP_SCHEMA], "displayName": "Treasury Operators"},
+            headers=_auth(),
+        )
+        group_id = created.json()["id"]
+        role_change = client.patch(
+            f"/scim/v2/Groups/{group_id}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "replace", "path": "displayName", "value": "Owners"}],
+            },
+            headers=_auth(),
+        )
+        assert role_change.status_code == 400
+
+
+def test_scim_groups_are_disabled_without_an_allowlist() -> None:
+    with _client(MemoryScimRepository()) as client:
+        assert client.get("/scim/v2/Groups", headers=_auth()).status_code == 404

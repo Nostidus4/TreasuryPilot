@@ -68,6 +68,7 @@ async def _scenario(database_url: str) -> None:
             for email, roles, status in (
                 ("owner@example.com", ["Owner", "Operator"], "active"),
                 ("suspended@example.com", ["Operator"], "suspended"),
+                ("manual-operator@example.com", ["Operator"], "active"),
             ):
                 await connection.execute(
                     text(
@@ -106,6 +107,17 @@ async def _scenario(database_url: str) -> None:
         # The email links to an account that already has an identity for this issuer.
         with pytest.raises(ValueError):
             await login("sub-other", "owner@example.com", ("fin",))
+
+        # Linking an existing manually managed member must not convert its existing
+        # Operator grant into an OIDC grant that the next claim can remove.
+        await login("sub-manual-operator", "manual-operator@example.com", ("fin",))
+        assert await membership("manual-operator@example.com") == (
+            ["Finance", "Operator"],
+            "active",
+        )
+        with pytest.raises(ValueError):
+            await login("sub-manual-operator", "manual-operator@example.com", ())
+        assert await membership("manual-operator@example.com") == (["Operator"], "active")
     finally:
         await engine.dispose()
 

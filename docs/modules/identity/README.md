@@ -11,7 +11,7 @@ M01 answers **who is this person, which organization are they acting for, what m
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | SAML, SCIM groups and provisioning (Later: IDN-L03) |
+| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | SAML and complete SCIM provisioning (Later: IDN-L03) |
 | TOTP and WebAuthn second factors, recovery codes, step-up (IDN-L01) | |
 | SIWE wallet linking (EOA + ERC-1271) | Owner keys (never held, BR-092) |
 | Organizations, onboarding checklist, settings (solo mode, auto-match) | Billing (M18) |
@@ -61,6 +61,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | PATCH/DELETE | `/orgs/{o}/members/{u}` | ADM | `LAST_ADMIN`, `LAST_OWNER` |
 | GET | `/scim/v2/Users` · `/scim/v2/Users/{id}` | configured SCIM bearer token; tenant-scoped existing user resources; list supports `userName eq "email"` | 401, 404, 503 |
 | PATCH | `/scim/v2/Users/{id}` | configured SCIM bearer token; only `replace active=false` | 400, 404, 409 last OrgAdmin/Owner |
+| GET/POST | `/scim/v2/Groups` · GET `/scim/v2/Groups/{id}` | configured SCIM bearer token; only configured group names; list supports `displayName eq "name"` | 400, 404, 409 duplicate group |
+| PATCH/DELETE | `/scim/v2/Groups/{id}` | configured SCIM bearer token; membership add/remove or group delete; existing active tenant users only | 400, 404 |
 | GET | `/me/mfa` | auth; enrolled factors and unused recovery codes | |
 | POST | `/me/mfa/totp` · `/me/mfa/totp/{f}/confirm` | auth + CSRF; returns an `otpauth://` URI, confirm takes the 6-digit code and returns recovery codes with the first factor | `MFA_CODE_INVALID`, `MFA_UNAVAILABLE` (no field encryption key) |
 | POST | `/me/mfa/webauthn/challenge` · `/me/mfa/webauthn` | auth + CSRF; `register` or `assert` challenge, then register an ES256 credential (`none` attestation) | `MFA_REGISTRATION_INVALID`, `MFA_ORIGIN_INVALID`, `MFA_CREDENTIAL_EXISTS` |
@@ -69,11 +71,11 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 
 SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values; `signerRolesActive` is true only when the membership holds Owner, Approver or Guardian and a wallet is linked.
 
-The opt-in SCIM slice exposes tenant-scoped user reads and `PATCH active=false` at `/scim/v2/Users`. It suspends the user's membership in one configured organization, revokes that organization's scoped sessions, and records a system audit event in the same transaction. SCIM cannot reactivate users or change roles; creation, groups and SAML remain unimplemented. An organization's last active OrgAdmin or Owner cannot be deprovisioned.
+The opt-in SCIM slice exposes tenant-scoped user reads and `PATCH active=false` at `/scim/v2/Users`. It suspends the user's membership in one configured organization, revokes that organization's scoped sessions, and records a system audit event in the same transaction. Optional `/Groups` resources are restricted to names in `TP_SCIM_GROUP_ROLE_MAP`; their assignments grant only configured `Operator`, `Finance`, or `Auditor` roles to existing active members in that organization. Manual, OIDC, and SCIM role grants are stored separately and the effective membership roles are their union, so removing one source preserves the others. Losing the final effective role suspends the membership and revokes scoped sessions. SCIM cannot create or reactivate users, set role names directly, assign privileged roles, or nest groups. SAML and the remaining SCIM provisioning scope are still unimplemented. An organization's last active OrgAdmin or Owner cannot be deprovisioned.
 
 ## 7. Flows
 
-Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Enterprise sign-in uses OIDC authorization code flow with PKCE, signed state, nonce and verified RS256 ID tokens. Each callback provisions a user and applies configured IDP group roles to one configured organization. SSO sessions expire after five minutes; callbacks request a fresh IDP login, and a callback with no mapped groups suspends the organization membership. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
+Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Enterprise sign-in uses OIDC authorization code flow with PKCE, signed state, nonce and verified RS256 ID tokens. Each callback provisions a user and applies configured IDP group roles to one configured organization. SSO sessions expire after five minutes; callbacks request a fresh IDP login. A callback with no mapped groups removes OIDC-managed roles; the membership is suspended only if no manual or SCIM grant remains, and that login is rejected. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
 
 ## 8. Algorithms
 
@@ -97,13 +99,18 @@ limiter (`TP_REDIS_URL` is required).
 
 SCIM is disabled unless both `TP_SCIM_BEARER_TOKEN` (at least 32 bytes) and
 `TP_SCIM_ORGANIZATION_ID` (a UUID) are configured. The bearer token is compared
-in constant time and is never logged or returned. This integration currently
-supports deprovisioning existing memberships only; it does not provision users
-or groups and does not support reactivation.
+in constant time and is never logged or returned. Optional
+`TP_SCIM_GROUP_ROLE_MAP` is a JSON object from exact SCIM group display names to
+non-empty arrays containing only `Operator`, `Finance`, and `Auditor`; names are
+unique ignoring case. Groups are disabled when this map is empty. Removing a
+configured group name deletes its persisted SCIM group and assignment records
+at API startup, then recomputes affected role grants. This integration supports
+deprovisioning existing memberships and configured group membership only; it
+does not create or reactivate users.
 
 ## 10. Security
 
-SCIM is limited to one configured organization, accepts only membership deactivation, and does not disable a person's account in other organizations.
+SCIM is limited to one configured organization and does not disable a person's account in other organizations. Group mappings are server controlled and can grant only Operator, Finance, or Auditor; SCIM requests cannot change a mapping, assign a privileged role, create/reactivate an account, or nest another group.
 
 Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored; email enumeration avoided (same response for unknown emails). OIDC trusts only the configured issuer, verified email claims, and mapped non-privileged roles. Discovery and key endpoints must use HTTPS except loopback local development; endpoint redirects are rejected.
 
@@ -113,7 +120,7 @@ Email provider down → the link is sent after the 202 response, so a failed sen
 
 ## 12. Test plan
 
-Unit: token lifecycle, SIWE verification (EOA + ERC-1271 mock), maker-checker matrix, SCIM bearer auth and deactivation patch validation. Integration: cross-tenant route enumeration; last admin/owner guards; SCIM membership suspension, session revocation and audit; rate limits. Security: CSRF, cookie flags.
+Unit: token lifecycle, SIWE verification (EOA + ERC-1271 mock), maker-checker matrix, SCIM bearer auth, user deactivation, group allowlist, and membership patch validation. Integration: cross-tenant route enumeration; last admin/owner guards; SCIM membership suspension, role-source union, group-removal session revocation and audit; rate limits. Security: CSRF, cookie flags.
 
 ## 13. Tickets
 

@@ -267,6 +267,7 @@ class SqlAlchemyMembershipRepository:
                 org_id=invite.org_id,
                 user_id=user_id,
                 roles=list(invite.roles),
+                manual_roles=list(invite.roles),
                 status=MembershipStatus.ACTIVE,
                 created_by=invite.created_by,
                 updated_by=invite.created_by,
@@ -338,8 +339,12 @@ class SqlAlchemyMembershipRepository:
             membership = next((item for item in memberships if item.user_id == user_id), None)
             if membership is None:
                 return None
-            _guard_last_roles(memberships, membership, set(roles))
-            membership.roles = list(roles)
+            managed_roles = set(membership.oidc_roles) | set(membership.scim_roles)
+            manual_roles = set(roles) - managed_roles
+            effective_roles = manual_roles | managed_roles
+            _guard_last_roles(memberships, membership, effective_roles)
+            membership.manual_roles = sorted(manual_roles)
+            membership.roles = sorted(effective_roles)
             membership.updated_by = updated_by
             await session.flush()
             user = await session.scalar(select(User).where(User.id == user_id))

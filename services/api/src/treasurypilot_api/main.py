@@ -1,5 +1,7 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import FastAPI, Request
@@ -370,7 +372,7 @@ def create_app(
             rate_limiter=rate_limiter,
         )
 
-    if scim_repository is None and settings.scim_configured and sessions is not None:
+    if scim_repository is None and sessions is not None:
         scim_repository = SqlAlchemyScimIdentityRepository(sessions)
 
     @asynccontextmanager
@@ -407,6 +409,17 @@ def create_app(
                     await sync_platform_configuration(session, configuration)
             finally:
                 await sync_engine.dispose()
+        if isinstance(application.state.scim_repository, SqlAlchemyScimIdentityRepository):
+            group_role_map = (
+                json.loads(settings.scim_group_role_map) if settings.scim_configured else {}
+            )
+            await application.state.scim_repository.reconcile_group_roles(
+                organization_id=(
+                    settings.scim_organization_id if settings.scim_configured else None
+                ),
+                role_map=group_role_map,
+                now=datetime.now(UTC),
+            )
         yield
         if engine is not None:
             await engine.dispose()
