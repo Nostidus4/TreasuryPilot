@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -352,6 +352,41 @@ def redteam() -> int:
     return len(paths)
 
 
+def recompute_copilot_source(source: str, scenario: dict[str, Any]) -> dict[str, str]:
+    """Independently derive deterministic-tool numbers from the referenced dev scenario."""
+    treasury = scenario["treasury"]
+    requests = scenario["requests"]
+    pay = treasury["limits"]["pay"]
+    daily_left = max(0, int(pay["daily"]) - int(treasury["used_today"]["pay"]))
+    if source == "deterministic_tool.minimum_shortage":
+        wallet = requests[0]["wallet"]
+        need = int(requests[0]["amount"]) + int(treasury["buffers"][wallet])
+        return {"shortage": str(max(0, need - int(treasury["balances"][wallet])))}
+    if source == "deterministic_tool.remaining_daily_pay":
+        return {"remaining_daily_pay": str(daily_left)}
+    if source == "deterministic_tool.remaining_daily_pay_after_r1":
+        require(requests[0]["id"] == "r1", "Copilot r1 reference drift")
+        return {
+            "remaining_daily_pay_after_r1": str(max(0, daily_left - int(requests[0]["amount"])))
+        }
+    if source == "deterministic_tool.approved_options":
+        request = requests[1]
+        standard = int(request["amount"])
+        early = standard * (10_000 - int(request["terms"]["discount_bps"])) // 10_000
+        require(str(early) == request["early_amount"], "Copilot early amount drift")
+        return {"early_amount": str(early), "forgone_discount": str(standard - early)}
+    if source == "deterministic_tool.liquidity_decision":
+        reserve = sum(int(request["amount"]) for request in requests)
+        required = int(treasury["buffers"]["T"]) + reserve
+        return {
+            "supply_amount": str(max(0, int(treasury["balances"]["T"]) - required)),
+            "required_safe_reserve": str(required),
+        }
+    if source == "deterministic_tool.approved_request":
+        return {"standard_amount": requests[0]["amount"]}
+    raise ValueError(f"Unknown Copilot evidence source: {source}")
+
+
 def copilot() -> int:
     directory = ROOT / "copilot"
     paths = sorted(directory.glob("cp-*.yaml"))
@@ -379,11 +414,35 @@ def copilot() -> int:
             set(case.expected_numbers) == set(case.units) == set(case.evidence_sources),
             "Numeric provenance incomplete",
         )
+        require(
+            not re.search(r"^\s*[^#\n]*:\s+[&*]id\d+", path.read_text(encoding="utf-8"), re.M),
+            "Copilot YAML must not contain anchors or aliases",
+        )
+        scenario = yaml.safe_load(
+            (ROOT / "scenarios/dev" / (case.scenario + ".yaml")).read_text(encoding="utf-8")
+        )
+        tool_outputs = case.context["tool_outputs"]
+        require(
+            set(tool_outputs) == set(case.evidence_sources.values()), "Copilot tool source drift"
+        )
+        recomputed: dict[str, str] = {}
+        for source in tool_outputs:
+            derived = recompute_copilot_source(source, scenario)
+            require(tool_outputs[source] == derived, "Copilot tool output differs from scenario")
+            recomputed.update(derived)
         for key, value in case.expected_numbers.items():
             units(value)
             source = case.evidence_sources[key]
+            require(tool_outputs[source][key] == value, "Unsupported numeric answer")
+            require(recomputed[key] == value, "Copilot answer differs from recomputed scenario")
+        if case.scenario in {"sc-005", "sc-006", "sc-007", "sc-008"}:
+            first, second = scenario["requests"][:2]
+            pay = scenario["treasury"]["limits"]["pay"]
             require(
-                case.context["tool_outputs"][source][key] == value, "Unsupported numeric answer"
+                first["due"] == scenario["as_of"]
+                and int(second["amount"]) <= int(pay["per_request"])
+                and int(first["amount"]) + int(second["early_amount"]) > int(pay["daily"]),
+                "Copilot discount cases require a deadline/budget conflict",
             )
         refusals += int(case.must_refuse)
     require(len(paths) == 20 and refusals == 4, "Copilot case/refusal count drift")
