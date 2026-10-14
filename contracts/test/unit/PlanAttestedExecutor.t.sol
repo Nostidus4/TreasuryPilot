@@ -70,6 +70,32 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         require(gate.nonceBoundTo(1) == att.planHash, "nonce bound");
     }
 
+    function testAttestedExecutorPaysFreshQuoteAmountWithinSignedMaximum() external {
+        I.PaymentApproval memory ap = _approval(914, 100e6);
+        H.PlanAttestation memory att = _att(ap, 15);
+        bytes memory attSig = _sign(att);
+        bytes memory approverSig = _sign(ap);
+
+        vm.prank(executor);
+        gate.payWithAmount(ap, approverSig, PAY_STEP, 75e6, att, attSig);
+
+        require(token.balanceOf(vendor) == 75e6, "fresh quote amount not paid");
+        require(module.usedToday(module.PAY()) == 75e6, "counter not updated by actual amount");
+    }
+
+    function testAttestedExecutorRejectsFreshQuoteAboveSignedMaximum() external {
+        I.PaymentApproval memory ap = _approval(915, 100e6);
+        H.PlanAttestation memory att = _att(ap, 16);
+        bytes memory attSig = _sign(att);
+        bytes memory approverSig = _sign(ap);
+
+        vm.expectRevert(E.PaymentAmountExceedsApproval.selector);
+        vm.prank(executor);
+        gate.payWithAmount(ap, approverSig, PAY_STEP, 101e6, att, attSig);
+
+        require(token.balanceOf(vendor) == 0, "over-cap payment was transferred");
+    }
+
     function testDirectExecutorCallsNoLongerBypassTheGate() external {
         I.PaymentApproval memory ap = _approval(902, 100e6);
         bytes memory approverSig = _sign(ap);

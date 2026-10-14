@@ -117,6 +117,7 @@ class RequestView(_HexModel):
     paying_wallet: Address
     payee: Address
     amount: BaseUnits
+    fiat_amount_minor_units: NonNegativeInt | None = None
     early_amount: BaseUnits  # 0 = no early option (ADR-019)
     early_pay_by: NonNegativeInt
     deadline: NonNegativeInt

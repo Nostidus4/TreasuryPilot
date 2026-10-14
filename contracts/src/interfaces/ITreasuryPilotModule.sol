@@ -185,6 +185,14 @@ interface ITreasuryPilotModule {
     function cancelRequest(bytes32 requestId) external;
     /// @notice Executor pays exactly the signed payment option via the operational Safe.
     function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId) external;
+
+    /// @notice Execute a payment whose amount may be below the signed maximum, but never above it.
+    function payWithAmount(
+        PaymentApproval calldata ap,
+        bytes calldata approverSig,
+        bytes32 stepId,
+        uint256 paymentAmount
+    ) external;
     /// @notice Executor refills only the approved operational wallet, once per request.
     function refill(
         PaymentApproval calldata ap,

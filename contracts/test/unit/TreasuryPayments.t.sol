@@ -19,6 +19,37 @@ contract ContractApprover is IERC1271 {
 }
 
 contract TreasuryPaymentsTest is TreasuryFixture {
+    function testFreshQuotePaymentCannotExceedSignedStablecoinMaximum() external {
+        I.PaymentApproval memory ap = _approval(500, 120e6);
+        bytes memory signature = _sign(ap);
+
+        vm.prank(executor);
+        module.payWithAmount(ap, signature, bytes32(uint256(500)), 101e6);
+
+        require(token.balanceOf(vendor) == 101e6, "did not pay proposed amount");
+        require(module.usedToday(module.PAY()) == 101e6, "counter did not track proposed amount");
+    }
+
+    function testFreshQuotePaymentAboveSignedStablecoinMaximumReverts() external {
+        I.PaymentApproval memory ap = _approval(501, 100e6);
+        bytes memory signature = _sign(ap);
+
+        vm.expectRevert(E.PaymentAmountExceedsApproval.selector);
+        vm.prank(executor);
+        module.payWithAmount(ap, signature, bytes32(uint256(501)), 101e6);
+
+        require(token.balanceOf(vendor) == 0, "over-cap transfer occurred");
+    }
+
+    function testFreshQuotePaymentCannotBeZero() external {
+        I.PaymentApproval memory ap = _approval(502, 100e6);
+        bytes memory signature = _sign(ap);
+
+        vm.expectRevert(E.InvalidAmount.selector);
+        vm.prank(executor);
+        module.payWithAmount(ap, signature, bytes32(uint256(502)), 0);
+    }
+
     function testAssetAllowlistAndDailyCountersAreIndependent() external {
         TestUSDC second = new TestUSDC();
         second.mint(address(op1), 1000e6);

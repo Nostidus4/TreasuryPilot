@@ -196,6 +196,24 @@ def test_a_valid_plan_passes_every_check() -> None:
     assert {"approval_signature", "payee_active", "plan_shape"} <= {c.name for c in checks}
 
 
+def test_fiat_plan_may_execute_the_fresh_quote_amount_under_the_signed_cap() -> None:
+    request = _request(fiat_amount_minor_units=12_000)
+    checks = authorization_checks(
+        _plan(pay=1_201), _ctx(request=request, approval=_approval(_typed(request)))
+    )
+
+    assert _failing(checks) == []
+
+
+def test_fiat_plan_cannot_exceed_the_signed_stablecoin_cap() -> None:
+    request = _request(fiat_amount_minor_units=12_000)
+    checks = authorization_checks(
+        _plan(pay=1_501), _ctx(request=request, approval=_approval(_typed(request)))
+    )
+
+    assert _failing(checks) == [C.PLAN_MALFORMED]
+
+
 def _flag(raised_at: datetime, severity: Literal["LOW", "HIGH"] = "HIGH") -> FlagView:
     return FlagView(id=UUID(int=9), code="ADDRESS_CHANGED", severity=severity, raised_at=raised_at)
 

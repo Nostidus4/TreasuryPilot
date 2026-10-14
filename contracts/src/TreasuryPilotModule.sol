@@ -22,6 +22,27 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         onlyExecutor
         nonReentrant
     {
+        bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
+        _pay(ap, approverSig, stepId, early ? ap.earlyAmount : ap.amount);
+    }
+
+    /// @notice Executes a fresh-quote amount under the approver's signed maximum.
+    /// @dev The selected approval amount is the early amount while that option is open.
+    function payWithAmount(
+        PaymentApproval calldata ap,
+        bytes calldata approverSig,
+        bytes32 stepId,
+        uint256 paymentAmount
+    ) external onlyExecutor nonReentrant {
+        _pay(ap, approverSig, stepId, paymentAmount);
+    }
+
+    function _pay(
+        PaymentApproval calldata ap,
+        bytes calldata approverSig,
+        bytes32 stepId,
+        uint256 amount
+    ) internal {
         verifyApproval(ap, approverSig);
         if (!isOperational[ap.payingWallet]) revert E.NotOperationalWallet();
         _requireActivePayee(ap.payee);
@@ -32,7 +53,9 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
             delete duplicateAllowedFor[ap.fingerprint];
         }
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
-        uint256 amount = early ? ap.earlyAmount : ap.amount;
+        uint256 approvedAmount = early ? ap.earlyAmount : ap.amount;
+        if (amount == 0) revert E.InvalidAmount();
+        if (amount > approvedAmount) revert E.PaymentAmountExceedsApproval();
         bool usedException = false;
         Limits storage limits = _assetPolicies[ap.asset].pay;
         if (amount > limits.perRequest) {

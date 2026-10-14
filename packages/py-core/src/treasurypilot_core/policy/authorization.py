@@ -248,8 +248,14 @@ def _plan_well_formed(i: _Inputs) -> bool:
     pay, refill, withdraw = (by_action.get(a) for a in (Action.PAY, Action.REFILL, Action.WITHDRAW))
     if pay is None:
         return False
+    approved_amount = r.early_amount if early else r.amount
+    amount_matches = (
+        0 < pay.amount <= approved_amount
+        if r.fiat_amount_minor_units is not None
+        else pay.amount == approved_amount
+    )
     return (
-        pay.amount == (r.early_amount if early else r.amount)
+        amount_matches
         and _same(pay.from_wallet, r.paying_wallet)
         and _same(pay.to, r.payee)
         and (

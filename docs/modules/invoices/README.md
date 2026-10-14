@@ -41,6 +41,15 @@ quote. `FxQuoteProvider` is the adapter boundary; adapters report transient
 provider failures as `FxProviderUnavailable`. Hashes of non-fiat requests keep the
 original encoding; the four fiat fields are appended only when `fiatCurrency` is set.
 
+The returned base-unit amount is the fiat request's PAY step amount; it must stay
+separate from the signed maximum in the approval. Worker pre-sign simulation encodes
+that amount in `payWithAmount`, and the module rejects zero or any amount above the
+selected signed limit (the early-payment amount while its option is open, otherwise
+the normal maximum). The module's daily counters and emitted payment amount record
+the amount actually transferred. Plan policy keeps non-fiat PAY steps equal to their
+approved amount and accepts fiat PAY steps only when they are positive and at or below
+the signed maximum.
+
 Configuration: fiat requests are enabled only when `TP_FX_SOURCE_ID` and
 `TP_FX_TOLERANCE_BPS` (0..10000) are set (optional `TP_FX_MAX_QUOTE_AGE_SECONDS`,
 default 60, and `TP_FX_DEPEG_THRESHOLD_BPS`, default 100) **and** an `FxQuoteProvider`

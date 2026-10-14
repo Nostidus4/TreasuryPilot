@@ -70,7 +70,10 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
             raise ValueError(f"a {step.action} step needs the approval it was planned with")
         types = [_APPROVAL, "bytes", "bytes32"]
         args = [_struct(PAYMENT_APPROVAL_TYPE, ctx.approval), ctx.approver_signature, step.step_id]
-        if step.action is Action.REFILL:
+        if step.action is Action.PAY:
+            # Fiat payment plans use the fresh-quote amount while the approval carries its cap.
+            types, args = [*types, "uint256"], [*args, int(step.amount)]
+        else:
             types, args = [*types, "address", "uint256"], [*args, step.to, int(step.amount)]
     elif step.action in (Action.SUPPLY, Action.WITHDRAW):
         # attestation[1] is requestId (0x0 for a liquidity plan), as the executor expects.
@@ -82,7 +85,7 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
         raise ValueError(f"{step.action} steps cannot be simulated")
     types = [*types, _ATTESTATION, "bytes"]
     args = [*args, attestation, ctx.attestation_signature]
-    name = step.action.lower()
+    name = "payWithAmount" if step.action is Action.PAY else step.action.lower()
     return error_selector(f"{name}({','.join(types)})") + encode(types, args)
 
 

@@ -37,6 +37,18 @@ contract PlanAttestedExecutor {
         module.pay(ap, approverSig, stepId);
     }
 
+    function payWithAmount(
+        ITreasuryPilotModule.PaymentApproval calldata ap,
+        bytes calldata approverSig,
+        bytes32 stepId,
+        uint256 paymentAmount,
+        H.PlanAttestation calldata att,
+        bytes calldata attSig
+    ) external {
+        _consume(ap.requestId, stepId, att, attSig);
+        module.payWithAmount(ap, approverSig, stepId, paymentAmount);
+    }
+
     function refill(
         ITreasuryPilotModule.PaymentApproval calldata ap,
         bytes calldata approverSig,
