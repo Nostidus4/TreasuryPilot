@@ -57,7 +57,15 @@ def main() -> None:
                 data["invoice_no"] += "B" if variant == 0 else "C"
             bad = "0x" + ("22" if variant == 0 else "33") * 20
             if attack == "homoglyph-address":
-                bad = "0x" + "а" + "a" * 39 if variant == 0 else "0x" + "I" * 40
+                # Both lookalikes derive from the registered payee (0x11...11).
+                registered = "11" * 20
+                if variant == 0:
+                    # Valid hex, one middle nibble changed: only an exact/checksum
+                    # comparison catches it.
+                    bad = "0x" + registered[:20] + "d" + registered[21:]
+                else:
+                    # Latin 'l' replaces one '1': visually similar, invalid hex.
+                    bad = "0x" + registered[:20] + "l" + registered[21:]
             injected = TEXT[attack].format(bad=bad)
             if variant:
                 injected = "Message from supplier finance desk: " + injected
