@@ -77,8 +77,10 @@ class _Candidate:
     value: int
 
 
-def _fallback(edf: Schedule, reason: str) -> Schedule:
-    _log.warning("cpsat_fallback", reason=reason)
+def _fallback(edf: Schedule, reason: str, *, unexpected: bool = False) -> Schedule:
+    # An unexpected error is a bug, not an expected limit: log it loudly so the EDF
+    # fallback cannot mask a model regression.
+    (_log.error if unexpected else _log.warning)("cpsat_fallback", reason=reason)
     return edf.model_copy(update={"status": "FALLBACK"})
 
 
@@ -221,7 +223,7 @@ def schedule_cpsat(
     except _CpSatUnavailable as error:
         return _fallback(edf, str(error))
     except Exception as error:  # solver crashes must never take the planner down
-        return _fallback(edf, f"solver error: {type(error).__name__}: {error}")
+        return _fallback(edf, f"solver error: {type(error).__name__}: {error}", unexpected=True)
 
 
 def _solve(
@@ -263,9 +265,12 @@ def _solve(
         )
 
     result = _build_schedule(ordered, chosen, status, snapshot, policy, horizon)
-    # Fees change the values the model maximises, so only default-fee runs are comparable.
-    if int(fee_in_asset) == 0 and not fee_hold_today and result.objective > edf.objective:
-        raise _CpSatUnavailable("CP-SAT result is worse than the EDF schedule")
+    # A fee changes the values the model maximises but not the missed-deadline term, so
+    # only that term is comparable then; a fee hold removes days EDF may still use.
+    if not fee_hold_today:
+        terms = 4 if int(fee_in_asset) == 0 else 2
+        if result.objective[:terms] > edf.objective[:terms]:
+            raise _CpSatUnavailable("CP-SAT result is worse than the EDF schedule")
     return result
 
 
@@ -552,9 +557,8 @@ def _build_schedule(
         if active_day is None:
             reason = PolicyReasonCode.PAYEE_UNKNOWN
             detail = "Payee is not in the snapshot, so its activation day was never read."
-        elif all(
-            _needs_exception(request, d, policy)
-            for d in range(max(snapshot.day, active_day), snapshot.day + horizon)
+        elif (days := range(max(snapshot.day, active_day), snapshot.day + horizon)) and all(
+            _needs_exception(request, d, policy) for d in days
         ):
             reason = NEEDS_EXCEPTION
             detail = "Approved request exceeds the per-request pay cap; Owner exception required."
