@@ -85,6 +85,12 @@ class RequestSource(StrEnum):
     RECURRING = "RECURRING"
 
 
+class ExtractionStatus(StrEnum):
+    EXTRACTING = "Extracting"
+    EXTRACTED = "Extracted"
+    MANUAL_ENTRY = "ManualEntry"
+
+
 class CancelOnchainStatus(StrEnum):
     NOT_NEEDED = "NotNeeded"
     PENDING = "Pending"
@@ -126,6 +132,7 @@ def _values(enum: type[StrEnum]) -> str:
 _REQUEST_STATUSES = _values(RequestStatus)
 _REQUEST_SOURCES = _values(RequestSource)
 _CANCEL_STATUSES = _values(CancelOnchainStatus)
+_EXTRACTION_STATUSES = _values(ExtractionStatus)
 _FLAG_SEVERITIES = _values(RequestFlagSeverity)
 _FLAG_SOURCES = _values(RequestFlagSource)
 _FLAG_STATUSES = _values(RequestFlagStatus)
@@ -183,6 +190,10 @@ class PaymentRequest(Base):
         CheckConstraint(
             "terms_confirmed_by IS NULL OR terms_confirmed_at IS NOT NULL",
             name="ck_payment_requests_terms_confirmation_pair",
+        ),
+        CheckConstraint(
+            f"extraction_status IS NULL OR extraction_status IN ({_EXTRACTION_STATUSES})",
+            name="ck_payment_requests_extraction_status",
         ),
         CheckConstraint(
             "extraction_confirmed_by IS NULL OR extraction_confirmed_at IS NOT NULL",
@@ -290,6 +301,8 @@ class PaymentRequest(Base):
         default=RequestSource.MANUAL,
         server_default=RequestSource.MANUAL,
     )
+    # Set only on upload drafts: Extracting -> Extracted | ManualEntry (AGT-004).
+    extraction_status: Mapped[str | None] = mapped_column(String(16))
     extraction_confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     extraction_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(

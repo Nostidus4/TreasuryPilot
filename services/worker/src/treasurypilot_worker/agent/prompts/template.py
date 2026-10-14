@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from treasurypilot_worker.agent.errors import PromptTemplateError
 from treasurypilot_worker.agent.prompts.policy import POLICY_VERSION, UNTRUSTED_DATA_POLICY
-from treasurypilot_worker.agent.types import Message, TextBlock
+from treasurypilot_worker.agent.types import ContentBlock, DocumentBlock, Message, TextBlock
 from treasurypilot_worker.agent.untrusted import UntrustedBlock
 
 _VERSION = re.compile(r"[a-z0-9][a-z0-9_.-]*")
@@ -28,6 +28,7 @@ _WRAPPER_TAG = re.compile(r"<\s*/?\s*untrusted\b", re.IGNORECASE)
 class SlotKind(StrEnum):
     UNTRUSTED = "untrusted"
     TRUSTED = "trusted"
+    DOCUMENT = "document"
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,12 @@ class Slot:
         """Takes an `UntrustedBlock` from `wrap_untrusted`."""
 
         return cls(name, SlotKind.UNTRUSTED)
+
+    @classmethod
+    def document(cls, name: str) -> "Slot":
+        """Takes a `DocumentBlock` (uploaded PDF or image), attached before the text."""
+
+        return cls(name, SlotKind.DOCUMENT)
 
     @classmethod
     def trusted(cls, name: str) -> "Slot":
@@ -100,17 +107,37 @@ class PromptTemplate:
         if unexpected:
             raise PromptTemplateError(f"{self.version}: unexpected slot values {unexpected}")
 
-        sections = [_render_slot(slot, values[slot.name]) for slot in self.slots]
+        documents = [
+            _document(slot, values[slot.name])
+            for slot in self.slots
+            if slot.kind is SlotKind.DOCUMENT
+        ]
+        sections = [
+            _render_slot(slot, values[slot.name])
+            for slot in self.slots
+            if slot.kind is not SlotKind.DOCUMENT
+        ]
         sections.append(self.instructions)
-        user = Message("user", (TextBlock("\n\n".join(sections)),))
+        content: tuple[ContentBlock, ...] = (*documents, TextBlock("\n\n".join(sections)))
+        user = Message("user", content)
         return RenderedPrompt(
             version=self.prompt_version,
             system=f"{UNTRUSTED_DATA_POLICY}\n\n{self.system}",
             messages=(user,),
             input_refs=tuple(
-                str(value.source) for value in values.values() if isinstance(value, UntrustedBlock)
+                str(value.source) if isinstance(value, UntrustedBlock) else value.source
+                for value in values.values()
+                if isinstance(value, UntrustedBlock | DocumentBlock)
             ),
         )
+
+
+def _document(slot: Slot, value: object) -> DocumentBlock:
+    if not isinstance(value, DocumentBlock):
+        raise PromptTemplateError(
+            f"slot {slot.name!r} takes a DocumentBlock, got {type(value).__name__}"
+        )
+    return value
 
 
 def _render_slot(slot: Slot, value: object) -> str:

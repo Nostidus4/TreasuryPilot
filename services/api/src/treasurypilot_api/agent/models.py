@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     desc,
     func,
 )
@@ -88,4 +89,26 @@ class AiCall(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Extraction(Base):
+    """AI invoice extraction of one document (AGT-004), written by worker-ai."""
+
+    __tablename__ = "extractions"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(fields) = 'object'", name="ck_extractions_fields_object"),
+        UniqueConstraint("document_id", name="uq_extractions_document"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    ai_call_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_calls.id", ondelete="RESTRICT"), nullable=False
+    )
+    fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

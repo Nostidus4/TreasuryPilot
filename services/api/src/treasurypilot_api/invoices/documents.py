@@ -30,6 +30,7 @@ from treasurypilot_api.invoices.fingerprints import (
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
+    ExtractionStatus,
     PaymentRequest,
     RequestDocument,
     RequestFlag,
@@ -374,6 +375,7 @@ async def upload_invoice_document(
             amount=None,
             asset_id=asset.id,
             source=RequestSource.UPLOAD.value,
+            extraction_status=ExtractionStatus.EXTRACTING.value,
             status=RequestStatus.DRAFT.value,
             current_revision=1,
             created_by=member.user_id,

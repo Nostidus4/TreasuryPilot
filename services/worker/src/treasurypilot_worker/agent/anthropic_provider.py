@@ -1,5 +1,6 @@
 """Anthropic Messages API implementation of `Provider` (ADR-005, M09-D1)."""
 
+import base64
 from typing import Any, cast
 
 import anthropic
@@ -8,6 +9,7 @@ from anthropic.types import MessageParam, TextBlockParam, ToolParam
 
 from treasurypilot_worker.agent.errors import AiTimeout, AiUnavailable
 from treasurypilot_worker.agent.types import (
+    DocumentBlock,
     Message,
     ProviderRequest,
     ProviderResponse,
@@ -101,6 +103,14 @@ def _to_param(message: Message) -> MessageParam:
         match block:
             case TextBlock(text=text):
                 blocks.append({"type": "text", "text": text})
+            case DocumentBlock(media_type=media_type, data=data):
+                source = {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.b64encode(data).decode(),
+                }
+                kind = "document" if media_type == "application/pdf" else "image"
+                blocks.append({"type": kind, "source": source})
             case ToolCall(id=id_, name=name, input=input_):
                 blocks.append({"type": "tool_use", "id": id_, "name": name, "input": input_})
             case ToolResult(tool_call_id=id_, content=content, is_error=is_error):

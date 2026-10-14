@@ -14,6 +14,18 @@ class TextBlock:
 
 
 @dataclass(frozen=True)
+class DocumentBlock:
+    """An uploaded PDF or image, untrusted as a whole. `source` (e.g. "document:<id>") is logged.
+
+    The adapter's secret scan reads text only, so file bytes are not scanned (FR-804).
+    """
+
+    source: str
+    media_type: str
+    data: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ToolCall:
     id: str
     name: str
@@ -27,7 +39,7 @@ class ToolResult:
     is_error: bool = False
 
 
-ContentBlock = TextBlock | ToolCall | ToolResult
+ContentBlock = TextBlock | DocumentBlock | ToolCall | ToolResult
 
 
 @dataclass(frozen=True)

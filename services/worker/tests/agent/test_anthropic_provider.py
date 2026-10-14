@@ -19,6 +19,7 @@ from treasurypilot_worker.agent import (
     AiTask,
     AiTimeout,
     AiUnavailable,
+    DocumentBlock,
     InMemoryAiCallLog,
     InMemoryBudgetLedger,
     Message,
@@ -173,6 +174,29 @@ def test_request_uses_structured_output_strict_tools_and_cached_system(
         "content": '{"balance": "6000"}',
         "is_error": False,
     }
+
+
+def test_pdf_and_image_documents_are_sent_as_base64_blocks(stub: tuple[Stub, str]) -> None:
+    state, url = stub
+    pdf = DocumentBlock("document:d1", "application/pdf", b"%PDF-1.7 body")
+    png = DocumentBlock("document:d2", "image/png", b"\x89PNG body")
+
+    _provider(state, url).complete(
+        _request(messages=(Message("user", (pdf, png, TextBlock("Extract."))),)), timeout_s=5
+    )
+
+    content = state.bodies[0]["messages"][0]["content"]  # type: ignore[index]
+    assert content[0] == {
+        "type": "document",
+        "source": {
+            "type": "base64",
+            "media_type": "application/pdf",
+            "data": "JVBERi0xLjcgYm9keQ==",
+        },
+    }
+    assert content[1]["type"] == "image"
+    assert content[1]["source"]["media_type"] == "image/png"
+    assert content[2] == {"type": "text", "text": "Extract."}
 
 
 def test_response_maps_text_tool_calls_and_cache_usage(stub: tuple[Stub, str]) -> None:
