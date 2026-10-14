@@ -18,6 +18,7 @@ def create_celery_app() -> Celery:
     settings = get_settings()
     core_exchange = Exchange("core", type="direct")
     ai_exchange = Exchange("ai", type="direct")
+    webhooks_exchange = Exchange("webhooks", type="direct")
     app = Celery(
         "treasurypilot",
         broker=settings.redis_url,
@@ -33,6 +34,7 @@ def create_celery_app() -> Celery:
         task_queues=(
             Queue("core", exchange=core_exchange, routing_key="core"),
             Queue("ai", exchange=ai_exchange, routing_key="ai"),
+            Queue("webhooks", exchange=webhooks_exchange, routing_key="webhooks"),
         ),
         task_reject_on_worker_lost=True,
         task_ignore_result=True,
@@ -68,17 +70,22 @@ def create_celery_app() -> Celery:
             "deliver-telegram": {
                 "task": "treasurypilot.notifications.deliver-telegram",
                 "schedule": timedelta(seconds=1),
-                "options": {"queue": "core", "expires": 2},
+                "options": {"queue": "webhooks", "expires": 2},
             },
             "publish-daily-audit-roots": {
                 "task": "treasurypilot.audit.publish-daily-roots",
                 "schedule": crontab(hour=0, minute=5),
                 "options": {"queue": "core"},
             },
+            "deliver-webhooks": {
+                "task": "treasurypilot.notifications.deliver-webhooks",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "webhooks", "expires": 2},
+            },
             "deliver-chat": {
                 "task": "treasurypilot.notifications.deliver-chat",
                 "schedule": timedelta(seconds=1),
-                "options": {"queue": "core", "expires": 2},
+                "options": {"queue": "webhooks", "expires": 2},
             },
         },
     )

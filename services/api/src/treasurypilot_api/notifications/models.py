@@ -5,6 +5,7 @@ from datetime import datetime, time
 from enum import StrEnum
 
 from sqlalchemy import (
+    ARRAY,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -32,6 +33,85 @@ class NotificationSeverity(StrEnum):
     INFO = "INFO"
     ACTION = "ACTION"
     CRITICAL = "CRITICAL"
+
+
+class WebhookEndpoint(Base):
+    """An organization-owned callback destination and encrypted signing key."""
+
+    __tablename__ = "webhook_endpoints"
+    __table_args__ = (
+        CheckConstraint("url LIKE 'https://%'", name="ck_webhook_endpoints_https"),
+        CheckConstraint("cardinality(event_types) > 0", name="ck_webhook_endpoints_event_types"),
+        UniqueConstraint("id", "org_id", name="uq_webhook_endpoints_id_org"),
+        Index("ix_webhook_endpoints_org", "org_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    event_types: Mapped[list[str]] = mapped_column(ARRAY(String(80)), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WebhookDelivery(Base):
+    """Durable delivery state; one delivery per endpoint and domain event."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'retrying', 'delivered', 'dead')",
+            name="ck_webhook_deliveries_status",
+        ),
+        ForeignKeyConstraint(
+            ["endpoint_id", "org_id"],
+            ["webhook_endpoints.id", "webhook_endpoints.org_id"],
+            name="fk_webhook_deliveries_endpoint_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["event_id", "org_id"],
+            ["domain_events.id", "domain_events.org_id"],
+            name="fk_webhook_deliveries_event_org",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("endpoint_id", "event_id", name="uq_webhook_deliveries_endpoint_event"),
+        Index(
+            "ix_webhook_deliveries_pending",
+            "next_attempt_at",
+            "id",
+            postgresql_where=text("status IN ('pending', 'retrying')"),
+        ),
+        Index(
+            "ix_webhook_deliveries_dead",
+            "org_id",
+            "created_at",
+            postgresql_where=text("status = 'dead'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_status_code: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(String(240))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Notification(Base):

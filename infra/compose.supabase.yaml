@@ -30,6 +30,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  worker-webhooks:
+    environment: *supabase-environment
+    depends_on:
+      postgres: !reset null
+      migrate:
+        condition: service_completed_successfully
+
   beat:
     environment: *supabase-environment
     networks: [public]

@@ -1,7 +1,7 @@
 """add Slack, Lark and WeCom notification channels and delivery state
 
-Revision ID: 20261014_0032
-Revises: 20261014_0031
+Revision ID: 20261014_0033
+Revises: 20261014_0032
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0032"
-down_revision: str | None = "20261014_0031"
+revision: str = "20261014_0033"
+down_revision: str | None = "20261014_0032"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
