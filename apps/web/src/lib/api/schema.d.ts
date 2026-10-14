@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  '/admin/tenants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenants */
+    get: operations['tenants_admin_tenants_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenant Health */
+    get: operations['tenant_health_admin_tenants__tenant_id__health_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suspend Tenant */
+    post: operations['suspend_tenant_admin_tenants__tenant_id__suspend_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/health': {
     parameters: {
       query?: never;
@@ -117,6 +168,23 @@ export interface paths {
     get: operations['health_v1_health_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/invites/{token}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Invite */
+    post: operations['accept_invite_v1_invites__token__accept_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -242,23 +310,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+<<<<<<< HEAD
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}': {
+=======
+  '/v1/orgs/{organization_id}/invites': {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
+<<<<<<< HEAD
     /** Get Governance Tx */
     get: operations['get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get'];
     put?: never;
     post?: never;
+=======
+    /** List Invites */
+    get: operations['list_invites_v1_orgs__organization_id__invites_get'];
+    put?: never;
+    /** Create Invite */
+    post: operations['create_invite_v1_orgs__organization_id__invites_post'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
+<<<<<<< HEAD
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call': {
     parameters: {
       query?: never;
@@ -277,6 +358,9 @@ export interface paths {
     trace?: never;
   };
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures': {
+=======
+  '/v1/orgs/{organization_id}/invites/{invite_id}': {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -285,15 +369,41 @@ export interface paths {
     };
     get?: never;
     put?: never;
+<<<<<<< HEAD
     /** Add Governance Signature */
     post: operations['add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post'];
+=======
+    post?: never;
+    /** Revoke Invite */
+    delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Members */
+    get: operations['list_members_v1_orgs__organization_id__members_get'];
+    put?: never;
+    post?: never;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
+<<<<<<< HEAD
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted': {
+=======
+  '/v1/orgs/{organization_id}/members/{user_id}': {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -302,8 +412,99 @@ export interface paths {
     };
     get?: never;
     put?: never;
+<<<<<<< HEAD
     /** Report Submission */
     post: operations['report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post'];
+=======
+    post?: never;
+    /** Remove Member */
+    delete: operations['remove_member_v1_orgs__organization_id__members__user_id__delete'];
+    options?: never;
+    head?: never;
+    /** Update Member */
+    patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/evidence': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Request Evidence */
+    get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Review Items */
+    get: operations['list_review_items_v1_orgs__organization_id__review_items_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Review Item */
+    get: operations['get_review_item_v1_orgs__organization_id__review_items__item_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/review-items/{item_id}/actions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Act On Review Item */
+    post: operations['act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/safes/deploy-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safe Deployment Transaction */
+    post: operations['safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
@@ -361,7 +562,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+<<<<<<< HEAD
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs': {
+=======
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mandates */
+    get: operations['list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get'];
+    put?: never;
+    /** Create Mandate Draft */
+    post: operations['create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}': {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
@@ -370,8 +593,30 @@ export interface paths {
     };
     get?: never;
     put?: never;
+<<<<<<< HEAD
     /** Create Governance Tx */
     post: operations['create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post'];
+=======
+    post?: never;
+    /** Discard Mandate Draft */
+    delete: operations['discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/clone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Clone Mandate Draft */
+    post: operations['clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     delete?: never;
     options?: never;
     head?: never;
@@ -382,6 +627,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AICallEvidence */
+    AICallEvidence: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Model */
+      model?: string | null;
+      /** Outputsummary */
+      outputSummary?: string | null;
+      /** Promptversion */
+      promptVersion?: string | null;
+      /** Purpose */
+      purpose: string;
+    };
+    /** ActionLimits */
+    ActionLimits: {
+      /** Daily */
+      daily: string;
+      /** Perrequest */
+      perRequest: string;
+    };
+    /** ApprovalEvidence */
+    ApprovalEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
+    };
     /** AssetView */
     AssetView: {
       /** Address */
@@ -397,6 +676,17 @@ export interface components {
       isTest: boolean;
       /** Symbol */
       symbol: string;
+    };
+    /** AttestationEvidence */
+    AttestationEvidence: {
+      /** Signaturehash */
+      signatureHash?: string | null;
+      /** Signeraddress */
+      signerAddress?: string | null;
+      /** Typeddata */
+      typedData?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** AuditLogResponse */
     AuditLogResponse: {
@@ -453,6 +743,7 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+<<<<<<< HEAD
     /** CallInput */
     CallInput: {
       /** Data */
@@ -469,6 +760,25 @@ export interface components {
        * @default 0
        */
       value: string;
+=======
+    /** BundleRequest */
+    BundleRequest: {
+      /** Amount */
+      amount: string;
+      /** Currency */
+      currency: string;
+      /** Fingerprint */
+      fingerprint?: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Invoicehash */
+      invoiceHash?: string | null;
+      /** Vendordisplayname */
+      vendorDisplayName?: string | null;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     };
     /** ChainView */
     ChainView: {
@@ -480,6 +790,8 @@ export interface components {
       explorerUrl: string;
       /** Name */
       name: string;
+      /** Safedeploymentavailable */
+      safeDeploymentAvailable: boolean;
     };
     /** ChainsResponse */
     ChainsResponse: {
@@ -523,6 +835,7 @@ export interface components {
       /** Wallets */
       wallets: components['schemas']['WalletRequest'][];
     };
+<<<<<<< HEAD
     /**
      * GovernanceTxPurpose
      * @enum {string}
@@ -540,6 +853,87 @@ export interface components {
       | 'RESUME'
       | 'REVOKE'
       | 'GUARDIAN_SETUP';
+=======
+    /** EvidenceBundle */
+    EvidenceBundle: {
+      /** Aicalls */
+      aiCalls?: components['schemas']['AICallEvidence'][];
+      /** Appversion */
+      appVersion: string;
+      approval?: components['schemas']['ApprovalEvidence'] | null;
+      attestation?: components['schemas']['AttestationEvidence'] | null;
+      /** Coverage */
+      coverage?: {
+        [key: string]: unknown;
+      };
+      /** Easuid */
+      easUid?: string | null;
+      /** Fixturelabels */
+      fixtureLabels?: string[];
+      /** Flags */
+      flags?: components['schemas']['FlagEvidence'][];
+      /**
+       * Generatedat
+       * Format: date-time
+       */
+      generatedAt: string;
+      /** Operations */
+      operations?: {
+        [key: string]: unknown;
+      }[];
+      /**
+       * Organizationid
+       * Format: uuid
+       */
+      organizationId: string;
+      plan?: components['schemas']['PlanEvidence'] | null;
+      /** Reconciliation */
+      reconciliation?: {
+        [key: string]: unknown;
+      } | null;
+      request: components['schemas']['BundleRequest'];
+      /**
+       * Schemaversion
+       * @default evidence-bundle.v1
+       * @constant
+       */
+      schemaVersion: 'evidence-bundle.v1';
+      /** Sha256 */
+      sha256?: string | null;
+      /**
+       * Status
+       * @default VALID
+       * @constant
+       */
+      status: 'VALID';
+      /** Transactions */
+      transactions?: components['schemas']['TransactionEvidence'][] | null;
+      /** Validations */
+      validations?: components['schemas']['ValidationEvidence'][];
+      /** Verifications */
+      verifications?: components['schemas']['VerificationEvidence'][];
+    };
+    /** FlagEvidence */
+    FlagEvidence: {
+      /** Acknote */
+      ackNote?: string | null;
+      /** Acknowledgedat */
+      acknowledgedAt?: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy?: string | null;
+      /** Code */
+      code: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Severity */
+      severity: string;
+      /** Status */
+      status: string;
+    };
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -554,6 +948,74 @@ export interface components {
       /** Version */
       version: string;
     };
+    /** InviteCreateRequest */
+    InviteCreateRequest: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** InviteCreatedResponse */
+    InviteCreatedResponse: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+      /** Token */
+      token: string;
+    };
+    /** InviteView */
+    InviteView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Email */
+      email: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Roles */
+      roles: string[];
+    };
+    /** InvitesResponse */
+    InvitesResponse: {
+      /** Invites */
+      invites: components['schemas']['InviteView'][];
+    };
     /** LinkWalletRequest */
     LinkWalletRequest: {
       /** Message */
@@ -566,6 +1028,101 @@ export interface components {
       /** Email */
       email: string;
     };
+    /** MandateConfig */
+    MandateConfig: {
+      /** Actions */
+      actions?: ('REFILL' | 'PAY' | 'SUPPLY' | 'SWAP')[] | null;
+      /**
+       * Approvalmaxage
+       * @default 1209600
+       */
+      approvalMaxAge: number;
+      /** Approvers */
+      approvers?: string[] | null;
+      /** Buffers */
+      buffers?: components['schemas']['WalletBuffer'][] | null;
+      /** Executor */
+      executor?: string | null;
+      /** Expiresat */
+      expiresAt?: string | null;
+      /** Gasfundingcapwei */
+      gasFundingCapWei?: string | null;
+      /** Guardian */
+      guardian?: string | null;
+      /** Limits */
+      limits?: {
+        [key: string]: components['schemas']['ActionLimits'];
+      } | null;
+      /** Minsupply */
+      minSupply?: string | null;
+      /** Payeecoolingseconds */
+      payeeCoolingSeconds?: number | null;
+      /** Refillpaths */
+      refillPaths?: components['schemas']['RefillPath'][] | null;
+      /**
+       * Reservehorizondays
+       * @default 30
+       */
+      reserveHorizonDays: number;
+      supplyLimits?: components['schemas']['ActionLimits'] | null;
+      /** Swap */
+      swap?: {
+        [key: string]: unknown;
+      } | null;
+      /** Validfrom */
+      validFrom?: string | null;
+    };
+    /** MandateDraftResponse */
+    MandateDraftResponse: {
+      /** Bundlepreview */
+      bundlePreview: {
+        [key: string]: unknown;
+      };
+      /** Diff */
+      diff: {
+        [key: string]: unknown;
+      }[];
+      draft: components['schemas']['MandateView'];
+      /** Requiresconfirmation */
+      requiresConfirmation: boolean;
+      /** Summary */
+      summary: {
+        [key: string]: string;
+      }[];
+    };
+    /** MandateListResponse */
+    MandateListResponse: {
+      /** Items */
+      items: components['schemas']['MandateView'][];
+    };
+    /** MandateView */
+    MandateView: {
+      /** Config */
+      config: {
+        [key: string]: unknown;
+      };
+      /** Confighash */
+      configHash: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Status */
+      status: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Version */
+      version: number;
+    };
     /** MeResponse */
     MeResponse: {
       /** Memberships */
@@ -573,6 +1130,31 @@ export interface components {
       user: components['schemas']['UserView'];
       /** Wallets */
       wallets: components['schemas']['treasurypilot_api__identity__api__WalletView'][];
+    };
+    /** MemberResponse */
+    MemberResponse: {
+      member: components['schemas']['MemberView'];
+    };
+    /** MemberView */
+    MemberView: {
+      /** Email */
+      email: string;
+      /** Roles */
+      roles: string[];
+      /** Signerrolesactive */
+      signerRolesActive: boolean;
+      /** Status */
+      status: string;
+      /**
+       * Userid
+       * Format: uuid
+       */
+      userId: string;
+    };
+    /** MembersResponse */
+    MembersResponse: {
+      /** Members */
+      members: components['schemas']['MemberView'][];
     };
     /** MembershipView */
     MembershipView: {
@@ -617,6 +1199,19 @@ export interface components {
     OrganizationResponse: {
       org: components['schemas']['OrganizationView'];
     };
+    /**
+     * OrganizationRole
+     * @enum {string}
+     */
+    OrganizationRole:
+      | 'OrgAdmin'
+      | 'Owner'
+      | 'Approver'
+      | 'Operator'
+      | 'Finance'
+      | 'Guardian'
+      | 'Auditor'
+      | 'PlatformAdmin';
     /** OrganizationSettingsRequest */
     OrganizationSettingsRequest: {
       /** Automatch */
@@ -649,10 +1244,99 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+<<<<<<< HEAD
     /** SignatureRequest */
     SignatureRequest: {
       /** Signature */
       signature: string;
+=======
+    /** PlanEvidence */
+    PlanEvidence: {
+      /** Planhash */
+      planHash?: string | null;
+      /** Plannersource */
+      plannerSource: string;
+      /** Steps */
+      steps?: {
+        [key: string]: unknown;
+      }[];
+    };
+    /** RefillPath */
+    RefillPath: {
+      /** From */
+      from: string;
+      /** To */
+      to: string;
+    };
+    /**
+     * ReviewAction
+     * @enum {string}
+     */
+    ReviewAction:
+      | 'RETRY'
+      | 'REPLAN'
+      | 'CANCEL'
+      | 'EDIT_REQUEST'
+      | 'GRANT_EXCEPTION'
+      | 'ACCEPT_FEE'
+      | 'DEFER'
+      | 'ACKNOWLEDGE'
+      | 'MARK_MATCHED';
+    /** ReviewActionRequest */
+    ReviewActionRequest: {
+      action: components['schemas']['ReviewAction'];
+      /** Note */
+      note?: string | null;
+      /** Version */
+      version: number;
+    };
+    /**
+     * ReviewStatus
+     * @enum {string}
+     */
+    ReviewStatus: 'Open' | 'Resolved' | 'Dismissed';
+    /**
+     * ReviewType
+     * @enum {string}
+     */
+    ReviewType:
+      | 'POLICY_BLOCK'
+      | 'NEEDS_AUTHORITY'
+      | 'FEE_APPROVAL'
+      | 'UNCERTAIN_TX'
+      | 'DISCREPANCY'
+      | 'AI_REJECTED'
+      | 'INFRA'
+      | 'UNEXPECTED_OUTFLOW';
+    /** RoleUpdateRequest */
+    RoleUpdateRequest: {
+      /** Roles */
+      roles: components['schemas']['OrganizationRole'][];
+    };
+    /** SafeDeploymentRequest */
+    SafeDeploymentRequest: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Threshold */
+      threshold: number;
+    };
+    /** SafeDeploymentResponse */
+    SafeDeploymentResponse: {
+      /** Chainid */
+      chainId: number;
+      transaction: components['schemas']['SafeDeploymentTransaction'];
+    };
+    /** SafeDeploymentTransaction */
+    SafeDeploymentTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     };
     /** SiweNonceResponse */
     SiweNonceResponse: {
@@ -670,10 +1354,65 @@ export interface components {
       /** Scheme */
       scheme: string;
     };
+<<<<<<< HEAD
     /** SubmittedRequest */
     SubmittedRequest: {
       /** Transactionhash */
       transactionHash: string;
+=======
+    /** TenantHealth */
+    TenantHealth: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Status */
+      status: string;
+      /**
+       * Tenantid
+       * Format: uuid
+       */
+      tenantId: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TenantList */
+    TenantList: {
+      /** Items */
+      items: components['schemas']['TenantView'][];
+    };
+    /** TenantView */
+    TenantView: {
+      /** Activemembers */
+      activeMembers: number;
+      /** Country */
+      country: string | null;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Treasuries */
+      treasuries: number;
+    };
+    /** TransactionEvidence */
+    TransactionEvidence: {
+      /** Blocknumber */
+      blockNumber?: number | null;
+      /** Chainid */
+      chainId: number;
+      /** Feebaseunits */
+      feeBaseUnits?: string | null;
+      /** Txhash */
+      txHash: string;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     };
     /** TreasuryResponse */
     TreasuryResponse: {
@@ -739,6 +1478,37 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** ValidationEvidence */
+    ValidationEvidence: {
+      /** Checks */
+      checks?: {
+        [key: string]: unknown;
+      }[];
+      /** Decision */
+      decision: string;
+      /** Id */
+      id?: string | null;
+      /** Reasoncodes */
+      reasonCodes?: string[];
+      /** Stage */
+      stage: string;
+    };
+    /** VerificationEvidence */
+    VerificationEvidence: {
+      /**
+       * Checkedat
+       * Format: date-time
+       */
+      checkedAt: string;
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Status */
+      status: string;
+      /** Txhash */
+      txHash: string;
+    };
     /** VerifyMagicLinkRequest */
     VerifyMagicLinkRequest: {
       /** Token */
@@ -749,6 +1519,15 @@ export interface components {
       /** Csrftoken */
       csrfToken: string;
       user: components['schemas']['UserView'];
+    };
+    /** WalletBuffer */
+    WalletBuffer: {
+      /** Minimum */
+      minimum: string;
+      /** Target */
+      target?: string | null;
+      /** Wallet */
+      wallet: string;
     };
     /** WalletRequest */
     WalletRequest: {
@@ -812,6 +1591,88 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  tenants_admin_tenants_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantList'];
+        };
+      };
+    };
+  };
+  tenant_health_admin_tenants__tenant_id__health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantHealth'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  suspend_tenant_admin_tenants__tenant_id__suspend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TenantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_health_get: {
     parameters: {
       query?: never;
@@ -970,6 +1831,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HealthResponse'];
+        };
+      };
+    };
+  };
+  accept_invite_v1_invites__token__accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -1190,12 +2082,248 @@ export interface operations {
       };
     };
   };
+<<<<<<< HEAD
   get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get: {
+=======
+  list_invites_v1_orgs__organization_id__invites_get: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
+<<<<<<< HEAD
         governance_tx_id: string;
+=======
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvitesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_invite_v1_orgs__organization_id__invites_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['InviteCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteCreatedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_invite_v1_orgs__organization_id__invites__invite_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        invite_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_members_v1_orgs__organization_id__members_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MembersResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  remove_member_v1_orgs__organization_id__members__user_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_member_v1_orgs__organization_id__members__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RoleUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_review_items_v1_orgs__organization_id__review_items_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['ReviewStatus'] | null;
+        type?: components['schemas']['ReviewType'] | null;
+        role?: components['schemas']['OrganizationRole'] | null;
+      };
+      header?: never;
+      path: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
         organization_id: string;
       };
       cookie?: never;
@@ -1224,13 +2352,22 @@ export interface operations {
       };
     };
   };
+<<<<<<< HEAD
   get_exec_call_v1_orgs__organization_id__governance_txs__governance_tx_id__exec_call_get: {
+=======
+  get_review_item_v1_orgs__organization_id__review_items__item_id__get: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
+<<<<<<< HEAD
         governance_tx_id: string;
         organization_id: string;
+=======
+        organization_id: string;
+        item_id: string;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
       };
       cookie?: never;
     };
@@ -1243,7 +2380,11 @@ export interface operations {
         };
         content: {
           'application/json': {
+<<<<<<< HEAD
             [key: string]: string;
+=======
+            [key: string]: unknown;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
           };
         };
       };
@@ -1258,19 +2399,32 @@ export interface operations {
       };
     };
   };
+<<<<<<< HEAD
   add_governance_signature_v1_orgs__organization_id__governance_txs__governance_tx_id__signatures_post: {
+=======
+  act_on_review_item_v1_orgs__organization_id__review_items__item_id__actions_post: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
+<<<<<<< HEAD
         governance_tx_id: string;
         organization_id: string;
+=======
+        organization_id: string;
+        item_id: string;
+>>>>>>> origin/feat/treasury-112-safe-snapshots
       };
       cookie?: never;
     };
     requestBody: {
       content: {
+<<<<<<< HEAD
         'application/json': components['schemas']['SignatureRequest'];
+=======
+        'application/json': components['schemas']['ReviewActionRequest'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
       };
     };
     responses: {
@@ -1296,19 +2450,30 @@ export interface operations {
       };
     };
   };
+<<<<<<< HEAD
   report_submission_v1_orgs__organization_id__governance_txs__governance_tx_id__submitted_post: {
+=======
+  safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
     parameters: {
       query?: never;
       header?: never;
       path: {
+<<<<<<< HEAD
         governance_tx_id: string;
+=======
+>>>>>>> origin/feat/treasury-112-safe-snapshots
         organization_id: string;
       };
       cookie?: never;
     };
     requestBody: {
       content: {
+<<<<<<< HEAD
         'application/json': components['schemas']['SubmittedRequest'];
+=======
+        'application/json': components['schemas']['SafeDeploymentRequest'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
       };
     };
     responses: {
@@ -1318,9 +2483,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+<<<<<<< HEAD
           'application/json': {
             [key: string]: unknown;
           };
+=======
+          'application/json': components['schemas']['SafeDeploymentResponse'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
         };
       };
       /** @description Validation Error */
@@ -1436,7 +2605,59 @@ export interface operations {
       };
     };
   };
+<<<<<<< HEAD
   create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post: {
+=======
+  list_mandates_v1_orgs__organization_id__treasuries__treasury_id__mandates_get: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+<<<<<<< HEAD
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGovernanceTxRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+=======
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+>>>>>>> origin/feat/treasury-112-safe-snapshots
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+<<<<<<< HEAD
+          'application/json': {
+            [key: string]: unknown;
+          };
+=======
+          'application/json': components['schemas']['MandateListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1448,7 +2669,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['CreateGovernanceTxRequest'];
+        'application/json': components['schemas']['MandateConfig'];
       };
     };
     responses: {
@@ -1458,9 +2679,72 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['MandateDraftResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  discard_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  clone_mandate_draft_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__clone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        mandate_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MandateDraftResponse'];
+>>>>>>> origin/feat/treasury-112-safe-snapshots
         };
       };
       /** @description Validation Error */

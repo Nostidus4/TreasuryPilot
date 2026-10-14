@@ -96,7 +96,9 @@ class ValidationContext(BaseModel):   # built by the worker from M06/M03/M05/M10
     unknown_operations: int        # count for this treasury
     pause_requested: bool          # BR-063 backend pause
     circuit_open: bool             # BR-065
-    screening_hit: bool            # BR-085 (stub in M1)
+    screening_hit: bool            # BR-085; latest screening returned HIT
+    screening_clear: bool          # false by default; true only after a valid CLEAR (a HIT reports SCREENING_HIT only)
+    policy_state: PolicyState      # balances, buffers, limits, daily counters and exception view (POL-003)
     config: PolicyConfig           # §9
 
 class Check(BaseModel):    name: str; passed: bool; code: PolicyReasonCode | None; expected: str | None; observed: str | None
@@ -112,6 +114,8 @@ class Decision(BaseModel):
     policy_version: bytes32
     snapshot_block: int
 ```
+
+PolicyState is the immutable, block-consistent input to POL-003: pay/refill/supply limits; wallet balances, buffers and targets; daily usage; request/step/fingerprint replay flags; matching exception; and liquidity reserve/Aave balances. Missing policy state is DATA_MISSING, never an implicit zero. PLAN checks project balance and daily usage after earlier steps before validating the next step. validate_plan and validate_step return a Decision; the decision policy version hashes the mandate version, validator version and canonical policy configuration.
 
 ### 4.2 Database (changes to DATA_MODEL §2.5)
 
@@ -147,6 +151,7 @@ A re-plan after partial completion (RCV-003) produces a **new** plan containing 
 | `validate_step(plan, seq, ctx) → Decision` | stage PRE_STEP: one step against a fresh snapshot |
 | `decide(checks) → Decision` | aggregation (§8.2) |
 | `plan_hash(plan) → bytes32` | §8.3 |
+| `ExecutionPlan.message() → dict` | the §8.3 Plan mapping (hex strings, module action codes): `attestation_typed_data` takes it as is; `plan_hash` takes its four fields |
 | `step_id(request_id, action, wallet) → bytes32` | §8.4 |
 | `policy_version(mandate_version, cfg) → bytes32` | §3 |
 | `attestation_typed_data(plan, decision, nonce, valid_until, evidence_digest) → dict` | EIP-712 message |

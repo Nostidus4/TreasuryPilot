@@ -71,6 +71,7 @@ export const CHAINS: Chain[] = [
     chainId: 11155111,
     name: 'Sepolia',
     explorerUrl: 'https://sepolia.etherscan.io',
+    safeDeploymentAvailable: false,
     assets: [
       {
         id: 'usdc-sepolia',
