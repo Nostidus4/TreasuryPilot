@@ -34,7 +34,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
         uint256 amount = early ? ap.earlyAmount : ap.amount;
         bool usedException = false;
-        Limits memory limits = _assetPolicies[ap.asset].pay;
+        Limits storage limits = _assetPolicies[ap.asset].pay;
         if (amount > limits.perRequest) {
             Exception storage ex = exceptions[ap.requestId];
             if (ex.amount == 0) revert E.OverPerRequestLimit();
@@ -76,7 +76,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (toWallet != ap.payingWallet || !isOperational[toWallet]) revert E.WrongRefillTarget();
         if (refilledFor[ap.requestId][toWallet]) revert E.AlreadyRefilledForRequest();
         if (amount == 0) revert E.InvalidAmount();
-        Limits memory limits = _assetPolicies[ap.asset].refill;
+        Limits storage limits = _assetPolicies[ap.asset].refill;
         if (amount > limits.perRequest) revert E.OverRefillPerRequest();
         uint256 day = block.timestamp / 1 days;
         bytes32 key = _counterKey(REFILL, ap.asset, day);
@@ -277,6 +277,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
     /// @inheritdoc ITreasuryPilotModule
     function remainingToday(uint8 action, address asset_) public view returns (uint256) {
         uint256 cap = 0;
+        if (!isAssetAllowed(asset_)) return 0;
         if (action == PAY) cap = _assetPolicies[asset_].pay.daily;
         else if (action == REFILL) cap = _assetPolicies[asset_].refill.daily;
         else if (action == SUPPLY && asset_ == asset) cap = _mandate.supply.daily;

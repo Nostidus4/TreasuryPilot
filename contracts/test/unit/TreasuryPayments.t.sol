@@ -125,8 +125,9 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         _owner(abi.encodeCall(module.configureMandate, (config)));
         require(!module.isAssetAllowed(address(second)), "secondary reset");
         require(module.isAssetAllowed(address(token)), "primary kept");
-        require(module.allowedAssets().length == 1, "allowlist");
-        require(module.bufferOf(address(second), address(op1)) == 0, "buffer cleared");
+        vm.prank(address(treasury));
+        module.setAssetPolicy(address(second), true, I.Limits(100e6, 100e6), I.Limits(0, 0));
+        require(module.isAssetAllowed(address(second)), "re-enabled under new version");
     }
 
     function testPaymentApprovalRejectsAssetOutsideAllowlist() external {

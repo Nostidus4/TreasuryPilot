@@ -34,7 +34,7 @@ interface ITreasuryPilotModule {
     }
 
     struct AssetPolicy {
-        bool enabled;
+        uint64 version;
         Limits pay;
         Limits refill;
     }
@@ -218,8 +218,6 @@ interface ITreasuryPilotModule {
     function remainingToday(uint8 action) external view returns (uint256);
     function remainingToday(uint8 action, address asset) external view returns (uint256);
     function isAssetAllowed(address asset) external view returns (bool);
-    function allowedAssets() external view returns (address[] memory);
-    function assetPolicyOf(address asset) external view returns (AssetPolicy memory);
     function bufferOf(address asset, address wallet) external view returns (uint256);
     function targetOf(address asset, address wallet) external view returns (uint256);
     function domainSeparator() external view returns (bytes32);

@@ -85,7 +85,7 @@ struct Mandate {
     uint32  approvalMaxAge;          // seconds an approval stays usable after signing deadline window, default 14 days
 }
 Mandate public mandate;
-struct AssetPolicy { bool enabled; Limits pay; Limits refill; }
+struct AssetPolicy { uint64 version; Limits pay; Limits refill; } // allowed only while version == mandate().version
 // Limits, UTC daily counters, wallet floors and targets are keyed by asset.
 // Primary-asset compatibility getters remain available for existing integrations.
 mapping(address => bool)    public isApprover;
@@ -153,10 +153,10 @@ The implementation's `initialize` is disabled in its constructor; clones are ini
 
 | Function | Effect | Reverts with |
 |---|---|---|
-| `configureMandate(MandateInit m)` | Replaces mandate fields, `version++`. Does **not** touch counters, payees, approvers or buffers. Unused exceptions of older versions become invalid automatically (they store `mandateVersion`). | `NotOwner`, `InvalidMandate(field)` (expiry ≤ validFrom, zero executor, zero cooling, perRequest > daily) |
+| `configureMandate(MandateInit m)` | Replaces mandate fields, `version++`. Does **not** touch counters, payees, approvers or buffers, but secondary-asset policies stop being allowed until re-enabled with `setAssetPolicy` under the new version. Unused exceptions of older versions become invalid automatically (they store `mandateVersion`). | `NotOwner`, `InvalidMandate(field)` (expiry ≤ validFrom, zero executor, zero cooling, perRequest > daily) |
 | `setApprovers(address[] add, address[] remove)` | Updates the set; must stay ≥ 1. | `NotOwner`, `NoApprovers` |
 | `setBuffer(address wallet, uint256 buffer, uint256 target)` | Sets primary-asset floor and target (compatibility form). | `NotOwner`, `UnknownWallet`, `TargetBelowBuffer` |
-| `setAssetPolicy(address asset, bool enabled, Limits pay, Limits refill)` | Enables or disables a non-primary ERC20 and its independent PAY/REFILL caps. | `NotOwner`, `InvalidConfiguration` |
+| `setAssetPolicy(address asset, bool enabled, Limits pay, Limits refill)` | Enables or disables a non-primary ERC20 and its independent PAY/REFILL caps. Enabling needs a positive Safe T floor and a positive target on every operational wallet; disabling clears the asset's buffers. Limits are published in `AssetPolicySet` (no getter, to stay under the EIP-170 size limit). | `NotOwner`, `InvalidConfiguration`, `AssetBufferNotConfigured` |
 | `setAssetBuffer(address asset, address wallet, uint256 buffer, uint256 target)` | Sets the selected asset floor and operational refill target. | `NotOwner`, `AssetNotAllowed`, `UnknownWallet`, `TargetBelowBuffer` |
 | `addPayee(address payee)` | `activeFrom = now + mandate.payeeCoolingSeconds`, `active = true`. Re-adding restarts cooling. Payee must not be a treasury wallet. | `NotOwner`, `InvalidPayee` |
 | `deactivatePayee(address payee)` | `active = false`. | `NotOwner`, `UnknownPayee` |
@@ -237,7 +237,7 @@ All state-changing functions use a reentrancy guard and checks-effects-interacti
 
 ### 6.5 Views
 
-`mandate()`, `status()`, `isAssetAllowed(asset)`, `allowedAssets()`, `assetPolicyOf(asset)`, `usedToday(action, asset)`, `remainingToday(action, asset)`, `bufferOf(asset, wallet)`, `targetOf(asset, wallet)`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `requestCancelled(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
+`mandate()`, `status()`, `isAssetAllowed(asset)`, `usedToday(action, asset)`, `remainingToday(action, asset)`, `bufferOf(asset, wallet)`, `targetOf(asset, wallet)`, `payees(addr)`, `payeeStatus(addr) → (state, activeFrom)`, `usedToday(action) → uint256`, `remainingToday(action)`, `requestPaid(id)`, `requestCancelled(id)`, `stepUsed(id)`, `fingerprintPaid(fp)`, `exceptions(id)`, `isApprover(addr)`, `bufferOf(w)`, `targetOf(w)`, `operationalList()`, `domainSeparator()`, `hashApproval(PaymentApproval)`.
 
 ### 6.6 Events
 
