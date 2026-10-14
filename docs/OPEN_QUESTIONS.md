@@ -8,8 +8,8 @@ O1–O8 from the source docs are **closed** by decision Q8: their proposed optio
 
 | ID | Question | Why it matters | Affects | Options | BA recommendation |
 |---|---|---|---|---|---|
-| OQ-01 | Does the competition accept **testnet** transaction hashes as execution evidence for Topic F? | It decides between testnet and mainnet with real stablecoins, and the legal and compliance exposure. | NFR-CMP-01, F-151, all evidence | (a) testnet accepted; (b) mainnet required | **Email the organizers now.** Plan for (a), and keep a small-value mainnet contingency on a chain with low fees. |
-| OQ-02 | Which **chain** for M1? *(Phase 3)* | Safe availability, testnet USDC faucet, EAS availability, RPC reliability, explorer. | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Base Sepolia**, pending verification of Safe, Circle testnet USDC and EAS availability in Phase 3. |
+| OQ-01 | What execution evidence does the published checklist require, and which network does our team use? | Keep the official requirement separate from team assumptions. | NFR-CMP-01, F-151, submission item 06 | Real on-chain transaction hashes; network is unspecified in the checklist. | Use Ethereum Sepolia under ADR-012/019 and NFR-CMP-01. Organizer clarification is optional and does not gate this work. See the source review below. |
+| OQ-02 | Which **chain** for M1? *(Phase 3)* | Safe availability, testnet USDC faucet, EAS availability, RPC reliability, explorer. | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Resolved (PH-1, 2026-10-11): Ethereum Sepolia** (ADR-012); DOM-001 records the infrastructure verification. Base Sepolia is no longer the recommendation. |
 | OQ-03 | Which **stablecoin** for M1: Circle testnet USDC or a team-deployed `tUSDC`? | Realism versus control (we can't mint Circle's token freely). | F-013, demo | (a) Circle testnet USDC; (b) tUSDC | (a) if the faucet gives enough for 40+ runs; otherwise (b), clearly labelled. |
 | OQ-04 | **Cooling-period** duration for production and demo. | Security versus friction. | F-022, BR-017 | 24h / 48h / 72h; demo 5 min | 24h production (configurable 1h–7d); 5 min demo. |
 | OQ-05 | Demo **limit values** (per request, daily, refill, buffer, target). | Demo narrative needs an over-cap invoice, and a buffer that matters. | F-020, F-023, F-024 | Use source YAML (2,000 / 10,000 / 2,500 / 12,000) | Use the source YAML values, scaled to the faucet budget. |
@@ -48,7 +48,7 @@ O1–O8 from the source docs are **closed** by decision Q8: their proposed optio
 | OQ-16 | **Accepted.** A deadline means "confirmed on-chain by". |
 | OQ-17 | **Accepted.** Telegram shows amounts and addresses only if the user opts in. |
 | OQ-18 | **Accepted.** Aim for 2–3 interviews; report the true number. |
-| OQ-01 | **Still open.** Action: email the organizers (wangyr@pbcsf.tsinghua.edu.cn). Working assumption: testnet accepted. |
+| OQ-01 | **Historical G1 uncertainty, superseded by the source review on 2026-10-14.** The published checklist requires real on-chain transaction hashes; there is no mandatory email gate. |
 | OQ-02, OQ-03, OQ-11, OQ-14 | **Deferred to Phase 3 (gate G2).** |
 
 ### Phase 3 interview — 2026-10-11
@@ -59,4 +59,35 @@ O1–O8 from the source docs are **closed** by decision Q8: their proposed optio
 | OQ-03 | **Accepted (anh Phúc, 2026-10-11).** tUSDC for the main demo and automated runs; one evidence run with Circle USDC on Sepolia with limits ÷ 100 (faucet: 10 USDC/day public, 10×20 USDC/day developer console). |
 | OQ-11 | **Resolved:** Anthropic Claude via the SDK, with an adapter (decision Q27). |
 | OQ-14 | **Resolved:** in-house magic link + SIWE (decision Q33, ADR-009). |
-| OQ-01 | **Answered by anh Phúc (2026-10-11):** public testnet evidence is acceptable. DOM-003 keeps asking the organizers for a written confirmation. |
+| OQ-01 | **Team interpretation recorded by anh Phúc (2026-10-11):** use public testnet evidence. This is not an organizer reply. The source review below records the published wording and optional clarification. |
+
+### OQ-01 / DOM-003 source review — 2026-10-14
+
+Source: [PBCSF Appendix 2 — Problem Description and Competition Rules for
+International Track](https://www.its.ac.id/international/wp-content/uploads/sites/66/2026/10/PBCSF-Appendix-2-Problem-Description-and-Competition-Rules-for-International-Track.pdf),
+page 3, Submission checklist, item 06 (Execution evidence). This is the published
+rules document redistributed by ITS Global Engagement, not our internal assessment.
+
+- **Published requirement:** for the on-chain topic, “real on-chain transaction
+  hashes”. The checklist does not specify testnet/mainnet and does not require an
+  organizer email or written confirmation.
+- **Team working choice:** Ethereum Sepolia per ADR-012/019; M1 remains testnet-only
+  under NFR-CMP-01. The unspecified network wording is not an explicit guarantee
+  that organizers accept testnet; no organizer reply is claimed here.
+- **Implementation evidence:** produce actual on-chain actions and retain their
+  genuine transaction hashes. The team's evidence bundle should include chain ID,
+  explorer links and receipts/events linking the transaction to the demonstrated
+  action. Those supporting checks are team traceability choices, not extra quoted
+  submission requirements. An offline-computed hash or local simulation alone
+  must not be presented as a publicly executed transaction.
+- **Optional clarification:** the team may ask the organizer if it wants further
+  certainty. Sending an email, waiting for a reply or recording a missing reply by
+  14/10 is not a completion criterion for DOM-003 and does not block development
+  or submission. No email was sent by this source-review work.
+- **If requirements change:** record the actual organizer response and open a
+  reviewed ADR/scope decision. Do not silently switch networks or override the
+  testnet-only project requirement.
+
+This resolves the documentation task by recording the actual requirement and
+assumption boundary. Public deployment and transaction-evidence collection remain
+separate work under DOM-001/002 and the relevant execution tickets.

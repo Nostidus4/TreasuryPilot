@@ -81,11 +81,12 @@ T("DOM-002","Decide the M1 stablecoin (owner: Phúc)","M1","P0","S","F-013","OQ-
   "", "Recommendation: both.",
   "ADR-012 lists the token address(es) and how to obtain funds;Faucet limits are documented",
   "—")
-T("DOM-003","Ask the organizers whether testnet evidence is accepted","M1","P0","S","—","OQ-01","",
-  "Remove the biggest external uncertainty.",
-  "Email wangyr@pbcsf.tsinghua.edu.cn;record the answer in OPEN_QUESTIONS.md;if mainnet is required, open a follow-up decision",
-  "", "",
-  "The email is sent and the reply (or lack of one by 14/10) is recorded", "—")
+T("DOM-003","Document execution evidence requirements and the Sepolia assumption","M1","P0","S","—","OQ-01, Submission item 06, NFR-CMP-01, ADR-012, ADR-019","",
+  "Record the published on-chain execution-evidence requirement and distinguish it from the team's network choice.",
+  "Cite PBCSF Appendix 2, page 3, submission checklist item 06 in OPEN_QUESTIONS.md;Record that on-chain submissions require real on-chain transaction hashes, while the checklist does not specify testnet or mainnet;Record Ethereum Sepolia as the team's working choice under ADR-012/019 and NFR-CMP-01, not as explicit organizer confirmation;Keep organizer clarification optional and non-blocking, and record an actual reply only if one is obtained",
+  "Sending an organizer email, public deployment and collecting transaction hashes are not required to complete this documentation ticket. Actual deployment/evidence stays with DOM-001/002 and the relevant execution tickets.", "Checked 2026-10-14 against the published PBCSF rules. PH-3 records the team's interpretation, not an organizer reply. No mandatory email or 14/10 reply deadline; no automatic switch to mainnet. Source: [PBCSF Appendix 2, page 3](https://www.its.ac.id/international/wp-content/uploads/sites/66/2026/10/PBCSF-Appendix-2-Problem-Description-and-Competition-Rules-for-International-Track.pdf).",
+  "OPEN_QUESTIONS.md cites the source, page and checklist item with the exact transaction-hash requirement;The official requirement and the team's Sepolia assumption are explicitly distinguished;No mandatory organizer email or reply blocks development or submission in this ticket;Any future network restriction is handled through a reviewed decision instead of an undocumented mainnet switch", "—",
+  context="This documentation ticket records the published execution-evidence wording and the team's network interpretation. Optional organizer clarification does not block implementation or submission.")
 T("DOM-004","Author the labelled invoice dataset (30)","M1","P0","M","F-092","AGT-013","",
   "Realistic invoices to measure extraction.",
   "30 invoices as PDF with JSON labels (fields and terms) in evals/invoices;mix: clean, with discount terms, late fees, messy layouts, two languages;no real company data",

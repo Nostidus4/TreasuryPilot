@@ -334,7 +334,7 @@ MDT-001 schema → **MDT-009 governance tx builder + signature collection (new)*
 | M03-D16 | Sentinel and executor are separate keys with separate gas balances and low-gas alerts. |
 | **PH-1** | Chain M1 = **Ethereum Sepolia** (ADR-012 accepted). |
 | **PH-2** | Asset: `tUSDC` for the main demo and automated runs; one evidence run with **Circle USDC on Sepolia** with limits ÷ 100. |
-| **PH-3** | Public testnet evidence is acceptable (anh Phúc); DOM-003 keeps a written confirmation if the organizers reply. |
+| **PH-3** | PH-3 records the team's public-testnet interpretation, not an organizer reply. Published item 06 requires real on-chain transaction hashes without specifying the network; DOM-003 clarification is optional (source review 2026-10-14). |
 | **PH-4** | Guardian Safe 1-of-N with sentinel (= M03-D2). |
 | **PH-5** | Payment "Paid" after **3 confirmations** on `latest` (~36 s on Sepolia), configurable; reconciliation can additionally wait for `finalized` (M10/M11). |
 | **PH-6** | Event indexing by polling `eth_getLogs` (every 6 s) with stored block hashes and a 64-block reorg re-scan (M06). |

@@ -23,7 +23,7 @@ The project lead assigns names in the GitHub Project **Owner** field. Suggested 
 |---|---|---|
 | **Finance advisor** | Invoices, payment terms, scheduling scenarios, business-rule review, demo company profile | DOM-004, DOM-005, DOM-007, DOM-008 |
 | **Blockchain / security advisor** | Chain verification (DOM-001, with @Nostidus4) and token verification (DOM-002, with anh Phúc), red-team invoices, threat model, known risks, security self-assessment | DOM-001*, DOM-002*, DOM-006, DOM-009, DOM-011 |
-| **Research / communication advisor** | Organizer email, interviews, compliance note, licenses, technical documentation assembly, deck, video, FigJam | DOM-003, DOM-010, DOM-012, DOM-013, DOM-014, DOM-015, DOM-016, DOM-017 |
+| **Research / communication advisor** | Evidence-requirement review, optional organizer clarification, interviews, compliance note, licenses, technical documentation assembly, deck, video, FigJam | DOM-003, DOM-010, DOM-012, DOM-013, DOM-014, DOM-015, DOM-016, DOM-017 |
 
 \* DOM-001 (#70) is owned by **@Nostidus4 (Tân)** from 2026-10-14, following anh Phúc's infrastructure handoff. The repository owner handles RPC/API/service access, infrastructure verification and the Safe transaction evidence; **@longhuynh55 (anh Phúc)** supports contract integration. DOM-002 remains owned by anh Phúc. The decisions were taken on 2026-10-11 (Ethereum Sepolia; tUSDC + one Circle USDC run, PH-1/PH-2); the tickets now verify infrastructure and prepare tokens.
 
@@ -33,7 +33,7 @@ The project lead assigns names in the GitHub Project **Owner** field. Suggested 
 |---|---|---|---|
 | DOM-001 | Ethereum Sepolia infrastructure verified (Safe, MultiSend, EAS, RPC, Etherscan) and recorded in ADR-012 | SC-016, DEV-010, SC-019 | A |
 | DOM-002 | tUSDC parameters + Circle USDC Sepolia address in ADR-012; ≥ 120 Circle USDC collected for the evidence run | TRS-003, DEV-006 | A |
-| DOM-003 | Organizer answer recorded in `docs/OPEN_QUESTIONS.md` (OQ-01) | Whole team | A |
+| DOM-003 | Published execution-evidence requirement and Sepolia working assumption recorded in `docs/OPEN_QUESTIONS.md` (OQ-01); clarification optional | Whole team | A |
 | DOM-004 | `evals/invoices/` — 30 invoices (PDF + JSON label) | AGT-013 (extraction accuracy), demo | B |
 | DOM-005 | `evals/scenarios/` — ≥ 30 planner scenarios with ground truth | AGT-014 (B1 vs B2 benchmark) | A |
 | DOM-006 | `evals/redteam/` — 20 attack invoices + expected outcomes | AGT-015 (red-team runner) | A |

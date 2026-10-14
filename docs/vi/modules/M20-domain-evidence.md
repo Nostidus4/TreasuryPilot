@@ -23,7 +23,7 @@ Trưởng nhóm phân người qua trường **Owner** trên GitHub Project. G�
 |---|---|---|
 | **Cố vấn tài chính** | Hóa đơn, điều khoản thanh toán, kịch bản lập lịch, soát luật nghiệp vụ, hồ sơ công ty demo | DOM-004, 005, 007, 008 |
 | **Cố vấn blockchain / bảo mật** | Kiểm chain (DOM-001, cùng @Nostidus4) và token (DOM-002, cùng anh Phúc), hóa đơn red-team, mô hình đe dọa, rủi ro, tự đánh giá bảo mật | DOM-001*, 002*, 006, 009, 011 |
-| **Cố vấn nghiên cứu / truyền thông** | Email ban tổ chức, phỏng vấn, ghi chú tuân thủ, giấy phép, tài liệu kỹ thuật, deck, video, FigJam | DOM-003, 010, 012, 013, 014, 015, 016, 017 |
+| **Cố vấn nghiên cứu / truyền thông** | Đối chiếu thể lệ, hỏi thêm BTC tùy chọn, phỏng vấn, ghi chú tuân thủ, giấy phép, tài liệu kỹ thuật, deck, video, FigJam | DOM-003, 010, 012, 013, 014, 015, 016, 017 |
 
 \* DOM-001 (#70) do **@Nostidus4 (Tân)** phụ trách từ 14/10/2026, theo bàn giao hạ tầng của anh Phúc. Chủ repo xử lý quyền truy cập RPC/API/dịch vụ, kiểm hạ tầng và ghi bằng chứng giao dịch Safe; **@longhuynh55 (anh Phúc)** hỗ trợ tích hợp contract. DOM-002 vẫn do anh Phúc phụ trách. Quyết định đã chốt ngày 11/10/2026 (Ethereum Sepolia; tUSDC + một lượt Circle USDC, PH-1/PH-2); hai ticket giờ là kiểm hạ tầng và chuẩn bị token.
 
@@ -33,7 +33,7 @@ Trưởng nhóm phân người qua trường **Owner** trên GitHub Project. G�
 |---|---|---|---|
 | DOM-001 | Kiểm hạ tầng Ethereum Sepolia (Safe, MultiSend, EAS, RPC, Etherscan), ghi vào ADR-012 | SC-016, DEV-010, SC-019 | A |
 | DOM-002 | Thông số tUSDC + địa chỉ Circle USDC Sepolia trong ADR-012; gom ≥ 120 Circle USDC cho lượt bằng chứng | TRS-003, DEV-006 | A |
-| DOM-003 | Câu trả lời của ban tổ chức ghi vào `docs/OPEN_QUESTIONS.md` (OQ-01) | cả team | A |
+| DOM-003 | Yêu cầu tx hash thật và giả định Sepolia ghi vào `docs/OPEN_QUESTIONS.md` (OQ-01); hỏi BTC là tùy chọn | cả team | A |
 | DOM-004 | `evals/invoices/`: 30 hóa đơn (PDF + nhãn JSON) | AGT-013, demo | B |
 | DOM-005 | `evals/scenarios/`: ≥ 30 kịch bản lập lịch có đáp án | AGT-014 (benchmark) | A |
 | DOM-006 | `evals/redteam/`: 20 hóa đơn tấn công + kết quả mong đợi | AGT-015 | A |

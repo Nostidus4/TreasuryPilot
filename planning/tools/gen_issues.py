@@ -63,6 +63,7 @@ def render(t):
     probs = [f"- **{f}** solves: {FP[f]}" for f in feats[:3] if f in FP]
     why = ("Problem behind this work (from `docs/FEATURES.md`):\n\n" + "\n".join(probs)) if probs else \
           "This is enabling work: other tickets cannot start, or evidence cannot be produced, without it."
+    why = t.get("context") or why
     if t["id"] == "INV-L03":
         later_note = (
             "\n> **Phase: Later.** This ticket was re-estimated and split into the separately "

@@ -134,7 +134,7 @@ Tickets in the same wave have no blocking dependency on each other, so they **ca
 | DOM-006 | Author the red-team invoice set (20) | P0 | M | — |
 | DOM-008 | Review business rules and demo limits from a finance view | P0 | S | — |
 | DOM-009 | Review the threat model and write the known-risk list | P0 | M | — |
-| DOM-003 | Ask the organizers whether testnet evidence is accepted | P1 | S | — |
+| DOM-003 | Document execution evidence requirements and the Sepolia assumption | P1 | S | — |
 | DOM-010 | Run customer interviews (2–3) | P1 | M | — |
 | DOM-015 | Write the compliance positioning note and license inventory | P1 | S | — |
 | DOM-017 | Choose the repository license | P1 | S | — |

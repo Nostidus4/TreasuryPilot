@@ -252,7 +252,7 @@ Kích thước: S ≤ 0,5 ngày · M khoảng 1 ngày · L 1,5–2 ngày. Cut: A
 | WEB-023 | web | Write the Playwright end-to-end happy path | F-161 | M1 | P1 | M | After submission | WEB-012 | Sẵn sàng phân công |
 | DOM-001 | domain-evidence | Verify Ethereum Sepolia infrastructure (owner: Nostidus4) | F-010, F-151 | M1 | P0 | S | A | — | Sẵn sàng phân công |
 | DOM-002 | domain-evidence | Set up tUSDC and the Circle USDC evidence run (owner: Phúc) | F-013 | M1 | P0 | S | A | DOM-001 | Sẵn sàng phân công |
-| DOM-003 | domain-evidence | Ask the organizers whether testnet evidence is accepted | — | M1 | P1 | S | A | — | Sẵn sàng phân công |
+| DOM-003 | domain-evidence | Document execution evidence requirements and the Sepolia assumption | — | M1 | P1 | S | A | — | Sẵn sàng phân công |
 | DOM-004 | domain-evidence | Author the labelled invoice dataset (30) | F-092 | M1 | P0 | M | B | — | Sẵn sàng phân công |
 | DOM-005 | domain-evidence | Author planner scenarios with ground truth (≥30) | F-092 | M1 | P0 | L | A | — | Sẵn sàng phân công |
 | DOM-006 | domain-evidence | Author the red-team invoice set (20) | F-091, F-163 | M1 | P0 | M | A | — | Sẵn sàng phân công |

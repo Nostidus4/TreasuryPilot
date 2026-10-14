@@ -38,7 +38,7 @@ Lý do: luồng A là đường đi của tiền, phải đúng trước (contra
 | #179 | DOM-006 | Author the red-team invoice set (20) | P0 | M | A |
 | #232 | DOM-008 | Review business rules and demo limits from a finance view | P0 | S | A |
 | #233 | DOM-009 | Review the threat model and write the known-risk list | P0 | M | A |
-| #231 | DOM-003 | Ask the organizers whether testnet evidence is accepted | P1 | S | A |
+| #231 | DOM-003 | Document execution evidence requirements and the Sepolia assumption | P1 | S | A |
 | #175 | DOM-004 | Author the labelled invoice dataset (30) | P0 | M | B |
 | #234 | DOM-010 | Run customer interviews (2–3) | P1 | M | B |
 | #239 | DOM-015 | Write the compliance positioning note and license inventory | P1 | S | B |

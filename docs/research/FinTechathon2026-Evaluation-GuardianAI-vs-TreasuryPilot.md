@@ -4,6 +4,12 @@
 **Ngày đánh giá:** 10/10/2026 · **Deadline nộp bài:** 20/10/2026, 23:59 giờ Bắc Kinh (15:59 UTC)
 **Hội đồng (mô phỏng):** FinTech Competition Judge · Product Strategist · AI/Agent Architect · Security & Compliance Expert · Startup CTO
 
+**Cập nhật nguồn 14/10/2026:** mục 06 của thể lệ yêu cầu tx hash on-chain thật;
+checklist không chỉ định testnet/mainnet hay yêu cầu email xác nhận. Khuyến nghị
+hỏi BTC bên dưới là đánh giá nội bộ tại ngày viết, hiện là tùy chọn và không chặn
+công việc. Xem mục OQ-01 / DOM-003 trong [OPEN_QUESTIONS.md](../OPEN_QUESTIONS.md)
+để phân biệt wording của BTC với giả định dùng Sepolia của nhóm.
+
 **Nguồn đã đọc đầy đủ:**
 
 | File | Trạng thái đọc | Ghi chú |
@@ -65,7 +71,7 @@ Thể lệ **không công bố tiêu chí con**. Mọi tiêu chí con dưới đ
 | 03 | Demo video | Tùy chọn, ≤ 5 phút | Vòng online review (20/10) **không có trình bày trực tiếp**, nên video thực tế gần như bắt buộc. |
 | 04 | Source code | README, GitHub link, deployment instructions, **test cases** | Bộ test của hai dự án (TP AT-01..13; GA AT01..37) là tài sản lớn nếu thực sự được code. |
 | 05 | Security self-assessment | **Permission-tier implementation** + **known-risk list** | Cả hai đã có sẵn bảng phân quyền và rủi ro còn lại, chỉ cần dịch và cập nhật theo code thật. |
-| 06 | Execution evidence | Topic on-chain: **real on-chain transaction hashes** | Phải có tx hash thật. Tài liệu không nói testnet có được chấp nhận hay không; cả hai dự án đều ghi nhận điểm mở này (TP O5; GA D01). **Nên email ban tổ chức (wangyr@pbcsf.tsinghua.edu.cn) hỏi ngay hôm nay.** |
+| 06 | Execution evidence | Topic on-chain: **real on-chain transaction hashes** | Phải có tx hash thật. Tài liệu không nói testnet có được chấp nhận hay không; cả hai dự án đều ghi nhận điểm mở này (TP O5; GA D01). Hỏi thêm ban tổ chức (wangyr@pbcsf.tsinghua.edu.cn) là tùy chọn, không chặn công việc (xem OQ-01). |
 
 Các ràng buộc khác: đội 2–5 sinh viên, ≥60% không mang quốc tịch Trung Quốc, ngôn ngữ chính thức là tiếng Anh, được cập nhật bài nộp trước deadline (bản cuối cùng được tính). Vòng online review do chuyên gia WeBank và học giả chấm (20/10 → công bố finalist 31/10 → chung kết Thâm Quyến 21–23/11). Có giải Best Innovation riêng (RMB 20.000).
 
@@ -307,7 +313,7 @@ Giả định: đội 3–4 người, có ít nhất một người viết đư�
 
 | Ngày | Ưu tiên | Kiểm tra / cắt phạm vi |
 |---|---|---|
-| **10/10 (T6)** | Chốt chain (gợi ý Base Sepolia hoặc Ethereum Sepolia), token (USDC testnet nếu faucet dùng được, nếu không thì `tUSDC` tự deploy, ghi nhãn rõ), con số hạn mức demo. **Email ban tổ chức hỏi về testnet.** Dựng repo, Foundry, khung Safe local trên Anvil. Bắt đầu dịch tài liệu sang tiếng Anh (song song). | Quyết định toàn bộ O1–O8 theo "phương án đề xuất" trong tài liệu, không mở lại tranh luận. |
+| **10/10 (T6)** | Chốt chain (gợi ý Base Sepolia hoặc Ethereum Sepolia), token (USDC testnet nếu faucet dùng được, nếu không thì `tUSDC` tự deploy, ghi nhãn rõ), con số hạn mức demo. (Cập nhật 14/10: hỏi BTC về testnet chỉ là tùy chọn, không bắt buộc.) Dựng repo, Foundry, khung Safe local trên Anvil. Bắt đầu dịch tài liệu sang tiếng Anh (song song). | Quyết định toàn bộ O1–O8 theo "phương án đề xuất" trong tài liệu, không mở lại tranh luận. |
 | **11/10** | Viết module: pay + refill + allowlist + counter UTC + buffer + replay. Unit test cho AT-01, 02, 05, 06. | |
 | **12/10** | Xác minh chữ ký approval EIP-712. Pause/revoke. Invariant/fuzz test cơ bản. Deploy lên testnet. | **Mốc kiểm tra #1:** một payment hợp lệ và ba vi phạm bị contract chặn trên testnet. Nếu chưa đạt thì **cắt UC-06 và toàn bộ swap**, dồn người sang contract. |
 | **13/10** | Policy engine (công thức §3) + executor tuần tự + theo dõi receipt + trạng thái Unknown. | |

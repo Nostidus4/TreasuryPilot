@@ -207,7 +207,7 @@ MDT-001 schema → **MDT-009 gom chữ ký giao dịch quản trị (mới)** �
 | M03-D16 | Sentinel và executor là hai khóa riêng, ví gas riêng, cảnh báo riêng. |
 | **PH-1** | Chain M1 = **Ethereum Sepolia** (ADR-012 đã chốt). |
 | **PH-2** | `tUSDC` cho demo chính và test tự động; một lượt bằng chứng với **Circle USDC trên Sepolia**, hạn mức ÷ 100. |
-| **PH-3** | Bằng chứng trên public testnet được chấp nhận (anh Phúc); DOM-003 vẫn xin xác nhận bằng văn bản. |
+| **PH-3** | PH-3 ghi cách hiểu public testnet của nhóm, không phải phản hồi BTC. Mục 06 yêu cầu tx hash on-chain thật và không chỉ định mạng; hỏi thêm ở DOM-003 là tùy chọn (đối chiếu 14/10/2026). |
 | **PH-4** | Guardian Safe 1-trên-N có sentinel (= M03-D2). |
 | **PH-5** | "Đã trả" sau **3 xác nhận** (~36 giây trên Sepolia), cấu hình được; đối soát có thể chờ thêm `finalized`. |
 | **PH-6** | Đọc event bằng `eth_getLogs` mỗi 6 giây, lưu block hash, quét lại 64 block để bắt reorg (M06). |

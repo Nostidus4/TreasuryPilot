@@ -3,7 +3,7 @@ the dependency map, GitHub issues and the Excel tracker are all generated from i
 TICKETS = []
 
 def T(id, title, phase, prio, size, feats, refs, deps, objective, scope, oos, notes, ac, tests,
-      split_plan=None):
+      split_plan=None, context=None):
     """scope / ac / tests: ';'-separated strings. deps: space-separated ticket ids."""
     TICKETS.append(dict(
         id=id, title=title, phase=phase, prio=prio, size=size, feats=feats, refs=refs,
@@ -12,7 +12,7 @@ def T(id, title, phase, prio, size, feats, refs, deps, objective, scope, oos, no
         oos=oos, notes=notes,
         ac=[s.strip() for s in ac.split(';') if s.strip()],
         tests=[s.strip() for s in tests.split(';') if s.strip()],
-        split_plan=split_plan,
+        split_plan=split_plan, context=context,
     ))
 
 MODULES = {

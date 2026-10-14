@@ -6,8 +6,8 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 
 | ID | Câu hỏi | Vì sao quan trọng | Ảnh hưởng | Phương án | Khuyến nghị BA |
 |---|---|---|---|---|---|
-| OQ-01 | Cuộc thi có chấp nhận tx hash trên **testnet** làm bằng chứng thực thi cho Topic F không? | Quyết định dùng testnet hay mainnet với stablecoin thật, kéo theo rủi ro pháp lý và tuân thủ | NFR-CMP-01, F-151, mọi bằng chứng | (a) chấp nhận testnet; (b) bắt buộc mainnet | **Email ban tổ chức ngay.** Lên kế hoạch theo (a); dự phòng mainnet giá trị nhỏ trên chain phí thấp |
-| OQ-02 | Chain nào cho M1? *(Phase 3)* | Ảnh hưởng: có Safe không, có faucet USDC test không, có EAS không, RPC, explorer | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Base Sepolia**, chờ kiểm chứng ở Phase 3 |
+| OQ-01 | Thể lệ yêu cầu bằng chứng nào và nhóm chọn mạng nào? | Phân biệt yêu cầu BTC với giả định của nhóm | NFR-CMP-01, F-151, mục submission 06 | Tx hash on-chain thật; checklist không chỉ định testnet/mainnet | Dùng Ethereum Sepolia theo ADR-012/019 và NFR-CMP-01; hỏi thêm BTC là tùy chọn, không chặn công việc |
+| OQ-02 | Chain nào cho M1? *(Phase 3)* | Ảnh hưởng: có Safe không, có faucet USDC test không, có EAS không, RPC, explorer | F-010, F-013, F-074, F-151 | Base Sepolia; Ethereum Sepolia; Arbitrum Sepolia | **Đã chốt (PH-1, 11/10/2026): Ethereum Sepolia** (ADR-012); DOM-001 ghi nhận kết quả kiểm chứng. Base Sepolia không còn là khuyến nghị. |
 | OQ-03 | Stablecoin cho M1: USDC testnet của Circle hay `tUSDC` tự triển khai? | Đánh đổi giữa tính thực tế và quyền kiểm soát nguồn cung | F-013, demo | (a) USDC Circle; (b) tUSDC | (a) nếu faucet đủ cho hơn 40 lần chạy; nếu không thì (b), ghi nhãn rõ |
 | OQ-04 | Thời gian chờ payee | Đánh đổi giữa bảo mật và sự phiền phức | F-022, BR-017 | 24 / 48 / 72 giờ; demo 5 phút | 24 giờ (cấu hình 1 giờ–7 ngày); demo 5 phút |
 | OQ-05 | Giá trị hạn mức trong demo | Demo cần một hóa đơn vượt trần và một buffer có ý nghĩa | F-020, F-023, F-024 | Dùng YAML gốc | Theo YAML gốc, co giãn theo lượng faucet |
@@ -28,7 +28,7 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 ## Kết quả cổng G1 (10/10/2026)
 
 - **Chấp nhận khuyến nghị:** OQ-04, 05, 06, 07, 08, 09, 10, 12, 13, 15, 16, 17, 18.
-- **Còn mở:** OQ-01 — cần email ban tổ chức; giả định làm việc là testnet được chấp nhận.
+- **OQ-01:** yêu cầu đã được đối chiếu với thể lệ ngày 14/10/2026; không có bước email bắt buộc. Nhóm dùng Sepolia như giả định làm việc, không tuyên bố có xác nhận từ BTC.
 - **Chuyển sang Phase 3 (cổng G2):** OQ-02, 03, 11, 14.
 
 ## Cập nhật Phase 3 (11/10/2026)
@@ -39,4 +39,23 @@ Mỗi câu hỏi có khuyến nghị của BA. Khuyến nghị được dùng l�
 | OQ-03 | **Đã chốt (anh Phúc, 11/10/2026):** `tUSDC` cho demo chính và test tự động; một lượt bằng chứng bằng USDC thật của Circle trên Sepolia với hạn mức chia 100 (faucet Circle: 10 USDC/ngày công khai, 10 × 20 USDC/ngày cho tài khoản developer). |
 | OQ-11 | **Đã chốt:** Anthropic Claude qua SDK, có adapter (quyết định Q27). |
 | OQ-14 | **Đã chốt:** tự xây magic link + SIWE (quyết định Q33). |
-| OQ-01 | **Anh Phúc xác nhận (11/10/2026):** bằng chứng trên public testnet được chấp nhận. DOM-003 vẫn xin ban tổ chức xác nhận bằng văn bản. |
+| OQ-01 | **Cách hiểu của nhóm ghi nhận qua anh Phúc (11/10/2026):** dùng public testnet. Đây không phải phản hồi của BTC; xem đối chiếu thể lệ ngày 14/10 dưới đây. |
+
+## OQ-01 / DOM-003 — đối chiếu thể lệ ngày 14/10/2026
+
+[Thể lệ PBCSF Appendix 2](https://www.its.ac.id/international/wp-content/uploads/sites/66/2026/10/PBCSF-Appendix-2-Problem-Description-and-Competition-Rules-for-International-Track.pdf),
+trang 3, checklist submission mục 06, yêu cầu Topic on-chain có **tx hash on-chain
+thật**. Checklist không chỉ định testnet/mainnet, không yêu cầu gửi email hay có
+xác nhận bằng văn bản.
+
+Nhóm tiếp tục dùng Ethereum Sepolia theo ADR-012/019 và phạm vi testnet-only của
+NFR-CMP-01. Điều này là lựa chọn/giả định của nhóm, không phải cam kết BTC chấp nhận
+testnet. Bằng chứng phải lấy từ action thực sự thực thi; nhóm bổ sung chain ID,
+explorer link và receipt/event để dễ kiểm chứng, không coi hash tính offline hoặc
+mô phỏng là giao dịch public thật.
+
+Hỏi BTC là tùy chọn để tăng độ chắc chắn, không chặn development/submission và
+không phải acceptance bắt buộc của #231. Lần đối chiếu này không gửi email, không
+giả lập phản hồi. Nếu sau này BTC đưa ra yêu cầu khác, ghi phản hồi thật và mở
+quyết định thay đổi ADR/scope có review; không tự chuyển sang mainnet. Phần deploy
+và thu thập tx hashes thực tế vẫn thuộc DOM-001/002 và các ticket thực thi.
