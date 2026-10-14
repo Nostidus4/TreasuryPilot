@@ -1247,7 +1247,6 @@ export interface components {
       /** Scheme */
       scheme: string;
     };
-<<<<<<< HEAD
     /** TenantHealth */
     TenantHealth: {
       /** Activemembers */
@@ -1273,7 +1272,23 @@ export interface components {
       activeMembers: number;
       /** Country */
       country: string | null;
-=======
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Status */
+      status: string;
+      /** Treasuries */
+      treasuries: number;
+    };
     /** TransactionEvidence */
     TransactionEvidence: {
       /** Blocknumber */
@@ -1308,7 +1323,6 @@ export interface components {
       /** Chainid */
       chainId: number;
       coverage: components['schemas']['Coverage'];
->>>>>>> origin/main
       /**
        * Createdat
        * Format: date-time
@@ -1319,18 +1333,9 @@ export interface components {
        * Format: uuid
        */
       id: string;
-<<<<<<< HEAD
-      /** Name */
-      name: string;
-      /** Status */
-      status: string;
-      /** Treasuries */
-      treasuries: number;
-=======
       /** Moduleaddress */
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
->>>>>>> origin/main
     };
     /** UserView */
     UserView: {

@@ -1700,7 +1700,6 @@
         "title": "SiweNonceResponse",
         "type": "object"
       },
-<<<<<<< HEAD
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -1746,7 +1745,51 @@
             "type": "integer"
           },
           "country": {
-=======
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "treasuries": {
+            "title": "Treasuries",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "country",
+          "createdAt",
+          "status",
+          "activeMembers",
+          "treasuries"
+        ],
+        "title": "TenantView",
+        "type": "object"
+      },
       "TransactionEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -1768,7 +1811,6 @@
             "type": "integer"
           },
           "feeBaseUnits": {
->>>>>>> origin/main
             "anyOf": [
               {
                 "type": "string"
@@ -1777,9 +1819,6 @@
                 "type": "null"
               }
             ],
-<<<<<<< HEAD
-            "title": "Country"
-=======
             "title": "Feebaseunits"
           },
           "txHash": {
@@ -1833,7 +1872,6 @@
           },
           "coverage": {
             "$ref": "#/components/schemas/Coverage"
->>>>>>> origin/main
           },
           "createdAt": {
             "format": "date-time",
@@ -1845,19 +1883,6 @@
             "title": "Id",
             "type": "string"
           },
-<<<<<<< HEAD
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "treasuries": {
-            "title": "Treasuries",
-            "type": "integer"
-=======
           "moduleAddress": {
             "anyOf": [
               {
@@ -1871,21 +1896,10 @@
           },
           "status": {
             "$ref": "#/components/schemas/TreasuryStatus"
->>>>>>> origin/main
           }
         },
         "required": [
           "id",
-<<<<<<< HEAD
-          "name",
-          "country",
-          "createdAt",
-          "status",
-          "activeMembers",
-          "treasuries"
-        ],
-        "title": "TenantView",
-=======
           "chainId",
           "assetId",
           "status",
@@ -1894,7 +1908,6 @@
           "createdAt"
         ],
         "title": "TreasuryView",
->>>>>>> origin/main
         "type": "object"
       },
       "UserView": {
