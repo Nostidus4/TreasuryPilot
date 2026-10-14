@@ -108,6 +108,29 @@
         "title": "ApprovalEvidence",
         "type": "object"
       },
+      "ApproveRequest": {
+        "properties": {
+          "expiry": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expiry",
+            "type": "integer"
+          },
+          "revision": {
+            "exclusiveMinimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "signature": {
+            "maxLength": 8192,
+            "minLength": 2,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["signature", "revision", "expiry"],
+        "title": "ApproveRequest",
+        "type": "object"
+      },
       "AssetView": {
         "properties": {
           "address": {
@@ -5383,6 +5406,142 @@
           }
         },
         "summary": "Edit Request",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data": {
+      "get": {
+        "operationId": "get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Approval Typed Data V1 Orgs  Organization Id  Requests  Request Id  Approval Typed Data Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Approval Typed Data",
+        "tags": ["requests"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/approve": {
+      "post": {
+        "operationId": "approve_request_v1_orgs__organization_id__requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Request V1 Orgs  Organization Id  Requests  Request Id  Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Request",
         "tags": ["requests"],
         "x-organization-scoped": true
       }
