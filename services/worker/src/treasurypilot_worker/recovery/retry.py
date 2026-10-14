@@ -62,6 +62,10 @@ class OperationIds:
     idempotency_key: str
 
 
+class BroadcastSent(Exception):
+    """Raised by ``send`` (``raise BroadcastSent from err``) once the tx may have reached the network."""
+
+
 @dataclass(frozen=True, slots=True)
 class Stop:
     review: ReviewIntent
@@ -83,13 +87,17 @@ _UNCLASSIFIED = Classification(review=ReviewIntent("INFRA", "UNCLASSIFIED_ERROR"
 
 
 def classify(error: BaseException | PolicyReasonCode, *, broadcast: bool = False) -> Classification:
-    """Map an error to retry-or-stop; unknown errors stop (fail closed)."""
+    """Map an error to retry-or-stop; unknown errors stop (fail closed).
 
+    After broadcast every outcome is UNCERTAIN_TX: the tx may be on chain, so no INFRA retry.
+    """
+
+    if broadcast:
+        return _NOT_RETRIED
     if isinstance(error, PolicyReasonCode):
         kind = _TERMINAL_CODES.get(error)
         return Classification(review=ReviewIntent(kind, error.value)) if kind else _UNCLASSIFIED
-    result = _classify_error(error)
-    return _NOT_RETRIED if broadcast and result.retryable else result
+    return _classify_error(error)
 
 
 def _classify_error(error: BaseException) -> Classification:
@@ -126,13 +134,18 @@ async def run_with_retry[T](
 ) -> T | Stop:
     """Call ``send(ids, attempt, remedy)`` until it succeeds or the policy says stop.
 
-    ``remedy`` is what the previous failure asked for (nonce resync, fee bump).
+    ``remedy`` is what the previous failure asked for (nonce resync, fee bump). ``send`` raises
+    ``BroadcastSent`` once the tx may be on the network; that stops the loop (never re-send).
     """
 
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
     remedy = Remedy.NONE
     for attempt in range(1, max_attempts + 1):
         try:
             return await send(ids, attempt, remedy)
+        except BroadcastSent as error:
+            return Stop(classify(error, broadcast=True).review, attempt)  # type: ignore[arg-type]
         except Exception as error:  # classified below; unknown errors stop, never propagate
             outcome = classify(error)
         if outcome.review is not None:

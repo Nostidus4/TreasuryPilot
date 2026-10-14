@@ -10,6 +10,7 @@ from treasurypilot_api.recovery.review_queue import ReviewType
 from treasurypilot_core.policy import PolicyReasonCode
 from treasurypilot_worker.chain.rpc import RpcClient, RpcProvider, RpcResponseError, RpcUnavailable
 from treasurypilot_worker.recovery.retry import (
+    BroadcastSent,
     OperationIds,
     Remedy,
     ReviewIntent,
@@ -75,6 +76,20 @@ def test_nothing_is_retried_after_broadcast() -> None:
     assert result.review == ReviewIntent("UNCERTAIN_TX", "TX_UNKNOWN")
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError("boom"),
+        RpcResponseError(3, "execution reverted"),
+        PolicyReasonCode.PAYLOAD_MISMATCH,
+    ],
+)
+def test_every_outcome_after_broadcast_is_uncertain(
+    error: BaseException | PolicyReasonCode,
+) -> None:
+    assert classify(error, broadcast=True).review == ReviewIntent("UNCERTAIN_TX", "TX_UNKNOWN")
+
+
 def test_backoff_doubles_from_two_seconds() -> None:
     assert [backoff_seconds(n) for n in range(1, 7)] == [2, 4, 8, 16, 32, 64]
 
@@ -118,6 +133,25 @@ def test_max_attempts_exhausted_asks_for_an_infra_review() -> None:
     assert len(send.calls) == 6
     assert delays == [2, 4, 8, 16, 32]
     assert {call[0] for call in send.calls} == {IDS}
+
+
+def test_timeout_after_broadcast_stops_on_attempt_1_as_uncertain() -> None:
+    async def send(ids: OperationIds, attempt: int, remedy: Remedy) -> str:
+        raise BroadcastSent from TimeoutError()
+
+    delays: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    result = asyncio.run(run_with_retry(send, IDS, sleep=sleep))
+    assert result == Stop(ReviewIntent("UNCERTAIN_TX", "TX_UNKNOWN"), 1)
+    assert delays == []
+
+
+def test_max_attempts_below_one_is_rejected() -> None:
+    with pytest.raises(ValueError, match="max_attempts"):
+        _run(_Flaky([]), [], max_attempts=0)
 
 
 def test_terminal_error_stops_on_first_attempt() -> None:
