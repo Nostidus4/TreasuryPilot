@@ -1,7 +1,7 @@
 """add platform tenant status and admin operation records
 
-Revision ID: 20261014_0011
-Revises: 20261014_0010
+Revision ID: 20261014_0013
+Revises: 20261013_0012
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0011"
-down_revision: str | None = "20261014_0010"
+revision: str = "20261014_0013"
+down_revision: str | None = "20261013_0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
