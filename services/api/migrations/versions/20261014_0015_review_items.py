@@ -1,7 +1,7 @@
 """Create the organization-scoped recovery review queue.
 
 Revision ID: 20261014_0015
-Revises: 20261014_0013
+Revises: 20261014_0014
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261014_0015"
-down_revision: str | None = "20261014_0013"
+down_revision: str | None = "20261014_0014"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
