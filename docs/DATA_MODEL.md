@@ -89,7 +89,7 @@ erDiagram
 |---|---|---|
 | `mandate_versions` | id, treasury_id, version, onchain_version, status enum(Draft,PendingActivation,Active,Superseded,Expired,Revoked,Discrepancy), config jsonb (full mandate), config_hash, governance_tx_id, valid_from, expires_at, created_by, activated_at | **Immutable rows** except status/onchain_version/activated_at (and governance_tx_id while Draft); only a Draft can be deleted; a trigger enforces this. Status transitions recorded in `mandate_status_events`. unique(treasury_id,version). Paused is a treasury status (docs/modules/mandate §5.1) |
 | `mandate_status_events` | id, mandate_version_id, from, to, tx_hash, at, by | append-only |
-| `vendors` | id, org_id, name, normalized_ref, tax_id null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
+| `vendors` | id, org_id, name, normalized_ref, tax_id (encrypted) null, contact (encrypted), notes, created_by | unique(org_id, normalized_ref); PII is Confidential (F-113); M05-D2 |
 | `payees` | id, treasury_id, vendor_id, label, address, status enum(Proposed,Screening,ScreeningFailed,AwaitingOwner,Cooling,Active,Deactivated), active_from, oob_verified_by/at, oob_method, oob_note, registration_tx_id, deactivated_at | unique(treasury_id,address) where status≠Deactivated; see docs/modules/mandate §4 |
 | `screenings` | id, payee_id or address, provider, result enum(CLEAR,HIT,ERROR), source_ref, checked_at, ttl_until | idx(address, checked_at desc) |
 | `exceptions` | id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested,Proposed,Granted,Consumed,Expired,Invalidated,Rejected,Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status in (Proposed, Granted) |

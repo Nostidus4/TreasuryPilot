@@ -40,7 +40,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|
 | **Vendor** | A company we pay (name, tax id, normalized reference). Has 1..n payee addresses (M03). History (amounts, addresses) is kept **per vendor** (M05-D2). |
 | **Payment request** | One invoice to be paid once, in full, from one paying wallet to one payee (M05-D9). |
-| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
+| **Bound fields** | The fields signed in `PaymentApproval` (BR-003): requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry. Editing any of their inputs creates a new revision and invalidates approvals. |
 | **Free fields** | Internal note, tags, cost center, attachments other than the invoice document. Editable at any time before Paid without invalidation. |
 | **requestId (on-chain)** | `keccak256(abi.encode("TP_REQ_V1", orgId, request uuid))`. Stable across revisions so `requestPaid` blocks a second payment of any revision. |
 | **invoiceHash** | `keccak256(abi.encode(normVendorRef, normInvoiceNo, amount, asset, issueDate, dueDate, documentSha256 or 0x0))` (M05-D3). |
@@ -53,11 +53,11 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 |---|---|---|
 | `vendors` | id, org_id, name, **normalized_ref** (unique per org), **tax_id** null, contact (encrypted), notes, created_by | M05-D2. `normalized_ref = norm(name or supplier code)` set once; renaming keeps it |
 | `payees` | + `vendor_id` NOT NULL | a payee always belongs to a vendor |
-| `payment_requests` | id, org_id, treasury_id, vendor_id, payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
+| `payment_requests` | id, org_id, treasury_id, chain_id (= treasury's chain, ties asset_id), vendor_id (= payee's vendor, same org), payee_id, invoice_no, **issue_date**, due_at, amount numeric(78,0), asset_id, paying_wallet_id, terms jsonb, terms_hash, terms_confirmed_by/at, fingerprint, **invoice_hash**, **onchain_request_id**, **source** enum(MANUAL, UPLOAD, CSV), extraction_confirmed_by/at, status, current_revision, created_by, last_edited_by, note, tags text[], cost_center, **cancel_onchain** enum(NotNeeded, Pending, Confirmed) , cancel_tx_hash, version | unique(treasury_id, fingerprint) where status ∉ (Rejected, Cancelled, Expired) |
 | `request_revisions` | id, request_id, revision, snapshot jsonb (all bound inputs), edited_by, at, reason | append-only |
 | `documents` | id, request_id, storage_key, sha256, mime, size, pages, uploaded_by | private bucket |
 | `flags` | id, request_id, **revision**, code, severity, evidence jsonb, source enum(DETERMINISTIC, AI), status enum(Open, Acknowledged, Superseded), acknowledged_by/at, ack_note | recomputed on every revision; old ones → Superseded |
-| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, **acknowledged_flag_ids** uuid[], **solo_mode** bool, expires_at, status enum(Valid, Invalidated, Expired, Cancelled) | immutable except status |
+| `approvals` | id, request_id, revision, approver_user_id, approver_address, typed_data jsonb, signature, **acknowledged_flag_ids** uuid[], **solo_mode** bool, expires_at, status enum(Valid, Invalidated, Expired, Cancelled) | immutable except status, which only moves Valid → Invalidated/Expired/Cancelled |
 | `csv_imports` | id, org_id, treasury_id, file_sha256, rows_total, rows_created, errors jsonb, created_by, at | |
 | `request_status_events` | id, request_id, from, to, actor_type, actor_id, reason, at | append-only |
 
@@ -103,6 +103,8 @@ stateDiagram-v2
 | Transition | Who | Guard (error) |
 |---|---|---|
 | submit | OPR, ADM | payee exists and not Deactivated (`PAYEE_UNKNOWN`); asset = treasury stablecoin (`ASSET_NOT_PAYMENT_STABLECOIN`); no other active request with the same fingerprint (`DUPLICATE_FINGERPRINT`); extracted fields confirmed if source = UPLOAD (`EXTRACTION_UNCONFIRMED`); extracted terms confirmed or none (`TERMS_UNCONFIRMED`) |
+| acknowledge flag | APR | request is AwaitingApproval (`NOT_AWAITING_APPROVAL`); flag is Open on the current revision (`FLAG_SUPERSEDED`); note has at least 10 non-whitespace characters; the creator cannot acknowledge, and maker-checker applies to the last editor unless solo mode is on (`MAKER_CHECKER`) |
+| serve approval typed data | APR | request is AwaitingApproval (`NOT_AWAITING_APPROVAL`); every HIGH flag on the current revision is acknowledged (`HIGH_FLAGS_UNACKED`) |
 | approve | APR with linked wallet | §8.6 (all errors listed there) |
 | edit bound field | OPR, ADM | status ∈ {Draft, AwaitingApproval→withdraw first, Approved} and no operation in flight (`PAYMENT_IN_FLIGHT`); `If-Match` (412) |
 | cancel | OPR (own drafts), OWN, ADM | no PAY operation NotSubmitted/Submitted/Pending/Unknown (`PAYMENT_IN_FLIGHT`, BR-060) |
@@ -113,6 +115,8 @@ stateDiagram-v2
 
 **Cancellation (M05-D4, BR-077):** cancel is immediate off-chain (validator code `REQUEST_CANCELLED`, signer refuses). If the request ever had a `Valid` approval, `cancel_onchain = Pending` and the UI shows **"Cancel on-chain"**: any Approver signs a transaction `module.cancelRequest(requestId)` from their own wallet, or the Owner submits it through Safe T. When `RequestCancelled` is observed, `cancel_onchain = Confirmed`. A Pending on-chain cancel is a visible to-do on the dashboard until confirmed.
 
+**INV-011 implementation boundary:** rejection, cancellation state changes, approval expiry, and renewal are persisted by the API/worker. The cancellation transaction builder and `RequestCancelled` event consumer remain unavailable until the module contract ABI/deployment and chain event indexer are present; the API returns `ONCHAIN_CANCEL_UNAVAILABLE` and leaves the cancellation visibly `Pending` in the meantime. Do not treat this state as an on-chain cancellation.
+
 ## 6. API (changes to API_SPEC §4)
 
 | Method | Endpoint | Perm | Request → Response | Errors |
@@ -121,19 +125,29 @@ stateDiagram-v2
 | POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | OPR | multipart `file`, `treasuryId` → `202 {requestId, extractionJobId}` | 413, 415, 422 `MULTI_INVOICE_DOCUMENT` |
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
-| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart, `?dryRun=true` → `{importId, created[], errors[{row, field, code}]}` | 422 `CSV_HEADER_INVALID`, `CSV_ENCODING` |
+| POST | `/orgs/{o}/requests/import-csv` 🔁 | OPR | multipart `file`, `treasuryId`, `?dryRun=true` → `{importId, dryRun, created[], errors[{row, field, code, message, value}], errorReportUrl}` | 413 `CSV_TOO_LARGE`; 422 `CSV_HEADER_INVALID`, `CSV_ENCODING`, `CSV_ROW_LIMIT` |
+| GET | `/orgs/{o}/requests/import-csv/{importId}/errors.csv` | OPR | downloadable, formula-neutralized error report | 404 `REQUEST_NOT_FOUND` |
 | PATCH | `/orgs/{o}/requests/{r}` | OPR | `If-Match` + fields → `{request, revision, approvalInvalidated: bool}` | 409 `NOT_EDITABLE`, `PAYMENT_IN_FLIGHT`, 412 |
-| POST | `/…/{r}/terms/confirm` | OPR | `{terms}` → `{request}` | 422 `TERMS_INVALID` |
-| POST | `/…/{r}/submit` | OPR | → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED` |
-| POST | `/…/{r}/withdraw` | OPR | → Draft | |
-| POST | `/…/{r}/request-changes` | APR | `{reason}` → Draft | |
-| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER` |
+| POST | `/…/{r}/terms/confirm` | OPR | `If-Match` + `{terms}` → `{request}` | 409 `NOT_EDITABLE`, 412, 422 `TERMS_INVALID` |
+| POST | `/…/{r}/submit` | OPR | `If-Match` → `{request}` | 409 `DUPLICATE_FINGERPRINT` (+ `existingRequestId`), `TERMS_UNCONFIRMED`, `EXTRACTION_UNCONFIRMED`, `REQUEST_FIELDS_INCOMPLETE`; 412 |
+| POST | `/…/{r}/withdraw` | OPR | `If-Match` → Draft | 409 `INVALID_REQUEST_TRANSITION`; 412 |
+| POST | `/…/{r}/request-changes` | APR | `If-Match` + `{reason}` → Draft | 409 `INVALID_REQUEST_TRANSITION`, `MAKER_CHECKER`; 412 |
+| POST | `/…/{r}/flags/{f}/ack` | APR | `{note}` (≥ 10 chars) → `{flag}` | 409 `FLAG_SUPERSEDED`, `MAKER_CHECKER`, `NOT_AWAITING_APPROVAL` |
 | GET | `/…/{r}/approval-typed-data` | APR | → `{domain, types, primaryType, message}` | 409 `MAKER_CHECKER`, `HIGH_FLAGS_UNACKED`, `NOT_AWAITING_APPROVAL` |
-| POST | `/…/{r}/approve` 🔁 | APR | `{signature, revision}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
+| POST | `/…/{r}/approve` 🔁 | APR | `Idempotency-Key` + `{signature, revision, expiry}` → `{request: Approved, approval}` | 400 `SIGNATURE_INVALID`, 403 `NOT_IN_APPROVER_SET`, `WALLET_NOT_LINKED`, 409 `MAKER_CHECKER`, `REVISION_CHANGED`, `HIGH_FLAGS_UNACKED` |
 | POST | `/…/{r}/reject` | APR | `{reason}` → Rejected | |
 | POST | `/…/{r}/cancel` | OPR, OWN, ADM | `{reason}` → `{request: Cancelled, cancelOnchain}` | 409 `PAYMENT_IN_FLIGHT` |
 | GET | `/…/{r}/cancel-tx` | APR, OWN | → `{to: module, data: cancelRequest(requestId)}` or `{safeTx}` for the Owner | 409 `CANCEL_NOT_NEEDED` |
 | POST | `/…/{r}/renew` | OPR | `{dueDate?}` → Draft (new revision) | 409 `NOT_EXPIRED` |
+
+Terms submitted with a draft are provisional. The confirmation endpoint validates the
+ENG-005 payment-terms model, stores its canonical JSON and `terms_hash`, and records
+the confirming operator and time (re-confirming identical terms keeps the original
+confirmer). Late-fee `amount`/`cap` may be sent as integers or canonical integer strings (stored as strings). Editing
+bound request fields clears confirmation. Only confirmed terms may be converted to
+scheduler input. A confirmed discount derives
+`earlyAmount = amount − floor(amount × discount_bps / 10000)` and `earlyPayBy` as
+23:59:59 UTC on the discount deadline day; both are `null` without a discount.
 
 **`PaymentApproval` typed data (corrected: 11 fields, no `overrideDuplicate`, M04-D3)**
 
@@ -178,7 +192,7 @@ sequenceDiagram
 
 ### 7.2 CSV import
 
-Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. Steps: encoding UTF-8 (BOM allowed) → header exact match → per row: vendor by `normalized_ref`, payee address must belong to that vendor (no auto-creation), amount decimal string with ≤ asset decimals, dates ISO → fingerprint vs DB **and** vs earlier rows in the file → flags → Draft. `dryRun=true` returns the same report without writing. Error report CSV escapes cells starting with `= + - @ \t \r` by prefixing `'` (FR-307).
+Template columns: `vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, terms_text?, note?, cost_center?`. UTF-8 (BOM allowed), an exact ordered header (optional columns may be omitted), and at most 1,000 data rows / 5 MiB are accepted. Each row resolves a vendor by `normalized_ref`, requires a registered non-deactivated payee address belonging to that vendor, parses amount without rounding, validates ISO dates, and checks its fingerprint against active requests and earlier valid rows in the file. Valid rows become Draft requests with revisions, status events and deterministic flags; invalid rows stay in the report and do not prevent other valid rows from importing. `dryRun=true` returns the prospective valid rows and row errors without creating an import record or any requests. Cells containing NUL characters are rejected per row as `CSV_NUL_BYTE`. The endpoint takes no `Idempotency-Key`; a retry never creates duplicate requests (the active-fingerprint index holds) but re-reports the rows as `DUPLICATE_FINGERPRINT` under a new `importId`. A completed import with errors exposes `errorReportUrl`; its CSV download prefixes an apostrophe to cells starting with `= + - @ \t \r` (FR-307).
 
 ## 8. Algorithms
 
@@ -237,6 +251,8 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 6. Recover the signer (ECDSA) or call `isValidSignature` (ERC-1271) on the caller's linked contract wallet (`SIGNATURE_INVALID`).
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
+
+`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 13-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

@@ -5,12 +5,15 @@ from .context import (
     Action,
     ApprovalView,
     ChainSnapshot,
+    ExceptionView,
     ExecutionPlan,
     FlagView,
+    Limits,
     MandateView,
     PayeeView,
     PlanStep,
     PolicyConfig,
+    PolicyState,
     RequestView,
     ValidationContext,
 )
@@ -26,6 +29,7 @@ from .reason_codes import (
     is_warning,
     precedence,
 )
+from .validator import validate_plan, validate_step
 
 __all__ = [
     "REASON_CODES",
@@ -34,6 +38,9 @@ __all__ = [
     "ChainSnapshot",
     "ExecutionPlan",
     "FlagView",
+    "ExceptionView",
+    "Limits",
+    "PolicyState",
     "MandateView",
     "PayeeView",
     "PlanStep",
@@ -42,6 +49,8 @@ __all__ = [
     "ValidationContext",
     "aggregate",
     "authorization_checks",
+    "validate_plan",
+    "validate_step",
     "Check",
     "Decision",
     "Group",

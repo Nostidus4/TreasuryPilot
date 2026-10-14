@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import uuid
 from collections.abc import Mapping
@@ -471,6 +472,7 @@ def test_console_sender_outputs_usable_local_link_without_recipient() -> None:
 def test_email_failure_invalidates_issued_token_without_revealing_the_account(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.WARNING, logger="treasurypilot_api.identity.auth")
     with make_harness(sender_fails=True) as harness:
         known = harness.client.post("/v1/auth/magic-link", json={"email": "person@example.com"})
         unknown = harness.client.post("/v1/auth/magic-link", json={"email": "nobody@example.com"})
@@ -840,6 +842,20 @@ def test_organization_routes_hide_non_members_and_restrict_solo_mode() -> None:
         )
         assert owner_setting.status_code == 200
         assert owner_setting.json()["org"]["soloMode"] is True
+
+
+def test_governance_routes_hide_transactions_from_non_member_organizations() -> None:
+    organizations = MemoryOrganizationRepository()
+    member_org = uuid.UUID("00000000-0000-4000-8000-000000000012")
+    user_id = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    organizations.memberships[(member_org, user_id)] = {"Owner"}
+
+    with make_harness(organization_repository=organizations) as harness:
+        harness.login()
+        response = harness.client.get(f"/v1/orgs/{uuid.uuid4()}/governance-txs/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "ORG_NOT_FOUND"
 
 
 def test_organization_input_is_validated_and_settings_require_authentication() -> None:
@@ -1266,6 +1282,7 @@ def test_chains_list_enabled_chains_with_test_assets_labelled() -> None:
                     "chainId": 11155111,
                     "name": "Chain 11155111",
                     "explorerUrl": "https://explorer.example/",
+                    "safeDeploymentAvailable": False,
                     "assets": [
                         {
                             "id": str(asset_id(11155111, "0x" + "ab" * 20)),

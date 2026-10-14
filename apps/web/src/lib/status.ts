@@ -73,7 +73,7 @@ export function stepStatus(
   }
 }
 
-const requestStatuses: Record<RequestStatus, StatusMeta> = {
+export const requestStatuses: Record<RequestStatus, StatusMeta> = {
   Extracting: { label: 'Reading document', tone: 'ai', live: true },
   Draft: { label: 'Draft', tone: 'neutral' },
   AwaitingApproval: { label: 'Awaiting approval', tone: 'warning' },
@@ -90,7 +90,7 @@ const requestStatuses: Record<RequestStatus, StatusMeta> = {
   Cancelled: { label: 'Cancelled', tone: 'neutral' },
 };
 
-const governanceStatuses: Record<GovernanceStatus, StatusMeta> = {
+export const governanceStatuses: Record<GovernanceStatus, StatusMeta> = {
   AwaitingSignatures: { label: 'Awaiting signatures', tone: 'warning' },
   ReadyToExecute: { label: 'Ready to execute', tone: 'info' },
   Executing: {
@@ -103,7 +103,7 @@ const governanceStatuses: Record<GovernanceStatus, StatusMeta> = {
   Superseded: { label: 'Superseded', tone: 'neutral' },
 };
 
-const planStatuses: Record<PlanStatus, StatusMeta> = {
+export const planStatuses: Record<PlanStatus, StatusMeta> = {
   Proposed: { label: 'Proposed', tone: 'neutral' },
   Validated: { label: 'Validated by policy', tone: 'info' },
   Executing: { label: 'Executing', tone: 'info', live: true },
@@ -112,7 +112,7 @@ const planStatuses: Record<PlanStatus, StatusMeta> = {
   Rejected: { label: 'Rejected by policy', tone: 'danger' },
 };
 
-const payeeStatuses: Record<PayeeStatus, StatusMeta> = {
+export const payeeStatuses: Record<PayeeStatus, StatusMeta> = {
   Screening: { label: 'Screening', tone: 'info', live: true },
   ScreeningHit: { label: 'Screening hit', tone: 'danger' },
   AwaitingVerification: { label: 'Needs out-of-band check', tone: 'warning' },
@@ -122,7 +122,7 @@ const payeeStatuses: Record<PayeeStatus, StatusMeta> = {
   Deactivated: { label: 'Deactivated', tone: 'neutral' },
 };
 
-const mandateStatuses: Record<MandateStatus, StatusMeta> = {
+export const mandateStatuses: Record<MandateStatus, StatusMeta> = {
   Draft: { label: 'Draft', tone: 'neutral' },
   PendingActivation: { label: 'Pending activation', tone: 'warning' },
   Active: { label: 'Active on-chain', tone: 'success' },
@@ -130,7 +130,7 @@ const mandateStatuses: Record<MandateStatus, StatusMeta> = {
   Expired: { label: 'Expired', tone: 'danger' },
 };
 
-const treasuryStatuses: Record<TreasuryStatus, StatusMeta> = {
+export const treasuryStatuses: Record<TreasuryStatus, StatusMeta> = {
   Setup: { label: 'Setup in progress', tone: 'warning' },
   Active: { label: 'Operating', tone: 'success' },
   PauseRequested: { label: 'Pausing…', tone: 'warning', live: true },

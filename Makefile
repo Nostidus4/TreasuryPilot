@@ -31,6 +31,11 @@ help:
 	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
+	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+
+.PHONY: eval-validate
+eval-validate:
+	uv run --frozen python evals/validate.py
 
 bootstrap:
 	uv sync

@@ -9,11 +9,14 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
+from treasurypilot_api.admin.api import create_admin_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
+from treasurypilot_api.audit.evidence import EvidenceRepository
+from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -28,6 +31,11 @@ from treasurypilot_api.identity.auth import (
     utc_now,
 )
 from treasurypilot_api.identity.email import ConsoleMagicLinkSender, ResendMagicLinkSender
+from treasurypilot_api.identity.memberships import (
+    MembershipRepository,
+    SqlAlchemyMembershipRepository,
+)
+from treasurypilot_api.identity.memberships import router as memberships_router
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
     SqlAlchemyOrganizationRepository,
@@ -42,8 +50,39 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.documents import (
+    ExtractionQueue,
+    ObjectStorage,
+    build_document_storage,
+    build_extraction_queue,
+)
+from treasurypilot_api.invoices.documents import router as invoice_documents_router
+from treasurypilot_api.invoices.requests import router as requests_router
+from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.governance_service import GovernanceService
+from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
+from treasurypilot_api.mandate.payees import router as payees_router
+from treasurypilot_api.mandate.routes import (
+    MandateRepository,
+    SqlAlchemyMandateRepository,
+)
+from treasurypilot_api.mandate.routes import router as mandate_router
+from treasurypilot_api.mandate.vendors import (
+    FieldCipher,
+    SqlAlchemyVendorRepository,
+    VendorRepository,
+)
+from treasurypilot_api.mandate.vendors import router as vendors_router
+from treasurypilot_api.notifications.routes import (
+    NotificationRepository,
+    SqlAlchemyNotificationRepository,
+)
+from treasurypilot_api.notifications.routes import router as notifications_router
+from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
+from treasurypilot_api.treasury.safe import RpcSafeVerifier
+from treasurypilot_api.treasury.service import TreasuryService
 from treasurypilot_api.treasury.sync import sync_platform_configuration
 from treasurypilot_core.error_tracking import configure_error_tracking
 from treasurypilot_core.observability import REQUEST_ID_HEADER, configure_logging
@@ -78,6 +117,7 @@ def _auth_service(
     OrganizationRepository | None,
     WalletRepository | None,
     AuditRepository | None,
+    async_sessionmaker[AsyncSession] | None,
 ]:
     # Only an explicit local environment relaxes the deployment checks; any other
     # value (including a shared "test" or QA env) is treated as deployed.
@@ -108,6 +148,7 @@ def _auth_service(
     organization_repository: OrganizationRepository | None = None
     wallet_repository: WalletRepository | None = None
     audit_repository: AuditRepository | None = None
+    sessions: async_sessionmaker[AsyncSession] | None = None
     if settings.database_url:
         engine, sessions = create_session_factory(settings.database_url.get_secret_value())
         repository: AuthRepository = SqlAlchemyAuthRepository(sessions)
@@ -150,6 +191,7 @@ def _auth_service(
         organization_repository,
         wallet_repository,
         audit_repository,
+        sessions,
     )
 
 
@@ -160,6 +202,19 @@ def create_app(
     organization_repository: OrganizationRepository | None = None,
     wallet_repository: WalletRepository | None = None,
     audit_repository: AuditRepository | None = None,
+    admin_sessions: async_sessionmaker[AsyncSession] | None = None,
+    screening_service: ScreeningService | None = None,
+    vendor_repository: VendorRepository | None = None,
+    payee_repository: PayeeRepository | None = None,
+    field_cipher: FieldCipher | None = None,
+    mandate_repository: MandateRepository | None = None,
+    treasury_service: TreasuryService | None = None,
+    governance_service: GovernanceService | None = None,
+    membership_repository: MembershipRepository | None = None,
+    evidence_repository: EvidenceRepository | None = None,
+    notification_repository: NotificationRepository | None = None,
+    document_storage: ObjectStorage | None = None,
+    extraction_queue: ExtractionQueue | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -169,7 +224,13 @@ def create_app(
         SQLAlchemyInstrumentor().instrument()
     configure_error_tracking("api")
     engine: AsyncEngine | None = None
+    admin_engine: AsyncEngine | None = None
+    if admin_sessions is None and settings.admin_configured and settings.database_url is not None:
+        admin_engine, admin_sessions = create_session_factory(
+            settings.database_url.get_secret_value()
+        )
     redis_limiter: RedisRateLimiter | None = None
+    sessions: async_sessionmaker[AsyncSession] | None = None
     if auth_service is None:
         (
             auth_service,
@@ -178,6 +239,7 @@ def create_app(
             default_organizations,
             default_wallets,
             default_audit,
+            sessions,
         ) = _auth_service(settings)
         if organization_repository is None:
             organization_repository = default_organizations
@@ -185,6 +247,28 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if screening_service is None and engine is not None:
+        screening_service = build_screening_service(
+            settings.environment, async_sessionmaker(engine, expire_on_commit=False)
+        )
+
+    if mandate_repository is None and engine is not None:
+        mandate_repository = SqlAlchemyMandateRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+
+    if membership_repository is None and engine is not None:
+        membership_repository = SqlAlchemyMembershipRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if notification_repository is None and engine is not None:
+        notification_repository = SqlAlchemyNotificationRepository(
+            async_sessionmaker(engine, expire_on_commit=False)
+        )
+    if vendor_repository is None and sessions is not None:
+        vendor_repository = SqlAlchemyVendorRepository(sessions)
+    if payee_repository is None and sessions is not None:
+        payee_repository = SqlAlchemyPayeeRepository(sessions)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -193,6 +277,14 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if application.state.treasury_service is None and sessions is not None:
+            application.state.treasury_service = TreasuryService(
+                sessions, RpcSafeVerifier(configuration), configuration
+            )
+        if application.state.governance_service is None and sessions is not None:
+            application.state.governance_service = GovernanceService(
+                sessions, RpcSafeVerifier(configuration), configuration
+            )
         if settings.database_url is None:
             if configuration.chains:
                 raise PlatformConfigurationError(
@@ -212,6 +304,8 @@ def create_app(
         yield
         if engine is not None:
             await engine.dispose()
+        if admin_engine is not None:
+            await admin_engine.dispose()
         if redis_limiter is not None:
             await redis_limiter.aclose()
 
@@ -228,6 +322,22 @@ def create_app(
     app.state.organization_repository = organization_repository
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
+    app.state.screening_service = screening_service
+    app.state.vendor_repository = vendor_repository
+    app.state.payee_repository = payee_repository
+    app.state.field_cipher = field_cipher
+    app.state.mandate_repository = mandate_repository
+    app.state.review_sessions = (
+        async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
+    )
+    app.state.treasury_service = treasury_service
+    app.state.governance_service = governance_service
+    app.state.membership_repository = membership_repository
+    app.state.evidence_repository = evidence_repository
+    app.state.notification_repository = notification_repository
+    app.state.request_sessions = sessions
+    app.state.document_storage = document_storage or build_document_storage(settings)
+    app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -252,8 +362,18 @@ def create_app(
 
     app.include_router(identity_router)
     app.include_router(organizations_router)
+    app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(governance_router)
+    app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(mandate_router)
+    app.include_router(vendors_router)
+    app.include_router(payees_router)
+    app.include_router(review_router)
+    app.include_router(notifications_router)
+    app.include_router(requests_router)
+    app.include_router(invoice_documents_router)
 
     return app
 
