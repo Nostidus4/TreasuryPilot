@@ -1,7 +1,7 @@
 """create append-only validations (M08 §4.2, POL-007)
 
 Revision ID: 20261015_0049
-Revises: 20261015_0040
+Revises: 20261015_0047
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261015_0049"
-down_revision: str | None = "20261015_0040"
+down_revision: str | None = "20261015_0047"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
