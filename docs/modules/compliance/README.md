@@ -40,7 +40,7 @@ Payee screening: `Screening → CLEAR | HIT | ERROR`; re-screen when TTL expires
 
 ## 6. Interfaces
 
-Internal `screen(address, chain) → ScreeningResult`; `encrypt(value, cls)` / `decrypt`; structlog processors. API: `GET /orgs/{o}/payees/{id}/screenings` (OWN, ADM, Auditor).
+Internal `screen(org_id, address, chain) → ScreeningResult`; `encrypt(value, cls)` / `decrypt`; structlog processors. API: `GET /orgs/{o}/payees/{id}/screenings` (OWN, ADM, Auditor).
 
 ## 7. Flows
 
@@ -54,6 +54,32 @@ Payee proposal → screen → CLEAR → Owner may register (M03). Before each PA
 ## 9. Configuration
 
 Screening TTL 24 h; provider `fixture` in M1; encryption key from Docker secret `field_key`; redaction on in all environments.
+
+The API exposes the screening adapter through `app.state.screening_service` for
+payee-registration and pre-PAY callers. `screen(org_id, address, chain_id)` persists each
+result with its `chain_id` and provider, and reuses a CLEAR/HIT record for 24 hours
+only for the same address, chain and provider; a reused result is also recorded for
+the requesting payee so its screening history is complete; that copy keeps the original
+`checked_at`/`ttl_until` (when the provider answered, not when the payee relied on it).
+A cached result cannot be force-refreshed within its 24-hour window, and concurrent
+cache misses may each insert a row. Address matching ignores
+case and checksum (`0x`/`0X` or bare hex). The provider call has a 5-second timeout
+(M14-D7). A timeout or provider error (`ScreeningProviderError`, network errors) is
+logged and persisted as ERROR without a cache lifetime; `require_clear()` raises
+`DATA_MISSING` for ERROR and `SCREENING_HIT` for HIT (fail closed, BR-085). Invalid
+input (address, `chain_id <= 0`, a naive clock) raises instead of being recorded.
+
+The fixture provider reads the `screening_lists` table (TEST DATA rows seeded by
+migration `20261014_0013`, including a sample from the
+[OFAC SDN-list update on 2026-03-12](https://ofac.treasury.gov/recent-actions/20260312))
+and is only used when `TP_ENVIRONMENT` is exactly `local`, `test` or `demo`
+(case-insensitive; `dev`/`development` are not accepted and fail closed). The seed runs
+in every environment, so production must delete those TEST DATA rows before a real list
+reader is pointed at the table. The fixture matches on address only and ignores
+`chain_id`, so one list entry yields a separate HIT row per chain screened. In any other
+environment no real provider exists yet, so screening fails closed (every check is
+ERROR → `DATA_MISSING`) and startup logs `screening_provider_unconfigured`.
+The fixture is not a live sanctions list and must not be used for real screening.
 
 The `field_key` secret contains a base64-encoded 32-byte key. Services load it from
 `/run/secrets/field_key` by default; managed environments may inject
