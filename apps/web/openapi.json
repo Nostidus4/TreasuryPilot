@@ -1930,6 +1930,16 @@
         "title": "ModuleMandateInput",
         "type": "object"
       },
+      "NotificationCategory": {
+        "enum": ["mandatory", "approvals", "payments", "operations"],
+        "title": "NotificationCategory",
+        "type": "string"
+      },
+      "NotificationChannel": {
+        "enum": ["in_app", "email", "telegram"],
+        "title": "NotificationChannel",
+        "type": "string"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -1946,6 +1956,67 @@
         },
         "required": ["items", "unreadCount"],
         "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationPreferencesView": {
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channels",
+          "categories",
+          "quietHoursStart",
+          "quietHoursEnd",
+          "timezone"
+        ],
+        "title": "NotificationPreferencesView",
         "type": "object"
       },
       "NotificationView": {
@@ -2982,6 +3053,110 @@
         "title": "SubmittedRequest",
         "type": "object"
       },
+      "SupportGrantRequest": {
+        "properties": {
+          "durationHours": {
+            "default": 24,
+            "maximum": 72.0,
+            "minimum": 1.0,
+            "title": "Durationhours",
+            "type": "integer"
+          },
+          "staffUser": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Staffuser",
+            "type": "string"
+          }
+        },
+        "required": ["staffUser"],
+        "title": "SupportGrantRequest",
+        "type": "object"
+      },
+      "SupportGrantView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "grantedBy": {
+            "format": "uuid",
+            "title": "Grantedby",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revokedat"
+          },
+          "scope": {
+            "const": "read",
+            "title": "Scope",
+            "type": "string"
+          },
+          "staffUser": {
+            "title": "Staffuser",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "expired", "revoked"],
+            "readOnly": true,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "staffUser",
+          "scope",
+          "expiresAt",
+          "grantedBy",
+          "createdAt",
+          "revokedAt",
+          "status"
+        ],
+        "title": "SupportGrantView",
+        "type": "object"
+      },
+      "SupportSummary": {
+        "properties": {
+          "grantId": {
+            "format": "uuid",
+            "title": "Grantid",
+            "type": "string"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantView"
+          }
+        },
+        "required": ["tenant", "grantId"],
+        "title": "SupportSummary",
+        "type": "object"
+      },
       "TenantHealth": {
         "properties": {
           "activeMembers": {
@@ -3190,6 +3365,64 @@
           "createdAt"
         ],
         "title": "TreasuryView",
+        "type": "object"
+      },
+      "UpdateNotificationPreferences": {
+        "description": "PUT body. Omitted fields keep their stored value (the defaults below only\ndescribe the schema); send ``null`` quiet hours to clear them.",
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "channels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "title": "Channels",
+            "type": "object"
+          },
+          "quietHoursEnd": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursend"
+          },
+          "quietHoursStart": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiethoursstart"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "UpdateNotificationPreferences",
         "type": "object"
       },
       "UploadResponse": {
@@ -3781,6 +4014,47 @@
         "tags": ["platform-admin"]
       }
     },
+    "/admin/tenants/{tenant_id}/support": {
+      "get": {
+        "operationId": "support_summary_admin_tenants__tenant_id__support_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Summary",
+        "tags": ["platform-admin"]
+      }
+    },
     "/admin/tenants/{tenant_id}/suspend": {
       "post": {
         "operationId": "suspend_tenant_admin_tenants__tenant_id__suspend_post",
@@ -4038,6 +4312,62 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "get_notification_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Notification Preferences",
+        "tags": ["notifications"]
+      },
+      "put": {
+        "operationId": "put_notification_preferences_v1_me_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Notification Preferences",
+        "tags": ["notifications"]
       }
     },
     "/v1/me/wallets": {
@@ -7024,6 +7354,156 @@
         },
         "summary": "Update Organization Settings",
         "tags": ["organizations"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants": {
+      "get": {
+        "operationId": "list_support_grants_v1_orgs__organization_id__support_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportGrantView"
+                  },
+                  "title": "Response List Support Grants V1 Orgs  Organization Id  Support Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Support Grants",
+        "tags": ["support"]
+      },
+      "post": {
+        "operationId": "grant_support_v1_orgs__organization_id__support_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Support",
+        "tags": ["support"]
+      }
+    },
+    "/v1/orgs/{organization_id}/support-grants/{grant_id}": {
+      "delete": {
+        "operationId": "revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Support Grant",
+        "tags": ["support"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries": {

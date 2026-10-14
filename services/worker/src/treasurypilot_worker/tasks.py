@@ -1,14 +1,18 @@
 import asyncio
 import os
+import time
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
+from celery import Task
 
+from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
 from treasurypilot_worker.notify.publisher import publish_from_pool
+from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -79,6 +83,52 @@ def refresh_safe_config_task() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for Safe configuration refresh")
     return {"snapshots_written": refresh_safe_config_snapshots_sync(database_url)}
+
+
+# Sequential receipt waits (up to 120s per organization); stays under the broker visibility timeout.
+@app.task(name="treasurypilot.audit.publish-daily-roots", queue="core", bind=True, time_limit=1800)
+def publish_daily_audit_roots_task(self: Task, utc_day: int | None = None) -> dict[str, int]:
+    """Anchor each org's current audit head using the dedicated audit publisher key.
+
+    The target UTC day is fixed on the first run and carried through retries.
+    """
+
+    if utc_day is None:
+        utc_day = int(time.time()) // 86_400
+    settings = get_settings()
+    database_url = settings.database_url
+    rpc_url = settings.audit_anchor_rpc_url
+    chain_id = settings.audit_anchor_chain_id
+    contract_address = settings.audit_anchor_contract_address
+    private_key = settings.audit_anchor_private_key
+    if (
+        not database_url
+        or not rpc_url
+        or chain_id is None
+        or not contract_address
+        or private_key is None
+    ):
+        raise RuntimeError("database and complete TP_AUDIT_ANCHOR_* configuration are required")
+    try:
+        chain = Web3AuditRootChain(
+            rpc_url=rpc_url,
+            expected_chain_id=chain_id,
+            contract_address=contract_address,
+            private_key=private_key.get_secret_value(),
+        )
+        count = asyncio.run(publish_daily_audit_roots(database_url, chain, utc_day=utc_day))
+    except Exception as exc:
+        # A send may have succeeded even when its receipt timed out. A redelivery
+        # re-reads the immutable on-chain day marker before attempting another send.
+        # Avoid logging the exception text because RPC errors can echo credentialed URLs.
+        # Autoretry would replay the original args, so retry explicitly with the fixed day.
+        raise self.retry(
+            args=(utc_day,),
+            exc=RetryableTaskError(f"daily audit root publication failed ({type(exc).__name__})"),
+            countdown=min(2**self.request.retries, 60),
+            max_retries=MAX_TASK_RETRIES,
+        ) from None
+    return {"roots_published": count}
 
 
 class _PublisherRuntime:

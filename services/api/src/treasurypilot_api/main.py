@@ -12,7 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
-from treasurypilot_api.admin.api import create_admin_router
+from treasurypilot_api.admin.api import create_admin_router, create_support_grant_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
@@ -74,6 +74,11 @@ from treasurypilot_api.mandate.vendors import (
     VendorRepository,
 )
 from treasurypilot_api.mandate.vendors import router as vendors_router
+from treasurypilot_api.notifications.preferences import (
+    NotificationPreferencesRepository,
+    SqlAlchemyNotificationPreferencesRepository,
+)
+from treasurypilot_api.notifications.preferences import router as notification_preferences_router
 from treasurypilot_api.notifications.routes import (
     NotificationRepository,
     SqlAlchemyNotificationRepository,
@@ -217,6 +222,7 @@ def create_app(
     membership_repository: MembershipRepository | None = None,
     evidence_repository: EvidenceRepository | None = None,
     notification_repository: NotificationRepository | None = None,
+    notification_preferences_repository: NotificationPreferencesRepository | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
 ) -> FastAPI:
@@ -276,6 +282,8 @@ def create_app(
         vendor_repository = SqlAlchemyVendorRepository(sessions)
     if payee_repository is None and sessions is not None:
         payee_repository = SqlAlchemyPayeeRepository(sessions)
+    if notification_preferences_repository is None and sessions is not None:
+        notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -344,6 +352,7 @@ def create_app(
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.add_middleware(
@@ -375,6 +384,7 @@ def create_app(
     app.include_router(treasury_router)
     app.include_router(governance_router)
     app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)
     app.include_router(vendors_router)
     app.include_router(payees_router)
@@ -382,6 +392,7 @@ def create_app(
     app.include_router(notifications_router)
     app.include_router(requests_router)
     app.include_router(invoice_api_keys_router)
+    app.include_router(notification_preferences_router)
     app.include_router(invoice_documents_router)
 
     return app

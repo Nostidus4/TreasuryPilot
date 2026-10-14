@@ -27,6 +27,7 @@ F-120 (FR-911, FR-912, BR-097, NFR-AUD-01–02), F-121 (FR-913, BR-095), F-122 (
 | **Audit record** | `{seq, org_id, at, actor_type (USER, SYSTEM, AI, CONTRACT), actor_id, action, entity_type, entity_id, data, prev_hash, hash}`; `hash = sha256(prev_hash ‖ canonical_json(record without hash))`. |
 | **Audited action** | Anything that affects money or authority: approvals, governance txs and signatures, mandate activation, payee changes, exceptions, plan attestations, operations, pause/resume, role changes, wallet links, solo mode, fee acceptance, review actions, exports. |
 | **Evidence bundle** | JSON `evidence-bundle.v1` + optional attachments (document hash, report), sha256-sealed. |
+| **Daily audit anchor** | One immutable SHA-256 chain head per organization and UTC day, published by an authorized platform account to `AuditRootAnchor`. |
 
 ## 4. Data model
 
@@ -95,3 +96,32 @@ AUD-001 → AUD-002 → AUD-004 → AUD-003. Later AUD-L01.
 | M15-D7 | Coverage object on every status DTO. |
 | M15-D8 | Audit retention forever in M1. |
 | M15-D9 | Bundle exclude Confidential data except vendor display name. |
+
+### Later · AUD-L01 anchoring boundary
+
+`contracts/src/AuditRootAnchor.sol` is the on-chain registry for daily roots. The
+contract accepts one root per opaque organization identifier and UTC day, rejects
+future dates and overwrites, and restricts publication to the configured publisher
+for that organization. The organization identifier is `keccak256` of the organization
+UUID's 16 raw bytes (RFC 4122 big-endian order, Python `UUID.bytes`). A separate
+existence bit allows the all-zero genesis head to be anchored, and `anchoredAt` stores
+the block timestamp of each anchor. Past days may be backfilled after an outage, so
+verifiers compare `anchoredAt` with the end of the UTC day to see how late a root was
+published. The worker fixes the target UTC day when the task starts and reuses it on
+every retry. It reads `audit_heads.last_hash` values inside one read-only
+`REPEATABLE READ` transaction and publishes those exact bytes under that day. Retries
+read `isAnchored` for that organization and UTC day. Once an anchor exists, a retry is
+a no-op (including a revert caused by an earlier timed-out attempt that was mined
+afterwards) even if the live audit head has advanced; the first daily root is
+immutable and is never overwritten. One organization's failure does not stop the
+others; the task retries after all have been attempted.
+
+The worker runs daily at 00:05 UTC. Configure `TP_AUDIT_ANCHOR_RPC_URL`,
+`TP_AUDIT_ANCHOR_CHAIN_ID`, `TP_AUDIT_ANCHOR_CONTRACT_ADDRESS`, and the dedicated
+`TP_AUDIT_ANCHOR_PRIVATE_KEY` only in the core worker, after the publisher address is
+allowlisted in the contract. The RPC chain id is checked before signing; the private
+key is never logged. Do not configure a general purpose treasury signing key.
+
+The contract is not deployed by the current deployment scripts. Production use still
+requires reviewed deployment/address publication and provisioned dedicated publisher
+secrets. Until those external steps are complete, the scheduled task fails closed.

@@ -193,12 +193,15 @@ class ScheduledItem(FrozenModel):
     day: NonNegativeInt
     refill: BaseUnits
     value: int
+    # ``default`` preserves the meaning of schedules produced by the single-asset API.
+    asset_id: Annotated[str, Field(min_length=1)] = "default"
 
 
 class Infeasible(FrozenModel):
     request_id: Annotated[str, Field(min_length=1)]
     reason: ReasonCode
     detail: str
+    asset_id: Annotated[str, Field(min_length=1)] = "default"
 
 
 class Schedule(FrozenModel):

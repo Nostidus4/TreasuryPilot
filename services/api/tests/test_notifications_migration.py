@@ -22,8 +22,10 @@ def test_notifications_upgrade_and_downgrade_compile_offline() -> None:
     sql = output.getvalue()
     assert "CREATE TABLE domain_events" in sql
     assert "CREATE TABLE notifications" in sql
+    assert "CREATE TABLE notification_preferences" in sql
     assert "uq_notifications_user_event" in sql
     assert "fk_notifications_event_org" in sql
     assert "ix_domain_events_pending" in sql
     assert "DROP TABLE notifications" in sql
+    assert "DROP TABLE notification_preferences" in sql
     assert "DROP TABLE domain_events" in sql

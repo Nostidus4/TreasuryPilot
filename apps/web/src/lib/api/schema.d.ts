@@ -38,6 +38,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/admin/tenants/{tenant_id}/support': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Support Summary */
+    get: operations['support_summary_admin_tenants__tenant_id__support_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/tenants/{tenant_id}/suspend': {
     parameters: {
       query?: never;
@@ -201,6 +218,24 @@ export interface paths {
     /** Me */
     get: operations['me_v1_me_get'];
     put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/notification-preferences': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Notification Preferences */
+    get: operations['get_notification_preferences_v1_me_notification_preferences_get'];
+    /** Put Notification Preferences */
+    put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
     post?: never;
     delete?: never;
     options?: never;
@@ -983,6 +1018,41 @@ export interface paths {
     head?: never;
     /** Update Organization Settings */
     patch: operations['update_organization_settings_v1_orgs__organization_id__settings_patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/support-grants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Support Grants */
+    get: operations['list_support_grants_v1_orgs__organization_id__support_grants_get'];
+    put?: never;
+    /** Grant Support */
+    post: operations['grant_support_v1_orgs__organization_id__support_grants_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/support-grants/{grant_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Support Grant */
+    delete: operations['revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/v1/orgs/{organization_id}/treasuries': {
@@ -1998,12 +2068,39 @@ export interface components {
        */
       validFrom: string;
     };
+    /**
+     * NotificationCategory
+     * @enum {string}
+     */
+    NotificationCategory: 'mandatory' | 'approvals' | 'payments' | 'operations';
+    /**
+     * NotificationChannel
+     * @enum {string}
+     */
+    NotificationChannel: 'in_app' | 'email' | 'telegram';
     /** NotificationList */
     NotificationList: {
       /** Items */
       items: components['schemas']['NotificationView'][];
       /** Unreadcount */
       unreadCount: number;
+    };
+    /** NotificationPreferencesView */
+    NotificationPreferencesView: {
+      /** Categories */
+      categories: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd: string | null;
+      /** Quiethoursstart */
+      quietHoursStart: string | null;
+      /** Timezone */
+      timezone: string;
     };
     /** NotificationView */
     NotificationView: {
@@ -2398,6 +2495,67 @@ export interface components {
       /** Transactionhash */
       transactionHash: string;
     };
+    /** SupportGrantRequest */
+    SupportGrantRequest: {
+      /**
+       * Durationhours
+       * @default 24
+       */
+      durationHours: number;
+      /** Staffuser */
+      staffUser: string;
+    };
+    /** SupportGrantView */
+    SupportGrantView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      /**
+       * Grantedby
+       * Format: uuid
+       */
+      grantedBy: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Revokedat */
+      revokedAt: string | null;
+      /**
+       * Scope
+       * @constant
+       */
+      scope: 'read';
+      /** Staffuser */
+      staffUser: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      readonly status: 'active' | 'expired' | 'revoked';
+    };
+    /** SupportSummary */
+    SupportSummary: {
+      /**
+       * Grantid
+       * Format: uuid
+       */
+      grantId: string;
+      tenant: components['schemas']['TenantView'];
+    };
     /** TenantHealth */
     TenantHealth: {
       /** Activemembers */
@@ -2487,6 +2645,30 @@ export interface components {
       /** Moduleaddress */
       moduleAddress: string | null;
       status: components['schemas']['TreasuryStatus'];
+    };
+    /**
+     * UpdateNotificationPreferences
+     * @description PUT body. Omitted fields keep their stored value (the defaults below only
+     *     describe the schema); send ``null`` quiet hours to clear them.
+     */
+    UpdateNotificationPreferences: {
+      /** Categories */
+      categories?: {
+        [key: string]: boolean;
+      };
+      /** Channels */
+      channels?: {
+        [key: string]: boolean;
+      };
+      /** Quiethoursend */
+      quietHoursEnd?: string | null;
+      /** Quiethoursstart */
+      quietHoursStart?: string | null;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone: string;
     };
     /** UploadResponse */
     UploadResponse: {
@@ -2750,6 +2932,37 @@ export interface operations {
       };
     };
   };
+  support_summary_admin_tenants__tenant_id__support_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportSummary'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   suspend_tenant_admin_tenants__tenant_id__suspend_post: {
     parameters: {
       query?: never;
@@ -2990,6 +3203,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MeResponse'];
+        };
+      };
+    };
+  };
+  get_notification_preferences_v1_me_notification_preferences_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+    };
+  };
+  put_notification_preferences_v1_me_notification_preferences_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotificationPreferences'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NotificationPreferencesView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -4690,6 +4956,104 @@ export interface operations {
         content: {
           'application/json': components['schemas']['OrganizationResponse'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_support_grants_v1_orgs__organization_id__support_grants_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportGrantView'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  grant_support_v1_orgs__organization_id__support_grants_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SupportGrantRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SupportGrantView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_support_grant_v1_orgs__organization_id__support_grants__grant_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        grant_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {

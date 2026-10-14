@@ -1,0 +1,16 @@
+{
+  "id": "inv-014",
+  "vendor_name": "SYNTH Vendor 014 Ltd",
+  "invoice_no": "TEST-INV-0014",
+  "issue_date": "2026-09-20",
+  "amount": "450000000",
+  "currency": "USDC",
+  "decimals": 6,
+  "payee_address": "0x1111111111111111111111111111111111111111",
+  "due_date": "2026-10-20",
+  "terms": null,
+  "expected_flags": [],
+  "layout": "messy",
+  "language": "en",
+  "notes": "Synthetic evaluation fixture; no real company or payment authority."
+}
