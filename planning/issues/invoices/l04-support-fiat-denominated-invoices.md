@@ -46,7 +46,7 @@ Follow the module spec and the relevant ADRs.
 ## Dependencies
 
 - INV-003: Implement manual request creation and editing
-- ENG-L02: Add FX conversion and depeg checks for fiat invoices
+- ENG-016: Guard fiat conversion against FX drift, depeg and approved caps
 
 ## Acceptance criteria
 

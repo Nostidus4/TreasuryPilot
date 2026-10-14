@@ -74,7 +74,7 @@ T("INV-L02","Add the inbound invoice API with scoped keys","Later","-","M","F-03
 T("INV-L03","Add recurring payment schedules","Later","-","M","F-040","FR-321, BR-002","INV-003",
   "Generate periodic drafts.", "Schedule templates;draft generation job;skip a period", "", "",
   "Generated drafts require approval every period", "Integration")
-T("INV-L04","Support fiat-denominated invoices","Later","-","L","F-041","FR-322","INV-003 ENG-L02",
+T("INV-L04","Support fiat-denominated invoices","Later","-","L","F-041","FR-322","INV-003 ENG-016",
   "Accept invoices in fiat with FX conversion.", "Fiat amount and currency on requests;approval binds max stablecoin amount;FX source adapter", "", "",
   "Payment never exceeds the approved maximum stablecoin amount", "Integration")
 
