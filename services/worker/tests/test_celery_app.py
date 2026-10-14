@@ -275,3 +275,11 @@ def test_dashboard_snapshots_are_scheduled_every_minute() -> None:
     assert entry["task"] == "treasurypilot.chain.snapshot_dashboards"
     assert entry["schedule"].total_seconds() == 60
     assert entry["options"]["queue"] == "core"
+
+
+def test_event_indexer_is_scheduled_every_six_seconds_on_core_queue() -> None:
+    entry = app.conf.beat_schedule["index-chain-events"]
+
+    assert entry["task"] == "treasurypilot.chain.index-events"
+    assert entry["schedule"] == timedelta(seconds=6)
+    assert entry["options"]["queue"] == "core"

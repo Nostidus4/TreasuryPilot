@@ -66,6 +66,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=60),
                 "options": {"queue": "core", "expires": 55},
             },
+            "index-chain-events": {
+                "task": "treasurypilot.chain.index-events",
+                "schedule": timedelta(seconds=6),
+                "options": {"queue": "core", "expires": 6},
+            },
             "expire-invoice-approvals": {
                 "task": "treasurypilot.invoices.expire_approvals",
                 "schedule": timedelta(minutes=5),

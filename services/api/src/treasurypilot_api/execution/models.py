@@ -230,3 +230,76 @@ class GasLedger(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     day: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class IndexStream(StrEnum):
+    MODULE = "MODULE"
+    SAFE_CONFIG = "SAFE_CONFIG"
+    SAFE_EXEC = "SAFE_EXEC"
+    TOKEN = "TOKEN"
+
+
+index_stream_enum = _enum(IndexStream, "index_stream")
+
+
+class ObservedEvent(Base):
+    """A log read from the chain (M06 §8.3); ``removed`` marks a reorged-out log."""
+
+    __tablename__ = "observed_events"
+    __table_args__ = (
+        CheckConstraint("block_number >= 0", name="ck_observed_events_block_number"),
+        CheckConstraint("log_index >= 0", name="ck_observed_events_log_index"),
+        CheckConstraint("octet_length(block_hash) = 32", name="ck_observed_events_block_hash"),
+        CheckConstraint("octet_length(tx_hash) = 32", name="ck_observed_events_tx_hash"),
+        CheckConstraint("octet_length(address) = 20", name="ck_observed_events_address"),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object'", name="ck_observed_events_payload_object"
+        ),
+        UniqueConstraint(
+            "chain_id", "tx_hash", "log_index", name="uq_observed_events_chain_tx_log"
+        ),
+        Index("ix_observed_events_treasury_stream_block", "treasury_id", "stream", "block_number"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
+    )
+    chain_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("chains.chain_id", ondelete="RESTRICT"), nullable=False
+    )
+    stream: Mapped[IndexStream] = mapped_column(index_stream_enum, nullable=False)
+    block_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    block_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    tx_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    log_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    event_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    removed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+
+class IndexCursor(Base):
+    __tablename__ = "index_cursors"
+    __table_args__ = (
+        CheckConstraint("last_block >= 0", name="ck_index_cursors_last_block"),
+        CheckConstraint(
+            "last_block_hash IS NULL OR octet_length(last_block_hash) = 32",
+            name="ck_index_cursors_block_hash",
+        ),
+    )
+
+    treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="CASCADE"), primary_key=True
+    )
+    stream: Mapped[IndexStream] = mapped_column(index_stream_enum, primary_key=True)
+    last_block: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    last_block_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
