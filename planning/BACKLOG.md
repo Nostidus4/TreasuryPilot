@@ -10,8 +10,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 42 |
-| **All** | | | | **248** |
+| Later | – | – | – | 45 |
+| **All** | | | | **251** |
 
 ## Epics
 
@@ -30,7 +30,7 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 0 | [`issues/recovery/`](issues/recovery/) |
-| M13 · Notifications | `notifications` | 3 | 4 | [`issues/notifications/`](issues/notifications/) |
+| M13 · Notifications | `notifications` | 3 | 7 | [`issues/notifications/`](issues/notifications/) |
 | M14 · Compliance | `compliance` | 3 | 4 | [`issues/compliance/`](issues/compliance/) |
 | M15 · Audit & Evidence | `audit` | 4 | 1 | [`issues/audit/`](issues/audit/) |
 | M16 · Web Application | `web` | 27 | 0 | [`issues/web/`](issues/web/) |
@@ -205,7 +205,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | NTF-003 | notifications | M13 | [Add Telegram linking and delivery](issues/notifications/003-add-telegram-linking-and-delivery.md) | F-101 | M1 | P2 | M | After submission | NTF-001 | Ready for Assignment |
 | NTF-L01 | notifications | M13 | [Add email notifications and digests](issues/notifications/l01-add-email-notifications-and-digests.md) | F-102 | Later | - | M | After submission | NTF-001 | Accepted |
 | NTF-L02 | notifications | M13 | [Add outbound webhooks](issues/notifications/l02-add-outbound-webhooks.md) | F-103 | Later | - | M | After submission | NTF-001 | Accepted |
-| NTF-L03 | notifications | M13 | [Add Slack, Lark and WeCom channels](issues/notifications/l03-add-slack-lark-and-wecom-channels.md) | F-104 | Later | - | L | After submission | NTF-001 | Accepted |
+| NTF-L03 | notifications | M13 | [Build secure chat-channel registration and delivery](issues/notifications/l03-build-secure-chat-channel-registration-and-delivery.md) | F-104 | Later | - | M | After submission | NTF-001, NTF-003 | Accepted |
+| NTF-L03a | notifications | M13 | [Add Slack notification adapter](issues/notifications/l03a-add-slack-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03b | notifications | M13 | [Add Lark notification adapter](issues/notifications/l03b-add-lark-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03c | notifications | M13 | [Add WeCom notification adapter](issues/notifications/l03c-add-wecom-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
 | NTF-L04 | notifications | M13 | [Add notification preferences](issues/notifications/l04-add-notification-preferences.md) | F-105 | Later | - | S | After submission | NTF-002 | Accepted |
 | CMP-001 | compliance | M14 | [Build the screening adapter and fixture provider](issues/compliance/001-build-the-screening-adapter-and-fixture-provider.md) | F-110 | M1 | P1 | S | A | MDT-001 | Ready for Assignment |
 | CMP-002 | compliance | M14 | [Screen payees before each PAY](issues/compliance/002-screen-payees-before-each-pay.md) | F-110 | M1 | P1 | S | After submission | CMP-001, POL-003 | Ready for Assignment |

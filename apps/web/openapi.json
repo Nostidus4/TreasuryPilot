@@ -521,7 +521,7 @@
         "type": "object"
       },
       "ChannelKind": {
-        "enum": ["TELEGRAM"],
+        "enum": ["TELEGRAM", "SLACK", "LARK", "WECOM"],
         "title": "ChannelKind",
         "type": "string"
       },
@@ -2036,7 +2036,7 @@
         "type": "string"
       },
       "NotificationChannel": {
-        "enum": ["in_app", "email", "telegram"],
+        "enum": ["in_app", "email", "telegram", "slack", "lark", "wecom"],
         "title": "NotificationChannel",
         "type": "string"
       },
@@ -4130,6 +4130,19 @@
         "title": "WarningView",
         "type": "object"
       },
+      "WebhookChannelCreate": {
+        "properties": {
+          "webhookUrl": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Webhookurl",
+            "type": "string"
+          }
+        },
+        "required": ["webhookUrl"],
+        "title": "WebhookChannelCreate",
+        "type": "object"
+      },
       "WebhookDeliveryView": {
         "properties": {
           "attemptCount": {
@@ -4875,6 +4888,57 @@
           }
         },
         "summary": "Update Channel",
+        "tags": ["notifications"]
+      }
+    },
+    "/v1/me/channels/{kind}": {
+      "post": {
+        "operationId": "connect_chat_channel_v1_me_channels__kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": ["slack", "lark", "wecom"],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookChannelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connect Chat Channel",
         "tags": ["notifications"]
       }
     },
