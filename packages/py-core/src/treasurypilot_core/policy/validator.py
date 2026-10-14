@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Literal
 
 from eth_abi import encode
@@ -21,15 +22,34 @@ def _check(name: str, passed: bool, code: C) -> Check:
     )
 
 
+def _above(balances: dict[str, int], floors: Mapping[str, int], source: str, amount: int) -> bool:
+    """Source is known and keeps at least its floor (buffer/reserve) after paying ``amount``."""
+    return (
+        source in balances and source in floors and balances[source] - amount >= int(floors[source])
+    )
+
+
 def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
+    try:
+        return _project(steps, ctx)
+    except (ArithmeticError, LookupError, TypeError, ValueError):
+        # Malformed state (non-numeric amount, missing key) fails closed, like authorization._run.
+        return [_check("policy_state_valid", False, C.DATA_MISSING)]
+
+
+def _project(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
     state = ctx.policy_state
     if state is None:
         return [_check("policy_state_present", False, C.DATA_MISSING)]
     checks: list[Check] = []
     balances = {key: int(value) for key, value in state.balances.items()}
     used = {key: int(value) for key, value in state.used_today.items()}
+    # Liquidity figures are projected across steps like balances and counters.
+    a_token, pool_liquidity = int(state.a_token_balance), int(state.pool_liquidity)
+    available_for_supply = int(state.available_for_supply)
     for step in steps:
         source, target, amount = step.from_wallet.lower(), step.to.lower(), int(step.amount)
+        key = step.action.value
         if step.step_id in state.step_used:
             checks.append(_check(f"step_unused_{step.seq}", False, C.STEP_ALREADY_EXECUTED))
         if step.action == Action.PAY:
@@ -68,7 +88,7 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
                 and exception.amount == step.amount
                 and exception.payee.lower() == target
             )
-            if exception is not None:
+            if exception is not None and amount > limit.per_request:
                 checks.append(
                     _check(f"exception_valid_{step.seq}", exception_valid, C.EXCEPTION_INVALID)
                 )
@@ -82,22 +102,20 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             checks.append(
                 _check(
                     f"pay_daily_{step.seq}",
-                    int(used.get("PAY", 0)) + amount <= limit.daily,
+                    used.get(key, 0) + amount <= limit.daily,
                     C.OVER_DAILY_LIMIT,
                 )
             )
             checks.append(
                 _check(
                     f"pay_buffer_{step.seq}",
-                    source in balances
-                    and source in state.buffers
-                    and balances[source] - amount >= int(state.buffers[source]),
+                    _above(balances, state.buffers, source, amount),
                     C.BUFFER_BREACH,
                 )
             )
             if source in balances:
                 balances[source] -= amount
-            used["PAY"] = int(used.get("PAY", 0)) + amount
+            used[key] = used.get(key, 0) + amount
         elif step.action == Action.REFILL:
             limit = state.refill_limits
             checks.append(
@@ -117,16 +135,14 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             checks.append(
                 _check(
                     f"refill_daily_{step.seq}",
-                    int(used.get("REFILL", 0)) + amount <= limit.daily,
+                    used.get(key, 0) + amount <= limit.daily,
                     C.OVER_REFILL_DAILY,
                 )
             )
             checks.append(
                 _check(
                     f"refill_source_buffer_{step.seq}",
-                    source in balances
-                    and source in state.buffers
-                    and balances[source] - amount >= int(state.buffers[source]),
+                    _above(balances, state.buffers, source, amount),
                     C.SOURCE_BUFFER_BREACH,
                 )
             )
@@ -144,7 +160,7 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             if source in balances and target_balance is not None:
                 balances[source] -= amount
                 balances[target] += amount
-            used["REFILL"] = int(used.get("REFILL", 0)) + amount
+            used[key] = used.get(key, 0) + amount
         elif step.action == Action.SUPPLY:
             limit = state.supply_limits
             checks.append(
@@ -155,23 +171,21 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             checks.append(
                 _check(
                     f"supply_daily_{step.seq}",
-                    int(used.get("SUPPLY", 0)) + amount <= limit.daily,
+                    used.get(key, 0) + amount <= limit.daily,
                     C.OVER_SUPPLY_DAILY,
                 )
             )
             checks.append(
                 _check(
                     f"supply_floor_{step.seq}",
-                    source in balances
-                    and source in state.buffers
-                    and balances[source] - amount >= int(state.buffers[source]),
+                    _above(balances, state.buffers, source, amount),
                     C.SUPPLY_FLOOR_BREACH,
                 )
             )
             checks.append(
                 _check(
                     f"supply_available_{step.seq}",
-                    int(state.available_for_supply) >= amount,
+                    available_for_supply >= amount,
                     C.SOURCE_INSUFFICIENT,
                 )
             )
@@ -191,23 +205,26 @@ def _state_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             )
             if source in balances:
                 balances[source] -= amount
-            used["SUPPLY"] = int(used.get("SUPPLY", 0)) + amount
+            available_for_supply -= amount
+            used[key] = used.get(key, 0) + amount
         elif step.action == Action.WITHDRAW:
             checks.append(
                 _check(
                     f"withdraw_atoken_{step.seq}",
-                    amount <= state.a_token_balance,
+                    amount <= a_token,
                     C.INSUFFICIENT_A_TOKEN,
                 )
             )
             checks.append(
                 _check(
                     f"withdraw_liquidity_{step.seq}",
-                    amount <= state.pool_liquidity,
+                    amount <= pool_liquidity,
                     C.INSUFFICIENT_POOL_LIQUIDITY,
                 )
             )
-            balances[target] = int(balances.get(target, 0)) + amount
+            balances[target] = balances.get(target, 0) + amount
+            a_token -= amount
+            pool_liquidity -= amount
         else:
             checks.append(_check(f"supported_action_{step.seq}", False, C.PLAN_MALFORMED))
     return checks
@@ -248,14 +265,25 @@ def _decide(
     )
 
 
+def _timing_checks(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
+    """Late-payment warnings; only a PAY step has a deadline or an early-payment discount."""
+    request = ctx.request
+    if request is None or not any(step.action == Action.PAY for step in steps):
+        return []
+    checks: list[Check] = []
+    if ctx.now > request.deadline:
+        checks.append(_check("deadline", False, C.DEADLINE_MISSED))
+    if request.early_amount > 0 and ctx.now > request.early_pay_by:
+        checks.append(_check("discount", False, C.DISCOUNT_MISSED))
+    return checks
+
+
 def validate_plan(plan: ExecutionPlan, ctx: ValidationContext) -> Decision:
     """Validate every step in order, projecting balances and counters across the plan."""
-    checks = authorization_checks(plan, ctx) + _state_checks(list(plan.steps), ctx)
-    if ctx.request is not None:
-        if ctx.now > ctx.request.deadline:
-            checks.append(_check("deadline", False, C.DEADLINE_MISSED))
-        if ctx.request.early_amount > 0 and ctx.now > ctx.request.early_pay_by:
-            checks.append(_check("discount", False, C.DISCOUNT_MISSED))
+    steps = list(plan.steps)
+    checks = (
+        authorization_checks(plan, ctx) + _state_checks(steps, ctx) + _timing_checks(steps, ctx)
+    )
     return _decide(checks, ctx, "PLAN", None)
 
 
@@ -265,6 +293,8 @@ def validate_step(plan: ExecutionPlan, seq: int, ctx: ValidationContext) -> Deci
     checks = (
         [_check("step_exists", False, C.PLAN_MALFORMED)]
         if step is None
-        else authorization_checks(plan, ctx, seq=seq) + _state_checks([step], ctx)
+        else authorization_checks(plan, ctx, seq=seq)
+        + _state_checks([step], ctx)
+        + _timing_checks([step], ctx)
     )
     return _decide(checks, ctx, "PRE_STEP", seq)
