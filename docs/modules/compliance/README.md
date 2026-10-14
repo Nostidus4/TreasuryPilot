@@ -167,13 +167,22 @@ with database access. Each deleted invitation leaves a `deletion_receipts` row w
 only a SHA-256 digest of its random UUID, a record type and deletion timestamp.
 The digest is never computed from email, a name, or a token. The worker skips an
 invitation referenced by the immutable audit log, because deleting the source
-cannot remove personal data from that hash chain; email matches ignore case. Those records require a separate
-legal review before a broader erasure workflow is enabled. Session and magic-link
-retention are separate follow-up scopes because they are user-wide rather than
-organization-scoped; no policy here silently deletes them.
+cannot remove personal data from that hash chain; email matches ignore case. Those
+records require a separate legal review before a broader erasure workflow is enabled.
+
+Session and magic-link retention is configured separately because those records are
+user-wide rather than organization-scoped. `configure_auth_policy()` requires explicit
+session and magic-link periods; `None` disables deletion for that record type, and
+there is no default period. Its deployment-wide legal hold freezes both auth artifact
+sweeps. Sessions become eligible after their revoke or expiry time plus the configured
+period; magic links become eligible after use or expiry plus their configured period.
+Each deleted session or magic link leaves a receipt containing only the SHA-256 digest
+of its random row UUID, type and deletion time; it never hashes or stores the email,
+token, user id, IP or user agent. The global hold is intentionally conservative;
+subject-specific deletion requests and holds remain a separate follow-up.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
-a day). Follow-up work is estimated at another 2–3 days: user-wide session and
-magic-link retention, subject-level deletion requests and holds, and a policy for
-financial records and immutable audit evidence after their storage models land.
-Until those slices are designed and implemented, CMP-L03 remains open.
+a day). This follow-up adds user-wide session and magic-link retention. Subject-level
+deletion requests and holds, and a policy for financial records and immutable audit
+evidence after their storage models land, remain out of scope. CMP-L03 remains open
+until those slices are designed and implemented.

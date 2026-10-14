@@ -48,13 +48,43 @@ class RetentionPolicy(Base):
     )
 
 
+class AuthRetentionPolicy(Base):
+    """Explicit deployment-wide retention for expired authentication artifacts."""
+
+    __tablename__ = "auth_retention_policies"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_auth_retention_policies_singleton"),
+        CheckConstraint(
+            "session_retention_days IS NULL OR session_retention_days BETWEEN 0 AND 36500",
+            name="ck_auth_retention_policies_session_days",
+        ),
+        CheckConstraint(
+            "magic_link_retention_days IS NULL OR magic_link_retention_days BETWEEN 0 AND 36500",
+            name="ck_auth_retention_policies_magic_link_days",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
+    session_retention_days: Mapped[int | None] = mapped_column(Integer)
+    magic_link_retention_days: Mapped[int | None] = mapped_column(Integer)
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DeletionReceipt(Base):
     """An irreversible digest of a random row id, without email, token or subject id."""
 
     __tablename__ = "deletion_receipts"
     __table_args__ = (
         CheckConstraint("octet_length(record_hash) = 32", name="ck_deletion_receipts_hash_length"),
-        CheckConstraint("record_type = 'invite'", name="ck_deletion_receipts_record_type"),
+        CheckConstraint(
+            "record_type IN ('invite', 'session', 'magic_link')",
+            name="ck_deletion_receipts_record_type",
+        ),
     )
 
     record_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)
