@@ -341,6 +341,7 @@ class RecurringPaymentSchedule(Base):
         ),
         ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
         ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
+        ForeignKeyConstraint(["last_edited_by"], ["users.id"], ondelete="SET NULL"),
         Index("ix_recurring_schedules_due", "status", "next_period"),
     )
 

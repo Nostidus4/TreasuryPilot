@@ -18,14 +18,43 @@ from treasurypilot_core.recurrence import RecurrenceCadence, period_at, period_i
 
 logger = logging.getLogger(__name__)
 
-_DUE_SCHEDULES = """
-SELECT s.*
-FROM recurring_payment_schedules AS s
-WHERE s.status = 'Active' AND s.next_period <= $1
-ORDER BY s.next_period, s.id
+_DUE_SCHEDULE_IDS = """
+SELECT id FROM recurring_payment_schedules
+WHERE status = 'Active' AND next_period <= $1
+ORDER BY next_period, id
 LIMIT $2
+"""
+# Re-checked under the row lock; SKIP LOCKED leaves schedules another worker holds to that worker.
+_LOCK_SCHEDULE = """
+SELECT * FROM recurring_payment_schedules
+WHERE id = $1 AND status = 'Active' AND next_period <= $2
 FOR UPDATE SKIP LOCKED
 """
+
+
+async def _advance(connection: asyncpg.Connection, schedule: asyncpg.Record) -> None:
+    """Move a schedule past its current period (generated, skipped, failed or already recorded)."""
+    next_index = schedule["period_index"] + 1
+    next_date = period_at(
+        schedule["start_date"],
+        RecurrenceCadence(schedule["cadence"]),
+        schedule["interval"],
+        next_index,
+    )
+    status = (
+        "Completed"
+        if schedule["end_date"] is not None and next_date > schedule["end_date"]
+        else "Active"
+    )
+    await connection.execute(
+        """UPDATE recurring_payment_schedules
+           SET period_index=$2, next_period=$3, status=$4, version=version+1, updated_at=now()
+           WHERE id=$1""",
+        schedule["id"],
+        next_index,
+        next_date,
+        status,
+    )
 
 
 async def _insert_period(
@@ -44,7 +73,8 @@ async def _insert_period(
         schedule["id"],
         period_date,
     )
-    if exists is not None:
+    if exists is not None:  # recorded earlier (e.g. skipped); still move past it
+        await _advance(connection, schedule)
         return False
 
     details = await connection.fetchrow(
@@ -88,7 +118,25 @@ async def _insert_period(
         value,
     )
     if duplicate_id is not None:
-        raise ValueError(f"generated invoice duplicates active request {duplicate_id}")
+        reason = f"generated invoice duplicates active request {duplicate_id}"
+        await connection.execute(
+            """INSERT INTO recurring_payment_periods (id, schedule_id, period_date, status, reason)
+               VALUES ($1,$2,$3,'Failed',$4)""",
+            uuid.uuid4(),
+            schedule["id"],
+            period_date,
+            reason,
+        )
+        await _advance(connection, schedule)
+        logger.warning(
+            "recurring_period_failed",
+            extra={
+                "schedule_id": str(schedule["id"]),
+                "period": period_date.isoformat(),
+                "error": reason,
+            },
+        )
+        return False
 
     request_id = uuid.uuid4()
     last_editor_id = schedule["last_edited_by"] or schedule["created_by"]
@@ -179,6 +227,9 @@ async def _insert_period(
         request_id,
         f"recurring schedule {schedule['id']} period {period_date.isoformat()} generated",
     )
+    # shortcut: the anomaly engine lives in treasurypilot_api, so only the deterministic date and
+    # history flags the API's CSV-import path also emits are evaluated (always LOW); move the
+    # engine into treasurypilot_core to run the full set (amount, payee change, ...) here.
     flags: list[tuple[str, dict[str, Any]]] = []
     if due_date < today:
         flags.append(("DUE_DATE_PAST", {"dueDate": due_date.isoformat()}))
@@ -205,18 +256,6 @@ async def _insert_period(
             code,
             json.dumps(evidence, separators=(",", ":")),
         )
-    next_index = schedule["period_index"] + 1
-    next_date = period_at(
-        schedule["start_date"],
-        RecurrenceCadence(schedule["cadence"]),
-        schedule["interval"],
-        next_index,
-    )
-    status = (
-        "Completed"
-        if schedule["end_date"] is not None and next_date > schedule["end_date"]
-        else "Active"
-    )
     await connection.execute(
         """INSERT INTO recurring_payment_periods (id, schedule_id, period_date, request_id, status)
            VALUES ($1,$2,$3,$4,'Generated')""",
@@ -225,60 +264,58 @@ async def _insert_period(
         period_date,
         request_id,
     )
-    await connection.execute(
-        """UPDATE recurring_payment_schedules
-           SET period_index=$2, next_period=$3, status=$4, version=version+1, updated_at=now()
-           WHERE id=$1""",
-        schedule["id"],
-        next_index,
-        next_date,
-        status,
-    )
+    await _advance(connection, schedule)
     return True
+
+
+async def _generate_schedule(
+    connection: asyncpg.Connection, schedule_id: uuid.UUID, run_date: date
+) -> tuple[int, int]:
+    generated = errors = 0
+    # One transaction per schedule keeps the row lock short and commits finished work early.
+    async with connection.transaction():
+        schedule = await connection.fetchrow(_LOCK_SCHEDULE, schedule_id, run_date)
+        for _ in range(100):  # bound catch-up work for templates with a long outage
+            if schedule is None:
+                break
+            try:
+                async with connection.transaction():
+                    made_draft = await _insert_period(connection, schedule, run_date)
+                if made_draft:
+                    generated += 1
+            except (ValueError, asyncpg.PostgresError) as error:
+                errors += 1
+                await connection.execute(
+                    """UPDATE recurring_payment_schedules
+                       SET status='Paused', pause_reason=$2, version=version+1, updated_at=now()
+                       WHERE id=$1 AND status='Active'""",
+                    schedule_id,
+                    str(error)[:500] or type(error).__name__,
+                )
+                logger.warning(
+                    "recurring_period_not_generated",
+                    extra={
+                        "schedule_id": str(schedule_id),
+                        "period": schedule["next_period"].isoformat(),
+                        "error": str(error),
+                    },
+                )
+                break
+            schedule = await connection.fetchrow(_LOCK_SCHEDULE, schedule_id, run_date)
+    return generated, errors
 
 
 async def generate_due_recurring_drafts(
     connection: asyncpg.Connection, *, today: date | None = None, batch_size: int = 100
 ) -> dict[str, int]:
-    """Create due drafts in locked PostgreSQL transactions; redeliveries are idempotent."""
+    """Create due drafts, one locked transaction per schedule; redeliveries are idempotent."""
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     run_date = today or datetime.now(UTC).date()
     generated = 0
     errors = 0
-    async with connection.transaction():
-        schedules = await connection.fetch(_DUE_SCHEDULES, run_date, batch_size)
-        for claimed in schedules:
-            schedule_id = claimed["id"]
-            for _ in range(100):  # bound catch-up work for templates with a long outage
-                schedule = await connection.fetchrow(
-                    "SELECT * FROM recurring_payment_schedules WHERE id=$1", schedule_id
-                )
-                if (
-                    schedule is None
-                    or schedule["status"] != "Active"
-                    or schedule["next_period"] > run_date
-                ):
-                    break
-                try:
-                    async with connection.transaction():
-                        made_draft = await _insert_period(connection, schedule, run_date)
-                    if made_draft:
-                        generated += 1
-                except (ValueError, asyncpg.PostgresError) as error:
-                    errors += 1
-                    if isinstance(error, ValueError | asyncpg.UniqueViolationError):
-                        await connection.execute(
-                            "UPDATE recurring_payment_schedules SET status='Paused', version=version+1, updated_at=now() WHERE id=$1 AND status='Active'",
-                            schedule_id,
-                        )
-                    logger.warning(
-                        "recurring_period_not_generated",
-                        extra={
-                            "schedule_id": str(schedule_id),
-                            "period": schedule["next_period"].isoformat(),
-                            "error": str(error),
-                        },
-                    )
-                    break
+    for row in await connection.fetch(_DUE_SCHEDULE_IDS, run_date, batch_size):
+        made, failed = await _generate_schedule(connection, row["id"], run_date)
+        generated += made
+        errors += failed
     return {"generated": generated, "errors": errors}

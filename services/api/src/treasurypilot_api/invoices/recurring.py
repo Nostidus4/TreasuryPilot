@@ -55,6 +55,8 @@ class RecurringScheduleCreate(ApiModel):
     @model_validator(mode="after")
     def validate_template(self) -> RecurringScheduleCreate:
         period_invoice_number(self.invoice_no_template, self.start_date)
+        if self.start_date < datetime.now(UTC).date():
+            raise ValueError("startDate must be today or later")
         if self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("endDate must be on or after startDate")
         _validate_dates(
@@ -120,10 +122,22 @@ def _view(row: RecurringPaymentSchedule) -> dict[str, object]:
         "endDate": row.end_date.isoformat() if row.end_date else None,
         "dueDaysAfterIssue": row.due_days_after_issue,
         "status": row.status,
+        "pauseReason": row.pause_reason,
         "createdBy": str(row.created_by) if row.created_by else None,
         "lastEditedBy": str(row.last_edited_by) if row.last_edited_by else None,
         "version": row.version,
     }
+
+
+def _resume(row: RecurringPaymentSchedule, today: date) -> None:
+    """Resume from today: do not backfill drafts for the periods missed while paused."""
+    cadence = RecurrenceCadence(row.cadence)
+    while row.next_period < today:
+        row.period_index += 1
+        row.next_period = period_at(row.start_date, cadence, row.interval, row.period_index)
+    if row.end_date is not None and row.next_period > row.end_date:
+        row.status = "Completed"
+    row.pause_reason = None
 
 
 @router.post("", status_code=201, openapi_extra={"x-organization-scoped": True})
@@ -239,6 +253,7 @@ async def edit_schedule(
                 title="Schedule completed",
                 detail="Completed schedules cannot be changed.",
             )
+        was_paused = row.status == "Paused"
         fields = payload.model_dump(exclude_unset=True)
         if "payee_id" in fields:
             row.payee_id = fields["payee_id"]
@@ -269,6 +284,8 @@ async def edit_schedule(
                 title="Dates invalid",
                 detail="The end date cannot be before the next period.",
             )
+        if was_paused and row.status == "Active":
+            _resume(row, datetime.now(UTC).date())
         await _bound_fields(
             session,
             organization_id=member.organization_id,
@@ -326,6 +343,19 @@ async def skip_period(
                 code="SCHEDULE_COMPLETED",
                 title="Schedule completed",
                 detail="This schedule has no period on or before its end date.",
+            )
+        recorded = await session.scalar(
+            select(RecurringPaymentPeriod.id).where(
+                RecurringPaymentPeriod.schedule_id == row.id,
+                RecurringPaymentPeriod.period_date == period_date,
+            )
+        )
+        if recorded is not None:
+            raise AuthFailure(
+                status=409,
+                code="PERIOD_NOT_CURRENT",
+                title="Period cannot be skipped",
+                detail="This period already has a recorded outcome.",
             )
         period = RecurringPaymentPeriod(
             id=uuid7(),
