@@ -213,7 +213,7 @@ async def _deliver_user(
             logger.exception(
                 "notification_email_delivery_failed", extra={"user_id": str(batch[0]["user_id"])}
             )
-            permanent = isinstance(error, (PermanentEmailError, ValueError))
+            permanent = isinstance(error, PermanentEmailError | ValueError)
             try:
                 await _execute(pool, _FAILED, ids, permanent, MAX_ATTEMPTS)
             except Exception:

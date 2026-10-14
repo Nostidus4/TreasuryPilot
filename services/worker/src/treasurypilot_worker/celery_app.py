@@ -67,6 +67,11 @@ def create_celery_app() -> Celery:
                 # this, a busy or stopped worker lets thousands pile up in Redis.
                 "options": {"queue": "core", "expires": 2},
             },
+            "generate-recurring-payment-drafts": {
+                "task": "treasurypilot.invoices.generate-recurring-drafts",
+                "schedule": crontab(minute=5, hour=0),
+                "options": {"queue": "core"},
+            },
             "deliver-telegram": {
                 "task": "treasurypilot.notifications.deliver-telegram",
                 "schedule": timedelta(seconds=1),
@@ -89,6 +94,11 @@ def create_celery_app() -> Celery:
             },
             "deliver-webhooks": {
                 "task": "treasurypilot.notifications.deliver-webhooks",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "webhooks", "expires": 2},
+            },
+            "deliver-chat": {
+                "task": "treasurypilot.notifications.deliver-chat",
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "webhooks", "expires": 2},
             },

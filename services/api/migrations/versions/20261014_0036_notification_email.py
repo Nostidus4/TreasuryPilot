@@ -1,7 +1,7 @@
 """add user email cadence, delivery claims and retry state for notification mail
 
-Revision ID: 20261014_0034
-Revises: 20261014_0033
+Revision ID: 20261014_0036
+Revises: 20261014_0035
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261014_0034"
-down_revision: str | None = "20261014_0033"
+revision: str = "20261014_0036"
+down_revision: str | None = "20261014_0035"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

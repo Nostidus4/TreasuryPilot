@@ -13,7 +13,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from fastapi import APIRouter, Request
 from pydantic import Field
@@ -29,6 +29,7 @@ from treasurypilot_api.notifications.models import (
     NotificationChannel,
     TelegramLinkCode,
 )
+from treasurypilot_core.notifications import canonical_chat_webhook_url
 from treasurypilot_core.privacy import FieldCipher
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ CHAT_TAKEN_REPLY = "This Telegram chat is already linked to another TreasuryPilo
 
 class TelegramUnavailable(Exception):
     """Linking is not configured (bot username or field encryption key missing)."""
+
+
+class WebhookAlreadyLinked(Exception):
+    """An incoming webhook destination already belongs to another account."""
 
 
 class LinkOutcome:
@@ -89,6 +94,10 @@ class ChannelPatch(ApiModel):
     show_amounts: bool = Field(alias="showAmounts")
 
 
+class WebhookChannelCreate(ApiModel):
+    webhook_url: str = Field(alias="webhookUrl", min_length=1, max_length=2048)
+
+
 class TelegramRepository(Protocol):
     async def issue_link_code(self, *, user_id: uuid.UUID) -> tuple[str, datetime]: ...
 
@@ -101,6 +110,10 @@ class TelegramRepository(Protocol):
     ) -> NotificationChannel | None: ...
 
     async def unlink(self, *, user_id: uuid.UUID, channel_id: uuid.UUID) -> bool: ...
+
+    async def connect_chat(
+        self, *, user_id: uuid.UUID, kind: ChannelKind, webhook_url: str
+    ) -> NotificationChannel: ...
 
 
 def hash_link_code(code: str) -> bytes:
@@ -127,6 +140,42 @@ class SqlAlchemyTelegramRepository:
         if not self._hash_key:
             raise TelegramUnavailable
         return hmac.new(self._hash_key, f"telegram:{chat_id}".encode(), hashlib.sha256).digest()
+
+    def _chat_values(self, kind: ChannelKind, webhook_url: str) -> dict[str, Any]:
+        """Column values for a webhook channel; hash and ciphertext use the canonical URL."""
+
+        if kind is ChannelKind.TELEGRAM or self._cipher is None or not self._hash_key:
+            raise TelegramUnavailable
+        webhook_url = canonical_chat_webhook_url(kind.value, webhook_url)
+        return {
+            "target": self._cipher.encrypt_text(webhook_url, context=TARGET_CONTEXT),
+            "target_hash": hmac.new(
+                self._hash_key, f"{kind.value}:{webhook_url}".encode(), hashlib.sha256
+            ).digest(),
+            "verified_at": self._now(),
+            "active": True,
+            "last_sent_at": None,
+        }
+
+    async def connect_chat(
+        self, *, user_id: uuid.UUID, kind: ChannelKind, webhook_url: str
+    ) -> NotificationChannel:
+        values = self._chat_values(kind, webhook_url)
+        try:
+            async with self._sessions() as session, session.begin():
+                statement = insert(NotificationChannel).values(
+                    id=uuid.uuid4(), user_id=user_id, kind=kind.value, **values
+                )
+                row = await session.scalar(
+                    statement.on_conflict_do_update(
+                        constraint="uq_notification_channels_user_kind", set_=values
+                    ).returning(NotificationChannel)
+                )
+                if row is None:
+                    raise RuntimeError("channel upsert returned no row")
+                return row
+        except IntegrityError as exc:
+            raise WebhookAlreadyLinked from exc
 
     async def issue_link_code(self, *, user_id: uuid.UUID) -> tuple[str, datetime]:
         # Fail before handing out a code that complete_link could never honour.
@@ -263,6 +312,42 @@ async def create_link_code(request: Request) -> LinkCodeIssued:
     return LinkCodeIssued(
         code=code, bot_url=f"https://t.me/{username}?start={code}", expires_at=expires_at
     )
+
+
+@router.post("/me/channels/{kind}", response_model=ChannelView)
+async def connect_chat_channel(
+    kind: Literal["slack", "lark", "wecom"],
+    payload: WebhookChannelCreate,
+    request: Request,
+) -> ChannelView:
+    channel_kind = ChannelKind(kind.upper())
+    access = await _authenticated(request, require_csrf=True)
+    try:
+        channel = await _repository(request).connect_chat(
+            user_id=access.user.id, kind=channel_kind, webhook_url=payload.webhook_url
+        )
+    except ValueError as exc:
+        raise AuthFailure(
+            status=422,
+            code="WEBHOOK_URL_INVALID",
+            title="Webhook URL invalid",
+            detail="Use a valid incoming webhook URL for this channel provider.",
+        ) from exc
+    except WebhookAlreadyLinked as exc:
+        raise AuthFailure(
+            status=409,
+            code="CHANNEL_ALREADY_LINKED",
+            title="Channel already linked",
+            detail="This incoming webhook is already connected to another account.",
+        ) from exc
+    except TelegramUnavailable as exc:
+        raise AuthFailure(
+            status=503,
+            code="CHANNEL_ENCRYPTION_UNAVAILABLE",
+            title="Channel unavailable",
+            detail="External notification channels are not configured.",
+        ) from exc
+    return ChannelView.from_channel(channel)
 
 
 @router.get("/me/channels", response_model=ChannelList)

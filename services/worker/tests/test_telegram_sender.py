@@ -246,6 +246,42 @@ def test_only_the_notified_user_with_a_channel_receives_anything() -> None:
     _run(scenario)
 
 
+def test_pending_delivery_from_before_reverification_is_failed_without_send() -> None:
+    async def scenario(world: World) -> None:
+        entity = await world.notify()
+        (notification,) = await world.rows(
+            "SELECT id FROM notifications WHERE event_id IN "
+            "(SELECT id FROM domain_events WHERE entity_id = $1)",
+            entity,
+        )
+        delivery_id = uuid.uuid4()
+        async with world.pool.acquire() as c, c.transaction():
+            await c.execute(
+                "INSERT INTO telegram_deliveries "
+                "(id, notification_id, channel_id, next_attempt_at) "
+                "VALUES ($1, $2, $3, $4)",
+                delivery_id,
+                notification["id"],
+                world.channel_id,
+                world.t0,
+            )
+            await c.execute(
+                "UPDATE notification_channels SET verified_at = $2 WHERE id = $1",
+                world.channel_id,
+                world.t0 + timedelta(seconds=30),
+            )
+
+        client = FakeTelegramClient()
+        assert await world.run(client, after=60) == 0
+        assert client.sent == []
+        (row,) = await world.rows(
+            "SELECT status, last_error FROM telegram_deliveries WHERE id = $1", delivery_id
+        )
+        assert (row["status"], row["last_error"]) == ("FAILED", "channel_reverified")
+
+    _run(scenario)
+
+
 def test_notifications_from_before_linking_are_not_replayed() -> None:
     async def scenario(world: World) -> None:
         await world.notify()

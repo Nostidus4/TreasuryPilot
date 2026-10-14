@@ -78,7 +78,9 @@ def test_optional_events_follow_the_selected_cadence(mode: str, expected: str | 
 def test_muted_channel_or_category_is_consumed_not_sent(
     event_type: str, channels: dict[str, bool], categories: dict[str, bool]
 ) -> None:
-    assert _route("immediate", event_type, "ACTION", channels=channels, categories=categories) is None
+    assert (
+        _route("immediate", event_type, "ACTION", channels=channels, categories=categories) is None
+    )
 
 
 def test_inactive_accounts_are_never_emailed() -> None:
@@ -422,7 +424,11 @@ def test_failed_pool_close_does_not_mask_the_original_task_error() -> None:
         raise ValueError("original")
 
     runtime = _PublisherRuntime()
-    runtime._pid, runtime._loop, runtime._pool = os.getpid(), asyncio.new_event_loop(), _BrokenPool()
+    runtime._pid, runtime._loop, runtime._pool = (
+        os.getpid(),
+        asyncio.new_event_loop(),
+        _BrokenPool(),
+    )
 
     with pytest.raises(ValueError, match="original"):
         runtime.run("postgresql://unused", work)

@@ -6,14 +6,14 @@
 | **Epic** | M05 · Invoices & Payment Requests |
 | **Module** | `invoices` ([spec](../../../docs/modules/invoices/README.md)) |
 | **Phase / Priority** | Later / - |
-| **Size** | M (~1 day) |
+| **Size** | L (1.5–2 days; split if it grows) |
 | **Area** | backend |
 | **Status** | Accepted |
 | **Traces to** | FR-321, BR-002 |
 | **Blocks** | — |
 | **Submission cut** | After submission |
 
-> **Phase: Later.** This ticket is intentionally coarser than M1 tickets. It must be re-estimated and split before it is scheduled.
+> **Phase: Later.** This ticket was re-estimated and split into the separately sized INV-L03A, INV-L03B and INV-L03C slices before scheduling.
 
 ## Context
 
@@ -41,7 +41,7 @@ Nothing specific beyond the scope above.
 
 ## Technical notes
 
-Follow the module spec and the relevant ADRs.
+Re-estimated from M to L and split into template, generation, and skip work before scheduling.
 
 ## Dependencies
 

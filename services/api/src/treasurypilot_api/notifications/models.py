@@ -209,6 +209,9 @@ class Notification(Base):
 
 class ChannelKind(StrEnum):
     TELEGRAM = "TELEGRAM"
+    SLACK = "SLACK"
+    LARK = "LARK"
+    WECOM = "WECOM"
 
 
 class NotificationChannel(Base):
@@ -216,7 +219,10 @@ class NotificationChannel(Base):
 
     __tablename__ = "notification_channels"
     __table_args__ = (
-        CheckConstraint("kind IN ('TELEGRAM')", name="ck_notification_channels_kind"),
+        CheckConstraint(
+            "kind IN ('TELEGRAM', 'SLACK', 'LARK', 'WECOM')",
+            name="ck_notification_channels_kind",
+        ),
         CheckConstraint(
             "octet_length(target_hash) = 32", name="ck_notification_channels_target_hash"
         ),
@@ -336,3 +342,44 @@ class NotificationPreference(Base):
     quiet_hours_start: Mapped[time | None] = mapped_column(Time(timezone=False))
     quiet_hours_end: Mapped[time | None] = mapped_column(Time(timezone=False))
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default="UTC")
+
+
+class ChatDelivery(Base):
+    """Outcome of sending one notification to one Slack/Lark/WeCom channel."""
+
+    __tablename__ = "chat_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'SENT', 'FAILED')", name="ck_chat_deliveries_status"
+        ),
+        CheckConstraint("attempts >= 0", name="ck_chat_deliveries_attempts"),
+        UniqueConstraint("notification_id", "channel_id", name="uq_chat_deliveries_pair"),
+        Index(
+            "ix_chat_deliveries_pending",
+            "channel_id",
+            "next_attempt_at",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    notification_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False
+    )
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notification_channels.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

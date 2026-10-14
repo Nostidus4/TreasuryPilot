@@ -234,10 +234,10 @@ services:
     restart: unless-stopped
     networks: [public, internal]
 
-  # Sends signed webhooks, Telegram messages and notification email to external HTTPS endpoints,
-  # so it is the only worker besides worker-ai on the public network. Explicit allowlist: no
-  # policy keystore, signer secret or object-store credentials; the webhook sender rejects
-  # non-public addresses.
+  # Sends signed webhooks, Telegram, Slack/Lark/WeCom messages and notification email to
+  # external HTTPS endpoints, so it is the only worker besides worker-ai on the public network.
+  # Explicit allowlist: no policy keystore, signer secret or object-store credentials; the
+  # webhook sender rejects non-public addresses.
   worker-webhooks:
     build:
       <<: *python-build

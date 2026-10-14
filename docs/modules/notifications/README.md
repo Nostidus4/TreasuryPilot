@@ -11,10 +11,10 @@ M13 makes sure **the right person learns about the right event quickly, without 
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Domain event bus (outbox table + publisher) | Email notifications, webhooks, Slack/Lark/WeCom |
+| Domain event bus (outbox table + publisher) | Email notifications, generic webhooks |
 | Routing event → roles, dedup by event id | |
 | In-app notifications + SSE stream for live status | |
-| Telegram channel with linking, minimal content, opt-in amounts (P2) | |
+| Telegram channel with linking, minimal content, opt-in amounts (P2); Slack/Lark/WeCom webhook channels (Later NTF-L03) | |
 | Per-user channel/category preferences and quiet hours (Later NTF-L04) | |
 
 ## 2. Features, requirements and rules
@@ -35,10 +35,11 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 |---|---|
 | `domain_events` | id, org_id, treasury_id, type, entity_type, entity_id, payload jsonb, created_at, published_at |
 | `notifications` | id, org_id, user_id, event_id, type, title, body, link, severity enum(INFO, ACTION, CRITICAL), read_at — unique(user_id, event_id) |
-| `notification_channels` | id, user_id, kind enum(TELEGRAM), target (encrypted chat id), verified_at, show_amounts bool |
+| `notification_channels` | id, user_id, kind enum(TELEGRAM, SLACK, LARK, WECOM), target (encrypted chat id or webhook URL), verified_at, show_amounts bool |
 | `telegram_link_codes` | code_hash (SHA-256), user_id, expires_at, used_at |
 | `telegram_deliveries` | id, notification_id, channel_id, status enum(PENDING, SENT, FAILED), attempts, next_attempt_at, sent_at, last_error — unique(notification_id, channel_id) |
 | `notification_preferences` | user_id, channels jsonb, categories jsonb, quiet_hours_start, quiet_hours_end, timezone |
+| `chat_deliveries` | id, notification_id, channel_id, status enum(PENDING, SENT, FAILED), attempts, next_attempt_at, sent_at, last_error — unique(notification_id, channel_id) |
 
 `notification_channels` also holds `target_hash` (HMAC of the chat id keyed by `TP_TELEGRAM_CHAT_HASH_KEY`, unique per kind, so one chat belongs to one user), `active` and `last_sent_at` (the rate-limit anchor). `target` is an AES-GCM `FieldCipher` envelope bound to the column.
 
@@ -70,6 +71,7 @@ F-100 (FR-901), F-101 (FR-902, OQ-17), F-132 (live timeline via SSE); Later F-10
 | POST | `/orgs/{o}/notifications/read` `{ids}` | auth |
 | GET | `/orgs/{o}/events` (SSE; `Last-Event-ID` resume; heartbeat 15 s) | auth member |
 | POST | `/me/channels/telegram/link-code` → `{code, botUrl}` | auth |
+| POST | `/me/channels/{slack\|lark\|wecom}` `{webhookUrl}` | auth + CSRF |
 | POST | `/integrations/telegram/webhook` (secret header) | Telegram |
 | PATCH | `/me/channels/{id}` `{showAmounts}` | auth |
 | GET/PUT | `/me/notification-preferences` | auth |
@@ -84,12 +86,13 @@ SSE event types: `request.status`, `plan.status`, `operation.status`, `review.cr
 
 ## 7. Flows
 
-Change + `domain_events` row in one transaction → publisher task (every 1 s, `FOR UPDATE SKIP LOCKED`) → routing → `notifications` rows (dedup) → SSE push via Redis pub/sub per org → Telegram sender (P2) for ACTION/CRITICAL to linked users.
+Change + `domain_events` row in one transaction → publisher task (every 1 s, `FOR UPDATE SKIP LOCKED`) → routing → `notifications` rows (dedup) → SSE push via Redis pub/sub per org → Telegram and chat senders for ACTION/CRITICAL to connected users.
 
 ## 8. Algorithms
 
 - **Telegram content (OQ-17):** default `"[TreasuryPilot] Approval needed for request R-1042 · open: <link>"` — no amounts, addresses, vendor names; with `show_amounts` opt-in: adds amount and vendor display name. Deep links require app login.
 - **Telegram flow:** the user requests a link code (128-bit, only its hash stored, 10 min, one code per user, consumed by an atomic `UPDATE … WHERE used_at IS NULL AND expires_at > now()`), opens `botUrl` and sends `/start <code>` in a private chat; the webhook (header `X-Telegram-Bot-Api-Secret-Token`, constant-time compare) links the chat. The webhook understands nothing else, so no action is possible from Telegram. The worker task `deliver-telegram` (every 1 s) queues ACTION/CRITICAL notifications of linked, active channels (created after linking, due per `deliver_at` so quiet hours hold them back, within 1 h of becoming due, and allowed by the user's Telegram preferences via `preference_allows`) into `telegram_deliveries` and sends one message per channel per 10 s. A send claims the channel in a short transaction (row lock plus rate-window stamp), calls Telegram with no transaction open, then records the outcome in a second short transaction; a crash in between leaves the deliveries pending for retry. A bot-blocked response (403) deactivates the channel; transient errors retry 3 times, permanent ones fail at once. Amount and vendor name are read at send time, only for opted-in channels and only from the notification's own organization; addresses are not sent.
+- **Chat webhook flow:** the user registers an incoming webhook in account settings. The API accepts only HTTPS URLs on the provider's fixed webhook host and path, encrypts the full URL and stores a keyed hash for uniqueness. URLs are canonicalised (lowercase host, default port and empty query dropped) before hashing. The worker task `deliver-chat` (every 1 s, on the egress-capable `webhooks` queue) queues ACTION/CRITICAL notifications that are due (`deliver_at`, so quiet hours hold) and allowed by the user's per-kind preference (`slack`, `lark`, `wecom` via `preference_allows`) into `chat_deliveries`, then uses the same claim, send-outside-transaction and record flow as Telegram, merges bursts and limits each destination to one message per 10 s. Transient failures (network, HTTP 429/5xx, and provider busy codes returned with HTTP 200: Lark 11232, WeCom -1/45009/45033) retry up to three times with the same backoff as Telegram; permanent rejections, including a stored URL that no longer validates, fail the delivery. Message text is escaped for the provider (Slack `&`, `<`, `>`; Lark brackets) so notification data cannot trigger mentions or disguised links. Amounts and vendor names are included only when opted in. Messages are plain text with an app deep link and no actionable controls. Slack uses `{text}`, Lark uses the text message envelope, and WeCom uses the text message envelope.
 - **Dedup:** unique(user_id, event_id). **Rate:** at most 1 Telegram message per user per 10 s, bursts merged into a digest line.
 - Governance signature events include `ownerUserIds` with the organization user IDs linked to that Safe's current owners. The publisher delivers only to those active organization members.
 - `NeedsReview:<Role>` encodes the routed M12 role in the event type (for example, `NeedsReview:Finance`); event payloads still contain IDs only.
@@ -104,25 +107,25 @@ Change + `domain_events` row in one transaction → publisher task (every 1 s, `
 
 Publisher interval 1 s; SSE heartbeat 15 s; Telegram link code 10 min; Telegram retries 3 with backoff (5 s, then 20 s).
 
-Telegram env: API `TP_TELEGRAM_BOT_USERNAME`, `TP_TELEGRAM_WEBHOOK_SECRET`, `TP_TELEGRAM_CHAT_HASH_KEY` (fixed for the life of the data; keys the chat-uniqueness hash), `TP_FIELD_ENCRYPTION_KEY`; `worker-webhooks` `TP_TELEGRAM_BOT_TOKEN`, `TP_FIELD_ENCRYPTION_KEY`, `TP_APP_BASE_URL`. Without them the channel is simply off (link-code returns `TELEGRAM_UNAVAILABLE`, the delivery task is a no-op). The bot token is read from the environment only and never logged.
+Telegram env: API `TP_TELEGRAM_BOT_USERNAME`, `TP_TELEGRAM_WEBHOOK_SECRET`, `TP_TELEGRAM_CHAT_HASH_KEY` (fixed for the life of the data; keys the chat-uniqueness hash), `TP_FIELD_ENCRYPTION_KEY`; `worker-webhooks` `TP_TELEGRAM_BOT_TOKEN`, `TP_FIELD_ENCRYPTION_KEY`, `TP_APP_BASE_URL`. Without them the channel is simply off (link-code returns `TELEGRAM_UNAVAILABLE`, the delivery task is a no-op). The bot token is read from the environment only and never logged. Chat webhooks use the encrypted per-user target and require `TP_FIELD_ENCRYPTION_KEY` in the worker (`worker-webhooks`, which has the egress); without it the chat delivery task is a no-op. Provider webhook URLs are never logged.
 
 Email cadence is per user (`immediate`, `daily` or `off`, default `immediate`). Mandatory events (`CRITICAL` or a mandatory category) are always emailed immediately, whatever the cadence or unsubscribe state. `GET`/`PUT /v1/me/notifications/email` read or update the cadence. The signed `POST /v1/me/notifications/email/unsubscribe?user_id=…&signature=…` endpoint powers List-Unsubscribe; it only disables non-critical mail. Immediate mail polls each 60 s, daily digests run at 08:00 UTC, both on the `webhooks` queue (Resend needs egress). `worker-webhooks` env: `TP_RESEND_API_KEY`, `TP_RESEND_FROM_EMAIL`, `TP_SESSION_SECRET` (at least 32 bytes, the API's value; signs unsubscribe links), `TP_PUBLIC_API_BASE_URL`, `TP_APP_BASE_URL`. Without a Resend key the email tasks are no-ops; the unsubscribe endpoint answers 503 when the API has no valid `TP_SESSION_SECRET`.
 
 ## 10. Security
 
-Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from Telegram; chat ids encrypted (Confidential). Email uses only the notification title, body and internal link (no payload, amount or address); unsubscribe signatures are HMAC-SHA256 under `TP_SESSION_SECRET`.
+Org-scoped streams; payloads carry ids only (UI fetches details with permissions); Telegram webhook secret; no actions possible from a notification channel; chat ids and provider webhook URLs encrypted (Confidential); chat webhook destinations constrained to provider HTTPS endpoints to prevent SSRF. Email uses only the notification title, body and internal link (no payload, amount or address); unsubscribe signatures are HMAC-SHA256 under `TP_SESSION_SECRET`.
 
 ## 11. Failure scenarios
 
-Telegram down → in-app still delivered, retries; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates). Email failures retry with backoff (1, 2, 4, 8 min, 5 attempts; a 4xx from Resend is permanent); sends carry an `Idempotency-Key`, so a crash after provider acceptance is deduplicated by Resend when the 10 min claim lease expires.
+Telegram or chat provider down → in-app still delivered and outbound retries run independently; Redis pub/sub down → SSE clients fall back to polling every 10 s; publisher crash → outbox rows re-published (dedup prevents duplicates). Email failures retry with backoff (1, 2, 4, 8 min, 5 attempts; a 4xx from Resend is permanent); sends carry an `Idempotency-Key`, so a crash after provider acceptance is deduplicated by Resend when the 10 min claim lease expires.
 
 ## 12. Test plan
 
-Routing table tests; dedup; SSE org isolation and < 2 s latency; Telegram content with/without opt-in; link-code expiry.
+Routing table tests; dedup; SSE org isolation and < 2 s latency; Telegram content with/without opt-in; link-code expiry; Slack/Lark/WeCom payload, destination validation, secret redaction and retry outcome tests.
 
 ## 13. Tickets
 
-NTF-001 → NTF-002 → NTF-003 (P2). Later NTF-L01…L04.
+NTF-001 → NTF-002 → NTF-003 (P2). Later NTF-L01…L04; NTF-L03 is split into shared secure channel delivery plus Slack, Lark and WeCom adapter tasks (NTF-L03a…L03c).
 
 ## 14. Decisions
 

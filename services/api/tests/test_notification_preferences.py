@@ -63,7 +63,14 @@ def test_preferences_default_on_and_can_store_quiet_hours() -> None:
 
     default = client.get("/v1/me/notification-preferences")
     assert default.status_code == 200
-    assert default.json()["channels"] == {"in_app": True, "email": True, "telegram": True}
+    assert default.json()["channels"] == {
+        "in_app": True,
+        "email": True,
+        "telegram": True,
+        "slack": True,
+        "lark": True,
+        "wecom": True,
+    }
     assert default.json()["quietHoursStart"] is None
 
     updated = client.put(

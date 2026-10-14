@@ -311,6 +311,23 @@ export interface paths {
     patch: operations['update_channel_v1_me_channels__channel_id__patch'];
     trace?: never;
   };
+  '/v1/me/channels/{kind}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect Chat Channel */
+    post: operations['connect_chat_channel_v1_me_channels__kind__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/notification-preferences': {
     parameters: {
       query?: never;
@@ -323,6 +340,44 @@ export interface paths {
     /** Put Notification Preferences */
     put: operations['put_notification_preferences_v1_me_notification_preferences_put'];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/notifications/email': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Email Preference */
+    get: operations['get_email_preference_v1_me_notifications_email_get'];
+    /** Set Email Preference */
+    put: operations['set_email_preference_v1_me_notifications_email_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/notifications/email/unsubscribe': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Unsubscribe Email
+     * @description Token-authenticated unsubscribe. CRITICAL/security mail remains mandatory.
+     */
+    post: operations['unsubscribe_email_v1_me_notifications_email_unsubscribe_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -672,6 +727,58 @@ export interface paths {
      * @description Mark one notification read; idempotent for the owner, 404 for anyone else.
      */
     post: operations['mark_notification_read_v1_orgs__organization_id__notifications__notification_id__read_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Schedules */
+    get: operations['list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get'];
+    put?: never;
+    /** Create Schedule */
+    post: operations['create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Edit Schedule */
+    patch: operations['edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch'];
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/recurring-payment-schedules/{schedule_id}/periods/{period_date}/skip': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Skip Period */
+    post: operations['skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1677,7 +1784,7 @@ export interface components {
      * ChannelKind
      * @enum {string}
      */
-    ChannelKind: 'TELEGRAM';
+    ChannelKind: 'TELEGRAM' | 'SLACK' | 'LARK' | 'WECOM';
     /** ChannelList */
     ChannelList: {
       /** Items */
@@ -1834,6 +1941,19 @@ export interface components {
       expiresAt: string;
       /** Url */
       url: string;
+    };
+    /**
+     * EmailDeliveryMode
+     * @enum {string}
+     */
+    EmailDeliveryMode: 'immediate' | 'daily' | 'off';
+    /** EmailPreferenceRequest */
+    EmailPreferenceRequest: {
+      deliveryMode: components['schemas']['EmailDeliveryMode'];
+    };
+    /** EmailPreferenceView */
+    EmailPreferenceView: {
+      deliveryMode: components['schemas']['EmailDeliveryMode'];
     };
     /** EvidenceBundle */
     EvidenceBundle: {
@@ -2286,7 +2406,13 @@ export interface components {
      * NotificationChannel
      * @enum {string}
      */
-    NotificationChannel: 'in_app' | 'email' | 'telegram';
+    NotificationChannel:
+      | 'in_app'
+      | 'email'
+      | 'telegram'
+      | 'slack'
+      | 'lark'
+      | 'wecom';
     /** NotificationList */
     NotificationList: {
       /** Items */
@@ -2490,6 +2616,93 @@ export interface components {
       steps?: {
         [key: string]: unknown;
       }[];
+    };
+    /**
+     * RecurrenceCadence
+     * @enum {string}
+     */
+    RecurrenceCadence: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+    /** RecurringScheduleCreate */
+    RecurringScheduleCreate: {
+      /** Amount */
+      amount: string;
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
+      cadence: components['schemas']['RecurrenceCadence'];
+      /** Costcenter */
+      costCenter?: string | null;
+      /**
+       * Duedaysafterissue
+       * @default 30
+       */
+      dueDaysAfterIssue: number;
+      /** Enddate */
+      endDate?: string | null;
+      /**
+       * Interval
+       * @default 1
+       */
+      interval: number;
+      /** Invoicenotemplate */
+      invoiceNoTemplate: string;
+      /** Note */
+      note?: string | null;
+      /**
+       * Payeeid
+       * Format: uuid
+       */
+      payeeId: string;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /**
+       * Startdate
+       * Format: date
+       */
+      startDate: string;
+      /** Tags */
+      tags?: string[];
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /**
+       * Vendorid
+       * Format: uuid
+       */
+      vendorId: string;
+    };
+    /** RecurringSchedulePatch */
+    RecurringSchedulePatch: {
+      /** Amount */
+      amount?: string | null;
+      /** Costcenter */
+      costCenter?: string | null;
+      /** Enddate */
+      endDate?: string | null;
+      /** Invoicenotemplate */
+      invoiceNoTemplate?: string | null;
+      /** Note */
+      note?: string | null;
+      /** Payeeid */
+      payeeId?: string | null;
+      /** Payingwalletid */
+      payingWalletId?: string | null;
+      /** Status */
+      status?: string | null;
+      /** Tags */
+      tags?: string[] | null;
+      /** Terms */
+      terms?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** RefillPath */
     RefillPath: {
@@ -3098,6 +3311,11 @@ export interface components {
       /** Wallets */
       wallets: string[];
     };
+    /** WebhookChannelCreate */
+    WebhookChannelCreate: {
+      /** Webhookurl */
+      webhookUrl: string;
+    };
     /** WebhookDeliveryView */
     WebhookDeliveryView: {
       /** Attemptcount */
@@ -3669,6 +3887,41 @@ export interface operations {
       };
     };
   };
+  connect_chat_channel_v1_me_channels__kind__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kind: 'slack' | 'lark' | 'wecom';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebhookChannelCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_notification_preferences_v1_me_notification_preferences_get: {
     parameters: {
       query?: never;
@@ -3710,6 +3963,89 @@ export interface operations {
         content: {
           'application/json': components['schemas']['NotificationPreferencesView'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_email_preference_v1_me_notifications_email_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EmailPreferenceView'];
+        };
+      };
+    };
+  };
+  set_email_preference_v1_me_notifications_email_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EmailPreferenceRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EmailPreferenceView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unsubscribe_email_v1_me_notifications_email_unsubscribe_post: {
+    parameters: {
+      query: {
+        user_id: string;
+        signature: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -4478,6 +4814,151 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MarkReadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_schedule_v1_orgs__organization_id__recurring_payment_schedules_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecurringScheduleCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  edit_schedule_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        'If-Match'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecurringSchedulePatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  skip_period_v1_orgs__organization_id__recurring_payment_schedules__schedule_id__periods__period_date__skip_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        schedule_id: string;
+        period_date: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

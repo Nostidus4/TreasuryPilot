@@ -10,6 +10,8 @@ The worker package runs as three Compose services:
   user; AI tasks then fail when they build the adapter, because every AI call must be
   written to `ai_calls` (AGT-002).
 - `beat` publishes periodic jobs. Business schedules are added by their owning tickets.
+  It runs recurring payment draft generation shortly after midnight UTC; each template
+  period is claimed and recorded transactionally in PostgreSQL.
 
 All tasks inherit `SafeTask`: late acknowledgement, rejection/redelivery when a worker process
 is lost, bounded exponential retry for `RetryableTaskError`, and propagated

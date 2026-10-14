@@ -60,6 +60,7 @@ from treasurypilot_api.invoices.documents import (
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
 from treasurypilot_api.invoices.fx import FxQuoteProvider
+from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
@@ -440,6 +441,7 @@ def create_app(
     app.include_router(webhook_router)
     app.include_router(notification_email_router)
     app.include_router(requests_router)
+    app.include_router(recurring_schedules_router)
     app.include_router(invoice_api_keys_router)
     app.include_router(notification_preferences_router)
     app.include_router(invoice_documents_router)

@@ -10,8 +10,8 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | Phase | P0 | P1 | P2 | Total |
 |---|---:|---:|---:|---:|
 | M1 | 144 | 52 | 10 | 206 |
-| Later | – | – | – | 42 |
-| **All** | | | | **248** |
+| Later | – | – | – | 48 |
+| **All** | | | | **254** |
 
 ## Epics
 
@@ -24,13 +24,13 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | M01 · Identity & Access | `identity` | 8 | 3 | [`issues/identity/`](issues/identity/) |
 | M02 · Treasury & Chain Configuration | `treasury` | 8 | 2 | [`issues/treasury/`](issues/treasury/) |
 | M03 · Mandate, Payees, Exceptions & Pause | `mandate` | 11 | 1 | [`issues/mandate/`](issues/mandate/) |
-| M05 · Invoices & Payment Requests | `invoices` | 12 | 6 | [`issues/invoices/`](issues/invoices/) |
+| M05 · Invoices & Payment Requests | `invoices` | 12 | 9 | [`issues/invoices/`](issues/invoices/) |
 | M06 · Chain Reader & Tx Tracking | `chain-reader` | 6 | 0 | [`issues/chain-reader/`](issues/chain-reader/) |
 | M09 · AI Agent | `agent` | 17 | 0 | [`issues/agent/`](issues/agent/) |
 | M10 · Orchestration & Execution | `execution` | 14 | 4 | [`issues/execution/`](issues/execution/) |
 | M11 · Verification & Reconciliation | `reconciliation` | 5 | 3 | [`issues/reconciliation/`](issues/reconciliation/) |
 | M12 · Recovery & Exceptions | `recovery` | 7 | 0 | [`issues/recovery/`](issues/recovery/) |
-| M13 · Notifications | `notifications` | 3 | 4 | [`issues/notifications/`](issues/notifications/) |
+| M13 · Notifications | `notifications` | 3 | 7 | [`issues/notifications/`](issues/notifications/) |
 | M14 · Compliance | `compliance` | 3 | 4 | [`issues/compliance/`](issues/compliance/) |
 | M15 · Audit & Evidence | `audit` | 4 | 1 | [`issues/audit/`](issues/audit/) |
 | M16 · Web Application | `web` | 27 | 0 | [`issues/web/`](issues/web/) |
@@ -144,7 +144,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | INV-011 | invoices | M05 | [Implement reject, cancel, invalidation and expiry](issues/invoices/011-implement-reject-cancel-invalidation-and-expiry.md) | F-038, F-039 | M1 | P0 | S | B | INV-010, SC-022, MDT-009 | Ready for Assignment |
 | INV-L01 | invoices | M05 | [Add the email-forwarding invoice inbox](issues/invoices/l01-add-the-email-forwarding-invoice-inbox.md) | F-033 | Later | - | L | After submission | INV-004, AGT-004 | Accepted |
 | INV-L02 | invoices | M05 | [Add the inbound invoice API with scoped keys](issues/invoices/l02-add-the-inbound-invoice-api-with-scoped-keys.md) | F-034 | Later | - | L | After submission | INV-003 | Accepted |
-| INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
+| INV-L03 | invoices | M05 | [Add recurring payment schedules](issues/invoices/l03-add-recurring-payment-schedules.md) | F-040 | Later | - | L | After submission | INV-003 | Accepted |
+| INV-L03A | invoices | M05 | [Create recurring schedule templates](issues/invoices/l03a-create-recurring-schedule-templates.md) | F-040 | Later | - | M | After submission | INV-003 | Accepted |
+| INV-L03B | invoices | M05 | [Generate recurring payment drafts](issues/invoices/l03b-generate-recurring-payment-drafts.md) | F-040 | Later | - | M | After submission | INV-L03A | Accepted |
+| INV-L03C | invoices | M05 | [Skip a recurring payment period](issues/invoices/l03c-skip-a-recurring-payment-period.md) | F-040 | Later | - | S | After submission | INV-L03A | Accepted |
 | INV-L04 | invoices | M05 | [Support fiat-denominated invoices](issues/invoices/l04-support-fiat-denominated-invoices.md) | F-041 | Later | - | L | After submission | INV-015, INV-016 | Accepted |
 | INV-015 | invoices | M05 | [Model fiat invoice amounts and approval caps](issues/invoices/015-model-fiat-invoice-amounts-and-approval-caps.md) | F-041 | Later | - | S | After submission | INV-003, ENG-015 | Accepted |
 | INV-016 | invoices | M05 | [Guard fiat invoice payment against FX drift and depeg](issues/invoices/016-guard-fiat-invoice-payment-against-fx-drift-and-depeg.md) | F-041 | Later | - | S | After submission | INV-015, ENG-016 | Accepted |
@@ -205,7 +208,10 @@ Gate G3 accepted by the project lead on 2026-10-11: M1 tickets are **Ready for A
 | NTF-003 | notifications | M13 | [Add Telegram linking and delivery](issues/notifications/003-add-telegram-linking-and-delivery.md) | F-101 | M1 | P2 | M | After submission | NTF-001 | Ready for Assignment |
 | NTF-L01 | notifications | M13 | [Add email notifications and digests](issues/notifications/l01-add-email-notifications-and-digests.md) | F-102 | Later | - | M | After submission | NTF-001 | Accepted |
 | NTF-L02 | notifications | M13 | [Add outbound webhooks](issues/notifications/l02-add-outbound-webhooks.md) | F-103 | Later | - | M | After submission | NTF-001 | Accepted |
-| NTF-L03 | notifications | M13 | [Add Slack, Lark and WeCom channels](issues/notifications/l03-add-slack-lark-and-wecom-channels.md) | F-104 | Later | - | L | After submission | NTF-001 | Accepted |
+| NTF-L03 | notifications | M13 | [Build secure chat-channel registration and delivery](issues/notifications/l03-build-secure-chat-channel-registration-and-delivery.md) | F-104 | Later | - | M | After submission | NTF-001, NTF-003 | Accepted |
+| NTF-L03a | notifications | M13 | [Add Slack notification adapter](issues/notifications/l03a-add-slack-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03b | notifications | M13 | [Add Lark notification adapter](issues/notifications/l03b-add-lark-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
+| NTF-L03c | notifications | M13 | [Add WeCom notification adapter](issues/notifications/l03c-add-wecom-notification-adapter.md) | F-104 | Later | - | S | After submission | NTF-L03 | Accepted |
 | NTF-L04 | notifications | M13 | [Add notification preferences](issues/notifications/l04-add-notification-preferences.md) | F-105 | Later | - | S | After submission | NTF-002 | Accepted |
 | CMP-001 | compliance | M14 | [Build the screening adapter and fixture provider](issues/compliance/001-build-the-screening-adapter-and-fixture-provider.md) | F-110 | M1 | P1 | S | A | MDT-001 | Ready for Assignment |
 | CMP-002 | compliance | M14 | [Screen payees before each PAY](issues/compliance/002-screen-payees-before-each-pay.md) | F-110 | M1 | P1 | S | After submission | CMP-001, POL-003 | Ready for Assignment |
