@@ -379,6 +379,12 @@ async def _group_scenario(database_url: str) -> None:
             ["Operator"],
             "active",
         )
+        async with sessions() as session:
+            no_config_revoked_at = await session.scalar(
+                text("SELECT revoked_at FROM sessions WHERE id = :id"),
+                {"id": scoped_session_id},
+            )
+        assert no_config_revoked_at is None
 
         other_group = await scim_repository.create_group(
             organization_id=other_organization_id,

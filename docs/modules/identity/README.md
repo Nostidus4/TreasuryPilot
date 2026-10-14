@@ -107,6 +107,8 @@ configured group name deletes its persisted SCIM group and assignment records
 at API startup, then recomputes affected role grants. This integration supports
 deprovisioning existing memberships and configured group membership only; it
 does not create or reactivate users.
+When no SCIM organization is configured, startup reconciliation is a no-op, so
+persisted group grants and scoped sessions remain untouched.
 
 ## 10. Security
 
