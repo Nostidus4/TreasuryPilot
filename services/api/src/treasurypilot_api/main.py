@@ -36,6 +36,9 @@ from treasurypilot_api.identity.memberships import (
     SqlAlchemyMembershipRepository,
 )
 from treasurypilot_api.identity.memberships import router as memberships_router
+from treasurypilot_api.identity.mfa import MfaService
+from treasurypilot_api.identity.mfa_api import router as mfa_router
+from treasurypilot_api.identity.mfa_repository import SqlAlchemyMfaRepository
 from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
@@ -240,6 +243,7 @@ def create_app(
     extraction_queue: ExtractionQueue | None = None,
     fx_quote_provider: FxQuoteProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
+    mfa_service: MfaService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -313,6 +317,23 @@ def create_app(
         payee_repository = SqlAlchemyPayeeRepository(sessions)
     if notification_preferences_repository is None and sessions is not None:
         notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
+
+    if mfa_service is None and sessions is not None:
+        try:
+            mfa_cipher: CoreFieldCipher | None = CoreFieldCipher(
+                FieldEncryptionKey.from_environment()
+            )
+        except EncryptionConfigurationError:
+            # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
+            mfa_cipher = None
+        mfa_service = MfaService(
+            repository=SqlAlchemyMfaRepository(sessions),
+            cipher=mfa_cipher,
+            secret=settings.session_secret.get_secret_value().encode()
+            if settings.session_secret
+            else LOCAL_SESSION_SECRET,
+            rate_limiter=rate_limiter,
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -403,6 +424,7 @@ def create_app(
         else None
     )
     app.state.telegram_repository = telegram_repository
+    app.state.mfa_service = mfa_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -426,6 +448,7 @@ def create_app(
         return problem_response(request, exc)
 
     app.include_router(identity_router)
+    app.include_router(mfa_router)
     app.include_router(organizations_router)
     app.include_router(memberships_router)
     app.include_router(audit_router)

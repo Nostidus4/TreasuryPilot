@@ -11,7 +11,8 @@ M01 answers **who is this person, which organization are they acting for, what m
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | MFA, SAML/SCIM (Later: IDN-L01, IDN-L03) |
+| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | SAML/SCIM (Later: IDN-L03) |
+| TOTP and WebAuthn second factors, recovery codes, step-up (IDN-L01) | |
 | SIWE wallet linking (EOA + ERC-1271) | Owner keys (never held, BR-092) |
 | Organizations, onboarding checklist, settings (solo mode, auto-match) | Billing (M18) |
 | Memberships, 8 roles, invites, last-admin/owner guards | |
@@ -39,7 +40,7 @@ A user can hold several roles. Signer roles (Owner, Approver, Guardian) are **in
 
 ## 4. Data model (DATA_MODEL §2.1)
 
-`users`, `sessions` (idle 30 min, absolute 12 h), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes), `oidc_identities` (issuer/subject binding to a user).
+`users`, `sessions` (idle 30 min, absolute 12 h), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes), `oidc_identities` (issuer/subject binding to a user), `mfa_factors` (TOTP secret as a field-encryption envelope, or a WebAuthn credential id and P-256 key, with the last accepted TOTP step and signature counter), `mfa_recovery_codes` (hashed, single use), and `sessions.step_up_at`.
 
 ## 5. State
 
@@ -58,6 +59,11 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
 | GET/POST | `/orgs/{o}/members`, `/orgs/{o}/invites` · POST `/invites/{token}/accept` | ADM | `ALREADY_MEMBER`, `INVITE_EXPIRED` |
 | PATCH/DELETE | `/orgs/{o}/members/{u}` | ADM | `LAST_ADMIN`, `LAST_OWNER` |
+| GET | `/me/mfa` | auth; enrolled factors and unused recovery codes | |
+| POST | `/me/mfa/totp` · `/me/mfa/totp/{f}/confirm` | auth + CSRF; returns an `otpauth://` URI, confirm takes the 6-digit code and returns recovery codes with the first factor | `MFA_CODE_INVALID`, `MFA_UNAVAILABLE` (no field encryption key) |
+| POST | `/me/mfa/webauthn/challenge` · `/me/mfa/webauthn` | auth + CSRF; `register` or `assert` challenge, then register an ES256 credential (`none` attestation) | `MFA_REGISTRATION_INVALID`, `MFA_ORIGIN_INVALID`, `MFA_CREDENTIAL_EXISTS` |
+| POST | `/me/mfa/step-up` | auth + CSRF; one of `code`, `recoveryCode`, `webauthn` assertion; stamps the session; 20 attempts/15 min per user | `MFA_CODE_INVALID`, 429 `RATE_LIMITED` |
+| POST/DELETE | `/me/mfa/recovery-codes` (regenerate) · `/me/mfa/{f}` | auth + CSRF + fresh step-up | `STEP_UP_REQUIRED` |
 
 SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values; `signerRolesActive` is true only when the membership holds Owner, Approver or Guardian and a wallet is linked.
 
@@ -66,6 +72,8 @@ SIWE message: domain = configured app origin, `chainId` = treasury chain (111551
 Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Enterprise sign-in uses OIDC authorization code flow with PKCE, signed state, nonce and verified RS256 ID tokens. Each callback provisions a user and applies configured IDP group roles to one configured organization. SSO sessions expire after five minutes; callbacks request a fresh IDP login, and a callback with no mapped groups suspends the organization membership. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
 
 ## 8. Algorithms
+
+- **Step-up (FR-016):** `require_role(..., step_up=True)` also rejects with 403 `STEP_UP_REQUIRED` unless `sessions.step_up_at` is less than 10 minutes old. It guards invoice approval, governance transaction and module-deploy creation (which carry exception grants and mandate activation), and mandate draft create, clone and discard. A user with no enrolled factor cannot pass it. Adding, removing or resetting factors needs a fresh step-up once any factor is enrolled; confirming the first TOTP code or key stamps the session. TOTP is RFC 6238 (SHA-1, 6 digits, 30 s, plus or minus one step) and a time step is accepted once. WebAuthn challenges are HMAC-signed with a 5-minute expiry (not stored, see the `shortcut:` note in `mfa.py`) and a signature counter that does not advance is rejected.
 
 - **RBAC:** FastAPI dependencies `require_member(org)` (non-member → **404**) and `require_role(*roles)` (member without role → 403); repositories always filter by `org_id`. An automated test enumerates every org-scoped route and calls it as a non-member.
 - **Maker-checker:** `assert_maker_checker(request, user_id=..., organization=...)` rejects `approver ∈ {created_by, last_edited_by}` with 409 `MAKER_CHECKER` unless persisted `solo_mode` is enabled. It returns `solo_mode = true` only when solo mode actually allowed self-approval. The Owner-only setting API verifies current Safe T ownership. Invoice approval handlers in dependent #123/#124 must call the helper and persist its decision on the approval and audit event; handler wiring is not part of IDN-008.
@@ -115,3 +123,4 @@ IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 
 | M01-D10 | Same response for known/unknown emails (no enumeration). |
 | M01-D11 | Unlinking the last signer wallet with pending signer items is refused. |
 | M01-D12 | Email provider Resend; console in local. |
+| M01-D13 | Second factors are a step-up on sensitive routes, not a login gate; a step-up lasts 10 minutes per session. |

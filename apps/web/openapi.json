@@ -520,6 +520,40 @@
         "title": "ChainsResponse",
         "type": "object"
       },
+      "ChallengeRequest": {
+        "properties": {
+          "purpose": {
+            "enum": ["register", "assert"],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": ["purpose"],
+        "title": "ChallengeRequest",
+        "type": "object"
+      },
+      "ChallengeResponse": {
+        "properties": {
+          "allowCredentials": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowcredentials",
+            "type": "array"
+          },
+          "challenge": {
+            "title": "Challenge",
+            "type": "string"
+          },
+          "rpId": {
+            "title": "Rpid",
+            "type": "string"
+          }
+        },
+        "required": ["challenge", "rpId", "allowCredentials"],
+        "title": "ChallengeResponse",
+        "type": "object"
+      },
       "ChannelKind": {
         "enum": ["TELEGRAM", "SLACK", "LARK", "WECOM"],
         "title": "ChannelKind",
@@ -964,6 +998,23 @@
         "title": "EmailPreferenceView",
         "type": "object"
       },
+      "EnrolmentResult": {
+        "properties": {
+          "factor": {
+            "$ref": "#/components/schemas/FactorView"
+          },
+          "recoveryCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recoverycodes",
+            "type": "array"
+          }
+        },
+        "required": ["factor", "recoveryCodes"],
+        "title": "EnrolmentResult",
+        "type": "object"
+      },
       "EvidenceBundle": {
         "additionalProperties": false,
         "properties": {
@@ -1177,6 +1228,30 @@
           "amount"
         ],
         "title": "ExtractionConfirmation",
+        "type": "object"
+      },
+      "FactorView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "label", "createdAt"],
+        "title": "FactorView",
         "type": "object"
       },
       "FlagAcknowledgment": {
@@ -1423,6 +1498,19 @@
         },
         "required": ["invites"],
         "title": "InvitesResponse",
+        "type": "object"
+      },
+      "LabelRequest": {
+        "properties": {
+          "label": {
+            "default": "Authenticator app",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "title": "LabelRequest",
         "type": "object"
       },
       "LinkCodeIssued": {
@@ -1976,6 +2064,24 @@
           "signerRolesActive"
         ],
         "title": "MembershipView",
+        "type": "object"
+      },
+      "MfaStatus": {
+        "properties": {
+          "factors": {
+            "items": {
+              "$ref": "#/components/schemas/FactorView"
+            },
+            "title": "Factors",
+            "type": "array"
+          },
+          "recoveryCodesRemaining": {
+            "title": "Recoverycodesremaining",
+            "type": "integer"
+          }
+        },
+        "required": ["factors", "recoveryCodesRemaining"],
+        "title": "MfaStatus",
         "type": "object"
       },
       "ModuleBufferInput": {
@@ -3531,6 +3637,46 @@
         "title": "SiweNonceResponse",
         "type": "object"
       },
+      "StepUpRequest": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "recoveryCode": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoverycode"
+          },
+          "webauthn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebAuthnAssertion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StepUpRequest",
+        "type": "object"
+      },
       "SubmittedRequest": {
         "properties": {
           "transactionHash": {
@@ -3735,6 +3881,35 @@
           "treasuries"
         ],
         "title": "TenantView",
+        "type": "object"
+      },
+      "TotpConfirm": {
+        "properties": {
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": ["code"],
+        "title": "TotpConfirm",
+        "type": "object"
+      },
+      "TotpStart": {
+        "properties": {
+          "factorId": {
+            "title": "Factorid",
+            "type": "string"
+          },
+          "otpauthUri": {
+            "title": "Otpauthuri",
+            "type": "string"
+          }
+        },
+        "required": ["factorId", "otpauthUri"],
+        "title": "TotpStart",
         "type": "object"
       },
       "TransactionEvidence": {
@@ -4466,6 +4641,62 @@
         },
         "required": ["code", "message", "wallets"],
         "title": "WarningView",
+        "type": "object"
+      },
+      "WebAuthnAssertion": {
+        "properties": {
+          "authenticatorData": {
+            "maxLength": 2048,
+            "title": "Authenticatordata",
+            "type": "string"
+          },
+          "clientDataJson": {
+            "maxLength": 4096,
+            "title": "Clientdatajson",
+            "type": "string"
+          },
+          "credentialId": {
+            "maxLength": 1400,
+            "title": "Credentialid",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 1024,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credentialId",
+          "clientDataJson",
+          "authenticatorData",
+          "signature"
+        ],
+        "title": "WebAuthnAssertion",
+        "type": "object"
+      },
+      "WebAuthnRegistration": {
+        "properties": {
+          "attestationObject": {
+            "maxLength": 8192,
+            "title": "Attestationobject",
+            "type": "string"
+          },
+          "clientDataJson": {
+            "maxLength": 4096,
+            "title": "Clientdatajson",
+            "type": "string"
+          },
+          "label": {
+            "default": "Security key",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": ["clientDataJson", "attestationObject"],
+        "title": "WebAuthnRegistration",
         "type": "object"
       },
       "WebhookChannelCreate": {
@@ -5278,6 +5509,280 @@
         },
         "summary": "Connect Chat Channel",
         "tags": ["notifications"]
+      }
+    },
+    "/v1/me/mfa": {
+      "get": {
+        "operationId": "mfa_status_v1_me_mfa_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mfa Status",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/recovery-codes": {
+      "post": {
+        "operationId": "regenerate_recovery_codes_v1_me_mfa_recovery_codes_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Regenerate Recovery Codes V1 Me Mfa Recovery Codes Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Regenerate Recovery Codes",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/step-up": {
+      "post": {
+        "operationId": "step_up_v1_me_mfa_step_up_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Step Up",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/totp": {
+      "post": {
+        "operationId": "start_totp_v1_me_mfa_totp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Totp",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/totp/{factor_id}/confirm": {
+      "post": {
+        "operationId": "confirm_totp_v1_me_mfa_totp__factor_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factor_id",
+            "required": true,
+            "schema": {
+              "title": "Factor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolmentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Totp",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/webauthn": {
+      "post": {
+        "operationId": "register_webauthn_v1_me_mfa_webauthn_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnRegistration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolmentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Webauthn",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/webauthn/challenge": {
+      "post": {
+        "operationId": "webauthn_challenge_v1_me_mfa_webauthn_challenge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Webauthn Challenge",
+        "tags": ["mfa"]
+      }
+    },
+    "/v1/me/mfa/{factor_id}": {
+      "delete": {
+        "operationId": "delete_factor_v1_me_mfa__factor_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "factor_id",
+            "required": true,
+            "schema": {
+              "title": "Factor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Factor",
+        "tags": ["mfa"]
       }
     },
     "/v1/me/notification-preferences": {

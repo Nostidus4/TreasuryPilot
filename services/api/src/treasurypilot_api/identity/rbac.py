@@ -14,7 +14,7 @@ from typing import Annotated, Protocol, cast
 
 from fastapi import Depends, Request
 
-from treasurypilot_api.identity.api import _authenticated
+from treasurypilot_api.identity.api import _authenticated, _service
 from treasurypilot_api.identity.auth import AuthFailure, SessionAccess
 from treasurypilot_api.identity.models import OrganizationRole
 
@@ -84,7 +84,11 @@ async def require_member(organization_id: uuid.UUID, request: Request) -> Member
     return MemberAccess(access=access, organization_id=organization_id, roles=roles)
 
 
-def require_role(*roles: OrganizationRole) -> Callable[..., Awaitable[MemberAccess]]:
+def require_role(
+    *roles: OrganizationRole, step_up: bool = False
+) -> Callable[..., Awaitable[MemberAccess]]:
+    """Require one of ``roles``; with ``step_up`` also a fresh second-factor check."""
+
     allowed = frozenset(role.value for role in roles)
 
     async def dependency(member: Annotated[MemberAccess, Depends(require_member)]) -> MemberAccess:
@@ -97,4 +101,15 @@ def require_role(*roles: OrganizationRole) -> Callable[..., Awaitable[MemberAcce
             )
         return member
 
-    return dependency
+    if not step_up:
+        return dependency
+
+    # A default, not Annotated: ``dependency`` is local, so a string annotation cannot resolve it.
+    async def with_step_up(
+        request: Request,
+        member: MemberAccess = Depends(dependency),  # noqa: B008
+    ) -> MemberAccess:
+        _service(request).require_step_up(member.access)
+        return member
+
+    return with_step_up

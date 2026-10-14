@@ -18,6 +18,8 @@ from treasurypilot_api.identity.rate_limit import RateLimiter, RateLimiterUnavai
 MAGIC_LINK_LIFETIME = timedelta(minutes=15)
 SESSION_IDLE_LIFETIME = timedelta(minutes=30)
 SESSION_ABSOLUTE_LIFETIME = timedelta(hours=12)
+# How long a second-factor check stays good for approve, exception and mandate routes.
+STEP_UP_LIFETIME = timedelta(minutes=10)
 MAX_MAGIC_LINK_TOKEN_LENGTH = 256
 
 # Identity README section 6: 5 per 15 min per email, 20 per 15 min per IP.
@@ -122,6 +124,7 @@ class SessionAccess:
     user: UserRecord
     session_id: uuid.UUID
     organization_scope_id: uuid.UUID | None = None
+    step_up_at: datetime | None = None
 
 
 class AuthRepository(Protocol):
@@ -487,6 +490,20 @@ class AuthService:
         if access is None:
             raise self._authentication_required()
         return access
+
+    def require_step_up(self, access: SessionAccess) -> None:
+        """Reject a session whose last second-factor check is missing or older than 10 minutes."""
+
+        now = self._now()
+        if access.step_up_at is None or not (
+            timedelta(0) <= now - access.step_up_at < STEP_UP_LIFETIME
+        ):
+            raise AuthFailure(
+                status=403,
+                code="STEP_UP_REQUIRED",
+                title="Second factor required",
+                detail="Confirm a second factor (POST /v1/me/mfa/step-up) and retry.",
+            )
 
     async def logout(
         self, *, session_token: str | None, csrf_cookie: str | None, csrf_header: str | None

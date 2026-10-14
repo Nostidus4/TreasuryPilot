@@ -165,6 +165,7 @@ class SqlAlchemyAuthRepository:
                 user=_user_record(user),
                 session_id=session_id,
                 organization_scope_id=auth_session.organization_scope_id,
+                step_up_at=auth_session.step_up_at,
             )
 
     async def revoke_session(self, *, session_id: uuid.UUID, now: datetime) -> None:
