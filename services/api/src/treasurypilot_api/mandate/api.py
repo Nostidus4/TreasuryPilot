@@ -182,7 +182,7 @@ async def create_governance_tx(
     request: Request,
     member: Annotated[
         MemberAccess,
-        Depends(require_role(OrganizationRole.OWNER)),
+        Depends(require_role(OrganizationRole.OWNER, step_up=True)),
     ],
 ) -> dict[str, Any]:
     calls = [
@@ -214,7 +214,7 @@ async def create_module_setup(
     treasury_id: uuid.UUID,
     payload: CreateModuleSetupRequest,
     request: Request,
-    member: Annotated[MemberAccess, Depends(require_role(OrganizationRole.OWNER))],
+    member: Annotated[MemberAccess, Depends(require_role(OrganizationRole.OWNER, step_up=True))],
 ) -> dict[str, Any]:
     mandate = payload.mandate
 

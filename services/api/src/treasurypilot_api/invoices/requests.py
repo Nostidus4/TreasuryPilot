@@ -106,6 +106,7 @@ from treasurypilot_core.policy.context import RequestView
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
 _require_approver = require_role(OrganizationRole.APPROVER)
+_require_approver_step_up = require_role(OrganizationRole.APPROVER, step_up=True)
 _require_canceller = require_role(
     OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER
 )
@@ -2703,7 +2704,7 @@ async def approve_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+    member: MemberAccess = Depends(_require_approver_step_up),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(

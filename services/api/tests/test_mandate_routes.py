@@ -134,7 +134,10 @@ def _iso(value: datetime) -> str:
 
 
 def make_client(
-    repository: MemoryMandateRepository, *, roles: frozenset[str] = frozenset({"Owner"})
+    repository: MemoryMandateRepository,
+    *,
+    roles: frozenset[str] = frozenset({"Owner"}),
+    step_up_at: datetime | None = None,
 ) -> TestClient:
     app = create_app(
         settings=Settings(environment="local"),
@@ -146,6 +149,7 @@ def make_client(
         access = SessionAccess(
             user=UserRecord(OWNER_ID, "owner@example.test", None, "active"),
             session_id=uuid.UUID("00000000-0000-4000-8000-000000000444"),
+            step_up_at=step_up_at or datetime.now(UTC),
         )
         return MemberAccess(access=access, organization_id=organization_id, roles=roles)
 
@@ -265,3 +269,16 @@ def test_problem_extensions_cannot_overwrite_standard_fields() -> None:
     assert body["detail"] == "real detail"
     assert body["status"] == 422
     assert body["fields"] == ["a"]
+
+
+def test_mandate_draft_requires_fresh_second_factor() -> None:
+    repository = MemoryMandateRepository()
+    stale = datetime.now(UTC) - timedelta(minutes=11)
+    with make_client(repository, step_up_at=stale) as client:
+        response = client.post(
+            f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates", json=config_payload()
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "STEP_UP_REQUIRED"
+    assert repository.rows == []

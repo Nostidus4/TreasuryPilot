@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -114,6 +115,8 @@ class Session(Base):
     ip_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     ua_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last successful second-factor check on this session; sensitive routes need it fresh.
+    step_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MagicLink(Base):
@@ -360,3 +363,60 @@ class OIDCIdentity(Base):
     linked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class MfaFactor(Base):
+    __tablename__ = "mfa_factors"
+    __table_args__ = (
+        CheckConstraint("kind IN ('totp', 'webauthn')", name="ck_mfa_factors_kind"),
+        CheckConstraint(
+            "(kind = 'totp' AND secret IS NOT NULL AND credential_id IS NULL)"
+            " OR (kind = 'webauthn' AND secret IS NULL AND credential_id IS NOT NULL"
+            " AND public_key IS NOT NULL)",
+            name="ck_mfa_factors_material",
+        ),
+        Index("ix_mfa_factors_user_id", "user_id"),
+        Index(
+            "uq_mfa_factors_credential_id",
+            "credential_id",
+            unique=True,
+            postgresql_where=text("credential_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    # TOTP shared secret as a field-encryption envelope; never stored in clear.
+    secret: Mapped[str | None] = mapped_column(Text())
+    credential_id: Mapped[bytes | None] = mapped_column(LargeBinary())
+    # Raw P-256 point, x || y (64 bytes).
+    public_key: Mapped[bytes | None] = mapped_column(LargeBinary(64))
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Highest accepted TOTP time step: a code can be used once.
+    last_counter: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MfaRecoveryCode(Base):
+    __tablename__ = "mfa_recovery_codes"
+    __table_args__ = (
+        CheckConstraint("octet_length(code_hash) = 32", name="ck_mfa_recovery_codes_hash_length"),
+        Index("ix_mfa_recovery_codes_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

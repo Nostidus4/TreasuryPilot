@@ -439,7 +439,7 @@ async def create_mandate_draft(
     payload: MandateConfig,
     request: Request,
     response: Response,
-    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER, step_up=True)),  # noqa: B008
 ) -> MandateDraftResponse:
     return await _create_draft(
         request=request,
@@ -464,7 +464,7 @@ async def clone_mandate_draft(
     mandate_id: uuid.UUID,
     request: Request,
     response: Response,
-    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER, step_up=True)),  # noqa: B008
 ) -> MandateDraftResponse:
     source = await _repository(request).get_version(
         organization_id=member.organization_id,
@@ -505,7 +505,7 @@ async def discard_mandate_draft(
     treasury_id: uuid.UUID,
     mandate_id: uuid.UUID,
     request: Request,
-    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER)),  # noqa: B008
+    member: MemberAccess = Depends(require_role(OrganizationRole.OWNER, step_up=True)),  # noqa: B008
 ) -> Response:
     row = await _repository(request).discard_draft(
         organization_id=member.organization_id,
