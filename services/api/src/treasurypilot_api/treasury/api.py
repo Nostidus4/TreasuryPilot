@@ -314,8 +314,30 @@ async def create_treasury(
             ],
         )
     except TreasuryRequestError as exc:
+        extensions: dict[str, object] = {}
+        if exc.address is not None:
+            invalid_wallet = next(
+                (
+                    item
+                    for item in payload.wallets
+                    if item.safe_address.lower() == exc.address.lower()
+                ),
+                None,
+            )
+            if invalid_wallet is not None:
+                label = invalid_wallet.label
+                field = (
+                    f"wallets.{label}"
+                    if label in {"T", "O1", "O2"}
+                    else f"wallets.{invalid_wallet.role.value}"
+                )
+                extensions["errors"] = [{"field": field, "message": exc.detail}]
         raise AuthFailure(
-            status=422, code=exc.code, title="Treasury request rejected", detail=exc.detail
+            status=422,
+            code=exc.code,
+            title="Treasury request rejected",
+            detail=exc.detail,
+            extensions=extensions,
         ) from None
     except RpcUnavailable:
         raise AuthFailure(
