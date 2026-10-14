@@ -54,8 +54,11 @@ test('create and submit a request, then approve it with the demo signer', async 
   await expect(page).toHaveURL(/\/login$/);
   await signIn(page, 'an@northwind.test');
 
-  await page.getByRole('link', { name: 'Approvals' }).click();
-  await page.getByRole('row', { name: `Open request E2E-WEB-023-001` }).click();
+  await page.getByRole('link', { name: 'Requests' }).click();
+  await page
+    .getByRole('row', { name: 'Open request E2E-WEB-023-001' })
+    .click();
+  await page.getByRole('link', { name: 'Open in approvals' }).click();
   await page
     .getByRole('button', { name: 'Connect wallet to continue' })
     .click();
