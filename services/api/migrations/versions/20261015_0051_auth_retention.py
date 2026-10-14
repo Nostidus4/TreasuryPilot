@@ -1,7 +1,7 @@
 """Add explicit auth artifact retention and hash-only deletion receipts.
 
 Revision ID: 20261015_0051
-Revises: 20261015_0049
+Revises: 20261015_0050
 """
 
 from collections.abc import Sequence
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261015_0051"
-down_revision: str | None = "20261015_0049"
+down_revision: str | None = "20261015_0050"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
