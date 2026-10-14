@@ -182,10 +182,9 @@ token, user id, IP or user agent. The global hold is intentionally conservative;
 subject-specific deletion requests and holds remain a separate follow-up.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
-a day). This follow-up adds user-wide session and magic-link retention. Subject-level
-deletion requests and holds, and a policy for financial records and immutable audit
-evidence after their storage models land, remain out of scope. CMP-L03 remains open
-until those slices are designed and implemented.
+a day). This follow-up adds user-wide authentication retention and a bounded profile
+erasure request/hold path. A policy for financial records and immutable audit evidence
+remains out of scope, so CMP-L03 stays open for that design and its acceptance tests.
 
 ## 16. Travel Rule exchange (CMP-L02)
 

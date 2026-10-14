@@ -1,4 +1,4 @@
-"""Run bounded retention batches against invitations and authentication artifacts.
+"""Run bounded retention batches for invitations, authentication artifacts and subjects.
 
 The policy row is locked before checking a hold or deleting records. Writers use an
 upsert on the same row, so placing a hold and a deletion cannot pass each other.
@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, cast, delete, exists, func, or_, select
+from sqlalchemy import String, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,10 +25,30 @@ from treasurypilot_api.compliance.models import (
     AuthRetentionPolicy,
     DeletionReceipt,
     RetentionPolicy,
+    SubjectDeletionControl,
 )
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.models import Invite, MagicLink
-from treasurypilot_api.identity.models import Session as AuthSession
+from treasurypilot_api.identity.models import (
+    Invite,
+    MagicLink,
+    MfaFactor,
+    MfaRecoveryCode,
+    OIDCIdentity,
+    SiweNonce,
+    User,
+    UserStatus,
+    WalletLink,
+)
+from treasurypilot_api.identity.models import (
+    Session as AuthSession,
+)
+from treasurypilot_api.notifications.models import (
+    Notification,
+    NotificationChannel,
+    NotificationEmailPreference,
+    NotificationPreference,
+    TelegramLinkCode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +69,12 @@ def auth_receipt_hash(record_type: str, record_id: uuid.UUID) -> bytes:
     if record_type not in {"session", "magic_link"}:
         raise ValueError("record_type must be 'session' or 'magic_link'")
     return hashlib.sha256(f"treasurypilot:{record_type}:v1:".encode() + record_id.bytes).digest()
+
+
+def subject_receipt_hash(user_id: uuid.UUID) -> bytes:
+    """Hash the account UUID, never its email, display name or credentials."""
+
+    return hashlib.sha256(b"treasurypilot:subject:v1:" + user_id.bytes).digest()
 
 
 async def configure_policy(
@@ -111,6 +137,88 @@ async def configure_auth_policy(
                 "legal_hold": statement.excluded.legal_hold,
                 "updated_at": datetime.now(UTC),
             },
+        )
+    )
+
+
+async def request_subject_deletion(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    requested_at: datetime | None = None,
+) -> None:
+    """Queue a profile-erasure request without replacing an active legal hold."""
+
+    timestamp = requested_at or datetime.now(UTC)
+    if timestamp.utcoffset() is None:
+        raise ValueError("requested_at must be timezone-aware")
+    user_exists = await session.scalar(select(User.id).where(User.id == user_id))
+    if user_exists is None:
+        raise ValueError("user does not exist")
+    statement = pg_insert(SubjectDeletionControl).values(
+        user_id=user_id,
+        deletion_requested_at=timestamp,
+        legal_hold=False,
+        audit_reference_blocked=False,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[SubjectDeletionControl.user_id],
+            set_={
+                "deletion_requested_at": func.coalesce(
+                    SubjectDeletionControl.deletion_requested_at,
+                    statement.excluded.deletion_requested_at,
+                ),
+                "audit_reference_blocked": False,
+                "updated_at": timestamp,
+            },
+        )
+    )
+    # Lock the user after the control row, matching the worker's lock order. This
+    # prevents new authenticated sessions while avoiding a user/control deadlock.
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(status=UserStatus.DISABLED.value, version=User.version + 1)
+    )
+
+
+async def set_subject_legal_hold(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    legal_hold: bool,
+    updated_at: datetime | None = None,
+) -> None:
+    """Set a subject-level hold, serialized with deletion on the same control row."""
+
+    timestamp = updated_at or datetime.now(UTC)
+    if timestamp.utcoffset() is None:
+        raise ValueError("updated_at must be timezone-aware")
+    if not legal_hold:
+        await session.execute(
+            update(SubjectDeletionControl)
+            .where(SubjectDeletionControl.user_id == user_id)
+            .values(legal_hold=False, updated_at=timestamp)
+        )
+        await session.execute(
+            delete(SubjectDeletionControl).where(
+                SubjectDeletionControl.user_id == user_id,
+                SubjectDeletionControl.deletion_requested_at.is_(None),
+            )
+        )
+        return
+    statement = pg_insert(SubjectDeletionControl).values(
+        user_id=user_id,
+        deletion_requested_at=None,
+        legal_hold=True,
+        audit_reference_blocked=False,
+        updated_at=timestamp,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[SubjectDeletionControl.user_id],
+            set_={"legal_hold": True, "updated_at": timestamp},
         )
     )
 
@@ -180,6 +288,18 @@ async def run_retention(
     else:
         examined += auth_examined
         deleted += auth_deleted
+
+    try:
+        subject_examined, subject_deleted, subject_failed = await _run_subject_requests(
+            sessions, now=now, batch_size=batch_size, dry_run=dry_run
+        )
+    except Exception:
+        logger.exception("subject deletion failed")
+        failed += 1
+    else:
+        examined += subject_examined
+        deleted += subject_deleted
+        failed += subject_failed
 
     return RetentionResult(examined=examined, deleted=deleted, failed=failed)
 
@@ -310,6 +430,165 @@ async def _run_auth(
             await session.execute(delete(model).where(model.id.in_(record_ids)))
             deleted += len(record_ids)
     return examined, deleted
+
+
+async def _run_subject_requests(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    now: datetime,
+    batch_size: int,
+    dry_run: bool,
+) -> tuple[int, int, int]:
+    """Process bounded profile-erasure requests, respecting each subject's hold."""
+
+    async with sessions() as session:
+        auth_policy = await session.get(AuthRetentionPolicy, 1)
+        if auth_policy is not None and auth_policy.legal_hold:
+            return 0, 0, 0
+        user_ids = list(
+            await session.scalars(
+                select(SubjectDeletionControl.user_id)
+                .where(
+                    SubjectDeletionControl.deletion_requested_at.is_not(None),
+                    SubjectDeletionControl.legal_hold.is_(False),
+                    SubjectDeletionControl.audit_reference_blocked.is_(False),
+                )
+                .order_by(
+                    SubjectDeletionControl.deletion_requested_at, SubjectDeletionControl.user_id
+                )
+                .limit(batch_size)
+            )
+        )
+    if dry_run:
+        return len(user_ids), 0, 0
+
+    examined = deleted = failed = 0
+    for user_id in user_ids:
+        try:
+            subject_examined, subject_deleted = await _run_subject_request(
+                sessions, user_id=user_id, now=now
+            )
+        except Exception:
+            logger.exception("subject deletion failed for request %s", user_id)
+            failed += 1
+            continue
+        examined += subject_examined
+        deleted += subject_deleted
+    return examined, deleted, failed
+
+
+async def _run_subject_request(
+    sessions: async_sessionmaker[AsyncSession], *, user_id: uuid.UUID, now: datetime
+) -> tuple[int, int]:
+    """Anonymize one profile and purge identity artifacts in the hold-row transaction."""
+
+    async with sessions() as session, session.begin():
+        auth_policy = await session.get(AuthRetentionPolicy, 1, with_for_update=True)
+        if auth_policy is not None and auth_policy.legal_hold:
+            return 0, 0
+        control = await session.scalar(
+            select(SubjectDeletionControl)
+            .where(
+                SubjectDeletionControl.user_id == user_id,
+                SubjectDeletionControl.deletion_requested_at.is_not(None),
+                SubjectDeletionControl.legal_hold.is_(False),
+                SubjectDeletionControl.audit_reference_blocked.is_(False),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if control is None:
+            return 0, 0
+        user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
+        if user is None:
+            await session.execute(
+                delete(SubjectDeletionControl).where(SubjectDeletionControl.user_id == user_id)
+            )
+            return 1, 0
+
+        email = str(user.email)
+        if await _audit_references_email(session, email):
+            control.audit_reference_blocked = True
+            return 1, 0
+
+        session_ids = list(
+            await session.scalars(select(AuthSession.id).where(AuthSession.user_id == user_id))
+        )
+        magic_link_ids = list(
+            await session.scalars(select(MagicLink.id).where(MagicLink.email == email))
+        )
+        receipts = [
+            {
+                "record_hash": subject_receipt_hash(user_id),
+                "record_type": "subject",
+                "deleted_at": now,
+            },
+            *[
+                {
+                    "record_hash": auth_receipt_hash("session", record_id),
+                    "record_type": "session",
+                    "deleted_at": now,
+                }
+                for record_id in session_ids
+            ],
+            *[
+                {
+                    "record_hash": auth_receipt_hash("magic_link", record_id),
+                    "record_type": "magic_link",
+                    "deleted_at": now,
+                }
+                for record_id in magic_link_ids
+            ],
+        ]
+        await session.execute(
+            pg_insert(DeletionReceipt)
+            .values(receipts)
+            .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+        )
+
+        for model, criterion in (
+            (AuthSession, AuthSession.user_id == user_id),
+            (MagicLink, MagicLink.email == email),
+            (WalletLink, WalletLink.user_id == user_id),
+            (SiweNonce, SiweNonce.user_id == user_id),
+            (OIDCIdentity, OIDCIdentity.user_id == user_id),
+            (MfaFactor, MfaFactor.user_id == user_id),
+            (MfaRecoveryCode, MfaRecoveryCode.user_id == user_id),
+            (Notification, Notification.user_id == user_id),
+            (NotificationChannel, NotificationChannel.user_id == user_id),
+            (NotificationEmailPreference, NotificationEmailPreference.user_id == user_id),
+            (NotificationPreference, NotificationPreference.user_id == user_id),
+            (TelegramLinkCode, TelegramLinkCode.user_id == user_id),
+        ):
+            await session.execute(delete(model).where(criterion))
+
+        # Financial and immutable audit rows retain the stable subject UUID, but the
+        # account itself no longer contains an identifying email or display name.
+        user.email = f"deleted-{user_id.hex}@privacy.invalid"
+        user.display_name = None
+        user.status = UserStatus.DISABLED.value
+        await session.execute(
+            delete(SubjectDeletionControl).where(SubjectDeletionControl.user_id == user_id)
+        )
+        return 1, 1
+
+
+async def _audit_references_email(session: AsyncSession, email: str) -> bool:
+    normalized = email.lower()
+    return bool(
+        await session.scalar(
+            select(
+                exists(
+                    select(AuditLog.seq).where(
+                        or_(
+                            func.lower(AuditLog.entity_id) == normalized,
+                            func.lower(AuditLog.actor_id) == normalized,
+                            func.strpos(func.lower(cast(AuditLog.data, String)), normalized) > 0,
+                        )
+                    )
+                )
+            )
+        )
+    )
 
 
 async def _run_cli(*, batch_size: int, execute: bool) -> None:
