@@ -11,7 +11,7 @@ M01 answers **who is this person, which organization are they acting for, what m
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Magic-link login, sessions, CSRF, rate limits | MFA, SSO, SCIM (Later: IDN-L01…L03) |
+| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | MFA, SAML/SCIM (Later: IDN-L01, IDN-L03) |
 | SIWE wallet linking (EOA + ERC-1271) | Owner keys (never held, BR-092) |
 | Organizations, onboarding checklist, settings (solo mode, auto-match) | Billing (M18) |
 | Memberships, 8 roles, invites, last-admin/owner guards | |
@@ -39,7 +39,7 @@ A user can hold several roles. Signer roles (Owner, Approver, Guardian) are **in
 
 ## 4. Data model (DATA_MODEL §2.1)
 
-`users`, `sessions` (idle 30 min, absolute 12 h), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes).
+`users`, `sessions` (idle 30 min, absolute 12 h), `magic_links` (hashed, single use, 15 min), `wallet_links` (unique active address), `siwe_nonces` (single use, 10 min), `organizations` (+ `settings` jsonb: solo_mode, auto_match, display_tz), `memberships` (roles[]), `invites` (hashed token, 7 days). Additional: `role_events` (append-only audit of role changes), `oidc_identities` (issuer/subject binding to a user).
 
 ## 5. State
 
@@ -63,7 +63,7 @@ SIWE message: domain = configured app origin, `chainId` = treasury chain (111551
 
 ## 7. Flows
 
-Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
+Sign-in: email → link (Resend; console locally) → verify → session cookie (httpOnly, Secure, SameSite=Lax) + CSRF token. Enterprise sign-in uses OIDC authorization code flow with PKCE, signed state, nonce and verified RS256 ID tokens. Each callback provisions a user and applies configured IDP group roles to one configured organization. SSO sessions expire after five minutes; callbacks request a fresh IDP login, and a callback with no mapped groups suspends the organization membership. Organization creation inserts the creator's `OrgAdmin` membership in the same transaction. The current onboarding response computes active member count, whether any member has an active wallet, whether a treasury exists, and whether its module address has been recorded from persisted data. Onboarding checklist: members → wallet linked → treasury → module enabled → mandate Active → payee Active → first invoice; computed from data, not stored flags.
 
 ## 8. Algorithms
 
@@ -77,7 +77,7 @@ Session idle 30 min / absolute 12 h; magic link 15 min; invite 7 days; SIWE nonc
 
 Deployed API instances require `DATABASE_URL`, a high-entropy `TP_SESSION_SECRET`
 (at least 32 bytes), an HTTPS `TP_MAGIC_LINK_BASE_URL`, and
-`TP_RESEND_API_KEY` / `TP_RESEND_FROM_EMAIL`. The `local` environment uses the
+`TP_RESEND_API_KEY` / `TP_RESEND_FROM_EMAIL`. OIDC is opt-in and requires `TP_OIDC_ISSUER`, `TP_OIDC_CLIENT_ID`, `TP_OIDC_CLIENT_SECRET`, `TP_OIDC_REDIRECT_URI`, and `TP_OIDC_ORGANIZATION_ID`; `TP_OIDC_GROUP_ROLE_MAP` is a JSON object from provider group names to arrays of `Operator`, `Finance`, or `Auditor` roles. Callback URI must exactly match the provider registration. The `local` environment uses the
 console delivery adapter and prints the one-time URL intentionally; every other
 `TP_ENVIRONMENT` value (including `test`) is treated as deployed and never falls
 back to console delivery, the fixed local session secret or an in-process rate
@@ -85,7 +85,7 @@ limiter (`TP_REDIS_URL` is required).
 
 ## 10. Security
 
-Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored in M1 (magic link only); email enumeration avoided (same response for unknown emails).
+Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored; email enumeration avoided (same response for unknown emails). OIDC trusts only the configured issuer, verified email claims, and mapped non-privileged roles. Discovery and key endpoints must use HTTPS except loopback local development; endpoint redirects are rejected.
 
 ## 11. Failure scenarios
 

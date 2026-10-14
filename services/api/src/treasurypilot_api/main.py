@@ -36,6 +36,7 @@ from treasurypilot_api.identity.memberships import (
     SqlAlchemyMembershipRepository,
 )
 from treasurypilot_api.identity.memberships import router as memberships_router
+from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
 from treasurypilot_api.identity.organizations import (
     OrganizationRepository,
     SqlAlchemyOrganizationRepository,
@@ -337,6 +338,11 @@ def create_app(
     app.state.auth_service = auth_service
     app.state.api_key_rate_limiter = rate_limiter
     app.state.organization_repository = organization_repository
+    app.state.oidc_repository = (
+        OIDCIdentityRepository(sessions)
+        if settings.oidc_configured and sessions is not None
+        else None
+    )
     app.state.wallet_repository = wallet_repository
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
