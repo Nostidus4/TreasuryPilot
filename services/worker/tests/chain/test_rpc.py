@@ -20,6 +20,7 @@ from treasurypilot_worker.chain.rpc import (
     SafeConfig,
     build_rpc_client,
     rpc_health_sink,
+    safe_config_changed,
 )
 
 
@@ -178,7 +179,12 @@ def safe_provider(*, guard: str | None, next_module: str = SENTINEL) -> FakeProv
         return "0x" + "00" * 12 + value.removeprefix("0x")
 
     return FakeProvider(
-        {"eth_getBlockByNumber": HEAD, "eth_call": eth_call, "eth_getStorageAt": storage}
+        {
+            "eth_getBlockByNumber": HEAD,
+            "eth_call": eth_call,
+            "eth_getStorageAt": storage,
+            "eth_getCode": "0x",
+        }
     )
 
 
@@ -194,6 +200,7 @@ def test_safe_config_reads_one_block() -> None:
         guard=GUARD,
         fallback_handler=None,
         nonce=7,
+        module_implementations=(None,),
     )
 
 
@@ -210,6 +217,55 @@ def test_safe_config_stops_paging_modules_that_never_end() -> None:
     with pytest.raises(RpcError, match="did not end"):
         asyncio.run(client(provider, FakeProvider()).safe_config(SAFE))
     assert len(provider.requests) < 50
+
+
+def test_safe_config_change_detection_ignores_owner_order_and_block_metadata() -> None:
+    previous = SafeConfig(10, BLOCK, (SAFE, GUARD), 2, (GUARD,), None, None, 7)
+    reordered = SafeConfig(11, OTHER_BLOCK, (GUARD, SAFE), 2, (GUARD,), None, None, 8)
+
+    assert not safe_config_changed(previous, reordered)
+
+
+def test_safe_config_change_detection_detects_security_configuration_changes() -> None:
+    previous = SafeConfig(10, BLOCK, (SAFE, GUARD), 2, (GUARD,), None, None, 7)
+    changed = SafeConfig(11, OTHER_BLOCK, (SAFE, "0x" + "33" * 20), 1, (), SAFE, None, 8)
+
+    assert safe_config_changed(previous, changed)
+
+
+def test_pre_0013_snapshot_row_does_not_report_a_spurious_change() -> None:
+    row = {
+        "owners": [SAFE, GUARD],
+        "threshold": 2,
+        "modules": [bytes.fromhex("11" * 20)],
+        "guard": None,
+        "fallback_handler": None,
+        "module_implementations": {},
+    }
+    current = SafeConfig(
+        11,
+        OTHER_BLOCK,
+        (SAFE, GUARD),
+        2,
+        ("0x" + "11" * 20,),
+        None,
+        "0x" + "22" * 20,
+        8,
+        ("0x" + "33" * 20,),
+    )
+
+    assert not safe_config_changed(row, current)
+    row["module_implementations"] = {"0x" + "11" * 20: None}
+    assert safe_config_changed(row, current)
+
+
+def test_eip1167_runtime_extracts_only_the_canonical_clone_target() -> None:
+    prefix = bytes.fromhex("363d3d373d3d3d363d73")
+    suffix = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
+    target = bytes.fromhex("44" * 20)
+
+    assert rpc_module._eip1167_implementation(prefix + target + suffix) == "0x" + "44" * 20
+    assert rpc_module._eip1167_implementation(prefix + target + suffix + b"\x00") is None
 
 
 class Erroring(FakeProvider):

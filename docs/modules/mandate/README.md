@@ -120,7 +120,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET | `/…/treasuries/{t}/mandates` | ANY | → `{items}` | |
-| POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
+| POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
 | POST | `/…/mandates/{v}/clone` | OWN | → `201 {draft}` | |
 | POST | `/…/mandates/{v}/governance-tx` | OWN | → `{governanceTx}` (§6.3) | 409 `NOT_DRAFT`, `NO_CHANGES` |
 | DELETE | `/…/mandates/{v}` | OWN | discard a Draft | 409 `NOT_DRAFT` |
@@ -129,8 +129,8 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
-| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT` |
-| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER` |
+| POST | `/…/treasuries/{t}/payees` | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `ADDRESS_INVALID`, `ADDRESS_IS_TREASURY_WALLET`, `SCREENING_HIT`; a provider ERROR fails closed with 503 `DATA_MISSING` (payee `ScreeningFailed`, registration stays blocked) |
+| POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER`, `OOB_ALREADY_VERIFIED` (evidence is recorded once) |
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
 | GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |
@@ -147,12 +147,22 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
 | GET | `/…/governance-txs?status=` | ANY | → `{items}` | |
+| POST | `/orgs/{o}/treasuries/{t}/governance-txs` 🔁 | OWN | `{purpose, calls[]}` → `{governanceTx, decodedCalls[], humanSummary, typedData}` | 503 `MULTISEND_UNAVAILABLE` when a bundle has no configured Safe MultiSendCallOnly v1.4.1 deployment |
 | GET | `/…/governance-txs/{g}` | ANY | → `{governanceTx, decodedCalls[], humanSummary, typedData (SafeTx EIP-712), signatures[], threshold, owners[]}` | |
 | POST | `/…/governance-txs/{g}/signatures` 🔁 | OWN (an owner of that Safe) | `{signature}` → `{signatures[], status}` | 400 `SIGNATURE_INVALID`, 403 `NOT_SAFE_OWNER`, 409 `ALREADY_SIGNED`, `SUPERSEDED` |
 | GET | `/…/governance-txs/{g}/exec-call` | OWN | → `{to: safe, data: execTransaction(..., packedSignatures)}` for the owner's wallet | 409 `NOT_READY` |
-| POST | `/…/governance-txs/{g}/submitted` | OWN | `{txHash}` → `{status: Submitted}` | |
+| POST | `/…/governance-txs/{g}/submitted` | OWN | `{transactionHash}` → `{status: Submitted}` | |
 | POST | `/…/governance-txs/{g}/cancel` | creator, OWN | → `{status: Cancelled}` | 409 `ALREADY_SUBMITTED` |
 | GET | `/…/governance-txs/{g}/safe-wallet-link` | OWN | → `{url}` (optional: propose to Safe Transaction Service, open in Safe{Wallet}) | 503 if the service is unavailable |
+
+Borrow and repay calldata builders encode the module's `authorizeBorrow` and
+`authorizeRepay` calls from integer arguments. Amounts, expiry, minimum health
+factor and maximum rate are carried without display-unit conversion or rounding.
+The proposal read model currently has no API-backed `planId`, expiry, minimum
+health-factor authorization, or max-rate authorization fields, so proposal-backed
+creation and the WEB-027 owner action are not wired yet. Until that integration
+exists, the general governance endpoint persists and tracks calls supplied by an
+Owner but does not independently prove they match a validated borrow proposal.
 
 ### 6.4 Fee policy (FEE-1 … FEE-3)
 
@@ -207,15 +217,15 @@ M08 NEEDS_APPROVAL → exception `Requested` with numbers → AI draft (M09) →
 
 ### 8.1 Mandate validation (BR-014)
 
-Required: actions ⊆ {REFILL, PAY} (SWAP only if P2 enabled with router, pairs, slippage, quote age); executor ≠ 0; guardian set; ≥ 1 approver; `validFrom < expiresAt`; `expiresAt − validFrom ≤ 365 d`; cooling within 1 h–7 d (demo profile: 60 s–1 h); for each action `0 ≤ perRequest ≤ daily`; for each operational wallet `0 ≤ buffer ≤ target`; Safe T buffer set; `approvalMaxAge` 1–60 days; all amounts integers in base units, inputs with more decimals than the asset are rejected. Limits of 0 are allowed with a warning "action disabled".
+Required: actions ⊆ {REFILL, PAY, SUPPLY} (SWAP only if P2 enabled with router, pairs, slippage, quote age); executor ≠ 0; guardian set; ≥ 1 approver; `validFrom < expiresAt`; `expiresAt − validFrom ≤ 365 d`; cooling within 1 h–7 d (demo profile: 60 s–1 h); for each PAY/REFILL/SUPPLY action `0 ≤ perRequest ≤ daily`; SUPPLY uses the separate `supplyLimits` field; for each operational wallet `0 ≤ buffer ≤ target`; Safe T buffer set; `approvalMaxAge` 1–60 days; all amounts are integer base-unit strings. `minSupply` is required in production and defaults to 500 whole asset units in demo; when SUPPLY is enabled it must be positive and fit both SUPPLY limits. `reserveHorizonDays` defaults to 30. Limits of 0 are allowed with a warning "action disabled".
 
 ### 8.2 Summary and diff
 
-Human summary template (one line per rule, display units and base units), e.g. *"The agent may pay vendors up to **2,000.00 tUSDC** per invoice and **10,000.00 tUSDC** per UTC day (2000000000 / 10000000000 base units)."* Diff = field-by-field old → new with risk markers: ▲ looser (higher limit, lower buffer, shorter cooling, longer expiry, added approver) / ▼ stricter. Looser changes show a red marker and require a confirm checkbox.
+Human summary template (one line per rule, display units and base units), e.g. *"The agent may pay vendors up to **2,000.00 tUSDC** per invoice and **10,000.00 tUSDC** per UTC day (2000000000 / 10000000000 base units)."* Diff = field-by-field old → new with risk markers: ▲ looser (higher limit, lower buffer, shorter cooling, earlier start, longer expiry, added action/approver) / ▼ stricter. Looser changes show a red marker and require a confirm checkbox.
 
 ### 8.3 Bundle building
 
-Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` (delegatecall to the canonical MultiSendCallOnly v1.4.1, operation = 1). `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
+Compute the on-chain diff: mandate fields changed → `configureMandate`; approvers added/removed → `setApprovers(add, remove)`; each changed wallet → `setBuffer`. One call → direct call; several → `MultiSendCallOnly` v1.4.1 (the Safe uses delegatecall, operation = 1; each bundled operation is CALL). Its address must be configured in the chain deployment manifest as `SAFE_MULTISEND_CALL_ONLY`. `safe_nonce` = max(on-chain nonce, highest open governance nonce + 1).
 
 ### 8.4 Read-back
 

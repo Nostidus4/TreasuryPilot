@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from celery import Celery, signals
+from celery.schedules import crontab
 from kombu import Exchange, Queue
 from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
@@ -44,6 +47,25 @@ def create_celery_app() -> Celery:
         worker_prefetch_multiplier=1,
         timezone="UTC",
         enable_utc=True,
+        beat_schedule={
+            "refresh-safe-config-snapshots": {
+                "task": "treasurypilot.treasury.refresh_safe_config_snapshots",
+                "schedule": crontab(minute="*/10"),
+                "options": {"queue": "core"},
+            },
+            "expire-invoice-approvals": {
+                "task": "treasurypilot.invoices.expire_approvals",
+                "schedule": timedelta(minutes=5),
+                "options": {"queue": "core"},
+            },
+            "publish-domain-events": {
+                "task": "treasurypilot.notifications.publish-domain-events",
+                "schedule": timedelta(seconds=1),
+                # A run nobody picked up within 2 s is superseded by the next one; without
+                # this, a busy or stopped worker lets thousands pile up in Redis.
+                "options": {"queue": "core", "expires": 2},
+            },
+        },
     )
     return app
 
