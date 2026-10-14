@@ -273,6 +273,11 @@ async def _prepare_database(
             [
                 User(id=USER_ID, email=f"setup-{USER_ID}@example.test"),
                 Organization(id=ORG_ID, name="Setup wizard Anvil"),
+            ]
+        )
+    async with sessions() as session, session.begin():
+        session.add_all(
+            [
                 Membership(id=uuid.uuid4(), org_id=ORG_ID, user_id=USER_ID, roles=["Owner"]),
                 WalletLink(
                     id=uuid.uuid4(),

@@ -26,6 +26,20 @@ SafeConfigReader = Callable[[Sequence[str]], RpcClient]
 EventPublisher = Callable[[asyncpg.Connection, Mapping[str, Any]], Awaitable[None]]
 
 
+def _decode_rpc_urls(value: object) -> list[str]:
+    """Normalize asyncpg's JSONB text result and validate configured provider URLs."""
+
+    if isinstance(value, str):
+        value = json.loads(value)
+    if (
+        not isinstance(value, list | tuple)
+        or not value
+        or any(not isinstance(url, str) or not url.strip() for url in value)
+    ):
+        raise ValueError("chain rpc_urls must be a non-empty list of URL strings")
+    return list(value)
+
+
 async def publish_safe_config_changed(
     connection: asyncpg.Connection, payload: Mapping[str, Any]
 ) -> None:
@@ -76,7 +90,7 @@ async def refresh_safe_config_snapshots(
         failed_treasuries: set[uuid.UUID] = set()
         for wallet in wallets:
             try:
-                rpc = reader_factory(wallet["rpc_urls"])
+                rpc = reader_factory(_decode_rpc_urls(wallet["rpc_urls"]))
                 safe_address = "0x" + bytes(wallet["safe_address"]).hex()
                 safe_config = await rpc.safe_config(safe_address)
                 snapshots_written += await _store_snapshot(
