@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import cast
@@ -19,6 +20,8 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.invoices.fingerprints import (
+    DuplicateFingerprintConflict,
+    compute_fingerprint,
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
@@ -38,7 +41,7 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.invoices.state_machine import SqlAlchemyPayOperationGuard
 from treasurypilot_api.mandate.models import Payee, Vendor
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
-from treasurypilot_core.fingerprint import fingerprint, normalize
+from treasurypilot_core.fingerprint import normalize
 from treasurypilot_core.money import BaseUnits
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
@@ -131,13 +134,21 @@ def _not_found() -> AuthFailure:
 
 
 def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
-    return AuthFailure(
-        status=409,
-        code="DUPLICATE_FINGERPRINT",
-        title="Duplicate invoice",
-        detail="An active request already uses this invoice fingerprint.",
-        extensions={"existingRequestId": str(existing_request_id)},
-    )
+    return DuplicateFingerprintConflict(existing_request_id)
+
+
+def _constraint_name(error: IntegrityError) -> str | None:
+    """Name of the violated constraint across psycopg and SQLAlchemy's asyncpg adapter."""
+    orig = error.orig
+    # The asyncpg adapter drops constraint_name; the real asyncpg error is its __cause__.
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        name = getattr(candidate, "constraint_name", None) or getattr(
+            getattr(candidate, "diag", None), "constraint_name", None
+        )
+        if name:
+            return str(name)
+    match = re.search(r'constraint "([^"]+)"', str(orig))
+    return match.group(1) if match else None
 
 
 def _validate_dates(issue_date: date, due_date: date) -> None:
@@ -290,8 +301,8 @@ async def _bound_fields(
 
 
 def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
-    row.fingerprint = fingerprint(
-        vendor_ref, row.invoice_no, BaseUnits(int(row.amount)), "0x" + asset_address.hex()
+    row.fingerprint = compute_fingerprint(
+        vendor_ref, row.invoice_no, int(row.amount), asset_address
     )
     row.invoice_hash = keccak(
         encode(
@@ -425,6 +436,7 @@ async def create_request(
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
+    row: PaymentRequest | None = None
     try:
         async with factory() as session, session.begin():
             previous = await session.scalar(
@@ -482,7 +494,8 @@ async def create_request(
                     idempotency_payload_hash=payload_hash,
                 )
                 _hashes(row, vendor.normalized_ref, asset.address or b"")
-                assert row.fingerprint is not None
+                if row.fingerprint is None:
+                    raise RuntimeError("Fingerprint was not computed.")
                 duplicate = await find_active_duplicate(
                     session,
                     treasury_id=row.treasury_id,
@@ -521,26 +534,19 @@ async def create_request(
                 flags = await _recompute_flags(session, row)
                 await session.flush()
     except IntegrityError as error:
-        constraint_name = getattr(
-            getattr(error.orig, "diag", None),
-            "constraint_name",
-            getattr(error.orig, "constraint_name", None),
-        )
-        if constraint_name == "uq_payment_requests_active_fingerprint":
-            fingerprint_value = row.fingerprint
-            if fingerprint_value is None:
-                raise error
+        if _constraint_name(error) == "uq_payment_requests_active_fingerprint":
+            if row is None or row.fingerprint is None:
+                raise
             async with factory() as session:
                 duplicate = await find_active_duplicate(
                     session,
                     treasury_id=row.treasury_id,
-                    value=fingerprint_value,
+                    value=row.fingerprint,
                 )
             if duplicate is not None:
                 raise _duplicate_fingerprint(duplicate) from error
             raise
-        if constraint_name != "uq_payment_requests_idempotency_key":
-            raise
+        # Any other violation falls through to the idempotency lookup, which re-raises if no match.
         async with factory() as session:
             existing = await session.scalar(
                 select(PaymentRequest).where(
@@ -674,7 +680,8 @@ async def edit_request(
             row.current_revision += 1
             row.last_edited_by = member.user_id
             _hashes(row, vendor.normalized_ref, asset.address or b"")
-            assert row.fingerprint is not None
+            if row.fingerprint is None:
+                raise RuntimeError("Fingerprint was not computed.")
             row.terms_hash = (
                 keccak(json.dumps(row.terms, sort_keys=True, separators=(",", ":")).encode())
                 if row.terms is not None

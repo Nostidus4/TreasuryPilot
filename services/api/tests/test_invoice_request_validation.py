@@ -7,11 +7,13 @@ from datetime import date
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.invoices.fingerprints import find_active_duplicate
 from treasurypilot_api.invoices.requests import (
     _amount,
+    _constraint_name,
     _duplicate_fingerprint,
     _request_id,
     _validate_dates,
@@ -84,3 +86,34 @@ def test_duplicate_error_exposes_existing_request_id_extension() -> None:
     assert error.status == 409
     assert error.code == "DUPLICATE_FINGERPRINT"
     assert error.extensions["existingRequestId"] == str(existing)
+
+
+class _AsyncpgUniqueViolation(Exception):
+    constraint_name = "uq_payment_requests_idempotency_key"
+
+
+class _AdaptedAsyncpgError(Exception):
+    """Mirrors SQLAlchemy's asyncpg adapter: no diag/constraint_name, real error in __cause__."""
+
+
+def test_constraint_name_reads_asyncpg_error_chained_as_cause() -> None:
+    orig = _AdaptedAsyncpgError("duplicate key")
+    orig.__cause__ = _AsyncpgUniqueViolation()
+
+    assert _constraint_name(IntegrityError("stmt", {}, orig)) == (
+        "uq_payment_requests_idempotency_key"
+    )
+
+
+def test_constraint_name_falls_back_to_driver_message() -> None:
+    orig = _AdaptedAsyncpgError(
+        'duplicate key value violates unique constraint "uq_payment_requests_active_fingerprint"'
+    )
+
+    assert _constraint_name(IntegrityError("stmt", {}, orig)) == (
+        "uq_payment_requests_active_fingerprint"
+    )
+
+
+def test_constraint_name_is_none_when_unknown() -> None:
+    assert _constraint_name(IntegrityError("stmt", {}, _AdaptedAsyncpgError("boom"))) is None
