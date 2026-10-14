@@ -58,6 +58,13 @@ def test_near_duplicate_candidates_have_severity_and_evidence() -> None:
     )
     assert "vendor_id" in sql and "amount" in sql and "issue_date" in sql
     assert RequestStatus.REJECTED.value in sql and RequestStatus.CANCELLED.value in sql
+    assert "LIMIT 100" in sql
+    index = next(
+        i
+        for i in PaymentRequest.__table__.indexes
+        if i.name == "ix_payment_requests_vendor_amount_issue_date"
+    )
+    assert [c.name for c in index.columns] == ["vendor_id", "amount", "issue_date"]
 
     recurring = PaymentRequest(
         id=uuid.uuid4(),

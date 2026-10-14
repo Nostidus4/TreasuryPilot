@@ -14,6 +14,7 @@ from treasurypilot_core.fingerprint import damerau_levenshtein, normalize
 
 _EXCLUDED_STATUSES = (RequestStatus.REJECTED.value, RequestStatus.CANCELLED.value)
 _DATE_WINDOW_DAYS = 45
+_MAX_CANDIDATES = 100  # bounds pure-Python distance work while the treasury lock is held
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,12 +39,17 @@ class NearDuplicate:
 async def find_near_duplicates(
     session: AsyncSession, request: PaymentRequest
 ) -> list[NearDuplicate]:
-    """Find same-vendor/amount requests in the indexed 45-day issue-date window."""
+    """Find same-vendor/amount requests in the indexed 45-day issue-date window.
+
+    Flags are computed per revision for the request being created/edited only; they are not
+    refreshed when a counterpart request later changes or is cancelled.
+    """
 
     if request.fingerprint is None:
         return []
     candidates = await session.execute(
-        select(PaymentRequest.id, PaymentRequest.invoice_no).where(
+        select(PaymentRequest.id, PaymentRequest.invoice_no)
+        .where(
             PaymentRequest.id != request.id,
             PaymentRequest.vendor_id == request.vendor_id,
             PaymentRequest.amount == request.amount,
@@ -55,6 +61,8 @@ async def find_near_duplicates(
             PaymentRequest.fingerprint.is_not(None),
             PaymentRequest.fingerprint != request.fingerprint,
         )
+        .order_by(PaymentRequest.issue_date.desc(), PaymentRequest.id)
+        .limit(_MAX_CANDIDATES)
     )
     normalized_invoice = normalize(request.invoice_no)
     matches: list[NearDuplicate] = []
