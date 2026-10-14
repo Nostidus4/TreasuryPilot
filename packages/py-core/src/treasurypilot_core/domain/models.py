@@ -210,6 +210,31 @@ class Schedule(FrozenModel):
     status: Literal["OPTIMAL", "FEASIBLE", "FALLBACK"]
 
 
+class BindingConstraintDetail(FrozenModel):
+    """Numeric explanation of a constraint that a proposed plan reaches or breaks."""
+
+    name: Literal[
+        "PAY_DAILY_CAP",
+        "REFILL_DAILY_CAP",
+        "BUFFER",
+        "SOURCE_CAPACITY",
+        "REFILL_BOUND",
+        "COOLING",
+        "DEADLINE",
+    ]
+    request_id: Annotated[str, Field(min_length=1)]
+    day: NonNegativeInt
+    used: int
+    limit: int
+
+
+class ExceptionValue(FrozenModel):
+    """Value currently blocked by the per-request cap if an Owner grants an exception."""
+
+    request_id: Annotated[str, Field(min_length=1)]
+    value: int
+
+
 class LiquidityPosition(FrozenModel):
     payment_reserve: BaseUnits
     safe_floor: BaseUnits

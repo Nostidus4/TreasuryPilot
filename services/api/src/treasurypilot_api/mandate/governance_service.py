@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
 import uuid
-from collections.abc import Mapping
 from typing import Any
 
 from eth_hash.auto import keccak
@@ -22,6 +19,7 @@ from treasurypilot_api.mandate.governance import (
     exec_transaction_data,
     pack_signatures,
     recover_owner,
+    safe_tx_hash,
 )
 from treasurypilot_api.mandate.models import (
     GovernanceSignature,
@@ -29,17 +27,12 @@ from treasurypilot_api.mandate.models import (
     GovernanceTxPurpose,
     GovernanceTxStatus,
 )
-from treasurypilot_api.treasury.config import (
-    PlatformConfiguration,
-    PlatformConfigurationError,
-    resolve_rpc_url,
-)
+from treasurypilot_api.treasury.config import PlatformConfiguration
 from treasurypilot_api.treasury.models import Treasury, TreasuryWallet, WalletRole
 from treasurypilot_api.treasury.safe import (
     RpcSafeVerifier,
     RpcUnavailable,
     SafeVerificationError,
-    _rpc,
 )
 
 _NONCE_SELECTOR = "0xaffed0e0"  # nonce()
@@ -71,13 +64,10 @@ class GovernanceService:
         sessions: async_sessionmaker[AsyncSession],
         verifier: RpcSafeVerifier,
         configuration: PlatformConfiguration,
-        *,
-        environ: Mapping[str, str] = os.environ,
     ) -> None:
         self._sessions = sessions
         self._verifier = verifier
         self._configuration = configuration
-        self._environ = environ
 
     async def _source(
         self, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -98,74 +88,41 @@ class GovernanceService:
             raise GovernanceFailure("TREASURY_NOT_FOUND", 404, "Treasury not found.")
         return item
 
+    async def _read(self, chain_id: int, method: str, params: list[object]) -> Any:
+        try:
+            return await self._verifier.call(chain_id, method, params)
+        except SafeVerificationError:
+            raise GovernanceFailure(
+                "WRONG_CHAIN", 422, "The treasury chain is not enabled."
+            ) from None
+
     async def _nonce(self, chain_id: int, safe: bytes) -> int:
-        chain = next(
-            (
-                item
-                for item in self._configuration.chains
-                if item.chain_id == chain_id and item.enabled
-            ),
-            None,
+        result = await self._read(
+            chain_id, "eth_call", [{"to": _address(safe), "data": _NONCE_SELECTOR}, "latest"]
         )
-        if chain is None:
-            raise GovernanceFailure("WRONG_CHAIN", 422, "The treasury chain is not enabled.")
-        for template in chain.rpc_urls:
-            if not template.startswith(("http://", "https://")):
-                continue
-            try:
-                url = resolve_rpc_url(template, self._environ)
-                result = await asyncio.to_thread(
-                    _rpc,
-                    url,
-                    "eth_call",
-                    [{"to": _address(safe), "data": _NONCE_SELECTOR}, "latest"],
-                )
-                return int(str(result), 16)
-            except (OSError, ValueError, PlatformConfigurationError):
-                continue
-            except Exception:
-                continue
-        raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
+        return int(str(result), 16)
 
     async def _receipt_status(
         self, chain_id: int, transaction_hash: bytes, safe: bytes, safe_tx_hash: bytes
     ) -> GovernanceTxStatus | None:
-        chain = next(
-            (
-                item
-                for item in self._configuration.chains
-                if item.chain_id == chain_id and item.enabled
-            ),
-            None,
-        )
-        if chain is None:
+        """Outcome of the submitted tx; READY means the outer tx reverted and the Safe nonce
+        is unconsumed, so the stored signatures are still usable."""
+        receipt = await self._read(chain_id, "eth_getTransactionReceipt", [_hex(transaction_hash)])
+        if receipt is None:
             return None
-        for template in chain.rpc_urls:
-            if not template.startswith(("http://", "https://")):
-                continue
-            try:
-                url = resolve_rpc_url(template, self._environ)
-                receipt = await asyncio.to_thread(
-                    _rpc, url, "eth_getTransactionReceipt", [_hex(transaction_hash)]
-                )
-            except Exception:
-                continue
-            if receipt is None:
-                return None
-            if str(receipt.get("status", "0x1")).lower() == "0x0":
-                return GovernanceTxStatus.FAILED
-            for log in receipt.get("logs", []):
-                topics = log.get("topics", [])
-                event = str(topics[0]).lower() if topics else ""
-                if (
-                    str(log.get("address", "")).lower() == _address(safe).lower()
-                    and len(topics) >= 2
-                    and str(topics[1]).lower() == _hex(safe_tx_hash).lower()
-                    and event in _EXECUTION_EVENTS
-                ):
-                    return _EXECUTION_EVENTS[event]
-            return None
-        raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
+        if str(receipt.get("status", "0x1")).lower() == "0x0":
+            return GovernanceTxStatus.READY
+        for log in receipt.get("logs", []):
+            topics = log.get("topics", [])
+            event = str(topics[0]).lower() if topics else ""
+            if (
+                str(log.get("address", "")).lower() == _address(safe).lower()
+                and len(topics) >= 2
+                and str(topics[1]).lower() == _hex(safe_tx_hash).lower()
+                and event in _EXECUTION_EVENTS
+            ):
+                return _EXECUTION_EVENTS[event]
+        return None
 
     async def create(
         self,
@@ -219,12 +176,13 @@ class GovernanceService:
             tx = build_safe_transaction(calls, multisend_call_only=multisend)
         except ValueError as exc:
             raise GovernanceFailure("CALL_INVALID", 422, str(exc)) from None
-        chain_nonce = await self._nonce(treasury.chain_id, wallet.safe_address)
         async with self._sessions() as session, session.begin():
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"governance:{treasury.chain_id}:{wallet.safe_address.hex()}"},
             )
+            # Read under the lock so a concurrent execution cannot leave the new row below it.
+            chain_nonce = await self._nonce(treasury.chain_id, wallet.safe_address)
             await session.execute(
                 text(
                     "UPDATE governance_txs SET status='Superseded', version=version+1, updated_at=now() "
@@ -254,8 +212,6 @@ class GovernanceService:
             typed = tx.typed_data(
                 chain_id=treasury.chain_id, safe_address=wallet.safe_address, nonce=nonce
             )
-            from treasurypilot_api.mandate.governance import safe_tx_hash
-
             row = GovernanceTx(
                 id=uuid.uuid4(),
                 org_id=organization_id,
@@ -336,7 +292,12 @@ class GovernanceService:
         refresh_chain: bool = True,
     ) -> dict[str, Any]:
         if refresh_chain:
-            await self.refresh(organization_id=organization_id, governance_tx_id=governance_tx_id)
+            try:
+                await self.refresh(
+                    organization_id=organization_id, governance_tx_id=governance_tx_id
+                )
+            except RpcUnavailable:
+                pass  # A plain read still returns the stored state while the chain RPC is down.
         async with self._sessions() as session:
             row = await self._row(session, organization_id, governance_tx_id)
             signatures = list(
@@ -385,8 +346,10 @@ class GovernanceService:
         for index, call in enumerate(row.calls, start=1):
             data = str(call["data"]).removeprefix("0x")
             selector = "0x" + data[:8] if len(data) >= 8 else "0x"
+            kind = "DELEGATECALL " if call["operation"] == 1 else ""
             descriptions.append(
-                f"call {index}: {call['to']}, value {call['value']} base units, selector {selector}"
+                f"{kind}call {index}: {call['to']}, value {call['value']} base units, "
+                f"selector {selector}"
             )
         return f"{label}: " + "; ".join(descriptions)
 
@@ -398,8 +361,13 @@ class GovernanceService:
             submitted_hash, signed_hash = row.exec_tx_hash, row.safe_tx_hash
         next_status: GovernanceTxStatus | None = None
         if status == GovernanceTxStatus.SUBMITTED and submitted_hash is not None:
+            # No receipt yet stays SUBMITTED: a lagging provider must not mislabel an executed tx.
             next_status = await self._receipt_status(chain_id, submitted_hash, safe, signed_hash)
-            if next_status is None and await self._nonce(chain_id, safe) > nonce:
+            # Reverted outer tx: reopen unless another tx has since consumed the nonce.
+            if (
+                next_status == GovernanceTxStatus.READY
+                and await self._nonce(chain_id, safe) > nonce
+            ):
                 next_status = GovernanceTxStatus.SUPERSEDED
         elif status in (GovernanceTxStatus.COLLECTING, GovernanceTxStatus.READY):
             if await self._nonce(chain_id, safe) > nonce:
@@ -407,12 +375,19 @@ class GovernanceService:
         if next_status is not None:
             async with self._sessions() as session, session.begin():
                 row = await self._row(session, organization_id, governance_tx_id)
-                if row.status in (
-                    GovernanceTxStatus.COLLECTING,
-                    GovernanceTxStatus.READY,
-                    GovernanceTxStatus.SUBMITTED,
+                # exec_tx_hash unchanged: a concurrent resubmission must not be overwritten.
+                if (
+                    row.status
+                    in (
+                        GovernanceTxStatus.COLLECTING,
+                        GovernanceTxStatus.READY,
+                        GovernanceTxStatus.SUBMITTED,
+                    )
+                    and row.exec_tx_hash == submitted_hash
                 ):
                     row.status = next_status
+                    if next_status == GovernanceTxStatus.READY:
+                        row.exec_tx_hash = None
 
     async def sign(
         self,
@@ -502,11 +477,13 @@ class GovernanceService:
     ) -> dict[str, Any]:
         if len(transaction_hash) != 32:
             raise GovernanceFailure("TX_HASH_INVALID", 422, "Transaction hash must be 32 bytes.")
+        await self.refresh(organization_id=organization_id, governance_tx_id=governance_tx_id)
         async with self._sessions() as session, session.begin():
-            row = await self._row(session, organization_id, governance_tx_id)
-            if row.status != GovernanceTxStatus.READY:
+            row = await self._row(session, organization_id, governance_tx_id, lock=True)
+            # A SUBMITTED row without a receipt may be re-reported (typo or dropped tx).
+            if row.status not in (GovernanceTxStatus.READY, GovernanceTxStatus.SUBMITTED):
                 raise GovernanceFailure(
-                    "NOT_READY", 409, "Only a ready transaction can be submitted."
+                    "NOT_READY", 409, "Only a ready or submitted transaction can be reported."
                 )
             linked = set(
                 await session.scalars(
@@ -547,9 +524,14 @@ class GovernanceService:
                     )
                 )
             )
-            packed = pack_signatures(
-                self._typed(row), signatures, row.owners_snapshot, row.threshold
-            )
+            try:
+                packed = pack_signatures(
+                    self._typed(row), signatures, row.owners_snapshot, row.threshold
+                )
+            except ValueError:
+                raise GovernanceFailure(
+                    "SIGNATURE_INVALID", 409, "The stored signatures no longer verify."
+                ) from None
             return {
                 "to": _address(row.safe_address),
                 "data": _hex(

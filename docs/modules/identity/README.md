@@ -68,7 +68,7 @@ Sign-in: email → link (Resend; console locally) → verify → session cookie 
 ## 8. Algorithms
 
 - **RBAC:** FastAPI dependencies `require_member(org)` (non-member → **404**) and `require_role(*roles)` (member without role → 403); repositories always filter by `org_id`. An automated test enumerates every org-scoped route and calls it as a non-member.
-- **Maker-checker:** `approver ∉ {created_by, last_edited_by}` unless `solo_mode` (Owner-only toggle), then the approval and audit entry carry `solo_mode = true`.
+- **Maker-checker:** `assert_maker_checker(request, user_id=..., organization=...)` rejects `approver ∈ {created_by, last_edited_by}` with 409 `MAKER_CHECKER` unless persisted `solo_mode` is enabled. It returns `solo_mode = true` only when solo mode actually allowed self-approval. The Owner-only setting API verifies current Safe T ownership. Invoice approval handlers in dependent #123/#124 must call the helper and persist its decision on the approval and audit event; handler wiring is not part of IDN-008.
 - **Owner check:** compare the user's linked addresses with Safe T owners at link/unlink time, before every Owner-only write (solo mode, or `autoMatch` by an Owner who is not OrgAdmin) with no cache, and on `/me` at most hourly as a best-effort display refresh (an RPC outage keeps the cached value). Mismatch leaves the role label in place but sets `ownerIsOnchain = false`; Owner-only settings fail with `OWNER_NOT_ONCHAIN`. A membership without the Owner role always has `ownerIsOnchain = false`.
 
 ## 9. Configuration

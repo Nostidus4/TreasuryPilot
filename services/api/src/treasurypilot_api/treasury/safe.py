@@ -15,25 +15,36 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import re
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from eth_abi import decode as abi_decode
-from eth_utils import keccak, to_checksum_address
+from eth_abi import encode as abi_encode
+from eth_abi.exceptions import DecodingError
+from eth_utils import is_checksum_address, keccak, to_checksum_address
 
 from treasurypilot_api.treasury.config import (
     ChainConfig,
+    DeploymentConfig,
     PlatformConfiguration,
     PlatformConfigurationError,
     resolve_rpc_url,
 )
 
+logger = logging.getLogger(__name__)
+
 SUPPORTED_SAFE_VERSION = "1.4.1"
 # Deployment names in the chain manifest (L1 and L2 singletons of Safe v1.4.1).
 SAFE_SINGLETON_DEPLOYMENTS = frozenset({"SAFE_SINGLETON_L1", "SAFE_SINGLETON_L2"})
+SAFE_DEPLOYMENT_NAMES = {
+    "factory": "SAFE_PROXY_FACTORY",
+    "fallback_handler": "SAFE_FALLBACK_HANDLER",
+}
 TIMEOUT_SECONDS = 4.0
 
 _MASTER_COPY_SLOT = "0x" + "00" * 32
@@ -54,6 +65,164 @@ class SafeVerificationError(Exception):
 
 class RpcUnavailable(Exception):
     """No configured RPC provider could answer the verification reads."""
+
+
+class SafeDeploymentUnavailable(Exception):
+    """Safe deployment cannot be offered from the configured chain manifest."""
+
+
+class SafeDeploymentCodeMismatch(SafeDeploymentUnavailable):
+    """A configured Safe deployment's live runtime code does not match its manifest hash."""
+
+
+class UnsupportedChain(ValueError):
+    """The chain is unknown or disabled."""
+
+    def __init__(self) -> None:
+        super().__init__("chain is not enabled")
+
+
+# Chains where the cheaper L1 singleton is the right one; every other chain gets the L2
+# singleton (it emits the events indexers need) when it is configured.
+_SAFE_L1_CHAIN_IDS = frozenset({1, 11155111})
+
+
+def _resolve_safe_deployments(
+    configuration: PlatformConfiguration, chain_id: int
+) -> tuple[ChainConfig, list[DeploymentConfig], DeploymentConfig, DeploymentConfig]:
+    """Return (chain, [singleton, factory, handler] to verify, factory, handler)."""
+    chain = next(
+        (item for item in configuration.chains if item.chain_id == chain_id and item.enabled),
+        None,
+    )
+    if chain is None:
+        raise UnsupportedChain
+    manifest = next((item for item in configuration.manifests if item.chain_id == chain_id), None)
+    if manifest is None:
+        raise SafeDeploymentUnavailable
+    deployments = {item.name: item for item in manifest.deployments}
+    order = ("SAFE_SINGLETON_L1", "SAFE_SINGLETON_L2")
+    if chain_id not in _SAFE_L1_CHAIN_IDS:
+        order = order[::-1]
+    singleton = next(
+        (
+            deployments[name]
+            for name in order
+            if name in deployments and deployments[name].version == SUPPORTED_SAFE_VERSION
+        ),
+        None,
+    )
+    factory = deployments.get(SAFE_DEPLOYMENT_NAMES["factory"])
+    handler = deployments.get(SAFE_DEPLOYMENT_NAMES["fallback_handler"])
+    if singleton is None or factory is None or handler is None:
+        raise SafeDeploymentUnavailable
+    if any(item.version != SUPPORTED_SAFE_VERSION for item in (factory, handler)):
+        raise SafeDeploymentUnavailable
+    return chain, [singleton, factory, handler], factory, handler
+
+
+def _is_strict_address(value: str) -> bool:
+    """0x-prefixed 20-byte hex; mixed-case input must carry a valid EIP-55 checksum."""
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
+        return False
+    return value.islower() or value[2:].isupper() or is_checksum_address(value)
+
+
+def safe_deployment_available(configuration: PlatformConfiguration, chain_id: int) -> bool:
+    try:
+        _resolve_safe_deployments(configuration, chain_id)
+    except (SafeDeploymentUnavailable, UnsupportedChain):
+        return False
+    return True
+
+
+async def verify_safe_deployment_code(
+    configuration: PlatformConfiguration,
+    chain_id: int,
+    environ: Mapping[str, str] = os.environ,
+) -> None:
+    """Require live runtime code hashes for the factory, singleton and handler."""
+    chain, checked, _, _ = _resolve_safe_deployments(configuration, chain_id)
+    mismatched: list[str] = []
+
+    def check(url: str) -> bool:
+        if int(str(_rpc(url, "eth_chainId", [])), 16) != chain_id:
+            raise _ProviderError("eth_chainId")
+        for deployment in checked:
+            code = bytes.fromhex(
+                str(_rpc(url, "eth_getCode", [deployment.address, "latest"])).removeprefix("0x")
+            )
+            if not code or keccak(code) != deployment.code_hash_bytes:
+                mismatched.append(deployment.name)
+                return False
+        return True
+
+    answered = False
+    for template in chain.rpc_urls:
+        if not template.startswith(("http://", "https://")):
+            continue
+        try:
+            url = resolve_rpc_url(template, environ)
+            if await asyncio.to_thread(check, url):
+                return
+            answered = True
+        except (_ProviderError, PlatformConfigurationError, OSError, ValueError):
+            continue
+    if answered:
+        logger.error("Safe deployment code hash mismatch on chain %s: %s", chain_id, mismatched)
+        raise SafeDeploymentCodeMismatch
+    raise RpcUnavailable(f"no RPC provider answered for Safe deployments on chain {chain_id}")
+
+
+def build_safe_deployment_transaction(
+    configuration: PlatformConfiguration,
+    chain_id: int,
+    owners: Sequence[str],
+    threshold: int,
+    salt_nonce: int,
+) -> dict[str, str]:
+    """Build a Safe Proxy Factory transaction from explicit manifest entries.
+
+    The factory, singleton and fallback handler must all be named deployments;
+    legacy scalar manifest fields are deliberately not accepted here.
+    """
+    _, (singleton, _, _), factory, fallback_handler = _resolve_safe_deployments(
+        configuration, chain_id
+    )
+    if not owners or not 1 <= threshold <= len(owners) or not 0 <= salt_nonce < 2**256:
+        raise ValueError("invalid Safe owners, threshold, or salt nonce")
+    if not all(_is_strict_address(owner) for owner in owners):
+        raise ValueError("owner addresses must be valid Ethereum addresses")
+    normalized = [to_checksum_address(owner) for owner in owners]
+    if len({owner.lower() for owner in normalized}) != len(normalized):
+        raise ValueError("owner addresses must be unique")
+    if any(int(owner, 16) == 0 for owner in normalized):
+        raise ValueError("owner addresses must not be the zero address")
+
+    # Safe.setup(owners, threshold, 0, empty bytes, fallback handler, no payment).
+    setup_signature = "setup(address[],uint256,address,bytes,address,address,uint256,address)"
+    setup_data = keccak(text=setup_signature)[:4] + abi_encode(
+        ["address[]", "uint256", "address", "bytes", "address", "address", "uint256", "address"],
+        [
+            normalized,
+            threshold,
+            "0x" + "00" * 20,
+            b"",
+            fallback_handler.address,
+            "0x" + "00" * 20,
+            0,
+            "0x" + "00" * 20,
+        ],
+    )
+    factory_signature = "createProxyWithNonce(address,bytes,uint256)"
+    factory_data = keccak(text=factory_signature)[:4] + abi_encode(
+        ["address", "bytes", "uint256"], [singleton.address, setup_data, salt_nonce]
+    )
+    return {
+        "to": factory.address,
+        "data": "0x" + factory_data.hex(),
+        "value": "0",
+    }
 
 
 class _ProviderError(Exception):
@@ -99,14 +268,21 @@ def _rpc(url: str, method: str, params: list[object]) -> Any:
     request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            payload: dict[str, Any] = json.load(response)
+            payload = json.load(response)
     except (OSError, ValueError):
         # The URL can embed an API key, so the transport error is not echoed.
         raise _ProviderError(method) from None
+    if not isinstance(payload, dict):
+        raise _ProviderError(method)
     error = payload.get("error")
     if error is not None:
-        message = str(error.get("message", "")).lower()
-        if method == "eth_call" and (error.get("code") == 3 or "revert" in message):
+        message = str(error.get("message", "")).lower() if isinstance(error, dict) else ""
+        # Only a definitive revert skips failover; code 3 is the geth/Erigon revert code.
+        if (
+            method == "eth_call"
+            and isinstance(error, dict)
+            and (error.get("code") == 3 or "execution reverted" in message)
+        ):
             raise _Reverted
         raise _ProviderError(method)
     if "result" not in payload:
@@ -141,7 +317,7 @@ def _verify_address(
         version = abi_decode(["string"], _call(url, address, _VERSION, block))[0]
         owners = abi_decode(["address[]"], _call(url, address, _GET_OWNERS, block))[0]
         threshold = abi_decode(["uint256"], _call(url, address, _GET_THRESHOLD, block))[0]
-    except (_Reverted, ValueError, OverflowError):
+    except (_Reverted, DecodingError, ValueError, OverflowError):
         raise not_a_safe from None
     if not owners or not 1 <= threshold <= len(owners):
         raise not_a_safe
@@ -200,5 +376,18 @@ class RpcSafeVerifier:
                 url = resolve_rpc_url(template, self._environ)
                 return await asyncio.to_thread(_verify_all, url, chain_id, addresses, singletons)
             except (_ProviderError, PlatformConfigurationError, OSError, ValueError):
+                continue
+        raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
+
+    async def call(self, chain_id: int, method: str, params: list[object]) -> Any:
+        """One JSON-RPC read with the same provider failover as ``verify``."""
+        chain = self._chain(chain_id)
+        for template in chain.rpc_urls:
+            if not template.startswith(("http://", "https://")):
+                continue
+            try:
+                url = resolve_rpc_url(template, self._environ)
+                return await asyncio.to_thread(_rpc, url, method, params)
+            except (_ProviderError, _Reverted, PlatformConfigurationError, OSError, ValueError):
                 continue
         raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
