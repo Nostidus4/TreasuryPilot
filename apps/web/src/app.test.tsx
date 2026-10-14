@@ -202,6 +202,9 @@ test('the organization view lists cross-chain treasuries separately without a co
   expect(
     await screen.findByRole('heading', { name: 'Liquidity' }),
   ).toBeInTheDocument();
+  expect(
+    await screen.findByRole('group', { name: 'Position breakdown' }),
+  ).toBeInTheDocument();
   expect(screen.getByText('v7')).toBeInTheDocument();
   expect(
     await screen.findByRole('meter', { name: 'Payments today' }),
@@ -249,7 +252,7 @@ test('a stale snapshot shows a banner', async () => {
   ).toBeInTheDocument();
 });
 
-test('signing is blocked until high-risk flags are acknowledged, then the request is Approved', async () => {
+test('signing is blocked until high-risk flags are acknowledged, then the request is planned', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/approvals/req_288`, { demoWallet: true });
 
@@ -285,10 +288,16 @@ test('signing is blocked until high-risk flags are acknowledged, then the reques
 
   await waitFor(() =>
     expect(db.requests.find((item) => item.id === 'req_288')?.status).toBe(
-      'Approved',
+      'Scheduled',
     ),
   );
-  expect((await screen.findAllByText('Approved')).length).toBeGreaterThan(0);
+  const request = db.requests.find((item) => item.id === 'req_288');
+  expect(request?.planId).toBeTruthy();
+  expect(
+    db.plans.some((plan) =>
+      plan.steps.some((step) => step.requestId === request?.id),
+    ),
+  ).toBe(true);
 });
 
 test('the creator of a request sees why they cannot approve it', async () => {
