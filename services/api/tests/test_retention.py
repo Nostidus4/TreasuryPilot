@@ -306,6 +306,9 @@ async def _integration_case(database_url: str) -> None:
 
         held = await run_retention(sessions, now=now, dry_run=False)
         assert held.deleted == 0
+        async with sessions() as session:
+            assert await session.get(Session, old_session_id) is not None
+            assert await session.get(MagicLink, old_link_id) is not None
         async with sessions() as session, session.begin():
             await configure_policy(
                 session, org_id=org_id, invite_retention_days=7, legal_hold=False
