@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from email import policy
+from email.parser import BytesParser
 from typing import cast
 
 from eth_abi import encode
 from eth_hash.auto import keccak
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import Field, ValidationError, model_validator
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,7 +38,9 @@ from treasurypilot_api.invoices.fingerprints import (
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
+    TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
+    CsvImport,
     PaymentApproval,
     PaymentRequest,
     RequestDocument,
@@ -56,6 +64,7 @@ from treasurypilot_api.invoices.state_machine import (
     TransitionActor,
 )
 from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
+from treasurypilot_api.mandate.vendors import normalize_vendor_ref
 from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.engine import InvalidTerms, validate_terms
@@ -65,6 +74,19 @@ from treasurypilot_core.money import BaseUnits
 router = APIRouter(prefix="/v1/orgs/{organization_id}/requests", tags=["requests"])
 _require_operator = require_role(OrganizationRole.OPERATOR, OrganizationRole.ORG_ADMIN)
 _require_approver = require_role(OrganizationRole.APPROVER)
+
+CSV_REQUIRED_COLUMNS = (
+    "vendor_ref",
+    "payee_address",
+    "invoice_no",
+    "issue_date",
+    "due_date",
+    "amount",
+)
+CSV_OPTIONAL_COLUMNS = ("terms_text", "note", "cost_center")
+CSV_MAX_BYTES = 5 * 1024 * 1024
+CSV_MAX_ROWS = 1_000
+_ADDRESS_RE = re.compile(r"^(?:0x)?[0-9a-fA-F]{40}$")
 
 
 class RequestCreate(ApiModel):
@@ -186,6 +208,29 @@ def confirmed_payment_terms(row: PaymentRequest) -> PaymentTerms | None:
     if row.terms_confirmed_by is None or row.terms is None:
         return None
     return PaymentTerms.model_validate(row.terms)
+
+
+class CsvImportCreated(ApiModel):
+    row: int
+    request_id: uuid.UUID | None
+    invoice_number: str
+    flags: list[str]
+
+
+class CsvImportRowError(ApiModel):
+    row: int
+    field: str
+    code: str
+    message: str
+    value: str
+
+
+class CsvImportResponse(ApiModel):
+    import_id: uuid.UUID | None
+    dry_run: bool
+    created: list[CsvImportCreated]
+    errors: list[CsvImportRowError]
+    error_report_url: str | None
 
 
 def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
@@ -665,6 +710,643 @@ async def _flag_views(session: AsyncSession, row: PaymentRequest) -> list[dict[s
         }
         for flag in flags
     ]
+
+
+def _parse_csv_upload(content_type: str | None, body: bytes) -> tuple[bytes, uuid.UUID]:
+    """Read the small multipart contract without making multipart a runtime parser dependency."""
+    if not content_type or not content_type.casefold().startswith("multipart/form-data"):
+        raise _fail(415, "CSV_MULTIPART_REQUIRED", "Multipart required", "Upload a multipart form.")
+    try:
+        message = BytesParser(policy=policy.default).parsebytes(
+            b"MIME-Version: 1.0\r\nContent-Type: "
+            + content_type.encode("ascii")
+            + b"\r\n\r\n"
+            + body
+        )
+    except (UnicodeEncodeError, ValueError):
+        raise _fail(
+            400, "CSV_MULTIPART_INVALID", "Multipart invalid", "The upload form is malformed."
+        ) from None
+    if not message.is_multipart():
+        raise _fail(
+            400, "CSV_MULTIPART_INVALID", "Multipart invalid", "The upload form is malformed."
+        )
+    file_bytes: bytes | None = None
+    treasury_id: uuid.UUID | None = None
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        decoded = part.get_payload(decode=True)
+        payload = decoded if isinstance(decoded, bytes) else b""
+        if name == "file":
+            file_bytes = payload
+        elif name == "treasuryId":
+            try:
+                treasury_id = uuid.UUID(payload.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                raise _fail(
+                    422, "TREASURY_INVALID", "Treasury invalid", "Provide a valid treasuryId."
+                ) from None
+    if file_bytes is None:
+        raise _fail(
+            422, "CSV_FILE_REQUIRED", "CSV file required", "Include a file part named file."
+        )
+    if len(file_bytes) > CSV_MAX_BYTES:
+        raise _fail(413, "CSV_TOO_LARGE", "CSV too large", "The CSV file exceeds 5 MiB.")
+    if treasury_id is None:
+        raise _fail(422, "TREASURY_INVALID", "Treasury invalid", "Provide a valid treasuryId.")
+    return file_bytes, treasury_id
+
+
+def _csv_rows(file_bytes: bytes) -> tuple[list[str], list[tuple[int, dict[str, str]]]]:
+    try:
+        source = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise _fail(
+            422, "CSV_ENCODING", "CSV encoding invalid", "Upload a UTF-8 CSV file."
+        ) from None
+    try:
+        reader = csv.reader(io.StringIO(source, newline=""), strict=True)
+        header = next(reader, None)
+        optional = header[len(CSV_REQUIRED_COLUMNS) :] if header is not None else []
+        if (
+            header is None
+            or header[: len(CSV_REQUIRED_COLUMNS)] != list(CSV_REQUIRED_COLUMNS)
+            or any(name not in CSV_OPTIONAL_COLUMNS for name in optional)
+            or optional != [name for name in CSV_OPTIONAL_COLUMNS if name in optional]
+            or len(set(header)) != len(header)
+        ):
+            raise _fail(
+                422,
+                "CSV_HEADER_INVALID",
+                "CSV header invalid",
+                "Use the documented CSV template columns in order.",
+            )
+        rows: list[tuple[int, dict[str, str]]] = []
+        while True:
+            number = reader.line_num + 1  # physical line where this record starts
+            values = next(reader, None)
+            if values is None:
+                break
+            if not values or (len(values) == 1 and not values[0].strip()):
+                continue
+            if len(rows) >= CSV_MAX_ROWS:
+                raise _fail(
+                    422,
+                    "CSV_ROW_LIMIT",
+                    "CSV row limit exceeded",
+                    "A CSV file may contain at most 1,000 data rows.",
+                )
+            parsed = dict(zip(header, values, strict=False))
+            if len(values) != len(header):
+                parsed["__csv_error__"] = "CSV_COLUMN_COUNT"
+            rows.append((number, parsed))
+    except csv.Error:
+        raise _fail(422, "CSV_INVALID", "CSV invalid", "The CSV syntax is invalid.") from None
+    return header, rows
+
+
+def _csv_error(row: int, field: str, code: str, message: str, value: str = "") -> dict[str, object]:
+    return {"row": row, "field": field, "code": code, "message": message, "value": value}
+
+
+def _error_csv(errors: list[dict[str, object]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow(("row", "field", "code", "message", "value"))
+    for error in errors:
+        values = [error.get(key, "") for key in ("row", "field", "code", "message", "value")]
+        safe = [
+            "'" + str(value) if str(value).startswith(("=", "+", "-", "@", "\t", "\r")) else value
+            for value in values
+        ]
+        writer.writerow(safe)
+    return output.getvalue().encode("utf-8")
+
+
+@router.post(
+    "/import-csv",
+    responses={413: {"description": "CSV file exceeds the upload limit"}},
+    openapi_extra={
+        "x-organization-scoped": True,
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["file", "treasuryId"],
+                        "properties": {
+                            "file": {"type": "string", "format": "binary"},
+                            "treasuryId": {"type": "string", "format": "uuid"},
+                        },
+                    }
+                }
+            },
+        },
+    },
+)
+async def import_requests_csv(
+    organization_id: uuid.UUID,
+    request: Request,
+    dry_run: bool = Query(default=False, alias="dryRun"),
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+) -> CsvImportResponse:
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > CSV_MAX_BYTES + 64 * 1024:
+            raise _fail(413, "CSV_TOO_LARGE", "CSV too large", "The CSV file exceeds 5 MiB.")
+    file_bytes, treasury_id = _parse_csv_upload(request.headers.get("content-type"), bytes(body))
+    _header, rows = _csv_rows(file_bytes)
+    return CsvImportResponse.model_validate(
+        await _import_csv_rows(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            user_id=member.user_id,
+            rows=rows,
+            file_sha256=hashlib.sha256(file_bytes).digest(),
+            dry_run=dry_run,
+            factory=_sessions(request),
+        )
+    )
+
+
+@router.get(
+    "/import-csv/{import_id}/errors.csv",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/csv": {"schema": {"type": "string", "format": "binary"}}}}},
+    openapi_extra={"x-organization-scoped": True},
+)
+async def download_csv_import_errors(
+    organization_id: uuid.UUID,
+    import_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+) -> StreamingResponse:
+    async with _sessions(request)() as session:
+        record = await session.scalar(
+            select(CsvImport).where(
+                CsvImport.id == import_id,
+                CsvImport.org_id == member.organization_id,
+            )
+        )
+    if record is None:
+        raise _not_found()
+    return StreamingResponse(
+        io.BytesIO(_error_csv(record.errors)),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="import-{import_id}-errors.csv"'},
+    )
+
+
+def _bulk_flag_codes(
+    row: PaymentRequest, *, paid_payees: set[uuid.UUID], paid_by_vendor: dict[uuid.UUID, int]
+) -> list[tuple[str, RequestFlagSeverity, dict[str, object]]]:
+    flags: list[tuple[str, RequestFlagSeverity, dict[str, object]]] = []
+    if row.due_at is None or row.issue_date is None or row.vendor_id is None:
+        return flags  # CSV rows always carry these; only upload drafts lack them
+    if row.due_at < datetime.now(UTC).date():
+        flags.append(
+            ("DUE_DATE_PAST", RequestFlagSeverity.LOW, {"dueDate": row.due_at.isoformat()})
+        )
+    if row.due_at > row.issue_date + timedelta(days=120):
+        flags.append(
+            (
+                "DUE_DATE_FAR",
+                RequestFlagSeverity.LOW,
+                {"dueDate": row.due_at.isoformat(), "thresholdDays": 120},
+            )
+        )
+    if row.payee_id not in paid_payees:
+        flags.append(
+            ("FIRST_PAYMENT_TO_PAYEE", RequestFlagSeverity.LOW, {"payeeId": str(row.payee_id)})
+        )
+    if paid_by_vendor.get(row.vendor_id, 0) < 5:
+        flags.append(("NO_BASELINE", RequestFlagSeverity.LOW, {"minimumHistory": 5}))
+    return flags
+
+
+async def _import_csv_rows(
+    *,
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    user_id: uuid.UUID,
+    rows: list[tuple[int, dict[str, str]]],
+    file_sha256: bytes,
+    dry_run: bool,
+    factory: async_sessionmaker[AsyncSession],
+) -> dict[str, object]:
+    errors: list[dict[str, object]] = []
+    candidates: list[tuple[int, PaymentRequest, str]] = []
+    seen: set[bytes] = set()
+    async with factory() as session:
+        treasury = await session.scalar(
+            select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        )
+        if treasury is None:
+            raise _not_found()
+        asset = await session.scalar(
+            select(Asset).where(Asset.id == treasury.asset_id, Asset.chain_id == treasury.chain_id)
+        )
+        if asset is None or asset.address is None:
+            raise _fail(
+                422,
+                "ASSET_NOT_PAYMENT_STABLECOIN",
+                "Payment asset invalid",
+                "The treasury payment asset must be an ERC-20 stablecoin.",
+            )
+        vendors = {
+            vendor.normalized_ref: vendor
+            for vendor in await session.scalars(
+                select(Vendor).where(Vendor.org_id == organization_id)
+            )
+        }
+        payees = list(
+            await session.scalars(
+                select(Payee).where(
+                    Payee.org_id == organization_id, Payee.treasury_id == treasury_id
+                )
+            )
+        )
+        payees_by_vendor_address = {
+            (payee.vendor_id, payee.address): payee
+            for payee in payees
+            if payee.status != PayeeStatus.DEACTIVATED
+        }
+        deactivated_payee_addresses = {
+            (payee.vendor_id, payee.address)
+            for payee in payees
+            if payee.status == PayeeStatus.DEACTIVATED
+        }
+        for line, cells in rows:
+            if cells.get("__csv_error__"):
+                errors.append(
+                    _csv_error(
+                        line,
+                        "_row",
+                        "CSV_COLUMN_COUNT",
+                        "The row has a different number of columns than the header.",
+                    )
+                )
+                continue
+            row_errors: list[dict[str, object]] = []
+            values = {
+                name: cells.get(name, "").strip()
+                for name in (*CSV_REQUIRED_COLUMNS, *CSV_OPTIONAL_COLUMNS)
+            }
+            nul_field = next((name for name, value in values.items() if "\x00" in value), None)
+            if nul_field is not None:  # Postgres rejects NUL in text/JSONB; never echo it back
+                errors.append(
+                    _csv_error(
+                        line,
+                        nul_field,
+                        "CSV_NUL_BYTE",
+                        "Cells must not contain NUL characters.",
+                    )
+                )
+                continue
+            vendor_ref = normalize_vendor_ref(values["vendor_ref"])
+            vendor = vendors.get(vendor_ref)
+            if not vendor:
+                row_errors.append(
+                    _csv_error(
+                        line,
+                        "vendor_ref",
+                        "VENDOR_UNKNOWN",
+                        "No vendor matches this reference.",
+                        values["vendor_ref"],
+                    )
+                )
+            invoice_no = values["invoice_no"]
+            if not invoice_no:
+                row_errors.append(
+                    _csv_error(
+                        line, "invoice_no", "INVOICE_NO_REQUIRED", "Invoice number is required."
+                    )
+                )
+            elif len(invoice_no) > 200:
+                row_errors.append(
+                    _csv_error(
+                        line,
+                        "invoice_no",
+                        "INVOICE_NO_TOO_LONG",
+                        "Invoice number must be at most 200 characters.",
+                        invoice_no,
+                    )
+                )
+            if len(values["cost_center"]) > 120:
+                row_errors.append(
+                    _csv_error(
+                        line,
+                        "cost_center",
+                        "COST_CENTER_TOO_LONG",
+                        "Cost center must be at most 120 characters.",
+                        values["cost_center"],
+                    )
+                )
+            issue_date: date | None = None
+            due_date: date | None = None
+            for field in ("issue_date", "due_date"):
+                raw = values[field]
+                try:
+                    parsed_date = date.fromisoformat(raw)
+                    if parsed_date.isoformat() != raw:
+                        raise ValueError
+                    if field == "issue_date":
+                        issue_date = parsed_date
+                    else:
+                        due_date = parsed_date
+                except ValueError:
+                    row_errors.append(
+                        _csv_error(
+                            line,
+                            field,
+                            "DATE_INVALID",
+                            "Use an ISO date in YYYY-MM-DD format.",
+                            raw,
+                        )
+                    )
+            if issue_date is not None and due_date is not None and due_date < issue_date:
+                row_errors.append(
+                    _csv_error(
+                        line,
+                        "due_date",
+                        "DATE_INVALID",
+                        "Due date must be on or after issue date.",
+                        values["due_date"],
+                    )
+                )
+            amount: int | None = None
+            try:
+                amount = _amount(values["amount"], asset.decimals)
+            except AuthFailure as error:
+                row_errors.append(
+                    _csv_error(line, "amount", error.code, error.detail, values["amount"])
+                )
+            payee = None
+            address_text = values["payee_address"]
+            if not _ADDRESS_RE.fullmatch(address_text):
+                row_errors.append(
+                    _csv_error(
+                        line,
+                        "payee_address",
+                        "PAYEE_ADDRESS_INVALID",
+                        "Payee address must be a 20-byte hex address.",
+                        address_text,
+                    )
+                )
+            elif vendor is not None:
+                address = bytes.fromhex(address_text.removeprefix("0x"))
+                key = (vendor.id, address)
+                payee = payees_by_vendor_address.get(key)
+                if payee is None:
+                    if key in deactivated_payee_addresses:
+                        row_errors.append(
+                            _csv_error(
+                                line,
+                                "payee_address",
+                                "PAYEE_INACTIVE",
+                                "A deactivated payee cannot receive a request.",
+                                address_text,
+                            )
+                        )
+                    else:
+                        row_errors.append(
+                            _csv_error(
+                                line,
+                                "payee_address",
+                                "PAYEE_NOT_OF_VENDOR",
+                                "Payee address is not registered to this vendor in the treasury.",
+                                address_text,
+                            )
+                        )
+            if row_errors:
+                errors.extend(row_errors)
+                continue
+            assert (
+                vendor is not None
+                and payee is not None
+                and issue_date is not None
+                and due_date is not None
+                and amount is not None
+            )
+            request_row = PaymentRequest(
+                id=uuid7(),
+                org_id=organization_id,
+                treasury_id=treasury_id,
+                chain_id=treasury.chain_id,
+                vendor_id=vendor.id,
+                payee_id=payee.id,
+                invoice_no=invoice_no,
+                issue_date=issue_date,
+                due_at=due_date,
+                amount=amount,
+                asset_id=asset.id,
+                source=RequestSource.CSV.value,
+                status=RequestStatus.DRAFT.value,
+                current_revision=1,
+                created_by=user_id,
+                last_edited_by=user_id,
+                terms={"text": values["terms_text"]} if values["terms_text"] else None,
+                note=values["note"] or None,
+                cost_center=values["cost_center"] or None,
+            )
+            _hashes(request_row, vendor.normalized_ref, asset.address)
+            assert request_row.fingerprint is not None
+            if request_row.fingerprint in seen:
+                errors.append(
+                    _csv_error(
+                        line,
+                        "invoice_no",
+                        "DUPLICATE_FINGERPRINT",
+                        "An active request already uses this vendor, invoice number, amount and asset.",
+                        invoice_no,
+                    )
+                )
+                seen.add(request_row.fingerprint)
+                continue
+            seen.add(request_row.fingerprint)
+            request_row.onchain_request_id = _request_id(organization_id, request_row.id)
+            request_row.terms_hash = (
+                keccak(
+                    json.dumps(request_row.terms, sort_keys=True, separators=(",", ":")).encode()
+                )
+                if request_row.terms is not None
+                else None
+            )
+            candidates.append((line, request_row, invoice_no))
+
+        if candidates:
+            taken = set(
+                await session.scalars(
+                    select(PaymentRequest.fingerprint).where(
+                        PaymentRequest.treasury_id == treasury_id,
+                        PaymentRequest.status.not_in(
+                            [status.value for status in TERMINAL_REQUEST_STATUSES]
+                        ),
+                        PaymentRequest.fingerprint.in_(
+                            [row.fingerprint for _, row, _ in candidates]
+                        ),
+                    )
+                )
+            )
+            for line, row, invoice_no in candidates:
+                if row.fingerprint in taken:
+                    errors.append(
+                        _csv_error(
+                            line,
+                            "invoice_no",
+                            "DUPLICATE_FINGERPRINT",
+                            "An active request already uses this vendor, invoice number, amount and asset.",
+                            invoice_no,
+                        )
+                    )
+            candidates = [item for item in candidates if item[1].fingerprint not in taken]
+        errors.sort(key=lambda error: cast(int, error["row"]))
+
+        paid_payees: set[uuid.UUID] = set()
+        paid_by_vendor: dict[uuid.UUID, int] = {}
+        if candidates:
+            candidate_payee_ids = {row.payee_id for _, row, _ in candidates}
+            candidate_vendor_ids = {row.vendor_id for _, row, _ in candidates}
+            paid_payees = set(
+                await session.scalars(
+                    select(PaymentRequest.payee_id).where(
+                        PaymentRequest.status == RequestStatus.PAID.value,
+                        PaymentRequest.payee_id.in_(candidate_payee_ids),
+                    )
+                )
+            )
+            counts = await session.execute(
+                select(PaymentRequest.vendor_id, func.count())
+                .where(
+                    PaymentRequest.status == RequestStatus.PAID.value,
+                    PaymentRequest.vendor_id.in_(candidate_vendor_ids),
+                )
+                .group_by(PaymentRequest.vendor_id)
+            )
+            paid_by_vendor = {
+                vendor_id: count for vendor_id, count in counts if vendor_id is not None
+            }
+
+        if dry_run:
+            return {
+                "importId": None,
+                "dryRun": True,
+                "created": [
+                    {
+                        "row": line,
+                        "requestId": None,
+                        "invoiceNumber": invoice_no,
+                        "flags": [
+                            code
+                            for code, _severity, _evidence in _bulk_flag_codes(
+                                row,
+                                paid_payees=paid_payees,
+                                paid_by_vendor=paid_by_vendor,
+                            )
+                        ],
+                    }
+                    for line, row, invoice_no in candidates
+                ],
+                "errors": errors,
+                "errorReportUrl": None,
+            }
+
+        record = CsvImport(
+            id=uuid7(),
+            org_id=organization_id,
+            treasury_id=treasury_id,
+            file_sha256=file_sha256,
+            rows_total=len(rows),
+            rows_created=0,
+            errors=[],
+            created_by=user_id,
+        )
+        session.add(record)
+        await session.flush()
+        created: list[dict[str, object]] = []
+        for line, row, invoice_no in candidates:
+            try:
+                async with session.begin_nested():
+                    session.add(row)
+                    await session.flush()
+                    session.add(
+                        RequestRevision(
+                            id=uuid7(),
+                            request_id=row.id,
+                            revision=1,
+                            snapshot=_snapshot(row),
+                            edited_by=user_id,
+                        )
+                    )
+                    session.add(
+                        RequestStatusEvent(
+                            id=uuid7(),
+                            request_id=row.id,
+                            from_status=None,
+                            to_status=RequestStatus.DRAFT.value,
+                            actor_type=StatusEventActorType.USER.value,
+                            actor_id=user_id,
+                            reason=f"CSV import row {line}",
+                        )
+                    )
+                    await session.flush()  # flags FK to the revision row
+                    flag_rows = []
+                    flag_codes = []
+                    for code, severity, evidence in _bulk_flag_codes(
+                        row, paid_payees=paid_payees, paid_by_vendor=paid_by_vendor
+                    ):
+                        flag_codes.append(code)
+                        flag_rows.append(
+                            RequestFlag(
+                                id=uuid7(),
+                                request_id=row.id,
+                                revision=1,
+                                code=code,
+                                severity=severity.value,
+                                evidence=evidence,
+                                source=RequestFlagSource.DETERMINISTIC.value,
+                            )
+                        )
+                    session.add_all(flag_rows)
+                    await session.flush()
+            except IntegrityError as error:
+                if not _is_fingerprint_conflict(error):
+                    raise
+                errors.append(
+                    _csv_error(
+                        line,
+                        "invoice_no",
+                        "DUPLICATE_FINGERPRINT",
+                        "An active request already uses this vendor, invoice number, amount and asset.",
+                        invoice_no,
+                    )
+                )
+                continue
+            created.append(
+                {
+                    "row": line,
+                    "requestId": str(row.id),
+                    "invoiceNumber": invoice_no,
+                    "flags": flag_codes,
+                }
+            )
+        errors.sort(key=lambda error: cast(int, error["row"]))  # insert-time duplicates arrive late
+        record.rows_created = len(created)
+        record.errors = errors
+        await session.flush()
+        import_id = record.id
+        await session.commit()
+    return {
+        "importId": str(import_id),
+        "dryRun": False,
+        "created": created,
+        "errors": errors,
+        "errorReportUrl": f"/v1/orgs/{organization_id}/requests/import-csv/{import_id}/errors.csv"
+        if errors
+        else None,
+    }
 
 
 @router.post("", status_code=201, openapi_extra={"x-organization-scoped": True})
