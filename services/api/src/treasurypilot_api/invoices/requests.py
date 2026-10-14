@@ -28,6 +28,7 @@ from treasurypilot_api.invoices.fingerprints import (
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
+    TERMINAL_REQUEST_STATUSES,
     ApprovalStatus,
     CsvImport,
     PaymentApproval,

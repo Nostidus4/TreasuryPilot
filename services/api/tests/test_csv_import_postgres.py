@@ -84,6 +84,12 @@ async def _import_scenario(database_url: str) -> tuple[float, int, int, int]:
         import_errors = cast(list[dict[str, object]], result["errors"])
         assert len(imported_rows) == 500
         assert import_errors == []
+        assert all(
+            row["flags"] == ["FIRST_PAYMENT_TO_PAYEE", "NO_BASELINE"] for row in imported_rows
+        )
+        async with sessions() as session:
+            flag_count = await session.scalar(text("SELECT count(*) FROM flags"))
+        assert flag_count == 1_000
 
         async with sessions() as session:
             before = await session.scalar(text("SELECT count(*) FROM payment_requests"))
