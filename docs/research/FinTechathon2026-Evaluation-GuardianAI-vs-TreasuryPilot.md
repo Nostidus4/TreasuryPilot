@@ -4,6 +4,12 @@
 **Ngày đánh giá:** 10/10/2026 · **Deadline nộp bài:** 20/10/2026, 23:59 giờ Bắc Kinh (15:59 UTC)
 **Hội đồng (mô phỏng):** FinTech Competition Judge · Product Strategist · AI/Agent Architect · Security & Compliance Expert · Startup CTO
 
+**Cập nhật nguồn 14/10/2026:** mục 06 của thể lệ yêu cầu tx hash on-chain thật;
+checklist không chỉ định testnet/mainnet hay yêu cầu email xác nhận. Khuyến nghị
+hỏi BTC bên dưới là đánh giá nội bộ tại ngày viết, hiện là tùy chọn và không chặn
+công việc. Xem [OQ-01 hiện hành](../OPEN_QUESTIONS.md#oq-01--dom-003-source-review--2026-10-14)
+để phân biệt wording của BTC với giả định dùng Sepolia của nhóm.
+
 **Nguồn đã đọc đầy đủ:**
 
 | File | Trạng thái đọc | Ghi chú |
