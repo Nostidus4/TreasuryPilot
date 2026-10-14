@@ -17,6 +17,9 @@ _RESERVE_SIGNATURE = (
     "getReserveData(address)((uint256,uint128,uint128,uint128,uint128,uint128,uint40,"
     "uint16,address,address,address,address,uint128,uint128,uint128))"
 )
+# Pinned by test_reserve_signature_matches_recorded_sepolia_output; Pool has no getReserveAToken.
+_RESERVE_FIELDS = 15
+_RESERVE_A_TOKEN_INDEX = 8
 
 
 def _address(value: object, field: str) -> str:
@@ -29,11 +32,11 @@ def _address(value: object, field: str) -> str:
 
 def check_configuration(manifest: dict[str, object], rpc_url: str) -> None:
     """Fail closed unless current RPC state agrees with the reviewed manifest."""
+    if not rpc_url.strip():
+        raise ValueError("Set SEPOLIA_RPC_URL (or ETH_RPC_URL) to run config-check")
     chain_id = manifest.get("chainId")
     if type(chain_id) is not int or chain_id <= 0:
         raise ValueError("Manifest chainId must be a positive integer")
-    if not rpc_url.strip():
-        raise ValueError("Set ETH_RPC_URL or SEPOLIA_RPC_URL to run config-check")
     asset = _address(manifest.get("asset"), "asset")
     pool = _address(manifest.get("aavePool"), "aavePool")
     a_token = _address(manifest.get("aToken"), "aToken")
@@ -49,13 +52,19 @@ def check_configuration(manifest: dict[str, object], rpc_url: str) -> None:
             raise ValueError(f"Manifest {name} has no on-chain runtime code")
 
     observed_decimals = read_scalar(asset, "decimals()(uint8)", [], rpc_url)
-    if type(observed_decimals) not in (int, str) or int(str(observed_decimals)) != decimals:
-        raise ValueError("On-chain token decimals differ from manifest assetDecimals")
+    try:
+        observed = int(str(observed_decimals).split()[0])  # cast may print "6 [6e0]"
+    except (IndexError, ValueError):
+        raise ValueError(f"Unparseable on-chain decimals: {observed_decimals!r}") from None
+    if observed != decimals:
+        raise ValueError(
+            f"On-chain token decimals ({observed}) differ from manifest assetDecimals ({decimals})"
+        )
 
     reserve = read_scalar(pool, _RESERVE_SIGNATURE, [asset], rpc_url)
-    if not isinstance(reserve, list) or len(reserve) != 15:
+    if not isinstance(reserve, list) or len(reserve) != _RESERVE_FIELDS:
         raise ValueError("Aave Pool returned an invalid reserve record for the configured asset")
-    if str(reserve[8]).lower() != a_token:
+    if str(reserve[_RESERVE_A_TOKEN_INDEX]).lower() != a_token:
         raise ValueError("Aave Pool reserve-to-aToken mapping differs from manifest aToken")
 
     underlying = read_scalar(a_token, "UNDERLYING_ASSET_ADDRESS()(address)", [], rpc_url)
@@ -70,7 +79,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("deployments/11155111.json"))
     parser.add_argument(
-        "--rpc-url", default=os.environ.get("ETH_RPC_URL") or os.environ.get("SEPOLIA_RPC_URL")
+        "--rpc-url", default=os.environ.get("SEPOLIA_RPC_URL") or os.environ.get("ETH_RPC_URL")
     )
     args = parser.parse_args()
     try:
