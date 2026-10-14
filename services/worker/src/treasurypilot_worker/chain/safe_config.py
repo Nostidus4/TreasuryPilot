@@ -45,8 +45,11 @@ async def refresh_safe_config_snapshots(
     *,
     reader_factory: SafeConfigReader = build_rpc_client,
     event_publisher: EventPublisher = publish_safe_config_changed,
+    treasury_id: uuid.UUID | None = None,
 ) -> int:
     """Read every configured Safe, persist snapshots, and publish configuration changes.
+
+    ``treasury_id`` limits the run to one treasury (the event indexer's recompute).
 
     Returns the number of new block snapshots. Re-deliveries at the same block are
     idempotent, and per-wallet advisory locks serialize overlapping beat/task runs.
@@ -63,8 +66,10 @@ async def refresh_safe_config_snapshots(
                 JOIN chains AS c ON c.chain_id = w.chain_id
                 JOIN treasuries AS t ON t.id = w.treasury_id
                 WHERE c.enabled AND t.status <> 'Revoked'
+                  AND ($1::uuid IS NULL OR w.treasury_id = $1)
                 ORDER BY w.id
-                """
+                """,
+                treasury_id,
             )
 
         snapshots_written = 0

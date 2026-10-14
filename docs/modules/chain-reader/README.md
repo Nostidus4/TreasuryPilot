@@ -141,6 +141,8 @@ for stream in [MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN]:
 
 TOKEN stream filter: `Transfer` topic on the asset address with topic1 ∈ {T, O1, O2} **or** topic2 ∈ {T, O1, O2} (two queries). Classification: tx hash matches one of our operations → AGENT (or INTERNAL_REFILL for T→O); `to` is a treasury wallet and `from` is not → INFLOW; otherwise OUT → UNEXPECTED_OUTFLOW.
 
+Implementation notes (CHR-005): the first run of a stream starts at the module's deployment block (binary search with `eth_getCode`, so it needs archive state) and one run reads at most 50 chunks. Handlers run in the transaction that stores the log, only for new or re-mined logs, and receive a `removed` flag only if they subscribed with `include_removed`. A stored log that is no longer returned in the window is set `removed = true`, which is why `observed_events.removed` is the one mutable column. Safe configuration events (`AddedOwner`, `RemovedOwner`, `ChangedThreshold`, `EnabledModule`, `DisabledModule`, `ChangedGuard`, `ChangedFallbackHandler`) are stored raw and trigger a fresh Safe read and coverage recompute for that treasury. The TOKEN stream is not indexed yet.
+
 ### 8.4 Example
 
 O1 balance 110 after refill (block 100). Block 103: Owner's Safe tx moves 50 from O1. Indexer at ~block 104 sees `Transfer(O1 → owner, 50)`, no matching operation → UNEXPECTED_OUTFLOW; the in-progress plan is re-validated immediately → PAY 100 from 60 breaches buffer 10 → BLOCK, PartiallyCompleted, review item; Owner gets one combined notification.

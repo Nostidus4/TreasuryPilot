@@ -15,6 +15,7 @@ from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher
 from treasurypilot_worker.agent.factory import get_ai_adapter
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
+from treasurypilot_worker.chain.indexer import index_events_sync
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
@@ -121,6 +122,16 @@ def snapshot_dashboards_task() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for dashboard snapshots")
     return {"snapshots_written": snapshot_dashboards_sync(database_url)}
+
+
+@app.task(name="treasurypilot.chain.index-events", queue="core")
+def index_events_task() -> dict[str, int]:
+    """Read module and Safe logs into observed_events and update state (CHR-005)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for event indexing")
+    return index_events_sync(database_url)
 
 
 # Sequential receipt waits (up to 120s per organization); stays under the broker visibility timeout.
