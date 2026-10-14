@@ -50,6 +50,7 @@ from treasurypilot_api.identity.rate_limit import (
 )
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
@@ -325,6 +326,7 @@ def create_app(
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
+    app.state.request_sessions = sessions
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -359,6 +361,7 @@ def create_app(
     app.include_router(payees_router)
     app.include_router(review_router)
     app.include_router(notifications_router)
+    app.include_router(requests_router)
 
     return app
 
