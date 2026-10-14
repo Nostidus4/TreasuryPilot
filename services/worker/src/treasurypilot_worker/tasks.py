@@ -8,6 +8,8 @@ from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
+from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
 from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
@@ -66,6 +68,7 @@ class _PublisherRuntime:
 
 _publisher = _PublisherRuntime()
 _telegram = _PublisherRuntime()
+_chat = _PublisherRuntime()
 logger = logging.getLogger(__name__)
 
 
@@ -102,6 +105,29 @@ def deliver_telegram() -> dict[str, int]:
         )
 
     return {"sent": _telegram.run(database_url, work)}
+
+
+@app.task(name="treasurypilot.notifications.deliver-chat", queue="core")
+def deliver_chat() -> dict[str, int]:
+    """Send eligible notifications to Slack, Lark and WeCom webhooks (NTF-L03)."""
+
+    settings = get_settings()
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for chat notification delivery")
+    try:
+        cipher = FieldCipher(FieldEncryptionKey.from_environment())
+    except EncryptionConfigurationError:
+        logger.error("chat_delivery_disabled_no_field_key")
+        return {"sent": 0}
+    clients = {platform: HttpChatWebhookClient(platform) for platform in ChatPlatform}
+
+    async def work(pool: Any) -> int:
+        return await deliver_chat_pending(
+            pool, clients=clients, cipher=cipher, base_url=settings.app_base_url
+        )
+
+    return {"sent": _chat.run(database_url, work)}
 
 
 @app.task(name="treasurypilot.recovery.escalate-overdue-review-items", queue="core")

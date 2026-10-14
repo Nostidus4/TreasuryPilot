@@ -53,6 +53,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=1),
                 "options": {"queue": "core", "expires": 2},
             },
+            "deliver-chat": {
+                "task": "treasurypilot.notifications.deliver-chat",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "core", "expires": 2},
+            },
             "escalate-overdue-review-items": {
                 "task": "treasurypilot.recovery.escalate-overdue-review-items",
                 "schedule": timedelta(seconds=60),

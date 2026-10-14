@@ -140,6 +140,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/me/channels/{kind}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kind: 'slack' | 'lark' | 'wecom';
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect Chat Channel */
+    post: operations['connect_chat_channel_v1_me_channels__kind__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/me/channels/{channel_id}': {
     parameters: {
       query?: never;
@@ -327,7 +346,7 @@ export interface components {
      * ChannelKind
      * @enum {string}
      */
-    ChannelKind: 'TELEGRAM';
+    ChannelKind: 'TELEGRAM' | 'SLACK' | 'LARK' | 'WECOM';
     /** ChannelList */
     ChannelList: {
       /** Items */
@@ -355,6 +374,11 @@ export interface components {
        * Format: date-time
        */
       verifiedAt: string;
+    };
+    /** WebhookChannelCreate */
+    WebhookChannelCreate: {
+      /** Webhookurl */
+      webhookUrl: string;
     };
     /** CreateOrganizationRequest */
     CreateOrganizationRequest: {
@@ -936,6 +960,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['LinkCodeIssued'];
+        };
+      };
+    };
+  };
+  connect_chat_channel_v1_me_channels__kind__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        kind: 'slack' | 'lark' | 'wecom';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebhookChannelCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChannelView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
