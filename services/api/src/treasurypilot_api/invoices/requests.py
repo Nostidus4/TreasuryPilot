@@ -9,24 +9,32 @@ from typing import cast
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi import APIRouter, Depends, Header, Request, Response
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.identity.access import MemberContext, require_role
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Organization, OrganizationRole, WalletLink, uuid7
+from treasurypilot_api.identity.rbac import MemberAccess, maker_checker_conflict, require_role
 from treasurypilot_api.invoices.anomalies import (
     InvoiceRevisionSignals,
     PaidInvoice,
     evaluate_anomalies,
 )
-from treasurypilot_api.invoices.approval import ApprovalChainReader, build_approval_typed_data
+from treasurypilot_api.invoices.approval import (
+    ApprovalChainReader,
+    ApprovalExpiryError,
+    build_approval_typed_data,
+)
 from treasurypilot_api.invoices.fingerprints import (
     DuplicateFingerprintConflict,
     assert_no_active_duplicate,
+    compute_fingerprint,
     find_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
@@ -44,19 +52,27 @@ from treasurypilot_api.invoices.models import (
     StatusEventActorType,
 )
 from treasurypilot_api.invoices.state_machine import (
+    AuditEntry,
+    RequestStateMachine,
     RequestTransitionError,
     SqlAlchemyPayOperationGuard,
     TransitionAction,
     TransitionActor,
     validate_transition,
 )
-from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus, Payee, Vendor
-from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet, WalletRole
+from treasurypilot_api.mandate.models import (
+    MandateVersion,
+    MandateVersionStatus,
+    Payee,
+    PayeeStatus,
+    Vendor,
+)
+from treasurypilot_api.treasury.models import Asset, Chain, Treasury, TreasuryWallet
 from treasurypilot_core.domain import PaymentTerms
 from treasurypilot_core.eip712 import digest as eip712_digest
 from treasurypilot_core.eip712 import verify_signature
 from treasurypilot_core.engine import InvalidTerms, validate_terms
-from treasurypilot_core.fingerprint import fingerprint, normalize
+from treasurypilot_core.fingerprint import normalize
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy.context import RequestView
 
@@ -101,6 +117,30 @@ class RequestPatch(ApiModel):
     tags: list[str] | None = Field(default=None, max_length=50)
     cost_center: str | None = Field(default=None, max_length=120)
 
+    @model_validator(mode="after")
+    def _reject_null_required_fields(self) -> RequestPatch:
+        # Only these columns accept NULL; an explicit null elsewhere would 500 downstream.
+        nullable = {"paying_wallet_id", "terms", "note", "cost_center"}
+        for name in self.model_fields_set - nullable:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
+
+
+_BOUND_FIELDS = (
+    "treasury_id",
+    "vendor_id",
+    "payee_id",
+    "invoice_no",
+    "issue_date",
+    "due_date",
+    "amount",
+    "asset_id",
+    "paying_wallet_id",
+    "terms",
+)
+_FINGERPRINT_INDEX = "uq_payment_requests_active_fingerprint"
+
 
 class ConfirmTermsRequest(ApiModel):
     terms: dict[str, object]
@@ -121,6 +161,8 @@ class FlagAcknowledgment(ApiModel):
 class ApproveRequest(ApiModel):
     signature: str = Field(min_length=2, max_length=8192)
     revision: int = Field(gt=0)
+    # The expiry from the typed data the approver signed; the server cannot re-derive it.
+    expiry: int = Field(gt=0)
 
 
 _TERMS_KEYS = {
@@ -132,9 +174,18 @@ _TERMS_KEYS = {
 }
 
 
+def _early_option(terms: PaymentTerms, amount: int) -> tuple[int, int] | None:
+    if terms.discount_deadline_day is None:
+        return None
+    return (
+        amount - amount * terms.discount_bps // 10_000,
+        terms.discount_deadline_day * 86_400 + 86_399,
+    )
+
+
 def _validated_terms(
     raw: dict[str, object], amount: int
-) -> tuple[dict[str, object], bytes, int, int]:
+) -> tuple[dict[str, object], bytes, tuple[int, int] | None]:
     normalized = {_TERMS_KEYS.get(key, key): value for key, value in raw.items()}
     if isinstance(normalized.get("late_fee"), dict):
         late_fee = cast(dict[str, object], normalized["late_fee"])
@@ -149,19 +200,15 @@ def _validated_terms(
         raise _fail(422, "TERMS_INVALID", "Payment terms invalid", str(error)) from None
     stored = terms.model_dump(mode="json", exclude_none=True)
     digest = keccak(json.dumps(stored, sort_keys=True, separators=(",", ":")).encode())
-    early_amount = 0
-    early_pay_by = 0
-    if terms.discount_deadline_day is not None:
-        early_amount = amount - amount * terms.discount_bps // 10_000
-        if early_amount <= 0:
-            raise _fail(
-                422,
-                "TERMS_INVALID",
-                "Payment terms invalid",
-                "A discount must leave a positive early payment amount.",
-            )
-        early_pay_by = terms.discount_deadline_day * 86_400 + 86_399
-    return stored, digest, early_amount, early_pay_by
+    early = _early_option(terms, amount)
+    if early is not None and early[0] <= 0:
+        raise _fail(
+            422,
+            "TERMS_INVALID",
+            "Payment terms invalid",
+            "A discount must leave a positive early payment amount.",
+        )
+    return stored, digest, early
 
 
 def confirmed_payment_terms(row: PaymentRequest) -> PaymentTerms | None:
@@ -260,21 +307,19 @@ async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequ
         )
 
 
-def _duplicate_fingerprint(existing_request_id: uuid.UUID) -> AuthFailure:
-    return AuthFailure(
-        status=409,
-        code="DUPLICATE_FINGERPRINT",
-        title="Duplicate invoice",
-        detail="An active request already uses this invoice fingerprint.",
-        extensions={"existingRequestId": str(existing_request_id)},
-    )
+def _validate_dates(issue_date: date, due_date: date) -> None:
+    if due_date < issue_date:
+        raise _fail(
+            422, "DATE_INVALID", "Dates invalid", "The due date must be on or after the issue date."
+        )
 
 
 def _serialize(row: PaymentRequest) -> dict[str, object]:
-    early_amount = 0
-    early_pay_by = 0
-    if confirmed_payment_terms(row) is not None:
-        _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
+    try:
+        terms = confirmed_payment_terms(row)
+    except ValidationError:  # stored terms no longer match the model; do not break reads
+        terms = None
+    early = _early_option(terms, int(row.amount)) if terms is not None else None
     return {
         "id": str(row.id),
         "orgId": str(row.org_id),
@@ -291,8 +336,8 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "termsHash": "0x" + row.terms_hash.hex() if row.terms_hash else None,
         "termsConfirmedBy": str(row.terms_confirmed_by) if row.terms_confirmed_by else None,
         "termsConfirmedAt": row.terms_confirmed_at.isoformat() if row.terms_confirmed_at else None,
-        "earlyAmount": str(early_amount),
-        "earlyPayBy": early_pay_by,
+        "earlyAmount": str(early[0]) if early else None,
+        "earlyPayBy": early[1] if early else None,
         "fingerprint": "0x" + row.fingerprint.hex() if row.fingerprint else None,
         "invoiceHash": "0x" + row.invoice_hash.hex() if row.invoice_hash else None,
         "onchainRequestId": "0x" + row.onchain_request_id.hex() if row.onchain_request_id else None,
@@ -334,6 +379,7 @@ async def _bound_fields(
     payee_id: uuid.UUID,
     asset_id: uuid.UUID,
     paying_wallet_id: uuid.UUID | None,
+    require_active_payee: bool = True,
 ) -> tuple[Treasury, Vendor, Payee, Asset]:
     treasury = await session.scalar(
         select(Treasury)
@@ -341,7 +387,12 @@ async def _bound_fields(
         .with_for_update()
     )
     if treasury is None:
-        raise _not_found()
+        raise _fail(
+            422,
+            "TREASURY_UNKNOWN",
+            "Treasury invalid",
+            "The treasury does not exist in this organization.",
+        )
     if treasury.asset_id != asset_id:
         raise _fail(
             422,
@@ -395,7 +446,7 @@ async def _bound_fields(
         raise _fail(
             422, "PAYEE_UNKNOWN", "Payee invalid", "The payee does not exist in this treasury."
         )
-    if payee.status == "Deactivated":
+    if require_active_payee and payee.status == PayeeStatus.DEACTIVATED:
         raise _fail(
             422,
             "PAYEE_UNKNOWN",
@@ -420,10 +471,50 @@ async def _bound_fields(
     return treasury, vendor, payee, asset
 
 
-def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
-    row.fingerprint = fingerprint(
-        vendor_ref, row.invoice_no, BaseUnits(int(row.amount)), "0x" + asset_address.hex()
-    )
+async def _bound_changed(
+    session: AsyncSession, row: PaymentRequest, fields: dict[str, object]
+) -> bool:
+    """Whether the patch changes a bound field, comparing normalised stored values."""
+    values = {key: fields[key] for key in _BOUND_FIELDS if key in fields}
+    if "amount" in values:
+        asset = await session.get(Asset, values.get("asset_id", row.asset_id))
+        if asset is None:
+            return True  # _bound_fields reports the invalid asset
+        values["amount"] = _amount(str(values["amount"]), asset.decimals)
+    current = {key: getattr(row, key) for key in values if key != "due_date"}
+    current["due_date"] = row.due_at
+    if "amount" in current:
+        current["amount"] = int(row.amount)
+    return any(current[key] != value for key, value in values.items())
+
+
+def _is_fingerprint_conflict(error: IntegrityError) -> bool:
+    return _FINGERPRINT_INDEX in str(error.orig)
+
+
+async def _raise_if_fingerprint_race(
+    factory: async_sessionmaker[AsyncSession],
+    error: IntegrityError,
+    scope: tuple[uuid.UUID, bytes] | None,
+    exclude_request_id: uuid.UUID | None = None,
+) -> None:
+    """Turn a lost unique-index race into the 409 that names the winning request."""
+    if scope is None or not _is_fingerprint_conflict(error):
+        return
+    async with factory() as session:
+        existing = await find_active_duplicate(
+            session,
+            treasury_id=scope[0],
+            value=scope[1],
+            exclude_request_id=exclude_request_id,
+        )
+    if existing is not None:
+        raise DuplicateFingerprintConflict(existing) from error
+
+
+def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> bytes:
+    value = compute_fingerprint(vendor_ref, row.invoice_no, int(row.amount), asset_address)
+    row.fingerprint = value
     row.invoice_hash = keccak(
         encode(
             ["string", "string", "uint256", "address", "string", "string", "bytes32"],
@@ -438,6 +529,7 @@ def _hashes(row: PaymentRequest, vendor_ref: str, asset_address: bytes) -> None:
             ],
         )
     )
+    return value
 
 
 def _request_id(org_id: uuid.UUID, request_id: uuid.UUID) -> bytes:
@@ -454,6 +546,8 @@ def _payload_hash(payload: RequestCreate) -> bytes:
 
 async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[dict[str, object]]:
     today = datetime.now(UTC).date()
+    # shortcut: updated_at stands in for the paid date (any later write to a Paid row shifts it),
+    # and every Paid row in the window is loaded for the median; revisit when paid_at exists.
     history_rows = await session.execute(
         select(
             PaymentRequest.amount, PaymentRequest.updated_at, PaymentRequest.payee_id, Payee.address
@@ -461,6 +555,8 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
         .join(Payee, Payee.id == PaymentRequest.payee_id)
         .where(
             PaymentRequest.vendor_id == row.vendor_id,
+            # Amounts are raw base units, so only compare within the same asset (decimals).
+            PaymentRequest.asset_id == row.asset_id,
             PaymentRequest.status == RequestStatus.PAID.value,
             PaymentRequest.updated_at
             >= datetime.combine(today - timedelta(days=365), datetime.min.time(), UTC),
@@ -502,8 +598,13 @@ async def _recompute_flags(session: AsyncSession, row: PaymentRequest) -> list[d
     registered_addresses = tuple(
         await session.scalars(select(Payee.address).where(Payee.vendor_id == row.vendor_id))
     )
-    if payee_address is None or asset_symbol is None or chain_name is None:
+    if payee_address is None:
+        raise _fail(
+            422, "PAYEE_UNKNOWN", "Payee unknown", "The payee is not registered for this vendor."
+        )
+    if asset_symbol is None or chain_name is None:  # unreachable: FK-enforced
         raise RuntimeError("Request anomaly inputs are incomplete")
+    # Only payee id and address are read; the amount and date are placeholders (not windowed).
     previous_paid = (
         PaidInvoice(0, today, previous_paid_row[0], previous_paid_row[1])
         if previous_paid_row is not None
@@ -581,7 +682,7 @@ async def create_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -590,8 +691,10 @@ async def create_request(
             "Idempotency key required",
             "Provide an Idempotency-Key for this create request.",
         )
+    _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     payload_hash = _payload_hash(payload)
+    scope: tuple[uuid.UUID, bytes] | None = None
     try:
         async with factory() as session, session.begin():
             previous = await session.scalar(
@@ -648,15 +751,12 @@ async def create_request(
                     idempotency_key=idempotency_key,
                     idempotency_payload_hash=payload_hash,
                 )
-                _hashes(row, vendor.normalized_ref, asset.address or b"")
-                assert row.fingerprint is not None
+                scope = (row.treasury_id, _hashes(row, vendor.normalized_ref, asset.address or b""))
                 duplicate = await find_active_duplicate(
-                    session,
-                    treasury_id=row.treasury_id,
-                    value=row.fingerprint,
+                    session, treasury_id=scope[0], value=scope[1]
                 )
                 if duplicate is not None:
-                    raise _duplicate_fingerprint(duplicate)
+                    raise DuplicateFingerprintConflict(duplicate)
                 row.onchain_request_id = _request_id(member.organization_id, row.id)
                 row.terms_hash = None
                 session.add(row)
@@ -684,26 +784,6 @@ async def create_request(
                 flags = await _recompute_flags(session, row)
                 await session.flush()
     except IntegrityError as error:
-        constraint_name = getattr(
-            getattr(error.orig, "diag", None),
-            "constraint_name",
-            getattr(error.orig, "constraint_name", None),
-        )
-        if constraint_name == "uq_payment_requests_active_fingerprint":
-            fingerprint_value = row.fingerprint
-            if fingerprint_value is None:
-                raise error
-            async with factory() as session:
-                duplicate = await find_active_duplicate(
-                    session,
-                    treasury_id=row.treasury_id,
-                    value=fingerprint_value,
-                )
-            if duplicate is not None:
-                raise _duplicate_fingerprint(duplicate) from error
-            raise
-        if constraint_name != "uq_payment_requests_idempotency_key":
-            raise
         async with factory() as session:
             existing = await session.scalar(
                 select(PaymentRequest).where(
@@ -712,6 +792,7 @@ async def create_request(
                 )
             )
             if existing is None:
+                await _raise_if_fingerprint_race(factory, error, scope)
                 raise
             if existing.idempotency_payload_hash != payload_hash:
                 raise _fail(
@@ -734,175 +815,167 @@ async def edit_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
-    try:
-        expected_version = int(if_match.strip().removeprefix("W/").strip('"')) if if_match else None
-    except ValueError:
-        expected_version = None
-    if expected_version is None:
-        raise _fail(
-            412,
-            "PRECONDITION_FAILED",
-            "Request changed",
-            "Provide the current request version in If-Match.",
-        )
+    expected_version = _expected_version(if_match)
     fields = payload.model_dump(exclude_unset=True)
-    async with _sessions(request)() as session, session.begin():
-        row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise _not_found()
-        if row.version != expected_version:
-            raise _fail(
-                412,
-                "PRECONDITION_FAILED",
-                "Request changed",
-                "The request changed since it was read; reload and try again.",
+    factory = _sessions(request)
+    scope: tuple[uuid.UUID, bytes] | None = None
+    try:
+        async with factory() as session, session.begin():
+            row = await session.scalar(
+                select(PaymentRequest)
+                .where(
+                    PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id
+                )
+                .with_for_update()
             )
-        if row.status not in {RequestStatus.DRAFT.value, RequestStatus.APPROVED.value}:
-            raise _fail(
-                409,
-                "NOT_EDITABLE",
-                "Request cannot be edited",
-                "Withdraw a request awaiting approval before editing it.",
-            )
-        bound_names = {
-            "treasury_id",
-            "vendor_id",
-            "payee_id",
-            "invoice_no",
-            "issue_date",
-            "due_date",
-            "amount",
-            "asset_id",
-            "paying_wallet_id",
-            "terms",
-        }
-        bound_changed = any(
-            getattr(row, key_map) != value
-            for key, value in fields.items()
-            if (key_map := {"due_date": "due_at"}.get(key, key)) in bound_names
-        )
-        for key, value in fields.items():
-            if key in {"note", "tags", "cost_center"}:
-                setattr(row, key, value)
-        if bound_changed:
-            if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
-                session=session, request_id=row.id
-            ):
+            if row is None:
+                raise _not_found()
+            if row.version != expected_version:
+                raise _fail(
+                    412,
+                    "PRECONDITION_FAILED",
+                    "Request changed",
+                    "The request changed since it was read; reload and try again.",
+                )
+            if row.status not in {RequestStatus.DRAFT.value, RequestStatus.APPROVED.value}:
                 raise _fail(
                     409,
-                    "PAYMENT_IN_FLIGHT",
-                    "Payment in progress",
-                    "Bound fields cannot change while a PAY operation is in flight.",
+                    "NOT_EDITABLE",
+                    "Request cannot be edited",
+                    "Withdraw a request awaiting approval before editing it.",
                 )
-            treasury_id = fields.get("treasury_id", row.treasury_id)
-            vendor_id = fields.get("vendor_id", row.vendor_id)
-            payee_id = fields.get("payee_id", row.payee_id)
-            asset_id = fields.get("asset_id", row.asset_id)
-            wallet_id = fields.get("paying_wallet_id", row.paying_wallet_id)
-            treasury, vendor, _payee, asset = await _bound_fields(
-                session,
-                organization_id=member.organization_id,
-                treasury_id=treasury_id,
-                vendor_id=vendor_id,
-                payee_id=payee_id,
-                asset_id=asset_id,
-                paying_wallet_id=wallet_id,
-            )
-            new_issue_date = fields.get("issue_date", row.issue_date)
-            new_due_date = fields.get("due_date", row.due_at)
-            amount = (
-                _amount(fields["amount"], asset.decimals) if "amount" in fields else int(row.amount)
-            )
-            row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
-                treasury.id,
-                treasury.chain_id,
-                vendor.id,
-                payee_id,
-            )
-            row.invoice_no, row.issue_date, row.due_at = (
-                fields.get("invoice_no", row.invoice_no),
-                new_issue_date,
-                new_due_date,
-            )
-            row.amount, row.asset_id, row.paying_wallet_id = amount, asset.id, wallet_id
-            if "terms" in fields:
-                row.terms = fields["terms"]
-            row.current_revision += 1
-            row.last_edited_by = member.user_id
-            _hashes(row, vendor.normalized_ref, asset.address or b"")
-            row.terms_hash = None
-            row.terms_confirmed_by = None
-            row.terms_confirmed_at = None
-            assert row.fingerprint is not None
-            duplicate = await find_active_duplicate(
-                session,
-                treasury_id=row.treasury_id,
-                value=row.fingerprint,
-                exclude_request_id=row.id,
-            )
-            if duplicate is not None:
-                raise _duplicate_fingerprint(duplicate)
-            previous_status = row.status
-            approval_invalidated = previous_status == RequestStatus.APPROVED.value
-            await session.execute(
-                update(PaymentApproval)
-                .where(
-                    PaymentApproval.request_id == row.id,
-                    PaymentApproval.status == ApprovalStatus.VALID.value,
+            bound_changed = await _bound_changed(session, row, fields)
+            for key, value in fields.items():
+                if key in {"note", "tags", "cost_center"}:
+                    setattr(row, key, value)
+            if bound_changed:
+                if await SqlAlchemyPayOperationGuard().has_in_flight_pay(
+                    session=session, request_id=row.id
+                ):
+                    raise _fail(
+                        409,
+                        "PAYMENT_IN_FLIGHT",
+                        "Payment in progress",
+                        "Bound fields cannot change while a PAY operation is in flight.",
+                    )
+                treasury_id = fields.get("treasury_id", row.treasury_id)
+                vendor_id = fields.get("vendor_id", row.vendor_id)
+                payee_id = fields.get("payee_id", row.payee_id)
+                asset_id = fields.get("asset_id", row.asset_id)
+                wallet_id = fields.get("paying_wallet_id", row.paying_wallet_id)
+                treasury, vendor, _payee, asset = await _bound_fields(
+                    session,
+                    organization_id=member.organization_id,
+                    treasury_id=treasury_id,
+                    vendor_id=vendor_id,
+                    payee_id=payee_id,
+                    asset_id=asset_id,
+                    paying_wallet_id=wallet_id,
+                    require_active_payee=payee_id != row.payee_id,
                 )
-                .values(status=ApprovalStatus.INVALIDATED.value)
-            )
-            await session.execute(
-                update(RequestFlag)
-                .where(
-                    RequestFlag.request_id == row.id,
-                    RequestFlag.status.in_(
-                        [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
-                    ),
+                new_issue_date = fields.get("issue_date", row.issue_date)
+                new_due_date = fields.get("due_date", row.due_at)
+                _validate_dates(new_issue_date, new_due_date)
+                amount = (
+                    _amount(fields["amount"], asset.decimals)
+                    if "amount" in fields
+                    else int(row.amount)
                 )
-                .values(status=RequestFlagStatus.SUPERSEDED.value)
-            )
-            row.status = RequestStatus.DRAFT.value
-            if previous_status == RequestStatus.APPROVED.value:
+                row.treasury_id, row.chain_id, row.vendor_id, row.payee_id = (
+                    treasury.id,
+                    treasury.chain_id,
+                    vendor.id,
+                    payee_id,
+                )
+                row.invoice_no, row.issue_date, row.due_at = (
+                    fields.get("invoice_no", row.invoice_no),
+                    new_issue_date,
+                    new_due_date,
+                )
+                row.amount, row.asset_id, row.paying_wallet_id = amount, asset.id, wallet_id
+                if "terms" in fields:
+                    row.terms = fields["terms"]
+                row.current_revision += 1
+                row.last_edited_by = member.user_id
+                scope = (row.treasury_id, _hashes(row, vendor.normalized_ref, asset.address or b""))
+                row.terms_hash = None
+                row.terms_confirmed_by = None
+                row.terms_confirmed_at = None
+                duplicate = await find_active_duplicate(
+                    session, treasury_id=scope[0], value=scope[1], exclude_request_id=row.id
+                )
+                if duplicate is not None:
+                    raise DuplicateFingerprintConflict(duplicate)
+                previous_status = row.status
+                approval_invalidated = previous_status == RequestStatus.APPROVED.value
+                await session.execute(
+                    update(PaymentApproval)
+                    .where(
+                        PaymentApproval.request_id == row.id,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                    )
+                    .values(status=ApprovalStatus.INVALIDATED.value)
+                )
+                await session.execute(
+                    update(RequestFlag)
+                    .where(
+                        RequestFlag.request_id == row.id,
+                        RequestFlag.status.in_(
+                            [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
+                        ),
+                    )
+                    .values(status=RequestFlagStatus.SUPERSEDED.value)
+                )
+                row.status = RequestStatus.DRAFT.value
+                if previous_status == RequestStatus.APPROVED.value:
+                    session.add(
+                        RequestStatusEvent(
+                            id=uuid7(),
+                            request_id=row.id,
+                            from_status=previous_status,
+                            to_status=RequestStatus.DRAFT.value,
+                            actor_type=StatusEventActorType.USER.value,
+                            actor_id=member.user_id,
+                            reason="bound fields edited; approvals invalidated",
+                        )
+                    )
+                    await write_audit(
+                        session,
+                        org_id=member.organization_id,
+                        actor=AuditActor(AuditActorType.USER, member.user_id),
+                        action=TransitionAction.EDIT_BOUND_FIELDS.value,
+                        entity=AuditEntity("payment_request", row.id),
+                        data={"from": previous_status, "to": RequestStatus.DRAFT.value},
+                    )
                 session.add(
-                    RequestStatusEvent(
+                    RequestRevision(
                         id=uuid7(),
                         request_id=row.id,
-                        from_status=previous_status,
-                        to_status=RequestStatus.DRAFT.value,
-                        actor_type=StatusEventActorType.USER.value,
-                        actor_id=member.user_id,
-                        reason="bound fields edited; approvals invalidated",
+                        revision=row.current_revision,
+                        snapshot=_snapshot(row),
+                        edited_by=member.user_id,
+                        reason="bound fields edited",
                     )
                 )
-            session.add(
-                RequestRevision(
-                    id=uuid7(),
-                    request_id=row.id,
-                    revision=row.current_revision,
-                    snapshot=_snapshot(row),
-                    edited_by=member.user_id,
-                    reason="bound fields edited",
-                )
-            )
-            flags = await _recompute_flags(session, row)
-        elif fields:
-            row.last_edited_by = member.user_id
-            flags = []
-            approval_invalidated = False
-        else:
-            flags = []
-            approval_invalidated = False
-        await session.flush()
-        result = _serialize(row)
-        version = row.version
-        revision = row.current_revision
+                flags = await _recompute_flags(session, row)
+            elif fields:
+                row.last_edited_by = member.user_id
+                flags = []
+                approval_invalidated = False
+            else:
+                flags = []
+                approval_invalidated = False
+            await session.flush()
+            # onupdate=func.now() expires updated_at; reload it before the sync serializer reads it.
+            await session.refresh(row)
+            result = _serialize(row)
+            version = row.version
+            revision = row.current_revision
+    except IntegrityError as error:
+        await _raise_if_fingerprint_race(factory, error, scope, request_id)
+        raise
     response.headers["ETag"] = f'"{version}"'
     return {
         "request": result,
@@ -919,8 +992,10 @@ async def confirm_request_terms(
     payload: ConfirmTermsRequest,
     request: Request,
     response: Response,
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
             select(PaymentRequest)
@@ -929,12 +1004,26 @@ async def confirm_request_terms(
         )
         if row is None:
             raise _not_found()
+        if row.version != expected_version:
+            raise _fail(
+                412,
+                "PRECONDITION_FAILED",
+                "Request changed",
+                "The request changed since it was read; reload and try again.",
+            )
         if row.status != RequestStatus.DRAFT.value:
             raise _fail(
                 409, "NOT_EDITABLE", "Request cannot be edited", "Only a draft can confirm terms."
             )
-        stored, digest, _, _ = _validated_terms(payload.terms, int(row.amount))
-        if row.terms != stored:
+        stored, digest, _ = _validated_terms(payload.terms, int(row.amount))
+        # Provisional terms are stored raw; compare in canonical form so an equivalent
+        # spelling (camelCase, omitted defaults) does not bump the revision.
+        try:
+            current = _validated_terms(row.terms, int(row.amount))[0] if row.terms else None
+        except AuthFailure:
+            current = row.terms
+        row.terms = stored
+        if current != stored:
             await session.execute(
                 update(RequestFlag)
                 .where(
@@ -945,7 +1034,6 @@ async def confirm_request_terms(
                 )
                 .values(status=RequestFlagStatus.SUPERSEDED.value)
             )
-            row.terms = stored
             row.current_revision += 1
             row.last_edited_by = member.user_id
             session.add(
@@ -960,12 +1048,69 @@ async def confirm_request_terms(
             )
             await _recompute_flags(session, row)
         row.terms_hash = digest
-        row.terms_confirmed_by = member.user_id
-        row.terms_confirmed_at = datetime.now(UTC)
+        if row.terms_confirmed_by is None or current != stored:
+            # Re-confirming identical terms keeps the original confirmer.
+            row.terms_confirmed_by = member.user_id
+            row.terms_confirmed_at = datetime.now(UTC)
         await session.flush()
         await session.refresh(row)
         result = _serialize(row)
         version = row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+class _AuditAppender:
+    async def append(self, *, session: AsyncSession, entry: AuditEntry) -> None:
+        await write_audit(
+            session,
+            org_id=entry.organization_id,
+            actor=AuditActor(AuditActorType(entry.actor_type.value), entry.actor_id),
+            action=entry.action,
+            entity=AuditEntity(entry.entity_type, entry.entity_id),
+            data=entry.data,
+        )
+
+
+async def _transition(
+    request: Request,
+    response: Response,
+    *,
+    member: MemberAccess,
+    request_id: uuid.UUID,
+    action: TransitionAction,
+    target: RequestStatus,
+    expected_version: int,
+    reason: str,
+) -> dict[str, object]:
+    """Run a user transition through the state machine and return the refreshed request."""
+    factory = _sessions(request)
+    machine = RequestStateMachine(
+        factory, audit=_AuditAppender(), pay_operation_guard=SqlAlchemyPayOperationGuard()
+    )
+    actor = TransitionActor(
+        StatusEventActorType.USER,
+        action,
+        member.user_id,
+        frozenset(OrganizationRole(role) for role in member.roles),
+    )
+    try:
+        await machine.transition(
+            organization_id=member.organization_id,
+            request_id=request_id,
+            target=target,
+            actor=actor,
+            expected_version=expected_version,
+            reason=reason,
+        )
+    except RequestTransitionError as error:
+        raise _fail(
+            error.status_code, error.code, "Request transition rejected", error.detail
+        ) from None
+    async with factory() as session:
+        row = await session.scalar(select(PaymentRequest).where(PaymentRequest.id == request_id))
+        assert row is not None
+        result, version = _serialize(row), row.version
     response.headers["ETag"] = f'"{version}"'
     return {"request": result}
 
@@ -977,94 +1122,73 @@ async def submit_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
     expected_version = _expected_version(if_match)
+    # The guards read the row at expected_version; the transition re-checks that version
+    # under the row lock, so an edit between the two is rejected with 412.
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
-            .with_for_update()
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id
+            )
         )
         if row is None:
             raise _not_found()
-        if row.version != expected_version:
-            raise _fail(
-                412,
-                "PRECONDITION_FAILED",
-                "Request changed",
-                "The request changed since it was read; reload and try again.",
-            )
-        if row.status != RequestStatus.DRAFT.value:
-            raise _fail(
-                409, "NOT_EDITABLE", "Request cannot be submitted", "Only a draft can be submitted."
-            )
-        if row.terms is not None and row.terms_confirmed_by is None:
-            raise _fail(
-                409,
-                "TERMS_UNCONFIRMED",
-                "Payment terms need confirmation",
-                "Confirm the extracted payment terms before submitting this request.",
-            )
-        if row.source == RequestSource.UPLOAD.value and row.extraction_confirmed_by is None:
-            raise _fail(
-                409,
-                "EXTRACTION_UNCONFIRMED",
-                "Extracted fields need confirmation",
-                "Confirm the extracted invoice fields before submitting this request.",
-            )
-        if (
-            row.treasury_id is None
-            or row.vendor_id is None
-            or row.payee_id is None
-            or row.asset_id is None
-            or row.invoice_no is None
-            or row.issue_date is None
-            or row.due_at is None
-            or row.amount is None
-        ):
-            code = (
-                "EXTRACTION_UNCONFIRMED"
-                if row.source == RequestSource.UPLOAD.value
-                else "REQUEST_FIELDS_INCOMPLETE"
-            )
-            raise _fail(
-                409,
-                code,
-                "Request fields are incomplete",
-                "Complete and confirm all required invoice fields before submitting this request.",
-            )
-        await _bound_fields(
-            session,
-            organization_id=member.organization_id,
-            treasury_id=row.treasury_id,
-            vendor_id=row.vendor_id,
-            payee_id=row.payee_id,
-            asset_id=row.asset_id,
-            paying_wallet_id=row.paying_wallet_id,
+        if row.version == expected_version and row.status == RequestStatus.DRAFT.value:
+            await _assert_submittable(session, row)
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.SUBMIT,
+        target=RequestStatus.AWAITING_APPROVAL,
+        expected_version=expected_version,
+        reason="request submitted for approval",
+    )
+
+
+async def _assert_submittable(session: AsyncSession, row: PaymentRequest) -> None:
+    if row.terms is not None and row.terms_confirmed_by is None:
+        raise _fail(
+            409,
+            "TERMS_UNCONFIRMED",
+            "Payment terms need confirmation",
+            "Confirm the extracted payment terms before submitting this request.",
         )
-        try:
-            await assert_no_active_duplicate(session, row)
-        except DuplicateFingerprintConflict as error:
-            raise _duplicate_fingerprint(error.existing_request_id) from error
-        previous_status = row.status
-        row.status = RequestStatus.AWAITING_APPROVAL.value
-        session.add(
-            RequestStatusEvent(
-                id=uuid7(),
-                request_id=row.id,
-                from_status=previous_status,
-                to_status=row.status,
-                actor_type=StatusEventActorType.USER.value,
-                actor_id=member.user_id,
-                reason="request submitted for approval",
-            )
+    if row.source == RequestSource.UPLOAD.value and row.extraction_confirmed_by is None:
+        raise _fail(
+            409,
+            "EXTRACTION_UNCONFIRMED",
+            "Extracted fields need confirmation",
+            "Confirm the extracted invoice fields before submitting this request.",
         )
-        await session.flush()
-        await session.refresh(row)
-        result, version = _serialize(row), row.version
-    response.headers["ETag"] = f'"{version}"'
-    return {"request": result}
+    if (
+        row.treasury_id is None
+        or row.vendor_id is None
+        or row.payee_id is None
+        or row.asset_id is None
+        or row.invoice_no is None
+        or row.issue_date is None
+        or row.due_at is None
+        or row.amount is None
+    ):
+        raise _fail(
+            409,
+            "REQUEST_FIELDS_INCOMPLETE",
+            "Request fields are incomplete",
+            "Complete all required invoice fields before submitting this request.",
+        )
+    await _bound_fields(
+        session,
+        organization_id=row.org_id,
+        treasury_id=row.treasury_id,
+        vendor_id=row.vendor_id,
+        payee_id=row.payee_id,
+        asset_id=row.asset_id,
+        paying_wallet_id=row.paying_wallet_id,
+    )
 
 
 @router.post("/{request_id}/withdraw", openapi_extra={"x-organization-scoped": True})
@@ -1074,17 +1198,17 @@ async def withdraw_request(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_operator),  # noqa: B008
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
 ) -> dict[str, object]:
-    return await _return_request_to_draft(
-        organization_id=organization_id,
+    return await _transition(
+        request,
+        response,
+        member=member,
         request_id=request_id,
-        request=request,
-        response=response,
+        action=TransitionAction.WITHDRAW,
+        target=RequestStatus.DRAFT,
         expected_version=_expected_version(if_match),
-        actor=member,
         reason="request withdrawn by operator",
-        require_checker=False,
     )
 
 
@@ -1096,351 +1220,18 @@ async def request_changes(
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_approver),  # noqa: B008
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
 ) -> dict[str, object]:
-    return await _return_request_to_draft(
-        organization_id=organization_id,
-        request_id=request_id,
-        request=request,
-        response=response,
-        expected_version=_expected_version(if_match),
-        actor=member,
-        reason=payload.reason,
-        require_checker=True,
-    )
-
-
-async def _lifecycle_transition(
-    *,
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    request: Request,
-    response: Response,
-    expected_version: int,
-    member: MemberContext,
-    target: RequestStatus,
-    action: TransitionAction,
-    reason: str,
-) -> dict[str, object]:
-    async with _sessions(request)() as session, session.begin():
-        row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise _not_found()
-        if row.version != expected_version:
-            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
-        roles = frozenset(role for role in OrganizationRole if role.value in member.roles)
-        solo = bool(
-            await session.scalar(
-                select(Organization.solo_mode).where(Organization.id == organization_id)
-            )
-        )
-        try:
-            rule = validate_transition(
-                source=row.status,
-                target=target,
-                actor=TransitionActor(StatusEventActorType.USER, action, member.user_id, roles),
-                created_by=row.created_by,
-                last_edited_by=row.last_edited_by,
-                solo_mode=solo,
-                pay_operation_in_flight=(
-                    target == RequestStatus.CANCELLED
-                    and await SqlAlchemyPayOperationGuard().has_in_flight_pay(
-                        session=session, request_id=request_id
-                    )
-                ),
-            )
-        except RequestTransitionError as error:
-            raise _fail(
-                error.status_code, error.code, "Request transition refused", error.detail
-            ) from error
-        if target in (RequestStatus.CANCELLED, RequestStatus.REJECTED):
-            # BR-077: any approval row was Valid at some point, so an on-chain cancel is owed.
-            if target == RequestStatus.CANCELLED and await session.scalar(
-                select(PaymentApproval.id).where(PaymentApproval.request_id == row.id).limit(1)
-            ):
-                row.cancel_onchain = "Pending"
-            await session.execute(
-                update(PaymentApproval)
-                .where(
-                    PaymentApproval.request_id == row.id,
-                    PaymentApproval.status == ApprovalStatus.VALID.value,
-                )
-                .values(
-                    status=(
-                        ApprovalStatus.CANCELLED
-                        if target == RequestStatus.CANCELLED
-                        else ApprovalStatus.INVALIDATED
-                    ).value
-                )
-            )
-        previous = row.status
-        row.status = rule.target.value
-        session.add(
-            RequestStatusEvent(
-                id=uuid7(),
-                request_id=row.id,
-                from_status=previous,
-                to_status=row.status,
-                actor_type=StatusEventActorType.USER.value,
-                actor_id=member.user_id,
-                reason=reason,
-            )
-        )
-        await session.flush()
-        await session.refresh(row)
-        result, version = _serialize(row), row.version
-    response.headers["ETag"] = f'"{version}"'
-    return {"request": result}
-
-
-@router.post("/{request_id}/reject", openapi_extra={"x-organization-scoped": True})
-async def reject_request(
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    payload: RequestReason,
-    request: Request,
-    response: Response,
-    if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_approver),  # noqa: B008
-) -> dict[str, object]:
-    return await _lifecycle_transition(
-        organization_id=organization_id,
-        request_id=request_id,
-        request=request,
-        response=response,
-        expected_version=_expected_version(if_match),
+    return await _transition(
+        request,
+        response,
         member=member,
-        target=RequestStatus.REJECTED,
-        action=TransitionAction.REJECT,
-        reason=payload.reason,
-    )
-
-
-@router.post("/{request_id}/cancel", openapi_extra={"x-organization-scoped": True})
-async def cancel_request(
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    payload: RequestReason,
-    request: Request,
-    response: Response,
-    if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_canceller),  # noqa: B008
-) -> dict[str, object]:
-    return await _lifecycle_transition(
-        organization_id=organization_id,
         request_id=request_id,
-        request=request,
-        response=response,
+        action=TransitionAction.REQUEST_CHANGES,
+        target=RequestStatus.DRAFT,
         expected_version=_expected_version(if_match),
-        member=member,
-        target=RequestStatus.CANCELLED,
-        action=TransitionAction.CANCEL,
         reason=payload.reason,
     )
-
-
-@router.post("/{request_id}/renew", openapi_extra={"x-organization-scoped": True})
-async def renew_request(
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    payload: RenewRequest,
-    request: Request,
-    response: Response,
-    if_match: str | None = Header(default=None, alias="If-Match"),
-    member: MemberContext = Depends(_require_renewer),  # noqa: B008
-) -> dict[str, object]:
-    expected_version = _expected_version(if_match)
-    async with _sessions(request)() as session, session.begin():
-        row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise _not_found()
-        if row.version != expected_version:
-            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
-        try:
-            rule = validate_transition(
-                source=row.status,
-                target=RequestStatus.DRAFT,
-                actor=TransitionActor(
-                    StatusEventActorType.USER,
-                    TransitionAction.RENEW,
-                    member.user_id,
-                    frozenset(role for role in OrganizationRole if role.value in member.roles),
-                ),
-                created_by=row.created_by,
-                last_edited_by=row.last_edited_by,
-            )
-        except RequestTransitionError as error:
-            raise _fail(
-                error.status_code, error.code, "Request cannot be renewed", error.detail
-            ) from error
-        today = datetime.now(UTC).date()
-        if payload.due_date is not None and payload.due_date < today:
-            raise _fail(
-                422,
-                "DUE_DATE_IN_PAST",
-                "Due date invalid",
-                "The renewed due date cannot be in the past.",
-            )
-        row.current_revision += 1
-        row.due_at = payload.due_date or max(row.due_at, today + timedelta(days=1))
-        vendor_ref, asset_address = (
-            await session.execute(
-                select(Vendor.normalized_ref, Asset.address)
-                .join(Asset, Asset.id == row.asset_id)
-                .where(Vendor.id == row.vendor_id)
-            )
-        ).one()
-        # due_at is part of invoice_hash; the active-duplicate check also revives the fingerprint.
-        _hashes(row, vendor_ref, asset_address or b"")
-        try:
-            await assert_no_active_duplicate(session, row)
-        except DuplicateFingerprintConflict as error:
-            raise _duplicate_fingerprint(error.existing_request_id) from error
-        # Flip the status only after the check: Draft is active, so autoflush would hit the index.
-        previous = row.status
-        row.status = rule.target.value
-        row.last_edited_by = member.user_id
-        row.terms_confirmed_by = None
-        row.terms_confirmed_at = None
-        session.add(
-            RequestRevision(
-                id=uuid7(),
-                request_id=row.id,
-                revision=row.current_revision,
-                snapshot=_snapshot(row),
-                edited_by=member.user_id,
-                reason="renewed after expiry",
-            )
-        )
-        session.add(
-            RequestStatusEvent(
-                id=uuid7(),
-                request_id=row.id,
-                from_status=previous,
-                to_status=row.status,
-                actor_type=StatusEventActorType.USER.value,
-                actor_id=member.user_id,
-                reason="request renewed after expiry",
-            )
-        )
-        await session.flush()
-        await session.refresh(row)
-        result, version = _serialize(row), row.version
-    response.headers["ETag"] = f'"{version}"'
-    return {"request": result}
-
-
-@router.get("/{request_id}/cancel-tx", openapi_extra={"x-organization-scoped": True})
-async def get_cancel_transaction(
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    request: Request,
-    member: MemberContext = Depends(_require_cancel_tx_actor),  # noqa: B008
-) -> dict[str, object]:
-    # The repository has no deployed module ABI/event indexer or Safe governance builder yet.
-    # Never return calldata that could be mistaken for a confirmed supported contract call.
-    async with _sessions(request)() as session:
-        row = await session.scalar(
-            select(PaymentRequest).where(
-                PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id
-            )
-        )
-        if row is None:
-            raise _not_found()
-        if row.cancel_onchain != "Pending":
-            raise _fail(
-                409,
-                "CANCEL_NOT_NEEDED",
-                "On-chain cancel not needed",
-                "This request has no pending on-chain cancellation.",
-            )
-        if row.onchain_request_id is None:
-            raise _fail(
-                503,
-                "ONCHAIN_CANCEL_UNAVAILABLE",
-                "On-chain cancellation unavailable",
-                "The request has no on-chain identifier; cancellation remains Pending.",
-            )
-    raise _fail(
-        503,
-        "ONCHAIN_CANCEL_UNAVAILABLE",
-        "On-chain cancellation unavailable",
-        "Contract support and the Safe transaction builder are not configured; cancellation remains Pending.",
-    )
-
-
-async def _return_request_to_draft(
-    *,
-    organization_id: uuid.UUID,
-    request_id: uuid.UUID,
-    request: Request,
-    response: Response,
-    expected_version: int,
-    actor: MemberContext,
-    reason: str,
-    require_checker: bool,
-) -> dict[str, object]:
-    async with _sessions(request)() as session, session.begin():
-        row = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise _not_found()
-        if row.version != expected_version:
-            raise _fail(
-                412,
-                "PRECONDITION_FAILED",
-                "Request changed",
-                "The request changed since it was read; reload and try again.",
-            )
-        if row.status != RequestStatus.AWAITING_APPROVAL.value:
-            raise _fail(
-                409,
-                "NOT_EDITABLE",
-                "Request cannot return to draft",
-                "Only a request awaiting approval can return to draft.",
-            )
-        if require_checker:
-            solo_mode = bool(
-                await session.scalar(
-                    select(Organization.solo_mode).where(Organization.id == organization_id)
-                )
-            )
-            if not solo_mode and actor.user_id in {row.created_by, row.last_edited_by}:
-                raise _fail(
-                    409,
-                    "MAKER_CHECKER",
-                    "Maker cannot request changes",
-                    "The creator or last editor cannot review this request.",
-                )
-        previous_status = row.status
-        row.status = RequestStatus.DRAFT.value
-        session.add(
-            RequestStatusEvent(
-                id=uuid7(),
-                request_id=row.id,
-                from_status=previous_status,
-                to_status=row.status,
-                actor_type=StatusEventActorType.USER.value,
-                actor_id=actor.user_id,
-                reason=reason,
-            )
-        )
-        await session.flush()
-        await session.refresh(row)
-        result, version = _serialize(row), row.version
-    response.headers["ETag"] = f'"{version}"'
-    return {"request": result}
 
 
 @router.post("/{request_id}/flags/{flag_id}/ack", openapi_extra={"x-organization-scoped": True})
@@ -1450,7 +1241,7 @@ async def acknowledge_flag(
     flag_id: uuid.UUID,
     payload: FlagAcknowledgment,
     request: Request,
-    member: MemberContext = Depends(_require_approver),  # noqa: B008
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
 ) -> dict[str, object]:
     note = payload.note.strip()
     if len(note) < 10:
@@ -1458,11 +1249,18 @@ async def acknowledge_flag(
     async with _sessions(request)() as session, session.begin():
         row = await session.scalar(
             select(PaymentRequest)
-            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id)
             .with_for_update()
         )
         if row is None:
             raise _not_found()
+        if row.status != RequestStatus.AWAITING_APPROVAL.value:
+            raise _fail(
+                409,
+                "NOT_AWAITING_APPROVAL",
+                "Request is not awaiting approval",
+                "Flags can only be acknowledged while the request awaits approval.",
+            )
         flag = await session.scalar(
             select(RequestFlag)
             .where(RequestFlag.id == flag_id, RequestFlag.request_id == row.id)
@@ -1484,25 +1282,17 @@ async def acknowledge_flag(
             raise _fail(
                 409, "FLAG_NOT_OPEN", "Flag is not open", "Only open flags can be acknowledged."
             )
-        if member.user_id == row.created_by:
-            raise _fail(
-                409,
-                "MAKER_CHECKER",
-                "Creator cannot acknowledge flags",
-                "The creator cannot acknowledge this flag.",
-            )
         solo_mode = bool(
             await session.scalar(
-                select(Organization.solo_mode).where(Organization.id == organization_id)
+                select(Organization.solo_mode).where(Organization.id == member.organization_id)
             )
         )
-        if not solo_mode and member.user_id == row.last_edited_by:
-            raise _fail(
-                409,
-                "MAKER_CHECKER",
-                "Maker cannot acknowledge flags",
-                "The last editor cannot acknowledge this flag.",
-            )
+        # Same rule as the approve transition: the creator never acknowledges; the last
+        # editor may only in solo mode.
+        if member.user_id == row.created_by or (
+            not solo_mode and member.user_id == row.last_edited_by
+        ):
+            raise maker_checker_conflict()
         flag.status = RequestFlagStatus.ACKNOWLEDGED.value
         flag.acknowledged_by = member.user_id
         flag.acknowledged_at = datetime.now(UTC)
@@ -1535,22 +1325,17 @@ def _approval_chain(request: Request) -> ApprovalChainReader:
 
 
 def _approval_signature(raw: str) -> bytes:
-    value = raw.removeprefix("0x")
-    if not value or len(value) % 2:
-        raise _fail(400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature.")
     try:
-        signature = bytes.fromhex(value)
+        signature = bytes.fromhex(raw.removeprefix("0x"))
     except ValueError:
-        raise _fail(
-            400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature."
-        ) from None
+        signature = b""
     if not signature:
         raise _fail(400, "SIGNATURE_INVALID", "Signature invalid", "Provide a hex signature.")
     return signature
 
 
 async def _approval_typed_data(
-    session: AsyncSession, row: PaymentRequest
+    session: AsyncSession, row: PaymentRequest, expiry: int | None = None
 ) -> tuple[dict[str, object], int, int]:
     treasury = await session.scalar(select(Treasury).where(Treasury.id == row.treasury_id))
     asset = await session.scalar(select(Asset).where(Asset.id == row.asset_id))
@@ -1582,25 +1367,30 @@ async def _approval_typed_data(
             "The request is missing signed fields.",
         )
 
-    wallet_query = select(TreasuryWallet).where(TreasuryWallet.treasury_id == row.treasury_id)
-    if row.paying_wallet_id is not None:
-        wallet_query = wallet_query.where(TreasuryWallet.id == row.paying_wallet_id)
-    else:
-        wallet_query = wallet_query.where(TreasuryWallet.role == WalletRole.OPERATIONAL.value)
-    wallet = await session.scalar(wallet_query.order_by(TreasuryWallet.id).limit(1))
+    # The signed payingWallet must be the requester's explicit choice, never a server default.
+    wallet = (
+        await session.scalar(
+            select(TreasuryWallet).where(
+                TreasuryWallet.treasury_id == row.treasury_id,
+                TreasuryWallet.id == row.paying_wallet_id,
+            )
+        )
+        if row.paying_wallet_id is not None
+        else None
+    )
     if wallet is None:
         raise _fail(
             409,
             "PAYING_WALLET_UNKNOWN",
             "Paying wallet invalid",
-            "Select an operational paying wallet.",
+            "Select an operational paying wallet on the request.",
         )
 
     mandate = await session.scalar(
         select(MandateVersion)
         .where(
             MandateVersion.treasury_id == row.treasury_id,
-            MandateVersion.status == MandateVersionStatus.ACTIVE.value,
+            MandateVersion.status == MandateVersionStatus.ACTIVE,
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -1623,9 +1413,12 @@ async def _approval_typed_data(
             "The active mandate has an invalid approvalMaxAge setting.",
         )
     approval_max_age = approval_max_age_value
-    early_amount, early_pay_by = 0, 0
-    if confirmed_payment_terms(row) is not None:
-        _, _, early_amount, early_pay_by = _validated_terms(row.terms or {}, int(row.amount))
+    terms = confirmed_payment_terms(row)
+    early_amount, early_pay_by = (_early_option(terms, int(row.amount)) if terms else None) or (
+        0,
+        0,
+    )
+    # End of the due day UTC, matching the 23:59:59 UTC earlyPayBy convention (invoices README).
     deadline = int(datetime.combine(row.due_at, datetime.max.time(), tzinfo=UTC).timestamp())
     view = RequestView.model_validate(
         {
@@ -1651,11 +1444,38 @@ async def _approval_typed_data(
             now=now,
             approval_max_age=approval_max_age,
             asset="0x" + asset.address.hex(),
+            expiry=expiry,
         )
+    except ApprovalExpiryError as error:
+        raise _fail(
+            400,
+            "APPROVAL_EXPIRY_INVALID",
+            "Approval expiry invalid",
+            "Request fresh typed data and sign it before it expires.",
+        ) from error
     except ValueError as error:
-        raise _fail(409, "APPROVAL_UNAVAILABLE", "Approval unavailable", str(error)) from error
-    expiry = cast(int, cast(dict[str, object], typed["message"])["expiry"])
-    return typed, expiry, row.chain_id
+        raise _fail(
+            409,
+            "APPROVAL_UNAVAILABLE",
+            "Approval unavailable",
+            "The request cannot be approved in its current state.",
+        ) from error
+    signed_expiry = cast(int, cast(dict[str, object], typed["message"])["expiry"])
+    return typed, signed_expiry, row.chain_id
+
+
+async def _enforce_maker_checker(
+    session: AsyncSession, organization_id: uuid.UUID, member: MemberAccess, row: PaymentRequest
+) -> bool:
+    """Reject makers unless the org is in solo mode; return the org's solo-mode flag."""
+    solo_mode = bool(
+        await session.scalar(
+            select(Organization.solo_mode).where(Organization.id == organization_id)
+        )
+    )
+    if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
+        raise maker_checker_conflict()
+    return solo_mode
 
 
 def _approval_view(row: PaymentApproval) -> dict[str, object]:
@@ -1677,7 +1497,8 @@ async def get_approval_typed_data(
     organization_id: uuid.UUID,
     request_id: uuid.UUID,
     request: Request,
-    member: MemberContext = Depends(_require_approver),  # noqa: B008
+    response: Response,
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
 ) -> dict[str, object]:
     async with _sessions(request)() as session:
         row = await session.scalar(
@@ -1706,8 +1527,11 @@ async def get_approval_typed_data(
                 "Wallet not linked",
                 "Link an EVM wallet before approving a payment request.",
             )
+        await _enforce_maker_checker(session, organization_id, member, row)
         await assert_high_flags_acknowledged(session, row)
         typed, _expiry, _chain_id = await _approval_typed_data(session, row)
+        # The POST must echo this revision and the signed message.expiry.
+        response.headers["X-Request-Revision"] = str(row.current_revision)
         return typed
 
 
@@ -1721,7 +1545,7 @@ async def approve_request(
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", min_length=1, max_length=255
     ),
-    member: MemberContext = Depends(_require_approver),  # noqa: B008
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
 ) -> dict[str, object]:
     if idempotency_key is None:
         raise _fail(
@@ -1731,6 +1555,7 @@ async def approve_request(
             "Provide an Idempotency-Key.",
         )
     signature = _approval_signature(payload.signature)
+    chain_reader = _approval_chain(request)
     key_hash = keccak(idempotency_key.encode("utf-8"))
     factory = _sessions(request)
     result: dict[str, object]
@@ -1802,27 +1627,17 @@ async def approve_request(
                     "Wallet not linked",
                     "Link an EVM wallet before approving a payment request.",
                 )
-            organization = await session.scalar(
-                select(Organization).where(Organization.id == organization_id)
-            )
-            solo_mode = bool(organization and organization.solo_mode)
-            if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
-                raise _fail(
-                    409,
-                    "MAKER_CHECKER",
-                    "Maker cannot approve request",
-                    "The creator or last editor cannot approve this request.",
-                )
+            solo_mode = await _enforce_maker_checker(session, organization_id, member, row)
             await assert_high_flags_acknowledged(session, row)
-            typed, expiry, chain_id = await _approval_typed_data(session, row)
+            typed, expiry, chain_id = await _approval_typed_data(session, row, payload.expiry)
             module_address = cast(
                 str, cast(dict[str, object], typed["domain"])["verifyingContract"]
             )
-            chain_reader = _approval_chain(request)
             signer_address: str | None = None
             signer_wallet: WalletLink | None = None
             approval_digest = eip712_digest(typed)
-            for wallet in linked_wallets:
+            # EOA wallets first: they need no RPC, so a failing ERC-1271 call cannot mask them.
+            for wallet in sorted(linked_wallets, key=lambda item: item.is_contract):
                 address = "0x" + wallet.address.hex()
                 if wallet.is_contract:
                     try:
@@ -1908,6 +1723,14 @@ async def approve_request(
                     reason="request approved with verified EIP-712 signature",
                 )
             )
+            await write_audit(
+                session,
+                org_id=organization_id,
+                actor=AuditActor(AuditActorType.USER, member.user_id),
+                action=TransitionAction.APPROVE.value,
+                entity=AuditEntity("payment_request", row.id),
+                data={"from": previous_status, "to": row.status, "soloMode": solo_mode},
+            )
             await session.flush()
             await session.refresh(row)
             await session.refresh(approval)
@@ -1917,6 +1740,16 @@ async def approve_request(
             }
             version = row.version
     except IntegrityError as error:
+        constraint_name = getattr(
+            getattr(error.orig, "diag", None),
+            "constraint_name",
+            getattr(error.orig, "constraint_name", None),
+        )
+        if constraint_name not in {
+            "uq_approvals_valid_request_revision_address",
+            "uq_approvals_request_idempotency_key",
+        }:
+            raise
         raise _fail(
             409,
             "APPROVAL_EXISTS",
@@ -1925,3 +1758,179 @@ async def approve_request(
         ) from error
     response.headers["ETag"] = f'"{version}"'
     return result
+
+
+@router.post("/{request_id}/reject", openapi_extra={"x-organization-scoped": True})
+async def reject_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_approver),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.REJECT,
+        target=RequestStatus.REJECTED,
+        expected_version=_expected_version(if_match),
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/cancel", openapi_extra={"x-organization-scoped": True})
+async def cancel_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RequestReason,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_canceller),  # noqa: B008
+) -> dict[str, object]:
+    return await _transition(
+        request,
+        response,
+        member=member,
+        request_id=request_id,
+        action=TransitionAction.CANCEL,
+        target=RequestStatus.CANCELLED,
+        expected_version=_expected_version(if_match),
+        reason=payload.reason,
+    )
+
+
+@router.post("/{request_id}/renew", openapi_extra={"x-organization-scoped": True})
+async def renew_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    payload: RenewRequest,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    member: MemberAccess = Depends(_require_renewer),  # noqa: B008
+) -> dict[str, object]:
+    expected_version = _expected_version(if_match)
+    async with _sessions(request)() as session, session.begin():
+        row = await session.scalar(
+            select(PaymentRequest)
+            .where(PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id)
+            .with_for_update()
+        )
+        if row is None:
+            raise _not_found()
+        if row.version != expected_version:
+            raise _fail(412, "PRECONDITION_FAILED", "Request changed", "Reload and try again.")
+        try:
+            validate_transition(
+                source=row.status,
+                target=RequestStatus.DRAFT,
+                actor=TransitionActor(
+                    StatusEventActorType.USER,
+                    TransitionAction.RENEW,
+                    member.user_id,
+                    frozenset(role for role in OrganizationRole if role.value in member.roles),
+                ),
+                created_by=row.created_by,
+                last_edited_by=row.last_edited_by,
+            )
+        except RequestTransitionError as error:
+            raise _fail(
+                error.status_code, error.code, "Request cannot be renewed", error.detail
+            ) from error
+        today = datetime.now(UTC).date()
+        if payload.due_date is not None and payload.due_date < today:
+            raise _fail(
+                422,
+                "DUE_DATE_IN_PAST",
+                "Due date invalid",
+                "The renewed due date cannot be in the past.",
+            )
+        row.current_revision += 1
+        row.due_at = payload.due_date or max(row.due_at, today + timedelta(days=1))
+        vendor_ref, asset_address = (
+            await session.execute(
+                select(Vendor.normalized_ref, Asset.address)
+                .join(Asset, Asset.id == row.asset_id)
+                .where(Vendor.id == row.vendor_id)
+            )
+        ).one()
+        # due_at is part of invoice_hash; the active-duplicate check also revives the fingerprint.
+        _hashes(row, vendor_ref, asset_address or b"")
+        await assert_no_active_duplicate(session, row)
+        # Flip the status only after the check: Draft is active, so autoflush would hit the index.
+        previous = row.status
+        row.status = RequestStatus.DRAFT.value
+        row.last_edited_by = member.user_id
+        row.terms_hash = None
+        row.terms_confirmed_by = None
+        row.terms_confirmed_at = None
+        session.add(
+            RequestRevision(
+                id=uuid7(),
+                request_id=row.id,
+                revision=row.current_revision,
+                snapshot=_snapshot(row),
+                edited_by=member.user_id,
+                reason="renewed after expiry",
+            )
+        )
+        session.add(
+            RequestStatusEvent(
+                id=uuid7(),
+                request_id=row.id,
+                from_status=previous,
+                to_status=row.status,
+                actor_type=StatusEventActorType.USER.value,
+                actor_id=member.user_id,
+                reason="request renewed after expiry",
+            )
+        )
+        await session.flush()
+        await session.refresh(row)
+        result, version = _serialize(row), row.version
+    response.headers["ETag"] = f'"{version}"'
+    return {"request": result}
+
+
+@router.get("/{request_id}/cancel-tx", openapi_extra={"x-organization-scoped": True})
+async def get_cancel_transaction(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(_require_cancel_tx_actor),  # noqa: B008
+) -> dict[str, object]:
+    # The repository has no deployed module ABI/event indexer or Safe governance builder yet.
+    # Never return calldata that could be mistaken for a confirmed supported contract call.
+    async with _sessions(request)() as session:
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        if row.cancel_onchain != "Pending":
+            raise _fail(
+                409,
+                "CANCEL_NOT_NEEDED",
+                "On-chain cancel not needed",
+                "This request has no pending on-chain cancellation.",
+            )
+        if row.onchain_request_id is None:
+            raise _fail(
+                503,
+                "ONCHAIN_CANCEL_UNAVAILABLE",
+                "On-chain cancellation unavailable",
+                "The request has no on-chain identifier; cancellation remains Pending.",
+            )
+    raise _fail(
+        503,
+        "ONCHAIN_CANCEL_UNAVAILABLE",
+        "On-chain cancellation unavailable",
+        "Contract support and the Safe transaction builder are not configured; cancellation remains Pending.",
+    )

@@ -1,9 +1,14 @@
 import asyncio
+import os
+from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.celery_app import app
+from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
+from treasurypilot_worker.notify.publisher import publish_from_pool
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -18,12 +23,8 @@ def core_probe() -> dict[str, str]:
 EXPIRABLE_REQUEST_STATUSES = ["Approved", "Scheduled", "AwaitingAuthority", "NeedsReview"]
 
 
-async def _expire_invoice_approvals() -> int:
-    database_url = get_settings().database_url
-    if not database_url:
-        raise RuntimeError("TP_DATABASE_URL or DATABASE_URL is required for invoice expiry")
-    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    conn = await asyncpg.connect(database_url)
+async def _expire_invoice_approvals(database_url: str) -> int:
+    conn = await asyncpg.connect(_asyncpg_database_url(database_url))
     try:
         async with conn.transaction():
             # Only expire signatures of requests the sweep may expire; Paying/Paid keep theirs.
@@ -57,7 +58,10 @@ async def _expire_invoice_approvals() -> int:
 @app.task(name="treasurypilot.invoices.expire_approvals", queue="core")
 def expire_invoice_approvals() -> dict[str, int]:
     """Expire approval signatures and their still-payable requests atomically."""
-    return {"requests_expired": asyncio.run(_expire_invoice_approvals())}
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for invoice expiry")
+    return {"requests_expired": asyncio.run(_expire_invoice_approvals(database_url))}
 
 
 @app.task(name="treasurypilot.system.ai_probe", queue="ai")
@@ -65,3 +69,59 @@ def ai_probe() -> dict[str, str]:
     """AI queue probe. It performs no LLM call and accesses no signing material."""
 
     return {"status": "ok", "queue": "ai"}
+
+
+@app.task(name="treasurypilot.treasury.refresh_safe_config_snapshots", queue="core")
+def refresh_safe_config_task() -> dict[str, int]:
+    """Poll each active treasury Safe and persist its latest observed configuration."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for Safe configuration refresh")
+    return {"snapshots_written": refresh_safe_config_snapshots_sync(database_url)}
+
+
+class _PublisherRuntime:
+    """One event loop and connection pool per worker process, reused across runs.
+
+    The publish task fires every second; opening a pool (TCP + Postgres session) on
+    every run would cost ~86k connections a day for a usually empty SELECT. A forked
+    child (prefork pool) builds its own loop and pool on first use.
+    """
+
+    def __init__(self) -> None:
+        self._pid: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._pool: Any = None
+
+    def publish(self, database_url: str) -> int:
+        if self._pid != os.getpid() or self._loop is None:
+            self._pid, self._loop, self._pool = os.getpid(), asyncio.new_event_loop(), None
+        loop = self._loop
+
+        async def run() -> int:
+            if self._pool is None:
+                self._pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+            return await publish_from_pool(self._pool)
+
+        try:
+            return loop.run_until_complete(run())
+        except Exception:
+            # A broken connection must not poison later runs: rebuild the pool next time.
+            if self._pool is not None:
+                pool, self._pool = self._pool, None
+                loop.run_until_complete(pool.close())
+            raise
+
+
+_publisher = _PublisherRuntime()
+
+
+@app.task(name="treasurypilot.notifications.publish-domain-events", queue="core")
+def publish_domain_events() -> dict[str, int]:
+    """Materialize pending in-app notifications from the PostgreSQL outbox."""
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for domain-event publishing")
+    return {"published": _publisher.publish(database_url)}

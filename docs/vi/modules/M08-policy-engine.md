@@ -41,7 +41,7 @@ F-055 (FR-410, FR-411, FR-313, FR-505; BR-001–005, BR-010–019, BR-022–024,
 
 ## 4. Mô hình dữ liệu
 
-**Python:** `PlanStep {seq, step_id, action, from_wallet, to, asset, amount}`, `ExecutionPlan {request_id, treasury, chain_id, steps, planner_source (AI, DETERMINISTIC, RULE_BASED), evidence_ids}`, `ApprovalView {typed, signature, signer, created_by, last_edited_by, approved_by_user, acknowledged_flag_ids, solo_mode}`, `FlagView`, `ExceptionView`, `ValidationContext {now, head_block, snapshot, request, approval, flags, coverage, unknown_operations, pause_requested, circuit_open, screening_hit, config}`, `Check {name, passed, code, expected, observed}`, `Decision {decision, primary, codes, warnings, checks, stage, step_seq, policy_version, snapshot_block}`.
+**Python:** `PlanStep {seq, step_id, action, from_wallet, to, asset, amount}`, `ExecutionPlan {request_id, treasury, chain_id, steps, planner_source (AI, DETERMINISTIC, RULE_BASED), evidence_ids}`, `ApprovalView {typed, signature, signer, created_by, last_edited_by, approved_by_user, acknowledged_flag_ids, solo_mode}`, `FlagView`, `ExceptionView`, `ValidationContext {now, head_block, snapshot, request, approval, flags, coverage, unknown_operations, pause_requested, circuit_open, screening_hit, screening_clear, config}`, `Check {name, passed, code, expected, observed}`, `Decision {decision, primary, codes, warnings, checks, stage, step_seq, policy_version, snapshot_block}`.
 
 **DB:** `validations` (plan, step_seq, stage, decision, primary_code, reason_codes, warnings, checks, policy_version, snapshot_block; append-only) · `attestations` (plan, request, plan_hash, step_ids, policy_version, executor, nonce, valid_until, evidence_digest, typed_data, signature, policy_signer; nonce duy nhất) · `signer.attestation_uses` (schema riêng của signer: nonce, plan_hash, step_id; mỗi nonce chỉ gắn một plan_hash; chỉ role DB của signer được ghi, M08-D9).
 
@@ -99,9 +99,9 @@ PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,bytes32 pol
 
 **8.2 Tổng hợp:** có lỗi cứng → BLOCK; chỉ có lỗi mềm → NEEDS_APPROVAL; không lỗi → ALLOW. Mã chính = mã lỗi đứng đầu theo thứ tự nhóm §6.4. Ngoại lệ hợp lệ chỉ gỡ `OVER_PER_REQUEST_LIMIT`, không gỡ gì khác; ngoại lệ không khớp thêm `EXCEPTION_INVALID` (BLOCK).
 
-**8.3 planHash:** `keccak256(abi.encode(PLAN_TYPEHASH, requestId, treasury, chainId, keccak256(nối các stepHash)))`, `stepHash_i = hashStruct(Step_i)`. Không bao giờ băm JSON. Python và TypeScript dùng chung vector.
+**8.3 planHash:** `keccak256(abi.encode(PLAN_TYPEHASH, requestId, treasury, chainId, keccak256(nối các stepHash)))`, `stepHash_i = hashStruct(Step_i)`; `PLAN_TYPEHASH` là typehash EIP-712 của `Plan(bytes32 requestId,address treasury,uint256 chainId,Step[] steps)Step(…)`. `treasury` là module clone, cùng địa chỉ với `treasury` của approval và `verifyingContract` của attestation (không phải Safe T). Không bao giờ băm JSON. Python và TypeScript dùng chung vector.
 
-**8.4 stepId:** `keccak256(abi.encode("TP_STEP_V1", requestId, uint8(action), wallet))`, `wallet` = ví nhận với REFILL, ví trả với PAY. Thử lại và lập lại plan dùng lại cùng id (BR-061); `stepUsed` của contract khiến không thể chạy lần hai.
+**8.4 stepId:** `keccak256(abi.encode("TP_STEP_V1", requestId, uint8(action), wallet))`, `action` theo mã của module (PAY 1, REFILL 2, SWAP_IN 3, SUPPLY 4, WITHDRAW 5), `wallet` = ví nhận với REFILL, ví trả với PAY, Safe T với SUPPLY/WITHDRAW. Plan thanh khoản có `requestId = 0x0` nên stepId dùng id của cycle thanh khoản thay cho requestId, tránh `stepUsed` chặn lần SUPPLY thứ hai. `cycleId = keccak256(abi.encode("TP_LIQ_CYCLE_V1", treasury, uint64(utcDay), uint32(seq)))`: `treasury` là module clone, `utcDay = unix_seconds / 86400`, `seq` = số plan thanh khoản của treasury đã hoàn tất trong ngày đó. Thử lại một cycle chưa xong sẽ ra cùng id nên `stepUsed` vẫn chặn chạy trùng (BR-061). Thử lại và lập lại plan dùng lại cùng id (BR-061); `stepUsed` của contract khiến không thể chạy lần hai.
 
 **8.5 Ví dụ** (mandate: pay 2.000/10.000; refill 2.500/12.000; O1 buffer 10, target 150; payee Active; bản duyệt hợp lệ; snapshot tươi)
 

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.events.writer import append_domain_event
 from treasurypilot_api.identity.models import Organization, OrganizationRole, uuid7
 from treasurypilot_api.invoices.fingerprints import (
     DenyDuplicateAllowance,
@@ -15,7 +16,9 @@ from treasurypilot_api.invoices.fingerprints import (
     assert_no_active_duplicate,
 )
 from treasurypilot_api.invoices.models import (
+    ApprovalStatus,
     CancelOnchainStatus,
+    PaymentApproval,
     PaymentRequest,
     RequestStatus,
     RequestStatusEvent,
@@ -73,8 +76,11 @@ class RequestVersionConflict(RequestTransitionError):
     code = "PRECONDITION_FAILED"
 
 
-class RequestNotFound(Exception):
+class RequestNotFound(RequestTransitionError):
     """The request does not exist or is outside the requested organization."""
+
+    status_code = 404
+    code = "REQUEST_NOT_FOUND"
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,7 +400,12 @@ class RequestStateMachine:
         expected_version: int | None = None,
         reason: str | None = None,
     ) -> RequestTransitionResult:
-        """Apply ``target``; user actors must pass the version they saw (``If-Match``)."""
+        """Apply ``target``; user actors must pass the version they saw (``If-Match``).
+
+        The request row stays locked for the whole transaction, including the PAY
+        in-flight check. M07 must take the same row lock (or re-check under it)
+        before advancing a PAY operation.
+        """
         async with self._sessions() as session, session.begin():
             request = await session.scalar(
                 select(PaymentRequest)
@@ -405,7 +416,7 @@ class RequestStateMachine:
                 .with_for_update()
             )
             if request is None:
-                raise RequestNotFound
+                raise RequestNotFound("Payment request not found.")
             if actor.actor_type == StatusEventActorType.USER and expected_version is None:
                 raise RequestVersionConflict("If-Match with the request version is required.")
             if expected_version is not None and expected_version != request.version:
@@ -414,6 +425,7 @@ class RequestStateMachine:
                 )
 
             source = _coerce_status(request.status)
+            version_before = request.version
             solo_mode = False
             if actor.action in _CHECKER_ACTIONS:
                 solo_mode = bool(
@@ -460,6 +472,22 @@ class RequestStateMachine:
                 if approved_before:
                     request.cancel_onchain = CancelOnchainStatus.PENDING.value
 
+            if target in (RequestStatus.CANCELLED, RequestStatus.REJECTED):
+                # A signature must not stay Valid once its request is cancelled or rejected.
+                await session.execute(
+                    update(PaymentApproval)
+                    .where(
+                        PaymentApproval.request_id == request_id,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                    )
+                    .values(
+                        status=(
+                            ApprovalStatus.CANCELLED
+                            if target == RequestStatus.CANCELLED
+                            else ApprovalStatus.INVALIDATED
+                        ).value
+                    )
+                )
             request.status = rule.target.value
             event = RequestStatusEvent(
                 id=uuid7(),
@@ -471,6 +499,38 @@ class RequestStateMachine:
                 reason=reason,
             )
             session.add(event)
+            if target == RequestStatus.AWAITING_APPROVAL:
+                approval_ids: dict[str, uuid.UUID | list[uuid.UUID]] = {"requestId": request_id}
+                org_solo_mode = await session.scalar(
+                    select(Organization.solo_mode).where(Organization.id == organization_id)
+                )
+                if not org_solo_mode:
+                    # Maker-checker: the creator and last editor cannot approve, so they
+                    # get no "Approval required" notification they cannot act on.
+                    makers = {request.created_by, request.last_edited_by} - {None}
+                    approval_ids["excludeUserIds"] = sorted(makers, key=str)  # type: ignore[arg-type]
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="ApprovalNeeded",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids=approval_ids,
+                )
+            elif target == RequestStatus.PAID:
+                payload_ids = {"requestId": request_id}
+                if request.created_by is not None:
+                    payload_ids["creatorId"] = request.created_by
+                append_domain_event(
+                    session,
+                    organization_id=organization_id,
+                    treasury_id=request.treasury_id,
+                    event_type="PaymentDone",
+                    entity_type="payment_request",
+                    entity_id=request_id,
+                    payload_ids=payload_ids,
+                )
             await session.flush()
 
             await self._audit.append(
@@ -486,8 +546,10 @@ class RequestStateMachine:
                         "from": source.value,
                         "to": rule.target.value,
                         "reason": reason,
-                        "soloMode": solo_mode,
+                        # Only evaluated for checker actions; None means "not evaluated".
+                        "soloMode": solo_mode if actor.action in _CHECKER_ACTIONS else None,
                         "cancelOnchain": request.cancel_onchain,
+                        "fromVersion": version_before,
                         "version": request.version,
                     },
                 ),

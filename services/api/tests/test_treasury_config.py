@@ -255,6 +255,57 @@ def test_rejects_manifest_chain_mismatch(tmp_path: Path) -> None:
         PlatformConfiguration.load(config_path, deployments_dir)
 
 
+def _asset(**overrides: Any) -> dict[str, Any]:
+    asset = {
+        "address": "0x" + "AB" * 20,
+        "symbol": "tUSDC",
+        "decimals": 6,
+        "issuerLabel": "TreasuryPilot test token",
+        "isTest": True,
+    }
+    asset.update(overrides)
+    return asset
+
+
+def test_loads_chain_assets_with_normalized_address(tmp_path: Path) -> None:
+    config_path, deployments_dir = _write_configuration(
+        tmp_path, chain=_chain(assets=[_asset()]), manifest=_manifest()
+    )
+
+    asset = PlatformConfiguration.load(config_path, deployments_dir).chains[0].assets[0]
+
+    assert asset.address == "0x" + "ab" * 20
+    assert (asset.symbol, asset.decimals, asset.is_test) == ("tUSDC", 6, True)
+
+
+@pytest.mark.parametrize(
+    ("assets", "message"),
+    [
+        ([_asset(address="0x1234")], "asset address.*20 bytes"),
+        ([_asset(decimals=256)], "decimals"),
+        ([_asset(symbol=" ")], "blank"),
+        ([_asset(), _asset(address="0x" + "ab" * 20)], "asset addresses must be unique"),
+    ],
+)
+def test_rejects_invalid_or_duplicate_assets(
+    tmp_path: Path, assets: list[dict[str, Any]], message: str
+) -> None:
+    config_path, deployments_dir = _write_configuration(
+        tmp_path, chain=_chain(assets=assets), manifest=_manifest()
+    )
+
+    with pytest.raises(PlatformConfigurationError, match=message):
+        PlatformConfiguration.load(config_path, deployments_dir)
+
+
+def test_chain_with_assets_requires_an_http_rpc_url(tmp_path: Path) -> None:
+    chain = _chain(assets=[_asset()], rpcUrls=["wss://rpc-one.example", "wss://rpc-two.example"])
+    config_path, deployments_dir = _write_configuration(tmp_path, chain=chain, manifest=_manifest())
+
+    with pytest.raises(PlatformConfigurationError, match="http"):
+        PlatformConfiguration.load(config_path, deployments_dir)
+
+
 def test_deployment_id_is_stable_and_keyed_by_natural_key() -> None:
     first = deployment_id(CHAIN_ID, "TREASURY_MODULE_IMPLEMENTATION", "1.0.0")
 

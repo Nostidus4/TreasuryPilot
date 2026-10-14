@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -14,8 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.access import MemberContext
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices.requests import (
     RenewRequest,
     RequestReason,
@@ -42,6 +44,14 @@ _PAYEE = "'00000000-0000-7000-8000-000000000060'"
 _ASSET = "'00000000-0000-7000-8000-000000000030'"
 
 
+def _member(user_id: uuid.UUID, role: str) -> MemberAccess:
+    return MemberAccess(
+        access=SimpleNamespace(user=SimpleNamespace(id=user_id)),  # type: ignore[arg-type]
+        organization_id=ORG,
+        roles=frozenset({role}),
+    )
+
+
 async def _insert_request(
     conn: AsyncConnection,
     name: str,
@@ -64,8 +74,15 @@ async def _insert_request(
             "inv": invoice_no,
             "due": due,
             "status": status,
-            "fp": fp,
+            "fp": fp or hashlib.sha256(name.encode()).digest(),
         },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+            "VALUES (gen_random_uuid(), :id, 1, '{}')"
+        ),
+        {"id": _IDS[name]},
     )
 
 
@@ -96,15 +113,16 @@ async def _seed(conn: AsyncConnection, today: date) -> None:
         f"11155111, {_ASSET})",
         f"INSERT INTO vendors (id, org_id, name, normalized_ref) VALUES ({_VENDOR}, :org, "
         "'Vendor', 'vendor')",
-        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) VALUES "
+        "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, "
+        "oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) VALUES "
         f"({_PAYEE}, {_TREASURY}, :org, {_VENDOR}, 'Main', decode(repeat('22', 20), 'hex'), "
-        "'Active')",
+        f"'Active', '{CREATOR}', now(), 'PHONE', 'verified', now())",
     )
     for statement in statements:
         await conn.execute(text(statement), {"org": ORG})
     future, past = today + timedelta(days=30), today - timedelta(days=5)
-    # A partially approved request still holds a Valid signature (BR-077).
-    await _insert_request(conn, "cancel_valid", "AwaitingApproval", "INV-CV", future)
+    # An approved request holds a Valid signature, so cancelling it owes an on-chain cancel (BR-077).
+    await _insert_request(conn, "cancel_valid", "Approved", "INV-CV", future)
     await _insert_approval(conn, "cancel_valid")
     await _insert_request(conn, "cancel_none", "AwaitingApproval", "INV-CN", future)
     await _insert_request(conn, "reject", "AwaitingApproval", "INV-RJ", future)
@@ -131,9 +149,9 @@ async def _scenario(database_url: str) -> None:
         app = FastAPI()
         app.state.request_sessions = sessions
         req = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
-        owner = MemberContext(ORG, OWNER, frozenset({"Owner"}))
-        approver = MemberContext(ORG, APPROVER, frozenset({"Approver"}))
-        operator = MemberContext(ORG, CREATOR, frozenset({"Operator"}))
+        owner = _member(OWNER, "Owner")
+        approver = _member(APPROVER, "Approver")
+        operator = _member(CREATOR, "Operator")
         why = RequestReason(reason="because")
 
         async def state(name: str) -> tuple[str, str, list[str]]:
@@ -179,7 +197,7 @@ async def _scenario(database_url: str) -> None:
 
 
 def test_org_admin_cannot_pass_renew_route_guard() -> None:
-    admin = MemberContext(ORG, OWNER, frozenset({"OrgAdmin"}))
+    admin = _member(OWNER, "OrgAdmin")
     with pytest.raises(AuthFailure) as err:
         asyncio.run(_require_renewer(member=admin))
     assert err.value.status == 403

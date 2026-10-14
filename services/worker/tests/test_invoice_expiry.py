@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import uuid
 from datetime import UTC, datetime
@@ -9,19 +10,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from treasurypilot_worker.config import Settings, get_settings
 from treasurypilot_worker.tasks import EXPIRABLE_REQUEST_STATUSES, _expire_invoice_approvals
 
 API_ROOT = Path(__file__).parents[2] / "api"
 ORG = uuid.UUID("00000000-0000-7000-8000-000000000010")
-
-
-def test_settings_read_compose_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("TP_DATABASE_URL", raising=False)
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://compose/db")
-    assert Settings().database_url == "postgresql+asyncpg://compose/db"
-    monkeypatch.setenv("TP_DATABASE_URL", "postgresql+asyncpg://tp/db")
-    assert Settings().database_url == "postgresql+asyncpg://tp/db"
 
 
 def test_sweep_statuses_match_state_machine_expire_rules() -> None:
@@ -34,7 +26,7 @@ def test_sweep_statuses_match_state_machine_expire_rules() -> None:
     assert set(EXPIRABLE_REQUEST_STATUSES) == expected
 
 
-async def _sweep(database_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+async def _sweep(database_url: str) -> None:
     conn = await asyncpg.connect(database_url.replace("postgresql+asyncpg://", "postgresql://"))
     try:
         await conn.execute("INSERT INTO organizations (id, name) VALUES ($1, 'Sweep')", ORG)
@@ -59,11 +51,15 @@ async def _sweep(database_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
             ORG,
         )
         await conn.execute(
-            "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status) "
+            "INSERT INTO users (id, email) VALUES ('00000000-0000-7000-8000-000000000001', 'u@e.test')"
+        )
+        await conn.execute(
+            "INSERT INTO payees (id, treasury_id, org_id, vendor_id, label, address, status, "
+            "oob_verified_by, oob_verified_at, oob_method, oob_note, active_from) "
             "VALUES ('00000000-0000-7000-8000-000000000060', "
             "'00000000-0000-7000-8000-000000000040', $1, "
             "'00000000-0000-7000-8000-000000000050', 'Main', decode(repeat('22', 20), 'hex'), "
-            "'Active')",
+            "'Active', '00000000-0000-7000-8000-000000000001', now(), 'PHONE', 'verified', now())",
             ORG,
         )
         ids = {}
@@ -76,15 +72,21 @@ async def _sweep(database_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
             ids[name] = uuid.uuid4()
             await conn.execute(
                 "INSERT INTO payment_requests (id, org_id, treasury_id, chain_id, vendor_id, "
-                "payee_id, asset_id, issue_date, due_at, invoice_no, amount, status) VALUES "
+                "payee_id, asset_id, issue_date, due_at, invoice_no, amount, status, fingerprint) VALUES "
                 "($1, $2, '00000000-0000-7000-8000-000000000040', 11155111, "
                 "'00000000-0000-7000-8000-000000000050', "
                 "'00000000-0000-7000-8000-000000000060', "
-                "'00000000-0000-7000-8000-000000000030', '2026-10-01', '2026-10-31', $3, 1001, $4)",
+                "'00000000-0000-7000-8000-000000000030', '2026-10-01', '2026-10-31', $3, 1001, $4, $5)",
                 ids[name],
                 ORG,
                 name,
                 status,
+                hashlib.sha256(name.encode()).digest(),
+            )
+            await conn.execute(
+                "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+                "VALUES (gen_random_uuid(), $1, 1, '{}')",
+                ids[name],
             )
             await conn.execute(
                 "INSERT INTO approvals (id, request_id, revision, approver_address, typed_data, "
@@ -97,10 +99,8 @@ async def _sweep(database_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         await conn.close()
 
-    monkeypatch.setenv("TP_DATABASE_URL", database_url)
-    get_settings.cache_clear()
-    assert await _expire_invoice_approvals() == 1
-    assert await _expire_invoice_approvals() == 0  # idempotent
+    assert await _expire_invoice_approvals(database_url) == 1
+    assert await _expire_invoice_approvals(database_url) == 0  # idempotent
 
     conn = await asyncpg.connect(database_url.replace("postgresql+asyncpg://", "postgresql://"))
     try:
@@ -127,16 +127,21 @@ async def _sweep(database_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     "TP_TEST_DATABASE_URL" not in os.environ,
     reason="TP_TEST_DATABASE_URL is required for the PostgreSQL expiry sweep test",
 )
-def test_expiry_sweep_runs_against_real_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_expiry_sweep_runs_against_real_postgres() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
-    monkeypatch.delenv("TP_DATABASE_URL", raising=False)
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     command.upgrade(config, "head")
     try:
-        asyncio.run(_sweep(database_url, monkeypatch))
+        asyncio.run(_sweep(database_url))
     finally:
-        monkeypatch.delenv("TP_DATABASE_URL", raising=False)
-        get_settings.cache_clear()
         command.downgrade(config, "base")
+
+
+def test_expiry_sweep_is_scheduled_every_five_minutes() -> None:
+    from treasurypilot_worker.celery_app import app
+
+    entry = app.conf.beat_schedule["expire-invoice-approvals"]
+    assert entry["task"] == "treasurypilot.invoices.expire_approvals"
+    assert entry["schedule"].total_seconds() == 300

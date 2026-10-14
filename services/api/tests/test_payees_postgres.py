@@ -96,7 +96,9 @@ async def _scenario(database_url: str) -> list[AuditEvent]:
                 organization_id=ORG_ID, treasury_id=TREASURY_ID, vendor_id=vendor.id,
                 user_id=USER_ID, label="Main", address=address,
             )  # fmt: skip
-            record = await screening.screen(address=address, chain_id=11155111, payee_id=payee.id)
+            record = await screening.screen(
+                organization_id=ORG_ID, address=address, chain_id=11155111, payee_id=payee.id
+            )
             await payees.finish_screening(
                 organization_id=ORG_ID, treasury_id=TREASURY_ID, payee_id=payee.id,
                 user_id=USER_ID, result=record.result, provider=record.provider,
