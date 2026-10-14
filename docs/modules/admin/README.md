@@ -37,11 +37,11 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 ## 6. Interfaces (Later)
 
-`/admin/tenants`, `/admin/tenants/{id}/health`, `/admin/tenants/{id}/suspend`, `/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with a staff bearer credential and socket-peer IP allowlist. It fails closed when any required credential or allowlist setting is missing. The initial implementation exposes tenant metadata and health counts and persists suspension with a platform event. Planning enforcement must be connected when planning routes and workers are implemented; staff SSO and read-only support sessions remain future work. The IP allowlist matches the TCP peer address, so behind a reverse proxy it sees the proxy address; run the admin API without a proxy hop or add a trusted-proxy setting first. `suspend` is idempotent (one event per transition); an unsuspend route is not yet implemented. Failed staff auth and admin reads are logged, not yet written to `platform_admin_events`.
+`/admin/tenants`, `/admin/tenants/{id}/health`, `/admin/tenants/{id}/suspend`, `/admin/tenants/{id}/support`, `/v1/orgs/{o}/support-grants`, `/admin/usage`, `/orgs/{o}/billing`. Admin API is a separate router with a staff bearer credential and socket-peer IP allowlist. It fails closed when any required credential or allowlist setting is missing. Tenant admins grant a named staff user read-only support access for 1–72 hours and can revoke it; staff can read only the tenant metadata and health summary while the grant is active. Grant and revoke consent is written to the tenant audit chain, and each support read is recorded in the append-only platform admin event log. No support session grants write access or impersonates a tenant member. The IP allowlist matches the TCP peer address, so behind a reverse proxy it sees the proxy address; run the admin API without a proxy hop or add a trusted-proxy setting first. `suspend` is idempotent (one event per transition); an unsuspend route is not yet implemented. The suspension status still needs to be enforced by planning routes and workers.
 
 ## 7–8. Flows and algorithms
 
-Support access: OrgAdmin grants 24 h read-only → staff sees the org via the normal API with a `support` session flag → every request audited in the org's audit log. Metering: monthly job over `request_status_events` (Paid) and `reconciliation_lines` (EXTERNAL_EXPENSE).
+Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: monthly job over `request_status_events` (Paid) and `reconciliation_lines` (EXTERNAL_EXPENSE).
 
 ## 9. Configuration
 
@@ -57,7 +57,7 @@ Invalid platform config → services refuse to start (M1).
 
 ## 12. Test plan (Later)
 
-No admin endpoint can call signer or governance builders (static route test); support grant expiry; usage reconciles with the event store.
+Static route test confirms admin exposes no signer or fund-moving operations; support grant role/expiry/revocation and audit tests; usage reconciles with the event store.
 
 ## 13. Tickets
 

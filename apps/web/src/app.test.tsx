@@ -446,3 +446,58 @@ test('reconciliation refuses to match a payment with incomplete evidence', async
     within(sheet).getByRole('button', { name: /mark as matched/i }),
   ).toBeDisabled();
 });
+
+test('a non-Safe verification error is shown beside the affected wallet field', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`);
+
+  await user.click(await screen.findByRole('button', { name: /continue/i }));
+  await user.type(
+    await screen.findByLabelText(/treasury safe \(T\)/i),
+    `0x${'1'.repeat(36)}dead`,
+  );
+  await user.type(
+    screen.getByLabelText(/payments safe \(O1\)/i),
+    `0x${'2'.repeat(36)}bb22`,
+  );
+  await user.click(
+    screen.getByRole('button', { name: /check safes and continue/i }),
+  );
+
+  expect(
+    await screen.findByText(/no safe contract was found at this address/i),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText(/treasury safe \(T\)/i)).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+});
+
+test('module setup creates a governance transaction for each treasury Safe', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`, { demoWallet: true });
+
+  await user.click(await screen.findByRole('button', { name: /continue/i }));
+  await user.click(await screen.findByRole('button', { name: /use demo safes/i }));
+  await user.click(
+    screen.getByRole('button', { name: /check safes and continue/i }),
+  );
+  await user.type(
+    await screen.findByLabelText(/guardian safe address/i),
+    `0x${'3'.repeat(36)}cc33`,
+  );
+  await user.click(
+    screen.getByRole('button', { name: /prepare module transactions/i }),
+  );
+
+  await waitFor(() => {
+    expect(
+      db.governance.filter(
+        (tx) => tx.treasuryId !== 'trs_main' && tx.kind === 'DEPLOY_MODULE',
+      ),
+    ).toHaveLength(2);
+  });
+  expect(
+    await screen.findByText(/Enable the TreasuryPilot module on O1/i),
+  ).toBeInTheDocument();
+});

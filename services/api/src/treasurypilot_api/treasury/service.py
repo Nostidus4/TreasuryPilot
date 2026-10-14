@@ -35,10 +35,11 @@ OWNER_SETS_DIFFER = "OWNER_SETS_DIFFER"
 class TreasuryRequestError(Exception):
     """A treasury request that fails validation; ``code`` is the API error code."""
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(self, code: str, detail: str, *, address: str | None = None) -> None:
         super().__init__(code)
         self.code = code
         self.detail = detail
+        self.address = address
 
 
 class TreasuryNotFound(Exception):
@@ -250,7 +251,7 @@ class TreasuryService:
         try:
             verified: list[SafeInfo] = await self._verifier.verify(chain_id, addresses)
         except SafeVerificationError as exc:
-            raise TreasuryRequestError(exc.code, exc.detail) from None
+            raise TreasuryRequestError(exc.code, exc.detail, address=exc.address) from None
 
         treasury = Treasury(
             id=uuid.uuid4(),
