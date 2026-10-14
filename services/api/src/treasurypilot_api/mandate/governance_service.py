@@ -37,7 +37,6 @@ from treasurypilot_api.mandate.models import (
 )
 from treasurypilot_api.treasury.config import (
     PlatformConfiguration,
-    PlatformConfigurationError,
     resolve_rpc_url,
 )
 from treasurypilot_api.treasury.models import (

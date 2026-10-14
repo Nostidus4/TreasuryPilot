@@ -266,6 +266,7 @@ def test_rpc_first_skips_failing_providers_and_unparseable_answers(
     assert asyncio.run(service._rpc_first(chain, "eth_call", [])) == "0x01"
     assert asyncio.run(service._rpc_first(chain, "eth_call", [], lambda _: None)) is None
 
+
 class _FakeVerifier:
     def __init__(self, receipt: Mapping[str, object] | None) -> None:
         self._receipt = receipt
