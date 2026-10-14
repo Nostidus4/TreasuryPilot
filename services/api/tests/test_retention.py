@@ -120,7 +120,9 @@ async def _integration_case(database_url: str) -> None:
     engine, sessions = create_session_factory(database_url)
     now = datetime.now(UTC)
     org_id = uuid.uuid4()
-    old_id, young_id, audited_id, cased_id = (uuid.uuid4() for _ in range(4))
+    old_id, young_id, audited_id, entity_cased_id, actor_cased_id, data_cased_id = (
+        uuid.uuid4() for _ in range(6)
+    )
     old_email = "expired-person@example.test"
     try:
         async with sessions() as session, session.begin():
@@ -156,9 +158,27 @@ async def _integration_case(database_url: str) -> None:
                         expires_at=now - timedelta(days=30),
                     ),
                     Invite(
-                        id=cased_id,
+                        id=entity_cased_id,
                         org_id=org_id,
-                        email="Cased-Person@Example.test",
+                        email="Cased-Entity@Example.test",
+                        roles=["Operator"],
+                        token_hash=os.urandom(32),
+                        created_at=now - timedelta(days=40),
+                        expires_at=now - timedelta(days=30),
+                    ),
+                    Invite(
+                        id=actor_cased_id,
+                        org_id=org_id,
+                        email="Cased-Actor@Example.test",
+                        roles=["Operator"],
+                        token_hash=os.urandom(32),
+                        created_at=now - timedelta(days=40),
+                        expires_at=now - timedelta(days=30),
+                    ),
+                    Invite(
+                        id=data_cased_id,
+                        org_id=org_id,
+                        email="Cased-Data@Example.test",
                         roles=["Operator"],
                         token_hash=os.urandom(32),
                         created_at=now - timedelta(days=40),
@@ -176,13 +196,30 @@ async def _integration_case(database_url: str) -> None:
                 entity=AuditEntity(entity_type="invite", entity_id=audited_id),
                 data={},
             )
+            # One upper-cased audit reference per guard branch; invite emails are mixed-case.
+            await write(
+                session,
+                org_id=org_id,
+                actor=AuditActor(actor_type="SYSTEM"),
+                action="invite.revoked",
+                entity=AuditEntity(entity_type="invite", entity_id="CASED-ENTITY@EXAMPLE.TEST"),
+                data={},
+            )
+            await write(
+                session,
+                org_id=org_id,
+                actor=AuditActor(actor_type="USER", actor_id="CASED-ACTOR@EXAMPLE.TEST"),
+                action="invite.accepted",
+                entity=AuditEntity(entity_type="other"),
+                data={},
+            )
             await write(
                 session,
                 org_id=org_id,
                 actor=AuditActor(actor_type="SYSTEM"),
                 action="invite.revoked",
                 entity=AuditEntity(entity_type="other"),
-                data={"email": "cased-person@example.test"},
+                data={"email": "CASED-DATA@EXAMPLE.TEST"},
             )
 
         held = await run_retention(sessions, now=now, dry_run=False)
@@ -201,7 +238,9 @@ async def _integration_case(database_url: str) -> None:
             assert await session.get(Invite, old_id) is None
             assert await session.get(Invite, young_id) is not None
             assert await session.get(Invite, audited_id) is not None
-            assert await session.get(Invite, cased_id) is not None
+            assert await session.get(Invite, entity_cased_id) is not None
+            assert await session.get(Invite, actor_cased_id) is not None
+            assert await session.get(Invite, data_cased_id) is not None
             receipts = list(await session.scalars(select(DeletionReceipt)))
             assert len(receipts) == 1
             assert receipts[0].record_hash == invite_receipt_hash(old_id)

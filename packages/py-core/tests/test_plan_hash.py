@@ -7,7 +7,17 @@ from typing import Any
 import pytest
 from eth_hash.auto import keccak
 
-from treasurypilot_core.eip712 import PAY, PLAN_TYPE, liquidity_cycle_id, plan_hash, step_id
+from treasurypilot_core.eip712 import (
+    PAY,
+    PLAN_TYPE,
+    REFILL,
+    WITHDRAW,
+    liquidity_cycle_id,
+    plan_hash,
+    step_id,
+)
+from treasurypilot_core.money import BaseUnits
+from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 
 VECTORS_DIR = Path(__file__).resolve().parents[3] / "contracts" / "test" / "vectors"
 VECTORS = json.loads((VECTORS_DIR / "plan-hash.json").read_text())
@@ -97,3 +107,33 @@ def test_the_plan_treasury_is_the_module_clone_not_safe_t() -> None:
     approval = json.loads((VECTORS_DIR / "payment-approval.json").read_text())
     for plan in PLANS.values():
         assert plan["treasury"] == approval["domain"]["verifyingContract"]
+
+
+def test_an_execution_plan_hashes_like_the_typescript_oracle() -> None:
+    vector = PLANS["request"]
+    actions = {WITHDRAW: Action.WITHDRAW, REFILL: Action.REFILL, PAY: Action.PAY}
+    plan = ExecutionPlan(
+        request_id=bytes.fromhex(vector["requestId"][2:]),
+        treasury=vector["treasury"],
+        chain_id=vector["chainId"],
+        steps=[
+            PlanStep(
+                seq=s["seq"],
+                step_id=bytes.fromhex(s["stepId"][2:]),
+                action=actions[s["action"]],
+                from_wallet=s["from"],
+                to=s["to"],
+                asset=s["asset"],
+                amount=BaseUnits(int(s["amount"])),
+            )
+            for s in vector["steps"]
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+    m = plan.message()
+
+    assert (
+        "0x" + plan_hash(m["requestId"], m["treasury"], m["chainId"], m["steps"]).hex()
+        == (vector["planHash"])
+    )

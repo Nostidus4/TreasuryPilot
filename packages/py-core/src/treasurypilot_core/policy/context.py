@@ -18,7 +18,7 @@ from treasurypilot_core.domain.models import (
     FrozenSequence,
     NonNegativeInt,
 )
-from treasurypilot_core.eip712 import PAYMENT_APPROVAL_TYPE
+from treasurypilot_core.eip712 import PAY, PAYMENT_APPROVAL_TYPE, REFILL, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 
 type Address = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
@@ -39,6 +39,10 @@ class Action(StrEnum):
     SWAP = "SWAP"  # P2
 
 
+# The module's uint8 action codes (M08 §8.4); SWAP is P2 and not mapped to SWAP_IN yet.
+_ACTION_CODES = {Action.PAY: PAY, Action.REFILL: REFILL, Action.WITHDRAW: WITHDRAW}
+
+
 class PlanStep(_HexModel):
     seq: NonNegativeInt
     step_id: Bytes32
@@ -56,6 +60,26 @@ class ExecutionPlan(_HexModel):
     steps: FrozenSequence[PlanStep]
     planner_source: Literal["AI", "DETERMINISTIC", "RULE_BASED"]
     evidence_ids: FrozenSequence[str]
+
+    def message(self) -> dict[str, Any]:
+        """The §8.3 Plan mapping that ``plan_hash`` and the attestation take, steps in plan order."""
+        return {
+            "requestId": "0x" + self.request_id.hex(),
+            "treasury": self.treasury,
+            "chainId": self.chain_id,
+            "steps": [
+                {
+                    "seq": s.seq,
+                    "stepId": "0x" + s.step_id.hex(),
+                    "action": _ACTION_CODES[s.action],
+                    "from": s.from_wallet,
+                    "to": s.to,
+                    "asset": s.asset,
+                    "amount": int(s.amount),
+                }
+                for s in self.steps
+            ],
+        }
 
 
 class MandateView(FrozenModel):
