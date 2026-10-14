@@ -1,7 +1,7 @@
 """create the domain-event outbox and in-app notification schema
 
 Revision ID: 20261014_0020
-Revises: 20261014_0018
+Revises: 20261014_0019
 Create Date: 2026-10-14 00:00:00
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261014_0020"
-down_revision: str | None = "20261014_0018"
+down_revision: str | None = "20261014_0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
