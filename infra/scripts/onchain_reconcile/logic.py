@@ -72,6 +72,8 @@ def compare_receipt(row: Row, receipt: dict[str, Any] | None, token: str) -> lis
         problems.append(f"block db={row.block_number} chain={chain_block}")
     if str(receipt.get("to") or "").lower() != token.lower():
         problems.append("receipt.to is not the token")
+    if chain_status == "failed":  # a reverted tx emits no Transfer log
+        return problems
     logs = [log for log in receipt.get("logs", []) if is_transfer_log(log, token)]
     if len(logs) != 1:
         problems.append(f"{len(logs)} Transfer logs (want 1)")
@@ -94,6 +96,10 @@ def find_orphans(rows: list[Row], logs: list[TransferLog]) -> list[tuple[Transfe
         row = known.get(log.tx_hash)
         if row is None:
             orphans.append((log, "no DB row for tx"))
+        elif row.status != "confirmed":
+            orphans.append((log, f"DB row status={row.status} but chain has Transfer"))
+        elif row.kind != ("mint" if log.from_addr == ZERO_ADDRESS else "transfer"):
+            orphans.append((log, f"DB row kind={row.kind} differs from log"))
         elif (log.from_addr, log.to_addr, log.amount) != (
             expected_from(row),
             row.to_addr,

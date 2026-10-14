@@ -52,7 +52,9 @@ async def main() -> None:
         await conn.execute(
             text(
                 "INSERT INTO sandbox.test_tokens(chain_id, address, deploy_tx_hash, deploy_block)"
-                " VALUES (:c, :a, :t, :b) ON CONFLICT DO NOTHING"
+                " VALUES (:c, :a, :t, :b) ON CONFLICT (chain_id, address)"
+                " DO UPDATE SET deploy_block = EXCLUDED.deploy_block,"
+                " deploy_tx_hash = EXCLUDED.deploy_tx_hash, created_at = now()"
             ),
             {"c": chain_id, "a": to_bytes(token), "t": to_bytes(tx_hash), "b": block},
         )

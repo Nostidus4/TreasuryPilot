@@ -14,6 +14,7 @@ from logic import (
     TRANSFER_TOPIC,
     Row,
     TransferLog,
+    block_ranges,
     compare_receipt,
     find_orphans,
     parse_transfer_log,
@@ -53,7 +54,7 @@ def fetch_logs(rpc_url: str, token: str, start: int) -> list[TransferLog]:
     span = MAX_LOG_RANGE
     low = start
     while low <= latest:
-        high = min(low + span - 1, latest)
+        high = block_ranges(low, latest, span)[0][1]  # first chunk only; span may shrink below
         params = {
             "fromBlock": hex(low),
             "toBlock": hex(high),
@@ -86,7 +87,9 @@ async def main() -> int:
                 ),
                 {"c": chain_id},
             )
-        ).one()
+        ).one_or_none()
+        if token_row is None:
+            raise SystemExit(f"No sandbox token for chain {chain_id}; run deploy_token.py first")
         rows = await load_rows(conn, chain_id, bytes(token_row.address))
     await engine.dispose()
     token = to_hex(token_row.address)

@@ -41,7 +41,9 @@ async def main() -> None:
                 ),
                 {"c": chain_id},
             )
-        ).one()
+        ).one_or_none()
+    if token_row is None:
+        raise SystemExit(f"No sandbox token for chain {chain_id}; run deploy_token.py first")
     token = to_hex(token_row.address)
     recipients = [fresh_address(rpc_url) for _ in TRANSFER_AMOUNTS]
     operations = [
@@ -70,11 +72,25 @@ async def main() -> None:
                     "k": kind,
                 },
             )
-        sent = json.loads(foundry(["cast", "send", token, *call, "--json"], rpc_url, signer=True))
-        tx_hash = sent["transactionHash"]
-        receipt = rpc(rpc_url, "eth_getTransactionReceipt", [tx_hash])
-        status = "confirmed" if int(receipt["status"], 16) == 1 else "failed"
-        block = int(receipt["blockNumber"], 16)
+        tx_hash = None
+        try:
+            sent = json.loads(
+                foundry(["cast", "send", token, *call, "--json"], rpc_url, signer=True)
+            )
+            tx_hash = sent["transactionHash"]
+            receipt = rpc(rpc_url, "eth_getTransactionReceipt", [tx_hash])
+            status = "confirmed" if int(receipt["status"], 16) == 1 else "failed"
+            block = int(receipt["blockNumber"], 16)
+        except BaseException:  # never leave the committed pending row orphaned; keep any hash
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE sandbox.test_transfers SET status = 'failed',"
+                        " tx_hash = COALESCE(:h, tx_hash), updated_at = now() WHERE id = :i"
+                    ),
+                    {"h": to_bytes(tx_hash) if tx_hash else None, "i": row_id},
+                )
+            raise
         async with engine.begin() as conn:
             await conn.execute(
                 text(

@@ -75,8 +75,16 @@ def rpc(url: str, method: str, params: list[Any]) -> Any:
             raise RuntimeError(f"RPC {method} failed: HTTP {error.code}") from None
     except urllib.error.URLError:
         raise RuntimeError(f"RPC {method} failed: network error") from None
+    except ValueError:  # 200 with a non-JSON body
+        raise RuntimeError(f"RPC {method} failed: response is not JSON") from None
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"RPC {method} failed: unexpected response {str(payload)[:200]}")
     if "error" in payload:
-        raise RuntimeError(f"RPC {method} failed: {payload['error'].get('message', 'error')}")
+        detail = payload["error"]
+        message = detail.get("message", detail) if isinstance(detail, dict) else detail
+        raise RuntimeError(f"RPC {method} failed: {message}")
+    if "result" not in payload:
+        raise RuntimeError(f"RPC {method} failed: no result in {str(payload)[:200]}")
     return payload["result"]
 
 

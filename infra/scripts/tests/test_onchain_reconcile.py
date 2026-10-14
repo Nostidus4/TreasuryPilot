@@ -146,3 +146,21 @@ def test_span_from_limit_error() -> None:
     assert logic.span_from_limit_error(message) == 10
     assert logic.span_from_limit_error("range limited to up to 2,000 block") == 2000
     assert logic.span_from_limit_error("unrelated failure") is None
+
+
+def test_reverted_tx_with_failed_row_is_in_sync() -> None:
+    row = make_row(status="failed")
+    assert logic.compare_receipt(row, make_receipt(status=0, logs=[]), TOKEN) == []
+
+
+def test_log_for_unconfirmed_row_is_flagged() -> None:
+    log = logic.parse_transfer_log(make_log())
+    for status in ("pending", "failed"):
+        orphans = logic.find_orphans([make_row(status=status)], [log])
+        assert orphans == [(log, f"DB row status={status} but chain has Transfer")]
+
+
+def test_log_with_wrong_row_kind_is_flagged() -> None:
+    log = logic.parse_transfer_log(make_log(sender=logic.ZERO_ADDRESS))
+    row = make_row(from_addr=logic.ZERO_ADDRESS)  # kind=transfer, but the log is a mint
+    assert logic.find_orphans([row], [log]) == [(log, "DB row kind=transfer differs from log")]
