@@ -33,6 +33,12 @@ interface ITreasuryPilotModule {
         Limits supply;
     }
 
+    struct AssetPolicy {
+        uint64 version;
+        Limits pay;
+        Limits refill;
+    }
+
     struct BufferInit {
         address wallet;
         uint256 buffer;
@@ -96,6 +102,15 @@ interface ITreasuryPilotModule {
     event MandateConfigured(uint64 version, uint64 expiresAt);
     event ApproversChanged(address[] added, address[] removed);
     event BufferSet(address indexed wallet, uint256 buffer, uint256 target);
+    event AssetPolicySet(
+        address indexed asset,
+        bool enabled,
+        uint128 payPerRequest,
+        uint128 payDaily,
+        uint128 refillPerRequest,
+        uint128 refillDaily
+    );
+    event AssetBufferSet(address indexed asset, address indexed wallet, uint256 buffer, uint256 target);
     event PayeeAdded(address indexed payee, uint64 activeFrom);
     event PayeeDeactivated(address indexed payee);
     event ExceptionGranted(bytes32 indexed requestId, uint128 amount, address payee, uint64 expiry, uint64 version);
@@ -146,6 +161,10 @@ interface ITreasuryPilotModule {
     function setApprovers(address[] calldata add, address[] calldata remove) external;
     /// @notice Only Safe T may set floors and operational targets.
     function setBuffer(address wallet, uint256 buffer, uint256 target) external;
+    /// @notice Only Safe T may configure a non-primary asset's allowlist and pay/refill caps.
+    function setAssetPolicy(address asset, bool enabled, Limits calldata pay, Limits calldata refill) external;
+    /// @notice Only Safe T may set an asset-specific floor and refill target.
+    function setAssetBuffer(address asset, address wallet, uint256 buffer, uint256 target) external;
     /// @notice Only Safe T may register a payee; always starts a new cooling period.
     function addPayee(address payee) external;
     /// @notice Only Safe T may deactivate a known payee.
@@ -195,7 +214,12 @@ interface ITreasuryPilotModule {
     function operationalList() external view returns (address[] memory);
     function payeeStatus(address payee) external view returns (PayeeState state, uint64 activeFrom);
     function usedToday(uint8 action) external view returns (uint256);
+    function usedToday(uint8 action, address asset) external view returns (uint256);
     function remainingToday(uint8 action) external view returns (uint256);
+    function remainingToday(uint8 action, address asset) external view returns (uint256);
+    function isAssetAllowed(address asset) external view returns (bool);
+    function bufferOf(address asset, address wallet) external view returns (uint256);
+    function targetOf(address asset, address wallet) external view returns (uint256);
     function domainSeparator() external view returns (bytes32);
     function hashApproval(PaymentApproval calldata ap) external view returns (bytes32);
     /// @notice Signature wire format is abi.encode(approver, signature), including ERC-1271.

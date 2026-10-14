@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -17,7 +17,9 @@ from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.invoices.requests import (
     RequestCreate,
     RequestPatch,
+    _active_mandate_config_stmt,
     _amount,
+    _asset_pay_limit,
     _request_id,
     _validate_dates,
     _validated_terms,
@@ -36,6 +38,49 @@ def test_manual_request_amount_must_be_positive() -> None:
     with pytest.raises(AuthFailure) as error:
         _amount("0", 6)
     assert error.value.code == "AMOUNT_NOT_POSITIVE"
+
+
+def test_secondary_asset_requires_its_own_active_pay_policy_and_limit() -> None:
+    asset_id = uuid.uuid4()
+    other_asset_id = uuid.uuid4()
+    window = {
+        "validFrom": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        "expiresAt": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    config = {
+        **window,
+        "assetPolicies": [
+            {
+                "assetId": str(asset_id),
+                "limits": {"PAY": {"perRequest": "5000", "daily": "10000"}},
+            }
+        ],
+    }
+    assert _asset_pay_limit(config, asset_id) == 5000
+    assert _asset_pay_limit(config, other_asset_id) is None
+    assert _asset_pay_limit({**config, "expiresAt": window["validFrom"]}, asset_id) is None
+    assert _asset_pay_limit({"assetPolicies": []}, asset_id) is None
+    assert (
+        _asset_pay_limit(
+            {
+                **window,
+                "assetPolicies": [
+                    {"assetId": str(asset_id), "limits": {"PAY": {"perRequest": "NaN"}}}
+                ],
+            },
+            asset_id,
+        )
+        is None
+    )
+
+
+def test_active_asset_policy_lookup_is_scoped_to_treasury() -> None:
+    treasury_id = uuid.uuid4()
+    statement = _active_mandate_config_stmt(treasury_id)
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+    assert "mandate_versions.treasury_id =" in compiled
+    assert "mandate_versions.status =" in compiled
+    assert "mandate_versions.version DESC" in compiled
 
 
 def test_fiat_fields_must_be_supplied_as_a_pair_and_use_minor_units() -> None:

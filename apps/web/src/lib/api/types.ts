@@ -232,6 +232,15 @@ export type MandateStatus =
   | 'Superseded'
   | 'Expired';
 
+export interface MandateAssetPolicy {
+  assetId: string;
+  limits: {
+    PAY: { perRequest: string; daily: string };
+    REFILL: { perRequest: string; daily: string };
+  };
+  buffers: Array<{ wallet: Hex; minimum: string; target?: string }>;
+}
+
 export interface MandateConfig {
   actions: Array<'REFILL' | 'PAY'>;
   limits: {
@@ -239,6 +248,7 @@ export interface MandateConfig {
     REFILL: { perRequest: string; daily: string };
   };
   buffers: Array<{ wallet: WalletRole; minimum: string; target: string }>;
+  assetPolicies?: MandateAssetPolicy[];
   executor: Hex;
   approvers: Hex[];
   guardian: Hex;

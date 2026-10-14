@@ -13,7 +13,7 @@ M02 registers **what a treasury is**: one chain, one payment stablecoin, one sou
 |---|---|
 | Platform chain config and deployments manifest | Mandate content (M03) |
 | Asset registry with on-chain decimals and test labels | Reading balances for planning (M06) |
-| Treasury creation with Safe verification; multiple per-chain treasuries and organization list view | Multiple assets per treasury (Later) |
+| Treasury creation with Safe verification; multiple per-chain treasuries and organization list view | Multiple assets per treasury (Later; TRS-L02) |
 | Safe config snapshots and change detection | |
 | Module deploy (factory) + enable on T/O1/O2 (via MDT-009) | |
 | Coverage computation and Owner acknowledgment | |
@@ -109,3 +109,7 @@ TRS-001 → TRS-002 → TRS-003 → TRS-004 → TRS-005 → TRS-006 → TRS-007 
 ## 15. v0.3 changes (ADR-019)
 
 The deployments manifest adds `AAVE_POOL`, `AAVE_POOL_ADDRESSES_PROVIDER`, `ATOKEN` and the Aave test USDC; the demo treasury is T + one operational Safe (O1). Coverage rules are unchanged (the module calls Aave through Safe T; Aave is not a Safe module).
+
+## 16. Later: multiple payment assets (TRS-L02)
+
+The treasury remains anchored to its primary asset for backwards compatibility. A mandate may add other configured ERC-20 assets on the same chain, each with independent PAY/REFILL limits and explicit buffer/target values for Safe T and every operational Safe. Bundle previews configure all asset-specific wallet buffers before enabling the asset policy. Invoice requests select an asset; a secondary asset is accepted only if it is on the treasury chain and listed with a PAY limit in that treasury's active mandate. Its per-request limit is checked using the selected token's decimals and integer base units. Daily caps and refill behavior remain enforced by the module's per-asset policy/counters.

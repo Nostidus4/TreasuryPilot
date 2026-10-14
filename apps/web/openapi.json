@@ -1452,6 +1452,33 @@
         "title": "MagicLinkRequest",
         "type": "object"
       },
+      "MandateAssetPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "buffers": {
+            "items": {
+              "$ref": "#/components/schemas/WalletBuffer"
+            },
+            "title": "Buffers",
+            "type": "array"
+          },
+          "limits": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ActionLimits"
+            },
+            "title": "Limits",
+            "type": "object"
+          }
+        },
+        "required": ["assetId", "limits", "buffers"],
+        "title": "MandateAssetPolicy",
+        "type": "object"
+      },
       "MandateConfig": {
         "additionalProperties": false,
         "properties": {
@@ -1489,6 +1516,20 @@
               }
             ],
             "title": "Approvers"
+          },
+          "assetPolicies": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MandateAssetPolicy"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetpolicies"
           },
           "buffers": {
             "anyOf": [

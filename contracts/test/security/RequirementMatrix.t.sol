@@ -71,7 +71,10 @@ contract RequirementMatrixTest is TreasuryFixture {
         vm.prank(executor);
         module.pay(ap, signature, bytes32(uint256(2)));
         require(module.usedToday(module.PAY()) == 100e6, "execution day cap");
-        require(module.usedOn(keccak256(abi.encode(module.PAY(), previousDay))) == 100e6, "previous day preserved");
+        require(
+            module.usedOn(keccak256(abi.encode(module.PAY(), address(token), previousDay))) == 100e6,
+            "previous day preserved"
+        );
     }
 
     function _grant(uint256 request, address payee, uint64 expiry) internal {
