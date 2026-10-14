@@ -202,3 +202,16 @@ class RpcSafeVerifier:
             except (_ProviderError, PlatformConfigurationError, OSError, ValueError):
                 continue
         raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
+
+    async def call(self, chain_id: int, method: str, params: list[object]) -> Any:
+        """One JSON-RPC read with the same provider failover as ``verify``."""
+        chain = self._chain(chain_id)
+        for template in chain.rpc_urls:
+            if not template.startswith(("http://", "https://")):
+                continue
+            try:
+                url = resolve_rpc_url(template, self._environ)
+                return await asyncio.to_thread(_rpc, url, method, params)
+            except (_ProviderError, _Reverted, PlatformConfigurationError, OSError, ValueError):
+                continue
+        raise RpcUnavailable(f"no RPC provider answered for chain {chain_id}")
