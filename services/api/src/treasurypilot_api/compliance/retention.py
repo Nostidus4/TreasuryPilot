@@ -157,6 +157,7 @@ async def _run_org(
                         AuditLog.org_id == Invite.org_id,
                         or_(
                             AuditLog.entity_id == cast(Invite.id, String),
+                            func.lower(AuditLog.entity_id) == email,
                             func.lower(AuditLog.actor_id) == email,
                             func.strpos(func.lower(cast(AuditLog.data, String)), email) > 0,
                         ),
