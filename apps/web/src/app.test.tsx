@@ -424,6 +424,25 @@ test('pausing asks for a reason and shows Pausing, then Paused on-chain', async 
   ).toBeInTheDocument();
 });
 
+test('an expired mandate stays visible and links Owners to review it', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.treasuries.trs_main.mandate!.status = 'Expired';
+    },
+  });
+
+  expect(await screen.findByText('Mandate expired')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Review mandate' })).toHaveAttribute(
+    'href',
+    `${T}/mandate`,
+  );
+  expect(
+    screen.getByText(
+      'The agent cannot run new plans until an Owner activates a current mandate.',
+    ),
+  ).toBeInTheDocument();
+});
+
 test('a manual request validates the amount before it reaches the API', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/requests/new`);
