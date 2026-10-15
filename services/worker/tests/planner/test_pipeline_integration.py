@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,8 @@ from alembic.config import Config
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
+from treasurypilot_api.audit.chain import DumpRecord, verify_chain
+from treasurypilot_core.domain.fee_policy import FeeDecision
 from treasurypilot_core.eip712 import payment_approval_typed_data
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.agent.plan_proposer import PlanProposalRejected
@@ -26,7 +29,12 @@ from treasurypilot_worker.attestation import attest
 from treasurypilot_worker.chain.snapshot import Snapshot, SnapshotPurpose, SnapshotScope
 from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xact_lock
 from treasurypilot_worker.planner.ai import CeleryAiProposer
-from treasurypilot_worker.planner.pipeline import AiOutcome, PlannerDeps, plan_request
+from treasurypilot_worker.planner.pipeline import (
+    AiOutcome,
+    PlannerDeps,
+    _fee_assessment,
+    plan_request,
+)
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
 from treasurypilot_worker.trigger.cycles import CycleSkipReason, run_execution_cycle
 
@@ -389,6 +397,7 @@ async def test_ai_disabled_produces_a_valid_deterministic_plan(
     assert (outcome.status, outcome.planner_source) == ("Attested", "DETERMINISTIC")
     plan = await pool.fetchrow("SELECT * FROM plans WHERE id = $1", outcome.plan_id)
     assert plan["chosen_reason"] and plan["plan_hash"] and plan["attestation_id"]
+    assert plan["fee_estimate_wei"] > 0
     assert plan["fee_estimate_wei"] == 2_000  # REFILL (balance 100 < 1000 + buffer) then PAY
     steps = await pool.fetch(
         "SELECT seq, action, amount FROM plan_steps WHERE plan_id = $1 ORDER BY seq",
@@ -516,3 +525,171 @@ async def test_fee_over_threshold_with_time_left_defers_without_a_review(
     # The cooldown stops the next 60 s cycle from planning (and calling the LLM) again at once.
     again, claimed = await _cycle(pool, world)
     assert not again.started and not claimed
+
+
+@pooled
+async def test_finish_writes_a_verifiable_audit_record(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    outcome = await _plan(pool, database_url, world)
+
+    rows = await pool.fetch("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY seq", world.org)
+    assert [(r["action"], r["entity_id"]) for r in rows] == [
+        ("plan.finished", str(outcome.plan_id))
+    ]
+    data = json.loads(rows[0]["data"])
+    assert data["status"] == "Attested" and data["plan_hash"] and data["reason_codes"] is not None
+    head = await pool.fetchrow("SELECT * FROM audit_heads WHERE org_id = $1", world.org)
+    records = [
+        DumpRecord(
+            seq=r["seq"],
+            org_id=r["org_id"],
+            at=r["at"],
+            actor_type=r["actor_type"],
+            actor_id=r["actor_id"],
+            action=r["action"],
+            entity_type=r["entity_type"],
+            entity_id=r["entity_id"],
+            data=json.loads(r["data"]),
+            prev_hash=bytes(r["prev_hash"]),
+            hash=bytes(r["hash"]),
+        )
+        for r in rows
+    ]
+    # The API's verifier accepts what the worker wrote, including the stored head.
+    assert verify_chain(records, SimpleNamespace(**dict(head))).status == "INTACT"
+
+
+@pooled
+async def test_finishing_a_plan_twice_keeps_one_attestation(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    first = await _plan(pool, database_url, world)
+    assert first.status == "Attested"
+    # A crash after the attestation committed but before the plan write: the plan is still Draft.
+    await pool.execute(
+        "UPDATE plans SET status = 'Draft', attestation_id = NULL WHERE id = $1", first.plan_id
+    )
+    again = await plan_request(pool, first.plan_id, _deps(pool, database_url, world))
+
+    assert again is not None and again.status == "Attested"
+    assert (
+        await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", first.plan_id)
+        == 1
+    )
+    assert (
+        await pool.fetchval("SELECT attestation_id FROM plans WHERE id = $1", first.plan_id)
+        is not None
+    )
+
+
+@pooled
+async def test_attested_fees_stop_counting_the_next_day(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    outcome = await _plan(pool, database_url, world)  # fee 2_000, still Attested
+    await pool.execute(
+        "UPDATE treasury_fee_policies SET per_plan_threshold_wei = $2, daily_budget_wei = $3 "
+        "WHERE treasury_id = $1",
+        world.treasury,
+        10**18,
+        10_000,
+    )
+    now = datetime.now(UTC)
+
+    async def assess() -> FeeDecision:
+        async with pool.acquire() as connection:
+            decision, _ = await _fee_assessment(
+                connection, world.treasury, 9_000, int((now + timedelta(days=2)).timestamp()), now
+            )
+        return decision
+
+    assert await assess() is not FeeDecision.PROCEED  # 2_000 in flight + 9_000 > 10_000
+    await pool.execute(
+        "UPDATE plans SET updated_at = now() - interval '2 days' WHERE id = $1", outcome.plan_id
+    )
+    assert await assess() is FeeDecision.PROCEED
+
+
+@pooled
+async def test_a_plan_waiting_on_a_fee_policy_is_reclaimed_after_acceptance(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, fee_threshold=1, due_offset=-1)
+    waiting = await _plan(pool, database_url, world)
+    assert waiting.status == "AwaitingFeeAcceptance"
+    stuck, _ = await _cycle(pool, world)
+    assert not stuck.started  # the open plan holds the request
+
+    await pool.execute(
+        "UPDATE plans SET created_at = now() - interval '1 hour' WHERE id = $1", waiting.plan_id
+    )
+    await pool.execute(
+        "UPDATE treasury_fee_policies SET per_plan_threshold_wei = $2, accepted_at = now() "
+        "WHERE treasury_id = $1",
+        world.treasury,
+        10**18,
+    )
+    result, claimed = await _cycle(pool, world)
+
+    assert result.started and len(claimed) == 1 and claimed[0] != waiting.plan_id
+    assert (
+        await pool.fetchval("SELECT status FROM plans WHERE id = $1", waiting.plan_id) == "Expired"
+    )
+
+
+@pooled
+async def test_unavailable_inputs_expire_the_plan(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    _, claimed = await _cycle(pool, world)
+    (plan_id,) = claimed
+    await pool.execute(
+        "UPDATE payment_requests SET onchain_request_id = NULL WHERE id = $1", world.request
+    )
+
+    outcome = await plan_request(pool, plan_id, _deps(pool, database_url, world))
+
+    assert outcome is not None and outcome.status == "Expired"
+    assert await pool.fetchval("SELECT status FROM plans WHERE id = $1", plan_id) == "Expired"
+
+
+@pooled
+async def test_reattest_renews_the_attestation_for_the_same_plan(
+    pool: Any, database_url: str
+) -> None:
+    from treasurypilot_core.policy import Decision as PolicyDecision
+    from treasurypilot_worker.executor.plan_loader import load_plan
+    from treasurypilot_worker.planner import reattest as module
+    from treasurypilot_worker.planner.context import load_inputs
+
+    world = await _seed(pool)
+    outcome = await _plan(pool, database_url, world)
+    loaded = await load_plan(pool, outcome.plan_id)
+    assert loaded is not None
+    inputs = await load_inputs(pool, loaded.plan, world.treasury, executor=EXECUTOR)
+
+    async def fresh(*_: Any) -> Snapshot:
+        return _chain(world)
+
+    class Rpc:
+        async def call(self, _method: str, _params: list[Any]) -> str:
+            return hex(100)
+
+    original, module.take_snapshot = module.take_snapshot, fresh
+    renew = module.reattest_fn(
+        pool,
+        loaded,
+        inputs,
+        rpc=Rpc(),  # type: ignore[arg-type]
+        attest=_deps(pool, database_url, world).attest,
+        fees={"feeCapWei": 1},
+    )
+    try:
+        run = await renew(0)
+    finally:
+        module.take_snapshot = original
+
+    assert not isinstance(run, PolicyDecision)
+    assert run.plan_id == outcome.plan_id and len(run.steps) == len(loaded.plan.steps)
+    assert run.valid_until >= loaded.valid_until
+    assert (
+        await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", outcome.plan_id)
+        == 2
+    )

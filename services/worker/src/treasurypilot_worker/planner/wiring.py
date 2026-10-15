@@ -19,36 +19,20 @@ from treasurypilot_worker.chain.snapshot import SnapshotPurpose, SnapshotScope, 
 from treasurypilot_worker.config import Settings
 from treasurypilot_worker.planner.ai import PROPOSE_TASK, CeleryAiProposer
 from treasurypilot_worker.planner.pipeline import PlannerDeps
+from treasurypilot_worker.planner.reattest import AttestFn
 
 # shortcut: a fixed per-step gas budget for the module's ERC-20 calls; swap in eth_estimateGas
 # once the executor exposes its calldata builder.
 STEP_GAS = 150_000
 
 
-def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
+def build_attest(settings: Settings) -> AttestFn:
+    """Sign and store a PlanAttestation with the policy key (used by planning and re-attestation)."""
+
     if not (settings.executor_address and settings.database_url):
-        raise RuntimeError("TP_EXECUTOR_ADDRESS and DATABASE_URL are required for planning")
+        raise RuntimeError("TP_EXECUTOR_ADDRESS and DATABASE_URL are required for attestation")
     database_url, executor = settings.database_url, settings.executor_address
     key = load_policy_key(settings.policy_keystore_path, settings.policy_keystore_password_file)
-
-    async def snapshot(treasury_id: uuid.UUID, scope: SnapshotScope) -> Any:
-        taken = await take_snapshot(pool, treasury_id, SnapshotPurpose.PLAN, scope)
-        return taken, taken.block_number  # read at "latest": the head is the snapshot block
-
-    async def estimate_fee(treasury_id: uuid.UUID, plan: ExecutionPlan) -> int:
-        row = await pool.fetchrow(
-            "SELECT c.rpc_urls, (SELECT max_fee_multiplier_bps FROM treasury_fee_policies "
-            " WHERE treasury_id = t.id AND accepted_at IS NOT NULL AND superseded_at IS NULL) "
-            "AS multiplier FROM treasuries t JOIN chains c ON c.chain_id = t.chain_id "
-            "WHERE t.id = $1",
-            treasury_id,
-        )
-        rpc = build_rpc_client(decode_rpc_urls(row["rpc_urls"]))
-        gas_price = int(await rpc.call("eth_gasPrice", []), 16)
-        multiplier = row["multiplier"] or PRESETS[FeePreset.NORMAL].max_fee_multiplier_bps
-        max_fee = gas_price * multiplier // 10_000
-        steps = len(plan.steps)
-        return estimate_plan_fee_wei([STEP_GAS] * steps, [max_fee] * steps)
 
     async def issue(
         plan_id: uuid.UUID,
@@ -69,6 +53,33 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
             now=now,
         )
 
+    return issue
+
+
+def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
+    if not (settings.executor_address and settings.database_url):
+        raise RuntimeError("TP_EXECUTOR_ADDRESS and DATABASE_URL are required for planning")
+    executor = settings.executor_address
+
+    async def snapshot(treasury_id: uuid.UUID, scope: SnapshotScope) -> Any:
+        taken = await take_snapshot(pool, treasury_id, SnapshotPurpose.PLAN, scope)
+        return taken, taken.block_number  # read at "latest": the head is the snapshot block
+
+    async def estimate_fee(treasury_id: uuid.UUID, plan: ExecutionPlan) -> int:
+        row = await pool.fetchrow(
+            "SELECT c.rpc_urls, (SELECT max_fee_multiplier_bps FROM treasury_fee_policies "
+            " WHERE treasury_id = t.id AND accepted_at IS NOT NULL AND superseded_at IS NULL) "
+            "AS multiplier FROM treasuries t JOIN chains c ON c.chain_id = t.chain_id "
+            "WHERE t.id = $1",
+            treasury_id,
+        )
+        rpc = build_rpc_client(decode_rpc_urls(row["rpc_urls"]))
+        gas_price = int(await rpc.call("eth_gasPrice", []), 16)
+        multiplier = row["multiplier"] or PRESETS[FeePreset.NORMAL].max_fee_multiplier_bps
+        max_fee = gas_price * multiplier // 10_000
+        steps = len(plan.steps)
+        return estimate_plan_fee_wei([STEP_GAS] * steps, [max_fee] * steps)
+
     def ask(request: dict[str, Any]) -> dict[str, Any]:
         result = app.send_task(PROPOSE_TASK, kwargs=request, queue="ai")
         # Blocking inside a task is safe here: the AI task runs on another queue and worker.
@@ -81,6 +92,6 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
         take_snapshot=snapshot,
         executor=executor,
         estimate_fee=estimate_fee,
-        attest=issue,
+        attest=build_attest(settings),
         ai=CeleryAiProposer(ask) if settings.planning_ai_enabled else None,
     )

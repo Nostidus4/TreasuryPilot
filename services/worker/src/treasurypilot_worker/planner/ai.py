@@ -36,6 +36,13 @@ _ERRORS: dict[str, Callable[[], AiError]] = {
 }
 
 
+def _failed(code: str, error: AiError, **extra: Any) -> dict[str, Any]:
+    # shortcut: only a failed post-check carries its logged call id; other failures are logged
+    # by the adapter without handing the id back, so those plans record no ai_call_ids.
+    call_id = getattr(error, "ai_call_id", None)
+    return {"error": code, **extra, **({"ai_call_id": call_id} if call_id else {})}
+
+
 def run_proposal(
     adapter: AiAdapter,
     backend: Any,
@@ -55,17 +62,17 @@ def run_proposal(
             tools=build_tools(backend, org_id),
         )
     except (PlanProposalRejected, AiInputRejected) as error:
-        return {"error": "PLAN_REJECTED", "detail": str(error)}
-    except AiTimeout:
-        return {"error": "AI_TIMEOUT"}
-    except AiBudgetExceeded:
-        return {"error": "AI_BUDGET_EXCEEDED"}
-    except AiSchemaError:
-        return {"error": "AI_SCHEMA"}
-    except AiToolLimitExceeded:
-        return {"error": "AI_TOOL_LIMIT"}
-    except AiError:
-        return {"error": "AI_UNAVAILABLE"}
+        return _failed("PLAN_REJECTED", error, detail=str(error))
+    except AiTimeout as error:
+        return _failed("AI_TIMEOUT", error)
+    except AiBudgetExceeded as error:
+        return _failed("AI_BUDGET_EXCEEDED", error)
+    except AiSchemaError as error:
+        return _failed("AI_SCHEMA", error)
+    except AiToolLimitExceeded as error:
+        return _failed("AI_TOOL_LIMIT", error)
+    except AiError as error:
+        return _failed("AI_UNAVAILABLE", error)
     return {"proposal": result.output.model_dump(mode="json"), "ai_call_id": result.ai_call_id}
 
 
@@ -77,10 +84,12 @@ def outcome_from_payload(payload: dict[str, Any]) -> AiOutcome:
             uuid.UUID(call_id) if call_id else None,
         )
     code = payload.get("error", "AI_UNAVAILABLE")
+    failed_call = payload.get("ai_call_id")
+    call_id = uuid.UUID(failed_call) if failed_call else None
     if code == "PLAN_REJECTED":
-        return AiOutcome(PlanProposalRejected(payload.get("detail", "proposal rejected")))
+        return AiOutcome(PlanProposalRejected(payload.get("detail", "proposal rejected")), call_id)
     make = _ERRORS.get(code, lambda: AiUnavailable("AI worker unavailable", retryable=False))
-    return AiOutcome(make())
+    return AiOutcome(make(), call_id)
 
 
 class CeleryAiProposer:

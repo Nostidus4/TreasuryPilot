@@ -54,11 +54,12 @@ from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
-from treasurypilot_worker.planner.context import load_inputs
 from treasurypilot_worker.planner.ai import PROPOSE_TASK, run_proposal
+from treasurypilot_worker.planner.context import load_inputs
 from treasurypilot_worker.planner.pipeline import plan_request
+from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
-from treasurypilot_worker.planner.wiring import build_deps
+from treasurypilot_worker.planner.wiring import build_attest, build_deps
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -675,22 +676,11 @@ def plan_fees() -> dict[str, int]:
     raise PlanNotExecutable("fee estimation is not wired")
 
 
-async def _reattest_unavailable(seq: int) -> Any:
-    # shortcut: re-attestation belongs to the planner pipeline (#146); until it exists an expired
-    # attestation stops the plan for review instead of being renewed.
-    from treasurypilot_core.policy import Decision, PolicyReasonCode
-
-    return Decision(
-        decision="BLOCK",
-        primary=PolicyReasonCode.ATTESTATION_EXPIRED,
-        codes=[PolicyReasonCode.ATTESTATION_EXPIRED],
-        warnings=[],
-        checks=[],
-        stage="PRE_STEP",
-        step_seq=seq,
-        policy_version=b"\x00" * 32,
-        snapshot_block=0,
-    )
+_PLAN_STATUS = {
+    "Waiting": "Executing",
+    "Completed": "Completed",
+    "PartiallyCompleted": "PartiallyCompleted",
+}
 
 
 async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
@@ -709,21 +699,33 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
             inputs = await load_inputs(
                 pool, loaded.plan, loaded.treasury_id, executor=loaded.executor
             )
-            run: PlanRun = plan_run(loaded, inputs, plan_fees())
+            fees = plan_fees()
+            run: PlanRun = plan_run(loaded, inputs, fees)
             urls = await pool.fetchval(
                 "SELECT rpc_urls FROM chains WHERE chain_id = $1", loaded.plan.chain_id
             )
+            rpc = build_rpc_client(decode_rpc_urls(urls))
             gate = PlanGate.for_treasury(
                 pool,
                 loaded.treasury_id,
-                rpc=build_rpc_client(decode_rpc_urls(urls)),
+                rpc=rpc,
                 plan_id=plan_id,
                 plan=loaded.plan,
                 inputs=inputs,
                 simulation=simulation_context(loaded, inputs),
-                reattest_fn=_reattest_unavailable,
+                reattest_fn=reattest_fn(
+                    pool, loaded, inputs, rpc=rpc, attest=build_attest(settings), fees=fees
+                ),
             )
             result = await sequence_plan(pool, signer, run, gate)
+            # The sequencer only moves the request; the plan row follows its outcome.
+            if plan_status := _PLAN_STATUS.get(result.status):
+                await pool.execute(
+                    "UPDATE plans SET status = $2, updated_at = now() "
+                    "WHERE id = $1 AND status IN ('Attested', 'Executing')",
+                    plan_id,
+                    plan_status,
+                )
             return {"status": result.status, "code": result.code, "completed": result.completed}
     finally:
         await pool.close()

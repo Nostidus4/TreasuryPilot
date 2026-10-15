@@ -45,6 +45,16 @@ class DbScheduleProvider:
     async def next_eligible_request(
         self, connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
     ) -> RequestSelection:
+        # A plan waiting for a fee decision is stale once the policy was accepted after it was
+        # made: free its request (it would otherwise stay open and block planning forever).
+        await connection.execute(
+            "UPDATE plans SET status = 'Expired', updated_at = now() "
+            "WHERE treasury_id = $1 AND status = 'AwaitingFeeAcceptance' AND EXISTS ("
+            "SELECT 1 FROM treasury_fee_policies f WHERE f.treasury_id = plans.treasury_id "
+            "AND f.accepted_at IS NOT NULL AND f.superseded_at IS NULL "
+            "AND f.accepted_at > plans.created_at)",
+            treasury_id,
+        )
         rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
         for order, row in enumerate(rows):
             terms = PaymentTerms.model_validate(as_json(row["terms"]))

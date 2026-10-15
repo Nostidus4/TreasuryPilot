@@ -12,22 +12,21 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any, Protocol
 
 import asyncpg  # type: ignore[import-untyped]
 from web3 import Web3
 
-from treasurypilot_core.domain import Schedule, ScheduledItem
+from treasurypilot_core.domain import ApprovedRequest, Schedule, ScheduledItem
 from treasurypilot_core.domain.fee_policy import FeeDecision, assess_fee
-from treasurypilot_core.eip712 import PAY, REFILL, plan_hash, step_id
+from treasurypilot_core.eip712 import plan_hash
 from treasurypilot_core.engine import pay_amount, schedule_edf
 from treasurypilot_core.ids import uuid7
 from treasurypilot_core.policy import (
-    Action,
     Decision,
     ExecutionPlan,
-    PlanStep,
+    ValidationContext,
     validate_plan,
 )
 from treasurypilot_worker.agent.errors import AiError
@@ -38,9 +37,18 @@ from treasurypilot_worker.agent.plan_proposer import (
     needs_full_proposal,
 )
 from treasurypilot_worker.agent.plan_selection import select_plan
+from treasurypilot_worker.audit import append_audit
 from treasurypilot_worker.chain.snapshot import Snapshot as ChainRead
 from treasurypilot_worker.chain.snapshot import SnapshotScope
-from treasurypilot_worker.planner.inputs import PlanInputs, load_inputs, scope_for
+from treasurypilot_worker.planner.context import ContextInputs, build_context, scope_for
+from treasurypilot_worker.planner.context import load_inputs as load_context_inputs
+from treasurypilot_worker.planner.inputs import (
+    InputsUnavailable,
+    PlanInputs,
+    load_inputs,
+    plan_steps,
+    probe_plan,
+)
 from treasurypilot_worker.recovery.retry import ReviewIntent
 
 logger = logging.getLogger(__name__)
@@ -89,42 +97,34 @@ class PlanOutcome:
     reviews: tuple[str, ...] = ()
 
 
+def evidence_digest(chain: ChainRead) -> str:
+    """Digest of the snapshot a plan was validated against (the attestation's evidenceDigest)."""
+
+    block_hash = bytes.fromhex(chain.block_hash.removeprefix("0x"))
+    return "0x" + bytes(Web3.keccak(block_hash + chain.id.bytes)).hex()
+
+
 def _build_plan(
-    inputs: PlanInputs, item: ScheduledItem, source: str, snapshot_id: str
+    probe: ExecutionPlan,
+    request: ApprovedRequest,
+    item: ScheduledItem,
+    source: str,
+    snapshot_id: str,
 ) -> ExecutionPlan:
-    view, chain = inputs.ctx.request, inputs.ctx.snapshot
-    assert view is not None
-    request = next(r for r in inputs.requests if r.id == item.request_id)
-    wallet = view.paying_wallet
-    steps: list[PlanStep] = []
-    if item.refill:
-        steps.append(
-            PlanStep(
-                seq=0,
-                step_id=step_id(view.request_id, REFILL, wallet),
-                action=Action.REFILL,
-                from_wallet=chain.safe_t,
-                to=wallet,
-                asset=chain.asset,
-                amount=item.refill,
-            )
-        )
-    steps.append(
-        PlanStep(
-            seq=len(steps),
-            step_id=step_id(view.request_id, PAY, wallet),
-            action=Action.PAY,
-            from_wallet=wallet,
-            to=view.payee,
-            asset=chain.asset,
-            amount=pay_amount(request, item.day),
-        )
-    )
+    pay = probe.steps[-1]
     return ExecutionPlan(
-        request_id=view.request_id,
-        treasury=chain.treasury,
-        chain_id=chain.chain_id,
-        steps=steps,
+        request_id=probe.request_id,
+        treasury=probe.treasury,
+        chain_id=probe.chain_id,
+        steps=plan_steps(
+            probe.request_id,
+            safe_t=probe.steps[0].from_wallet,  # the probe always carries both steps
+            asset=pay.asset,
+            wallet=pay.from_wallet,
+            payee=pay.to,
+            refill=int(item.refill),
+            pay=int(pay_amount(request, item.day)),
+        ),
         planner_source=source,  # type: ignore[arg-type]
         evidence_ids=[f"snapshot:{snapshot_id}"],
     )
@@ -219,11 +219,13 @@ async def _fee_assessment(
         treasury_id,
         now.date(),
     )
-    # Plans attested but not yet in the ledger count against the budget (no double spend).
+    # Plans attested today count against today's budget until the ledger has their fees. Nothing
+    # marks a plan Completed yet, so the day bound is what frees the budget the next day.
     in_flight = await connection.fetchval(
         f"SELECT coalesce(sum(fee_estimate_wei), 0) FROM plans WHERE treasury_id = $1 "
-        f"AND status IN {_OPEN_PLANS}",
+        f"AND status IN {_OPEN_PLANS} AND updated_at >= $2",
         treasury_id,
+        datetime.combine(now.date(), time.min, UTC),
     )
     result = assess_fee(
         estimated_fee_wei=estimate,
@@ -258,18 +260,18 @@ async def plan_request(
         if row["status"] != "Draft":
             return None
         treasury_id, request_id = row["treasury_id"], row["request_id"]
-        scope = await scope_for(connection, treasury_id, request_id)
-    chain, head = await deps.take_snapshot(treasury_id, scope)
-    async with pool.acquire() as connection:
-        inputs = await load_inputs(
-            connection,
-            treasury_id,
-            request_id,
-            chain,
-            executor=deps.executor,
-            now=datetime.now(UTC),
-            head_block=head,
-        )
+        try:
+            probe = await probe_plan(connection, treasury_id, request_id)
+        except InputsUnavailable as error:
+            return await _expire(pool, plan_id, error)
+    context_inputs = await load_context_inputs(pool, probe, treasury_id, executor=deps.executor)
+    chain, head = await deps.take_snapshot(treasury_id, scope_for(probe, context_inputs))
+    try:
+        async with pool.acquire() as connection:
+            inputs = await load_inputs(connection, treasury_id, request_id, chain, now=current)
+    except InputsUnavailable as error:
+        return await _expire(pool, plan_id, error)
+    context = Context(context_inputs, chain, int(current.timestamp()), head)
     target_id = str(request_id)
     deterministic = schedule_edf(inputs.requests, inputs.snapshot, inputs.policy)
 
@@ -299,7 +301,7 @@ async def plan_request(
         and not isinstance(outcome.result, PlanProposalRejected)
     ):
         # BR-055: an AI outage keeps the pipeline alive only through a validated template.
-        fallback = plan_fallback(inputs.ctx, outcome.result)
+        fallback = plan_fallback(context.build(probe), outcome.result)
         if isinstance(fallback, FallbackPlan):
             plan, source = fallback.plan, "RULE_BASED"
             reason = (
@@ -325,14 +327,15 @@ async def plan_request(
             (i for i in selection.items if i.request_id == target_id and i.day == today), None
         )
         if item is not None:
-            plan = _build_plan(inputs, item, source, str(chain.id))
+            target = next(r for r in inputs.requests if r.id == target_id)
+            plan = _build_plan(probe, target, item, source, str(chain.id))
         else:
             refusal = _not_today(deterministic, target_id)
     return await _finish(
         pool,
         deps,
         inputs,
-        chain,
+        context,
         plan_id,
         treasury_id,
         plan,
@@ -343,6 +346,32 @@ async def plan_request(
         ai_ids,
         current,
     )
+
+
+@dataclass(frozen=True)
+class Context:
+    """What `planner.context.build_context` needs besides the plan; one per planning run."""
+
+    inputs: ContextInputs
+    chain: ChainRead
+    now: int
+    head: int
+
+    def build(self, plan: ExecutionPlan) -> ValidationContext:
+        return build_context(self.chain, plan, self.inputs, now=self.now, head_block=self.head)
+
+
+async def _expire(pool: asyncpg.Pool, plan_id: uuid.UUID, error: InputsUnavailable) -> PlanOutcome:
+    """The request cannot be planned at all (fail closed): free it for the next cycle."""
+
+    logger.warning("plan_inputs_unavailable", extra={"plan_id": str(plan_id), "reason": str(error)})
+    await pool.execute(
+        "UPDATE plans SET status = 'Expired', chosen_reason = $2, updated_at = now() "
+        "WHERE id = $1 AND status = 'Draft'",
+        plan_id,
+        f"inputs unavailable: {error}",
+    )
+    return PlanOutcome(plan_id, "Expired", None)
 
 
 def _not_today(schedule: Schedule, target_id: str) -> tuple[str | None, str]:
@@ -359,7 +388,7 @@ async def _finish(
     pool: asyncpg.Pool,
     deps: PlannerDeps,
     inputs: PlanInputs,
-    chain: ChainRead,
+    context: Context,
     plan_id: uuid.UUID,
     treasury_id: uuid.UUID,
     plan: ExecutionPlan | None,
@@ -375,8 +404,8 @@ async def _finish(
     review: tuple[str, str, tuple[str, ...], int | None] | None = None  # kind, code, codes, fee
     request_to = ""
     estimate: int | None = None
-    request = inputs.ctx.request
-    assert request is not None
+    chain = context.chain
+    request = context.inputs.request
     if plan is None:
         assert refusal is not None
         kind, code = refusal
@@ -386,7 +415,7 @@ async def _finish(
             request_to = "AwaitingAuthority" if waiting else "NeedsReview"
             review = (kind, code, (code,), None)
     else:
-        decision = validate_plan(plan, inputs.ctx)
+        decision = validate_plan(plan, context.build(plan))
         codes = tuple(c.value for c in decision.codes)
         primary = decision.primary.value if decision.primary else decision.decision
         if decision.decision == "BLOCK":
@@ -399,6 +428,7 @@ async def _finish(
             status, request_to = "AwaitingAuthority", "AwaitingAuthority"
             review = ("NEEDS_AUTHORITY", primary, codes, None)
         else:
+            assert request is not None  # an ALLOW decision needed the request
             estimate = await deps.estimate_fee(treasury_id, plan)
             async with pool.acquire() as connection:
                 fee, fee_code = await _fee_assessment(
@@ -409,15 +439,15 @@ async def _finish(
                 code = fee_code or "FEE_APPROVAL_REQUIRED"
                 review = ("FEE_APPROVAL", code, (code,), estimate)
             elif fee is FeeDecision.PROCEED:
-                digest = (
-                    "0x"
-                    + bytes(
-                        Web3.keccak(
-                            bytes.fromhex(chain.block_hash.removeprefix("0x")) + chain.id.bytes
-                        )
-                    ).hex()
-                )
-                await deps.attest(plan_id, plan.message(), decision, digest, now)
+                digest = evidence_digest(chain)
+                # A re-run after a crash between the attestation commit and the plan write finds
+                # the attestation already stored: reuse it rather than signing a second one.
+                async with pool.acquire() as connection:
+                    attested = await connection.fetchval(
+                        "SELECT 1 FROM attestations WHERE plan_id = $1", plan_id
+                    )
+                if not attested:
+                    await deps.attest(plan_id, plan.message(), decision, digest, now)
                 status, request_to = "Attested", "Preparing"
     message = None if plan is None else plan.message()
     digest_bytes = (
@@ -489,12 +519,27 @@ async def _finish(
                 now=now,
                 fee_estimate_wei=fee_wei,
                 due=datetime.fromtimestamp(request.deadline, UTC)
-                if kind == "FEE_APPROVAL"
+                if kind == "FEE_APPROVAL" and request is not None
                 else None,
             )
             created.append(kind)
         if request_to:
             await _move_request(connection, inputs.request_id, request_to, f"plan {status}")
+        await append_audit(
+            connection,
+            inputs.org_id,
+            action="plan.finished",
+            entity_type="plan",
+            entity_id=str(plan_id),
+            data={
+                "status": status,
+                "request_id": str(inputs.request_id),
+                "planner_source": source if plan is not None else None,
+                "plan_hash": None if digest_bytes is None else "0x" + digest_bytes.hex(),
+                "reason_codes": [] if decision is None else [c.value for c in decision.codes],
+                "reviews": created,
+            },
+        )
     logger.info(
         "plan_finished",
         extra={
