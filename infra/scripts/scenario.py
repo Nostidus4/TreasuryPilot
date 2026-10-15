@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -154,10 +155,17 @@ def run_scenario(
         ctx["manifest"] = json.loads(manifest_path.read_text())
     except (OSError, ValueError):
         raise ScenarioError(f"cannot read {manifest_path}; run `make deploy-local`") from None
+    phase_ms: dict[str, float] = {}
     snapshot = rpc(rpc_url, "evm_snapshot", []) if reset and ctx["chain_id"] == 31337 else None
     try:
-        operations = [STEPS[step][0](ctx) for step in scenario["steps"]]
+        operations = []
+        for step in scenario["steps"]:
+            t0 = time.perf_counter()
+            operations.append(STEPS[step][0](ctx))
+            phase_ms[step] = (time.perf_counter() - t0) * 1000
+        t0 = time.perf_counter()
         bundle = asyncio.run(_bundle(ctx, name, operations))
+        phase_ms["evidence_bundle"] = (time.perf_counter() - t0) * 1000
     finally:  # the bundle resolved its transactions above, so rewinding cannot invalidate it
         if snapshot is not None:
             rpc(rpc_url, "evm_revert", [snapshot])
@@ -171,6 +179,10 @@ def run_scenario(
         "stateReset": snapshot is not None,
         "operations": operations,
         "bundleSha256": bundle.sha256,
+        "phaseMs": {**ctx.get("tx_ms", {}), **phase_ms},  # tx:<method> entries nest inside steps
+        "feeWei": sum(
+            int(r["gasUsed"], 16) * int(r["effectiveGasPrice"], 16) for r in ctx["transactions"]
+        ),
     }
     (run_dir / "run.json").write_text(json.dumps(result, indent=2) + "\n")
     return {**result, "runDir": str(run_dir)}
