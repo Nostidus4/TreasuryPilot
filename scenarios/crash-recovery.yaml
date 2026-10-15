@@ -1,0 +1,6 @@
+name: crash-recovery
+adr019: D9
+chain_id: 31337
+requires: [anvil, deployment, executor-pipeline, outbox-recovery]
+must_show:
+  - Killing the worker mid-send never double-pays and the tracker resolves the transaction

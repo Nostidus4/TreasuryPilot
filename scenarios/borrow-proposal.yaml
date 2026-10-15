@@ -1,0 +1,6 @@
+name: borrow-proposal
+adr019: D6
+chain_id: 11155111
+requires: [deployment, planner, aave-adapter]
+must_show:
+  - A borrow proposal shows engine numbers and never enters an executable plan unauthorized

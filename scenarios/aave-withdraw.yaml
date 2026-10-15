@@ -1,0 +1,6 @@
+name: aave-withdraw
+adr019: D3
+chain_id: 11155111
+requires: [deployment, planner, aave-adapter, executor-pipeline]
+must_show:
+  - A newly approved invoice triggers a withdraw that restores the reserve

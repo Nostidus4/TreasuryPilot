@@ -263,6 +263,55 @@ jobs:
           services/api/tests/test_saml_postgres.py
           infra/scripts/tests/test_seed_local.py
 
+  scenario-anvil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install Solidity dependencies
+        run: pnpm install --frozen-lockfile --filter @treasurypilot/contracts...
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.svm
+            contracts/cache
+          key: foundry-solc-${{ runner.os }}-v1.8.5-${{ hashFiles('contracts/foundry.toml', 'pnpm-lock.yaml') }}
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Start Anvil
+        run: |
+          anvil --silent --chain-id 31337 --port 8545 > /tmp/treasurypilot-anvil.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat /tmp/treasurypilot-anvil.log
+          exit 1
+      - name: Deploy contracts to Anvil
+        run: infra/scripts/deploy-local.sh
+      - name: Run pause scenario on Anvil
+        env:
+          TP_TEST_ANVIL_URL: http://127.0.0.1:8545
+        run: |
+          uv run pytest -q infra/scripts/tests/test_scenario.py
+          # pytest's real-Anvil test consumed the fresh module; redeploy for the CLI run
+          infra/scripts/deploy-local.sh
+          uv run python infra/scripts/scenario.py run pause
+
   # Live-RPC check kept out of `quality` so a public RPC outage cannot block unit tests.
   config-check:
     runs-on: ubuntu-latest
