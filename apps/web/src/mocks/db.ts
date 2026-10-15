@@ -1316,8 +1316,26 @@ export function seed(): Db {
           dailyUsed: usdc(2600),
           dailyLimit: usdc(10000),
         },
-        aiDraft:
-          'Lumen Legal’s retainer is 3,200.00 USDC, 1,200.00 above the 2,000.00 per-request limit. The payee is registered and past cooling, the invoice is approved, and today’s PAY total would be 5,800.00 of 10,000.00 after this payment. A one-time exception for this request only would let it pay on its due date.',
+        aiDraft: {
+          source: 'AI',
+          draft: {
+            summary:
+              'Lumen Legal’s retainer is 3,200.00 USDC, 1,200.00 above the 2,000.00 per-request limit.',
+            reasons: [
+              {
+                text: 'The payee is registered and past cooling, and the invoice is approved.',
+                evidence_ids: [],
+              },
+              {
+                text: 'Today’s PAY total would be 5,800.00 of 10,000.00 after this payment.',
+                evidence_ids: [],
+              },
+            ],
+            alternatives: [
+              'A one-time exception for this request only would let it pay on its due date.',
+            ],
+          },
+        },
       },
     },
     reconciliations: [

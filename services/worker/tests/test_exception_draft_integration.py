@@ -119,3 +119,17 @@ def test_another_organisations_exception_is_not_touched(database_url: str) -> No
     outcome = DraftOutcome(template_draft(_FACTS), "TEMPLATE", None)
 
     assert not attach_draft(exception_id, _OTHER_ORG, outcome, database_url=database_url)
+
+
+def test_an_existing_draft_is_not_rewritten(database_url: str) -> None:
+    exception_id = _exception(database_url)
+    first = DraftOutcome(template_draft(_FACTS), "TEMPLATE", None)
+    other = DraftOutcome(first.draft.model_copy(update={"summary": "Different."}), "TEMPLATE", None)
+
+    assert attach_draft(exception_id, _ORG, first, database_url=database_url)
+    assert not attach_draft(exception_id, _ORG, other, database_url=database_url)
+
+    (row,) = asyncio.run(
+        _run(database_url, "SELECT draft FROM exceptions WHERE id=$1", exception_id)
+    )
+    assert json.loads(row["draft"])["draft"]["summary"] == first.draft.summary

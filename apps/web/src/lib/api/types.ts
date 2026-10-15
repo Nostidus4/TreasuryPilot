@@ -604,7 +604,16 @@ export interface ExceptionDetail {
     dailyUsed: string;
     dailyLimit: string;
   };
-  aiDraft?: string;
+  aiDraft?: ExceptionAiDraft | null;
+}
+
+export interface ExceptionAiDraft {
+  source: 'AI' | 'TEMPLATE';
+  draft: {
+    summary: string;
+    reasons: { text: string; evidence_ids: string[] }[];
+    alternatives: string[];
+  };
 }
 
 /* ───────────── Reconciliation, fees, metrics ───────────── */

@@ -12,11 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from treasurypilot_worker.agent.adapter import AiAdapter
 from treasurypilot_worker.agent.config import AiTask
-from treasurypilot_worker.agent.errors import AiError
+from treasurypilot_worker.agent.errors import AiError, PostCheckFailed
 from treasurypilot_worker.agent.prompts.exception_draft import EXCEPTION_DRAFT_TEMPLATE
 from treasurypilot_worker.locks import _asyncpg_database_url
 
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Grouped (1,234 / 1,234.50) or plain digits, optionally signed. "1,2500" does not parse as one number.
+# shortcut: percentages ("25%") are rejected deliberately (never an engine number) and numbers
+# written as words are not checked; the prompt tells the model to quote digits. Upgrade if drafts need them.
+_NUMBER = re.compile(r"[-+\u2212]?\d{1,3}(?:,\d{3})+(?:\.\d+)?|[-+\u2212]?\d+(?:\.\d+)?")
 
 
 class _Strict(BaseModel):
@@ -74,7 +77,7 @@ def template_draft(facts: ExceptionFacts) -> ExceptionDraft:
 
 
 def _numbers(text: str) -> set[str]:
-    return {n.replace(",", "") for n in _NUMBER.findall(text)}
+    return {n.replace(",", "").replace("\u2212", "-").lstrip("+") for n in _NUMBER.findall(text)}
 
 
 def _matches_engine(draft: ExceptionDraft, facts: ExceptionFacts) -> bool:
@@ -89,29 +92,30 @@ def _matches_engine(draft: ExceptionDraft, facts: ExceptionFacts) -> bool:
 def draft_exception(adapter: AiAdapter, *, org_id: str, facts: ExceptionFacts) -> DraftOutcome:
     """AI draft if its numbers match the engine's, else the template (BR-043). Never raises `AiError`."""
 
+    def post_check(output: ExceptionDraft, _tool_calls: object) -> None:
+        if not _matches_engine(output, facts):
+            raise PostCheckFailed("draft numbers or evidence ids do not match the engine facts")
+
     try:
         result = adapter.run(
             AiTask.EXCEPTION_DRAFT,
             org_id=org_id,
             prompt=EXCEPTION_DRAFT_TEMPLATE.render(facts=facts),
             output=ExceptionDraft,
+            post_check=post_check,
         )
     except AiError:
-        return DraftOutcome(template_draft(facts), "TEMPLATE", None)
-    if not _matches_engine(result.output, facts):
         return DraftOutcome(template_draft(facts), "TEMPLATE", None)
     return DraftOutcome(result.output, "AI", result.ai_call_id)
 
 
-_ATTACH = (
-    "UPDATE exceptions SET draft = $3::jsonb, draft_ai_call_id = $4 WHERE id = $1 AND org_id = $2"
-)
+_ATTACH = "UPDATE exceptions SET draft = $3::jsonb, draft_ai_call_id = $4 WHERE id = $1 AND org_id = $2 AND draft IS NULL"
 
 
 def attach_draft(
     exception_id: uuid.UUID, org_id: uuid.UUID, outcome: DraftOutcome, *, database_url: str
 ) -> bool:
-    """Store the draft on the exception record. False if the record is not in this organisation."""
+    """Store the draft once. False if the record is not in this organisation or already has a draft."""
 
     ai_call_id = None if outcome.ai_call_id is None else uuid.UUID(outcome.ai_call_id)
     payload = json.dumps({"source": outcome.source, "draft": outcome.draft.model_dump(mode="json")})

@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from treasurypilot_worker.agent import (
     AiAdapter,
     AiConfig,
@@ -9,9 +11,11 @@ from treasurypilot_worker.agent import (
     InMemoryBudgetLedger,
     fake_text,
 )
+from treasurypilot_worker.agent.call_log import ValidationResult
 from treasurypilot_worker.agent.exception_draft import (
     DraftOutcome,
     ExceptionFacts,
+    _matches_engine,
     draft_exception,
     template_draft,
 )
@@ -21,12 +25,18 @@ FACTS = ExceptionFacts(
 )
 
 
-def _draft(repo_config: AiConfig, clock: FakeClock, now: datetime, *texts: str) -> DraftOutcome:
+def _draft(
+    repo_config: AiConfig,
+    clock: FakeClock,
+    now: datetime,
+    *texts: str,
+    log: InMemoryAiCallLog | None = None,
+) -> DraftOutcome:
     adapter = AiAdapter(
         provider=FakeProvider([fake_text(t) for t in texts]),
         config=repo_config,
         ledger=InMemoryBudgetLedger(),
-        call_log=InMemoryAiCallLog(),
+        call_log=log or InMemoryAiCallLog(),
         clock=clock,
         sleep=clock.sleep,
         now=lambda: now,
@@ -52,16 +62,24 @@ def test_draft_with_engine_numbers_is_kept(
 def test_draft_with_a_number_that_differs_from_the_engine_uses_the_template(
     repo_config: AiConfig, clock: FakeClock, october: datetime
 ) -> None:
-    outcome = _draft(repo_config, clock, october, _json("Pay 12,000 against a 10,000 cap."))
+    log = InMemoryAiCallLog()
+    outcome = _draft(
+        repo_config, clock, october, _json("Pay 12,000 against a 10,000 cap."), log=log
+    )
     assert outcome.source == "TEMPLATE" and outcome.ai_call_id is None
+    assert [e.validation_result for e in log.entries] == [ValidationResult.POSTCHECK_FAILED]
     assert outcome.draft == template_draft(FACTS)
 
 
 def test_draft_citing_an_unknown_fact_uses_the_template(
     repo_config: AiConfig, clock: FakeClock, october: datetime
 ) -> None:
-    outcome = _draft(repo_config, clock, october, _json("Pay 12,500.", evidence='["made_up"]'))
+    log = InMemoryAiCallLog()
+    outcome = _draft(
+        repo_config, clock, october, _json("Pay 12,500.", evidence='["made_up"]'), log=log
+    )
     assert outcome.source == "TEMPLATE"
+    assert [e.validation_result for e in log.entries] == [ValidationResult.POSTCHECK_FAILED]
 
 
 def test_ai_failure_uses_the_template(
@@ -74,6 +92,20 @@ def test_ai_failure_uses_the_template(
 
 
 def test_template_only_contains_engine_numbers() -> None:
-    from treasurypilot_worker.agent.exception_draft import _matches_engine
-
     assert _matches_engine(template_draft(FACTS), FACTS)
+
+
+@pytest.mark.parametrize(
+    ("summary", "ok"),
+    [
+        ("Pay 12,500 against 10,000.", True),
+        ("Pay 12500 against 10000.", True),
+        ("Pay -12,500 against 10,000.", False),  # sign flip
+        ("Pay 1,2500 against 10,000.", False),  # misplaced separator
+        ("Pay 12,500.00 against 10,000.", False),  # different spelling is not the engine's number
+        ("Pay 25% over the cap.", False),  # percentages rejected deliberately
+    ],
+)
+def test_number_check_is_exact_and_signed(summary: str, ok: bool) -> None:
+    draft = template_draft(FACTS).model_copy(update={"summary": summary})
+    assert _matches_engine(draft, FACTS) is ok
