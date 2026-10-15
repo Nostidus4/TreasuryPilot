@@ -7,6 +7,10 @@ on:
         'deployments/**',
         'infra/scripts/**',
         'packages/py-core/**',
+        'services/api/src/treasurypilot_api/mandate/**',
+        'services/api/pyproject.toml',
+        'uv.lock',
+        'services/api/tests/test_governance_anvil.py',
         '.github/workflows/contract-integration.yml',
       ]
   push:
@@ -17,11 +21,45 @@ on:
         'deployments/**',
         'infra/scripts/**',
         'packages/py-core/**',
+        'services/api/src/treasurypilot_api/mandate/**',
+        'services/api/pyproject.toml',
+        'uv.lock',
+        'services/api/tests/test_governance_anvil.py',
         '.github/workflows/contract-integration.yml',
       ]
 permissions:
   contents: read
 jobs:
+  governance-anvil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+      - name: Install pinned Solidity dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Build pinned Safe v1.4.1 artifacts
+        working-directory: contracts
+        run: forge build
+      - name: Execute app-built 2-of-3 MultiSend transaction on Anvil
+        env:
+          TP_REQUIRE_GOVERNANCE_ANVIL: '1'
+        run: uv run pytest services/api/tests/test_governance_anvil.py -q
+
   local-deploy:
     runs-on: ubuntu-latest
     steps:
@@ -41,6 +79,10 @@ jobs:
           version: '0.11.3'
       - run: pnpm install --frozen-lockfile
       - run: uv sync --frozen
+      - name: Differential policy validator and contract cases (POL-004)
+        run: |
+          uv run pytest -q packages/py-core/tests/test_policy_contract_differential.py
+          cd contracts && forge test --match-contract PolicyContractDifferentialTest -vv
       - name: Deploy Safes, module, factory, test token and local EAS
         working-directory: contracts
         env:
@@ -98,6 +140,24 @@ jobs:
           forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8546 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
           python tools/compare_deploy_runs.py /tmp/treasurypilot-deploy-first.json ../deployments/predictions/31337.json
           kill "$(cat /tmp/treasurypilot-anvil-repeat.pid)"
+      - name: Exercise make deploy-local and validate its manifest
+        run: |
+          rm -f deployments/31337.json deployments/predictions/31337.json
+          make deploy-local
+          test -f deployments/31337.json
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("deployments/31337.json").read_text(encoding="utf-8"))
+          assert manifest["chainId"] == 31337
+          assert manifest["deploymentStatus"] == "deployed"
+          assert manifest["localEasMock"] is True
+          assert manifest["operationalWalletCount"] == 2
+          for field in ("implementation", "factory", "testToken", "module", "safeT", "safeO1", "safeO2"):
+              assert manifest[field] and manifest[field + "CodeHash"]
+          print("make deploy-local produced a verified 31337 manifest")
+          PY
   sepolia-fork:
     runs-on: ubuntu-latest
     steps:

@@ -318,10 +318,10 @@ class PaymentRequest(Base):
     # For fiat requests, amount is the approved maximum in stablecoin base units.
     fiat_amount_minor_units: Mapped[int | None] = mapped_column(Numeric(78, 0))
     fiat_currency: Mapped[str | None] = mapped_column(String(3))
-    fx_reference_quote: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    fx_reference_quote: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     fx_tolerance_bps: Mapped[int | None] = mapped_column(SmallInteger)
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    terms: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     terms_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     terms_confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     terms_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -450,7 +450,7 @@ class RecurringPaymentSchedule(Base):
     paying_wallet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     invoice_no_template: Mapped[str] = mapped_column(String(180), nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
-    terms: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    terms: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     note: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default="{}"

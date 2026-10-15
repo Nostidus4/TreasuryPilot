@@ -44,57 +44,88 @@ _AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4
 _CANCEL_REQUEST_SELECTOR = keccak(b"cancelRequest(bytes32)")[:4]
 _ADD_PAYEE_SELECTOR = keccak(b"addPayee(address)")[:4]
 _DEACTIVATE_PAYEE_SELECTOR = keccak(b"deactivatePayee(address)")[:4]
+_GRANT_EXCEPTION_SELECTOR = keccak(b"grantException(bytes32,uint128,address,uint64)")[:4]
+_REVOKE_EXCEPTION_SELECTOR = keccak(b"revokeException(bytes32)")[:4]
+_ALLOW_DUPLICATE_SELECTOR = keccak(b"allowDuplicate(bytes32,bytes32)")[:4]
 
 
 def _require_positive_uint(name: str, value: int, bits: int = 256) -> None:
+    # `type(...) is int` also rejects bool, which would otherwise encode as 0/1.
+    if type(value) is not int:
+        raise ValueError(f"{name} must be an int")
     if not 0 < value < 1 << bits:
         raise ValueError(f"{name} must be positive and fit uint{bits}")
 
 
 def _require_authorization(kind: str, plan_id: bytes, amount: int, expiry: int) -> None:
-    if len(plan_id) != 32:
+    # Exact bytes only: a mutable bytearray could change after validation.
+    if type(plan_id) is not bytes or len(plan_id) != 32:
         raise ValueError("plan_id must be bytes32")
     _require_positive_uint(f"{kind} amount", amount)
     _require_positive_uint("expiry", expiry, 64)
 
 
+@dataclass(frozen=True, slots=True)
+class BorrowAuthorizationProposal:
+    """Exact integer terms captured for one owner-authorized borrow proposal."""
+
+    plan_id: bytes
+    amount: int
+    expiry: int
+    min_health_factor: int
+    max_rate_ray: int
+
+    def __post_init__(self) -> None:
+        # Validation also guarantees immutable field types (bytes, int).
+        _require_authorization("borrow", self.plan_id, self.amount, self.expiry)
+        _require_positive_uint("minimum health factor", self.min_health_factor)
+        _require_positive_uint("maximum rate", self.max_rate_ray)
+
+
 def build_borrow_authorization_call(
     module_address: bytes,
     *,
-    plan_id: bytes,
-    amount: int,
-    expiry: int,
-    min_health_factor: int,
-    max_rate_ray: int,
+    proposal: BorrowAuthorizationProposal,
 ) -> GovernanceCall:
     """Encode the exact owner authorization for one borrow proposal.
 
-    Only shape and range are checked here; linking the values to a proposal is the
-    caller's responsibility. All numeric values are integer base units / protocol scalars. Callers must pass
-    proposal-derived values directly; this builder deliberately performs no rounding
-    or conversion from display units.
+    The amount, expiry, minimum health factor and maximum rate travel together in one
+    immutable proposal object, so a caller cannot supply a different set of values to
+    the encoder. All values are protocol integers; no display-unit conversion occurs.
     """
-    _require_authorization("borrow", plan_id, amount, expiry)
-    _require_positive_uint("minimum health factor", min_health_factor)
-    _require_positive_uint("maximum rate", max_rate_ray)
     data = _AUTHORIZE_BORROW_SELECTOR + encode(
         ["bytes32", "uint256", "uint64", "uint256", "uint256"],
-        [plan_id, amount, expiry, min_health_factor, max_rate_ray],
+        [
+            proposal.plan_id,
+            proposal.amount,
+            proposal.expiry,
+            proposal.min_health_factor,
+            proposal.max_rate_ray,
+        ],
     )
     return GovernanceCall(module_address, 0, data)
+
+
+@dataclass(frozen=True, slots=True)
+class RepayAuthorizationProposal:
+    """Exact integer terms captured for one owner-authorized repay proposal."""
+
+    plan_id: bytes
+    amount: int
+    expiry: int
+
+    def __post_init__(self) -> None:
+        _require_authorization("repay", self.plan_id, self.amount, self.expiry)
 
 
 def build_repay_authorization_call(
     module_address: bytes,
     *,
-    plan_id: bytes,
-    amount: int,
-    expiry: int,
+    proposal: RepayAuthorizationProposal,
 ) -> GovernanceCall:
     """Encode the exact owner authorization for one repay proposal."""
-    _require_authorization("repay", plan_id, amount, expiry)
     data = _AUTHORIZE_REPAY_SELECTOR + encode(
-        ["bytes32", "uint256", "uint64"], [plan_id, amount, expiry]
+        ["bytes32", "uint256", "uint64"], [proposal.plan_id, proposal.amount, proposal.expiry]
     )
     return GovernanceCall(module_address, 0, data)
 
@@ -121,6 +152,59 @@ def build_deactivate_payee_call(module_address: bytes, *, payee: bytes) -> Gover
         raise ValueError("module and payee must be nonzero EVM addresses")
     return GovernanceCall(
         module_address, 0, _DEACTIVATE_PAYEE_SELECTOR + encode(["address"], [payee])
+    )
+
+
+def build_grant_exception_call(
+    module_address: bytes,
+    *,
+    request_id: bytes,
+    amount: int,
+    payee: bytes,
+    expiry: int,
+) -> GovernanceCall:
+    """Build the exact one-request, one-payee exception reviewed by an Owner."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    if len(payee) != 20 or payee == bytes(20):
+        raise ValueError("payee must be a nonzero EVM address")
+    _require_positive_uint("exception amount", amount, 128)
+    _require_positive_uint("exception expiry", expiry, 64)
+    return GovernanceCall(
+        module_address,
+        0,
+        _GRANT_EXCEPTION_SELECTOR
+        + encode(["bytes32", "uint128", "address", "uint64"], [request_id, amount, payee, expiry]),
+    )
+
+
+def build_revoke_exception_call(module_address: bytes, *, request_id: bytes) -> GovernanceCall:
+    """Build `revokeException` for the request's existing one-time grant."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    return GovernanceCall(
+        module_address, 0, _REVOKE_EXCEPTION_SELECTOR + encode(["bytes32"], [request_id])
+    )
+
+
+def build_allow_duplicate_call(
+    module_address: bytes, *, fingerprint: bytes, request_id: bytes
+) -> GovernanceCall:
+    """Build a duplicate override bound to one invoice fingerprint and request."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(fingerprint) != 32 or fingerprint == bytes(32):
+        raise ValueError("fingerprint must be a nonzero bytes32")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    return GovernanceCall(
+        module_address,
+        0,
+        _ALLOW_DUPLICATE_SELECTOR + encode(["bytes32", "bytes32"], [fingerprint, request_id]),
     )
 
 

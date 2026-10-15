@@ -36,7 +36,16 @@ class TravelRuleStatus(StrEnum):
     PENDING = "PENDING"
     COMPLETED = "COMPLETED"
     SELF_HOSTED = "SELF_HOSTED"
+    NOT_REQUIRED = "NOT_REQUIRED"
     ERROR = "ERROR"
+
+
+# Decisions that never change once recorded; stale provider replies must not overwrite them.
+_TERMINAL = (
+    TravelRuleStatus.COMPLETED,
+    TravelRuleStatus.SELF_HOSTED,
+    TravelRuleStatus.NOT_REQUIRED,
+)
 
 
 class CounterpartyKind(StrEnum):
@@ -94,14 +103,15 @@ class TravelRulePolicy:
                 )
         return cls(tuple(rules))
 
-    def requires_exchange(
+    def applicable_threshold(
         self,
         *,
         amount_minor_units: int,
         currency: str,
         origin_jurisdiction: str,
         beneficiary_jurisdiction: str,
-    ) -> bool:
+    ) -> int:
+        """Lower of the two configured jurisdiction thresholds for the transfer currency."""
         if (
             isinstance(amount_minor_units, bool)
             or not isinstance(amount_minor_units, int)
@@ -122,7 +132,22 @@ class TravelRulePolicy:
                 raise TravelRulePolicyError("no Travel Rule threshold is configured for this route")
             thresholds.append(rule.amount_minor_units)
         # A route qualifies if it exceeds the configured limit in either jurisdiction.
-        return amount_minor_units > min(thresholds)
+        return min(thresholds)
+
+    def requires_exchange(
+        self,
+        *,
+        amount_minor_units: int,
+        currency: str,
+        origin_jurisdiction: str,
+        beneficiary_jurisdiction: str,
+    ) -> bool:
+        return amount_minor_units > self.applicable_threshold(
+            amount_minor_units=amount_minor_units,
+            currency=currency,
+            origin_jurisdiction=origin_jurisdiction,
+            beneficiary_jurisdiction=beneficiary_jurisdiction,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,11 +210,15 @@ class TravelRuleTransfer:
             or self.amount_minor_units >= 10**78
         ):
             raise ValueError("amount must be positive")
-        if not _COUNTRY.fullmatch(self.origin_jurisdiction.upper()):
+        if not isinstance(self.origin_jurisdiction, str) or not _COUNTRY.fullmatch(
+            self.origin_jurisdiction.upper()
+        ):
             raise ValueError("origin jurisdiction must be a two-letter country code")
-        if not _COUNTRY.fullmatch(self.beneficiary_jurisdiction.upper()):
+        if not isinstance(self.beneficiary_jurisdiction, str) or not _COUNTRY.fullmatch(
+            self.beneficiary_jurisdiction.upper()
+        ):
             raise ValueError("beneficiary jurisdiction must be a two-letter country code")
-        if not _CURRENCY.fullmatch(self.currency.upper()):
+        if not isinstance(self.currency, str) or not _CURRENCY.fullmatch(self.currency.upper()):
             raise ValueError("currency must be a three-letter code")
         if self.originator is not None and (
             not isinstance(self.originator, TravelRuleParty)
@@ -220,6 +249,8 @@ class TravelRuleTransfer:
 class TravelRuleOutcome:
     status: TravelRuleStatus
     provider_ref: str | None = None
+    # Only meaningful for SELF_HOSTED: the adapter validated the wallet attestation.
+    attestation_verified: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +275,7 @@ class TravelRuleRecord:
     chain_id: int
     payload_encrypted: str
     provider_ref: str | None
+    threshold_minor_units: int | None = None
 
 
 class TravelRuleProviderError(Exception):
@@ -313,6 +345,7 @@ class SqlAlchemyTravelRuleRepository:
             provider=record.provider,
             status=record.status.value,
             amount=record.amount_minor_units,
+            threshold=record.threshold_minor_units,
             currency=record.currency,
             origin_jurisdiction=record.origin_jurisdiction,
             beneficiary_jurisdiction=record.beneficiary_jurisdiction,
@@ -352,11 +385,11 @@ class SqlAlchemyTravelRuleRepository:
             if row is None:
                 raise TravelRuleBlocked("Travel Rule case disappeared while updating")
             # Concurrent retries may receive stale PENDING/ERROR replies after another
-            # request has committed completion. Never let an old reply reopen a held case.
-            if row.status == TravelRuleStatus.COMPLETED.value:
+            # request has committed a final decision. Never let an old reply reopen a held case.
+            if TravelRuleStatus(row.status) in _TERMINAL:
                 return _record(row)
             row.status = status.value
-            row.provider_ref = provider_ref
+            row.provider_ref = provider_ref or row.provider_ref
             await session.flush()
             return _record(row)
 
@@ -427,8 +460,8 @@ class TravelRuleService:
 
     async def require_exchange_complete(
         self, *, organization_id: uuid.UUID, transfer: TravelRuleTransfer
-    ) -> TravelRuleRecord | None:
-        """Return only for below-threshold or attested self-hosted transfers, or completed exchange."""
+    ) -> TravelRuleRecord:
+        """Return the final case: below-threshold, attested self-hosted, or completed exchange."""
         try:
             existing = await self._repository.get(
                 organization_id=organization_id,
@@ -438,15 +471,9 @@ class TravelRuleService:
             logger.warning("travel_rule_repository_failed", extra={"error": type(error).__name__})
             raise TravelRuleBlocked("Travel Rule state is unavailable") from None
 
-        if existing is not None:
-            self._assert_same_payload(existing, transfer)
-            if existing.provider != self._provider.name:
-                raise TravelRuleBlocked("Travel Rule case belongs to a different provider")
-            if existing.status == TravelRuleStatus.COMPLETED:
-                return existing
-        else:
+        if existing is None:
             try:
-                qualifies = self._policy.requires_exchange(
+                threshold = self._policy.applicable_threshold(
                     amount_minor_units=transfer.amount_minor_units,
                     currency=transfer.currency,
                     origin_jurisdiction=transfer.origin_jurisdiction,
@@ -454,14 +481,26 @@ class TravelRuleService:
                 )
             except (TravelRulePolicyError, ValueError) as error:
                 raise TravelRuleBlocked("Travel Rule threshold policy is unavailable") from error
-            if not qualifies:
-                return None
-            if transfer.originator is None or transfer.beneficiary is None:
+            qualifies = transfer.amount_minor_units > threshold
+            if qualifies and (transfer.originator is None or transfer.beneficiary is None):
                 raise TravelRuleBlocked("qualifying transfers require both parties' data")
-            existing = await self._new_record(organization_id, transfer)
-            # A concurrent first preflight may have won the unique request key with
-            # different party data; never send this caller's payload under that case.
-            self._assert_same_payload(existing, transfer)
+            # The decision is persisted with its threshold so retries honor it even if the
+            # configured thresholds change later.
+            existing = await self._new_record(
+                organization_id,
+                transfer,
+                status=TravelRuleStatus.PENDING if qualifies else TravelRuleStatus.NOT_REQUIRED,
+                threshold=threshold,
+            )
+        # A concurrent first preflight may have won the unique request key with
+        # different party data; never send this caller's payload under that case.
+        self._assert_same_payload(existing, transfer)
+        if existing.status == TravelRuleStatus.NOT_REQUIRED:
+            return existing
+        if existing.provider != self._provider.name:
+            raise TravelRuleBlocked("Travel Rule case belongs to a different provider")
+        if existing.status in _TERMINAL:
+            return existing
 
         if existing.status == TravelRuleStatus.PENDING and existing.provider_ref:
             outcome = await self._call_provider(
@@ -480,6 +519,9 @@ class TravelRuleService:
             await self._save_status(existing.id, TravelRuleStatus.ERROR, outcome.provider_ref)
             raise TravelRuleBlocked("Travel Rule provider returned an unknown status") from None
         if outcome_status == TravelRuleStatus.SELF_HOSTED:
+            if not outcome.attestation_verified:
+                await self._save_status(existing.id, TravelRuleStatus.PENDING, outcome.provider_ref)
+                raise TravelRuleBlocked("self-hosted wallet attestation is incomplete")
             return await self._save_status(
                 existing.id, TravelRuleStatus.SELF_HOSTED, outcome.provider_ref
             )
@@ -494,7 +536,12 @@ class TravelRuleService:
         )
 
     async def _new_record(
-        self, organization_id: uuid.UUID, transfer: TravelRuleTransfer
+        self,
+        organization_id: uuid.UUID,
+        transfer: TravelRuleTransfer,
+        *,
+        status: TravelRuleStatus,
+        threshold: int,
     ) -> TravelRuleRecord:
         if self._cipher is None:
             raise TravelRuleBlocked("Travel Rule encryption is unavailable")
@@ -512,7 +559,7 @@ class TravelRuleService:
             organization_id=organization_id,
             payment_request_id=transfer.payment_request_id,
             provider=self._provider.name,
-            status=TravelRuleStatus.PENDING,
+            status=status,
             amount_minor_units=transfer.amount_minor_units,
             currency=transfer.currency.upper(),
             origin_jurisdiction=transfer.origin_jurisdiction.upper(),
@@ -521,6 +568,7 @@ class TravelRuleService:
             chain_id=transfer.chain_id,
             payload_encrypted=encrypted,
             provider_ref=None,
+            threshold_minor_units=threshold,
         )
         try:
             return await self._repository.create(record)
@@ -535,33 +583,29 @@ class TravelRuleService:
         organization_id: uuid.UUID,
         transfer: TravelRuleTransfer,
     ) -> TravelRuleOutcome:
-        try:
-            assessment = await self._call_provider(
-                "travel_rule_classification_failed",
-                lambda: self._provider.classify_counterparty(
-                    chain_id=transfer.chain_id,
-                    address=transfer.beneficiary_address,
-                    jurisdiction=transfer.beneficiary_jurisdiction.upper(),
-                ),
+        assessment = await self._call_provider(
+            "travel_rule_classification_failed",
+            lambda: self._provider.classify_counterparty(
+                chain_id=transfer.chain_id,
+                address=transfer.beneficiary_address,
+                jurisdiction=transfer.beneficiary_jurisdiction.upper(),
+            ),
+        )
+        if assessment.kind == CounterpartyKind.SELF_HOSTED:
+            # Attestation and persistence are handled with provider status replies by the caller.
+            return TravelRuleOutcome(
+                TravelRuleStatus.SELF_HOSTED, attestation_verified=assessment.attestation_verified
             )
-            if assessment.kind == CounterpartyKind.SELF_HOSTED:
-                if not assessment.attestation_verified:
-                    await self._save_status(existing.id, TravelRuleStatus.PENDING, None)
-                    raise TravelRuleBlocked("self-hosted wallet attestation is incomplete")
-                await self._save_status(existing.id, TravelRuleStatus.SELF_HOSTED, None)
-                return TravelRuleOutcome(TravelRuleStatus.SELF_HOSTED)
-            if assessment.kind != CounterpartyKind.VASP:
-                await self._save_status(existing.id, TravelRuleStatus.ERROR, None)
-                raise TravelRuleBlocked("counterparty classification is unavailable")
-            return await self._call_provider(
-                "travel_rule_exchange_failed",
-                lambda: self._provider.exchange(
-                    idempotency_key=f"{organization_id}:{transfer.payment_request_id}:{existing.id}",
-                    transfer=transfer,
-                ),
-            )
-        except TravelRuleBlocked:
-            raise
+        if assessment.kind != CounterpartyKind.VASP:
+            await self._save_status(existing.id, TravelRuleStatus.ERROR, None)
+            raise TravelRuleBlocked("counterparty classification is unavailable")
+        return await self._call_provider(
+            "travel_rule_exchange_failed",
+            lambda: self._provider.exchange(
+                idempotency_key=f"{organization_id}:{transfer.payment_request_id}:{existing.id}",
+                transfer=transfer,
+            ),
+        )
 
     async def _call_provider(self, event: str, operation: Callable[[], Awaitable[_T]]) -> _T:
         try:
@@ -612,7 +656,6 @@ async def travel_rule_before_pay(
     pay_steps = [step for step in plan.steps if step.action == "PAY"]
     if not pay_steps:
         return context
-    clear = False
     if (
         transfer is None
         or transfer.onchain_request_id != plan.request_id
@@ -623,18 +666,19 @@ async def travel_rule_before_pay(
         addresses = {normalize_address(step.to) for step in pay_steps}
     except ValueError:
         return context.model_copy(update={"travel_rule_clear": False})
-    if len(addresses) == 1 and addresses == {transfer.beneficiary_address}:
-        try:
-            await service.require_exchange_complete(
-                organization_id=organization_id,
-                transfer=transfer,
-            )
-            clear = True
-        except TravelRuleBlocked:
-            clear = False
-        except Exception as error:
-            logger.warning("travel_rule_preflight_failed", extra={"error": type(error).__name__})
-    return context.model_copy(update={"travel_rule_clear": clear})
+    if addresses != {transfer.beneficiary_address}:
+        return context.model_copy(update={"travel_rule_clear": False})
+    try:
+        await service.require_exchange_complete(
+            organization_id=organization_id,
+            transfer=transfer,
+        )
+    except TravelRuleBlocked:
+        return context.model_copy(update={"travel_rule_clear": False})
+    except Exception as error:
+        logger.warning("travel_rule_preflight_failed", extra={"error": type(error).__name__})
+        return context.model_copy(update={"travel_rule_clear": False})
+    return context.model_copy(update={"travel_rule_clear": True})
 
 
 def build_travel_rule_service(
@@ -688,4 +732,5 @@ def _record(row: TravelRuleExchange) -> TravelRuleRecord:
         chain_id=row.chain_id,
         payload_encrypted=row.payload_encrypted,
         provider_ref=row.provider_ref,
+        threshold_minor_units=int(row.threshold) if row.threshold is not None else None,
     )

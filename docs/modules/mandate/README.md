@@ -58,8 +58,8 @@ M03 is the **Owner's control room**. It turns what the Owner wants (limits, buff
 | `screenings` | id, payee_id or address, provider, result enum(CLEAR, HIT, ERROR), source_ref, checked_at, ttl_until | |
 | `exceptions` | id, request_id, mandate_onchain_version, amount, payee, expiry, status enum(Requested, Proposed, Granted, Consumed, Expired, Invalidated, Rejected, Revoked), governance_tx_id, draft_ai_call_id, reason | unique(request_id) where status ∈ (Proposed, Granted) |
 | `guardian_setups` *(new)* | id, treasury_id, guardian_safe, human_owners address[], sentinel_address, threshold (=1), created_tx_id, status | |
-| `treasury_fee_policies` *(new)* | id, treasury_id, preset enum(ECONOMY, NORMAL, FAST), max_fee_multiplier_bps, tip_percentile, resend_after_s, bump_bps, per_plan_threshold_wei, daily_budget_wei, reference_eth_price (asset base units per 1 ETH, for value comparison only), proposed_at, accepted_by, accepted_at, version | one active row per treasury; history kept |
-| `fee_acceptances` *(new)* | id, plan_id, estimated_fee_wei, accepted_cap_wei, accepted_by, at, reason | |
+| `treasury_fee_policies` *(new)* | id, treasury_id, preset enum(ECONOMY, NORMAL, FAST), max_fee_multiplier_bps, tip_percentile, resend_after_s, bump_bps, per_plan_threshold_wei, daily_budget_wei, avg_plan_fee_7d_wei, p90_plan_fee_7d_wei, plans_per_day_7d, nullable reference_eth_price (asset base units per 1 ETH), proposed_at, accepted_by, accepted_at, version | one pending proposal and one active row per treasury; history kept |
+| `fee_acceptances` *(new)* | id, plan_id, estimated_fee_wei, accepted_cap_wei, accepted_by, at, reason | at most one acceptance per plan; M1 cap equals the system estimate |
 | `backend_pause` | treasury_id, paused bool, reason, by, at, onchain_status enum(NotRequested, Requested, Effective) | one row per treasury |
 
 ## 5. State machines
@@ -156,14 +156,19 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | POST | `/…/governance-txs/{g}/cancel` | creator, OWN | → `{status: Cancelled}` | 409 `ALREADY_SUBMITTED` |
 | GET | `/…/governance-txs/{g}/safe-wallet-link` | OWN | → `{url}` (optional: propose to Safe Transaction Service, open in Safe{Wallet}) | 503 if the service is unavailable |
 
-Borrow and repay calldata builders encode the module's `authorizeBorrow` and
-`authorizeRepay` calls from integer arguments. Amounts, expiry, minimum health
-factor and maximum rate are carried without display-unit conversion or rounding.
-The proposal read model currently has no API-backed `planId`, expiry, minimum
-health-factor authorization, or max-rate authorization fields, so proposal-backed
-creation and the WEB-027 owner action are not wired yet. Until that integration
-exists, the general governance endpoint persists and tracks calls supplied by an
-Owner but does not independently prove they match a validated borrow proposal.
+The borrow calldata builder accepts one immutable `BorrowAuthorizationProposal`
+containing the plan ID, amount, expiry, minimum health factor and maximum rate.
+It encodes those exact integer values into `authorizeBorrow`, and the governance
+record and Safe signing payload retain the same call bytes without display-unit
+conversion or rounding. The repay builder follows the same pattern with an
+immutable `RepayAuthorizationProposal` (plan ID, amount, expiry) encoded into
+`authorizeRepay`. Both proposals accept only exact `bytes` plan IDs and `int`
+amounts (no `bool`, `float` or `bytearray`). The proposal read model still has no API-backed source for
+these authorization fields, so proposal-backed creation and the WEB-027 Owner
+action are not wired yet. Until that integration exists, an Owner can still supply
+an arbitrary call to the general governance endpoint; the immutable value object
+does not prove that its terms came from a validated proposal. This is a partial
+MDT-011 implementation and does not complete the issue.
 
 ### 6.4 Fee policy (FEE-1 … FEE-3)
 
@@ -171,6 +176,7 @@ Owner but does not independently prove they match a validated borrow proposal.
 |---|---|---|---|
 | GET | `/…/treasuries/{t}/fee-policy` | ANY | → `{active, proposal{preset, perPlanThresholdWei, dailyBudgetWei, basis{avgPlanFee7d, p90PlanFee7d, plansPerDay7d}}}` |
 | POST | `/…/treasuries/{t}/fee-policy/accept` | OWN | `{proposalId, preset?}` → `{active}` (values are the system's; the Owner accepts or picks another preset — no free typing in M1) |
+| PUT | `/…/treasuries/{t}/fee-policy/reference-price` | OWN | `{referenceEthPrice}` → `{feePolicy, referenceEthPriceSource: OWNER_LABELLED_SETTING}` (integer asset base units per ETH; no oracle in M1) |
 | POST | `/orgs/{o}/plans/{p}/fee/accept` | OWN, FIN, OPR | `{reason}` → `{acceptedCapWei}` (for a plan held by FEE-1/FEE-2) |
 | POST | `/orgs/{o}/plans/{p}/fee/defer` | OWN, FIN, OPR | → plan waits for a cheaper window |
 
@@ -232,7 +238,7 @@ Compute the on-chain diff: mandate fields changed → `configureMandate`; approv
 
 ### 8.4 Read-back
 
-After Executed + the chain's configured confirmations: read `mandate()`, `isApprover` for current and removed addresses, primary and secondary asset buffers/targets and allowlists, and the secondary PAY/REFILL caps from `AssetPolicySet` logs in the confirmed execution receipt. Also verify `aavePool()`/`aToken()` and the reserve's underlying/pool identity. Compare a canonical hash of the on-chain projection; off-chain-only settings remain covered by the immutable full `config_hash`. Equal projection → Active and the previous version becomes Superseded. A mismatch → Discrepancy plus an Owner/Finance review item; the previous version remains Active and execution is blocked by M08 `DATA_MISSING` until resolved. SUPPLY limits require a module initialized with an Aave pool; activation rejects a draft that enables SUPPLY when the module has none.
+After Executed + the chain's configured confirmations: read `mandate()`, `isApprover` for current and removed addresses, primary and secondary asset buffers/targets and allowlists, and the secondary PAY/REFILL caps from `AssetPolicySet` logs in the confirmed execution receipt. Also verify `aavePool()`/`aToken()` and the reserve's underlying/pool identity. Compare a canonical hash of the on-chain projection; off-chain-only settings remain covered by the immutable full `config_hash`. Equal projection → Active and the previous version becomes Superseded. A mismatch → Discrepancy plus an Owner/Finance review item; the previous version remains Active and execution is blocked by M08 `DATA_MISSING` until resolved. SUPPLY limits require a module initialized with an Aave pool; activation rejects a draft that enables SUPPLY when the module has none. A version whose read-back can never succeed (missing asset or module metadata, disabled chain, malformed config) also moves to Discrepancy with a review item. Discrepancy is terminal: Owners resolve it by authoring a new Draft version.
 
 ### 8.5 Exception pre-check
 
@@ -240,17 +246,16 @@ After Executed + the chain's configured confirmations: read `mandate()`, `isAppr
 
 ### 8.6 Fee policy proposal (FEE-1)
 
-From the last 7 days on this chain (or defaults on a new treasury):
-`avgPlanFee` = mean gas used per plan × mean effective gas price; `p90PlanFee` likewise at p90.
-**Per-plan threshold** = `3 × avgPlanFee` (min `p90PlanFee`). **Daily budget** = `max(3 × plansPerDay × avgPlanFee, 2 × threshold)`. Presets set `maxFee = k × baseFee + tip` with k = 1.5 / 2 / 3 and tip = p25 / p50 / p75 of `eth_feeHistory(20)`; resend after 90 / 60 / 30 s with +12.5 % (NORMAL is default). All values are proposed by the system; the Owner **accepts** (or picks another preset) — no manual numbers in M1.
+From the last 7 UTC days on this treasury's chain, sum confirmed executor gas by request (one plan per request) and compute integer-wei average and nearest-rank p90. Reverted transactions count as spent because their gas is not refunded. If no plan has completed, use a 21,000-gas baseline at the latest fee-history price and a one-plan-per-day basis.
+**Per-plan threshold** = `max(3 × avgPlanFee, p90PlanFee)`. **Daily budget** = `max(3 × plansPerDay × avgPlanFee, 2 × threshold)`. Presets set `maxFee = k × baseFee + tip` with k = 1.5 / 2 / 3 and tip = p25 / p50 / p75 of `eth_feeHistory(20)`; resend after 90 / 60 / 30 s with +12.5 % (NORMAL is default). All fee limits are proposed by the system; the Owner **accepts** (or picks another preset) — no manual fee numbers in M1.
 
 ### 8.7 Fee hold and smart wait (FEE-1, FEE-2)
 
-Before attesting a plan (M10): `est = estimateGas × maxFee` for all steps.
+Before attesting a plan (M10): `est = Σ(estimateGas(step) × maxFeePerGas(step))` in integer wei for all steps.
 - `est ≤ threshold` and `spentToday + est ≤ dailyBudget` → proceed.
 - Otherwise, if the request can still be paid by its due day with margin (`lastSafeDay > today`, using the execution lead time) → **defer** (re-check every cycle), reason `FEE_ABOVE_THRESHOLD` / `FEE_BUDGET_EXHAUSTED`, no human needed.
-- If today is the last safe day → plan `AwaitingFeeAcceptance`; review item `FEE_APPROVAL` routed to Finance/Operator/Owner (FEE-3) with "Pay now at X" / "Defer".
-- Discount check (FEE-2, with M07): early payment for a discount is scheduled only if `discount − feeInAsset > 0`, where `feeInAsset = est × reference_eth_price / 1e18` (reference price is a labelled setting in M1; an oracle is Later).
+- At or after the last safe execution time → plan `AwaitingFeeAcceptance`; persist the estimate on its `FEE_APPROVAL` review item and route it to Finance/Operator/Owner (FEE-3) with "Pay now at X" / "Defer". Accepting records a cap equal to that estimate; users cannot enter a higher fee.
+- Discount check (FEE-2, with M07): early payment for a discount is scheduled only if `discount − feeInAsset > 0`, where `feeInAsset = est × reference_eth_price / 1e18`. The Owner sets the labelled reference price in asset base units per ETH. Discount-based scheduling stays disabled until that setting exists; an oracle is Later.
 
 Example (NORMAL): avgPlanFee 0.0004 ETH → threshold 0.0012 ETH, 10 plans/day → budget max(0.012, 0.0024) = 0.012 ETH. A spike makes a plan cost 0.002 ETH: due in 5 days → deferred; due today → Finance sees "Pay now 0.002 ETH (≈ 6 tUSDC at reference 3,000) or defer".
 

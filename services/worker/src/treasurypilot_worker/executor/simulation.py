@@ -52,6 +52,8 @@ def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> 
     def coerce(kind: str, value: Any) -> Any:
         if kind == "bytes32[]":
             return [coerce("bytes32", item) for item in value]
+        if kind == "uint256[]":
+            return [int(item) for item in value]
         if kind == "bytes32" and isinstance(value, str):
             return bytes.fromhex(value.removeprefix("0x"))
         return value
@@ -70,8 +72,13 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
             raise ValueError(f"a {step.action} step needs the approval it was planned with")
         types = [_APPROVAL, "bytes", "bytes32"]
         args = [_struct(PAYMENT_APPROVAL_TYPE, ctx.approval), ctx.approver_signature, step.step_id]
-        if step.action is Action.REFILL:
+        if step.action is Action.PAY:
+            # Fiat payment plans use the fresh-quote amount while the approval carries its cap.
+            types, args = [*types, "uint256"], [*args, int(step.amount)]
+        elif step.action is Action.REFILL:
             types, args = [*types, "address", "uint256"], [*args, step.to, int(step.amount)]
+        else:
+            raise ValueError(f"{step.action} steps cannot be simulated")
     elif step.action in (Action.SUPPLY, Action.WITHDRAW):
         # attestation[1] is requestId (0x0 for a liquidity plan), as the executor expects.
         types, args = (

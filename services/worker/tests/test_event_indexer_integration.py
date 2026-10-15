@@ -263,6 +263,14 @@ def _address_topic(address: str) -> bytes:
 
 def test_module_and_safe_events_update_application_state(anvil_url: str, database_url: str) -> None:
     activation = int(time.time()) + 3600
+    exception_expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
     _emit(
         anvil_url,
         MODULE_ADDR,
@@ -276,7 +284,10 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         MODULE_ADDR,
         "ExceptionGranted",
         REQUEST_ID,
-        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, activation, 1]),
+        data=encode(
+            ["uint128", "address", "uint64", "uint64"],
+            [1000, PAYEE_ADDR, exception_expiry, 1],
+        ),
     )
     cancel = _emit(anvil_url, MODULE_ADDR, "RequestCancelled", REQUEST_ID, _address_topic(SENDER))
     _emit(
@@ -351,6 +362,79 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         )
     )["p"]
     assert json.loads(supplied) == {"stepId": "0x" + "01" * 32, "amount": "5000000", "day": "20000"}
+
+
+def test_exception_revocation_consumption_and_mandate_invalidation(
+    anvil_url: str, database_url: str
+) -> None:
+    expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "ExceptionGranted",
+        REQUEST_ID,
+        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, expiry, 1]),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Granted"
+    )
+
+    _emit(anvil_url, MODULE_ADDR, "ExceptionRevoked", REQUEST_ID)
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Revoked"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "PaymentExecuted",
+        REQUEST_ID,
+        b"\x01" * 32,
+        b"\x02" * 32,
+        data=encode(
+            ["address", "address", "uint256", "uint256", "bool", "bool"],
+            [SENDER, PAYEE_ADDR, 1000, 20_000, True, False],
+        ),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Consumed"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url, MODULE_ADDR, "MandateConfigured", data=encode(["uint64", "uint64"], [2, expiry])
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Invalidated"
+    )
 
 
 def test_rereading_the_same_range_creates_no_duplicates_or_repeat_effects(

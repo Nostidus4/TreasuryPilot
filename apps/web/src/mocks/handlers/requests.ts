@@ -16,6 +16,7 @@ import {
   h32,
   logActivity,
   notify,
+  planApprovedRequest,
   recountFlags,
   refreshQueues,
   schedule,
@@ -765,6 +766,8 @@ export const requestHandlers = [
             dailyLimit: db.treasuries[request.treasuryId].budgets[0].dailyLimit,
           },
         };
+      } else {
+        planApprovedRequest(request);
       }
       logActivity(
         request.treasuryId,

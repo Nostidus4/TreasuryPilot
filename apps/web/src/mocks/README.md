@@ -26,7 +26,7 @@ here: they call the hooks in `features/*/api.ts`, which use `lib/api/http.ts`.
 
 These were needed by the UI and should be confirmed with the backend owners:
 
-- `POST /orgs/{o}/treasuries/{t}/guardian` — record the Guardian Safe (MDT-010).
+- Guardian Safe creation/registration is intentionally not mocked. The wizard stays blocked until MDT-010 can deploy and record a threshold-1 Safe with human guardian and pause-only Sentinel owners, then verify Sentinel health.
 - `GET /orgs/{o}/treasuries/{t}/borrow-proposals/{id}` — borrow proposal read model (ADR-019 D6).
 - `POST /orgs/{o}/requests/{r}/cancel-tx/submitted` — report the `cancelRequest` tx hash (M16-D12).
 - `POST /orgs/{o}/notifications/all/read` — mark everything read.

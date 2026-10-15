@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from treasurypilot_api.agent.models import Extraction
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
@@ -220,7 +221,7 @@ def _inspect_document(body: bytes, filename: str) -> tuple[str, int]:
     raise ValueError("File content or extension is not a supported PDF, PNG or JPEG")
 
 
-async def _read_document(file: UploadFile) -> tuple[bytes, str, int]:
+async def read_document(file: UploadFile) -> tuple[bytes, str, int]:
     data = bytearray()
     while chunk := await file.read(64 * 1024):
         data.extend(chunk)
@@ -325,6 +326,7 @@ async def create_invoice_document_draft(
     idempotency_key: str,
     uploaded_by: uuid.UUID | None,
     initial_flags: tuple[InitialRequestFlag, ...] = (),
+    bind_treasury: bool = True,
 ) -> UploadResponse:
     """Store an already-inspected document and enqueue the existing extraction path."""
     body, mime, pages = document
@@ -350,7 +352,8 @@ async def create_invoice_document_draft(
                 "The treasury payment asset is unavailable.",
             )
 
-    payload_hash = hashlib.sha256(treasury_id.bytes + digest).digest()
+    # Email retries must replay even if the org re-pointed its intake treasury meanwhile.
+    payload_hash = hashlib.sha256((treasury_id.bytes if bind_treasury else b"") + digest).digest()
     replay = await _previous_upload(factory, organization_id, idempotency_key, payload_hash)
     if replay is None:
         request_id, document_id = uuid7(), uuid7()
@@ -488,7 +491,7 @@ async def upload_invoice_document(
             "Idempotency key required",
             "Provide an Idempotency-Key for this upload.",
         )
-    body, mime, pages = await _read_document(file)
+    body, mime, pages = await read_document(file)
     return await create_invoice_document_draft(
         request=request,
         organization_id=member.organization_id,
@@ -511,7 +514,6 @@ async def confirm_extraction(
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     scope: tuple[uuid.UUID, bytes] | None = None
-    multi_invoice = payload.invoice_count_in_document > 1
     try:
         async with factory() as session, session.begin():
             row = await session.scalar(
@@ -530,7 +532,33 @@ async def confirm_extraction(
                     "Request not editable",
                     "Only upload drafts can be confirmed.",
                 )
-            if multi_invoice:
+            if row.extraction_status == ExtractionStatus.EXTRACTING.value:
+                raise _fail(
+                    409,
+                    "EXTRACTION_PENDING",
+                    "Extraction pending",
+                    "The document is still being extracted; confirm once it settles.",
+                )
+            document = await session.scalar(
+                select(RequestDocument)
+                .where(RequestDocument.request_id == row.id)
+                .order_by(RequestDocument.created_at.desc(), RequestDocument.id.desc())
+                .limit(1)
+            )
+            extraction = (
+                await session.scalar(
+                    select(Extraction).where(Extraction.document_id == document.id)
+                )
+                if document is not None
+                else None
+            )
+            stored = extraction.fields.get("invoice_count_in_document") if extraction else None
+            # A malformed stored count is ignored so the operator's own report still decides.
+            if isinstance(stored, int) and not isinstance(stored, bool) and stored >= 1:
+                reported_count = max(stored, payload.invoice_count_in_document)
+            else:
+                reported_count = payload.invoice_count_in_document
+            if reported_count > 1:
                 open_flag = await session.scalar(
                     select(RequestFlag.id)
                     .where(
@@ -548,7 +576,7 @@ async def confirm_extraction(
                             revision=row.current_revision,
                             code="MULTI_INVOICE_DOCUMENT",
                             severity=RequestFlagSeverity.HIGH.value,
-                            evidence={"invoiceCountInDocument": payload.invoice_count_in_document},
+                            evidence={"invoiceCountInDocument": reported_count},
                             source=RequestFlagSource.AI.value,
                             status=RequestFlagStatus.OPEN.value,
                         )
@@ -562,9 +590,6 @@ async def confirm_extraction(
                     payee_id=payload.payee_id,
                     asset_id=row.asset_id,
                     paying_wallet_id=None,
-                )
-                document = await session.scalar(
-                    select(RequestDocument).where(RequestDocument.request_id == row.id)
                 )
                 if document is None:
                     raise _fail(

@@ -27,8 +27,11 @@ interface Vm {
     function readFile(string calldata path) external view returns (string memory);
     function parseJsonBytes32(string calldata json, string calldata key) external pure returns (bytes32);
     function parseJsonUint(string calldata json, string calldata key) external pure returns (uint256);
+    function parseJsonUintArray(string calldata json, string calldata key) external pure returns (uint256[] memory);
+    function parseJsonBool(string calldata json, string calldata key) external pure returns (bool);
     function parseJsonAddress(string calldata json, string calldata key) external pure returns (address);
     function parseJsonBytes(string calldata json, string calldata key) external pure returns (bytes memory);
+    function parseJsonString(string calldata json, string calldata key) external pure returns (string memory);
     function createSelectFork(string calldata url, uint256 blockNumber) external returns (uint256);
     function envString(string calldata name) external view returns (string memory);
     function envUint(string calldata name) external view returns (uint256);

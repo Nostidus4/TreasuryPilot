@@ -12,6 +12,7 @@ from eth_utils import keccak
 MODULE: Final = "MODULE"
 SAFE_CONFIG: Final = "SAFE_CONFIG"
 SAFE_EXEC: Final = "SAFE_EXEC"
+TOKEN: Final = "TOKEN"
 
 
 @dataclass(frozen=True)
@@ -82,12 +83,16 @@ _SAFE_EXEC = [
     "ExecutionFailure(bytes32 indexed txHash, uint256 payment)",
 ]
 
+# ERC-20 Transfer events from the treasury's configured asset contract.
+_TOKEN = ["Transfer(address indexed from, address indexed to, uint256 value)"]
+
 EVENTS: Final[Mapping[str, Mapping[str, EventAbi]]] = {
     stream: {abi.topic0: abi for abi in abis}
     for stream, abis in {
         MODULE: [_parse(item) for item in _MODULE],
         SAFE_CONFIG: _SAFE_CONFIG,
         SAFE_EXEC: [_parse(item) for item in _SAFE_EXEC],
+        TOKEN: [_parse(item) for item in _TOKEN],
     }.items()
 }
 

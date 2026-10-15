@@ -903,6 +903,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/plans/{plan_id}/fee/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Plan Fee */
+    post: operations['accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/plans/{plan_id}/fee/defer': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Defer Plan Fee */
+    post: operations['defer_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_defer_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/recurring-payment-schedules': {
     parameters: {
       query?: never;
@@ -1057,6 +1091,23 @@ export interface paths {
     patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/allow-duplicate-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Allow Duplicate */
+    post: operations['allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data': {
     parameters: {
       query?: never;
@@ -1153,6 +1204,74 @@ export interface paths {
     get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Exception */
+    get: operations['get_exception_v1_orgs__organization_id__requests__request_id__exception_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/grant-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Grant Exception */
+    post: operations['grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Exception */
+    post: operations['reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/revoke-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Exception */
+    post: operations['revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1481,6 +1600,57 @@ export interface paths {
     put?: never;
     /** Refresh Coverage */
     post: operations['refresh_coverage_v1_orgs__organization_id__treasuries__treasury_id__coverage_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Fee Policy */
+    get: operations['get_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept Fee Policy */
+    post: operations['accept_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_accept_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/reference-price': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set Fee Reference Price */
+    put: operations['set_fee_reference_price_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_reference_price_put'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1826,6 +1996,11 @@ export interface components {
       daily: string;
       /** Perrequest */
       perRequest: string;
+    };
+    /** AllowDuplicateRequest */
+    AllowDuplicateRequest: {
+      /** Reason */
+      reason: string;
     };
     /** ApiKeyCreate */
     ApiKeyCreate: {
@@ -2313,6 +2488,20 @@ export interface components {
       /** Label */
       label: string;
     };
+    /** FeePolicyAcceptRequest */
+    FeePolicyAcceptRequest: {
+      preset?: components['schemas']['FeePreset'] | null;
+      /**
+       * Proposalid
+       * Format: uuid
+       */
+      proposalId: string;
+    };
+    /**
+     * FeePreset
+     * @enum {string}
+     */
+    FeePreset: 'ECONOMY' | 'NORMAL' | 'FAST';
     /** FlagAcknowledgment */
     FlagAcknowledgment: {
       /** Note */
@@ -2355,6 +2544,14 @@ export interface components {
       | 'RESUME'
       | 'REVOKE'
       | 'GUARDIAN_SETUP';
+    /** GrantExceptionRequest */
+    GrantExceptionRequest: {
+      /**
+       * Expiryhours
+       * @default 72
+       */
+      expiryHours: number;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -2957,6 +3154,11 @@ export interface components {
         [key: string]: unknown;
       }[];
     };
+    /** PlanFeeActionRequest */
+    PlanFeeActionRequest: {
+      /** Reason */
+      reason?: string | null;
+    };
     /**
      * RecurrenceCadence
      * @enum {string}
@@ -3044,12 +3246,22 @@ export interface components {
         [key: string]: unknown;
       } | null;
     };
+    /** ReferencePriceRequest */
+    ReferencePriceRequest: {
+      /** Referenceethprice */
+      referenceEthPrice: string;
+    };
     /** RefillPath */
     RefillPath: {
       /** From */
       from: string;
       /** To */
       to: string;
+    };
+    /** RejectExceptionRequest */
+    RejectExceptionRequest: {
+      /** Reason */
+      reason: string;
     };
     /** RenewRequest */
     RenewRequest: {
@@ -5519,6 +5731,82 @@ export interface operations {
       };
     };
   };
+  accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanFeeActionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  defer_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_defer_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanFeeActionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get: {
     parameters: {
       query?: never;
@@ -5902,6 +6190,44 @@ export interface operations {
       };
     };
   };
+  allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AllowDuplicateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get: {
     parameters: {
       query?: never;
@@ -6102,6 +6428,150 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_exception_v1_orgs__organization_id__requests__request_id__exception_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GrantExceptionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectExceptionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -6854,6 +7324,116 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['CoverageResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  accept_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FeePolicyAcceptRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  set_fee_reference_price_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_reference_price_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReferencePriceRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

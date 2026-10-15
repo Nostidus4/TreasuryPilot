@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     # Signs notification-email unsubscribe links; shared with the egress worker, never the session key.
     email_unsubscribe_key: SecretStr | None = None
+    # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
+    retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
@@ -182,7 +184,11 @@ class Settings(BaseSettings):
                     raise ValueError(
                         "Travel Rule thresholds require ISO codes and nonnegative integer minor units"
                     )
+                if currency.upper() in normalized_currencies:
+                    raise ValueError("Duplicate Travel Rule currency after normalization")
                 normalized_currencies[currency.upper()] = threshold
+            if jurisdiction.upper() in normalized:
+                raise ValueError("Duplicate Travel Rule jurisdiction after normalization")
             normalized[jurisdiction.upper()] = normalized_currencies
         return json.dumps(normalized, sort_keys=True)
 
