@@ -360,6 +360,15 @@ async def _paused(connection: asyncpg.Connection, event: IndexedEvent) -> None:
 
 
 async def _resumed(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    # The Owner's resume acknowledges the circuit-breaker trips (RCV-006): consume the signals the
+    # circuit evaluator already turned into an event, or the planner gate would stay blocked.
+    await connection.execute(
+        "UPDATE chain_safety_signals s SET consumed_at = now() WHERE s.treasury_id = $1 "
+        "AND s.signal_type = 'CIRCUIT_BREAKER' AND s.consumed_at IS NULL "
+        "AND s.invalidated_at IS NULL AND EXISTS (SELECT 1 FROM circuit_events e "
+        "WHERE e.treasury_id = s.treasury_id AND e.dedupe_key = 'signal:' || s.id::text)",
+        event.treasury_id,
+    )
     row = await connection.fetchrow(
         "UPDATE backend_pause SET paused = false, onchain_status = 'NotRequested', "
         "version = version + 1, updated_at = now() WHERE treasury_id = $1 "

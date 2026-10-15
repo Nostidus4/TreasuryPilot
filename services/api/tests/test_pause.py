@@ -186,6 +186,15 @@ def test_guardian_cannot_resume_or_revoke(monkeypatch: pytest.MonkeyPatch) -> No
     assert governance.calls == []
 
 
+def test_circuit_pause_is_resumed_by_the_owner_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _paused_row(OnchainPauseStatus.EFFECTIVE)
+    row.reason = "Circuit breaker: REJECTIONS"
+    guardian, _, governance = _client(monkeypatch, role="Guardian", row=row)
+    assert guardian.post(f"{URL}/resume-tx").status_code == 403 and governance.calls == []
+    owner, _, governance = _client(monkeypatch, role="Owner", row=row)
+    assert owner.post(f"{URL}/resume-tx").status_code == 201 and len(governance.calls) == 1
+
+
 def test_owner_resume_builds_resume_call_only_when_pause_is_effective(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

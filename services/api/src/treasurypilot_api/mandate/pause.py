@@ -223,6 +223,7 @@ async def _upsert_pause(
     reason: str,
 ) -> OnchainPauseStatus:
     """Set the flag atomically: two first pauses cannot collide on the primary key."""
+    # Keep in sync with the worker's _PAUSE in recovery/circuit.py (raw-SQL twin of this upsert).
     table = BackendPause.__table__
     status_type = table.c.onchain_status.type
     insert = pg_insert(BackendPause).values(

@@ -1832,6 +1832,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Events */
+    get: operations['list_events_v1_orgs__organization_id__treasuries__treasury_id__circuit_events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/rules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Rules */
+    get: operations['list_rules_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/rules/{rule}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Tighten Rule */
+    put: operations['tighten_rule_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules__rule__put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge': {
     parameters: {
       query?: never;
@@ -2659,6 +2710,70 @@ export interface components {
        * Format: date-time
        */
       verifiedAt: string;
+    };
+    /** CircuitEventView */
+    CircuitEventView: {
+      /** Action */
+      action: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Details */
+      details: {
+        [key: string]: unknown;
+      };
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      rule: components['schemas']['CircuitRule'];
+    };
+    /** CircuitEventsResponse */
+    CircuitEventsResponse: {
+      /** Items */
+      items: components['schemas']['CircuitEventView'][];
+    };
+    /**
+     * CircuitRule
+     * @enum {string}
+     */
+    CircuitRule:
+      | 'REJECTIONS'
+      | 'AI_PLAN_REJECTED'
+      | 'COVERAGE_DROP'
+      | 'DISCREPANCY'
+      | 'UNEXPECTED_OUTFLOW';
+    /** CircuitRuleUpdate */
+    CircuitRuleUpdate: {
+      /** Threshold */
+      threshold: number;
+      /** Windowseconds */
+      windowSeconds: number;
+    };
+    /** CircuitRuleView */
+    CircuitRuleView: {
+      /** Action */
+      action: string;
+      /**
+       * Cooldownseconds
+       * @default 1800
+       */
+      cooldownSeconds: number;
+      rule: components['schemas']['CircuitRule'];
+      /** Threshold */
+      threshold: number;
+      /** Tunable */
+      tunable: boolean;
+      /** Windowseconds */
+      windowSeconds: number;
+    };
+    /** CircuitRulesResponse */
+    CircuitRulesResponse: {
+      /** Items */
+      items: components['schemas']['CircuitRuleView'][];
     };
     /** CitationView */
     CitationView: {
@@ -8807,6 +8922,107 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TreasuryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_events_v1_orgs__organization_id__treasuries__treasury_id__circuit_events_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CircuitEventsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_rules_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CircuitRulesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tighten_rule_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules__rule__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        rule: components['schemas']['CircuitRule'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CircuitRuleUpdate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CircuitRulesResponse'];
         };
       };
       /** @description Validation Error */

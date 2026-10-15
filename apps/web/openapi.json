@@ -686,6 +686,122 @@
         "title": "ChannelView",
         "type": "object"
       },
+      "CircuitEventView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/CircuitRule"
+          }
+        },
+        "required": ["id", "rule", "action", "details", "createdAt"],
+        "title": "CircuitEventView",
+        "type": "object"
+      },
+      "CircuitEventsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitEventView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "CircuitEventsResponse",
+        "type": "object"
+      },
+      "CircuitRule": {
+        "enum": [
+          "REJECTIONS",
+          "AI_PLAN_REJECTED",
+          "COVERAGE_DROP",
+          "DISCREPANCY",
+          "UNEXPECTED_OUTFLOW"
+        ],
+        "title": "CircuitRule",
+        "type": "string"
+      },
+      "CircuitRuleUpdate": {
+        "properties": {
+          "threshold": {
+            "minimum": 1.0,
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "windowSeconds": {
+            "minimum": 0.0,
+            "title": "Windowseconds",
+            "type": "integer"
+          }
+        },
+        "required": ["threshold", "windowSeconds"],
+        "title": "CircuitRuleUpdate",
+        "type": "object"
+      },
+      "CircuitRuleView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "cooldownSeconds": {
+            "default": 1800,
+            "title": "Cooldownseconds",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/CircuitRule"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "tunable": {
+            "title": "Tunable",
+            "type": "boolean"
+          },
+          "windowSeconds": {
+            "title": "Windowseconds",
+            "type": "integer"
+          }
+        },
+        "required": ["rule", "threshold", "windowSeconds", "action", "tunable"],
+        "title": "CircuitRuleView",
+        "type": "object"
+      },
+      "CircuitRulesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitRuleView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "CircuitRulesResponse",
+        "type": "object"
+      },
       "CitationView": {
         "properties": {
           "path": {
@@ -12421,6 +12537,177 @@
         },
         "summary": "Get Treasury",
         "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/events": {
+      "get": {
+        "operationId": "list_events_v1_orgs__organization_id__treasuries__treasury_id__circuit_events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitEventsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events",
+        "tags": ["circuit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/rules": {
+      "get": {
+        "operationId": "list_rules_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitRulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rules",
+        "tags": ["circuit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/circuit/rules/{rule}": {
+      "put": {
+        "operationId": "tighten_rule_v1_orgs__organization_id__treasuries__treasury_id__circuit_rules__rule__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CircuitRule"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CircuitRuleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitRulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tighten Rule",
+        "tags": ["circuit"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/coverage/acknowledge": {

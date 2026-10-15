@@ -43,8 +43,8 @@ M11 answers two questions after money moves: **did the chain end up exactly as p
 | Table | Columns | Notes |
 |---|---|---|
 | `verifications` | id, operation_id, block_number, expected jsonb, observed jsonb, diffs jsonb, result enum(PASSED, DISCREPANCY, UNKNOWN), at | append-only |
-| `reconciliations` | id, org_id, treasury_id, request_id, status enum(NotReady, Pending, Matched, Discrepancy), matched_by enum(USER, AUTO) null, matched_user_id, matched_at, note, finalized_at, eas_uid, version | one per request |
-| `reconciliation_lines` | id, reconciliation_id, class enum(INTERNAL_TRANSFER, CONVERSION, EXTERNAL_EXPENSE, FEE), operation_id, tx_hash, from, to, asset, amount, fee_wei, block_number, day | |
+| `reconciliations` | id, org_id, treasury_id, request_id, status enum(NotReady, Pending, Matched, Discrepancy), created_at, matched_by enum(USER, AUTO) null, matched_user_id, matched_at, note, finalized_at, eas_uid, version | one per request |
+| `reconciliation_lines` | id, reconciliation_id, classification enum(INTERNAL_TRANSFER, CONVERSION, EXTERNAL_EXPENSE, LENDING_TRANSFER, FEE) (renamed from `class`), operation_id, transaction_id, tx_hash, from_address, to_address (null for FEE), asset_address (null for FEE), amount, fee_wei, block_number, day | |
 | `account_mappings` | id, org_id, class, account_code, account_name | default generic rows seeded (OQ-12) |
 | `exports` | id, org_id, period_from, period_to, format enum(CSV, JOURNAL), storage_key, sha256, totals jsonb, created_by | |
 | `chain_attestations` | id, request_id, schema_uid, attestation_uid, tx_hash, status enum(Queued, Sent, Confirmed, Failed), attempts | ADR-018 |
@@ -92,7 +92,7 @@ Observed = values at block B minus values at B−1, read via Multicall3 pinned b
 
 ### 8.2 Classification (BR-096)
 
-REFILL → INTERNAL_TRANSFER; SWAP → CONVERSION; PAY → EXTERNAL_EXPENSE; every transaction's fee → FEE (ETH, valued at the reference price only in exports, labelled). A refill whose PAY never succeeded stays on an unpaid request and does not produce an expense.
+REFILL → INTERNAL_TRANSFER; SWAP → CONVERSION; SUPPLY/WITHDRAW → LENDING_TRANSFER; PAY → EXTERNAL_EXPENSE; every transaction's fee → FEE (ETH, valued at the reference price only in exports, labelled). A refill whose PAY never succeeded stays on an unpaid request and does not produce an expense.
 
 ### 8.3 Auto-match (OQ-09, default off)
 

@@ -232,3 +232,23 @@ def test_resume_on_a_revoked_treasury_is_refused(url: str, monkeypatch: pytest.M
     asyncio.run(_sql(url, "UPDATE treasuries SET status = 'Revoked' WHERE id = :t", t=treasury))
     response = client.post(f"{_base(treasury)}/resume-tx")
     assert response.status_code == 409 and response.json()["code"] == "TREASURY_REVOKED"
+
+
+def test_owner_tightens_a_circuit_rule_and_get_returns_it(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from treasurypilot_api.recovery import circuit
+
+    audited: list[Any] = []
+
+    async def capture(_: object, event: Any) -> None:
+        audited.append(event)
+
+    monkeypatch.setattr(circuit, "log_audit_event", capture)
+    client, treasury = _client(url, monkeypatch), TREASURIES[5]
+    rules = f"{_base(treasury)}/circuit/rules"
+    response = client.put(f"{rules}/REJECTIONS", json={"threshold": 2, "windowSeconds": 1800})
+    assert response.status_code == 200
+    items = {i["rule"]: i for i in client.get(rules).json()["items"]}
+    assert (items["REJECTIONS"]["threshold"], items["REJECTIONS"]["windowSeconds"]) == (2, 1800)
+    assert [(e.action, e.data["threshold"]) for e in audited] == [("circuit_rule.tightened", 2)]
