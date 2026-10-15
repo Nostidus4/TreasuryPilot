@@ -9,14 +9,14 @@ from eth_abi.exceptions import DecodingError
 from eth_account.signers.local import LocalAccount
 from eth_hash.auto import keccak
 
-from treasurypilot_core.eip712 import (  # type: ignore[import-untyped]
+from treasurypilot_core.eip712 import (
     PAY,
     REFILL,
     SUPPLY,
     WITHDRAW,
     plan_hash,
 )
-from treasurypilot_core.policy.attestation import (  # type: ignore[import-untyped]
+from treasurypilot_core.policy.attestation import (
     verify_attestation,
 )
 from treasurypilot_signer.config import Settings

@@ -8,14 +8,14 @@ from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel
 
-from treasurypilot_core.error_tracking import (  # type: ignore[import-untyped]
+from treasurypilot_core.error_tracking import (
     configure_error_tracking,
 )
-from treasurypilot_core.observability import configure_logging  # type: ignore[import-untyped]
-from treasurypilot_core.observability_asgi import (  # type: ignore[import-untyped]
+from treasurypilot_core.observability import configure_logging
+from treasurypilot_core.observability_asgi import (
     CorrelationMiddleware,
 )
-from treasurypilot_core.tracing import configure_tracing  # type: ignore[import-untyped]
+from treasurypilot_core.tracing import configure_tracing
 from treasurypilot_signer import __version__
 from treasurypilot_signer.config import Settings, get_settings
 from treasurypilot_signer.keys import ExecutorKeys

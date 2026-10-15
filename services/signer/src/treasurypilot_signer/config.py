@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from treasurypilot_core.observability import LogFormat  # type: ignore[import-untyped]
+from treasurypilot_core.observability import LogFormat
 
 
 class Settings(BaseSettings):
