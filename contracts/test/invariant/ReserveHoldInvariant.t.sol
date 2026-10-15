@@ -154,7 +154,7 @@ contract ReserveHandler {
         bytes memory sig = abi.encode(vm.addr(7), abi.encodePacked(r, s, v));
         bytes32 step = keccak256(abi.encode("step", ++nonce));
         vm.prank(executor);
-        try gate.refill(ap, sig, step, wallet, amount) {} catch {}
+        try gate.refill(ap, sig, step, owner, wallet, amount) {} catch {}
     }
 
     function advanceTime(uint256 seed) external {

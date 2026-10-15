@@ -70,7 +70,7 @@ contract RequirementMatrixTest is TreasuryFixture {
         vm.warp((previousDay + 1) * 1 days);
         vm.prank(executor);
         module.pay(ap, signature, bytes32(uint256(2)), ap.amount);
-        require(module.usedToday(module.PAY()) == 100e6, "execution day cap");
+        require(module.usedToday(module.PAY(), address(token)) == 100e6, "execution day cap");
         require(
             module.usedOn(keccak256(abi.encode(module.PAY(), address(token), previousDay))) == 100e6,
             "previous day preserved"
@@ -83,7 +83,7 @@ contract RequirementMatrixTest is TreasuryFixture {
 
     function _assertRejected(I.PaymentApproval memory ap) internal view {
         require(!module.requestPaid(ap.requestId) && !module.stepUsed(keccak256("rejected step")), "replay rollback");
-        require(module.usedToday(module.PAY()) == 0 && token.balanceOf(vendor) == 0, "payment rollback");
+        require(module.usedToday(module.PAY(), address(token)) == 0 && token.balanceOf(vendor) == 0, "payment rollback");
         require(token.balanceOf(address(op1)) == 10000e6, "cash rollback");
         (,,,, bool used) = module.exceptions(ap.requestId);
         require(!used, "grant rollback");
@@ -129,18 +129,21 @@ contract RequirementMatrixTest is TreasuryFixture {
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.OverRefillPerRequest.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(1)), address(op1), 500e6 + 1);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), address(op1), 500e6 + 1);
         require(
             !module.refilledFor(ap.requestId, address(op1)) && !module.stepUsed(bytes32(uint256(1))), "per-tx effects"
         );
-        require(module.usedToday(module.REFILL()) == 0 && token.balanceOf(address(op1)) == 0, "per-tx rollback");
+        require(
+            module.usedToday(module.REFILL(), address(token)) == 0 && token.balanceOf(address(op1)) == 0,
+            "per-tx rollback"
+        );
         _refill(ap, bytes32(uint256(1)), 500e6);
         ap = _approval(2, 1000e6);
         sig = _sign(ap);
         uint256 beforeCash = token.balanceOf(address(treasury));
         vm.expectRevert(E.OverRefillDaily.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(2)), address(op1), 100e6 + 1);
+        module.refill(ap, sig, bytes32(uint256(2)), address(treasury), address(op1), 100e6 + 1);
         require(
             !module.refilledFor(ap.requestId, address(op1)) && !module.stepUsed(bytes32(uint256(2))), "daily effects"
         );
@@ -148,9 +151,13 @@ contract RequirementMatrixTest is TreasuryFixture {
             token.balanceOf(address(treasury)) == beforeCash && token.balanceOf(address(op1)) == 500e6,
             "daily cash rollback"
         );
-        require(module.usedToday(module.REFILL()) == 500e6 && module.usedToday(module.PAY()) == 0, "separate counters");
+        require(
+            module.usedToday(module.REFILL(), address(token)) == 500e6
+                && module.usedToday(module.PAY(), address(token)) == 0,
+            "separate counters"
+        );
         _refill(ap, bytes32(uint256(2)), 100e6);
-        require(module.usedToday(module.REFILL()) == 600e6, "exact daily cap");
+        require(module.usedToday(module.REFILL(), address(token)) == 600e6, "exact daily cap");
     }
 
     function testBorrowEventMatchesChainReaderTopicAndPayload() external {

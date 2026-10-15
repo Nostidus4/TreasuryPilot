@@ -28,7 +28,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         module.pay(ap, signature, bytes32(uint256(500)), 101e6);
 
         require(token.balanceOf(vendor) == 101e6, "did not pay proposed amount");
-        require(module.usedToday(module.PAY()) == 101e6, "counter did not track proposed amount");
+        require(module.usedToday(module.PAY(), address(token)) == 101e6, "counter did not track proposed amount");
     }
 
     function testFreshQuotePaymentAboveSignedStablecoinMaximumReverts() external {
@@ -304,12 +304,17 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         ap.earlyAmount = 90e6;
         ap.earlyPayBy = uint64(block.timestamp);
         _pay(ap, bytes32(uint256(1)));
-        require(token.balanceOf(vendor) == 90e6 && module.usedToday(module.PAY()) == 90e6, "early amount");
+        require(
+            token.balanceOf(vendor) == 90e6 && module.usedToday(module.PAY(), address(token)) == 90e6, "early amount"
+        );
         ap.requestId = bytes32(uint256(2));
         ap.fingerprint = bytes32(uint256(2));
         vm.warp(block.timestamp + 1);
         _pay(ap, bytes32(uint256(2)));
-        require(token.balanceOf(vendor) == 190e6 && module.usedToday(module.PAY()) == 190e6, "standard amount");
+        require(
+            token.balanceOf(vendor) == 190e6 && module.usedToday(module.PAY(), address(token)) == 190e6,
+            "standard amount"
+        );
         ap = _approval(3, 100e6);
         ap.earlyAmount = 100e6 + 1;
         _expectPayError(ap, E.WrongPaymentOption.selector);
@@ -324,9 +329,9 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         _expectPayError(ap, E.OverDailyLimit.selector);
         ap.amount = 50e6;
         _pay(ap, bytes32(uint256(2)));
-        require(module.usedToday(module.PAY()) == 150e6, "daily aggregate");
+        require(module.usedToday(module.PAY(), address(token)) == 150e6, "daily aggregate");
         vm.warp((block.timestamp / 1 days + 1) * 1 days);
-        require(module.usedToday(module.PAY()) == 0, "UTC reset");
+        require(module.usedToday(module.PAY(), address(token)) == 0, "UTC reset");
         _pay(_approval(3, 100e6), bytes32(uint256(3)));
     }
 
@@ -346,22 +351,25 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.WrongRefillTarget.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(1)), address(op2), 1e6);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), address(op2), 1e6);
         vm.expectRevert(E.RefillExceedsNeed.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(1)), address(op1), 230e6 + 1);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), address(op1), 230e6 + 1);
         _refill(ap, bytes32(uint256(1)), 230e6);
-        require(token.balanceOf(address(op1)) == 250e6 && module.usedToday(module.PAY()) == 0, "refill bound");
+        require(
+            token.balanceOf(address(op1)) == 250e6 && module.usedToday(module.PAY(), address(token)) == 0,
+            "refill bound"
+        );
         vm.expectRevert(E.AlreadyRefilledForRequest.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(2)), address(op1), 1);
-        require(module.usedToday(module.REFILL()) == 230e6, "refill counter");
+        module.refill(ap, sig, bytes32(uint256(2)), address(treasury), address(op1), 1);
+        require(module.usedToday(module.REFILL(), address(token)) == 230e6, "refill counter");
         _owner(abi.encodeCall(module.setBuffer, (address(treasury), token.balanceOf(address(treasury)), 0)));
         ap = _approval(2, 100e6);
         sig = _sign(ap);
         vm.expectRevert(E.SourceBufferBreach.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(3)), address(op1), 1);
+        module.refill(ap, sig, bytes32(uint256(3)), address(treasury), address(op1), 1);
     }
 
     function testExceptionMatchesOnceAndNeverLiftsDailyCap() external {
@@ -417,6 +425,9 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         if (afterDate) vm.warp(block.timestamp + 1);
         _pay(ap, bytes32(uint256(1)));
         uint256 expected = early > 0 && !afterDate ? early : amount;
-        require(token.balanceOf(vendor) == expected && module.usedToday(module.PAY()) == expected, "payment option");
+        require(
+            token.balanceOf(vendor) == expected && module.usedToday(module.PAY(), address(token)) == expected,
+            "payment option"
+        );
     }
 }

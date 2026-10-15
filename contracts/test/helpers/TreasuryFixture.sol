@@ -155,7 +155,7 @@ abstract contract TreasuryFixture is SafeTestHelper {
     function _refill(I.PaymentApproval memory ap, bytes32 step, uint256 amount) internal {
         bytes memory signature = _sign(ap);
         vm.prank(executor);
-        module.refill(ap, signature, step, ap.payingWallet, amount);
+        module.refill(ap, signature, step, address(treasury), ap.payingWallet, amount);
     }
 
     function _expectPayError(I.PaymentApproval memory ap, bytes4 selector) internal {

@@ -63,7 +63,8 @@ contract AaveUSDCCappedForkTest is USDCForkFixture {
         vm.prank(executor);
         module.supply(bytes32(uint256(1)), 100e6);
         require(
-            token.balanceOf(address(treasury)) == beforeCash && module.usedToday(module.SUPPLY()) == 0, "cap rollback"
+            token.balanceOf(address(treasury)) == beforeCash && module.usedToday(module.SUPPLY(), address(token)) == 0,
+            "cap rollback"
         );
         require(!module.stepUsed(bytes32(uint256(1))) && token.allowance(address(treasury), POOL) == 0, "cap effects");
     }
