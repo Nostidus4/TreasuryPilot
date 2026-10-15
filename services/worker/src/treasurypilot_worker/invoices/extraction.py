@@ -148,10 +148,14 @@ def terms_values(extraction: InvoiceExtraction, *, decimals: int) -> dict[str, A
     """
 
     terms = extraction.terms
-    if terms is None or terms.uncertain or terms.net_days is None:
+    if terms is None:
+        return None
+    if terms.uncertain or terms.net_days is None:
+        logger.debug("terms_dropped reason=%s", terms.uncertain_reason or "net_days missing")
         return None
     if (terms.discount_bps is None) != (terms.discount_days is None):
-        return None  # half a discount is ambiguous, not "no discount"
+        logger.debug("terms_dropped reason=partial_discount")  # ambiguous, not "no discount"
+        return None
 
     def units(text: str | None) -> int | None:
         return None if text is None else int(BaseUnits.parse(text, decimals))
@@ -175,7 +179,8 @@ def terms_values(extraction: InvoiceExtraction, *, decimals: int) -> dict[str, A
             }
         )
         validate_terms(parsed)
-    except (ValueError, InvalidTerms):  # pydantic's ValidationError is a ValueError
+    except (ValueError, InvalidTerms) as error:  # pydantic's ValidationError is a ValueError
+        logger.debug("terms_dropped reason=invalid %s", type(error).__name__)
         return None
     return parsed.model_dump(mode="json", exclude_none=True)
 

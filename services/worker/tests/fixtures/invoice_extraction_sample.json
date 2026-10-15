@@ -1,40 +1,16 @@
 {
-  "vendor_name": {
-    "value": "Acme Design Ltd",
-    "page": 1,
-    "span": "Acme Design Ltd"
-  },
-  "invoice_no": {
-    "value": "INV-2026-0042",
-    "page": 1,
-    "span": "Invoice No: INV-2026-0042"
-  },
-  "issue_date": {
-    "value": "2026-10-01",
-    "page": 1,
-    "span": "Issued 2026-10-01"
-  },
-  "due_date": {
-    "value": "2026-10-31",
-    "page": 1,
-    "span": "Due 2026-10-31"
-  },
-  "amount_text": {
-    "value": "1250.50",
-    "page": 1,
-    "span": "Total due: 1250.50 USDC"
-  },
-  "currency": {
-    "value": "USDC",
-    "page": 1,
-    "span": "Total due: 1250.50 USDC"
-  },
+  "vendor_name": {"value": "Acme Design Ltd", "page": 1, "span": "Acme Design Ltd"},
+  "invoice_no": {"value": "INV-2026-0042", "page": 1, "span": "Invoice No: INV-2026-0042"},
+  "issue_date": {"value": "2026-10-01", "page": 1, "span": "Issued 2026-10-01"},
+  "due_date": {"value": "2026-10-31", "page": 1, "span": "Due 2026-10-31"},
+  "amount_text": {"value": "1250.50", "page": 1, "span": "Total due: 1250.50 USDC"},
+  "currency": {"value": "USDC", "page": 1, "span": "Total due: 1250.50 USDC"},
   "payee_address_as_found": {
     "value": "0x3333333333333333333333333333333333333333",
     "page": 1,
     "span": "Pay to 0x3333333333333333333333333333333333333333"
   },
+  "terms": null,
   "invoice_count_in_document": 1,
-  "suspicious_instructions": [],
-  "terms": null
+  "suspicious_instructions": []
 }
