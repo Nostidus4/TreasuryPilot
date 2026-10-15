@@ -57,6 +57,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         pool: asyncpg.Pool | None = None
+        rpc: JsonRpc | None = None
         application.state.signing_service = signer_override
         database_url = settings.effective_database_url
         if signer_override is None and database_url and settings.chain_rpc_url:
@@ -73,15 +74,18 @@ def create_app(
                 init=use_signer_role,
             )
             key_store = ExecutorKeys(settings)
+            rpc = JsonRpc(settings.chain_rpc_url)
             application.state.signing_service = SigningService(
                 settings,
                 SignerStore(pool),
-                JsonRpc(settings.chain_rpc_url),
+                rpc,
                 key_store.for_treasury,
             )
         try:
             yield
         finally:
+            if rpc is not None:
+                await rpc.close()
             if pool is not None:
                 await pool.close()
 

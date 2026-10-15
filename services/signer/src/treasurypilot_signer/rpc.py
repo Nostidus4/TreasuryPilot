@@ -23,18 +23,25 @@ class JsonRpc:
         self._url = url
         self._ids = itertools.count(1)
         self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._session: aiohttp.ClientSession | None = None
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
     async def call(self, method: str, params: Sequence[Any]) -> Any:
         request_id = next(self._ids)
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                async with session.post(
-                    self._url,
-                    json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
-                ) as response:
-                    if response.status != 200:
-                        raise RpcFailure(method)
-                    body: Mapping[str, Any] = await response.json()
+            if self._session is None or self._session.closed:
+                self._session = aiohttp.ClientSession(timeout=self._timeout)
+            async with self._session.post(
+                self._url,
+                json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
+            ) as response:
+                if response.status != 200:
+                    raise RpcFailure(method)
+                body: Mapping[str, Any] = await response.json()
         except (aiohttp.ClientError, TimeoutError, ValueError) as error:
             raise RpcFailure(method) from error
         if "error" in body:

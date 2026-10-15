@@ -331,6 +331,16 @@ def _rpc(url: str, method: str, params: list[Any]) -> Any:
     return body["result"]
 
 
+def _wait_for_receipt(url: str, transaction_hash: str) -> dict[str, Any]:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        receipt = _rpc(url, "eth_getTransactionReceipt", [transaction_hash])
+        if receipt is not None:
+            return receipt
+        time.sleep(0.05)
+    pytest.fail("Anvil did not mine the signer transaction within 10 seconds")
+
+
 @pytest.fixture
 def anvil_url() -> Iterator[str]:
     executable = shutil.which("anvil")
@@ -472,15 +482,23 @@ def test_signed_transaction_is_broadcast_to_anvil(anvil_url: str) -> None:
     _rpc(anvil_url, "anvil_setCode", [MODULE, _return_runtime(mandate_data)])
     _rpc(anvil_url, "anvil_setCode", [EXECUTOR_CONTRACT, "0x00"])
 
+    rpc = JsonRpc(anvil_url)
     service = SigningService(
         Settings(allowed_chain_ids=[31337], trusted_policy_signers=[POLICY.address]),
         FakeStore(),
-        JsonRpc(anvil_url),
+        rpc,
         lambda _treasury: executor,
     )
-    result = asyncio.run(service.sign_and_send(_make_request(executor=executor)))
 
-    receipt = _rpc(anvil_url, "eth_getTransactionReceipt", [result.tx_hash])
+    async def sign_and_close_rpc() -> Any:
+        try:
+            return await service.sign_and_send(_make_request(executor=executor))
+        finally:
+            await rpc.close()
+
+    result = asyncio.run(sign_and_close_rpc())
+
+    receipt = _wait_for_receipt(anvil_url, result.tx_hash)
     transaction = _rpc(anvil_url, "eth_getTransactionByHash", [result.tx_hash])
     assert receipt["status"] == "0x1"
     assert transaction["from"].lower() == executor.address.lower()
