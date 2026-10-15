@@ -10,12 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
+from treasurypilot_api.identity.api import _service as _auth_service
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import PaymentRequest
+from treasurypilot_api.mandate.fees import accept_held_plan_fee
 from treasurypilot_api.mandate.models import MandateVersion
-from treasurypilot_api.mandate.models import FeeAcceptance
 from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.recovery.review_queue import (
     ReviewAction,
@@ -207,44 +208,21 @@ async def act_on_review_item(
             raise _failure(409, "ACTION_NOT_ALLOWED", "The action is not allowed for this item.")
         if payload.note is not None:
             item.note = payload.note
-        if payload.action == ReviewAction.ACCEPT_FEE:
-            if item.type != ReviewType.FEE_APPROVAL.value:
-                raise _failure(
-                    409, "ACTION_NOT_ALLOWED", "Fee acceptance is only valid for fee reviews."
-                )
-            if item.plan_id is None or item.fee_estimate_wei is None:
-                raise _failure(
-                    409, "FEE_REVIEW_INCOMPLETE", "The held plan is missing its fee estimate."
-                )
-            existing = await session.scalar(
-                select(FeeAcceptance).where(FeeAcceptance.plan_id == item.plan_id)
-            )
-            if existing is not None:
-                raise _failure(
-                    409, "FEE_ALREADY_ACCEPTED", "This plan already has an accepted fee cap."
-                )
-            session.add(
-                FeeAcceptance(
-                    id=uuid7(),
-                    org_id=member.organization_id,
-                    plan_id=item.plan_id,
-                    estimated_fee_wei=item.fee_estimate_wei,
-                    accepted_cap_wei=item.fee_estimate_wei,
-                    accepted_by=member.user_id,
-                    at=datetime.now(UTC),
-                    reason=payload.note.strip() or None if payload.note is not None else None,
-                )
-            )
         if payload.action in {ReviewAction.ACCEPT_FEE, ReviewAction.DEFER}:
             if item.type != ReviewType.FEE_APPROVAL.value:
                 raise _failure(
                     409, "ACTION_NOT_ALLOWED", "Fee actions are only valid for fee reviews."
                 )
         if payload.action == ReviewAction.ACCEPT_FEE:
-            item.status = "Resolved"
-            item.resolution = payload.action.value
-            item.resolved_by = member.user_id
-            item.resolved_at = datetime.now(UTC)
+            # Accepting spends beyond the Owner's policy, so it needs a fresh second factor.
+            _auth_service(request).require_step_up(member.access)
+            await accept_held_plan_fee(
+                session,
+                item=item,
+                user_id=member.user_id,
+                reason=payload.note,
+                now=datetime.now(UTC),
+            )
         elif payload.action != ReviewAction.DEFER:
             item.status = "Resolved"
             item.resolution = payload.action.value

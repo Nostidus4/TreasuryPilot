@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,7 +159,7 @@ async def create_for_outcome(
         )
         .on_conflict_do_nothing(
             index_elements=[ReviewItem.request_id, ReviewItem.type],
-            index_where=ReviewItem.status == "Open",
+            index_where=text("status = 'Open'"),
         )
     )
     # Re-point an existing open item at a newer request version so it stays actionable.
@@ -169,7 +169,17 @@ async def create_for_outcome(
             ReviewItem.request_id == request.id,
             ReviewItem.type == kind.value,
             ReviewItem.status == "Open",
-            ReviewItem.request_version < request.version,
+            or_(
+                ReviewItem.request_version < request.version,
+                # An open fee review tracks the latest estimate of the same request version.
+                and_(
+                    ReviewItem.type == ReviewType.FEE_APPROVAL.value,
+                    or_(
+                        ReviewItem.plan_id.is_distinct_from(plan_id),
+                        ReviewItem.fee_estimate_wei.is_distinct_from(fee_estimate_wei),
+                    ),
+                ),
+            ),
         )
         .values(
             request_version=request.version,

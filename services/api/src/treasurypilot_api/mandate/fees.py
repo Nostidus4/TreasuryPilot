@@ -18,9 +18,11 @@ from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.mandate.models import FeeAcceptance, FeePreset, TreasuryFeePolicy
+from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.treasury.models import Treasury
 from treasurypilot_core.domain.fee_policy import (
     PRESETS,
+    FeeProposal,
     propose_fee_policy,
 )
 from treasurypilot_core.domain.fee_policy import (
@@ -28,6 +30,9 @@ from treasurypilot_core.domain.fee_policy import (
 )
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}", tags=["fees"])
+
+# A proposal is a snapshot of fee history; an older one is regenerated, never shown or accepted.
+PROPOSAL_MAX_AGE = timedelta(hours=1)
 
 
 class FeeHistoryProvider(Protocol):
@@ -133,8 +138,8 @@ async def _daily_spend(session: AsyncSession, treasury_id: uuid.UUID, day: date)
 async def _last_week_plan_fees(
     session: AsyncSession, treasury_id: uuid.UUID, today: date
 ) -> list[int]:
-    # Plans are one-per-request in M10 §4. Until the durable plans table lands,
-    # aggregate confirmed executor gas by request through the outbox rows.
+    # shortcut: operations carry no plan id yet, so this groups by request (one plan per request,
+    # M10 §4); a replanned request merges its plans. Group by plan once the plans table lands.
     statement = (
         select(Operation.request_id, func.sum(GasLedger.fee_wei))
         .join(Transaction, Transaction.operation_id == Operation.id)
@@ -184,6 +189,25 @@ async def _rpc_fee_history(request: Request, *, chain_id: int) -> tuple[int, lis
         ) from None
 
 
+async def _new_proposal(
+    request: Request,
+    *,
+    treasury_id: uuid.UUID,
+    chain_id: int,
+    preset: DomainFeePreset,
+) -> FeeProposal:
+    async with _sessions(request)() as session:
+        plan_fees = await _last_week_plan_fees(session, treasury_id, datetime.now(UTC).date())
+    base_fee, tips = await _rpc_fee_history(request, chain_id=chain_id)
+    return propose_fee_policy(
+        plan_fees_wei=plan_fees,
+        plans_last_7d=len(plan_fees),
+        base_fee_per_gas_wei=base_fee,
+        priority_fees_wei=tips,
+        preset=preset,
+    )
+
+
 async def _view_for_treasury(
     session: AsyncSession,
     *,
@@ -219,7 +243,8 @@ async def get_fee_policy(
     request: Request,
     member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> dict[str, object]:
-    today = datetime.now(UTC).date()
+    now = datetime.now(UTC)
+    today = now.date()
     sessions = _sessions(request)
     async with sessions() as session:
         state = await _view_for_treasury(
@@ -230,18 +255,12 @@ async def get_fee_policy(
         if state is None:
             raise _failure(404, "TREASURY_NOT_FOUND", "The treasury is unavailable.")
         active, pending, chain_id = state
-        plan_fees = (
-            await _last_week_plan_fees(session, treasury_id, today) if pending is None else []
-        )
 
-    if pending is None:
-        base_fee, tips = await _rpc_fee_history(request, chain_id=chain_id)
-        proposal = propose_fee_policy(
-            plan_fees_wei=plan_fees,
-            plans_last_7d=len(plan_fees),
-            base_fee_per_gas_wei=base_fee,
-            priority_fees_wei=tips,
-            preset=DomainFeePreset.NORMAL,
+    # Only an Owner (who may accept it) creates proposals; other members just read.
+    stale = pending is None or now - pending.proposed_at >= PROPOSAL_MAX_AGE
+    if stale and OrganizationRole.OWNER.value in member.roles:
+        proposal = await _new_proposal(
+            request, treasury_id=treasury_id, chain_id=chain_id, preset=DomainFeePreset.NORMAL
         )
         async with sessions() as session, session.begin():
             treasury = await session.scalar(
@@ -260,6 +279,11 @@ async def get_fee_policy(
                 )
                 .with_for_update()
             )
+            if pending is not None and now - pending.proposed_at >= PROPOSAL_MAX_AGE:
+                # Never accepted, so it is not history; the unique pending index needs it gone.
+                await session.delete(pending)
+                await session.flush()
+                pending = None
             if pending is None:
                 active = await session.scalar(
                     select(TreasuryFeePolicy)
@@ -297,13 +321,6 @@ async def get_fee_policy(
                 )
                 session.add(pending)
                 await session.flush()
-            active = await session.scalar(
-                select(TreasuryFeePolicy).where(
-                    TreasuryFeePolicy.treasury_id == treasury_id,
-                    TreasuryFeePolicy.accepted_at.is_not(None),
-                    TreasuryFeePolicy.superseded_at.is_(None),
-                )
-            )
 
     async with sessions() as session:
         spent = await _daily_spend(session, treasury_id, today)
@@ -315,6 +332,8 @@ async def get_fee_policy(
     if current is None:
         raise _failure(404, "TREASURY_NOT_FOUND", "The treasury is unavailable.")
     active, pending, _ = current
+    if pending is not None and now - pending.proposed_at >= PROPOSAL_MAX_AGE:
+        pending = None  # a non-Owner never sees (or accepts) a stale snapshot
     return {
         "active": _policy_view(active),
         "proposal": _proposal_view(pending),
@@ -335,6 +354,21 @@ async def accept_fee_policy(
     member: Annotated[MemberAccess, Depends(require_role(OrganizationRole.OWNER, step_up=True))],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
+    selected = DomainFeePreset(payload.preset.value) if payload.preset else DomainFeePreset.NORMAL
+    async with _sessions(request)() as session:
+        chain_id = await session.scalar(
+            select(Treasury.chain_id).where(
+                Treasury.id == treasury_id, Treasury.org_id == member.organization_id
+            )
+        )
+    if chain_id is None:
+        raise _failure(404, "TREASURY_NOT_FOUND", "The treasury is unavailable.")
+    # Proposals are built for NORMAL; another preset changes the fee-per-gas the limits derive from.
+    rebuilt = (
+        await _new_proposal(request, treasury_id=treasury_id, chain_id=chain_id, preset=selected)
+        if selected is not DomainFeePreset.NORMAL
+        else None
+    )
     async with _sessions(request)() as session, session.begin():
         treasury = await session.scalar(
             select(Treasury)
@@ -354,7 +388,7 @@ async def accept_fee_policy(
             )
             .with_for_update()
         )
-        if proposal is None:
+        if proposal is None or now - proposal.proposed_at >= PROPOSAL_MAX_AGE:
             raise _failure(409, "FEE_PROPOSAL_STALE", "Reload the current fee proposal.")
         active = await session.scalar(
             select(TreasuryFeePolicy)
@@ -369,10 +403,15 @@ async def accept_fee_policy(
             active.superseded_at = now
             active.updated_at = now
             active.updated_by = member.user_id
-        selected = (
-            DomainFeePreset(payload.preset.value) if payload.preset else DomainFeePreset.NORMAL
-        )
+            # The reference price is edited on the active row; carry it over.
+            proposal.reference_eth_price = active.reference_eth_price
         config = PRESETS[selected]
+        if rebuilt is not None:
+            proposal.per_plan_threshold_wei = rebuilt.per_plan_threshold_wei
+            proposal.daily_budget_wei = rebuilt.daily_budget_wei
+            proposal.avg_plan_fee_7d_wei = rebuilt.avg_plan_fee_7d_wei
+            proposal.p90_plan_fee_7d_wei = rebuilt.p90_plan_fee_7d_wei
+            proposal.plans_per_day_7d = rebuilt.plans_per_day_7d
         proposal.preset = FeePreset(selected.value)
         proposal.max_fee_multiplier_bps = config.max_fee_multiplier_bps
         proposal.tip_percentile = config.tip_percentile
@@ -443,6 +482,43 @@ async def set_fee_reference_price(
     return {"feePolicy": result, "referenceEthPriceSource": "OWNER_LABELLED_SETTING"}
 
 
+async def accept_held_plan_fee(
+    session: AsyncSession,
+    *,
+    item: ReviewItem,
+    user_id: uuid.UUID,
+    reason: str | None,
+    now: datetime,
+) -> None:
+    """Record the cap for a held plan (equal to its estimate) and resolve its fee review item."""
+
+    if item.type != "FEE_APPROVAL":
+        raise _failure(409, "ACTION_NOT_ALLOWED", "Fee acceptance is only valid for fee reviews.")
+    if item.plan_id is None or item.fee_estimate_wei is None:
+        raise _failure(409, "FEE_REVIEW_INCOMPLETE", "The held plan is missing its fee estimate.")
+    if await session.scalar(select(FeeAcceptance).where(FeeAcceptance.plan_id == item.plan_id)):
+        raise _failure(409, "FEE_ALREADY_ACCEPTED", "This plan already has an accepted fee cap.")
+    reason = (reason or "").strip() or None
+    session.add(
+        FeeAcceptance(
+            id=uuid7(),
+            org_id=item.org_id,
+            plan_id=item.plan_id,
+            estimated_fee_wei=item.fee_estimate_wei,
+            accepted_cap_wei=item.fee_estimate_wei,
+            accepted_by=user_id,
+            at=now,
+            reason=reason,
+        )
+    )
+    if reason is not None:
+        item.note = reason
+    item.status = "Resolved"
+    item.resolution = "ACCEPT_FEE"
+    item.resolved_by = user_id
+    item.resolved_at = now
+
+
 async def _act_on_fee_review(
     session: AsyncSession,
     *,
@@ -453,8 +529,6 @@ async def _act_on_fee_review(
     action: str,
     reason: str | None,
 ) -> dict[str, object]:
-    from treasurypilot_api.recovery.models import ReviewItem
-
     item = await session.scalar(
         select(ReviewItem)
         .where(
@@ -467,8 +541,6 @@ async def _act_on_fee_review(
     )
     if item is None or roles.isdisjoint(item.assigned_roles):
         raise _failure(404, "FEE_REVIEW_NOT_FOUND", "The held plan is unavailable.")
-    if item.fee_estimate_wei is None:
-        raise _failure(409, "FEE_REVIEW_INCOMPLETE", "The held plan is missing its fee estimate.")
     payment = await session.scalar(
         select(PaymentRequest).where(
             PaymentRequest.id == item.request_id,
@@ -477,37 +549,18 @@ async def _act_on_fee_review(
     )
     if payment is None or payment.version != item.request_version:
         raise _failure(409, "FEE_REVIEW_STALE", "Reload the held plan before acting.")
-    now = datetime.now(UTC)
     if action == "ACCEPT_FEE":
-        existing = await session.scalar(
-            select(FeeAcceptance).where(FeeAcceptance.plan_id == plan_id)
+        await accept_held_plan_fee(
+            session, item=item, user_id=user_id, reason=reason, now=datetime.now(UTC)
         )
-        if existing is not None:
-            raise _failure(
-                409, "FEE_ALREADY_ACCEPTED", "This plan already has an accepted fee cap."
-            )
-        accepted = FeeAcceptance(
-            id=uuid7(),
-            org_id=organization_id,
-            plan_id=plan_id,
-            estimated_fee_wei=item.fee_estimate_wei,
-            accepted_cap_wei=item.fee_estimate_wei,
-            accepted_by=user_id,
-            at=now,
-            reason=reason,
-        )
-        session.add(accepted)
-    item.note = reason
-    if action == "ACCEPT_FEE":
-        item.status = "Resolved"
-        item.resolution = action
-        item.resolved_by = user_id
-        item.resolved_at = now
+    elif reason is not None:
+        # Same as the review queue's DEFER: the item stays Open and the plan keeps waiting.
+        item.note = reason
     await session.flush()
     await session.refresh(item)
     return {
         "planId": str(plan_id),
-        "status": "FeeAccepted" if action == "ACCEPT_FEE" else "Deferred",
+        "status": "FeeAccepted" if action == "ACCEPT_FEE" else "AwaitingFeeAcceptance",
         "acceptedCapWei": str(item.fee_estimate_wei) if action == "ACCEPT_FEE" else None,
         "reviewItemId": str(item.id),
         "reviewItemVersion": item.version,
@@ -515,7 +568,7 @@ async def _act_on_fee_review(
 
 
 _fee_action_roles = require_role(
-    OrganizationRole.OWNER, OrganizationRole.FINANCE, OrganizationRole.OPERATOR
+    OrganizationRole.OWNER, OrganizationRole.FINANCE, OrganizationRole.OPERATOR, step_up=True
 )
 
 

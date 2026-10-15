@@ -10,7 +10,6 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
-    Numeric,
     String,
     Text,
     func,
@@ -21,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from treasurypilot_api.database import Base
 from treasurypilot_api.identity.models import uuid7
+from treasurypilot_api.mandate.models import Money
 
 
 class ReviewItem(Base):
@@ -57,7 +57,8 @@ class ReviewItem(Base):
             name="ck_review_items_fee_estimate_nonnegative",
         ),
         CheckConstraint(
-            "type <> 'FEE_APPROVAL' OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
+            "type <> 'FEE_APPROVAL' OR status <> 'Open' "
+            "OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
             name="ck_review_items_fee_approval_details",
         ),
         Index(
@@ -90,7 +91,7 @@ class ReviewItem(Base):
     request_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    fee_estimate_wei: Mapped[int | None] = mapped_column(Numeric(78, 0, asdecimal=False))
+    fee_estimate_wei: Mapped[int | None] = mapped_column(Money)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     primary_code: Mapped[str] = mapped_column(String(100), nullable=False)
     reason_codes: Mapped[list[str]] = mapped_column(ARRAY(String(100)), nullable=False)

@@ -15,11 +15,26 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.execution.fee_assessment import assess_plan_fee
+from treasurypilot_api.identity.auth import AuthFailure, AuthService
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.invoices.models import PaymentRequest
-from treasurypilot_api.mandate.models import MandateVersion
-from treasurypilot_api.mandate.models import FeeAcceptance
+from treasurypilot_api.mandate.fees import (
+    FeePolicyAcceptRequest,
+    PlanFeeActionRequest,
+    ReferencePriceRequest,
+    accept_fee_policy,
+    accept_plan_fee,
+    defer_plan_fee,
+    get_fee_policy,
+    set_fee_reference_price,
+)
+from treasurypilot_api.mandate.models import (
+    FeeAcceptance,
+    FeePreset,
+    MandateVersion,
+    TreasuryFeePolicy,
+)
 from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.recovery.review_queue import (
     ReviewType,
@@ -42,6 +57,24 @@ USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000001")
 ORG_ID = uuid.UUID("00000000-0000-7000-8000-000000000010")
 REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000070")
 MANDATE_VERSION_ID = uuid.UUID("00000000-0000-7000-8000-000000000071")
+
+
+class _FeeHistory:
+    async def call(self, chain_id: int, method: str, params: list[object]) -> dict[str, object]:
+        return {"baseFeePerGas": ["0x64"], "reward": [["0x1", "0x2", "0x3"]]}
+
+
+class _StepUpService(AuthService):
+    """Stands in for the auth service: step-up passes only once ``fresh`` is set."""
+
+    def __init__(self) -> None:  # no storage needed
+        self.fresh = False
+
+    def require_step_up(self, access: object) -> None:
+        if not self.fresh:
+            raise AuthFailure(
+                status=403, code="STEP_UP_REQUIRED", title="Step up", detail="Step up."
+            )
 
 
 def test_route_table_and_sla() -> None:
@@ -67,6 +100,7 @@ def test_mandate_discrepancy_is_owner_finance_ack_only() -> None:
         request_version=None,
         mandate_version_id=version_id,
         plan_id=None,
+        fee_estimate_wei=None,
         type=ReviewType.DISCREPANCY.value,
         primary_code="MANDATE_READBACK_MISMATCH",
         reason_codes=["CONFIG_HASH_MISMATCH"],
@@ -188,8 +222,11 @@ async def _exercise_review_queue(database_url: str) -> None:
         async with sessions() as session:
             assert await session.scalar(select(func.count()).select_from(ReviewItem)) == 1
 
+        step_up = _StepUpService()
+
         app = FastAPI()
         app.state.review_sessions = sessions
+        app.state.auth_service = step_up
         request = Request({"type": "http", "app": app, "method": "POST", "path": "/"})
         owner = SimpleNamespace(
             organization_id=ORG_ID,
@@ -199,6 +236,7 @@ async def _exercise_review_queue(database_url: str) -> None:
         operator = SimpleNamespace(
             organization_id=ORG_ID,
             user_id=USER_ID,
+            access=SimpleNamespace(),
             roles=frozenset({OrganizationRole.OPERATOR.value}),
         )
         finance = SimpleNamespace(
@@ -333,14 +371,45 @@ async def _exercise_review_queue(database_url: str) -> None:
             operator,
         )
         assert again["item"]["note"] == "waiting"
+        # Re-assessing the same request version refreshes the open item's estimate.
+        async with sessions() as session, session.begin():
+            payment = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert payment is not None
+            refreshed_fee = await create_for_outcome(
+                session,
+                request=payment,
+                outcome=ReviewType.FEE_APPROVAL,
+                primary_code="FEE_HIGH",
+                plan_id=fee_plan_id,
+                fee_estimate_wei=150_000_000_000_000,
+                last_safe_execution_at=now + timedelta(days=1),
+                now=now,
+            )
+            assert refreshed_fee is not None and refreshed_fee.id == fee_id
+            assert refreshed_fee.fee_estimate_wei == 150_000_000_000_000
+        fee_version = (await get_review_item(ORG_ID, fee_id, request, operator))["item"]["version"]
+        assert fee_version == again["item"]["version"] + 1
+        with pytest.raises(AuthFailure, match="STEP_UP_REQUIRED"):
+            await act_on_review_item(
+                ORG_ID,
+                fee_id,
+                ReviewActionRequest(action="ACCEPT_FEE", version=fee_version),
+                request,
+                Response(),
+                operator,
+            )
+        step_up.fresh = True
         accepted = await act_on_review_item(
             ORG_ID,
             fee_id,
-            ReviewActionRequest(action="ACCEPT_FEE", version=again["item"]["version"]),
+            ReviewActionRequest(action="ACCEPT_FEE", version=fee_version),
             request,
             Response(),
             operator,
         )
+        assert accepted["item"]["note"] == "waiting"
         assert accepted["item"]["status"] == "Resolved"
         assert accepted["item"]["resolution"] == "ACCEPT_FEE"
         async with sessions() as session:
@@ -348,9 +417,147 @@ async def _exercise_review_queue(database_url: str) -> None:
                 select(FeeAcceptance).where(FeeAcceptance.plan_id == fee_plan_id)
             )
             assert fee_acceptance is not None
-            assert fee_acceptance.estimated_fee_wei == 123_000_000_000_000
-            assert fee_acceptance.accepted_cap_wei == 123_000_000_000_000
+            assert fee_acceptance.estimated_fee_wei == 150_000_000_000_000
+            assert fee_acceptance.accepted_cap_wei == 150_000_000_000_000
 
+        # An accepted plan proceeds under its cap without a new review item (and fails over it).
+        async with sessions() as session, session.begin():
+            session.add(
+                TreasuryFeePolicy(
+                    org_id=ORG_ID,
+                    treasury_id=uuid.UUID("00000000-0000-7000-8000-000000000040"),
+                    preset=FeePreset.NORMAL,
+                    max_fee_multiplier_bps=20_000,
+                    tip_percentile=50,
+                    resend_after_s=60,
+                    bump_bps=1_250,
+                    per_plan_threshold_wei=1,
+                    daily_budget_wei=1,
+                    reference_eth_price=3_000_000_000,
+                    accepted_by=USER_ID,
+                    accepted_at=now,
+                    version=1,
+                )
+            )
+            payment = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert payment is not None
+            safe_at = now - timedelta(hours=1)
+            held = await assess_plan_fee(
+                session,
+                request=payment,
+                plan_id=fee_plan_id,
+                estimated_fee_wei=150_000_000_000_000,
+                last_safe_execution_at=safe_at,
+                now=now,
+            )
+            assert held.assessment.decision == "PROCEED" and held.review_item_id is None
+            with pytest.raises(ValueError, match="FEE_CAP_EXCEEDED"):
+                await assess_plan_fee(
+                    session,
+                    request=payment,
+                    plan_id=fee_plan_id,
+                    estimated_fee_wei=150_000_000_000_001,
+                    last_safe_execution_at=safe_at,
+                    now=now,
+                )
+
+        # Fee-policy lifecycle: Owner-only proposals, stale refresh, preset limits, shared plan fee
+        # actions.
+        app.state.request_sessions = sessions
+        app.state.fee_history_provider = _FeeHistory()
+        treasury_id = uuid.UUID("00000000-0000-7000-8000-000000000040")
+
+        async def pending_ids() -> list[uuid.UUID]:
+            async with sessions() as session:
+                return list(
+                    await session.scalars(
+                        select(TreasuryFeePolicy.id).where(
+                            TreasuryFeePolicy.treasury_id == treasury_id,
+                            TreasuryFeePolicy.accepted_at.is_(None),
+                        )
+                    )
+                )
+
+        assert (await get_fee_policy(ORG_ID, treasury_id, request, finance))["proposal"] is None
+        assert await pending_ids() == []
+        first_proposal = (await get_fee_policy(ORG_ID, treasury_id, request, owner))["proposal"]
+        assert first_proposal is not None
+        assert await pending_ids() == [uuid.UUID(first_proposal["id"])]
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "UPDATE treasury_fee_policies SET proposed_at = now() - interval '2 hours' "
+                    "WHERE accepted_at IS NULL"
+                )
+            )
+        assert (await get_fee_policy(ORG_ID, treasury_id, request, finance))["proposal"] is None
+        proposal = (await get_fee_policy(ORG_ID, treasury_id, request, owner))["proposal"]
+        assert proposal is not None and proposal["id"] != first_proposal["id"]
+        assert await pending_ids() == [uuid.UUID(proposal["id"])]
+
+        # The reference price is edited on the active row; accepting carries it to the new row.
+        priced = await set_fee_reference_price(
+            ORG_ID,
+            treasury_id,
+            ReferencePriceRequest(referenceEthPrice="5000000000"),
+            request,
+            owner,
+        )
+        assert priced["feePolicy"]["referenceEthPrice"] == "5000000000"
+        accepted_policy = (
+            await accept_fee_policy(
+                ORG_ID,
+                treasury_id,
+                FeePolicyAcceptRequest(proposalId=uuid.UUID(proposal["id"]), preset="FAST"),
+                request,
+                owner,
+            )
+        )["active"]
+        assert accepted_policy["preset"] == "FAST"
+        assert accepted_policy["referenceEthPrice"] == "5000000000"
+        # No plan history: the baseline is 21,000 gas at the FAST max fee (100 * 3 + p75 tip 3).
+        assert accepted_policy["perPlanThresholdWei"] == str(3 * 21_000 * 303)
+
+        # Held-plan actions share one implementation with the review queue.
+        async with sessions() as session, session.begin():
+            payment = await session.scalar(
+                select(PaymentRequest).where(PaymentRequest.id == REQUEST_ID)
+            )
+            assert payment is not None
+            second_plan_id = uuid.uuid4()
+            await create_for_outcome(
+                session,
+                request=payment,
+                outcome=ReviewType.FEE_APPROVAL,
+                primary_code="FEE_HIGH",
+                plan_id=second_plan_id,
+                fee_estimate_wei=7,
+                last_safe_execution_at=now - timedelta(hours=1),
+                now=now,
+            )
+        deferred_plan = await defer_plan_fee(
+            ORG_ID, second_plan_id, PlanFeeActionRequest(reason="later"), request, operator
+        )
+        assert deferred_plan["status"] == "AwaitingFeeAcceptance"
+        await defer_plan_fee(ORG_ID, second_plan_id, PlanFeeActionRequest(), request, operator)
+        accepted_plan = await accept_plan_fee(
+            ORG_ID, second_plan_id, PlanFeeActionRequest(), request, operator
+        )
+        assert accepted_plan["acceptedCapWei"] == "7"
+        async with sessions() as session:
+            fee_item = await session.scalar(
+                select(ReviewItem).where(ReviewItem.plan_id == second_plan_id)
+            )
+            assert fee_item is not None
+            assert (fee_item.status, fee_item.resolution, fee_item.note) == (
+                "Resolved",
+                "ACCEPT_FEE",
+                "later",
+            )
+        with pytest.raises(AuthFailure, match="FEE_REVIEW_NOT_FOUND"):
+            await accept_plan_fee(ORG_ID, second_plan_id, PlanFeeActionRequest(), request, operator)
 
         async with sessions() as session, session.begin():
             mandate_version = await session.scalar(
