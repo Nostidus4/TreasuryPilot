@@ -12,9 +12,9 @@ their own owner transactions. The Forge script writes only
 runtime hashes, module identity, owners, enablement, asset decimals and EAS schema
 at one RPC block before atomically publishing `deployments/31337.json`.
 
-The Anvil deployment uses tUSDC and disables Aave (`aavePool = 0`, supply limits
-zero). Lending unit tests create their own MockAavePool; pinned fork tests use
-the real pool. The Sepolia profile retains Aave's test USDC per ADR-019.
+The Anvil deployment uses tUSDC and a TEST-only `MockAavePool` (funded with 30000 tUSDC,
+supply limits 5000/20000) so the scenario runner can play the Aave scenarios (D2, D3, D6-D8).
+Pinned fork tests use the real pool. The Sepolia profile retains Aave's test USDC per ADR-019.
 
 Install the Python workspace with `uv sync --frozen`. On Windows, install Foundry
 and run `./infra/scripts/deploy-local.ps1`. Its fixed

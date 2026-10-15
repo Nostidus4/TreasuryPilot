@@ -1,6 +1,7 @@
 name: aave-withdraw
 adr019: D3
-chain_id: 11155111
-requires: [deployment, planner, aave-adapter, executor-pipeline]
+chain_id: 31337
+requires: [anvil, deployment, aave-mock]
+steps: [withdraw_for_invoice]
 must_show:
-  - A newly approved invoice triggers a withdraw that restores the reserve
+  - Cash parked in Aave is withdrawn into Safe T to fund a newly approved invoice, which is then paid
