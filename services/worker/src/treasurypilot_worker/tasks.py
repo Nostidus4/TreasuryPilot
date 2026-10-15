@@ -30,6 +30,7 @@ from treasurypilot_worker.locks import (
     create_worker_pool,
     treasury_advisory_xact_lock,
 )
+from treasurypilot_worker.mandate_expiry import expire_mandates
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
 from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
 from treasurypilot_worker.notify.delivery import deliver_pending_emails
@@ -98,6 +99,23 @@ def expire_invoice_approvals() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for invoice expiry")
     return {"requests_expired": asyncio.run(_expire_invoice_approvals(database_url))}
+
+
+async def _expire_mandates(database_url: str) -> dict[str, int]:
+    connection = await asyncpg.connect(_asyncpg_database_url(database_url))
+    try:
+        return await expire_mandates(connection)
+    finally:
+        await connection.close()
+
+
+@app.task(name="treasurypilot.mandates.expire", queue="core")
+def expire_mandate_versions() -> dict[str, int]:
+    """Warn owners before expiry and stop loading mandates whose expiry has passed."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for mandate expiry")
+    return asyncio.run(_expire_mandates(database_url))
 
 
 @app.task(name="treasurypilot.system.ai_probe", queue="ai")

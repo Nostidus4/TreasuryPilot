@@ -91,6 +91,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(minutes=5),
                 "options": {"queue": "core"},
             },
+            "expire-mandates": {
+                "task": "treasurypilot.mandates.expire",
+                "schedule": timedelta(minutes=10),
+                "options": {"queue": "core"},
+            },
             "publish-domain-events": {
                 "task": "treasurypilot.notifications.publish-domain-events",
                 "schedule": timedelta(seconds=1),
