@@ -51,12 +51,12 @@ def manifest(tmp_path: Path) -> Path:
 def test_list_shows_all_named_scenarios(capsys: pytest.CaptureFixture[str]) -> None:
     assert scenario.main(["list"]) == 0
     out = capsys.readouterr().out
-    for name in (
-        "demo-main", "over-cap-exception", "injected-invoice", "crash-recovery", "pause",
-        "unexpected-outflow", "fee-spike",
-    ):  # fmt: skip
-        assert name in out
-    assert "pause" in out and "runnable" in out
+    rows = {line.split()[1]: line for line in out.splitlines()}  # keyed by ADR-019 id
+    assert {"D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"} <= set(rows)
+    assert rows["D10"].endswith("  runnable") and rows["D10"].startswith("pause")
+    assert all(
+        r.endswith("not runnable yet") for k, r in rows.items() if k != "D10" and k[0] == "D"
+    )
 
 
 def test_invalid_scenario_file_is_rejected(tmp_path: Path) -> None:
@@ -68,6 +68,68 @@ def test_invalid_scenario_file_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(scenario.ScenarioError, match="unknown step"):
         scenario.load_scenarios(tmp_path)
+
+
+def _write(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "x.yaml").write_text(f"name: x\nmust_show: [a]\n{body}")
+    return tmp_path
+
+
+def test_scenario_file_validation(tmp_path: Path) -> None:
+    for body, message in (
+        ("chain_id: 1\nrequires: [anvil, planner]\n", "not in the scenario allowlist"),
+        ("chain_id: 31337\nrequires: [anvil]\n", "non-empty `steps`"),
+        ("chain_id: 31337\nrequires: [anvil]\nsteps: []\n", "non-empty `steps`"),
+        ("chain_id: 31337\nrequires: [anvil, plannr]\n", "unknown capability"),
+    ):
+        with pytest.raises(scenario.ScenarioError, match=message):
+            scenario.load_scenarios(_write(tmp_path, body))
+
+
+def test_mainnet_yaml_with_missing_capabilities_fails_not_not_runnable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = _write(tmp_path, "chain_id: 1\nrequires: [anvil, planner]\n")
+    assert scenario.main(["--scenarios-dir", str(directory), "list"]) == scenario.EXIT_FAILED
+    assert "not in the scenario allowlist" in capsys.readouterr().err
+    assert scenario.main(["--scenarios-dir", str(directory), "run", "x"]) == scenario.EXIT_FAILED
+
+
+def test_yaml_rpc_chain_mismatch_sends_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    directory = _write(tmp_path, "chain_id: 11155111\nrequires: [anvil]\nsteps: [guardian_pause]\n")
+    chain = FakeChain(31337)
+    monkeypatch.setattr(scenario, "rpc", chain)
+    code = scenario.main(
+        ["--scenarios-dir", str(directory), "run", "x", "--out", str(tmp_path / "out"),
+         "--manifest", str(manifest)]
+    )  # fmt: skip
+    assert code == scenario.EXIT_FAILED and chain.status == 0
+    assert "targets chain 11155111" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+
+
+def test_guardian_pause_refuses_sepolia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    directory = _write(tmp_path, "chain_id: 11155111\nrequires: [anvil]\nsteps: [guardian_pause]\n")
+    chain = FakeChain(11155111)
+    monkeypatch.setattr(scenario, "rpc", chain)
+    code = scenario.main(
+        ["--scenarios-dir", str(directory), "run", "x", "--out", str(tmp_path / "out"),
+         "--manifest", str(manifest)]
+    )  # fmt: skip
+    assert code == scenario.EXIT_FAILED and chain.status == 0
+    assert "chain 31337" in capsys.readouterr().err
+
+
+def test_unreachable_rpc_message(capsys: pytest.CaptureFixture[str]) -> None:
+    code = scenario.main(["run", "pause", "--rpc-url", "http://127.0.0.1:1"])
+    assert code == scenario.EXIT_FAILED
+    assert "cannot reach RPC" in capsys.readouterr().err
 
 
 def test_scenario_needing_unmerged_pieces_is_not_runnable(

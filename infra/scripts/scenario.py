@@ -32,8 +32,14 @@ from treasurypilot_api.audit.evidence import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ALLOWED_CHAIN_IDS = frozenset({31337, 11155111})
-# Capabilities this runner can drive today; anything else in `requires` is not runnable yet.
-AVAILABLE = frozenset({"anvil", "deployment"})
+# Capabilities wired in the platform but not yet driven by any step here; a scenario needing one is
+# NOT_RUNNABLE. Unknown names (typos) are rejected at load time.
+PENDING = frozenset(
+    {
+        "planner", "sequencer", "executor-pipeline", "ai-extraction", "outbox-recovery",
+        "chain-reader-alerts", "fee-policy-runtime", "aave-adapter", "borrow-authorization",
+    }
+)  # fmt: skip
 EXIT_FAILED, EXIT_NOT_RUNNABLE = 1, 2
 
 
@@ -52,8 +58,19 @@ def load_scenarios(directory: Path) -> dict[str, dict[str, Any]]:
         for key in ("requires", "must_show"):
             if not isinstance(data.get(key), list) or not data[key]:
                 raise ScenarioError(f"{path.name}: `{key}` must be a non-empty list")
-        if not set(data.get("steps", [])) <= set(STEPS):
-            raise ScenarioError(f"{path.name}: unknown step in {data['steps']}")
+        check_declared_chain(data)  # before capabilities, so a NOT_RUNNABLE file cannot hide it
+        if not set(data["requires"]) <= AVAILABLE | PENDING:
+            unknown = sorted(set(data["requires"]) - AVAILABLE - PENDING)
+            raise ScenarioError(f"{path.name}: unknown capability {unknown}")
+        steps = data.get("steps", [])
+        if not isinstance(steps, list) or not set(steps) <= set(STEPS):
+            raise ScenarioError(f"{path.name}: unknown step in {steps}")
+        if not missing_capabilities(data):
+            if not steps:
+                raise ScenarioError(f"{path.name}: a runnable scenario needs non-empty `steps`")
+            provided = set().union(*(STEPS[step][1] for step in steps))
+            if not set(data["requires"]) <= provided:
+                raise ScenarioError(f"{path.name}: steps do not provide {data['requires']}")
         scenarios[data["name"]] = data
     return scenarios
 
@@ -62,12 +79,22 @@ def missing_capabilities(scenario: dict[str, Any]) -> list[str]:
     return [c for c in scenario["requires"] if c not in AVAILABLE]
 
 
+def check_declared_chain(scenario: dict[str, Any]) -> None:
+    if scenario["chain_id"] not in ALLOWED_CHAIN_IDS:
+        raise ScenarioError(
+            f"{scenario['name']}: chain id {scenario['chain_id']} is not in the scenario "
+            f"allowlist {sorted(ALLOWED_CHAIN_IDS)}"
+        )
+
+
 def check_chain(scenario: dict[str, Any], rpc_url: str) -> int:
     """Refuse non-allowlisted chain ids, both declared and live."""
+    check_declared_chain(scenario)
     declared = scenario["chain_id"]
-    if declared not in ALLOWED_CHAIN_IDS:
-        raise ScenarioError(f"chain id {declared} is not in the scenario allowlist")
-    live = int(rpc(rpc_url, "eth_chainId", []), 16)
+    try:
+        live = int(rpc(rpc_url, "eth_chainId", []), 16)
+    except OSError as error:
+        raise ScenarioError(f"cannot reach RPC at {rpc_url} ({error}); run `make dev`") from None
     if live not in ALLOWED_CHAIN_IDS:
         raise ScenarioError(
             f"refusing to run: RPC serves chain id {live}, allowed {sorted(ALLOWED_CHAIN_IDS)}"
@@ -84,6 +111,10 @@ def _module_status(rpc_url: str, module: str) -> int:
 
 def step_guardian_pause(ctx: dict[str, Any]) -> dict[str, Any]:
     rpc_url, module = ctx["rpc_url"], ctx["manifest"]["module"]
+    if ctx["chain_id"] != 31337:  # the guardian sender is an unlocked Anvil account
+        raise ScenarioError(
+            "guardian_pause needs a local Anvil (chain 31337) with unlocked accounts"
+        )
     if rpc(rpc_url, "eth_getCode", [module, "latest"]) in ("0x", ""):
         raise ScenarioError(f"module {module} has no code; run `make deploy-local`")
     if _module_status(rpc_url, module) != 0:
@@ -107,7 +138,9 @@ def step_guardian_pause(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"step": "guardian_pause", "txHash": tx, "moduleStatus": "Paused"}
 
 
-STEPS = {"guardian_pause": step_guardian_pause}
+# step name -> (function, capabilities it provides); AVAILABLE is derived from this.
+STEPS = {"guardian_pause": (step_guardian_pause, frozenset({"anvil", "deployment"}))}
+AVAILABLE = frozenset().union(*(caps for _, caps in STEPS.values()))
 
 
 async def _bundle(
@@ -164,6 +197,7 @@ def run_scenario(
         "startedAt": started.isoformat(),
         "mustShow": scenario["must_show"],
     }
+    check_declared_chain(scenario)
     if missing := missing_capabilities(scenario):
         return {**result, "status": "NOT_RUNNABLE", "missing": missing}
     ctx: dict[str, Any] = {"rpc_url": rpc_url, "transactions": []}
@@ -172,7 +206,7 @@ def run_scenario(
         ctx["manifest"] = json.loads(manifest_path.read_text())
     except (OSError, ValueError):
         raise ScenarioError(f"cannot read {manifest_path}; run `make deploy-local`") from None
-    operations = [STEPS[step](ctx) for step in scenario.get("steps", [])]
+    operations = [STEPS[step][0](ctx) for step in scenario.get("steps", [])]
     bundle = asyncio.run(_bundle(ctx, name, operations))
     run_dir = out_dir / f"{name}-{started:%Y%m%dT%H%M%SZ}"
     run_dir.mkdir(parents=True)
