@@ -33,7 +33,6 @@ def _load(name: str, path: Path) -> Any:
 
 _seq = _load("sequencer_fixtures", _HERE / "executor" / "test_sequencer_integration.py")
 _trk = _load("tracker_fixtures", _HERE / "test_tracker_integration.py")
-anvil_url = _trk.anvil_url  # pytest fixture, reused as is
 
 REFILL_TO = "0x" + "33" * 20
 PAY_TO = "0x" + "44" * 20
