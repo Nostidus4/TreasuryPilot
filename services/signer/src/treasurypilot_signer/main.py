@@ -28,10 +28,17 @@ from treasurypilot_signer.store import SignerStore
 logger = logging.getLogger(__name__)
 
 
+class ExecutorHealth(BaseModel):
+    treasury_id: str
+    address: str
+    gas_balance_wei: str | None  # None when the RPC is unreachable
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
+    executors: list[ExecutorHealth] = []
 
 
 def _database_dsn(url: str) -> str:
@@ -62,7 +69,15 @@ def create_app(
         pool: asyncpg.Pool | None = None
         rpc: JsonRpc | None = None
         application.state.signing_service = signer_override
+        application.state.rpc = None
+        application.state.executor_addresses = {}
         database_url = settings.effective_database_url
+        key_store = ExecutorKeys(settings)
+        # Keys are optional (unconfigured signer answers NOT_CONFIGURED), but once a keystore map
+        # is set it must be valid. The password file path alone is always set in compose.
+        if signer_override is None and settings.executor_keystore_map:
+            # refuse to start on a missing keystore or wrong password
+            application.state.executor_addresses = key_store.validate()
         if signer_override is None and database_url and settings.chain_rpc_url:
 
             async def use_signer_role(connection: asyncpg.Connection) -> None:
@@ -76,8 +91,8 @@ def create_app(
                 command_timeout=5,
                 init=use_signer_role,
             )
-            key_store = ExecutorKeys(settings)
             rpc = JsonRpc(settings.chain_rpc_url)
+            application.state.rpc = rpc
             application.state.signing_service = SigningService(
                 settings,
                 SignerStore(pool),
@@ -99,8 +114,23 @@ def create_app(
     @app.get("/health", response_model=HealthResponse)
     async def health(request: Request) -> JSONResponse:
         configured = getattr(request.app.state, "signing_service", None) is not None
+        rpc: JsonRpc | None = request.app.state.rpc
+        executors = []
+        for treasury_id, address in request.app.state.executor_addresses.items():
+            balance: str | None = None
+            if rpc is not None:
+                try:
+                    balance = str(int(await rpc.call("eth_getBalance", [address, "latest"]), 16))
+                except Exception:  # health must not fail on RPC trouble
+                    balance = None
+            executors.append(
+                ExecutorHealth(treasury_id=treasury_id, address=address, gas_balance_wei=balance)
+            )
         body = HealthResponse(
-            status="ok" if configured else "unconfigured", service="signer", version=__version__
+            status="ok" if configured else "unconfigured",
+            service="signer",
+            version=__version__,
+            executors=executors,
         )
         return JSONResponse(status_code=200 if configured else 503, content=body.model_dump())
 

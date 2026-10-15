@@ -31,6 +31,7 @@ from treasurypilot_core.eip712 import (
     step_id,
 )
 from treasurypilot_signer.config import Settings
+from treasurypilot_signer.keys import ExecutorKeyNotConfigured
 from treasurypilot_signer.main import create_app
 from treasurypilot_signer.models import Fees, SignRequest
 from treasurypilot_signer.rpc import JsonRpc, RpcFailure
@@ -617,3 +618,14 @@ def test_signed_transaction_is_broadcast_to_anvil(anvil_url: str) -> None:
     assert receipt["status"] == "0x1"
     assert transaction["from"].lower() == executor.address.lower()
     assert int(transaction["nonce"], 16) == result.nonce
+
+
+def test_unmapped_treasury_key_is_refused_as_not_configured() -> None:
+    def unmapped(_treasury: str) -> LocalAccount:
+        raise ExecutorKeyNotConfigured
+
+    service, _node, _store = _service()
+    service._resolve_account = unmapped  # noqa: SLF001
+    with pytest.raises(SignerFault) as fault:
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert fault.value.code == "NOT_CONFIGURED"

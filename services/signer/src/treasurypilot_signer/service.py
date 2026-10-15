@@ -21,6 +21,7 @@ from treasurypilot_core.policy.attestation import (
     verify_attestation,
 )
 from treasurypilot_signer.config import Settings
+from treasurypilot_signer.keys import ExecutorKeyNotConfigured
 from treasurypilot_signer.models import SignRequest, SignResponse
 from treasurypilot_signer.rpc import RpcFailure
 from treasurypilot_signer.store import NonceAlreadyBound, StepAlreadyUsed
@@ -286,6 +287,8 @@ class SigningService:
         _check_payload(request, step)
         try:
             account = self._resolve_account(treasury_id)
+        except ExecutorKeyNotConfigured as error:
+            raise SignerFault("NOT_CONFIGURED", 503) from error
         except Exception as error:
             raise SignerFault("SIGNER_KEY_UNAVAILABLE", 503) from error
         if account.address.lower() != str(attestation_message["executor"]).lower():
