@@ -57,6 +57,23 @@ class _Rpc:
         return hex(BALANCE[label])
 
 
+class _Governance:
+    used = {1: 0, 2: 0}
+
+    async def read_used_today(
+        self, chain_id: int, module: bytes, asset: bytes, action: int = 1
+    ) -> int:
+        assert (chain_id, module, asset) == (
+            CHAIN,
+            bytes.fromhex("99" * 20),
+            bytes.fromhex("11" * 20),
+        )
+        return self.used[action]
+
+
+GOVERNANCE = _Governance()
+
+
 def _config(url: str) -> Config:
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))
@@ -99,8 +116,9 @@ async def _seed(url: str) -> None:
                 a=ASSET,
             )
             await run(
-                "INSERT INTO treasuries (id, org_id, chain_id, asset_id, status, coverage) "
-                "VALUES (:t, :o, 31337, :a, 'Ready', 'COMPLETE')",
+                "INSERT INTO treasuries (id, org_id, chain_id, asset_id, status, coverage, "
+                "module_address) VALUES (:t, :o, 31337, :a, 'Ready', 'COMPLETE', "
+                "decode(repeat('99', 20), 'hex'))",
                 t=TREASURY,
                 o=ORG,
                 a=ASSET,
@@ -168,7 +186,7 @@ async def _seed(url: str) -> None:
         await engine.dispose()
 
 
-def _app() -> tuple[FastAPI, _Rpc, list[uuid.UUID]]:
+def _app(*, real_member: bool = False) -> tuple[FastAPI, _Rpc, list[uuid.UUID]]:
     rpc = _Rpc()
     org = [ORG]
 
@@ -192,7 +210,9 @@ def _app() -> tuple[FastAPI, _Rpc, list[uuid.UUID]]:
     app.state.platform_configuration = SimpleNamespace(
         chains=[SimpleNamespace(chain_id=CHAIN, assets=[SimpleNamespace(address=TOKEN)])]
     )
-    app.dependency_overrides[require_member] = member
+    app.state.governance_service = GOVERNANCE
+    if not real_member:
+        app.dependency_overrides[require_member] = member
     app.include_router(router)
 
     async def handle(request: Request, error: Exception) -> Response:
@@ -249,6 +269,76 @@ async def _mandate_status(url: str, status: str) -> None:
     await engine.dispose()
 
 
+async def _sql(url: str, sql: str, **params: object) -> None:
+    engine, _ = create_session_factory(url)
+    async with engine.begin() as c:
+        await c.execute(text("SET LOCAL session_replication_role = replica"))  # skip immutability
+        await c.execute(text(sql), params)
+    await engine.dispose()
+
+
+def _edge_cases(url: str) -> None:
+    app, _, _ = _app()
+    path = f"/v1/orgs/{ORG}/treasuries/{TREASURY}/forecast"
+    limits = {"PAY": {"perRequest": "5000", "daily": "5000"}}
+    buffers = [
+        {"wallet": ADDRESS[k], "minimum": str(BUFFER[k]), "target": str(BUFFER[k] * 3)}
+        for k in WALLETS
+    ]
+
+    def mandate(**override: object) -> None:
+        config = {"limits": {**limits, "REFILL": limits["PAY"]}, "buffers": buffers, **override}
+        asyncio.run(
+            _sql(
+                url, "UPDATE mandate_versions SET config = CAST(:c AS jsonb)", c=json.dumps(config)
+            )
+        )
+
+    def failure(client: TestClient) -> tuple[int, str]:
+        response = client.get(path)
+        return response.status_code, response.json().get("code", "")
+
+    with TestClient(app) as client:
+        refill = client.get(path).json()["suggestedRefills"][0]
+        assert (refill["date"], refill["amount"]) == (_iso(0), "1300")  # target 1500 - (1000 - 800)
+
+        # PAY usage already on chain shrinks the cap: the 800 payment no longer lands today.
+        GOVERNANCE.used = {1: 4_900, 2: 0}
+        capped = client.get(path).json()
+        assert [d["outflow"] for d in capped["days"]][:2] == ["0", "800"]
+        GOVERNANCE.used = {1: 0, 2: 0}
+
+        # A refill that cannot be funded leaves O1 under its buffer, which raises an alert.
+        mandate(limits={**limits, "REFILL": {"perRequest": "1", "daily": "1"}})
+        alerts = client.get(path).json()["alerts"]
+        assert len(alerts) == 1 and alerts[0]["message"].startswith("O1 ")
+
+        # Requests without a paying wallet use O1; an assigned O2 request hits O2 instead.
+        mandate()
+        asyncio.run(
+            _sql(
+                url,
+                "UPDATE payment_requests SET paying_wallet_id = (SELECT id FROM treasury_wallets "
+                "WHERE label = 'O2') WHERE status = 'Approved'",
+            )
+        )
+        body = client.get(path).json()
+        assert sum(int(d["outflow"]) for d in body["days"]) == 0
+        assert body["wallets"][1]["days"][1]["balance"] != "500"  # O2 paid / was refilled
+
+        # Mandates the forecast cannot use are 409, not 500.
+        mandate(buffers=buffers[:2])
+        assert failure(client) == (409, "MANDATE_NOT_ACTIVE")  # O2 has no buffer entry
+        mandate(limits=limits)
+        assert failure(client) == (409, "MANDATE_NOT_ACTIVE")  # no REFILL limits
+        mandate(limits={})
+        assert failure(client) == (409, "MANDATE_NOT_ACTIVE")  # no PAY limits
+        mandate(buffers="nope")
+        assert failure(client) == (409, "MANDATE_NOT_ACTIVE")  # does not validate
+    mandate()
+    asyncio.run(_sql(url, "UPDATE payment_requests SET paying_wallet_id = NULL"))
+
+
 def test_forecast_route_serializes_engine_projection() -> None:
     if "TP_TEST_DATABASE_URL" not in os.environ:
         pytest.skip("TP_TEST_DATABASE_URL is required for forecast integration tests")
@@ -258,6 +348,7 @@ def test_forecast_route_serializes_engine_projection() -> None:
     try:
         asyncio.run(_seed(url))
         _checks()
+        _edge_cases(url)
         asyncio.run(_mandate_status(url, "Revoked"))
         app, _, _ = _app()
         with TestClient(app) as client:

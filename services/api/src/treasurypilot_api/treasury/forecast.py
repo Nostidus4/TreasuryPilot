@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select
+from pydantic import ValidationError
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
-from treasurypilot_api.invoices.models import PaymentRequest, RequestStatus
+from treasurypilot_api.invoices.models import (
+    ApprovalStatus,
+    PaymentApproval,
+    PaymentRequest,
+    RequestStatus,
+)
 from treasurypilot_api.invoices.requests import confirmed_payment_terms
 from treasurypilot_api.mandate.configuration import MandateConfig
 from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus, Payee
@@ -101,12 +108,35 @@ async def _balance(request: Request, chain_id: int, token: str, holder: str) -> 
         raise _fail(503, "FORECAST_UNAVAILABLE", "Wallet balances could not be read.") from error
 
 
-def _mandate_inputs(config: MandateConfig) -> tuple[PolicyView, dict[str, tuple[int, int]]]:
+async def _used_today(request: Request, record: TreasuryRecord, token: str) -> tuple[int, int]:
+    """On-chain PAY and REFILL usage for today, so the daily caps limit what lands today."""
+    service = getattr(request.app.state, "governance_service", None)
+    if record.module_address is None:
+        raise _fail(409, "TREASURY_NOT_READY", "The treasury has no module.")
+    if service is None:
+        raise _fail(503, "FORECAST_UNAVAILABLE", "Governance reads are not configured.")
+    module, asset = (bytes.fromhex(a.removeprefix("0x")) for a in (record.module_address, token))
+    try:
+        pay, refill = await asyncio.gather(
+            *(service.read_used_today(record.chain_id, module, asset, a) for a in (1, 2))
+        )
+    except Exception as error:
+        raise _fail(503, "FORECAST_UNAVAILABLE", "Daily usage could not be read.") from error
+    return int(pay), int(refill)
+
+
+def _mandate_inputs(raw: object) -> tuple[PolicyView, dict[str, tuple[int, int]]]:
+    try:
+        config = MandateConfig.model_validate(raw)
+    except ValidationError:
+        raise _fail(409, "MANDATE_NOT_ACTIVE", "The active mandate is not valid.") from None
     limits = config.limits or {}
     pay = limits.get("PAY")
     if pay is None:
         raise _fail(409, "MANDATE_NOT_ACTIVE", "The active mandate has no PAY limits.")
-    refill = limits.get("REFILL", pay)
+    refill = limits.get("REFILL")  # the worker also requires it; no fallback to PAY
+    if refill is None:
+        raise _fail(409, "MANDATE_NOT_ACTIVE", "The active mandate has no REFILL limits.")
     policy = PolicyView(
         pay=Limits(per_request=pay.per_request, daily=pay.daily),
         refill=Limits(per_request=refill.per_request, daily=refill.daily),
@@ -170,15 +200,31 @@ async def get_forecast(
                     PaymentRequest.amount.is_not(None),
                     PaymentRequest.payee_id.is_not(None),
                 )
-                .order_by(PaymentRequest.id)
+                # The worker's order: first valid approval of the current revision, then id.
+                # Unapproved rows (awaiting/draft) fall back to their creation time.
+                .order_by(
+                    func.coalesce(
+                        select(func.min(PaymentApproval.created_at))
+                        .where(
+                            PaymentApproval.request_id == PaymentRequest.id,
+                            PaymentApproval.revision == PaymentRequest.current_revision,
+                            PaymentApproval.status == ApprovalStatus.VALID,
+                        )
+                        .scalar_subquery(),
+                        PaymentRequest.created_at,
+                    ),
+                    PaymentRequest.id,
+                )
             )
         )
         payees = await session.execute(
             select(Payee.id, Payee.active_from).where(Payee.id.in_({r.payee_id for r in rows}))
         )
         active_from = {pid: at for pid, at in payees}
-    mandate = MandateConfig.model_validate(config)
-    policy, mandate_buffers = _mandate_inputs(mandate)
+    policy, mandate_buffers = _mandate_inputs(config)
+    for wallet in operational:
+        if wallet.safe_address.lower() not in mandate_buffers:
+            raise _fail(409, "MANDATE_NOT_ACTIVE", f"The mandate has no buffer for {wallet.label}.")
 
     configuration: PlatformConfiguration = request.app.state.platform_configuration
     token = next(
@@ -203,21 +249,22 @@ async def get_forecast(
             target=BaseUnits(target),
         )
 
-    source_state = state(
-        source.safe_address, await _balance(request, record.chain_id, token, source.safe_address)
+    holders = [source.safe_address, *(w.safe_address for w in operational)]
+    balances = await asyncio.gather(
+        *(_balance(request, record.chain_id, token, holder) for holder in holders)
     )
+    source_state = state(holders[0], balances[0])
     wallets = {
-        w.id: state(w.safe_address, await _balance(request, record.chain_id, token, w.safe_address))
-        for w in operational
+        w.id: state(w.safe_address, b) for w, b in zip(operational, balances[1:], strict=True)
     }
+    used = await _used_today(request, record, token)
     today = int(datetime.now(UTC).timestamp()) // 86_400
     snapshot = Snapshot(
         day=today,
         source=source_state,
         # The engine keys wallets by address.
         operational={ws.address: ws for ws in wallets.values()},
-        # shortcut: today's already-executed pay/refill usage is not counted, add when persisted.
-        used_today={"pay": BaseUnits(0), "refill": BaseUnits(0)},
+        used_today={"pay": BaseUnits(used[0]), "refill": BaseUnits(used[1])},
         payee_active_day={
             str(r.payee_id): int(active.timestamp()) // 86_400
             for r in rows
