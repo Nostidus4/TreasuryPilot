@@ -129,7 +129,7 @@ function pay(PaymentApproval ap, bytes approverSig, bytes32 stepId);
 
 | # | Kiểm | Lỗi | Luật |
 |---|---|---|---|
-| 1 | người gọi là executor, Active, trong thời hạn | `NotExecutor` / `NotActive` / `MandateExpired` | BR-062 |
+| 1 | người gọi là executor, Active, trong thời hạn | `NotExecutor` / `NotActive` / `MandatePaused` / `MandateRevoked` / `MandateExpired` | BR-062 |
 | 2 | bản duyệt hợp lệ: domain, `treasury == this`, đúng asset, `now ≤ expiry`, người ký là approver **hiện tại** (ECDSA hoặc ERC-1271) | `ApprovalInvalid` / `ApprovalExpired` / `NotApprover` | BR-001/003/004 |
 | 3 | chưa trả, chưa hủy | `RequestAlreadyPaid` / `RequestCancelled` | BR-061, BR-077 |
 | 4 | step chưa dùng | `StepAlreadyExecuted` | BR-061 |
@@ -158,7 +158,7 @@ Mọi hàm ghi đều có chống reentrancy và theo thứ tự kiểm–ghi–
 
 **Vượt trần có ngoại lệ (J5):** validator trả NEEDS_APPROVAL (2.500 > 2.000) → Owner ký giao dịch `grantException(requestId, 2500, payee, now + 3 ngày)` → `pay` dùng ngoại lệ ở bước 7, vẫn áp trần ngày ở bước 8.
 
-**Đường lỗi:** gửi lặp → `RequestAlreadyPaid`/`StepAlreadyExecuted`, không đổi trạng thái · pause giữa refill và pay → `pay` lỗi `NotActive`, refill vẫn giữ (BR-054) · approver bị gỡ sau khi ký → `NotApprover` · payee bị ngừng → `PayeeUnknown` · token trả false / có phí chuyển → `TransferFailed` / `BalanceDeltaMismatch` · Owner rút từ O1 giữa hai bước → `BufferBreach`, backend lập lại kế hoạch.
+**Đường lỗi:** gửi lặp → `RequestAlreadyPaid`/`StepAlreadyExecuted`, không đổi trạng thái · pause giữa refill và pay → `pay` lỗi `MandatePaused`, refill vẫn giữ (BR-054) · approver bị gỡ sau khi ký → `NotApprover` · payee bị ngừng → `PayeeUnknown` · token trả false / có phí chuyển → `TransferFailed` / `BalanceDeltaMismatch` · Owner rút từ O1 giữa hai bước → `BufferBreach`, backend lập lại kế hoạch.
 
 ## 8. Ví dụ số
 

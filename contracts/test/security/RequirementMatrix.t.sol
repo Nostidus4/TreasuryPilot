@@ -27,7 +27,7 @@ contract RequirementMatrixTest is TreasuryFixture {
         config.guardian = address(guardianSafe);
         _owner(abi.encodeCall(module.configureMandate, (config)));
         _safeTx(guardianSafe, address(module), abi.encodeCall(module.pause, ()));
-        _expectPayError(_approval(1, 1), E.NotActive.selector);
+        _expectPayError(_approval(1, 1), E.MandatePaused.selector);
         vm.expectRevert(E.NotOwner.selector);
         vm.prank(address(guardianSafe));
         module.resume();

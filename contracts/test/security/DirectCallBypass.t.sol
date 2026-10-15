@@ -54,7 +54,7 @@ contract DirectCallBypassTest is TreasuryFixture {
 
     function testDirectPausedCoolingDailyLimitAndCancelledRequestsRevertDocumentedErrors() external {
         _owner(abi.encodeCall(module.pause, ()));
-        _expectPayError(_approval(1, 1), E.NotActive.selector);
+        _expectPayError(_approval(1, 1), E.MandatePaused.selector);
         _owner(abi.encodeCall(module.resume, ()));
         _owner(abi.encodeCall(module.addPayee, (vendor)));
         _expectPayError(_approval(1, 1), E.PayeeCooling.selector);
