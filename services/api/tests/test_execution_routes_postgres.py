@@ -318,7 +318,7 @@ async def _read_routes(database_url: str) -> None:
         assert step["verification"] is None
         assert step["txHash"] == "0x" + "44" * 32
         assert step["confirmations"] == 2
-        assert body["attestation"]["planHash"] == "0x" + "88" * 32
+        assert body["attestation"]["planHash"] == "0x" + SIGNED_PLAN_HASH.hex()
 
         with pytest.raises(AuthFailure) as exc_info:
             await get_execution_plan(
