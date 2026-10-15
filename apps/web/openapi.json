@@ -51,6 +51,29 @@
         "title": "AICallEvidence",
         "type": "object"
       },
+      "AcknowledgeTokenMovementRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "AcknowledgeTokenMovementRequest",
+        "type": "object"
+      },
+      "AcknowledgeTokenMovementResponse": {
+        "properties": {
+          "movement": {
+            "$ref": "#/components/schemas/TokenMovementView"
+          }
+        },
+        "required": ["movement"],
+        "title": "AcknowledgeTokenMovementResponse",
+        "type": "object"
+      },
       "ActionLimits": {
         "additionalProperties": false,
         "properties": {
@@ -4111,6 +4134,150 @@
           "treasuries"
         ],
         "title": "TenantView",
+        "type": "object"
+      },
+      "TokenMovementListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TokenMovementView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TokenMovementListResponse",
+        "type": "object"
+      },
+      "TokenMovementView": {
+        "properties": {
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedat"
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedby"
+          },
+          "acknowledgementReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgementreason"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "blockHash": {
+            "title": "Blockhash",
+            "type": "string"
+          },
+          "blockNumber": {
+            "title": "Blocknumber",
+            "type": "integer"
+          },
+          "classification": {
+            "enum": [
+              "AGENT",
+              "INTERNAL_REFILL",
+              "INFLOW",
+              "UNEXPECTED_OUTFLOW",
+              "LENDING"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "counterparty": {
+            "title": "Counterparty",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "direction": {
+            "enum": ["IN", "OUT"],
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "operationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operationid"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          },
+          "transactionHash": {
+            "title": "Transactionhash",
+            "type": "string"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "wallet": {
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "wallet",
+          "direction",
+          "counterparty",
+          "amount",
+          "classification",
+          "operationId",
+          "removed",
+          "createdAt",
+          "acknowledgedBy",
+          "acknowledgedAt",
+          "acknowledgementReason"
+        ],
+        "title": "TokenMovementView",
         "type": "object"
       },
       "TotpConfirm": {
@@ -11379,6 +11546,142 @@
         },
         "summary": "Verify Oob",
         "tags": ["payees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements": {
+      "get": {
+        "operationId": "list_token_movements_v1_orgs__organization_id__treasuries__treasury_id__token_movements_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenMovementListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Token Movements",
+        "tags": ["chain"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements/{movement_id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledge_token_movement_v1_orgs__organization_id__treasuries__treasury_id__token_movements__movement_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "movement_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Movement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeTokenMovementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcknowledgeTokenMovementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Token Movement",
+        "tags": ["chain"],
         "x-organization-scoped": true
       }
     },
