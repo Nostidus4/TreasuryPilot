@@ -46,6 +46,9 @@ class SimulationContext:
     # Required for PAY and REFILL; the PaymentApproval message and its wire-format signature.
     approval: Mapping[str, Any] | None = None
     approver_signature: bytes = b""
+    # None = preflight not run (no-op); False = Travel Rule exchange held, which blocks PAY.
+    # REFILL is intentionally out of scope: it moves treasury funds, not a payee transfer.
+    travel_rule_clear: bool | None = None
 
 
 def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -107,6 +110,37 @@ def _revert_data(error: RpcResponseError) -> bytes | None:
 async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> Decision:
     """`eth_call` the step from the executor at `latest`; revert or RPC failure is BLOCK."""
 
+    if step.action is Action.PAY and ctx.travel_rule_clear is False:
+        # Held before any RPC call: an existing approval signature must not bypass the exchange.
+        codes: tuple[PolicyReasonCode, ...] = (PolicyReasonCode.DATA_MISSING,)
+        checks = [
+            Check(
+                name="travel_rule_clear",
+                passed=False,
+                code=PolicyReasonCode.DATA_MISSING,
+                expected="completed or non-qualifying Travel Rule exchange",
+                observed="Travel Rule exchange held for this transfer",
+            )
+        ]
+    else:
+        codes, checks = await _simulate_call(rpc, step, ctx)
+    outcome, primary = aggregate(codes)
+    return Decision(
+        decision=outcome,
+        primary=primary,
+        codes=list(codes),
+        warnings=[],
+        checks=checks,
+        stage="SIMULATION",
+        step_seq=step.seq,
+        policy_version=ctx.policy_version,
+        snapshot_block=ctx.snapshot_block,
+    )
+
+
+async def _simulate_call(
+    rpc: RpcClient, step: PlanStep, ctx: SimulationContext
+) -> tuple[tuple[PolicyReasonCode, ...], list[Check]]:
     call = {"from": ctx.executor, "to": ctx.target, "data": "0x" + build_calldata(step, ctx).hex()}
     codes: tuple[PolicyReasonCode, ...] = ()
     observed = None
@@ -138,18 +172,7 @@ async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> De
             for code in codes
         ]
     )
-    outcome, primary = aggregate(codes)
-    return Decision(
-        decision=outcome,
-        primary=primary,
-        codes=list(codes),
-        warnings=[],
-        checks=checks,
-        stage="SIMULATION",
-        step_seq=step.seq,
-        policy_version=ctx.policy_version,
-        snapshot_block=ctx.snapshot_block,
-    )
+    return codes, checks
 
 
 async def record_validation(pool: asyncpg.Pool, plan_id: UUID, decision: Decision) -> None:

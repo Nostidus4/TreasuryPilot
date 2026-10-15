@@ -12,6 +12,7 @@ import time
 import urllib.request
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,7 @@ CTX = SimulationContext(
     snapshot_block=42,
     approval=APPROVAL,
     approver_signature=b"\x22" * 64,
+    travel_rule_clear=True,
 )
 
 
@@ -157,6 +159,23 @@ def test_pay_calldata_carries_the_fresh_plan_amount_separately_from_the_approval
 
     assert decoded[0][7] == 100  # signed approver maximum
     assert decoded[3] == 90  # amount proposed by the fresh quote
+
+
+def test_an_already_approved_pay_is_blocked_until_travel_rule_preflight_clears() -> None:
+    node = FakeNode()
+    # The approval payload and signature are present, but do not substitute for Travel Rule clearance.
+    context = replace(CTX, travel_rule_clear=False)
+
+    decision = asyncio.run(simulate(_client(node), _step(Action.PAY), context))
+
+    assert (decision.decision, decision.codes, decision.primary, decision.stage) == (
+        "BLOCK",
+        [C.DATA_MISSING],
+        C.DATA_MISSING,
+        "SIMULATION",
+    )
+    assert decision.checks[0].name == "travel_rule_clear"
+    assert node.requests == []
 
 
 def test_a_clean_call_is_allowed_and_runs_from_the_executor_at_latest() -> None:
