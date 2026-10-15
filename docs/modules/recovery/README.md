@@ -192,6 +192,16 @@ Scan interval 60 s; escalation after 30 min; retry max 6; SLAs per §8.3; circui
 
 Worker killed mid-flight → scan + resolution; RPC down during recovery → remain blocked (never guess); sentinel unavailable → backend pause still holds, human guardian prompted.
 
+Traceability (RCV-007, #169): `services/worker/tests/test_recovery_crash_suite.py::test_executor_crash_never_double_pays` (CI: Anvil + Postgres job, ~9 s).
+
+| Requirement | Evidence |
+|---|---|
+| Worker killed at randomized points around the signer call and the DB write | 20 iterations; the order of 5 crash points (`before_signer`, `after_sign`, `after_broadcast`, `mid_commit`, `after_commit`, 4 runs each) is shuffled by `TP_CRASH_SEED` (default 169, printed with the schedule). The crash is an in-process `BaseException` out of `sequence_plan`; the pool is dropped so uncommitted work rolls back |
+| Restart and recovery | startup `scan_in_flight`, then `sequence_plan` again (the stand-in signer replays the stored raw tx by step id), then `track_transactions`, then `sequence_plan` to Paid |
+| Exactly one PAY on-chain, request Paid | per iteration: one mined transfer to the iteration's recipient (block scan) and recipient balance equal to the amount; `payment_requests.status = 'Paid'`, one `Confirmed` operation. Mutating the signer to re-sign on retry fails the suite with `2 PAY transfers mined` |
+
+Limits: the worker is simulated in process, not a killed Celery process, and the signer is a stand-in that signs once per step id with an Anvil dev key. `TreasuryPilotModule` and its `requestPaid`/`stepUsed` flags are not deployed here (covered separately in RCV-002 and the contract tests).
+
 ## 12. Test plan
 
 Unit: classifier table; routing; circuit rule windows. Integration (Anvil): Unknown resolution via receipt, via nonce, via module flags; partial completion resume (AT-07); circuit breaker pause within one cycle via sentinel. Fault injection: RCV-007 — 20/20 runs with exactly one PAY.
