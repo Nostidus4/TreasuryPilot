@@ -19,19 +19,21 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Final, Literal
 
 import asyncpg  # type: ignore[import-untyped]
 from eth_abi import decode, encode
+from eth_abi.exceptions import DecodingError
 from web3 import Web3
 
-from treasurypilot_worker.chain.rpc import RpcClient
-from treasurypilot_worker.tracker.track import CONFIRMATIONS, UNKNOWN_AFTER
+from treasurypilot_worker.chain.rpc import RpcClient, RpcError
+from treasurypilot_worker.tracker.track import CONFIRMATIONS, TRACKED, UNKNOWN_AFTER
 
 ESCALATE_AFTER: Final = timedelta(minutes=30)
 UNCERTAIN_SLA: Final = timedelta(hours=1)
-_IN_FLIGHT: Final = ("Submitted", "Pending", "Unknown")
+_IN_FLIGHT: Final = frozenset(TRACKED)
 _STEP_USED: Final = Web3.keccak(text="stepUsed(bytes32)")[:4]
 
 Resolution = Literal[
@@ -60,16 +62,40 @@ async def resolve_operation(
     if not txs:
         return "NotInFlight"
 
-    for tx in txs:
-        if await rpc.call("eth_getTransactionReceipt", ["0x" + bytes(tx["tx_hash"]).hex()]):
+    # Silence is not evidence: any failed or undecodable read leaves the operation untouched.
+    try:
+        verdict = await _observe(rpc, op, txs, now)
+    except (RpcError, ValueError, TypeError, KeyError, DecodingError):
+        logger.warning("operation %s: chain evidence unavailable", operation_id, exc_info=True)
+        return "Unclear"
+    if verdict == "Confirmed":
+        return await _close(pool, op, "Confirmed", None, txs) or "Confirmed"
+    if verdict == "NeverBroadcast":
+        return (
+            await _close(pool, op, "NotSubmitted", "NEVER_BROADCAST", txs, restart=now)
+            or "NeverBroadcast"
+        )
+    if verdict == "Escalated":
+        await _escalate(pool, op, now)
+    return verdict
+
+
+async def _observe(
+    rpc: RpcClient, op: asyncpg.Record, txs: Sequence[asyncpg.Record], now: datetime
+) -> Resolution:
+    hashes = ["0x" + bytes(tx["tx_hash"]).hex() for tx in txs]
+    for tx_hash in hashes:
+        if await rpc.call("eth_getTransactionReceipt", [tx_hash]):
             return "Receipt"
 
+    # shortcut: stepUsed at head-2 is treated as final and, unlike the tracker's receipts, is not
+    # re-watched for reorgs; upgrade to re-checking it for REORG_WINDOW blocks if a reorg deeper
+    # than CONFIRMATIONS is ever seen on a supported chain.
     if await _step_used(rpc, op):
-        await _close(pool, op, "Confirmed", None)
         return "Confirmed"
 
-    for tx in txs:
-        if await rpc.call("eth_getTransactionByHash", ["0x" + bytes(tx["tx_hash"]).hex()]):
+    for tx_hash in hashes:
+        if await rpc.call("eth_getTransactionByHash", [tx_hash]):
             return "Pending"
 
     # Same silence the tracker needs to call a transaction Unknown; before that it may be in transit.
@@ -82,15 +108,11 @@ async def resolve_operation(
         used = int(await rpc.call("eth_getTransactionCount", [sender, "latest"]), 16)
         consumed = consumed or int(tx["nonce"]) < used
     if not consumed:
-        await _close(pool, op, "NotSubmitted", "NEVER_BROADCAST", restart=now)
         return "NeverBroadcast"
 
     # shortcut: a consumed nonce with no receipt is not traced to its block (nonce scan of recent
     # blocks, M12 §8.1 step 2); it waits for the tracker or a human, upgrade if that is common.
-    if now - silent_since < ESCALATE_AFTER:
-        return "Unclear"
-    await _escalate(pool, op, now)
-    return "Escalated"
+    return "Unclear" if now - silent_since < ESCALATE_AFTER else "Escalated"
 
 
 async def _step_used(rpc: RpcClient, op: asyncpg.Record) -> bool:
@@ -102,6 +124,7 @@ async def _step_used(rpc: RpcClient, op: asyncpg.Record) -> bool:
         "data": "0x" + (_STEP_USED + encode(["bytes32"], [bytes(op["step_id"])])).hex(),
     }
     raw = await rpc.call("eth_call", [call, hex(max(head - CONFIRMATIONS + 1, 0))])
+    # An empty "0x" (no code at the module) raises a decode error instead of reading as false.
     return bool(decode(["bool"], bytes.fromhex(str(raw).removeprefix("0x")))[0])
 
 
@@ -110,34 +133,57 @@ async def _close(
     op: asyncpg.Record,
     status: str,
     error: str | None,
+    seen: Sequence[asyncpg.Record],
     *,
     restart: datetime | None = None,
-) -> None:
+) -> Resolution | None:
+    """Move the operation; None when done, else why the tracker's newer facts won."""
+
     async with pool.acquire() as connection, connection.transaction():
-        moved = await connection.execute(
-            "UPDATE operations SET status = $2::operation_status, last_error = $3 "
-            "WHERE id = $1 AND status = ANY($4::operation_status[])",
+        # Same order as the tracker (transactions, then operations) so the two cannot deadlock.
+        txs = await connection.fetch(
+            "SELECT tx_hash, status, block_hash, last_seen_pending_at FROM transactions "
+            "WHERE operation_id = $1 FOR UPDATE",
+            op["id"],
+        )
+        current = await connection.fetchval(
+            "SELECT status FROM operations WHERE id = $1 FOR UPDATE", op["id"]
+        )
+        if current not in _IN_FLIGHT:
+            return "Unclear"
+        before = {bytes(t["tx_hash"]): t["last_seen_pending_at"] for t in seen}
+        for tx in txs:
+            if tx["block_hash"] is not None or tx["status"] in ("Confirmed", "Reverted"):
+                return "Receipt"
+            # The tracker saw it in the mempool after we looked: it is not unbroadcast.
+            if restart and before.get(bytes(tx["tx_hash"]), None) != tx["last_seen_pending_at"]:
+                return "Unclear"
+        await connection.execute(
+            "UPDATE operations SET status = $2::operation_status, last_error = $3 WHERE id = $1",
             op["id"],
             status,
             error,
-            list(_IN_FLIGHT),
         )
-        if moved.endswith(" 0"):
-            return
         if restart is None:
             # Confirmed by the module flag: our hashes lost to an unrecorded one. Dropped keeps the
-            # tracker from flipping the operation back to Unknown.
+            # tracker from flipping the operation back to Unknown (none has a receipt, checked).
             await connection.execute(
                 "UPDATE transactions SET status = 'Dropped' WHERE operation_id = $1 "
-                "AND status IN ('Submitted', 'Pending', 'Unknown')",
+                "AND block_hash IS NULL AND status = ANY($2::transaction_status[])",
                 op["id"],
+                TRACKED,
             )
-        else:  # the Unknown clock restarts with the replay
+        else:
+            # The replay hands back the same signed tx (same hash), so the outbox inserts no new
+            # row (ON CONFLICT DO NOTHING): these rows are what the tracker follows, and they
+            # need a fresh Unknown clock or it would expire them at once.
             await connection.execute(
                 "UPDATE transactions SET status = 'Submitted', submitted_at = $2, "
-                "last_seen_pending_at = NULL WHERE operation_id = $1 AND status = 'Unknown'",
+                "last_seen_pending_at = NULL WHERE operation_id = $1 "
+                "AND status = ANY($3::transaction_status[])",
                 op["id"],
                 restart,
+                TRACKED,
             )
         await connection.execute(
             "UPDATE review_items SET evidence_resolved = true WHERE request_id = $1 "
@@ -152,6 +198,7 @@ async def _close(
             op["id"],
         )
     logger.info("operation %s resolved from chain evidence: %s", op["id"], status)
+    return None
 
 
 async def _escalate(pool: asyncpg.Pool, op: asyncpg.Record, now: datetime) -> None:
@@ -166,7 +213,7 @@ async def _escalate(pool: asyncpg.Pool, op: asyncpg.Record, now: datetime) -> No
             "type, primary_code, reason_codes, completed_steps, assigned_roles, status, "
             "sla_due_at, evidence_resolved) SELECT gen_random_uuid(), r.org_id, r.treasury_id, "
             "r.id, r.version, 'UNCERTAIN_TX', 'TX_UNKNOWN', ARRAY['TX_UNKNOWN'], '[]'::jsonb, "
-            "ARRAY['Operator'], 'Open', $2, false FROM payment_requests r WHERE r.id = $1 "
+            "ARRAY['Operator', 'Owner'], 'Open', $2, false FROM payment_requests r WHERE r.id = $1 "
             "ON CONFLICT (request_id, type) WHERE status = 'Open' DO NOTHING",
             op["request_id"],
             now + UNCERTAIN_SLA,

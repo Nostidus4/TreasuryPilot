@@ -82,12 +82,12 @@ Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK o
      receipt status 1 → Confirmed (verify via M11) ; status 0 → Reverted
 2. Else / no receipt: executor nonce = getTransactionCount(executor, latest)
      if op.nonce < nonce → some tx with that nonce mined → find it (by nonce scan of recent blocks) → link → 1.
-     if op.nonce ≥ nonce and not in mempool → NEVER_BROADCAST → Abandoned (same step id may be re-planned)
+     if op.nonce ≥ nonce and not in mempool → NEVER_BROADCAST → NotSubmitted (the executor replays the same step id; a replay refused as ATTESTATION_EXPIRED ends Abandoned)
 3. Module flags: stepUsed[stepId] or requestPaid[requestId] true → treat as Confirmed even without our receipt (e.g. replacement we did not record) → reconcile
 4. Still unclear after 30 min → ESCALATED: review item UNCERTAIN_TX (Operator + Owner), treasury stays blocked
 ```
 
-Code: `treasurypilot_worker.recovery.resolve.resolve_operation(pool, rpc, operation_id)`, called per in-flight operation by the scan (§7.1). A receipt is left to the tracker. `stepUsed` (read 3 blocks deep) makes the operation Confirmed. A hash that is unseen and whose nonce is unused, silent for 10 min, returns the operation to NotSubmitted so the executor replays the same step id. Otherwise it stays Unknown and, after 30 min of silence, opens one UNCERTAIN_TX item (`TX_UNKNOWN`); resolving evidence later sets `evidence_resolved`. Not done: tracing a consumed nonce to its block.
+Code: `treasurypilot_worker.recovery.resolve.resolve_operation(pool, rpc, operation_id)`, called per in-flight operation by the scan (§7.1). A receipt is left to the tracker. `stepUsed` (read 3 blocks deep) makes the operation Confirmed. A hash that is unseen and whose nonce is unused, silent for 10 min, returns the operation to NotSubmitted so the executor replays the same step id. Otherwise it stays Unknown and, after 30 min of silence, opens one UNCERTAIN_TX item (`TX_UNKNOWN`); resolving evidence later sets `evidence_resolved`. Rows are locked transactions-then-operation (the tracker's order) and re-checked first: a receipt, a final status or a newer mempool sighting recorded meanwhile aborts the change. RPC errors or undecodable answers return Unclear and change nothing. Replay resets in-flight rows to Submitted with a fresh clock (the signer returns the same hash, so no new row is inserted). A Pending tx seen in the mempool is left alone, not escalated or replaced. Not done, all left to the tracker: tracing a consumed nonce to its block (nonce scan), `requestPaid`, the secondary-provider receipt cross-check, and Reverted.
 
 ### 8.2 Retry classifier (RCV-005)
 

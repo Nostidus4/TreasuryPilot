@@ -16,6 +16,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
+from treasurypilot_worker.chain.rpc import RpcResponseError
 from treasurypilot_worker.executor.outbox import execute_step
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.recovery.resolve import resolve_operation
@@ -45,13 +46,19 @@ class FakeRpc:
         self.in_mempool = False
         self.step_used = False
         self.next_nonce = 0
+        self.fail: str | None = None
+        self.step_used_raw: str | None = None
 
     async def call(self, method: str, params: Sequence[Any]) -> Any:
+        if method == self.fail:
+            raise RpcResponseError(-32000, "boom")
         return {
             "eth_getTransactionReceipt": self.receipt,
             "eth_getTransactionByHash": {"hash": "0x1"} if self.in_mempool else None,
             "eth_blockNumber": "0x64",
-            "eth_call": "0x" + "00" * 31 + ("01" if self.step_used else "00"),
+            "eth_call": self.step_used_raw
+            if self.step_used_raw is not None
+            else "0x" + "00" * 31 + ("01" if self.step_used else "00"),
             "eth_getTransactionCount": hex(self.next_nonce),
         }[method]
 
@@ -87,6 +94,8 @@ async def _run(
     age: int = 60,
     tx_hash: bytes | None = None,
     nonce: int = 5,
+    extra_txs: int = 0,
+    reset: bool = True,
 ) -> tuple[Any, ...]:
     """Register an in-flight operation, resolve it, return (resolution, op, items, step_id)."""
 
@@ -94,6 +103,8 @@ async def _run(
     operation_id = uuid.uuid4()
     pool = await create_worker_pool(url, min_size=1, max_size=2)
     try:
+        if reset:  # review items are per request; start each case from a clean queue
+            await pool.execute("DELETE FROM review_items WHERE request_id = $1", _REQUEST)
         await pool.execute(
             "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
             "payload, idempotency_key, status, attempts) VALUES ($1, $2, $3, $4, $5, 'PAY', "
@@ -106,25 +117,37 @@ async def _run(
             str(operation_id),
             status,
         )
-        await pool.execute(
-            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address, "
-            "status, submitted_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6::transaction_status, $7)",
-            operation_id,
-            CHAIN_ID,
-            tx_hash or uuid.uuid4().bytes * 2,
-            nonce,
-            SENDER,
-            status,
-            NOW - timedelta(minutes=age),
-        )
+        for i in range(1 + extra_txs):
+            await pool.execute(
+                "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+                "from_address, status, submitted_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, "
+                "$5, $6::transaction_status, $7)",
+                operation_id,
+                CHAIN_ID,
+                (tx_hash if i == 0 and tx_hash else uuid.uuid4().bytes * 2),
+                nonce,
+                SENDER,
+                status,
+                NOW - timedelta(minutes=age),
+            )
         resolution = await resolve_operation(pool, rpc, operation_id, now=NOW)  # type: ignore[arg-type]
         op = await pool.fetchrow(
             "SELECT status, last_error FROM operations WHERE id = $1", operation_id
         )
         items = await pool.fetch(
-            "SELECT evidence_resolved, status FROM review_items WHERE type = 'UNCERTAIN_TX'"
+            "SELECT evidence_resolved, status, assigned_roles FROM review_items "
+            "WHERE type = 'UNCERTAIN_TX' AND request_id = $1",
+            _REQUEST,
         )
-        return resolution, op, items, step_id
+        txs = await pool.fetch(
+            "SELECT status, submitted_at, last_seen_pending_at FROM transactions "
+            "WHERE operation_id = $1",
+            operation_id,
+        )
+        events = await pool.fetchval(
+            "SELECT count(*) FROM domain_events WHERE entity_id = $1", operation_id
+        )
+        return resolution, op, items, step_id, txs, events
     finally:
         await pool.close()
 
@@ -132,8 +155,38 @@ async def _run(
 def test_step_used_on_chain_confirms_without_resubmission(database_url: str) -> None:
     rpc = FakeRpc()
     rpc.step_used = True
-    resolution, op, _, _ = asyncio.run(_run(database_url, rpc))
+    resolution, op, _, _, txs, events = asyncio.run(_run(database_url, rpc, extra_txs=1))
     assert (resolution, op["status"]) == ("Confirmed", "Confirmed")
+    assert [t["status"] for t in txs] == ["Dropped", "Dropped"]
+    assert events == 1
+
+
+def test_without_a_module_the_flag_is_not_read(database_url: str) -> None:
+    async def module(value: bytes | None) -> None:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        await pool.execute("UPDATE treasuries SET module_address = $1", value)
+        await pool.close()
+
+    rpc = FakeRpc()
+    rpc.step_used = True  # would confirm if it were read
+    asyncio.run(module(None))
+    try:
+        resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=2))
+    finally:
+        asyncio.run(module(MODULE))
+    assert (resolution, op["status"]) == ("Unclear", "Unknown")
+
+
+def test_rpc_errors_and_empty_answers_never_fall_through(database_url: str) -> None:
+    for method in ("eth_call", "eth_getTransactionByHash", "eth_getTransactionCount"):
+        rpc = FakeRpc()
+        rpc.fail = method
+        resolution, op, *_ = asyncio.run(_run(database_url, rpc))
+        assert (resolution, op["status"]) == ("Unclear", "Unknown"), method
+    rpc = FakeRpc()
+    rpc.step_used_raw = "0x"  # no code at the module
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc))
+    assert (resolution, op["status"]) == ("Unclear", "Unknown")
 
 
 def test_receipt_or_mempool_is_left_to_the_tracker(database_url: str) -> None:
@@ -142,13 +195,17 @@ def test_receipt_or_mempool_is_left_to_the_tracker(database_url: str) -> None:
     assert asyncio.run(_run(database_url, rpc))[0] == "Receipt"
     rpc = FakeRpc()
     rpc.in_mempool = True
-    resolution, op, _, _ = asyncio.run(_run(database_url, rpc))
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc))
     assert (resolution, op["status"]) == ("Pending", "Unknown")
 
 
 def test_never_broadcast_is_replayed_with_the_same_step_id(database_url: str) -> None:
     rpc = FakeRpc()
-    resolution, op, _, step_id = asyncio.run(_run(database_url, rpc, tx_hash=b"\x00" * 32))
+    resolution, op, _, step_id, txs, _ = asyncio.run(
+        _run(database_url, rpc, tx_hash=b"\x00" * 32, status="Pending", age=20)
+    )
+    # The aged Pending row restarts as Submitted so the tracker does not re-expire it at once.
+    assert [(t["status"], t["submitted_at"]) for t in txs] == [("Submitted", NOW)]
     assert (resolution, op["status"], op["last_error"]) == (
         "NeverBroadcast",
         "NotSubmitted",
@@ -188,10 +245,10 @@ def test_consumed_nonce_without_evidence_escalates_after_30_minutes(database_url
     rpc = FakeRpc()
     rpc.next_nonce = 6
     assert asyncio.run(_run(database_url, rpc, age=20))[0] == "Unclear"
-    resolution, op, items, _ = asyncio.run(_run(database_url, rpc, age=31))
+    resolution, op, items, *_ = asyncio.run(_run(database_url, rpc, age=31))
     assert (resolution, op["status"]) == ("Escalated", "Unknown")
-    assert [i["status"] for i in items] == ["Open"]
+    assert [(i["status"], i["assigned_roles"]) for i in items] == [("Open", ["Operator", "Owner"])]
     # Later chain evidence resolves the operation and unlocks the item's acknowledgment.
     rpc.step_used = True
-    _, _, items, _ = asyncio.run(_run(database_url, rpc))
+    items = asyncio.run(_run(database_url, rpc, reset=False))[2]
     assert items[0]["evidence_resolved"] is True
