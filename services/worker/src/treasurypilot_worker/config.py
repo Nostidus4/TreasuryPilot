@@ -61,7 +61,11 @@ class Settings(BaseSettings):
     gas_swap_max_amount_in: int | None = None
     gas_swap_slippage_bps: int = 100
     # Executor balance below which a LowGas alert is emitted (EXE-010): 0.005 native token.
+    # One global threshold for every role (executor, sentinel, receipt key) and chain.
     low_gas_threshold_wei: int = 5 * 10**15
+    # Optional extra addresses swept for low gas (role "sentinel" / "receipt"), on every treasury's chain.
+    sentinel_address: str | None = None
+    eas_receipt_address: str | None = None
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.

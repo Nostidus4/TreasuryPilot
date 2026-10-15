@@ -146,11 +146,16 @@ def expire_mandate_versions() -> dict[str, int]:
     return asyncio.run(_expire_mandates(database_url))
 
 
-async def _check_low_gas(database_url: str, threshold_wei: int) -> dict[str, int]:
+async def _check_low_gas(
+    database_url: str, threshold_wei: int, configured: list[tuple[str, str | None]]
+) -> dict[str, int]:
     connection = await asyncpg.connect(_asyncpg_database_url(database_url))
     try:
         return await check_low_gas(
-            connection, lambda urls: build_rpc_client(decode_rpc_urls(urls)), threshold_wei
+            connection,
+            lambda urls: build_rpc_client(decode_rpc_urls(urls)),
+            threshold_wei,
+            configured,
         )
     finally:
         await connection.close()
@@ -162,7 +167,14 @@ def check_low_gas_task() -> dict[str, int]:
     settings = get_settings()
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required for the low-gas check")
-    return asyncio.run(_check_low_gas(settings.database_url, settings.low_gas_threshold_wei))
+    configured = [
+        ("executor", settings.executor_address),
+        ("sentinel", settings.sentinel_address),
+        ("receipt", settings.eas_receipt_address),
+    ]
+    return asyncio.run(
+        _check_low_gas(settings.database_url, settings.low_gas_threshold_wei, configured)
+    )
 
 
 async def _auto_match(database_url: str) -> dict[str, int]:

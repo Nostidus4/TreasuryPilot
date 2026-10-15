@@ -367,6 +367,7 @@ class SigningService:
             ):
                 raise SignerFault("FEE_CAP_EXCEEDED")
             # Nothing is reserved or signed when the executor cannot pay the worst-case fee.
+            # Advisory only: a concurrent send can still drain the balance before broadcast.
             balance = _rpc_quantity(
                 await self._rpc.call("eth_getBalance", [account.address, "latest"])
             )

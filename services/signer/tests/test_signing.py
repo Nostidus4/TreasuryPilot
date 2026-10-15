@@ -641,9 +641,29 @@ def test_insufficient_executor_gas_refuses_before_reserving() -> None:
     assert not store.uses
 
 
+def test_failed_balance_lookup_fails_closed() -> None:
+    class BalanceDown(FakeRpc):
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            if method == "eth_getBalance":
+                raise RpcFailure(method)
+            return await super().call(method, params)
+
+    service, node, store = _service(rpc=BalanceDown())
+
+    with pytest.raises(SignerFault) as raised:
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert raised.value.code == "CHAIN_RPC_UNAVAILABLE"
+    assert node.sent == [] and not store.uses
+
+
 @pytest.mark.parametrize(
     ("method", "value"),
-    [("eth_chainId", 5), ("eth_estimateGas", "nope"), ("eth_getTransactionCount", None)],
+    [
+        ("eth_chainId", 5),
+        ("eth_estimateGas", "nope"),
+        ("eth_getTransactionCount", None),
+        ("eth_getBalance", None),
+    ],
 )
 def test_malformed_rpc_results_are_an_rpc_fault(method: str, value: Any) -> None:
     service, node, _ = _service(rpc=FakeRpc(overrides={method: value}))
