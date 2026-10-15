@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from treasurypilot_core.domain import (
     ApprovedRequest,
@@ -14,8 +14,8 @@ from treasurypilot_core.domain import (
     Snapshot,
     WalletState,
 )
-from treasurypilot_core.engine.liquidity import decide_refill, shortage
-from treasurypilot_core.engine.payment_terms import pay_amount, request_value
+from treasurypilot_core.engine.liquidity import decide_refill, shortage, source_capacity
+from treasurypilot_core.engine.payment_terms import amount_due, pay_amount, request_value
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy.reason_codes import PolicyReasonCode
 
@@ -43,6 +43,14 @@ _BINDING = {
 }
 
 
+def _reserve(request: ApprovedRequest, snapshot: Snapshot) -> int:
+    """Worst-case amount owed over the horizon (late fees included); amount_due only grows."""
+
+    return max(
+        int(amount_due(request, day)) for day in range(snapshot.day, snapshot.day + HORIZON_DAYS)
+    )
+
+
 @dataclass(slots=True)
 class _SimulationState:
     """Mutable balances and daily counters used by both schedule solvers."""
@@ -51,10 +59,26 @@ class _SimulationState:
     source: WalletState
     pay_used: int = 0
     refill_used: int = 0
+    # Per wallet: amounts of approved requests it still has to pay. An operational wallet
+    # lending to another keeps these (plus its buffer); empty means no known obligations.
+    reserved: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def start(cls, snapshot: Snapshot, requests: Sequence[ApprovedRequest]) -> _SimulationState:
+        reserved: dict[str, int] = {}
+        for request in requests:
+            reserved[request.paying_wallet] = reserved.get(request.paying_wallet, 0) + _reserve(
+                request, snapshot
+            )
+        return cls(dict(snapshot.operational), snapshot.source, reserved=reserved)
 
     def copy(self) -> _SimulationState:
         return _SimulationState(
-            dict(self.operational), self.source, self.pay_used, self.refill_used
+            dict(self.operational),
+            self.source,
+            self.pay_used,
+            self.refill_used,
+            dict(self.reserved),
         )
 
     def start_day(self, day: int, snapshot: Snapshot) -> None:
@@ -110,15 +134,33 @@ def _try_schedule_request(
     refill_request = request.model_copy(
         update={"amount": amount, "early_amount": None, "early_pay_by": None}
     )
+    refill_used = BaseUnits(state.refill_used)
     refill = decide_refill(
-        refill_request,
-        wallet,
-        state.source,
-        policy,
-        BaseUnits(state.refill_used),
-        _ZERO,
-        source_protected=_ZERO,
+        refill_request, wallet, state.source, policy, refill_used, _ZERO, source_protected=_ZERO
     )
+    refill_from: str | None = None
+    if refill.kind == "stop" and refill.reason == PolicyReasonCode.SOURCE_INSUFFICIENT:
+        # Safe T is always tried first; allowlisted operational wallets only cover its shortfall.
+        # Each lender keeps its buffer plus the requests it still has to pay.
+        lenders = sorted(
+            (-int(source_capacity(lender, BaseUnits(state.reserved.get(key, 0)))), key)
+            for key, lender in state.operational.items()
+            if (key, request.paying_wallet) in snapshot.refill_paths
+            and lender.address != wallet.address
+        )
+        for _capacity, key in lenders:
+            attempt = decide_refill(
+                refill_request,
+                wallet,
+                state.operational[key],
+                policy,
+                refill_used,
+                _ZERO,
+                source_protected=BaseUnits(state.reserved.get(key, 0)),
+            )
+            if attempt.kind != "stop":
+                refill, refill_from = attempt, key
+                break
     if refill.kind == "stop":
         return None, refill.reason
 
@@ -131,10 +173,18 @@ def _try_schedule_request(
     state.operational[request.paying_wallet] = wallet.model_copy(
         update={"balance": BaseUnits(wallet_balance)}
     )
-    if refill_amount:
+    if refill_amount and refill_from is not None:
+        lender = state.operational[refill_from]
+        state.operational[refill_from] = lender.model_copy(
+            update={"balance": BaseUnits(int(lender.balance) - refill_amount)}
+        )
+    elif refill_amount:
         state.source = state.source.model_copy(
             update={"balance": BaseUnits(int(state.source.balance) - refill_amount)}
         )
+    state.reserved[request.paying_wallet] = state.reserved.get(request.paying_wallet, 0) - _reserve(
+        request, snapshot
+    )
     state.pay_used += int(amount)
     state.refill_used += refill_amount
     return (
@@ -142,6 +192,7 @@ def _try_schedule_request(
             request_id=request.id,
             day=day,
             refill=BaseUnits(refill_amount),
+            refill_from=refill_from if refill_amount else None,
             value=request_value(request, day, supply_rate_bps=snapshot.supply_rate_bps),
         ),
         None,
@@ -214,7 +265,7 @@ def schedule_edf(
             status="OPTIMAL",
         )
     horizon_end = snapshot.day + HORIZON_DAYS - 1
-    state = _SimulationState(dict(snapshot.operational), snapshot.source)
+    state = _SimulationState.start(snapshot, ordered)
     scheduled: list[ScheduledItem] = []
     blocked_reason: dict[str, str] = {}
     binding: set[str] = set()
@@ -300,7 +351,7 @@ def schedule_in_order(
 
     by_id = {request.id: request for request in _ordered_requests(requests, snapshot)}
     remaining = [by_id[i] for i in priority if i in by_id]
-    state = _SimulationState(dict(snapshot.operational), snapshot.source)
+    state = _SimulationState.start(snapshot, list(by_id.values()))
     scheduled: list[ScheduledItem] = []
     for day in range(snapshot.day, snapshot.day + HORIZON_DAYS):
         state.start_day(day, snapshot)
@@ -358,6 +409,8 @@ def schedule_oracle(
     ordered = _ordered_requests(requests, snapshot)
     if len(ordered) > ORACLE_MAX_REQUESTS:
         raise ValueError(f"oracle supports at most {ORACLE_MAX_REQUESTS} requests")
+    if snapshot.refill_paths:
+        raise ValueError("oracle does not model operational refill paths")
     if not ordered:
         return Schedule(
             items=(),
@@ -508,7 +561,7 @@ def schedule_oracle(
         memo[key] = best
         return best[0]
 
-    root = _SimulationState(dict(snapshot.operational), snapshot.source)
+    root = _SimulationState.start(snapshot, ordered)
     root.start_day(snapshot.day, snapshot)
     full_mask = (1 << count) - 1
     solve(0, full_mask, root)

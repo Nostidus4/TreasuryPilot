@@ -39,6 +39,8 @@ jobs:
           version: v1.8.5
       - name: Install Python workspace
         run: uv sync --frozen
+      # This job (with Anvil) is the one that runs the Anvil planning test in
+      # test_pipeline_integration.py; the Postgres-only job below skips it (no anvil binary).
       - name: Run execution API and Anvil integration tests
         run: >-
           uv run pytest -q
@@ -47,6 +49,7 @@ jobs:
           services/worker/tests/test_tracker_integration.py
           services/worker/tests/test_event_indexer_integration.py
           services/worker/tests/test_recovery_resolve.py
+          services/worker/tests/planner/test_pipeline_integration.py
           services/worker/tests/test_recovery_crash_suite.py
 
   audit-evidence-postgres:

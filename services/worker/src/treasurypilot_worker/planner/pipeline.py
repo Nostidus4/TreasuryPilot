@@ -137,6 +137,7 @@ def _build_plan(
             wallet=pay.from_wallet,
             payee=pay.to,
             refill=int(item.refill),
+            refill_from=item.refill_from,
             pay=int(pay_amount(request, item.day)),
             withdraw=withdraw,
             a_token=a_token,

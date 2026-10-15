@@ -6,6 +6,8 @@ from treasurypilot_worker.agent.types import Usage
 class AiError(Exception):
     """Base class for every adapter failure."""
 
+    ai_call_id: str | None = None  # the failed ai_calls row, set by the adapter
+
 
 class AiTimeout(AiError):
     """The task's wall-clock deadline passed before a valid answer arrived."""
@@ -69,5 +71,3 @@ class ToolError(Exception):
 
 class PostCheckFailed(AiError):
     """The answer carries a number that no cited tool result contains."""
-
-    ai_call_id: str | None = None  # the POSTCHECK_FAILED row, set by the adapter
