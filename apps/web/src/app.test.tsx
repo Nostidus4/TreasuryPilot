@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { expect, test } from 'vitest';
+import { expect, onTestFinished, test } from 'vitest';
 
 import { api } from '@/lib/api/http';
 import type { Forecast } from '@/lib/api/types';
 import {
+  CHAINS,
   db,
   newReviewItem,
   reviewRoles,
@@ -139,7 +140,7 @@ test('a new user creates an organization and lands on the checklist', async () =
   expect(
     await screen.findByRole('heading', { name: /set up acme robotics/i }),
   ).toBeInTheDocument();
-  expect(await screen.findByText(/1 of 5 complete/i)).toBeInTheDocument();
+  expect(await screen.findByText(/of 4 complete/i)).toBeInTheDocument();
   expect(screen.getByText(/set up a treasury/i)).toBeInTheDocument();
 });
 
@@ -302,13 +303,25 @@ test('the organization view lists cross-chain treasuries separately without a co
         },
       ];
       db.treasuries.trs_base = second;
-      db.orgs[0].treasuries.push({ id: 'trs_base', name: 'Base treasury' });
+      // The platform must know the chain and asset, as the real /chains does.
+      CHAINS.push({
+        ...CHAINS[0],
+        chainId: 84532,
+        name: 'Base Sepolia',
+        assets: [second.treasury.asset],
+      });
+      onTestFinished(() => void CHAINS.pop());
+      db.orgs[0].treasuries.push({
+        id: 'trs_base',
+        name: 'Base Sepolia · USDC',
+      });
     },
   });
 
   expect(await screen.findByText('2 treasuries')).toBeInTheDocument();
-  expect(screen.getByText('Sepolia · USDC')).toBeInTheDocument();
-  expect(screen.getByText('Base Sepolia · USDC')).toBeInTheDocument();
+  // The shell's treasury switcher repeats the same chain · asset label.
+  expect(screen.getAllByText('Sepolia · USDC').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Base Sepolia · USDC').length).toBeGreaterThan(0);
   expect(screen.queryByText('163,000.00')).not.toBeInTheDocument();
   const secondTreasuryLink = screen.getByRole('link', {
     name: /Base Sepolia · USDC/i,
@@ -317,7 +330,7 @@ test('the organization view lists cross-chain treasuries separately without a co
 
   await user.click(secondTreasuryLink);
   expect(
-    await screen.findByRole('heading', { name: 'Base treasury' }),
+    await screen.findByRole('heading', { name: 'Base Sepolia · USDC' }),
   ).toBeInTheDocument();
   expect(
     await screen.findByRole('heading', { name: 'Liquidity' }),

@@ -229,7 +229,7 @@ export function StatusBanners() {
             ` ${t('{{count}} more in the review queue.', { count: outflows.length - 1 })}`}
         </Alert>
       )}
-      {state.staleness.stale && (
+      {state.staleness?.stale && (
         <Alert
           tone="warning"
           className="rounded-none border-x-0 border-t-0 px-4 sm:px-6"

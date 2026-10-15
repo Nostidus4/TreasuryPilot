@@ -276,18 +276,25 @@ export function MembersPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() =>
-                    setDialog({ mode: 'edit', member: row.original })
-                  }
-                >
-                  {t('Change roles')}
-                </DropdownMenuItem>
+                {row.original.status === 'Active' && (
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      setDialog({ mode: 'edit', member: row.original })
+                    }
+                  >
+                    {t('Change roles')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   destructive
                   onSelect={() =>
-                    removeMember(row.original.userId, {
-                      onSuccess: () => toast.success(t('Member removed')),
+                    removeMember(row.original, {
+                      onSuccess: () =>
+                        toast.success(
+                          row.original.status === 'Invited'
+                            ? t('Invitation revoked')
+                            : t('Member removed'),
+                        ),
                       onError: (error) => toast.error(errorMessage(error)),
                     })
                   }

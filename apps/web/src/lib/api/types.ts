@@ -73,7 +73,6 @@ export interface Member {
   roles: Role[];
   wallet?: Hex;
   status: 'Active' | 'Invited';
-  joinedAt: string;
 }
 
 /* ───────────── Treasury & chain ───────────── */
@@ -100,14 +99,23 @@ export interface TreasuryWallet {
   role: WalletRole;
   label: string;
   safeAddress: Hex;
-  balance: string;
-  buffer: string;
-  target: string;
+  /** Base units; absent until the API serves balances (TRS-009). */
+  balance?: string;
+  buffer?: string;
+  target?: string;
   threshold: number;
   owners: Hex[];
 }
 
-export type TreasuryStatus = 'Setup' | 'Active' | 'PauseRequested' | 'Paused';
+export type WalletWithBalances = TreasuryWallet &
+  Required<Pick<TreasuryWallet, 'balance' | 'buffer' | 'target'>>;
+
+export type TreasuryStatus =
+  | 'Setup'
+  | 'Active'
+  | 'PauseRequested'
+  | 'Paused'
+  | 'Revoked';
 
 export interface Treasury {
   id: string;
@@ -184,21 +192,22 @@ export interface TreasuryState {
   treasury: Treasury;
   wallets: TreasuryWallet[];
   coverage: Coverage;
-  mandate: {
+  // The fields below are not served by the API yet (TRS-009); render "unavailable" when absent.
+  mandate?: {
     version: number;
     status: MandateStatus;
     expiresAt: string;
   } | null;
-  budgets: Budget[];
-  staleness: { blockNumber: number; observedAt: string; stale: boolean };
-  position: Position;
-  queues: {
+  budgets?: Budget[];
+  staleness?: { blockNumber: number; observedAt: string; stale: boolean };
+  position?: Position;
+  queues?: {
     approvals: number;
     governance: number;
     review: number;
     reconciliation: number;
   };
-  activity: ActivityItem[];
+  activity?: ActivityItem[];
   borrowProposalId?: string;
 }
 

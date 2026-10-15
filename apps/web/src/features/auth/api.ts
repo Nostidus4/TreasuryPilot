@@ -1,7 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, isApiError } from '@/lib/api/http';
+import { api, isApiError, rememberCsrfToken } from '@/lib/api/http';
+import { fromApiRoles } from '@/lib/api/roles';
+import type { components } from '@/lib/api/schema';
 import type { Hex, Me, User } from '@/lib/api/types';
+
+type ApiMe = components['schemas']['MeResponse'];
+type ApiUser = components['schemas']['UserView'];
+
+const toUser = (user: ApiUser): User => ({
+  id: user.id,
+  email: user.email,
+  name: user.displayName ?? user.email,
+});
+
+const toMe = (me: ApiMe): Me => ({
+  user: toUser(me.user),
+  memberships: me.memberships.map((item) => ({
+    orgId: item.orgId,
+    orgName: item.orgName,
+    roles: fromApiRoles(item.roles),
+  })),
+  wallets: me.wallets.map((item) => ({
+    address: item.address as Hex,
+    linkedAt: item.linkedAt,
+  })),
+});
 
 export const meKey = ['me'] as const;
 
@@ -11,7 +35,7 @@ export function useMe() {
     queryKey: meKey,
     queryFn: async (): Promise<Me | null> => {
       try {
-        return await api.get<Me>('/me');
+        return toMe(await api.get<ApiMe>('/me'));
       } catch (error) {
         if (isApiError(error) && error.status === 401) return null;
         throw error;
@@ -31,8 +55,14 @@ export function useRequestMagicLink() {
 export function useVerifyMagicLink() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (token: string) =>
-      api.post<{ user: User }>('/auth/magic-link/verify', { token }),
+    mutationFn: async (token: string) => {
+      const { user, csrfToken } = await api.post<{
+        user: ApiUser;
+        csrfToken?: string;
+      }>('/auth/magic-link/verify', { token });
+      rememberCsrfToken(csrfToken ?? null);
+      return { user: toUser(user) };
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: meKey }),
   });
 }
@@ -42,6 +72,7 @@ export function useSignOut() {
   return useMutation({
     mutationFn: () => api.post<void>('/auth/logout'),
     onSuccess: () => {
+      rememberCsrfToken(null);
       queryClient.setQueryData(meKey, null);
       queryClient.removeQueries({ queryKey: ['org'] });
     },

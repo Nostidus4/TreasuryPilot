@@ -3692,8 +3692,8 @@ export interface components {
     };
     /** MembersResponse */
     MembersResponse: {
-      /** Members */
-      members: components['schemas']['MemberView'][];
+      /** Items */
+      items: components['schemas']['MemberView'][];
     };
     /** MembershipView */
     MembershipView: {
@@ -3707,6 +3707,8 @@ export interface components {
        * Format: uuid
        */
       orgId: string;
+      /** Orgname */
+      orgName: string;
       /** Ownercheckedat */
       ownerCheckedAt: string | null;
       /** Ownerisonchain */

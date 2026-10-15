@@ -141,6 +141,7 @@ export const treasuryStatuses: Record<TreasuryStatus, StatusMeta> = {
   Active: { label: 'Operating', tone: 'success' },
   PauseRequested: { label: 'Pausing…', tone: 'warning', live: true },
   Paused: { label: 'Paused on-chain', tone: 'danger' },
+  Revoked: { label: 'Revoked', tone: 'danger' },
 };
 
 const translate = (meta: StatusMeta): StatusMeta => ({
