@@ -19,7 +19,7 @@ from treasurypilot_worker.agent.factory import get_ai_adapter
 from treasurypilot_worker.agent.tools.backend import PostgresToolBackend
 from treasurypilot_worker.agent.tools.read_only import build_tools
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
-from treasurypilot_worker.celery_app import app
+from treasurypilot_worker.celery_app import SCAN_TASK, app
 from treasurypilot_worker.chain.event_handlers import (
     activate_due_payees as activate_due_payees_in_pool,
 )
@@ -65,6 +65,7 @@ from treasurypilot_worker.reconcile.auto_match import auto_match_reconciliations
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
+from treasurypilot_worker.recovery.scan import scan_in_flight_sync
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -484,6 +485,16 @@ def safety_cycle_task() -> dict[str, int]:
         database_url, lambda pool: _run_all_treasury_cycles(pool, scheduling=False)
     )
     return {"cycles_started": started}
+
+
+@app.task(name=SCAN_TASK, queue="core")
+def scan_in_flight_task() -> dict[str, int]:
+    """Resolve Submitted/Pending/Unknown operations from chain evidence (RCV-001)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for the in-flight scan")
+    return scan_in_flight_sync(database_url)
 
 
 @app.task(name="treasurypilot.recovery.circuit_breaker", queue="core")

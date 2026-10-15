@@ -20,6 +20,7 @@ from treasurypilot_worker.chain.rpc import RpcResponseError
 from treasurypilot_worker.executor.outbox import execute_step
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.recovery.resolve import resolve_operation
+from treasurypilot_worker.recovery.scan import scan_in_flight
 
 _spec = importlib.util.spec_from_file_location(
     "outbox_fixtures", Path(__file__).parent / "executor" / "test_outbox_integration.py"
@@ -252,3 +253,55 @@ def test_consumed_nonce_without_evidence_escalates_after_30_minutes(database_url
     rpc.step_used = True
     items = asyncio.run(_run(database_url, rpc, reset=False))[2]
     assert items[0]["evidence_resolved"] is True
+
+
+def test_scan_runs_on_worker_start_and_every_minute(monkeypatch: pytest.MonkeyPatch) -> None:
+    from treasurypilot_worker.celery_app import _scan_on_start, app
+
+    assert app.conf.beat_schedule["scan-in-flight-operations"]["schedule"].total_seconds() == 60
+    sent: list[str] = []
+    monkeypatch.setattr(app, "send_task", lambda name, **_: sent.append(name))
+    _scan_on_start()
+    assert sent == ["treasurypilot.recovery.scan_in_flight"]
+
+
+def test_scan_resolves_in_flight_and_reports_blocked_treasuries(database_url: str) -> None:
+    async def scan() -> dict[str, int]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=2)
+        try:
+            await pool.execute("DELETE FROM review_items WHERE request_id = $1", _REQUEST)
+            old = datetime.now(UTC) - timedelta(minutes=20)
+            for status in ("Pending", "Unknown"):
+                op = uuid.uuid4()
+                await pool.execute(
+                    "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
+                    "kind, payload, idempotency_key, status, attempts) VALUES ($1, $2, $3, $4, $5, "
+                    "'PAY', '{}'::jsonb, $6, $7::operation_status, 1)",
+                    op,
+                    _TREASURY,
+                    uuid.uuid4(),
+                    _REQUEST,
+                    uuid.uuid4().bytes * 2,
+                    str(op),
+                    status,
+                )
+                await pool.execute(
+                    "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+                    "from_address, status, submitted_at) VALUES (gen_random_uuid(), $1, $2, $3, "
+                    "7, $4, $5::transaction_status, $6)",
+                    op,
+                    CHAIN_ID,
+                    uuid.uuid4().bytes * 2,
+                    SENDER,
+                    status,
+                    old,
+                )
+            rpc = FakeRpc()
+            rpc.in_mempool = True  # both stay in flight, the Unknown one keeps its treasury blocked
+            result = await scan_in_flight(pool, client_factory=lambda _urls: rpc)  # type: ignore[arg-type]
+            return result
+        finally:
+            await pool.close()
+
+    result = asyncio.run(scan())
+    assert result["scanned"] >= 2 and result["blocked_treasuries"] == 1
