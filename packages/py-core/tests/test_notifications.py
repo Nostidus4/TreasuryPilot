@@ -41,6 +41,8 @@ def test_mandatory_categories_cannot_be_muted(event_type: str) -> None:
         ("PaymentDone", NotificationCategory.PAYMENTS),
         ("OperationConfirmed", NotificationCategory.OPERATIONS),
         ("LowGas", NotificationCategory.OPERATIONS),
+        ("MandateExpiring", NotificationCategory.OPERATIONS),
+        ("MandateExpired", NotificationCategory.OPERATIONS),
         ("NeedsReview:Finance", NotificationCategory.APPROVALS),
     ],
 )
@@ -69,6 +71,8 @@ def test_regular_events_obey_channel_and_category_preferences(
         ("PaymentDone", True),
         ("UnknownOperation", True),
         ("LowGas", True),
+        ("MandateExpiring", True),
+        ("MandateExpired", True),
         ("NeedsReview:Finance", True),
         ("NeedsReview:Nobody", False),
         ("NewSecurityEvent", False),

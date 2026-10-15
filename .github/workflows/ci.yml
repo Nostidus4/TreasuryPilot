@@ -38,6 +38,8 @@ jobs:
         run: uv sync --frozen
       - name: PostgreSQL evidence exporter integration
         run: uv run pytest services/api/tests/test_audit_evidence_postgres.py
+      - name: Mandate expiry sweep PostgreSQL integration
+        run: uv run pytest services/worker/tests/test_mandate_expiry.py
 
   retention-integration:
     runs-on: ubuntu-latest

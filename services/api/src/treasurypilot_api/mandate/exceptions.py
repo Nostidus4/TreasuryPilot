@@ -9,7 +9,7 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import Field, field_validator
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.events import AuditEvent, log_audit_event
@@ -202,6 +202,7 @@ async def _request_context(
                 MandateVersion.treasury_id == payment.treasury_id,
                 MandateVersion.org_id == organization_id,
                 MandateVersion.status == MandateVersionStatus.ACTIVE,
+                MandateVersion.expires_at > func.now(),
             )
         )
         if mandate is None or mandate.onchain_version is None:
