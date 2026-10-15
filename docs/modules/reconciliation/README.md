@@ -167,6 +167,19 @@ SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ len
 - Each verifier call makes one read attempt. The sequencer opens the INFRA review on the 3rd UNKNOWN newer than the operation's last PASSED/DISCREPANCY and the request's last resolved `VERIFICATION_UNKNOWN` review.
 - One PASSED/DISCREPANCY per operation (partial unique index), so concurrent verifiers raise one breaker signal.
 - `chain_safety_signals.observed_event_id` and `token_movement_id` are nullable now; a check constraint requires either both or a `verification_id`.
+- **Traceability:**
+
+  | Scope item | Where |
+  |---|---|
+  | Expected effects per step type | `verify.py::expected_effects` |
+  | Observed = Multicall3 state at header(B).hash minus header(B).parentHash, other txs' transfers netted | `compute`, `_state`, `_concurrent_net` |
+  | PASSED / DISCREPANCY / UNKNOWN, 3-read rule | `PostConditionVerifier.verify`, `executor/sequencer.py::_post_condition` |
+  | Review item and breaker signal | `sequencer.py::_post_condition`, `PostConditionVerifier._store` |
+  | EXE-008 gating (verify before the next step is sent) | the sequencer calls the verifier (`tasks.py`) |
+  | Unit / Postgres tests | `tests/reconcile/test_verify.py`, `tests/executor/test_sequencer_integration.py` |
+  | Anvil end to end | `tests/reconcile/test_verify_anvil.py`, `execution-integration` CI job |
+
+- Anvil tests use real Multicall3 code and the compiled `TestUSDC`, `MockAavePool`/`MockAToken` from `contracts/src`. The module is `contracts/test/helpers/ReconcileModuleStandIn.sol` (real Solidity, holds the funds, honours `stepUsed`, `requestPaid`, `usedToday` per action and asset); the full `TreasuryPilotModule` needs a Safe and EIP-712 approvals. Cases: normal PAY, same-block concurrent transfer, wrong amount (review item and breaker), SUPPLY with aToken rounding, WITHDRAW. With `CI` set, a missing anvil, forge or database fails the tests instead of skipping.
 
 ## Match, discrepancy and auto-match implementation notes (REC-003, #157)
 
