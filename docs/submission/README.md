@@ -15,6 +15,8 @@ revisions are stated only here, and the reports refer to this section.
 | --- | --- | --- |
 | [Security self-assessment](security-self-assessment.md) | #235 / DOM-011 | Permission tiers, control boundaries, proposed known risks, evidence and operational release gates |
 | [Technical documentation](technical-documentation.md) | #236 / DOM-012 | Architecture, money/authorization model, deterministic algorithms, execution design and evaluation status |
+| [Compliance positioning](compliance-positioning.md) | #239 / DOM-015 | Testnet-only scope, target market, KYB mainnet gate, reuse for tokenised deposits (positioning, not legal advice) |
+| [License inventory](licenses.md) | #239 / DOM-015 | Direct third-party code, images, models, datasets and fonts, with regeneration steps |
 
 The published [PBCSF checklist](https://www.its.ac.id/international/wp-content/uploads/sites/66/2026/10/PBCSF-Appendix-2-Problem-Description-and-Competition-Rules-for-International-Track.pdf)
 lists technical documentation as item 01 and a security self-assessment as item 05.
@@ -25,7 +27,7 @@ available. Passing CI and merged documentation do not establish operational
 release readiness.
 
 Other deliverables are tracked separately: presentation #237, optional demo video
-#238, compliance positioning/license inventory #239, and the repository license
+#238, and the repository license
 decision #241. For video, checklist item 03 specifies an optional submission of
 at most five minutes. See [M20](../modules/domain-evidence/README.md) for the team's
 work plan and [OQ-01](../OPEN_QUESTIONS.md) for execution-evidence source review.
