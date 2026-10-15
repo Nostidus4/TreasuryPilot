@@ -68,6 +68,7 @@ async def _scenario(database_url: str) -> None:
             for email, roles, status in (
                 ("owner@example.com", ["Owner", "Operator"], "active"),
                 ("suspended@example.com", ["Operator"], "suspended"),
+                ("manual-operator@example.com", ["Operator"], "active"),
             ):
                 await connection.execute(
                     text(
@@ -83,22 +84,23 @@ async def _scenario(database_url: str) -> None:
             await login("sub-suspended", "suspended@example.com", ("fin",))
         assert await membership("suspended@example.com") == (["Operator"], "suspended")
 
-        # SSO manages only its own roles; Owner survives a remap, a missing claim and
-        # a claim with no mapped groups, and the owner is never suspended.
+        # SSO manages only its own roles; the pre-existing Owner and Operator grants stay
+        # manual, survive a remap, a missing claim and a claim with no mapped groups, and
+        # the owner is never suspended.
         await login("sub-owner", "owner@example.com", ("fin",))
         roles, status = await membership("owner@example.com")
-        assert (sorted(roles), status) == (["Finance", "Owner"], "active")
+        assert (sorted(roles), status) == (["Finance", "Operator", "Owner"], "active")
         await login("sub-owner", "owner@example.com", None)
         assert await membership("owner@example.com") == (roles, "active")
         with pytest.raises(ValueError):
             await login("sub-owner", "owner@example.com", ())
-        assert await membership("owner@example.com") == (["Owner"], "active")
+        assert await membership("owner@example.com") == (["Operator", "Owner"], "active")
 
         # A user with no elevated role is suspended once the provider drops its groups.
         await login("sub-new", "new@example.com", ("fin",))
         with pytest.raises(ValueError):
             await login("sub-new", "new@example.com", ())
-        assert await membership("new@example.com") == (["Finance"], "suspended")
+        assert await membership("new@example.com") == ([], "suspended")
         # No groups claim and no membership: nothing is provisioned.
         with pytest.raises(ValueError):
             await login("sub-nogroups", "nogroups@example.com", None)
@@ -106,7 +108,21 @@ async def _scenario(database_url: str) -> None:
         # The email links to an account that already has an identity for this issuer.
         with pytest.raises(ValueError):
             await login("sub-other", "owner@example.com", ("fin",))
+
+        # Linking an existing manually managed member must not convert its existing
+        # Operator grant into an OIDC grant that the next claim can remove.
+        await login("sub-manual-operator", "manual-operator@example.com", ("fin",))
+        assert await membership("manual-operator@example.com") == (
+            ["Finance", "Operator"],
+            "active",
+        )
+        with pytest.raises(ValueError):
+            await login("sub-manual-operator", "manual-operator@example.com", ())
+        assert await membership("manual-operator@example.com") == (["Operator"], "active")
     finally:
+        # The downgrade refuses suspended memberships that no longer hold a role grant.
+        async with engine.begin() as connection:
+            await connection.execute(text("DELETE FROM memberships WHERE cardinality(roles) = 0"))
         await engine.dispose()
 
 

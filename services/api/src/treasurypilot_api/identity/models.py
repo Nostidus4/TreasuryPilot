@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -241,10 +242,14 @@ class Organization(Base):
 
 
 _VALID_ROLES_SQL = """
-roles <@ ARRAY[
+<@ ARRAY[
     'OrgAdmin', 'Owner', 'Approver', 'Operator', 'Finance', 'Guardian', 'Auditor',
     'PlatformAdmin'
 ]::text[]
+"""
+
+_ASSIGNABLE_WORK_ROLES_SQL = """
+<@ ARRAY['Operator', 'Finance', 'Auditor']::text[]
 """
 
 
@@ -252,15 +257,43 @@ class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
         UniqueConstraint("org_id", "user_id", name="uq_memberships_org_user"),
-        CheckConstraint("cardinality(roles) > 0", name="ck_memberships_roles_not_empty"),
+        CheckConstraint(
+            "cardinality(roles) > 0 OR status = 'suspended'",
+            name="ck_memberships_roles_not_empty",
+        ),
         CheckConstraint("array_position(roles, NULL) IS NULL", name="ck_memberships_roles_no_null"),
-        CheckConstraint(_VALID_ROLES_SQL, name="ck_memberships_roles_valid"),
+        CheckConstraint("roles " + _VALID_ROLES_SQL, name="ck_memberships_roles_valid"),
+        CheckConstraint(
+            "array_position(manual_roles, NULL) IS NULL",
+            name="ck_memberships_manual_roles_no_null",
+        ),
+        CheckConstraint(
+            "manual_roles " + _VALID_ROLES_SQL,
+            name="ck_memberships_manual_roles_valid",
+        ),
+        CheckConstraint(
+            "array_position(oidc_roles, NULL) IS NULL",
+            name="ck_memberships_oidc_roles_no_null",
+        ),
+        CheckConstraint(
+            "oidc_roles " + _ASSIGNABLE_WORK_ROLES_SQL,
+            name="ck_memberships_oidc_roles_valid",
+        ),
+        CheckConstraint(
+            "array_position(scim_roles, NULL) IS NULL",
+            name="ck_memberships_scim_roles_no_null",
+        ),
+        CheckConstraint(
+            "scim_roles " + _ASSIGNABLE_WORK_ROLES_SQL,
+            name="ck_memberships_scim_roles_valid",
+        ),
         CheckConstraint("status IN ('active', 'suspended')", name="ck_memberships_status"),
         CheckConstraint(
             "NOT owner_is_onchain OR owner_checked_at IS NOT NULL",
             name="ck_memberships_owner_check_time",
         ),
         CheckConstraint("version > 0", name="ck_memberships_version"),
+        UniqueConstraint("id", "org_id", name="uq_memberships_id_org"),
         Index("ix_memberships_user_id", "user_id"),
     )
 
@@ -272,6 +305,18 @@ class Membership(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     roles: Mapped[list[str]] = mapped_column(ARRAY(Text()), nullable=False)
+    manual_roles: Mapped[list[str]] = mapped_column(
+        ARRAY(Text()), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
+    oidc_roles: Mapped[list[str]] = mapped_column(
+        ARRAY(Text()), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
+    scim_roles: Mapped[list[str]] = mapped_column(
+        ARRAY(Text()), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
+    role_sources_initialized: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -296,6 +341,55 @@ class Membership(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     __mapper_args__ = {"version_id_col": version}
+
+
+class ScimGroup(Base):
+    __tablename__ = "scim_groups"
+    __table_args__ = (
+        UniqueConstraint("org_id", "display_name", name="uq_scim_groups_org_display_name"),
+        UniqueConstraint("id", "org_id", name="uq_scim_groups_id_org"),
+        CheckConstraint(
+            "length(display_name) BETWEEN 1 AND 100", name="ck_scim_groups_display_name_length"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ScimGroupMember(Base):
+    __tablename__ = "scim_group_members"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["group_id", "org_id"],
+            ["scim_groups.id", "scim_groups.org_id"],
+            ondelete="CASCADE",
+            name="fk_scim_group_members_group_org",
+        ),
+        ForeignKeyConstraint(
+            ["org_id", "user_id"],
+            ["memberships.org_id", "memberships.user_id"],
+            ondelete="CASCADE",
+            name="fk_scim_group_members_membership_org_user",
+        ),
+        Index("ix_scim_group_members_org_user", "org_id", "user_id"),
+    )
+
+    group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Invite(Base):

@@ -1,6 +1,9 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import cast
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -336,7 +339,10 @@ def create_app(
 
     if membership_repository is None and engine is not None:
         membership_repository = SqlAlchemyMembershipRepository(
-            async_sessionmaker(engine, expire_on_commit=False)
+            async_sessionmaker(engine, expire_on_commit=False),
+            oidc_organization_id=(
+                UUID(settings.oidc_organization_id) if settings.oidc_organization_id else None
+            ),
         )
     if notification_repository is None and engine is not None:
         notification_repository = SqlAlchemyNotificationRepository(
@@ -370,8 +376,13 @@ def create_app(
             rate_limiter=rate_limiter,
         )
 
-    if scim_repository is None and settings.scim_configured and sessions is not None:
-        scim_repository = SqlAlchemyScimIdentityRepository(sessions)
+    if scim_repository is None and sessions is not None:
+        scim_repository = SqlAlchemyScimIdentityRepository(
+            sessions,
+            oidc_organization_id=(
+                UUID(settings.oidc_organization_id) if settings.oidc_organization_id else None
+            ),
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -409,6 +420,17 @@ def create_app(
                     await sync_platform_configuration(session, configuration)
             finally:
                 await sync_engine.dispose()
+        if isinstance(application.state.scim_repository, SqlAlchemyScimIdentityRepository):
+            group_role_map = (
+                json.loads(settings.scim_group_role_map) if settings.scim_configured else {}
+            )
+            await application.state.scim_repository.reconcile_group_roles(
+                organization_id=(
+                    settings.scim_organization_id if settings.scim_configured else None
+                ),
+                role_map=group_role_map,
+                now=datetime.now(UTC),
+            )
         yield
         if engine is not None:
             await engine.dispose()

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_api.identity.role_grants import OIDC_ASSIGNABLE_ROLES
 from treasurypilot_core.observability import LogFormat
 
 # services/api/src/treasurypilot_api/config.py -> repository root
@@ -66,6 +67,8 @@ class Settings(BaseSettings):
     # SCIM is a single-tenant, bearer-authenticated deprovisioning integration.
     scim_bearer_token: SecretStr | None = None
     scim_organization_id: uuid.UUID | None = None
+    # Only configured SCIM group names may grant these non-privileged work roles.
+    scim_group_role_map: str = "{}"
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
     session_cookie_name: str = "tp_session"
@@ -190,6 +193,30 @@ class Settings(BaseSettings):
             and len(self.scim_bearer_token.get_secret_value().encode("utf-8")) < 32
         ):
             raise ValueError("TP_SCIM_BEARER_TOKEN must contain at least 32 bytes")
+        try:
+            group_role_map = json.loads(self.scim_group_role_map)
+        except json.JSONDecodeError as exc:
+            raise ValueError("TP_SCIM_GROUP_ROLE_MAP must be a JSON object") from exc
+        assignable_roles = OIDC_ASSIGNABLE_ROLES
+        if not isinstance(group_role_map, dict) or any(
+            not isinstance(group, str)
+            or not group.strip()
+            or len(group) > 100
+            or not isinstance(roles, list)
+            or not roles
+            or len(roles) > len(assignable_roles)
+            or any(not isinstance(role, str) or role not in assignable_roles for role in roles)
+            or len({role for role in roles if isinstance(role, str)}) != len(roles)
+            for group, roles in group_role_map.items()
+        ):
+            raise ValueError(
+                "SCIM groups may map only non-empty role lists of Operator, Finance or Auditor"
+            )
+        normalized_names = [group.casefold() for group in group_role_map]
+        if len(set(normalized_names)) != len(normalized_names):
+            raise ValueError("SCIM group names must be unique ignoring case")
+        if group_role_map and not self.scim_configured:
+            raise ValueError("SCIM group roles require SCIM bearer token and organization ID")
         return self
 
     @field_validator("admin_ip_allowlist")

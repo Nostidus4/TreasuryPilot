@@ -89,6 +89,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/scim/v2/Groups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Groups */
+    get: operations['list_groups_scim_v2_Groups_get'];
+    put?: never;
+    /** Create Group */
+    post: operations['create_group_scim_v2_Groups_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/scim/v2/Groups/{group_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Group */
+    get: operations['get_group_scim_v2_Groups__group_id__get'];
+    put?: never;
+    post?: never;
+    /** Delete Group */
+    delete: operations['delete_group_scim_v2_Groups__group_id__delete'];
+    options?: never;
+    head?: never;
+    /** Patch Group */
+    patch: operations['patch_group_scim_v2_Groups__group_id__patch'];
+    trace?: never;
+  };
   '/scim/v2/Users': {
     parameters: {
       query?: never;
@@ -4285,6 +4322,152 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HealthResponse'];
+        };
+      };
+    };
+  };
+  list_groups_scim_v2_Groups_get: {
+    parameters: {
+      query?: {
+        filter?: string | null;
+        startIndex?: string;
+        count?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_group_scim_v2_Groups_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  get_group_scim_v2_Groups__group_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        group_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_group_scim_v2_Groups__group_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        group_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  patch_group_scim_v2_Groups__group_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        group_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
