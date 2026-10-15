@@ -6,6 +6,7 @@ import json
 import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -64,7 +65,7 @@ class DbScheduleWriter:
         )
         if org_id is None:
             return False
-        items = []
+        items: list[dict[str, Any]] = []
         for order, row in enumerate(await connection.fetch(_CANDIDATES, treasury_id, now)):
             deadline = _pay_by(row["due_at"], PaymentTerms.model_validate(as_json(row["terms"])))
             items.append(
@@ -74,6 +75,18 @@ class DbScheduleWriter:
                     "scheduledFor": (deadline - self.lead_time).isoformat(),
                     "deadline": deadline.isoformat(),
                 }
+            )
+        # M05 §5: a request in a schedule is Scheduled (Approved -> Scheduled, SYSTEM).
+        for moved in await connection.fetch(
+            "UPDATE payment_requests SET status = 'Scheduled', version = version + 1, "
+            "updated_at = now() WHERE id = ANY($1::uuid[]) AND status = 'Approved' RETURNING id",
+            [uuid.UUID(item["requestId"]) for item in items],
+        ):
+            await connection.execute(
+                'INSERT INTO request_status_events (id, request_id, "from", "to", actor_type, '
+                "reason) VALUES ($1, $2, 'Approved', 'Scheduled', 'SYSTEM', 'schedule')",
+                uuid7(),
+                moved["id"],
             )
         latest = await connection.fetchval(
             "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at DESC LIMIT 1",
@@ -101,14 +114,18 @@ class DbScheduleWriter:
 
 
 class DbScheduleProvider:
-    """First open-window request in due-date order (BR-052).
+    """First request of the current schedule whose window is open (spec §7.1/§8.1, BR-052).
 
-    shortcut: reads Approved requests directly instead of a persisted M07 schedule (no
-    `schedules` table yet); the engine still orders and prices the plan, this only picks who.
+    The schedule is refreshed first (no new row when unchanged), so an approval just made is
+    in it without waiting for the 15-minute scheduling cycle, and the latest `schedules` row
+    is always "today's". Items in plan cooldown or with an open plan are skipped. Fallback: a
+    treasury with no schedule row (writer stored nothing, e.g. not Ready/Paused) uses the live
+    candidates in due-date order, so execution is never blocked on the first scheduling cycle.
     """
 
     def __init__(self, lead_time: timedelta = timedelta(hours=24)) -> None:
         self.lead_time = lead_time
+        self._writer = DbScheduleWriter(lead_time)
 
     async def next_eligible_request(
         self, connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
@@ -123,12 +140,31 @@ class DbScheduleProvider:
             "AND f.accepted_at > plans.created_at)",
             treasury_id,
         )
+        await self._writer.refresh_treasury(connection, treasury_id, now=now)
         rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
-        for order, row in enumerate(rows):
-            terms = PaymentTerms.model_validate(as_json(row["terms"]))
-            day = _pay_by(row["due_at"], terms)
-            if now >= day - self.lead_time:
-                return RequestSelection(ScheduledRequest(row["id"], day, order))
+        live = {row["id"] for row in rows}
+        latest = await connection.fetchval(
+            "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at DESC LIMIT 1",
+            treasury_id,
+        )
+        if latest is None:
+            items = []
+            for row in rows:
+                day = _pay_by(row["due_at"], PaymentTerms.model_validate(as_json(row["terms"])))
+                items.append(
+                    {
+                        "requestId": str(row["id"]),
+                        "scheduledFor": (day - self.lead_time).isoformat(),
+                        "deadline": day.isoformat(),
+                    }
+                )
+        else:
+            items = as_json(latest)
+        for order, item in enumerate(items):
+            request_id = uuid.UUID(item["requestId"])
+            if request_id in live and now >= datetime.fromisoformat(item["scheduledFor"]):
+                deadline = datetime.fromisoformat(item["deadline"])
+                return RequestSelection(ScheduledRequest(request_id, deadline, order))
         return RequestSelection(None)
 
 

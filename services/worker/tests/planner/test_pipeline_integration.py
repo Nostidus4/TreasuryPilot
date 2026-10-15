@@ -825,6 +825,101 @@ async def test_unknown_operation_skips_the_cycle_with_a_reason(
 
 
 @pooled
+async def test_provider_consumes_the_schedule_and_schedules_the_request(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    result, claimed = await _cycle(pool, world)  # no schedule row yet: the provider refreshes it
+
+    assert result.started and result.request_id == world.request and len(claimed) == 1
+    assert (
+        await pool.fetchval("SELECT count(*) FROM schedules WHERE treasury_id = $1", world.treasury)
+        == 1
+    )
+    assert (
+        await pool.fetchval("SELECT status FROM payment_requests WHERE id = $1", world.request)
+        == "Scheduled"
+    )
+    assert (
+        await pool.fetchval(
+            'SELECT count(*) FROM request_status_events WHERE request_id = $1 AND "from" = '
+            "'Approved' AND \"to\" = 'Scheduled' AND actor_type = 'SYSTEM'",
+            world.request,
+        )
+        == 1
+    )
+
+
+@pooled
+async def test_provider_follows_the_stored_schedule_not_only_live_requests(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    async with pool.acquire() as connection:
+        # An item whose window opens in an hour is not eligible even though the request is Approved.
+        later = datetime.now(UTC) + timedelta(hours=1)
+        selection = await DbScheduleProvider(timedelta(hours=1)).next_eligible_request(
+            connection, world.treasury, now=later - timedelta(hours=26)
+        )
+    assert (
+        selection.candidate is None and selection.skip_reason is CycleSkipReason.NO_ELIGIBLE_REQUEST
+    )
+    assert (
+        await pool.fetchval("SELECT count(*) FROM plans WHERE request_id = $1", world.request) == 0
+    )
+
+
+@pooled
+async def test_two_simultaneous_cycles_run_one(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    entered, release = asyncio.Event(), asyncio.Event()
+    inner = DbScheduleProvider()
+
+    class Slow:
+        async def next_eligible_request(
+            self, connection: Any, treasury_id: Any, *, now: Any
+        ) -> Any:
+            entered.set()
+            await release.wait()
+            return await inner.next_eligible_request(connection, treasury_id, now=now)
+
+    claimed: list[uuid.UUID] = []
+
+    async def run(provider: Any) -> Any:
+        return await run_execution_cycle(
+            world.treasury,
+            lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+            schedule_provider=provider,
+            plan_starter=DbPlanStarter(lambda plan_id, _t: claimed.append(plan_id)),
+        )
+
+    first = asyncio.create_task(run(Slow()))
+    await entered.wait()
+    second = await run(inner)
+    release.set()
+    first_result = await first
+
+    assert second.reason is CycleSkipReason.LOCK_BUSY and not second.started
+    assert first_result.started and len(claimed) == 1
+
+
+@pooled
+async def test_paused_treasury_is_skipped_with_a_reason(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    await pool.execute(
+        "INSERT INTO backend_pause (treasury_id, org_id, paused, reason) "
+        "VALUES ($1, $2, true, 'incident')",
+        world.treasury,
+        world.org,
+    )
+
+    result, claimed = await _cycle(pool, world)
+
+    assert not result.started and result.reason is CycleSkipReason.BACKEND_PAUSED
+    assert claimed == []
+
+
+@pooled
 async def test_approval_event_chain_and_latency_budget_stay_under_five_seconds(
     pool: Any, database_url: str
 ) -> None:
