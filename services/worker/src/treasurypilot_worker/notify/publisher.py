@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -21,6 +21,8 @@ from treasurypilot_core.notifications import (
 from treasurypilot_worker.notify.routing import NotificationPolicy, policy_for_event
 
 logger = logging.getLogger(__name__)
+
+ExecutionCycleDispatcher = Callable[[uuid.UUID, uuid.UUID], None]
 
 _CLAIM_EVENTS = """
 SELECT id, org_id, treasury_id, type, entity_type, entity_id, payload
@@ -215,7 +217,12 @@ async def _route(connection: asyncpg.Connection, event: asyncpg.Record) -> None:
     await connection.execute(_MARK_PUBLISHED, event["id"])
 
 
-async def publish_pending_events(connection: asyncpg.Connection, *, batch_size: int = 100) -> int:
+async def publish_pending_events(
+    connection: asyncpg.Connection,
+    *,
+    batch_size: int = 100,
+    dispatch_execution_cycle: ExecutionCycleDispatcher | None = None,
+) -> int:
     """Route a locked batch; concurrent publishers skip the locked rows.
 
     Each event runs in its own savepoint. One that cannot be routed is parked with
@@ -230,6 +237,14 @@ async def publish_pending_events(connection: asyncpg.Connection, *, batch_size: 
         events = await connection.fetch(_CLAIM_EVENTS, batch_size)
         for event in events:
             try:
+                if event["type"] == "ExecutionCycleRequested":
+                    if dispatch_execution_cycle is None:
+                        raise RuntimeError("execution cycle dispatcher is not configured")
+                    if event["treasury_id"] is None:
+                        raise ValueError("execution cycle event has no treasury")
+                    dispatch_execution_cycle(event["id"], event["treasury_id"])
+                    await connection.execute(_MARK_PUBLISHED, event["id"])
+                    continue
                 # Webhooks need no recipients or routing policy, so a routing failure
                 # must not drop them: enqueue in its own savepoint first.
                 async with connection.transaction():
@@ -250,6 +265,15 @@ async def publish_pending_events(connection: asyncpg.Connection, *, batch_size: 
     return len(events)
 
 
-async def publish_from_pool(pool: asyncpg.Pool, *, batch_size: int = 100) -> int:
+async def publish_from_pool(
+    pool: asyncpg.Pool,
+    *,
+    batch_size: int = 100,
+    dispatch_execution_cycle: ExecutionCycleDispatcher | None = None,
+) -> int:
     async with pool.acquire() as connection:
-        return await publish_pending_events(connection, batch_size=batch_size)
+        return await publish_pending_events(
+            connection,
+            batch_size=batch_size,
+            dispatch_execution_cycle=dispatch_execution_cycle,
+        )

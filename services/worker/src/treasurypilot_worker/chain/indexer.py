@@ -17,7 +17,14 @@ from typing import Any, Final
 import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent, registry
-from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_CONFIG, SAFE_EXEC, decode_log
+from treasurypilot_worker.chain.events import (
+    EVENTS,
+    MODULE,
+    SAFE_CONFIG,
+    SAFE_EXEC,
+    TOKEN,
+    decode_log,
+)
 from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import SafeConfigReader, refresh_safe_config_snapshots
 from treasurypilot_worker.locks import create_worker_pool
@@ -41,12 +48,13 @@ async def index_events(
     pool = await create_worker_pool(database_url, min_size=1, max_size=2)
     try:
         treasuries = await pool.fetch(
-            "SELECT t.id, t.chain_id, t.module_address, c.rpc_urls, "
+            "SELECT t.id, t.chain_id, t.module_address, asset.address AS asset_address, c.rpc_urls, "
             "COALESCE(array_agg(w.safe_address) FILTER (WHERE w.id IS NOT NULL), '{}') AS safes "
             "FROM treasuries t JOIN chains c USING (chain_id) "
+            "JOIN assets AS asset ON asset.id = t.asset_id "
             "LEFT JOIN treasury_wallets w ON w.treasury_id = t.id "
             "WHERE c.enabled AND t.module_address IS NOT NULL AND t.status <> 'Revoked' "
-            "GROUP BY t.id, c.rpc_urls ORDER BY t.id"
+            "GROUP BY t.id, c.rpc_urls, asset.address ORDER BY t.id"
         )
         changed = 0
         for treasury in treasuries:
@@ -56,6 +64,9 @@ async def index_events(
                 MODULE: [bytes(treasury["module_address"])],
                 SAFE_CONFIG: [bytes(safe) for safe in treasury["safes"]],
                 SAFE_EXEC: [bytes(safe) for safe in treasury["safes"]],
+                TOKEN: [bytes(treasury["asset_address"])]
+                if treasury["asset_address"] is not None
+                else [],
             }
             for stream, stream_addresses in addresses.items():
                 if not stream_addresses:
@@ -109,7 +120,8 @@ async def _index_stream(
             stream,
         )
         if cursor is None:
-            start = await _first_code_block(rpc, bytes(treasury["module_address"]), head)
+            first_address = addresses[0] if stream == TOKEN else bytes(treasury["module_address"])
+            start = await _first_code_block(rpc, first_address, head)
         else:
             start = max(cursor - REORG_WINDOW, 0)
         end = min(head, start + MAX_CHUNKS_PER_RUN * CHUNK_BLOCKS - 1)
