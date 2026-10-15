@@ -94,6 +94,8 @@ jobs:
         run: uv run pytest services/worker/tests/planner/test_pipeline_integration.py
       - name: Circuit breaker PostgreSQL integration
         run: uv run pytest services/worker/tests/test_circuit_breaker_integration.py
+      - name: Low-gas sweep PostgreSQL integration
+        run: uv run pytest services/worker/tests/test_low_gas_postgres.py
 
   retention-integration:
     runs-on: ubuntu-latest
