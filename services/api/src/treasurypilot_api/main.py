@@ -16,6 +16,7 @@ from treasurypilot_api.admin.api import create_admin_router, create_support_gran
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
+from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceRepository
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.config import Settings, get_settings
@@ -279,6 +280,8 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if evidence_repository is None and sessions is not None:
+        evidence_repository = SqlAlchemyEvidenceRepository(sessions)
     if rate_limiter is None:
         raise ValueError("rate_limiter is required when auth_service is injected")
     if screening_service is None and engine is not None:
