@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 
 from treasurypilot_worker.chain import safe_config as safe_config_module
-from treasurypilot_worker.chain.rpc import RpcUnavailable, SafeConfig
+from treasurypilot_worker.chain.rpc import RpcUnavailable, SafeConfig, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import (
     _mark_coverage_unknown,
     _store_snapshot,
@@ -35,13 +35,13 @@ BLOCK_HASH = "0x" + "aa" * 32
     ],
 )
 def test_decode_rpc_urls_accepts_asyncpg_jsonb_shapes(rpc_urls: object) -> None:
-    assert safe_config_module._decode_rpc_urls(rpc_urls) == ["https://rpc.example"]
+    assert decode_rpc_urls(rpc_urls) == ["https://rpc.example"]
 
 
 @pytest.mark.parametrize("rpc_urls", ["not-json", "[]", '[" "]', '["https://rpc.example", 3]'])
 def test_decode_rpc_urls_rejects_invalid_config(rpc_urls: object) -> None:
     with pytest.raises(ValueError):
-        safe_config_module._decode_rpc_urls(rpc_urls)
+        decode_rpc_urls(rpc_urls)
 
 
 NO_COVERAGE_ROW: dict[str, Any] = {

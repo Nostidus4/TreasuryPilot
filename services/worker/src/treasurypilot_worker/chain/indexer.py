@@ -18,7 +18,7 @@ import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent, registry
 from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_CONFIG, SAFE_EXEC, decode_log
-from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client
+from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import SafeConfigReader, refresh_safe_config_snapshots
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -51,7 +51,7 @@ async def index_events(
         changed = 0
         for treasury in treasuries:
             urls = treasury["rpc_urls"]
-            rpc = client_factory(list(json.loads(urls) if isinstance(urls, str) else urls))
+            rpc = client_factory(decode_rpc_urls(urls))
             addresses = {
                 MODULE: [bytes(treasury["module_address"])],
                 SAFE_CONFIG: [bytes(safe) for safe in treasury["safes"]],

@@ -72,6 +72,12 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.svm
+            contracts/cache
+          key: foundry-solc-${{ runner.os }}-v1.8.5-${{ hashFiles('contracts/foundry.toml', 'pnpm-lock.yaml') }}
       - name: Install Python workspace
         run: uv sync --frozen
       - name: Owner treasury setup over live API, Safe contracts and coverage worker
