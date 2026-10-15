@@ -80,7 +80,11 @@ def _walk_plan(
                 trial,
                 minimal_refill=minimal_refill,
             )
-            if expected is not None and expected.refill == item.refill:
+            if (
+                expected is not None
+                and expected.refill == item.refill
+                and expected.refill_from == item.refill_from
+            ):
                 accepted_state = trial
                 break
         yield item, request, state, accepted_state is not None

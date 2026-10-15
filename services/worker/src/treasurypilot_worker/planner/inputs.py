@@ -85,6 +85,7 @@ def plan_steps(
     request_id: bytes,
     *,
     safe_t: str,
+    # Scaffolding: production passes None until RefillPathSet wiring lands (#101 follow-up).
     refill_from: str | None = None,
     asset: str,
     wallet: str,

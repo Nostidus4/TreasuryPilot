@@ -15,7 +15,7 @@ from treasurypilot_core.domain import (
     WalletState,
 )
 from treasurypilot_core.engine.liquidity import decide_refill, shortage, source_capacity
-from treasurypilot_core.engine.payment_terms import pay_amount, request_value
+from treasurypilot_core.engine.payment_terms import amount_due, pay_amount, request_value
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy.reason_codes import PolicyReasonCode
 
@@ -43,6 +43,14 @@ _BINDING = {
 }
 
 
+def _reserve(request: ApprovedRequest, snapshot: Snapshot) -> int:
+    """Worst-case amount owed over the horizon (late fees included); amount_due only grows."""
+
+    return max(
+        int(amount_due(request, day)) for day in range(snapshot.day, snapshot.day + HORIZON_DAYS)
+    )
+
+
 @dataclass(slots=True)
 class _SimulationState:
     """Mutable balances and daily counters used by both schedule solvers."""
@@ -59,8 +67,8 @@ class _SimulationState:
     def start(cls, snapshot: Snapshot, requests: Sequence[ApprovedRequest]) -> _SimulationState:
         reserved: dict[str, int] = {}
         for request in requests:
-            reserved[request.paying_wallet] = reserved.get(request.paying_wallet, 0) + int(
-                request.amount
+            reserved[request.paying_wallet] = reserved.get(request.paying_wallet, 0) + _reserve(
+                request, snapshot
             )
         return cls(dict(snapshot.operational), snapshot.source, reserved=reserved)
 
@@ -174,8 +182,8 @@ def _try_schedule_request(
         state.source = state.source.model_copy(
             update={"balance": BaseUnits(int(state.source.balance) - refill_amount)}
         )
-    state.reserved[request.paying_wallet] = state.reserved.get(request.paying_wallet, 0) - int(
-        request.amount
+    state.reserved[request.paying_wallet] = state.reserved.get(request.paying_wallet, 0) - _reserve(
+        request, snapshot
     )
     state.pay_used += int(amount)
     state.refill_used += refill_amount

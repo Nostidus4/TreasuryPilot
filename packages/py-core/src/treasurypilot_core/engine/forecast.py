@@ -81,7 +81,11 @@ def forecast(
             if request is None:
                 raise ValueError(f"schedule contains unknown request {item.request_id!r}")
             wallet = snapshot.operational[request.paying_wallet]
-            source_address = item.refill_from or source.address
+            source_address = (
+                snapshot.operational[item.refill_from].address
+                if item.refill_from
+                else source.address
+            )
             target_address = wallet.address
             refill_amount = int(item.refill)
             if refill_amount:
