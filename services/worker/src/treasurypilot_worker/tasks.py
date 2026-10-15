@@ -39,7 +39,12 @@ from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
-from treasurypilot_worker.trigger.cycles import run_execution_cycle, run_scheduling_cycle
+from treasurypilot_worker.trigger.cycles import (
+    CycleResult,
+    CycleSkipReason,
+    run_execution_cycle,
+    run_scheduling_cycle,
+)
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -261,14 +266,17 @@ def publish_domain_events() -> dict[str, int]:
     return {"published": _publisher.run(database_url, publish)}
 
 
-async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> int:
-    result = await run_execution_cycle(
+async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> CycleResult:
+    return await run_execution_cycle(
         treasury_id,
         lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
         schedule_provider=None,
         plan_starter=None,
     )
-    return int(result.started)
+
+
+async def _started_cycles(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> int:
+    return int((await _execute_treasury_cycle(pool, treasury_id)).started)
 
 
 async def _run_all_treasury_cycles(pool: asyncpg.Pool, *, scheduling: bool) -> int:
@@ -276,17 +284,30 @@ async def _run_all_treasury_cycles(pool: asyncpg.Pool, *, scheduling: bool) -> i
         "SELECT id FROM treasuries WHERE status IN ('Ready', 'Paused') ORDER BY id"
     )
     started = 0
+    unavailable = 0
     for row in rows:
         treasury_id = row["id"]
-        if scheduling:
-            result = await run_scheduling_cycle(
-                treasury_id,
-                lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
-                schedule_writer=None,
-            )
-            started += int(result.started)
-        else:
-            started += await _execute_treasury_cycle(pool, treasury_id)
+        try:
+            if scheduling:
+                result = await run_scheduling_cycle(
+                    treasury_id,
+                    lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+                    schedule_writer=None,
+                )
+            else:
+                result = await _execute_treasury_cycle(pool, treasury_id)
+        except Exception:
+            # One treasury's failure must not abort the sweep or tear down the shared pool.
+            logger.exception("treasury_cycle_failed", extra={"treasury_id": str(treasury_id)})
+            continue
+        started += int(result.started)
+        unavailable += result.reason is CycleSkipReason.SCHEDULE_PROVIDER_UNAVAILABLE
+    if unavailable:
+        # Per-treasury results log this at DEBUG; one line per sweep is enough.
+        logger.info(
+            "execution_cycle_schedule_provider_unavailable",
+            extra={"scheduling": scheduling, "treasuries": unavailable},
+        )
     return started
 
 
@@ -315,7 +336,7 @@ def run_treasury_cycle_task(treasury_id: str, event_id: str | None = None) -> di
         raise RuntimeError("DATABASE_URL is required for execution cycles")
     cycles_started = _execution_cycles.run(
         database_url,
-        lambda pool: _execute_treasury_cycle(pool, uuid.UUID(treasury_id)),
+        lambda pool: _started_cycles(pool, uuid.UUID(treasury_id)),
     )
     return {"cycles_started": cycles_started}
 

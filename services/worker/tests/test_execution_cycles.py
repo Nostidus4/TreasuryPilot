@@ -147,3 +147,22 @@ def test_nonblocking_lock_allows_only_one_callback_to_claim_a_request() -> None:
     assert sum((first.started, second.started)) == 1
     assert starter.calls == 1
     assert schedule.calls == 1
+
+
+def test_sweep_continues_after_one_treasury_fails(monkeypatch: Any) -> None:
+    from treasurypilot_worker import tasks
+
+    failing, healthy = uuid.uuid4(), uuid.uuid4()
+
+    class _Pool:
+        async def fetch(self, _query: str) -> list[dict[str, uuid.UUID]]:
+            return [{"id": failing}, {"id": healthy}]
+
+    async def fake_cycle(_pool: Any, treasury_id: uuid.UUID) -> Any:
+        if treasury_id == failing:
+            raise RuntimeError("boom")
+        return tasks.CycleResult(treasury_id, True)
+
+    monkeypatch.setattr(tasks, "_execute_treasury_cycle", fake_cycle)
+
+    assert asyncio.run(tasks._run_all_treasury_cycles(_Pool(), scheduling=False)) == 1  # type: ignore[arg-type]

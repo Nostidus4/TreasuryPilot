@@ -137,14 +137,23 @@ WHERE t.id = $1
 """
 
 
+_plans_table_seen = False
+
+
 async def _read_gates(
     connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
 ) -> CycleGateState | None:
     row = await connection.fetchrow(_GATES_SQL, treasury_id, now)
     if row is None:
         return None
+    global _plans_table_seen
     executing_plan = False
-    if await connection.fetchval("SELECT to_regclass('plans') IS NOT NULL"):
+    # shortcut: only a positive probe is cached, so a worker without plans re-probes each cycle;
+    # drop the probe entirely once EXE-004 ships the plans table.
+    _plans_table_seen = _plans_table_seen or bool(
+        await connection.fetchval("SELECT to_regclass('plans') IS NOT NULL")
+    )
+    if _plans_table_seen:
         executing_plan = bool(
             await connection.fetchval(
                 "SELECT EXISTS (SELECT 1 FROM plans WHERE treasury_id = $1 "
@@ -274,4 +283,10 @@ def _log_result(result: CycleResult, *, cycle: str = "execution") -> None:
         fields["skip_reason"] = result.reason.value
     if result.request_id is not None:
         fields["request_id"] = str(result.request_id)
-    logger.info("execution_cycle_result", extra=fields)
+    # Sweeps visit every treasury; the missing-provider skip is aggregated by the caller.
+    level = (
+        logging.DEBUG
+        if result.reason is CycleSkipReason.SCHEDULE_PROVIDER_UNAVAILABLE
+        else logging.INFO
+    )
+    logger.log(level, "execution_cycle_result", extra=fields)

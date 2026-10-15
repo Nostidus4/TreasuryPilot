@@ -120,8 +120,7 @@ async def _index_stream(
             stream,
         )
         if cursor is None:
-            first_address = addresses[0] if stream == TOKEN else bytes(treasury["module_address"])
-            start = await _first_code_block(rpc, first_address, head)
+            start = await _first_code_block(rpc, bytes(treasury["module_address"]), head)
         else:
             start = max(cursor - REORG_WINDOW, 0)
         end = min(head, start + MAX_CHUNKS_PER_RUN * CHUNK_BLOCKS - 1)
@@ -130,6 +129,14 @@ async def _index_stream(
 
         # The node's address filter is exact; the re-check below guards a misbehaving provider.
         wanted = {"0x" + address.hex() for address in addresses}
+        topic_filter: list[Any] = [list(abis)]
+        recipients: set[str] = set()
+        if stream == TOKEN:
+            # Token Transfers are unbounded; only those into the treasury's Safes matter.
+            recipients = {"0x" + bytes(safe).hex().rjust(64, "0") for safe in treasury["safes"]}
+            if not recipients:
+                return 0
+            topic_filter += [None, sorted(recipients)]
         logs: list[dict[str, Any]] = []
         for low in range(start, end + 1, CHUNK_BLOCKS):
             logs += await rpc.call(
@@ -139,7 +146,7 @@ async def _index_stream(
                         "fromBlock": hex(low),
                         "toBlock": hex(min(low + CHUNK_BLOCKS - 1, end)),
                         "address": sorted(wanted),
-                        "topics": [list(abis)],
+                        "topics": topic_filter,
                     }
                 ],
             )
@@ -153,6 +160,7 @@ async def _index_stream(
                 or str(log["address"]).lower() not in wanted
                 or not topics
                 or topics[0] not in abis
+                or (recipients and (len(topics) < 3 or topics[2] not in recipients))
             ):
                 continue
             abi = abis[topics[0]]

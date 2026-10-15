@@ -99,12 +99,14 @@ async def _paused(connection: asyncpg.Connection, event: IndexedEvent) -> None:
 
 
 async def _resumed(connection: asyncpg.Connection, event: IndexedEvent) -> None:
-    await connection.execute(
+    row = await connection.fetchrow(
         "UPDATE backend_pause SET paused = false, onchain_status = 'NotRequested', "
-        "version = version + 1, updated_at = now() WHERE treasury_id = $1",
+        "version = version + 1, updated_at = now() WHERE treasury_id = $1 "
+        "AND (paused OR onchain_status <> 'NotRequested') RETURNING treasury_id",
         event.treasury_id,
     )
-    await _enqueue_execution_cycle(connection, event.treasury_id)
+    if row is not None:
+        await _enqueue_execution_cycle(connection, event.treasury_id)
 
 
 async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent) -> None:
@@ -204,7 +206,12 @@ async def activate_due_payees(pool: asyncpg.Pool) -> int:
         rows = await connection.fetch(
             "WITH active AS (UPDATE payees SET status = 'Active'::payee_status, "
             "version = version + 1, updated_at = now() WHERE status = 'Cooling' "
-            "AND active_from <= now() RETURNING id, treasury_id) "
+            "AND active_from <= now() "
+            # A reorged-out PayeeAdded must not activate (removed events do not reset the row).
+            "AND EXISTS (SELECT 1 FROM observed_events o WHERE o.treasury_id = payees.treasury_id "
+            "AND o.stream = 'MODULE'::index_stream AND o.event_name = 'PayeeAdded' AND NOT o.removed "
+            "AND o.payload->>'payee' = '0x' || encode(payees.address, 'hex')) "
+            "RETURNING id, treasury_id) "
             "INSERT INTO domain_events "
             "(id, org_id, treasury_id, type, entity_type, entity_id, payload) "
             "SELECT gen_random_uuid(), t.org_id, t.id, 'ExecutionCycleRequested', 'payee', "

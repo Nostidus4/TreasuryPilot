@@ -238,11 +238,22 @@ async def publish_pending_events(
         for event in events:
             try:
                 if event["type"] == "ExecutionCycleRequested":
-                    if dispatch_execution_cycle is None:
-                        raise RuntimeError("execution cycle dispatcher is not configured")
                     if event["treasury_id"] is None:
                         raise ValueError("execution cycle event has no treasury")
-                    dispatch_execution_cycle(event["id"], event["treasury_id"])
+                    try:
+                        if dispatch_execution_cycle is None:
+                            raise RuntimeError("execution cycle dispatcher is not configured")
+                        dispatch_execution_cycle(event["id"], event["treasury_id"])
+                    except Exception:
+                        # Broker outage: leave the row unpublished and retry next beat; the
+                        # cycle advisory lock makes a repeated dispatch idempotent.
+                        # shortcut: no attempts column, so a permanently failing row is retried
+                        # forever; add backoff/dead-lettering if that ever starves the queue.
+                        logger.exception(
+                            "execution_cycle_dispatch_failed",
+                            extra={"event_id": str(event["id"])},
+                        )
+                        continue
                     await connection.execute(_MARK_PUBLISHED, event["id"])
                     continue
                 # Webhooks need no recipients or routing policy, so a routing failure
