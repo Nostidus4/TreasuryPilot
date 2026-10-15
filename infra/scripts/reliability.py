@@ -3,9 +3,11 @@
 `make reliability` runs it 30 times on Anvil and `TESTNET_RUNS` (default 0) times on Sepolia,
 using the scenario runner (DEV-007). Per run it keeps status, a failure category, per-phase
 latency (runner `phaseMs`) and the fee from receipts (gasUsed x effectiveGasPrice). Failed runs
-are always listed with their category, never dropped.
+are always listed with their category, never dropped. `main` exits 0 even when runs failed; the
+CI grep on the report gates it. `tx:*` rows nest inside the step rows (e.g. refill_then_pay).
 shortcut: demo-main's steps are Anvil-only (unlocked demo accounts, chain id 31337), so a testnet
-run is attempted and recorded as a categorised failure until the runner can sign for Sepolia.
+run is attempted and recorded as a categorised failure until the runner can sign for Sepolia, so the
+testnet section reads 0% by construction.
 """
 
 from __future__ import annotations
@@ -30,7 +32,11 @@ SEPOLIA_RPC_ENV = "TP_SEPOLIA_RPC_URL"
 def categorize(error: BaseException) -> str:
     if isinstance(error, ScenarioError):
         text = str(error)
-        if "chain" in text and ("refusing" in text or "targets" in text):
+        if "cannot reach RPC" in text:
+            return "RPC_UNREACHABLE"
+        if "cannot read" in text:
+            return "SETUP"
+        if "chain" in text and ("refusing" in text or "targets" in text or "not in the" in text):
             return "CHAIN_MISMATCH"
         return "ASSERTION_FAILED"
     if isinstance(error, RuntimeError):
@@ -88,6 +94,8 @@ def render(sections: dict[str, list[dict[str, Any]]], date: str) -> str:
             f"- Runs: {a['total']}, completed: {a['passed']}, completion: {a['completionPct']}%",
             f"- Median fee per run: {a['medianFeeWei']} wei; total: {a['totalFeeWei']} wei",
             f"- Failure categories: {a['failures'] or 'none'}",
+            "",
+            "`tx:*` rows are individual transactions nested inside the step rows.",
             "",
             "| Phase | Median latency (ms) |",
             "|---|---|",

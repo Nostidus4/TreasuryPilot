@@ -30,7 +30,7 @@ help:
 	@echo "  make test            Run Python, web and contract tests"
 	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
 	@echo "  make seed            Deploy to Anvil and seed the idempotent TEST demo dataset (after make dev)"
-	@echo "  make reliability    Run demo-main 30x on Anvil (LOCAL_RUNS) and TESTNET_RUNS=N on Sepolia"
+	@echo "  make reliability    Run demo-main 30x on Anvil (LOCAL_RUNS); TESTNET_RUNS=N on Sepolia reads 0% until the runner can drive Sepolia"
 	@echo "  make scenario       List scenarios, or run one with NAME=<scenario>"
 	@echo "  make verify-sepolia  Verify the published Sepolia implementation, factory and tUSDC on Etherscan"
 	@echo "  make lint            Run all configured quality gates"
@@ -103,7 +103,8 @@ scenario:
 	uv run python infra/scripts/scenario.py $(if $(NAME),run $(NAME),list)
 
 # make reliability [LOCAL_RUNS=30] [TESTNET_RUNS=0]; needs Anvil + `make deploy-local`;
-# TESTNET_RUNS>0 also needs TP_SEPOLIA_RPC_URL. Writes docs/evidence/reliability-<date>.md.
+# TESTNET_RUNS>0 also needs TP_SEPOLIA_RPC_URL. Writes docs/evidence/reliability-<date>.md
+# (a same-day rerun overwrites the report).
 reliability:
 	uv run python infra/scripts/reliability.py --local-runs $(or $(LOCAL_RUNS),30) --testnet-runs $(or $(TESTNET_RUNS),0)
 

@@ -8,6 +8,8 @@ Scenario `demo-main`; fees in wei (gasUsed x effectiveGasPrice).
 - Median fee per run: 717747444568550 wei; total: 21531656553692776 wei
 - Failure categories: none
 
+`tx:*` rows are individual transactions nested inside the step rows.
+
 | Phase | Median latency (ms) |
 |---|---|
 | tx:refill | 215.9 |

@@ -57,3 +57,32 @@ def test_testnet_runs_without_rpc_credentials_fail_fast(
     monkeypatch.delenv(reliability.SEPOLIA_RPC_ENV, raising=False)
     assert reliability.main(["--testnet-runs", "2"]) == 1
     assert reliability.SEPOLIA_RPC_ENV in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("message", "category"),
+    [
+        ("cannot reach RPC at http://x (refused); run `make dev`", "RPC_UNREACHABLE"),
+        ("demo-main: chain id 1 is not in the scenario allowlist [31337]", "CHAIN_MISMATCH"),
+        ("scenario targets chain 31337 but the RPC serves chain 11155111", "CHAIN_MISMATCH"),
+        ("cannot read /x/31337.json; run `make deploy-local`", "SETUP"),
+        ("balance mismatch", "ASSERTION_FAILED"),
+    ],
+)
+def test_categorize_real_scenario_errors(message: str, category: str) -> None:
+    assert reliability.categorize(ScenarioError(message)) == category
+
+
+def test_execute_keeps_failed_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = iter(range(1, 4))
+
+    def fake(_scenario: dict[str, object], **_kw: object) -> dict[str, object]:
+        if next(calls) == 2:
+            raise ScenarioError("cannot reach RPC at x")
+        return {"phaseMs": {"p": 1.0}, "feeWei": 5}
+
+    monkeypatch.setattr(reliability, "run_scenario", fake)
+    runs = reliability.execute({}, 3)
+    assert len(runs) == 3
+    assert [r["ok"] for r in runs] == [True, False, True]
+    assert runs[1]["category"] == "RPC_UNREACHABLE"
