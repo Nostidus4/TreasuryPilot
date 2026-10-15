@@ -308,11 +308,13 @@ def test_resume_partial_task_enqueues_sequencing_only_when_resumed(monkeypatch) 
     status = {"v": "Resumed"}
 
     async def fake(_action, _request, _actor):  # type: ignore[no-untyped-def]
-        return SimpleNamespace(status=status["v"], plan_id=plan)
+        return SimpleNamespace(status=status["v"], plan_id=plan, treasury_id=uuid.uuid4())
 
     sent: list[str] = []
     monkeypatch.setattr(tasks, "_partial_action", fake)
-    monkeypatch.setattr(tasks.sequence_plan_task, "delay", sent.append)
+    monkeypatch.setattr(
+        tasks.sequence_plan_task, "apply_async", lambda args, queue: sent.append(args[0])
+    )
     assert tasks.resume_partial_task(str(uuid.uuid4()))["status"] == "Resumed"
     status["v"] = "InFlight"
     tasks.resume_partial_task(str(uuid.uuid4()))

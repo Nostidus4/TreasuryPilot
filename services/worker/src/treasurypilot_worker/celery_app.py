@@ -33,9 +33,10 @@ def create_celery_app() -> Celery:
         task_default_exchange="core",
         task_default_routing_key="core",
         task_queues=(
+            # `core` stays even with shards: beat and non-treasury tasks use it.
             *(
                 Queue(name, exchange=core_exchange, routing_key=name)
-                for name in shard_queues(settings.treasury_queue_shards)
+                for name in dict.fromkeys(("core", *shard_queues(settings.treasury_queue_shards)))
             ),
             Queue("ai", exchange=ai_exchange, routing_key="ai"),
             Queue("webhooks", exchange=webhooks_exchange, routing_key="webhooks"),

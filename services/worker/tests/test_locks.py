@@ -82,9 +82,9 @@ def test_lock_yields_connection_only_when_postgres_acquires_it() -> None:
 
 @pytest.mark.integration
 def test_two_transactions_cannot_enter_same_treasury_critical_section() -> None:
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = os.getenv("TP_TEST_DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
     if not database_url:
-        pytest.skip("TEST_DATABASE_URL is required for the PostgreSQL lock contention test")
+        pytest.skip("TP_TEST_DATABASE_URL is required for the PostgreSQL lock contention test")
 
     async def exercise() -> None:
         pool = await create_worker_pool(database_url, min_size=2, max_size=2)

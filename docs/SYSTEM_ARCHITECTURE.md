@@ -225,7 +225,7 @@ Profiles: `local` (Anvil + seeded scenario) · `testnet` (chain RPCs from env) �
 
 - Signer → KMS-backed.
 - Managed Postgres (point-in-time recovery).
-- Horizontal workers partitioned by treasury: set `TP_TREASURY_QUEUE_SHARDS=N` (default 1) on API-side producers and workers; run one `celery worker -Q core-<i> -c 1` per shard (or an HPA per shard on queue depth), plus one worker on `ai`/`webhooks`. Treasury-scoped tasks (`run_treasury_cycle`, the plan sweep) route by sha256(treasury_id) mod N; the per-treasury advisory lock stays the correctness guard. Changing N reshuffles treasuries: drain the queues first. Periodic beat tasks still use `core`, so keep one consumer on `core` as well when N > 1.
+- Horizontal workers partitioned by treasury: set `TP_TREASURY_QUEUE_SHARDS=N` (default 1) on worker and beat producers (and workers); run one `celery worker -Q core-<i> -c 1` per shard (or an HPA per shard on queue depth), plus one worker on `ai`/`webhooks`. Treasury-scoped tasks (`run_treasury_cycle`, `plan_request`, `sequence_plan` from the tracker, the sweep and partial resume) route by sha256(treasury_id) mod N; the per-treasury advisory lock stays the correctness guard. Changing N reshuffles treasuries: drain the queues first. Periodic beat tasks (not treasury-scoped, or scanning all treasuries) stay on `core`, so a `core` consumer is mandatory when N > 1.
 - Multi-chain treasuries.
 - An external contract audit before mainnet.
 - KYB/KYT/Travel Rule providers.

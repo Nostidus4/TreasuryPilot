@@ -341,14 +341,14 @@ def publish_domain_events() -> dict[str, int]:
 PLAN_ENQUEUE_COUNTDOWN_SECONDS = 1
 
 
-def _enqueue_plan(plan_id: uuid.UUID) -> None:
+def _enqueue_plan(plan_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
     # The claim commits when the cycle's lock transaction ends; the countdown outlasts it and
     # the task retries if it still cannot see the row.
     app.send_task(
         "treasurypilot.planning.plan_request",
         kwargs={"plan_id": str(plan_id)},
         task_id=f"plan:{plan_id}",
-        queue="core",
+        queue=treasury_queue(treasury_id, get_settings().treasury_queue_shards),
         countdown=PLAN_ENQUEUE_COUNTDOWN_SECONDS,
     )
 
@@ -832,7 +832,10 @@ def resume_partial_task(request_id: str, actor_id: str | None = None) -> dict[st
     result = asyncio.run(_partial_action(resume_partial, request_id, actor_id))
     plan_id = str(result.plan_id) if result.plan_id else None
     if result.status == "Resumed":
-        sequence_plan_task.delay(str(result.plan_id))
+        sequence_plan_task.apply_async(
+            (str(result.plan_id),),
+            queue=treasury_queue(result.treasury_id, get_settings().treasury_queue_shards),
+        )
     return {"status": result.status, "plan_id": plan_id}
 
 
