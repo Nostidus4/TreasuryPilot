@@ -65,6 +65,7 @@ class PolicyReasonCode(StrEnum):
     WRONG_PAYMENT_OPTION = "WRONG_PAYMENT_OPTION"
     NOT_OPERATIONAL_WALLET = "NOT_OPERATIONAL_WALLET"
     WRONG_REFILL_TARGET = "WRONG_REFILL_TARGET"
+    REFILL_PATH_NOT_ALLOWED = "REFILL_PATH_NOT_ALLOWED"
     REQUEST_ALREADY_PAID = "REQUEST_ALREADY_PAID"
     STEP_ALREADY_EXECUTED = "STEP_ALREADY_EXECUTED"
     REQUEST_CANCELLED = "REQUEST_CANCELLED"
@@ -155,6 +156,9 @@ REASON_CODES: dict[PolicyReasonCode, ReasonInfo] = {
         _G.WALLET_PATH, "BR-019", "NotOperationalWallet()"
     ),
     PolicyReasonCode.WRONG_REFILL_TARGET: _info(_G.WALLET_PATH, "BR-012", "WrongRefillTarget()"),
+    PolicyReasonCode.REFILL_PATH_NOT_ALLOWED: _info(
+        _G.WALLET_PATH, "BR-012", "RefillPathNotAllowed()"
+    ),
     PolicyReasonCode.REQUEST_ALREADY_PAID: _info(_G.REPLAY, "BR-061", "RequestAlreadyPaid()"),
     PolicyReasonCode.STEP_ALREADY_EXECUTED: _info(_G.REPLAY, "BR-061", "StepAlreadyExecuted()"),
     PolicyReasonCode.REQUEST_CANCELLED: _info(

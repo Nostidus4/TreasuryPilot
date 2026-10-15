@@ -32,6 +32,7 @@ library TreasuryPilotErrors {
     error RequestCancelled();
     error StepAlreadyExecuted();
     error WrongRefillTarget();
+    error RefillPathNotAllowed();
     error AlreadyRefilledForRequest();
     error OverRefillPerRequest();
     error OverRefillDaily();

@@ -111,7 +111,19 @@ contract ReserveHoldExecutorTest is TreasuryFixture {
         bytes memory sig = _sign(ap);
         vm.prank(executor);
         vm.expectRevert(ReserveHoldExecutor.CommittedFundsBreach.selector);
-        gate.refill(ap, sig, STEP, address(op1), 1500e6); // free is 1000, so 1500 breaches
+        gate.refill(ap, sig, STEP, address(treasury), address(op1), 1500e6); // free is 1000, so 1500 breaches
+    }
+
+    function testRefillFromOperationalSourceCannotBreachItsCommitments() external {
+        _owner(abi.encodeCall(module.setRefillPath, (address(op2), address(op1), true)));
+        _reserve(1, address(op2), 9000e6);
+        vm.prank(address(op1));
+        token.transfer(address(1), 9990e6);
+        I.PaymentApproval memory ap = _approval(7, 1500e6);
+        bytes memory sig = _sign(ap);
+        vm.prank(executor);
+        vm.expectRevert(ReserveHoldExecutor.CommittedFundsBreach.selector);
+        gate.refill(ap, sig, STEP, address(op2), address(op1), 1500e6); // free is 990, so 1500 breaches
     }
 
     function testHoldReleaseNeedsKnownOutcome() external {

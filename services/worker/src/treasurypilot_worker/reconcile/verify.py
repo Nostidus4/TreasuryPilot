@@ -96,12 +96,28 @@ def _reads(step: PlanStep, request_id: bytes, module: str) -> list[_Read]:
             )
     if step.action is Action.PAY:
         reads += [
-            _read("used_today", module, "usedToday(uint8)", "uint256", _PAY, shape=_uint),
+            _read(
+                "used_today",
+                module,
+                "usedToday(uint8,address)",
+                "uint256",
+                _PAY,
+                step.asset,
+                shape=_uint,
+            ),
             _read("request_paid", module, "requestPaid(bytes32)", "bool", rid, shape=_uint),
         ]
     elif step.action is Action.REFILL:
         reads += [
-            _read("used_today", module, "usedToday(uint8)", "uint256", _REFILL, shape=_uint),
+            _read(
+                "used_today",
+                module,
+                "usedToday(uint8,address)",
+                "uint256",
+                _REFILL,
+                step.asset,
+                shape=_uint,
+            ),
             _read(
                 "refilled_for",
                 module,
