@@ -11,7 +11,7 @@ M01 answers **who is this person, which organization are they acting for, what m
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | SAML/SCIM (Later: IDN-L03) |
+| Magic-link login, sessions, CSRF, rate limits, OIDC SSO | SAML, SCIM groups and provisioning (Later: IDN-L03) |
 | TOTP and WebAuthn second factors, recovery codes, step-up (IDN-L01) | |
 | SIWE wallet linking (EOA + ERC-1271) | Owner keys (never held, BR-092) |
 | Organizations, onboarding checklist, settings (solo mode, auto-match) | Billing (M18) |
@@ -59,6 +59,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | POST | `/orgs` · GET `/orgs/{o}` · PATCH `/orgs/{o}/settings` | auth / ANY / ADM (solo: OWN) | 403 |
 | GET/POST | `/orgs/{o}/members`, `/orgs/{o}/invites` · POST `/invites/{token}/accept` | ADM | `ALREADY_MEMBER`, `INVITE_EXPIRED` |
 | PATCH/DELETE | `/orgs/{o}/members/{u}` | ADM | `LAST_ADMIN`, `LAST_OWNER` |
+| GET | `/scim/v2/Users` · `/scim/v2/Users/{id}` | configured SCIM bearer token; tenant-scoped existing user resources; list supports `userName eq "email"` | 401, 404, 503 |
+| PATCH | `/scim/v2/Users/{id}` | configured SCIM bearer token; only `replace active=false` | 400, 404, 409 last OrgAdmin/Owner |
 | GET | `/me/mfa` | auth; enrolled factors and unused recovery codes | |
 | POST | `/me/mfa/totp` · `/me/mfa/totp/{f}/confirm` | auth + CSRF; returns an `otpauth://` URI, confirm takes the 6-digit code and returns recovery codes with the first factor | `MFA_CODE_INVALID`, `MFA_UNAVAILABLE` (no field encryption key) |
 | POST | `/me/mfa/webauthn/challenge` · `/me/mfa/webauthn` | auth + CSRF; `register` or `assert` challenge, then register an ES256 credential (`none` attestation) | `MFA_REGISTRATION_INVALID`, `MFA_ORIGIN_INVALID`, `MFA_CREDENTIAL_EXISTS` |
@@ -66,6 +68,8 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 | POST/DELETE | `/me/mfa/recovery-codes` (regenerate) · `/me/mfa/{f}` | auth + CSRF + fresh step-up | `STEP_UP_REQUIRED` |
 
 SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values; `signerRolesActive` is true only when the membership holds Owner, Approver or Guardian and a wallet is linked.
+
+The opt-in SCIM slice exposes tenant-scoped user reads and `PATCH active=false` at `/scim/v2/Users`. It suspends the user's membership in one configured organization, revokes that organization's scoped sessions, and records a system audit event in the same transaction. SCIM cannot reactivate users or change roles; creation, groups and SAML remain unimplemented. An organization's last active OrgAdmin or Owner cannot be deprovisioned.
 
 ## 7. Flows
 
@@ -91,7 +95,15 @@ console delivery adapter and prints the one-time URL intentionally; every other
 back to console delivery, the fixed local session secret or an in-process rate
 limiter (`TP_REDIS_URL` is required).
 
+SCIM is disabled unless both `TP_SCIM_BEARER_TOKEN` (at least 32 bytes) and
+`TP_SCIM_ORGANIZATION_ID` (a UUID) are configured. The bearer token is compared
+in constant time and is never logged or returned. This integration currently
+supports deprovisioning existing memberships only; it does not provision users
+or groups and does not support reactivation.
+
 ## 10. Security
+
+SCIM is limited to one configured organization, accepts only membership deactivation, and does not disable a person's account in other organizations.
 
 Hashed tokens; single-use nonces; CSRF on mutations; 404 for non-members; audit for role and wallet changes; no passwords stored; email enumeration avoided (same response for unknown emails). OIDC trusts only the configured issuer, verified email claims, and mapped non-privileged roles. Discovery and key endpoints must use HTTPS except loopback local development; endpoint redirects are rejected.
 
@@ -101,11 +113,11 @@ Email provider down → the link is sent after the 202 response, so a failed sen
 
 ## 12. Test plan
 
-Unit: token lifecycle, SIWE verification (EOA + ERC-1271 mock), maker-checker matrix. Integration: cross-tenant route enumeration; last admin/owner guards; rate limits. Security: CSRF, cookie flags.
+Unit: token lifecycle, SIWE verification (EOA + ERC-1271 mock), maker-checker matrix, SCIM bearer auth and deactivation patch validation. Integration: cross-tenant route enumeration; last admin/owner guards; SCIM membership suspension, session revocation and audit; rate limits. Security: CSRF, cookie flags.
 
 ## 13. Tickets
 
-IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 → IDN-007. Later IDN-L01…L03.
+IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → IDN-006 → IDN-008 → IDN-007. Later IDN-L01…L03. The SCIM deprovisioning slice is partial IDN-L03 coverage; SAML and the remaining SCIM provisioning scope are still open.
 
 ## 14. Decisions
 
