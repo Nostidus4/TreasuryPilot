@@ -1042,7 +1042,16 @@ test('an over-cap request shows the Owner a signable exception; after execution 
   );
   // The grantException transaction is signed in the governance inbox (no EIP-712 here).
   expect(await screen.findByText(/grantException/)).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: /sign with wallet/i }));
+  // A co-owner signed already; the demo wallet adds the second signature.
+  const grantTx = db.governance[0];
+  grantTx.signatures.push({
+    owner: grantTx.owners[1].address,
+    at: new Date().toISOString(),
+  });
+  grantTx.signaturesHex.push(`0x${'11'.repeat(65)}`);
+  await user.click(
+    await screen.findByRole('button', { name: /sign with wallet/i }),
+  );
   await user.click(
     await screen.findByRole('button', { name: /execute transaction/i }),
   );
