@@ -48,7 +48,8 @@ M06 is the system's **only window onto the chain**. Every other module reads cha
 | `transactions` | id, operation_id, chain_id, tx_hash, nonce, from_address, replaced_by_tx_id, status enum(Submitted, Pending, Confirmed, Reverted, Dropped, Unknown), block_number, block_hash, confirmations, revert_selector, gas_used, effective_gas_price, fee_wei, submitted_at, last_seen_pending_at, confirmed_at, crosscheck enum(NotRun, Match, Mismatch) | unique(chain_id, tx_hash) |
 | `observed_events` | id, treasury_id, chain_id, stream enum(MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN), block_number, block_hash, tx_hash, log_index, address, event_name, payload jsonb, classification null, observed_at, removed bool | unique(chain_id, tx_hash, log_index) |
 | `index_cursors` *(new)* | treasury_id, stream, last_block, last_block_hash, updated_at | PK(treasury_id, stream) |
-| `token_movements` *(new)* | id, treasury_id, event_id, wallet, direction enum(IN, OUT), counterparty, amount, class enum(AGENT, INTERNAL_REFILL, INFLOW, UNEXPECTED_OUTFLOW), operation_id null, acknowledged_by/at | from TOKEN events |
+| `token_movements` *(new)* | id, treasury_id, event_id, wallet, direction enum(IN, OUT), counterparty, amount in base units, class enum(AGENT, INTERNAL_REFILL, INFLOW, UNEXPECTED_OUTFLOW, LENDING), operation_id null, removed, acknowledgement actor/time/reason | from TOKEN events; unique event |
+| `chain_safety_signals` *(new)* | id, treasury_id, observed_event_id, token_movement_id, signal_type (PRE_STEP_REVALIDATION, CIRCUIT_BREAKER), payload, created_at, consumed_at, invalidated_at | durable, idempotent signals for execution and recovery consumers |
 | `rpc_health` *(new)* | provider, ok bool, latency_ms, head, last_error, at | rolling, 24 h |
 
 ## 5. Transaction status machine
@@ -85,6 +86,8 @@ There is no `Failed`. `Unknown` blocks the treasury (BR-060) until M11 resolves 
 | `safe_config(safe) → {owners, threshold, modules, guard, fallbackHandler, nonce}` | for coverage (TRS-007) and governance (MDT-009) |
 | Subscribers | `on_event(stream, name, handler)` — handlers in M03 (payees, mandate, pause, exceptions, cancellations, governance txs), M05, M11 |
 
+The API exposes `GET /v1/orgs/{org}/treasuries/{treasury}/token-movements` and an Owner-only `POST /v1/orgs/{org}/treasuries/{treasury}/token-movements/{movement}/acknowledge` with a required reason. Outflow events enter the notification outbox as mandatory `UnexpectedOutflow` alerts for Owner and Finance. The indexer stores PRE_STEP revalidation and circuit-breaker signals; #61/#65 must consume the PRE_STEP signal before an active PAY can be blocked end-to-end.
+
 ## 7. Flows
 
 ### 7.1 Payment confirmation
@@ -112,7 +115,7 @@ sequenceDiagram
 
 ### 7.2 Unexpected outflow (M06-D2)
 
-`Transfer(from = O1, to = X, 500)` indexed → no operation matches (same tx hash) → `UNEXPECTED_OUTFLOW` → notify Owner and Finance → if a plan of this treasury is in progress, request an immediate PRE_STEP re-validation (the BUFFER_BREACH of M08 example 10 is caught at once) → circuit-breaker input (RCV-006). The Owner can acknowledge it ("my own withdrawal").
+`Transfer(from = O1, to = X, 500)` indexed → no operation matches (same tx hash) → persist `UNEXPECTED_OUTFLOW`, Owner/Finance notification and PRE_STEP/circuit-breaker signals. The Owner can acknowledge it ("my own withdrawal"). The #61/#65 execution runtime must consume PRE_STEP and revalidate an active plan; that consumer is not in this repository yet.
 
 ## 8. Algorithms
 
@@ -141,13 +144,13 @@ for stream in [MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN]:
   cursor = to (with its block hash)
 ```
 
-TOKEN stream filter: `Transfer` topic on the asset address with topic1 ∈ {T, O1, O2} **or** topic2 ∈ {T, O1, O2} (two queries). Classification: tx hash matches one of our operations → AGENT (or INTERNAL_REFILL for T→O); `to` is a treasury wallet and `from` is not → INFLOW; otherwise OUT → UNEXPECTED_OUTFLOW.
+TOKEN stream filter: `Transfer` topic on the asset address with topic1 ∈ {T, O1, O2} **or** topic2 ∈ {T, O1, O2} (two queries). The indexer reads the module's configured Aave pool and aToken addresses and includes aToken Transfer logs too. Classification matches the transaction hash to persisted operations: a matching SUPPLY/WITHDRAW flow between Safe T and the configured pool, and Safe T↔aToken mint/burn, are `LENDING`; an agent REFILL from T to O1/O2 is `INTERNAL_REFILL`; another matched operation is `AGENT`; an external-to-treasury transfer is `INFLOW`; an unmatched transfer leaving the treasury boundary is `UNEXPECTED_OUTFLOW`. Other aToken transfers out of a treasury wallet remain alert candidates. All amounts stay integer base units.
 
-Implementation notes (CHR-005): the first run of a stream starts at the module's deployment block (binary search with `eth_getCode`, so it needs archive state) and one run reads at most 50 chunks. Handlers run in the transaction that stores the log, only for new or re-mined logs, and receive a `removed` flag only if they subscribed with `include_removed`. A stored log that is no longer returned in the window is set `removed = true`, which is why `observed_events.removed` is the one mutable column. Safe configuration events (`AddedOwner`, `RemovedOwner`, `ChangedThreshold`, `EnabledModule`, `DisabledModule`, `ChangedGuard`, `ChangedFallbackHandler`) are stored raw and trigger a fresh Safe read and coverage recompute for that treasury. The TOKEN stream is not indexed yet.
+Implementation notes (CHR-005): the first run of a stream starts at the module's deployment block (binary search with `eth_getCode`, so it needs archive state) and one run reads at most 50 chunks. Handlers run in the transaction that stores the log, only for new or re-mined logs, and receive a `removed` flag only if they subscribed with `include_removed`. A stored log that is no longer returned in the window is set `removed = true`, which is why `observed_events.removed` is the one mutable column. Safe configuration events (`AddedOwner`, `RemovedOwner`, `ChangedThreshold`, `EnabledModule`, `DisabledModule`, `ChangedGuard`, `ChangedFallbackHandler`) are stored raw and trigger a fresh Safe read and coverage recompute for that treasury. The TOKEN stream writes unique token movements and invalidates their pending safety signals when reorged out.
 
 ### 8.4 Example
 
-O1 balance 110 after refill (block 100). Block 103: Owner's Safe tx moves 50 from O1. Indexer at ~block 104 sees `Transfer(O1 → owner, 50)`, no matching operation → UNEXPECTED_OUTFLOW; the in-progress plan is re-validated immediately → PAY 100 from 60 breaches buffer 10 → BLOCK, PartiallyCompleted, review item; Owner gets one combined notification.
+O1 balance 110 after refill (block 100). Block 103: Owner's Safe tx moves 50 from O1. Indexer at ~block 104 sees `Transfer(O1 → owner, 50)`, no matching operation → `UNEXPECTED_OUTFLOW`; it persists immediate PRE_STEP and circuit-breaker signals and alerts Owner/Finance. Once the execution runtime consumes `PRE_STEP_REVALIDATION`, the PAY is revalidated against the new balance and must block if it breaches the buffer. The current repository does not yet have the #61/#65 active-plan execution consumer, so this ticket records the request and alert but cannot claim the pending PAY is already blocked end-to-end.
 
 ## 9. Configuration and defaults
 
@@ -217,4 +220,4 @@ CHR-001 RPC client (+ secondary cross-check) → CHR-002 snapshots (Multicall3) 
 
 ## 15. v0.3 changes (ADR-019)
 
-Snapshot read set adds (same Multicall3 block): `aToken.balanceOf(safeT)`, `asset.balanceOf(aToken)` (pool available liquidity), `pool.getReserveData(asset)` (currentLiquidityRate, currentVariableBorrowRate, aToken address check), `pool.getUserAccountData(safeT)` (health factor, debt). Indexer adds module events `Supplied`, `Withdrawn` (and `BorrowExecuted`, `Repaid`). Token movements classify Safe T ↔ aToken transfers as `LENDING` (not unexpected outflow). **Tickets:** CHR-002, CHR-005, CHR-006 revised.
+Snapshot read set adds (same Multicall3 block): `aToken.balanceOf(safeT)`, `asset.balanceOf(aToken)` (pool available liquidity), `pool.getReserveData(asset)` (currentLiquidityRate, currentVariableBorrowRate, aToken address check), `pool.getUserAccountData(safeT)` (health factor, debt). Indexer adds module events `Supplied`, `Withdrawn` (and `BorrowExecuted`, `Repaid`). Safe T↔aToken mint/burn and confirmed underlying supply/withdraw transfers are `LENDING`; a share transfer to an unrelated address remains an outflow alert candidate. **Tickets:** CHR-002, CHR-005, CHR-006 revised.

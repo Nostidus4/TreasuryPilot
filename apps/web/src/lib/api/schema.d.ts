@@ -1693,6 +1693,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Token Movements */
+    get: operations['list_token_movements_v1_orgs__organization_id__treasuries__treasury_id__token_movements_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements/{movement_id}/acknowledge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Acknowledge Token Movement */
+    post: operations['acknowledge_token_movement_v1_orgs__organization_id__treasuries__treasury_id__token_movements__movement_id__acknowledge_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/vendors': {
     parameters: {
       query?: never;
@@ -1819,6 +1853,15 @@ export interface components {
       promptVersion?: string | null;
       /** Purpose */
       purpose: string;
+    };
+    /** AcknowledgeTokenMovementRequest */
+    AcknowledgeTokenMovementRequest: {
+      /** Reason */
+      reason: string;
+    };
+    /** AcknowledgeTokenMovementResponse */
+    AcknowledgeTokenMovementResponse: {
+      movement: components['schemas']['TokenMovementView'];
     };
     /** ActionLimits */
     ActionLimits: {
@@ -3352,6 +3395,66 @@ export interface components {
       status: string;
       /** Treasuries */
       treasuries: number;
+    };
+    /** TokenMovementListResponse */
+    TokenMovementListResponse: {
+      /** Items */
+      items: components['schemas']['TokenMovementView'][];
+    };
+    /** TokenMovementView */
+    TokenMovementView: {
+      /** Acknowledgedat */
+      acknowledgedAt: string | null;
+      /** Acknowledgedby */
+      acknowledgedBy: string | null;
+      /** Acknowledgementreason */
+      acknowledgementReason: string | null;
+      /** Amount */
+      amount: string;
+      /** Blockhash */
+      blockHash: string;
+      /** Blocknumber */
+      blockNumber: number;
+      /**
+       * Classification
+       * @enum {string}
+       */
+      classification:
+        | 'AGENT'
+        | 'INTERNAL_REFILL'
+        | 'INFLOW'
+        | 'UNEXPECTED_OUTFLOW'
+        | 'LENDING';
+      /** Counterparty */
+      counterparty: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Direction
+       * @enum {string}
+       */
+      direction: 'IN' | 'OUT';
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Operationid */
+      operationId: string | null;
+      /** Removed */
+      removed: boolean;
+      /** Transactionhash */
+      transactionHash: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Wallet */
+      wallet: string;
     };
     /** TotpConfirm */
     TotpConfirm: {
@@ -7323,6 +7426,77 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_token_movements_v1_orgs__organization_id__treasuries__treasury_id__token_movements_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TokenMovementListResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  acknowledge_token_movement_v1_orgs__organization_id__treasuries__treasury_id__token_movements__movement_id__acknowledge_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+        movement_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AcknowledgeTokenMovementRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AcknowledgeTokenMovementResponse'];
         };
       };
       /** @description Validation Error */

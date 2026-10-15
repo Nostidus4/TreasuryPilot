@@ -126,7 +126,7 @@ def snapshot_dashboards_task() -> dict[str, int]:
 
 @app.task(name="treasurypilot.chain.index-events", queue="core")
 def index_events_task() -> dict[str, int]:
-    """Read module and Safe logs into observed_events and update state (CHR-005)."""
+    """Read module, Safe and token logs into observed_events and update state (CHR-005/006)."""
 
     database_url = get_settings().database_url
     if not database_url:

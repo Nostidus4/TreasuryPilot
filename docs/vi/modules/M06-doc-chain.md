@@ -39,7 +39,8 @@ F-050 (FR-401, FR-402, BR-051, BR-018) · F-070 (FR-601, FR-602, BR-053, BR-060)
 | `transactions` | operation, tx_hash, nonce, from, replaced_by, status (Submitted, Pending, Confirmed, Reverted, Dropped, Unknown), block, confirmations, revert_selector, gas, fee_wei, crosscheck (NotRun, Match, Mismatch) | |
 | `observed_events` | treasury, stream (MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN), block, block_hash, tx_hash, log_index, address, event_name, payload, classification, removed | duy nhất (chain, tx_hash, log_index) |
 | `index_cursors` *(mới)* | treasury, stream, last_block, last_block_hash | |
-| `token_movements` *(mới)* | wallet, direction (IN, OUT), counterparty, amount, class (AGENT, INTERNAL_REFILL, INFLOW, UNEXPECTED_OUTFLOW), operation, người xác nhận | |
+| `token_movements` *(mới)* | treasury, event, wallet, direction (IN, OUT), counterparty, amount base unit, class (AGENT, INTERNAL_REFILL, INFLOW, UNEXPECTED_OUTFLOW, LENDING), operation, reorg, người/lý do xác nhận | duy nhất theo event |
+| `chain_safety_signals` *(mới)* | treasury, event, movement, loại PRE_STEP_REVALIDATION/CIRCUIT_BREAKER, payload, created/consumed/invalidated | hàng đợi bền vững cho runtime và recovery |
 | `rpc_health` *(mới)* | provider, ok, latency, head, lỗi cuối | giữ 24 giờ |
 
 ## 5. Trạng thái giao dịch
@@ -60,11 +61,13 @@ F-050 (FR-401, FR-402, BR-051, BR-018) · F-070 (FR-601, FR-602, BR-053, BR-060)
 | `safe_config(safe)` | owners, threshold, modules, guard, fallback handler, nonce |
 | Đăng ký nhận event | handler của M03 (payee, mandate, pause, ngoại lệ, hủy, giao dịch quản trị), M05, M12 |
 
+API liệt kê `GET /v1/orgs/{org}/treasuries/{treasury}/token-movements`; Owner xác nhận bằng `POST /v1/orgs/{org}/treasuries/{treasury}/token-movements/{movement}/acknowledge` kèm lý do.
+
 ## 7. Luồng
 
 **Xác nhận thanh toán:** mỗi 6 giây tracker hỏi RPC chính receipt và block hiện tại. Chưa có receipt → hỏi mempool. Có receipt và ≥ 3 xác nhận → hỏi RPC thứ hai receipt + block hash. Khớp → Confirmed (status 1) hoặc Reverted (status 0, giải mã selector). Không khớp hoặc không đọc được → giữ Pending; quá 10 phút → Unknown + review item.
 
-**Tiền ra bất thường (M06-D2):** thấy `Transfer(from = O1, to = X, 500)` → không khớp thao tác nào (cùng tx hash) → `UNEXPECTED_OUTFLOW` → báo Owner và Finance → nếu treasury đang chạy plan thì yêu cầu kiểm lại PRE_STEP ngay (bắt ví dụ 10 của M08 tức thì) → gửi tín hiệu cho circuit breaker. Owner có thể xác nhận ("tôi tự rút").
+**Tiền ra bất thường (M06-D2):** thấy `Transfer(from = O1, to = X, 500)` → không khớp thao tác nào (cùng tx hash) → `UNEXPECTED_OUTFLOW` → báo Owner và Finance → lưu tín hiệu PRE_STEP và circuit breaker. Owner có thể xác nhận ("tôi tự rút"). Consumer của runtime thực thi sẽ đọc tín hiệu PRE_STEP và kiểm lại plan trước khi PAY. Repo hiện chưa có consumer execution của #61/#65, nên ticket này lưu yêu cầu và cảnh báo nhưng chưa chặn PAY đang chạy đầu-cuối.
 
 ## 8. Thuật toán
 
@@ -72,9 +75,9 @@ F-050 (FR-401, FR-402, BR-051, BR-018) · F-070 (FR-601, FR-602, BR-053, BR-060)
 
 **8.2 Luật tracker:** hỏi mỗi 6 giây; Confirmed khi 3 xác nhận **và** RPC thứ hai khớp; RPC thứ hai không có → thử tới 10 phút rồi Unknown. Giao dịch thay thế cùng `(from, nonce)` được đào → bản gốc `Dropped`, liên kết `replaced_by`. Revert → giải mã selector bằng `decode_revert` của POL-001. Ngày tính theo **timestamp của block đã đào** (BR-026).
 
-**8.3 Đọc event và xử lý reorg (PH-6):** với mỗi luồng [MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN]: `from = con trỏ − 64`, `to = head`; `eth_getLogs` theo địa chỉ và topic, chia khúc ≤ 2.000 block; upsert theo (chain, tx_hash, log_index), lưu block hash; event đã lưu trong khoảng mà không còn trả về hoặc khác block hash → `removed = true`, gọi handler "removed"; cập nhật con trỏ. Luồng TOKEN lọc `Transfer` của asset với topic1 ∈ {T, O1, O2} **hoặc** topic2 ∈ {T, O1, O2}. Phân loại: tx hash khớp thao tác của ta → AGENT (T→O là INTERNAL_REFILL); đích là ví treasury, nguồn không phải → INFLOW; còn lại là tiền ra → UNEXPECTED_OUTFLOW.
+**8.3 Đọc event và xử lý reorg (PH-6):** với mỗi luồng [MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN]: `from = con trỏ − 64`, `to = head`; `eth_getLogs` theo địa chỉ và topic, chia khúc ≤ 2.000 block; upsert theo (chain, tx_hash, log_index), lưu block hash; event đã lưu trong khoảng mà không còn trả về hoặc khác block hash → `removed = true`, gọi handler "removed"; cập nhật con trỏ. Luồng TOKEN lọc `Transfer` của asset và aToken với topic1 ∈ {T, O1, O2} **hoặc** topic2 ∈ {T, O1, O2}. Theo tx hash: chuyển underlying giữa Safe T và pool trong SUPPLY/WITHDRAW khớp, cùng mint/burn aToken Safe T là LENDING; REFILL của agent từ T→O là INTERNAL_REFILL; thao tác đã khớp khác là AGENT; tiền từ ngoài vào ví treasury là INFLOW; chuyển không khớp ra ngoài ranh giới treasury là UNEXPECTED_OUTFLOW. Chuyển aToken ra địa chỉ ngoài vẫn có thể là cảnh báo. Reorg đánh dấu movement removed và vô hiệu hóa tín hiệu an toàn.
 
-**8.4 Ví dụ:** O1 = 110 sau refill (block 100). Block 103: Owner chuyển 50 ra khỏi O1 qua Safe. Khoảng block 104 indexer thấy `Transfer(O1 → owner, 50)`, không khớp thao tác → UNEXPECTED_OUTFLOW; plan đang chạy được kiểm lại ngay → PAY 100 từ 60 vi phạm buffer 10 → BLOCK, PartiallyCompleted, review item; Owner nhận một thông báo gộp.
+**8.4 Ví dụ:** O1 = 110 sau refill (block 100). Block 103: Owner chuyển 50 ra khỏi O1 qua Safe. Khoảng block 104 indexer thấy `Transfer(O1 → owner, 50)`, không khớp thao tác → UNEXPECTED_OUTFLOW; lưu tín hiệu PRE_STEP và circuit breaker, đồng thời báo Owner/Finance. Khi runtime thực thi tiêu thụ PRE_STEP, PAY được kiểm lại với số dư mới và bị chặn nếu vi phạm buffer. Repo hiện chưa có consumer plan đang chạy của #61/#65, nên ticket này chưa thể khẳng định PAY đã bị chặn đầu-cuối.
 
 ## 9. Cấu hình
 
