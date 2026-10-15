@@ -10,7 +10,9 @@ import type {
   Payee,
   TxCall,
   TypedData,
+  Vendor,
 } from '@/lib/api/types';
+import type { components } from '@/lib/api/schema';
 
 const treasuryBase = (orgId: string, treasuryId: string) =>
   `/orgs/${orgId}/treasuries/${treasuryId}`;
@@ -50,35 +52,55 @@ export const usePayees = (orgId: string, treasuryId: string) =>
     `/treasuries/${treasuryId}/payees`,
   );
 
+export const useCreateVendor = (orgId: string) =>
+  useOrgMutation(orgId, (name: string) =>
+    api.post<{ vendor: Vendor }>(`/orgs/${orgId}/vendors`, { name }),
+  );
+
 export const useProposePayee = (orgId: string, treasuryId: string) =>
-  useOrgMutation(
-    orgId,
-    (input: {
-      vendorId?: string;
-      vendorName?: string;
-      label: string;
-      address: string;
-    }) =>
-      api.post<{ payee: Payee }>(
-        `${treasuryBase(orgId, treasuryId)}/payees`,
-        input,
-      ),
+  useOrgMutation(orgId, (input: components['schemas']['PayeeCreate']) =>
+    api.post<components['schemas']['PayeeResponse']>(
+      `${treasuryBase(orgId, treasuryId)}/payees`,
+      input,
+    ),
   );
 
 export const useVerifyPayeeOob = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (input: { id: string; method: string; note: string }) =>
-    api.post<{ payee: Payee }>(
-      `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/verify-oob`,
-      { method: input.method, note: input.note },
-    ),
+  useOrgMutation(
+    orgId,
+    (input: { id: string } & components['schemas']['OobVerification']) =>
+      api.post<components['schemas']['PayeeResponse']>(
+        `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/verify-oob`,
+        { method: input.method, note: input.note },
+      ),
   );
 
 export const usePayeeTx = (orgId: string, treasuryId: string) =>
   useOrgMutation(
     orgId,
-    (input: { id: string; kind: 'registration' | 'deactivation' }) =>
+    (input: {
+      id: string;
+      kind: 'registration' | 'deactivation';
+      reason?: string;
+    }) =>
       api.post<{ governanceTx: GovernanceTx }>(
         `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/${input.kind}-tx`,
+        input.kind === 'deactivation' ? { reason: input.reason } : undefined,
+      ),
+  );
+
+/** Owner-only: deactivates the old address and starts a new payee's cooling. */
+export const useReplacePayeeAddress = (orgId: string, treasuryId: string) =>
+  useOrgMutation(
+    orgId,
+    (
+      input: {
+        id: string;
+      } & components['schemas']['ReplacePayeeAddressRequest'],
+    ) =>
+      api.post<{ payee: Payee; deactivationGovernanceTx: GovernanceTx }>(
+        `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/replace-address`,
+        { address: input.address, reason: input.reason },
       ),
   );
 
