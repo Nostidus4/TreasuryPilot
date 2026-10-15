@@ -50,7 +50,7 @@ contract AcceptanceTest is TreasuryFixture {
         I.PaymentApproval memory ap = _approval(1, 100e6);
         _refill(ap, bytes32(uint256(1)), 90e6);
         _owner(abi.encodeCall(module.pause, ()));
-        _expectPayError(ap, E.NotActive.selector);
+        _expectPayError(ap, E.MandatePaused.selector);
         require(module.refilledFor(ap.requestId, address(op1)) && !module.requestPaid(ap.requestId), "partial state");
         _owner(abi.encodeCall(module.resume, ()));
         bytes memory signature = _sign(ap);
