@@ -67,6 +67,7 @@ from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
 from treasurypilot_worker.recovery.scan import scan_in_flight_sync
+from treasurypilot_worker.routing import treasury_queue
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -358,7 +359,7 @@ def publish_domain_events() -> dict[str, int]:
             "treasurypilot.execution.run_treasury_cycle",
             kwargs={"treasury_id": str(treasury_id), "event_id": str(event_id)},
             task_id=f"execution-cycle:{event_id}",
-            queue="core",
+            queue=treasury_queue(treasury_id, get_settings().treasury_queue_shards),
         )
 
     async def publish(pool: Any) -> int:
@@ -373,14 +374,14 @@ def publish_domain_events() -> dict[str, int]:
 PLAN_ENQUEUE_COUNTDOWN_SECONDS = 1
 
 
-def _enqueue_plan(plan_id: uuid.UUID) -> None:
+def _enqueue_plan(plan_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
     # The claim commits when the cycle's lock transaction ends; the countdown outlasts it and
     # the task retries if it still cannot see the row.
     app.send_task(
         "treasurypilot.planning.plan_request",
         kwargs={"plan_id": str(plan_id)},
         task_id=f"plan:{plan_id}",
-        queue="core",
+        queue=treasury_queue(treasury_id, get_settings().treasury_queue_shards),
         countdown=PLAN_ENQUEUE_COUNTDOWN_SECONDS,
     )
 
@@ -874,7 +875,10 @@ def resume_partial_task(request_id: str, actor_id: str | None = None) -> dict[st
     result = asyncio.run(_partial_action(resume_partial, request_id, actor_id))
     plan_id = str(result.plan_id) if result.plan_id else None
     if result.status == "Resumed":
-        sequence_plan_task.delay(str(result.plan_id))
+        sequence_plan_task.apply_async(
+            (str(result.plan_id),),
+            queue=treasury_queue(result.treasury_id, get_settings().treasury_queue_shards),
+        )
     return {"status": result.status, "plan_id": plan_id}
 
 
@@ -895,7 +899,7 @@ def cancel_partial_task(request_id: str, actor_id: str | None = None) -> dict[st
 # Plans whose request is still executing and whose newest operation is Confirmed, awaiting replay
 # after a crash (NotSubmitted) or not started: the tracker's trigger may have been lost.
 _SWEEP_SQL = (
-    "SELECT DISTINCT ON (a.plan_id) a.plan_id FROM attestations a "
+    "SELECT DISTINCT ON (a.plan_id) a.plan_id, r.treasury_id FROM attestations a "
     "JOIN payment_requests r ON r.onchain_request_id = a.request_id "
     "WHERE r.status IN ('Preparing', 'Paying') AND COALESCE((SELECT o.status::text "
     "FROM operations o WHERE o.request_id = r.id ORDER BY o.created_at DESC, o.id DESC LIMIT 1), "
@@ -915,14 +919,17 @@ def sequence_plans_sweep() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for plan sequencing")
 
-    async def ids() -> list[uuid.UUID]:
+    async def ids() -> list[Any]:
         pool = await create_worker_pool(database_url, min_size=1, max_size=1)
         try:
-            return [row["plan_id"] for row in await pool.fetch(_SWEEP_SQL)]
+            return list(await pool.fetch(_SWEEP_SQL))
         finally:
             await pool.close()
 
-    plan_ids = asyncio.run(ids())
-    for plan_id in plan_ids:
-        sequence_plan_task.delay(str(plan_id))
-    return {"plans": len(plan_ids)}
+    shards = get_settings().treasury_queue_shards
+    rows = asyncio.run(ids())
+    for row in rows:
+        sequence_plan_task.apply_async(
+            (str(row["plan_id"]),), queue=treasury_queue(row["treasury_id"], shards)
+        )
+    return {"plans": len(rows)}

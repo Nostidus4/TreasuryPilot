@@ -385,7 +385,7 @@ async def _cycle(pool: Any, world: World) -> tuple[Any, list[uuid.UUID]]:
         world.treasury,
         lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
         schedule_provider=DbScheduleProvider(),
-        plan_starter=DbPlanStarter(claimed.append),
+        plan_starter=DbPlanStarter(lambda plan_id, _treasury_id: claimed.append(plan_id)),
     )
     return result, claimed
 
