@@ -227,6 +227,27 @@ def test_a_plan_with_a_swap_for_gas_step_runs_it_first_and_completes(database_ur
     assert _request_status(database_url, run) == "Paid"
 
 
+def test_a_request_plan_with_a_leading_withdraw_runs_it_first_and_completes(
+    database_url: str,
+) -> None:
+    run = asyncio.run(_new_run(database_url, kinds=("WITHDRAW", "REFILL", "PAY")))
+    signer, gate = FakeSigner(), FakeGate()
+
+    for index, step in enumerate(run.steps):
+        assert asyncio.run(_go(database_url, signer, run, gate)).status == "Waiting"
+        assert gate.checked == list(range(index + 1)) and signer.calls == index + 1
+        _tracker_says(database_url, step, "Confirmed")
+    assert asyncio.run(_go(database_url, signer, run, gate)).status == "Completed"
+    kinds = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT kind FROM operations WHERE request_id = $1 ORDER BY created_at",
+            run.request_id,
+        )
+    )
+    assert [str(row["kind"]) for row in kinds] == ["WITHDRAW", "REFILL", "PAY"]
+
+
 def test_owner_balance_change_between_refill_and_pay_stops_with_review(database_url: str) -> None:
     run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
     asyncio.run(_go(database_url, signer, run, gate))

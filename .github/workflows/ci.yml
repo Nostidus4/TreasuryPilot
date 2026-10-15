@@ -90,6 +90,8 @@ jobs:
         run: uv run pytest services/api/tests/test_reconciliation_postgres.py
       - name: Plan gate PostgreSQL integration
         run: uv run pytest services/worker/tests/executor/test_gate_integration.py
+      - name: Treasury partitioning PostgreSQL load test
+        run: uv run pytest services/worker/tests/test_partitioning.py services/worker/tests/test_locks.py
       - name: Planning pipeline PostgreSQL integration
         run: uv run pytest services/worker/tests/planner/test_pipeline_integration.py
       - name: Circuit breaker PostgreSQL integration
@@ -162,6 +164,7 @@ jobs:
           services/worker/tests/test_invoice_extraction_integration.py
           services/api/tests/test_operations_metrics.py
           services/api/tests/test_savings_report.py
+          services/api/tests/test_treasury_forecast_postgres.py
           services/worker/tests/test_exception_draft_integration.py
           services/api/tests/test_usage_metering.py
           services/api/tests/test_reconciliation_export_integration.py
