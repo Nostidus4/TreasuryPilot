@@ -1,4 +1,5 @@
 import { TriangleAlert } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -27,13 +28,21 @@ import {
   useReviewItems,
 } from '@/features/operations/api';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { errorMessage } from '@/lib/api/http';
+import { errorMessage, isApiError } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { roleLabels } from '@/lib/status';
 
 const typeLabel: Record<ReviewItem['type'], string> = {
+  POLICY_BLOCK: 'Policy block',
+  NEEDS_AUTHORITY: 'Needs authority',
+  FEE_APPROVAL: 'Fee approval',
+  UNCERTAIN_TX: 'Uncertain transaction',
+  DISCREPANCY: 'Discrepancy',
+  AI_REJECTED: 'AI rejected',
+  INFRA: 'Infrastructure issue',
+  UNEXPECTED_OUTFLOW: 'Unexpected outflow',
   EXCEPTION: 'Exception request',
   UNKNOWN_OPERATION: 'Unknown outcome',
   FAILED_STEP: 'Failed step',
@@ -43,10 +52,50 @@ const typeLabel: Record<ReviewItem['type'], string> = {
 
 const actionLabel: Record<ReviewItem['actions'][number], string> = {
   RETRY: 'Look up the transaction again',
+  REPLAN: 'Replan',
   CANCEL: 'Cancel the operation',
+  EDIT_REQUEST: 'Edit the request',
+  GRANT_EXCEPTION: 'Grant an exception',
+  ACCEPT_FEE: 'Accept the fee',
+  DEFER: 'Defer',
+  ACKNOWLEDGE: 'Acknowledge',
+  MARK_MATCHED: 'Mark as matched',
   RESOLVE: 'Mark resolved',
   EDIT_REAPPROVE: 'Edit and re-approve',
 };
+
+/** Shown when the item changed under the user: acting again needs fresh data. */
+function StalePrompt({
+  orgId,
+  onRefresh,
+}: {
+  orgId: string;
+  onRefresh: () => void;
+}) {
+  const queryClient = useQueryClient();
+  return (
+    <Alert
+      tone="warning"
+      title={t('This item changed')}
+      action={
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => {
+            onRefresh();
+            void queryClient.invalidateQueries({
+              queryKey: ['org', orgId, 'review'],
+            });
+          }}
+        >
+          {t('Refresh')}
+        </Button>
+      }
+    >
+      {t('Someone else may have handled it. Refresh to see the latest state.')}
+    </Alert>
+  );
+}
 
 /**
  * One-time exception (F-025). Granting is a governance transaction (M16-D3):
@@ -242,6 +291,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
   const [action, setAction] = useState<string>(item.actions[0] ?? 'RESOLVE');
   const [note, setNote] = useState('');
   const allowed = scope.can(...item.roles);
+  const stale = isApiError(act.error, 'STALE_ITEM');
 
   if (!allowed) {
     return (
@@ -266,7 +316,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
           onSubmit={(event) => {
             event.preventDefault();
             act.mutate(
-              { id: item.id, action, note },
+              { id: item.id, action, note, version: item.version },
               {
                 onSuccess: () => {
                   toast.success(
@@ -287,14 +337,15 @@ function ActionPanel({ item }: { item: ReviewItem }) {
               onValueChange={setAction}
               options={item.actions.map((value) => ({
                 value,
-                label: t(actionLabel[value]),
+                label: t(actionLabel[value] ?? value),
               }))}
             />
           </Field>
+          {stale && <StalePrompt orgId={scope.orgId} onRefresh={act.reset} />}
           <Field
             htmlFor="review-note"
             label={t('Note')}
-            error={act.isError ? errorMessage(act.error) : undefined}
+            error={act.isError && !stale ? errorMessage(act.error) : undefined}
           >
             <Textarea
               id="review-note"
@@ -332,7 +383,7 @@ function ItemDetail({ item }: { item: ReviewItem }) {
           </div>
           <p className="mt-2 text-base text-muted-foreground">{item.detail}</p>
           <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span>{t(typeLabel[item.type])}</span>
+            <span>{t(typeLabel[item.type] ?? item.type)}</span>
             <span>{formatDateTime(item.createdAt)}</span>
             {item.requestId && (
               <Link
@@ -422,7 +473,7 @@ export function ReviewPage() {
             >
               <p className="text-base font-medium">{item.title}</p>
               <p className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>{t(typeLabel[item.type])}</span>
+                <span>{t(typeLabel[item.type] ?? item.type)}</span>
                 <span>{formatRelative(item.createdAt)}</span>
               </p>
             </InboxItem>

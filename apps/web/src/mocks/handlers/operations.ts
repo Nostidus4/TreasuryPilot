@@ -153,7 +153,7 @@ export const operationHandlers: RequestHandler[] = [
     };
   }),
 
-  route<{ action: string; note?: string }>(
+  route<{ action: string; note?: string; version?: number }>(
     'post',
     '/orgs/:orgId/review-items/:id/actions',
     ({ params, body }) => {
@@ -163,7 +163,9 @@ export const operationHandlers: RequestHandler[] = [
         (entry) => entry.id === params.id,
         'Review item',
       );
-      if (item.status !== 'Open')
+      if (!Number.isInteger(body.version) || (body.version ?? 0) < 1)
+        fail(422, 'VALIDATION', 'version is required.');
+      if (item.status !== 'Open' || body.version !== item.version)
         fail(
           409,
           'STALE_ITEM',
@@ -171,6 +173,7 @@ export const operationHandlers: RequestHandler[] = [
         );
       if (!body.note?.trim())
         fail(422, 'VALIDATION', 'Add a note. It is recorded in the audit log.');
+      item.version += 1;
       if (body.action === 'RETRY') {
         const plan = db.plans.find((entry) => entry.id === item.planId);
         const unknown = plan?.steps.find((entry) => entry.status === 'Unknown');

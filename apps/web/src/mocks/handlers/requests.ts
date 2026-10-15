@@ -747,6 +747,7 @@ export const requestHandlers = [
       if (BigInt(request.amount) > BigInt(cap)) {
         db.reviewItems.unshift({
           id: `rev_${request.id}`,
+          version: 1,
           type: 'EXCEPTION',
           title: `${request.invoiceNumber} is over the per-request limit`,
           detail: `${request.vendorName} · the amount is above the per-request PAY limit. Paying it needs a one-time exception granted by the Safe owners.`,

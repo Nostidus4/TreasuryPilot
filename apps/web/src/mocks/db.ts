@@ -1271,6 +1271,7 @@ export function seed(): Db {
     reviewItems: [
       {
         id: 'rev_512',
+        version: 1,
         type: 'EXCEPTION',
         title: 'LL-2026-512 is over the per-request limit',
         detail:
@@ -1283,6 +1284,7 @@ export function seed(): Db {
       },
       {
         id: 'rev_unknown',
+        version: 1,
         type: 'UNKNOWN_OPERATION',
         title: 'Refill to Payroll Safe has no confirmed outcome',
         detail:
@@ -1295,6 +1297,7 @@ export function seed(): Db {
       },
       {
         id: 'rev_mismatch',
+        version: 1,
         type: 'VERIFICATION_MISMATCH',
         title: 'Paid amount differs from the invoice by 0.50 USDC',
         detail:
