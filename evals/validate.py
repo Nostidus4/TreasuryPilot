@@ -7,7 +7,7 @@ import importlib.util
 import json
 import re
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -418,12 +418,32 @@ def recompute_copilot_source(source: str, scenario: dict[str, Any]) -> dict[str,
         require(str(early) == request["early_amount"], "Copilot early amount drift")
         return {"early_amount": str(early), "forgone_discount": str(standard - early)}
     if source == "deterministic_tool.liquidity_decision":
-        reserve = sum(int(request["amount"]) for request in requests)
-        required = int(treasury["buffers"]["T"]) + reserve
-        return {
-            "supply_amount": str(max(0, int(treasury["balances"]["T"]) - required)),
-            "required_safe_reserve": str(required),
-        }
+        # Mirrors BR-032 section 15 for the SUPPLY branch; fresh-day counters (no supply used today).
+        liquidity = scenario["liquidity"]
+        horizon_end = date.fromisoformat(scenario["as_of"]) + timedelta(
+            days=scenario["assumptions"]["horizon_days"]
+        )
+        reserve = sum(
+            int(request["amount"])
+            for request in requests
+            if date.fromisoformat(request["due"]) <= horizon_end
+        )
+        required = (
+            reserve
+            + int(treasury["buffers"]["T"])
+            + int(liquidity["debt_service_reserve"])
+            + int(liquidity["execution_holds"])
+        )
+        safe_usdc = int(liquidity["safe_usdc"])
+        require(safe_usdc == int(treasury["balances"]["T"]), "Copilot safe_usdc drift")
+        require(safe_usdc >= required, "Copilot supply case must not have a reserve deficit")
+        free = safe_usdc - required
+        supply = 0
+        if free and free >= int(liquidity["min_supply"]):
+            supply = min(
+                free, int(liquidity["supply"]["per_request"]), int(liquidity["supply"]["daily"])
+            )
+        return {"supply_amount": str(supply), "required_safe_reserve": str(required)}
     if source == "deterministic_tool.approved_request":
         return {"standard_amount": requests[0]["amount"]}
     raise ValueError(f"Unknown Copilot evidence source: {source}")
@@ -434,12 +454,18 @@ def copilot() -> int:
     paths = sorted(directory.glob("cp-*.yaml"))
     require(bool(paths), "Required Copilot corpus is missing")
     schema = json.loads((directory / "case.schema.json").read_text(encoding="utf-8"))
-    require(schema == CopilotCase.model_json_schema(), "Copilot schema/model drift")
+    require(
+        schema == CopilotCase.model_json_schema(),
+        "Copilot schema/model drift; regenerate case.schema.json from CopilotCase.model_json_schema()",
+    )
     spec = importlib.util.spec_from_file_location("copilot_author", directory / "author.py")
-    assert spec and spec.loader
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load evals/copilot/author.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     reference = {case["id"]: case for case in module.build_cases()}
+    groups = dict(module.GROUPS)
+    discount_scenarios = {f"sc-{number:03d}" for number in groups["discount"]}
     refusals = 0
     for path in paths:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -456,7 +482,10 @@ def copilot() -> int:
             "Numeric provenance incomplete",
         )
         require(
-            not re.search(r"^\s*[^#\n]*:\s+[&*]id\d+", path.read_text(encoding="utf-8"), re.M),
+            not any(
+                getattr(event, "anchor", None)
+                for event in yaml.parse(path.read_text(encoding="utf-8"))
+            ),
             "Copilot YAML must not contain anchors or aliases",
         )
         scenario = yaml.safe_load(
@@ -466,6 +495,12 @@ def copilot() -> int:
         require(
             set(tool_outputs) == set(case.evidence_sources.values()), "Copilot tool source drift"
         )
+        if "deterministic_tool.minimum_shortage" in tool_outputs:
+            first = scenario["requests"][0]
+            require(
+                first["wallet"] in case.question and first["id"] in case.question,
+                "Copilot shortage question must name the scenario wallet and request",
+            )
         recomputed: dict[str, str] = {}
         for source in tool_outputs:
             derived = recompute_copilot_source(source, scenario)
@@ -476,9 +511,16 @@ def copilot() -> int:
             source = case.evidence_sources[key]
             require(tool_outputs[source][key] == value, "Unsupported numeric answer")
             require(recomputed[key] == value, "Copilot answer differs from recomputed scenario")
-        if case.scenario in {"sc-005", "sc-006", "sc-007", "sc-008"}:
+        if case.scenario in discount_scenarios:
             first, second = scenario["requests"][:2]
             pay = scenario["treasury"]["limits"]["pay"]
+            as_of = date.fromisoformat(scenario["as_of"])
+            require(
+                date.fromisoformat(second["early_pay_by"]) >= as_of
+                and date.fromisoformat(second["terms"]["discount_deadline"]) >= as_of
+                and date.fromisoformat(second["due"]) > as_of,
+                "Copilot discount cases require an open discount window",
+            )
             require(
                 first["due"] == scenario["as_of"]
                 and int(second["amount"]) <= int(pay["per_request"])
@@ -486,8 +528,14 @@ def copilot() -> int:
                 "Copilot discount cases require a deadline/budget conflict",
             )
         refusals += int(case.must_refuse)
-    require(len(paths) == 20 and refusals == 4, "Copilot case/refusal count drift")
-    print("Copilot: 20 numeric cases, four refused write requests, dev-only references")
+    expected_cases = sum(len(numbers) for _, numbers in module.GROUPS)
+    require(
+        len(paths) == expected_cases and refusals == len(groups["refuse"]),
+        "Copilot case/refusal count drift",
+    )
+    print(
+        f"Copilot: {len(paths)} numeric cases, {refusals} refused write requests, dev-only references"
+    )
     return len(paths)
 
 
