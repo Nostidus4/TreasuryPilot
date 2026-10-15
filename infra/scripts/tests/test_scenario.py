@@ -180,6 +180,17 @@ def test_pause_writes_valid_evidence_bundle(
     assert scenario.main([*again, "--keep-state"]) == scenario.EXIT_FAILED
 
 
+def test_step_fails_when_expected_revert_does_not_happen(
+    monkeypatch: pytest.MonkeyPatch, manifest: Path
+) -> None:
+    monkeypatch.setattr(scenario_steps, "rpc", lambda *_a: "0x")  # the guarded call succeeds
+    chain = scenario_steps.Chain(
+        {"rpc_url": "x", "manifest": json.loads(manifest.read_text()), "transactions": []}
+    )
+    with pytest.raises(scenario_steps.ScenarioError, match="call succeeded"):
+        chain.reverts_with("PayeeUnknown", scenario_steps.EXECUTOR, chain.module, "pay()", [], [])
+
+
 @pytest.mark.skipif(
     "TP_TEST_ANVIL_URL" not in os.environ, reason="needs Anvil with `make deploy-local` applied"
 )

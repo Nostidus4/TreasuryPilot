@@ -490,17 +490,23 @@ def fee_spike_defers(ctx: dict[str, Any]) -> dict[str, Any]:
         rpc(c.url, "evm_mine", [])
         return int(rpc(c.url, "eth_getBlockByNumber", ["latest", False])["baseFeePerGas"], 16)
 
-    _check(assess(base).decision is FeeDecision.PROCEED, "a normal base fee should proceed")
-    spiked = set_base_fee(base * 100)
-    held = assess(spiked)
+    def pay_if_accepted(base_fee: int) -> tuple[Any, dict[str, Any] | None]:
+        """The runner sends PAY only when the fee decision allows it."""
+        decision = assess(base_fee)
+        return decision, (c.pay(ap, "pay") if decision.decision is FeeDecision.PROCEED else None)
+
+    held, sent = pay_if_accepted(spiked := set_base_fee(base * 100))
     _check(
         held.decision is FeeDecision.DEFER and held.reason_code == "FEE_ABOVE_THRESHOLD",
         f"spike not held: {held}",
     )
-    _check(not c.request_paid(ap), "payment was sent during the fee spike")
-    calm = set_base_fee(base)
-    _check(assess(calm).decision is FeeDecision.PROCEED, "fee did not clear after the spike")
-    pay_tx = c.pay(ap, "pay")["transactionHash"]
+    _check(sent is None, "payment was sent during the fee spike")
+    cleared, receipt = pay_if_accepted(set_base_fee(base))
+    _check(
+        cleared.decision is FeeDecision.PROCEED and receipt is not None,
+        "fee did not clear after the spike",
+    )
+    pay_tx = receipt["transactionHash"]
     _paid(amount, c, ap, before)
     return {"step": "fee_spike_defers", "decision": held.decision.value, "reason": held.reason_code,
             "spikeBaseFeeWei": spiked, "payTx": pay_tx}  # fmt: skip

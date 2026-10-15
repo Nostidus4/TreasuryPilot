@@ -38,7 +38,7 @@ Aave scenarios use the TEST-only `MockAavePool` that `Deploy.s.sol` deploys on A
 
 ## Stand-ins (known gaps)
 
-The runner plays the contract and policy layers directly. The planner, sequencer, AI extraction,
+Scenarios run at the contract and policy level; the runner stands in for the planner, sequencer, AI and tracker. It plays the contract and policy layers directly. The planner, sequencer, AI extraction,
 outbox/tracker, chain-reader alerting and fee-policy services are not started: their outcomes are
 asserted from chain state and `treasurypilot_core` fee math (so D4 does not exercise injection
 flagging, D9 does not kill a worker, and the unexpected-outflow alert is computed by the runner from
