@@ -4570,6 +4570,102 @@ export interface components {
       /** Version */
       version: number;
     };
+    /** ReviewItemDetail */
+    ReviewItemDetail: {
+      /** Allowedactions */
+      allowedActions: components['schemas']['ReviewAction'][];
+      /** Evidence */
+      evidence: {
+        [key: string]: unknown;
+      };
+      item: components['schemas']['ReviewItemView'];
+      mandateVersion: components['schemas']['ReviewMandateRef'] | null;
+      plan: components['schemas']['ReviewPlanRef'] | null;
+      request: components['schemas']['ReviewRequestRef'] | null;
+      /** Steps */
+      steps: {
+        [key: string]: unknown;
+      }[];
+      /** Validations */
+      validations: string[];
+    };
+    /** ReviewItemList */
+    ReviewItemList: {
+      /** Items */
+      items: components['schemas']['ReviewItemView'][];
+    };
+    /** ReviewItemResult */
+    ReviewItemResult: {
+      item: components['schemas']['ReviewItemView'];
+    };
+    /** ReviewItemView */
+    ReviewItemView: {
+      /** Allowedactions */
+      allowedActions: components['schemas']['ReviewAction'][];
+      /** Assignedroles */
+      assignedRoles: components['schemas']['OrganizationRole'][];
+      /** Completedsteps */
+      completedSteps: {
+        [key: string]: unknown;
+      }[];
+      /** Createdat */
+      createdAt: string;
+      /** Feeestimatewei */
+      feeEstimateWei: string | null;
+      /** Id */
+      id: string;
+      /** Mandateversionid */
+      mandateVersionId: string | null;
+      /** Note */
+      note: string | null;
+      /** Orgid */
+      orgId: string;
+      /** Planid */
+      planId: string | null;
+      /** Primarycode */
+      primaryCode: string;
+      /** Reasoncodes */
+      reasonCodes: string[];
+      /** Requestid */
+      requestId: string | null;
+      /** Requestversion */
+      requestVersion: number | null;
+      /** Resolution */
+      resolution: string | null;
+      /** Resolvedat */
+      resolvedAt: string | null;
+      /** Resolvedby */
+      resolvedBy: string | null;
+      /** Sladueat */
+      slaDueAt: string;
+      status: components['schemas']['ReviewStatus'];
+      /** Treasuryid */
+      treasuryId: string;
+      type: components['schemas']['ReviewType'];
+      /** Version */
+      version: number;
+    };
+    /** ReviewMandateRef */
+    ReviewMandateRef: {
+      /** Id */
+      id: string;
+      /** Status */
+      status: string;
+      /** Version */
+      version: number;
+    };
+    /** ReviewPlanRef */
+    ReviewPlanRef: {
+      /** Id */
+      id: string;
+    };
+    /** ReviewRequestRef */
+    ReviewRequestRef: {
+      /** Id */
+      id: string;
+      /** Status */
+      status: string;
+    };
     /**
      * ReviewStatus
      * @enum {string}
@@ -9195,9 +9291,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['ReviewItemList'];
         };
       };
       /** @description Validation Error */
@@ -9229,9 +9323,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['ReviewItemDetail'];
         };
       };
       /** @description Validation Error */
@@ -9267,9 +9359,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['ReviewItemResult'];
         };
       };
       /** @description Validation Error */

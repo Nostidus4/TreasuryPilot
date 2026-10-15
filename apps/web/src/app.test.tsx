@@ -5,7 +5,13 @@ import { expect, test } from 'vitest';
 
 import { api } from '@/lib/api/http';
 import type { Forecast } from '@/lib/api/types';
-import { db } from '@/mocks/db';
+import {
+  db,
+  newReviewItem,
+  reviewRoles,
+  reviewView,
+  type MockReviewItem,
+} from '@/mocks/db';
 import { server } from '@/mocks/server';
 import { renderApp } from '@/test/render';
 
@@ -573,19 +579,14 @@ test('an expired mandate stays visible and links Owners to review it', async () 
   ).toBeInTheDocument();
 });
 
-const outflow = (overrides: Record<string, unknown> = {}) => ({
-  id: 'rev_outflow_x',
-  version: 1,
-  type: 'UNEXPECTED_OUTFLOW' as const,
-  title: '',
-  detail: '',
-  status: 'Open' as const,
-  createdAt: new Date().toISOString(),
-  treasuryId: 'trs_main',
-  roles: ['OWN' as const],
-  actions: ['ACKNOWLEDGE' as const],
-  ...overrides,
-});
+const outflow = (overrides: Partial<MockReviewItem> = {}) =>
+  newReviewItem({
+    id: 'rev_outflow_x',
+    type: 'UNEXPECTED_OUTFLOW',
+    primaryCode: 'OUTFLOW_NOT_IN_PLAN',
+    treasuryId: 'trs_main',
+    ...overrides,
+  });
 
 test('an open unexpected-outflow item for this treasury raises a banner linking to the queue', async () => {
   renderApp(T, {
@@ -604,7 +605,7 @@ test('an open unexpected-outflow item for this treasury raises a banner linking 
   );
 });
 
-test.each([
+test.each<[string, Partial<MockReviewItem>]>([
   ['resolved', { status: 'Resolved' }],
   ['on another treasury', { treasuryId: 'trs_other' }],
 ])('an outflow item that is %s shows no banner', async (_name, overrides) => {
@@ -944,7 +945,11 @@ test('Refresh refetches the queue and clears the stale prompt', async () => {
   server.use(
     http.get('*/v1/orgs/:orgId/review-items', () => {
       listCalls += 1;
-      return HttpResponse.json({ items: db.reviewItems });
+      return HttpResponse.json({
+        items: db.reviewItems.map((item) =>
+          reviewView(item, reviewRoles('org_northwind')),
+        ),
+      });
     }),
     http.post('*/v1/orgs/:orgId/review-items/:id/actions', () =>
       stale
@@ -961,7 +966,9 @@ test('Refresh refetches the queue and clears the stale prompt', async () => {
               headers: { 'content-type': 'application/problem+json' },
             },
           )
-        : HttpResponse.json({ item: db.reviewItems[0] }),
+        : HttpResponse.json({
+            item: reviewView(db.reviewItems[2], reviewRoles('org_northwind')),
+          }),
     ),
   );
   renderApp(`${BASE}/review?item=rev_unknown`);
@@ -979,7 +986,7 @@ test('Refresh refetches the queue and clears the stale prompt', async () => {
   );
 });
 
-test('mock review action: 409 on version mismatch, 422 without version, no bump on 422', async () => {
+test('mock review action: 409 on version mismatch, 422 without version, 409 for an action the route does not allow', async () => {
   const path = '/v1/orgs/org_northwind/review-items/rev_unknown/actions';
   const post = (body: object) =>
     api.post(path.replace('/v1', ''), body).then(
@@ -989,18 +996,24 @@ test('mock review action: 409 on version mismatch, 422 without version, no bump 
   renderApp(BASE);
   const item = db.reviewItems.find((entry) => entry.id === 'rev_unknown')!;
   expect(
-    await post({ action: 'RETRY', note: 'x', version: item.version + 1 }),
+    await post({ action: 'ACKNOWLEDGE', version: item.version + 1 }),
   ).toMatchObject({ code: 'STALE_ITEM' });
-  expect(await post({ action: 'RETRY', note: 'x' })).toMatchObject({
+  expect(await post({ action: 'ACKNOWLEDGE' })).toMatchObject({
     code: 'VALIDATION',
   });
   const before = item.version;
   expect(
-    await post({ action: 'RETRY', note: ' ', version: before }),
-  ).toMatchObject({
-    code: 'VALIDATION',
-  });
+    await post({ action: 'GRANT_EXCEPTION', version: before }),
+  ).toMatchObject({ code: 'ACTION_NOT_ALLOWED' });
   expect(item.version).toBe(before);
+  expect(await post({ action: 'ACKNOWLEDGE', version: before })).toBe(
+    undefined,
+  );
+  expect(item).toMatchObject({
+    status: 'Resolved',
+    resolution: 'ACKNOWLEDGE',
+    version: before + 1,
+  });
 });
 
 test('a mandate that failed read-back shows Discrepancy, and non-owners see pending as read-only', async () => {
@@ -1020,6 +1033,119 @@ test('a mandate that failed read-back shows Discrepancy, and non-owners see pend
   ).toBeInTheDocument();
   expect(screen.getAllByText('Discrepancy').length).toBeGreaterThan(0);
   expect(screen.getByText('v8 is waiting for signatures')).toBeInTheDocument();
+});
+
+test('an over-cap request shows the Owner a signable exception; after execution the item closes', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/review?item=rev_512`, { demoWallet: true });
+
+  // Detail: SLA, routing, reason codes, completed steps, engine numbers and AI draft.
+  expect(await screen.findByText('OVER_PER_REQUEST_LIMIT')).toBeInTheDocument();
+  // The Owner can also cancel the operation next to the grant.
+  expect(
+    await screen.findByLabelText('What do you want to do?'),
+  ).toBeInTheDocument();
+  expect(screen.getByText('Invoice approved')).toBeInTheDocument();
+  expect(screen.getAllByText(/^Due /).length).toBeGreaterThan(1);
+  expect(await screen.findByText('Over the limit by')).toBeInTheDocument();
+  expect(
+    await screen.findByText('AI summary of the request'),
+  ).toBeInTheDocument();
+
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Create governance transaction to grant',
+    }),
+  );
+  // The grantException transaction is signed in the governance inbox (no EIP-712 here).
+  expect(await screen.findByText(/grantException/)).toBeInTheDocument();
+  // A co-owner signed already; the demo wallet adds the second signature.
+  const grantTx = db.governance[0];
+  grantTx.signatures.push({
+    owner: grantTx.owners[1].address,
+    at: new Date().toISOString(),
+  });
+  grantTx.signaturesHex.push(`0x${'11'.repeat(65)}`);
+  await user.click(
+    await screen.findByRole('button', { name: /sign with wallet/i }),
+  );
+  await user.click(
+    await screen.findByRole('button', { name: /execute transaction/i }),
+  );
+  await screen.findByText('Executed on-chain', { selector: 'p' });
+
+  await waitFor(() =>
+    expect(db.reviewItems.find((item) => item.id === 'rev_512')?.status).toBe(
+      'Resolved',
+    ),
+  );
+});
+
+test('the queue filters by type, flags overdue items and keeps resolved and dismissed ones in the resolved group', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/review?item=rev_unknown`, {
+    beforeRender: () => {
+      db.reviewItems.push(
+        newReviewItem({
+          id: 'rev_dismissed',
+          type: 'UNEXPECTED_OUTFLOW',
+          primaryCode: 'DISMISSED_CODE',
+          treasuryId: 'trs_main',
+          status: 'Dismissed',
+        }),
+      );
+    },
+  });
+  expect(await screen.findByText('Overdue')).toBeInTheDocument();
+  const list = screen.getByRole('complementary', { name: 'Review items' });
+  expect(within(list).getByText('Resolved')).toBeInTheDocument();
+  expect(within(list).getByText('Dismissed code')).toBeInTheDocument();
+
+  await user.click(screen.getByRole('combobox', { name: 'Filter by type' }));
+  await user.click(
+    await screen.findByRole('option', { name: 'Needs authority' }),
+  );
+  expect(within(list).getByText('Over per request limit')).toBeInTheDocument();
+  expect(within(list).queryByText('Tx unknown')).not.toBeInTheDocument();
+});
+
+test('a non-Owner never sees the over-cap exception, and the Owner-only grant is refused by the mock', async () => {
+  renderApp(`${BASE}/review`, {
+    beforeRender: () => {
+      db.members[0].roles = ['OPR'];
+    },
+  });
+  expect(await screen.findByText('Tx unknown')).toBeInTheDocument();
+  expect(screen.queryByText('Over per request limit')).not.toBeInTheDocument();
+});
+
+test('the exception panel shows a refresh prompt when granting hits a stale item', async () => {
+  const user = userEvent.setup();
+  server.use(
+    http.post('*/v1/orgs/:orgId/requests/:rId/exception/grant-tx', () =>
+      HttpResponse.json(
+        {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          code: 'STALE_ITEM',
+          detail: 'Reload the review item before acting.',
+        },
+        {
+          status: 409,
+          headers: { 'content-type': 'application/problem+json' },
+        },
+      ),
+    ),
+  );
+  renderApp(`${BASE}/review?item=rev_512`);
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Create governance transaction to grant',
+    }),
+  );
+  expect(await screen.findByText('This item changed')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
 });
 
 test('mandate editor: the summary matches the saved base units, a looser change needs confirmation, and activation stays pending', async () => {

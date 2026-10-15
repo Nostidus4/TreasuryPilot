@@ -45,6 +45,7 @@ from treasurypilot_api.recovery.review_queue import (
 )
 from treasurypilot_api.recovery.routes import (
     ReviewActionRequest,
+    ReviewItemView,
     _allowed_actions,
     _view,
     act_on_review_item,
@@ -108,6 +109,7 @@ def test_mandate_discrepancy_is_owner_finance_ack_only() -> None:
         assigned_roles=[OrganizationRole.OWNER.value, OrganizationRole.FINANCE.value],
         status="Open",
         sla_due_at=now + timedelta(hours=48),
+        created_at=now,
         evidence={},
         resolved_by=None,
         resolved_at=None,
@@ -131,6 +133,11 @@ def test_mandate_discrepancy_is_owner_finance_ack_only() -> None:
     assert view["requestVersion"] is None
     assert view["mandateVersionId"] == str(version_id)
     assert view["allowedActions"] == ["ACKNOWLEDGE"]
+    # The documented response model is exactly the shape the view returns.
+    parsed = ReviewItemView.model_validate(view)
+    assert set(parsed.model_dump(by_alias=True)) == set(view)
+    assert parsed.assigned_roles == [OrganizationRole.OWNER, OrganizationRole.FINANCE]
+    assert parsed.created_at == now.isoformat()
 
 
 async def _exercise_review_queue(database_url: str) -> None:

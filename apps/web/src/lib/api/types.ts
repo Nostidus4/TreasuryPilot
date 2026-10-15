@@ -578,30 +578,8 @@ export interface PlanDetail extends Plan {
   attestation?: { planHash: Hex; signer: Hex; signedAt: string };
 }
 
-export interface ReviewItem {
-  id: string;
-  type:
-    | components['schemas']['ReviewType']
-    | 'EXCEPTION'
-    | 'UNKNOWN_OPERATION'
-    | 'FAILED_STEP'
-    | 'VERIFICATION_MISMATCH'
-    | 'FEE_ACCEPTANCE';
-  title: string;
-  detail: string;
-  status: 'Open' | 'Resolved';
-  createdAt: string;
-  treasuryId?: string;
-  requestId?: string;
-  planId?: string;
-  roles: Role[];
-  actions: Array<
-    components['schemas']['ReviewAction'] | 'RESOLVE' | 'EDIT_REAPPROVE'
-  >;
-  /** Optimistic-concurrency token; echoed back when acting. */
-  version: components['schemas']['ReviewActionRequest']['version'];
-  resolution?: { action: string; note: string; at: string };
-}
+/** The real review contract; drift from the API breaks tsc. */
+export type ReviewItem = components['schemas']['ReviewItemView'];
 
 export interface ExceptionDetail {
   exception: {

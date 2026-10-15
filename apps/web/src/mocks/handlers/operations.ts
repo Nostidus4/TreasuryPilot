@@ -13,7 +13,9 @@ import {
   db,
   h32,
   refreshQueues,
-  schedule,
+  reviewRoles,
+  reviewView,
+  roleNames,
   startExecution,
   tick,
   usdc,
@@ -139,12 +141,24 @@ export const operationHandlers: RequestHandler[] = [
 
   route('get', '/orgs/:orgId/review-items', ({ params, query }) => {
     requireOrg(params.orgId);
-    const status = query.get('status');
-    if (query.get('type') === 'FEE_APPROVAL')
+    const type = query.get('type');
+    if (type === 'FEE_APPROVAL')
       return { items: northwind(params.orgId) ? db.feeReviews : [] };
+    const status = query.get('status');
+    const roles = reviewRoles(params.orgId);
     return {
       items: northwind(params.orgId)
-        ? db.reviewItems.filter((item) => !status || item.status === status)
+        ? db.reviewItems
+            .map((item) => reviewView(item, roles))
+            .filter(
+              (item) =>
+                (!status || item.status === status) &&
+                (!type || item.type === type) &&
+                // Like the API, an item is visible only to its routed roles.
+                item.assignedRoles.some((role) =>
+                  roles.map((code) => roleNames[code]).includes(role),
+                ),
+            )
         : [],
     };
   }),
@@ -167,36 +181,24 @@ export const operationHandlers: RequestHandler[] = [
           'STALE_ITEM',
           'This item was already handled. Reload the queue.',
         );
-      if (!body.note?.trim())
-        fail(422, 'VALIDATION', 'Add a note. It is recorded in the audit log.');
+      const roles = reviewRoles(params.orgId);
+      const allowed: string[] = reviewView(item, roles).allowedActions;
+      if (!allowed.includes(body.action))
+        fail(
+          409,
+          'ACTION_NOT_ALLOWED',
+          'The action is not allowed for this item.',
+        );
       item.version += 1;
-      if (body.action === 'RETRY') {
-        const plan = db.plans.find((entry) => entry.id === item.planId);
-        const unknown = plan?.steps.find((entry) => entry.status === 'Unknown');
-        schedule(2000, () => {
-          if (unknown && plan) {
-            Object.assign(unknown, {
-              status: 'Verified',
-              confirmations: 64,
-              verification: 'VERIFIED',
-              updatedAt: isoNow(),
-            });
-            plan.status = 'Completed';
-          }
-          item.status = 'Resolved';
-          item.resolution = {
-            action: 'RETRY',
-            note: 'Receipt found on the second lookup: the refill was mined.',
-            at: isoNow(),
-          };
-          refreshQueues();
-        });
-        return { item };
+      if (body.note) item.note = body.note;
+      if (body.action !== 'DEFER') {
+        item.status = 'Resolved';
+        item.resolution = body.action;
+        item.resolvedBy = db.session!.id;
+        item.resolvedAt = isoNow();
       }
-      item.status = 'Resolved';
-      item.resolution = { action: body.action, note: body.note, at: isoNow() };
       refreshQueues();
-      return { item };
+      return { item: reviewView(item, roles) };
     },
   ),
 
@@ -268,15 +270,14 @@ export const operationHandlers: RequestHandler[] = [
           detail.exception.status = 'Granted';
           const item = db.reviewItems.find(
             (entry) =>
-              entry.requestId === request.id && entry.type === 'EXCEPTION',
+              entry.requestId === request.id &&
+              entry.type === 'NEEDS_AUTHORITY',
           );
           if (item) {
             item.status = 'Resolved';
-            item.resolution = {
-              action: 'GRANTED',
-              note: 'Exception granted on-chain.',
-              at: isoNow(),
-            };
+            item.resolution = 'GRANT_EXCEPTION';
+            item.note = 'Exception granted on-chain.';
+            item.resolvedAt = isoNow();
           }
           request.status = 'Scheduled';
         },
@@ -307,15 +308,14 @@ export const operationHandlers: RequestHandler[] = [
         fail(422, 'VALIDATION', 'Give a reason for the rejection.');
       detail.exception.status = 'Rejected';
       const item = db.reviewItems.find(
-        (entry) => entry.requestId === params.rId && entry.type === 'EXCEPTION',
+        (entry) =>
+          entry.requestId === params.rId && entry.type === 'NEEDS_AUTHORITY',
       );
       if (item) {
         item.status = 'Resolved';
-        item.resolution = {
-          action: 'REJECTED',
-          note: body.reason,
-          at: isoNow(),
-        };
+        item.resolution = 'CANCEL';
+        item.note = body.reason;
+        item.resolvedAt = isoNow();
       }
       refreshQueues();
       return { exception: detail.exception };
