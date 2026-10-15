@@ -210,7 +210,9 @@ def _make_swap_request(
     )
 
 
-def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
+def _make_payment_request(
+    *, refill: bool, nonce: int = 88, calldata_from: str | None = None
+) -> SignRequest:
     action = REFILL if refill else PAY
     payment_request_id = "0x" + "aa" * 32
     step_from = SAFE_T if refill else WALLET
@@ -280,8 +282,8 @@ def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
         "bytes32",
     ]
     if refill:
-        args.extend([step_to, amount])
-        types.extend(["address", "uint256"])
+        args.extend([calldata_from or step_from, step_to, amount])
+        types.extend(["address", "address", "uint256"])
     else:
         args.append(amount)
         types.append("uint256")
@@ -517,6 +519,15 @@ def test_pay_and_refill_payloads_are_supported(refill: bool) -> None:
     asyncio.run(service.sign_and_send(_make_payment_request(refill=refill)))
 
     assert len(node.sent) == 1
+
+
+def test_refill_from_wallet_must_match_the_planned_source() -> None:
+    service, node, _ = _service()
+
+    with pytest.raises(SignerFault, match="PAYLOAD_MISMATCH"):
+        asyncio.run(service.sign_and_send(_make_payment_request(refill=True, calldata_from=PAYEE)))
+
+    assert not node.sent
 
 
 def test_swap_for_gas_payload_is_supported() -> None:

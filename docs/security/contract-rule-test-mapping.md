@@ -10,7 +10,7 @@ features are listed separately; a passing contract test does not prove them.
 | BR-001/003/004 | `testDirectUnsignedApprovalCannotMoveTreasuryFunds`, `testDirectAlteredPayeeAmountAssetAndRequestFailCryptographicProof`, 13-field fuzz; domain/current-approver tests | ApprovalInvalid, NotApprover, ApprovalExpired |
 | BR-010 | direct paused/cooling/cancelled suite; mandate window test | MandatePaused, MandateRevoked, NotActive, MandateExpired, RequestCancelled |
 | BR-011 | `testDirectArbitrarySelectorsAndNativeValueCannotExecute`, fixed pool/pair unit tests, I13 | no generic selector, native value or arbitrary target |
-| BR-012/019 | direct refill destination test, `testPayOnlyOperationalWalletAndExecutor` | WrongRefillTarget, NotOperationalWallet, NotExecutor |
+| BR-012/019 | direct refill destination test, `testPayOnlyOperationalWalletAndExecutor`, `OperationalRefill.t.sol` path/directional/self-refill tests | WrongRefillTarget, NotOperationalWallet, NotExecutor, RefillPathNotAllowed |
 | BR-013/017 | cooling/reactivation tests; `testDirectExceptionCannotLiftPayeeRules` | PayeeUnknown, PayeeCooling even with an exception |
 | BR-014/015/016 | mandate validation/role/version tests, I8/I9 | InvalidMandate, NotOwner; counters persist |
 | BR-020/083 | six-decimal USDC fork, typed integer vectors and publisher config tests | integer base units and reviewed decimals/reserve identity |
@@ -18,7 +18,7 @@ features are listed separately; a passing contract test does not prove them.
 | BR-023 | `testDirectRefillCapsAndExactDailyBoundaryWithRollback`, I16 | OverRefillPerRequest, OverRefillDaily; separate PAY/REFILL counters |
 | BR-024 | early boundary/single-option fuzz, I14 and its prior mutation evidence | exact approved option, WrongPaymentOption |
 | BR-025 | malicious-token rollback, cap/exception rollback assertions | no balance/counter/replay/grant effects on revert |
-| BR-030 | buffer boundary, direct refill source-floor test, AT11/AT12, I4 | BufferBreach, SourceBufferBreach |
+| BR-030 | buffer boundary, direct refill source-floor test, `testSourceBufferBreachRejected` (operational source), reserve-hold operational-source test, AT11/AT12, I4 | BufferBreach, SourceBufferBreach, CommittedFundsBreach |
 | BR-036 | refill bound/replay/destination unit tests, I10 | RefillExceedsNeed, AlreadyRefilledForRequest, WrongRefillTarget |
 | BR-037 | supply floor/per-tx/daily/rounding/rollback tests, I12/I13 | SupplyFloorBreach, OverSupplyPerTx, OverSupplyDaily; static floor only |
 | BR-038 | supply/withdraw exact-cash test and USDC D3 fork | withdrawal returns exactly to Safe T |

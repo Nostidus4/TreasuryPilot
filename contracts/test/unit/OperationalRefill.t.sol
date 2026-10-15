@@ -61,6 +61,12 @@ contract OperationalRefillTest is TreasuryFixture {
         require(token.balanceOf(address(op2)) == 10e6, "buffer kept");
     }
 
+    function testOperationalSourceRefillStillBoundedByNeed() external {
+        _owner(abi.encodeCall(module.setRefillPath, (address(op2), address(op1), true)));
+        // op1 holds 20 with a target of 150, so a request of 100 allows at most 230.
+        _expectFrom(_approval(1, 100e6), address(op2), 231e6, E.RefillExceedsNeed.selector);
+    }
+
     function testPathAdminIsOwnerOnlyAndOperationalOnly() external {
         vm.expectRevert(E.NotOwner.selector);
         module.setRefillPath(address(op2), address(op1), true);

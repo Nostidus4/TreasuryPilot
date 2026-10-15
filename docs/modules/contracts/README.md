@@ -204,10 +204,10 @@ function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 st
 | # | Check | Error | Rule |
 |---|---|---|---|
 | 1 | caller is executor, status Active, `validFrom ≤ now ≤ expiresAt` | `NotExecutor` / `NotActive` / `MandatePaused` / `MandateRevoked` / `MandateExpired` (`NotActive` only means `now < validFrom`; precedence: Paused, Revoked, NotActive, Expired) | BR-062 |
+| 1a | `fromWallet == safeT` or `refillPath[fromWallet][toWallet]` (SC-L06; this also rejects a self-refill, because a path from a wallet to itself cannot be set) | `RefillPathNotAllowed` | BR-012 |
 | 2 | approval valid: domain, `treasury == this`, `asset == asset`, `now ≤ ap.expiry`, signer is a **current** approver (ECDSA or ERC-1271) | `ApprovalInvalid` / `ApprovalExpired` / `NotApprover` | BR-001/003/004 |
 | 3 | `!requestPaid[ap.requestId]`; `!requestCancelled[ap.requestId]` | `RequestAlreadyPaid` / `RequestCancelled` | BR-061, BR-077 |
 | 4 | `!stepUsed[stepId]` | `StepAlreadyExecuted` | BR-061 |
-| 5a | `fromWallet == safeT` or `refillPath[fromWallet][toWallet]` (SC-L06; this also rejects a self-refill, because a path from a wallet to itself cannot be set) | `RefillPathNotAllowed` | BR-012 |
 | 5 | `toWallet == ap.payingWallet` and `isOperational[toWallet]` | `WrongRefillTarget` | BR-012 |
 | 6 | `!refilledFor[requestId][toWallet]` | `AlreadyRefilledForRequest` | BR-036 |
 | 7 | `amount ≤ mandate.refill.perRequest` and `usedOn[REFILL,day] + amount ≤ mandate.refill.daily` | `OverRefillPerRequest` / `OverRefillDaily` | BR-023 |
@@ -482,3 +482,5 @@ Limits: the contract trusts the signed `planHash` (one step cannot recompute it)
 ## 18. Operational refill paths (SC-L06, F-059)
 
 `refill` takes an explicit `fromWallet`. Safe T stays the default source. Safe T may also call `setRefillPath(O2, O1, true)` so that an approved request paying from O1 can be funded from O2 when T is short. A path is directional, off by default, revocable, and never implies the reverse. The request-bound checks do not change: one refill per request per target (`AlreadyRefilledForRequest`, whichever source), the `ap.amount + target` bound, the refill caps, and replay protection. The source must keep its own buffer (`SourceBufferBreach`), which is Safe T's floor for T and the wallet's `bufferOf` for an operational source. A refill from a wallet that is not allowed, including from the target to itself, reverts `RefillPathNotAllowed`. The signature change touches `PlanAttestedExecutor.refill` and `ReserveHoldExecutor.refill`, which now take `fromWallet` too; the reserve executor enforces its reserve on the actual source. To fit EIP-170, the redundant post-transfer balance re-checks in `refill` were dropped (the exact-delta check in `_transfer` already guarantees them) and the unused `usedToday(action)` and `remainingToday(action)` overloads were removed.
+
+`fromWallet` is not covered by the approver or plan signature. The operator picks among the allowlisted sources, bounded by the allowlist, the source buffer, the refill caps and one refill per request. The off-chain binding is the signer, which requires the calldata `fromWallet` to equal the plan step `from`. The path flag has no getter (event only), so an indexer must track `RefillPathSet`.

@@ -154,10 +154,12 @@ contract TreasuryHandler {
         bool active = _active();
         bool cancelled = module.requestCancelled(ap.requestId);
         bool previouslyRefilled = module.refilledFor(ap.requestId, ap.payingWallet);
+        // SC-L06: sometimes fund from the other operational wallet over an allowlisted path.
+        address source = seed % 3 == 0 ? (ap.payingWallet == op1 ? op2 : op1) : owner;
         vm.prank(executor);
-        try module.refill(ap, sig, step, owner, ap.payingWallet, amount) {
+        try module.refill(ap, sig, step, source, ap.payingWallet, amount) {
             ++successes;
-            _flag(4, token.balanceOf(owner) < module.bufferOf(owner));
+            _flag(4, token.balanceOf(source) < module.bufferOf(source));
             _flag(5, previouslyRefilled || ++stepCount[step] > 1);
             _flag(7, !active);
             _flag(10, token.balanceOf(ap.payingWallet) > ap.amount + module.targetOf(ap.payingWallet)); // BR-036
@@ -375,6 +377,8 @@ contract TreasuryInvariantTest is TreasuryFixture {
         super.setUp();
         _safeTx(op1, address(token), abi.encodeWithSignature("transfer(address,uint256)", address(0xD00D), 7000e6));
         _safeTx(op2, address(token), abi.encodeWithSignature("transfer(address,uint256)", address(0xD00D), 9900e6));
+        _owner(abi.encodeCall(module.setRefillPath, (address(op1), address(op2), true)));
+        _owner(abi.encodeCall(module.setRefillPath, (address(op2), address(op1), true)));
         handler = new TreasuryHandler(module, vendor, address(op1), address(op2));
         // Establish non-vacuous successful execution before the randomized campaign.
         handler.pay(1);

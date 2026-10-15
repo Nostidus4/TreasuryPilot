@@ -92,7 +92,7 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverRefillDaily();
         _requireFloor(ap.asset, fromWallet, amount, true);
         uint256 beforeTo = _balance(ap.asset, toWallet);
-        // amount <= the uint128 refill cap, so the sum cannot wrap.
+        // ap.amount is a uint256: an overflowing sum reverts (checked arithmetic), it never wraps.
         if (beforeTo + amount > ap.amount + targetOf(ap.asset, toWallet)) revert E.RefillExceedsNeed();
         stepUsed[stepId] = true;
         refilledFor[ap.requestId][toWallet] = true;
@@ -316,10 +316,6 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
 
     function _balance(address asset_, address wallet) internal view returns (uint256) {
         return IERC20(asset_).balanceOf(wallet);
-    }
-
-    function _transfer(address from, address to, uint256 amount) internal {
-        _transfer(asset, from, to, amount);
     }
 
     function _transfer(address asset_, address from, address to, uint256 amount) internal {
