@@ -167,6 +167,7 @@ class ChainAttestation(Base):
     schema_uid: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     attestation_uid: Mapped[bytes | None] = mapped_column(LargeBinary)
     tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary)
+    nonce: Mapped[int | None] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="Queued")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     next_attempt_at: Mapped[datetime] = mapped_column(
