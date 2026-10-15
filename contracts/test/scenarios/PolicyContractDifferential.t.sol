@@ -84,7 +84,7 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
         _owner(
             abi.encodeCall(
                 module.grantException,
-                    (ap.requestId, uint128(ap.amount - 1), ap.payee, uint64(block.timestamp + 1 days))
+                (ap.requestId, uint128(ap.amount - 1), ap.payee, uint64(block.timestamp + 1 days))
             )
         );
         _comparePay("invalid_exception", ap);
@@ -113,8 +113,7 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
 
     function _compareRefill(string memory caseId, I.PaymentApproval memory ap, uint256 amount) internal {
         _compare(
-            caseId,
-            abi.encodeCall(module.refill, (ap, _sign(ap), keccak256(bytes(caseId)), ap.payingWallet, amount))
+            caseId, abi.encodeCall(module.refill, (ap, _sign(ap), keccak256(bytes(caseId)), ap.payingWallet, amount))
         );
     }
 

@@ -43,8 +43,7 @@ REQUEST_ID = b"\x01" * 32
 MAKER, CHECKER = UUID(int=1), UUID(int=2)
 APPROVER = Account.from_key("0x" + "7a" * 32)
 MATRIX_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "contracts/test/vectors/policy_contract_differential.json"
+    Path(__file__).resolve().parents[3] / "contracts/test/vectors/policy_contract_differential.json"
 )
 CONTRACT_TEST = (
     Path(__file__).resolve().parents[3]
