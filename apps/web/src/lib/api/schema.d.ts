@@ -4249,15 +4249,62 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/scim+json': {
+          /** @default true */
+          active?: boolean;
+          displayName?: string | null;
+          externalId?: string | null;
+          schemas: 'urn:ietf:params:scim:schemas:core:2.0:User'[];
+          /**
+           * Format: email
+           * @description Email of an existing active user with a verified identity.
+           */
+          userName: string;
+        };
+      };
+    };
     responses: {
-      /** @description Successful Response */
-      200: {
+      /** @description SCIM User resource created. */
+      201: {
         headers: {
+          /** @description URI of the created SCIM User resource. */
+          Location?: string;
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/scim+json': {
+            active: boolean;
+            displayName: string | null;
+            emails: {
+              /** @constant */
+              primary: true;
+              /** @enum {string} */
+              type: 'work';
+              /** Format: email */
+              value: string;
+            }[];
+            externalId?: string;
+            /** Format: uuid */
+            id: string;
+            meta: {
+              /** Format: date-time */
+              created: string;
+              /** Format: date-time */
+              lastModified: string;
+              /** Format: uri */
+              location: string;
+              /** @enum {string} */
+              resourceType: 'User';
+            };
+            name?: {
+              formatted: string;
+            };
+            schemas: 'urn:ietf:params:scim:schemas:core:2.0:User'[];
+            /** Format: email */
+            userName: string;
+          };
         };
       };
     };

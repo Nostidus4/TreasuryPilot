@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -87,7 +88,7 @@ def parse_login_response(
     now = _aware_utc(now)
     try:
         parsed = client.parse_authn_request_response(
-            response_xml,
+            base64.b64encode(response_xml),
             BINDING_HTTP_POST,
             outstanding={request_id: True},
             # PySAML2 checks bearer Recipient against this exact configured ACS URL.

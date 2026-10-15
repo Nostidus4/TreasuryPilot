@@ -57,14 +57,18 @@ async def _saml_login_scenario(database_url: str) -> None:
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     repository = SAMLIdentityRepository(sessions)
     organization_id = uuid.uuid4()
+    other_organization_id = uuid.uuid4()
     user_id = uuid.uuid4()
     now = datetime.now(UTC)
     request_expiry = now + timedelta(minutes=10)
     try:
         async with engine.begin() as connection:
             await connection.execute(
-                text("INSERT INTO organizations (id, name) VALUES (:org, 'SAML integration')"),
-                {"org": organization_id},
+                text(
+                    "INSERT INTO organizations (id, name) VALUES "
+                    "(:org, 'SAML integration'), (:other_org, 'Other SAML tenant')"
+                ),
+                {"org": organization_id, "other_org": other_organization_id},
             )
             await connection.execute(
                 text(
@@ -112,6 +116,44 @@ async def _saml_login_scenario(database_url: str) -> None:
             )
             is None
         )
+
+        # A valid persistent identity in one organization must not fall back to the
+        # globally shared user record when the same user has no membership in another.
+        await repository.create_request(
+            request_id="_saml-request-cross-tenant",
+            relay_state="relay-cross-tenant",
+            browser_nonce="browser-cross-tenant",
+            organization_id=other_organization_id,
+            now=now,
+            expires_at=request_expiry,
+        )
+        with pytest.raises(
+            SAMLIdentityError, match="does not match one active organization member"
+        ):
+            await repository.complete_login(
+                request_id="_saml-request-cross-tenant",
+                relay_state="relay-cross-tenant",
+                browser_nonce="browser-cross-tenant",
+                organization_id=other_organization_id,
+                issuer="https://id.example/saml",
+                subject="persistent-subject-1",
+                email="saml-user@example.com",
+                response_id="_response-cross-tenant",
+                assertion_id="_assertion-cross-tenant",
+                assertion_expires_at=now + timedelta(minutes=5),
+                now=now,
+            )
+        assert await repository.find_pending_request(
+            relay_state="relay-cross-tenant",
+            browser_nonce="browser-cross-tenant",
+            now=now,
+        ) == ("_saml-request-cross-tenant", other_organization_id)
+        async with sessions() as session:
+            other_tenant_identity_count = await session.scalar(
+                text("SELECT count(*) FROM saml_identities WHERE org_id = :org"),
+                {"org": other_organization_id},
+            )
+        assert other_tenant_identity_count == 0
 
         with pytest.raises(SAMLIdentityError, match="already used"):
             await repository.complete_login(

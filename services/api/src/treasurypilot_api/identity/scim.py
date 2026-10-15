@@ -46,6 +46,79 @@ SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group"
 SCIM_LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 SCIM_PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
+SCIM_USER_CREATE_BODY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schemas", "userName"],
+    "properties": {
+        "schemas": {
+            "type": "array",
+            "items": {"type": "string", "enum": [SCIM_USER_SCHEMA]},
+            "minItems": 1,
+            "maxItems": 1,
+        },
+        "userName": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "description": "Email of an existing active user with a verified identity.",
+        },
+        "displayName": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": r"\S",
+        },
+        "externalId": {"type": ["string", "null"], "minLength": 1, "maxLength": 100},
+        "active": {"type": "boolean", "default": True},
+    },
+}
+SCIM_USER_RESOURCE_SCHEMA = {
+    "type": "object",
+    "required": ["schemas", "id", "userName", "displayName", "emails", "active", "meta"],
+    "properties": {
+        "schemas": {
+            "type": "array",
+            "items": {"type": "string", "enum": [SCIM_USER_SCHEMA]},
+            "minItems": 1,
+            "maxItems": 1,
+        },
+        "id": {"type": "string", "format": "uuid"},
+        "userName": {"type": "string", "format": "email"},
+        "displayName": {"type": ["string", "null"]},
+        "emails": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+                "type": "object",
+                "required": ["value", "type", "primary"],
+                "properties": {
+                    "value": {"type": "string", "format": "email"},
+                    "type": {"type": "string", "enum": ["work"]},
+                    "primary": {"type": "boolean", "const": True},
+                },
+            },
+        },
+        "active": {"type": "boolean"},
+        "meta": {
+            "type": "object",
+            "required": ["resourceType", "created", "lastModified", "location"],
+            "properties": {
+                "resourceType": {"type": "string", "enum": ["User"]},
+                "created": {"type": "string", "format": "date-time"},
+                "lastModified": {"type": "string", "format": "date-time"},
+                "location": {"type": "string", "format": "uri"},
+            },
+        },
+        "name": {
+            "type": "object",
+            "required": ["formatted"],
+            "properties": {"formatted": {"type": "string"}},
+        },
+        "externalId": {"type": "string"},
+    },
+}
 _USER_NAME_FILTER = re.compile(r'^\s*userName\s+eq\s+"([^"\\]{1,320})"\s*$', re.IGNORECASE)
 _GROUP_NAME_FILTER = re.compile(r'^\s*displayName\s+eq\s+"([^"\\]{1,100})"\s*$', re.IGNORECASE)
 _GROUP_MEMBER_FILTER = re.compile(
@@ -961,6 +1034,10 @@ def _record(
 router = APIRouter(prefix="/scim/v2", tags=["scim"])
 
 
+class SCIMJSONResponse(JSONResponse):
+    media_type = "application/scim+json"
+
+
 def _response(
     content: dict[str, object], *, status: int = 200, headers: dict[str, str] | None = None
 ) -> JSONResponse:
@@ -1224,7 +1301,33 @@ async def list_users(
     )
 
 
-@router.post("/Users")
+@router.post(
+    "/Users",
+    status_code=201,
+    response_class=SCIMJSONResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/scim+json": {"schema": SCIM_USER_CREATE_BODY_SCHEMA},
+            },
+        },
+        "responses": {
+            "201": {
+                "description": "SCIM User resource created.",
+                "headers": {
+                    "Location": {
+                        "description": "URI of the created SCIM User resource.",
+                        "schema": {"type": "string", "format": "uri"},
+                    },
+                },
+                "content": {
+                    "application/scim+json": {"schema": SCIM_USER_RESOURCE_SCHEMA},
+                },
+            },
+        },
+    },
+)
 async def create_user(request: Request) -> JSONResponse:
     organization_id = _authorized(request)
     if isinstance(organization_id, JSONResponse):

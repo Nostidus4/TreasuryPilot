@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -136,7 +137,7 @@ def test_saml_client_uses_local_metadata_and_requires_signed_correlated_response
     assert client.config.getattr("allow_unsolicited", "sp") is False
     assert client.config.getattr("want_response_signed", "sp") is True
     assert client.config.getattr("want_assertions_signed", "sp") is True
-    assert client.config.getattr("only_use_keys_in_metadata", "sp") is True
+    assert client.config.getattr("only_use_keys_in_metadata") is True
     service = client.config.getattr("endpoints", "sp")
     assert service["assertion_consumer_service"] == [(ACS_URL, BINDING_HTTP_POST)]
     assert (
@@ -165,6 +166,7 @@ def test_saml_response_requires_signature_verifier_correlation_and_persistent_id
     assert claims.assertion_id == "_assertion-123"
     assert client.arguments["outstanding"] == {REQUEST_ID: True}
     assert client.arguments["conv_info"] == {"entity_id": ACS_URL}
+    assert client.arguments["args"] == (base64.b64encode(b"<signed-response/>"), BINDING_HTTP_POST)
 
 
 @pytest.mark.skipif(shutil.which("xmlsec1") is None, reason="xmlsec1 is required by PySAML2")
