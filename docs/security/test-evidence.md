@@ -92,6 +92,22 @@ version and the function gas table from `forge test --gas-report`.
 | AT-12 | Only minimum shortage refilled while treasury reserve holds; target remains unmet |
 | AT-04/13 | Optional labelled ERC20 test router, minimum output, execution-day budgets, zero allowance |
 
+### MDT-007 / AT-08 pause and resume trace
+
+AT-08 has no single test; it is the conjunction of these (see mandate README section 7.2).
+
+| Criterion | Evidence |
+| --- | --- |
+| Backend flag is committed before any sentinel or Guardian transaction | `mandate/pause.py` commits the flag, then calls the sentinel; `test_pause.py::test_sentinel_failure_keeps_flag_and_falls_back_to_safe_tx` |
+| Requested vs effective on-chain state is reported | `PauseStatusResponse.onchain_status` / `effective`; `test_pause.py::test_status_distinguishes_requested_from_effective` |
+| Guardian cannot resume or revoke | `test_pause.py::test_guardian_cannot_resume_or_revoke` |
+| Resume only once the pause is effective; revoke needs the exact name and fresh step-up | `test_pause.py::test_owner_resume_builds_resume_call_only_when_pause_is_effective`, `test_revoke_requires_the_exact_confirmation_name`, `test_stale_step_up_is_refused_on_resume_and_revoke` |
+| `Paused`, `Resumed`, `Revoked` events update the projection | `event_handlers._paused`, `_resumed`, `_revoked`; `test_event_indexer_integration.py::test_revoked_event_marks_the_treasury_revoked`, `test_execution_cycle_hooks.py::test_resume_enqueues_only_when_a_pause_was_cleared` |
+| Paused treasury creates no operation and never reaches the signer | `test_outbox_integration.py::test_paused_treasury_creates_no_operation_and_never_reaches_the_signer` |
+| Paused treasury is a no-op for the sequencer; the request stays queued | `test_sequencer_integration.py::test_paused_treasury_is_a_no_op_and_the_request_stays_queued` |
+| Sentinel pause lands within two blocks and is idempotent | `services/signer/tests/test_sentinel.py::test_pause_lands_within_two_blocks_and_is_idempotent_on_anvil` |
+| Old authority is rejected after the on-chain pause or revoke | Contract suite, AT-08 row above |
+
 AT-03 native-gas bootstrapping, AT-09 invoice parsing and backend retry/reporting
 are not implemented by the contract suite. Static-analysis findings and exact
 triage are recorded in [static-analysis.md](static-analysis.md). CI publishes the
