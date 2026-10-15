@@ -44,6 +44,9 @@ _AUTHORIZE_REPAY_SELECTOR = keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4
 _CANCEL_REQUEST_SELECTOR = keccak(b"cancelRequest(bytes32)")[:4]
 _ADD_PAYEE_SELECTOR = keccak(b"addPayee(address)")[:4]
 _DEACTIVATE_PAYEE_SELECTOR = keccak(b"deactivatePayee(address)")[:4]
+_GRANT_EXCEPTION_SELECTOR = keccak(b"grantException(bytes32,uint128,address,uint64)")[:4]
+_REVOKE_EXCEPTION_SELECTOR = keccak(b"revokeException(bytes32)")[:4]
+_ALLOW_DUPLICATE_SELECTOR = keccak(b"allowDuplicate(bytes32,bytes32)")[:4]
 
 
 def _require_positive_uint(name: str, value: int, bits: int = 256) -> None:
@@ -121,6 +124,59 @@ def build_deactivate_payee_call(module_address: bytes, *, payee: bytes) -> Gover
         raise ValueError("module and payee must be nonzero EVM addresses")
     return GovernanceCall(
         module_address, 0, _DEACTIVATE_PAYEE_SELECTOR + encode(["address"], [payee])
+    )
+
+
+def build_grant_exception_call(
+    module_address: bytes,
+    *,
+    request_id: bytes,
+    amount: int,
+    payee: bytes,
+    expiry: int,
+) -> GovernanceCall:
+    """Build the exact one-request, one-payee exception reviewed by an Owner."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    if len(payee) != 20 or payee == bytes(20):
+        raise ValueError("payee must be a nonzero EVM address")
+    _require_positive_uint("exception amount", amount, 128)
+    _require_positive_uint("exception expiry", expiry, 64)
+    return GovernanceCall(
+        module_address,
+        0,
+        _GRANT_EXCEPTION_SELECTOR
+        + encode(["bytes32", "uint128", "address", "uint64"], [request_id, amount, payee, expiry]),
+    )
+
+
+def build_revoke_exception_call(module_address: bytes, *, request_id: bytes) -> GovernanceCall:
+    """Build `revokeException` for the request's existing one-time grant."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    return GovernanceCall(
+        module_address, 0, _REVOKE_EXCEPTION_SELECTOR + encode(["bytes32"], [request_id])
+    )
+
+
+def build_allow_duplicate_call(
+    module_address: bytes, *, fingerprint: bytes, request_id: bytes
+) -> GovernanceCall:
+    """Build a duplicate override bound to one invoice fingerprint and request."""
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module address must be a nonzero EVM address")
+    if len(fingerprint) != 32 or fingerprint == bytes(32):
+        raise ValueError("fingerprint must be a nonzero bytes32")
+    if len(request_id) != 32 or request_id == bytes(32):
+        raise ValueError("request_id must be a nonzero bytes32")
+    return GovernanceCall(
+        module_address,
+        0,
+        _ALLOW_DUPLICATE_SELECTOR + encode(["bytes32", "bytes32"], [fingerprint, request_id]),
     )
 
 

@@ -1023,6 +1023,23 @@ export interface paths {
     patch: operations['edit_request_v1_orgs__organization_id__requests__request_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/requests/{request_id}/allow-duplicate-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Allow Duplicate */
+    post: operations['allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data': {
     parameters: {
       query?: never;
@@ -1119,6 +1136,74 @@ export interface paths {
     get: operations['get_request_evidence_v1_orgs__organization_id__requests__request_id__evidence_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Exception */
+    get: operations['get_exception_v1_orgs__organization_id__requests__request_id__exception_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/grant-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Grant Exception */
+    post: operations['grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Exception */
+    post: operations['reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/requests/{request_id}/exception/revoke-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Exception */
+    post: operations['revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1793,6 +1878,11 @@ export interface components {
       /** Perrequest */
       perRequest: string;
     };
+    /** AllowDuplicateRequest */
+    AllowDuplicateRequest: {
+      /** Reason */
+      reason: string;
+    };
     /** ApiKeyCreate */
     ApiKeyCreate: {
       /** Expiresat */
@@ -2321,6 +2411,14 @@ export interface components {
       | 'RESUME'
       | 'REVOKE'
       | 'GUARDIAN_SETUP';
+    /** GrantExceptionRequest */
+    GrantExceptionRequest: {
+      /**
+       * Expiryhours
+       * @default 72
+       */
+      expiryHours: number;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -2974,6 +3072,11 @@ export interface components {
       from: string;
       /** To */
       to: string;
+    };
+    /** RejectExceptionRequest */
+    RejectExceptionRequest: {
+      /** Reason */
+      reason: string;
     };
     /** RenewRequest */
     RenewRequest: {
@@ -5760,6 +5863,44 @@ export interface operations {
       };
     };
   };
+  allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AllowDuplicateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get: {
     parameters: {
       query?: never;
@@ -5960,6 +6101,150 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['EvidenceBundle'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_exception_v1_orgs__organization_id__requests__request_id__exception_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GrantExceptionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectExceptionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

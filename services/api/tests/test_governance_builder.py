@@ -13,9 +13,12 @@ from eth_hash.auto import keccak
 from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
+    build_allow_duplicate_call,
     build_borrow_authorization_call,
     build_cancel_request_call,
+    build_grant_exception_call,
     build_repay_authorization_call,
+    build_revoke_exception_call,
     build_safe_transaction,
     decode_multisend_calls,
     enable_module_data,
@@ -75,6 +78,47 @@ def test_cancel_request_call_encodes_module_selector_and_request_id() -> None:
     assert decode(["bytes32"], call.data[4:]) == (PLAN,)
     with pytest.raises(ValueError, match="bytes32"):
         build_cancel_request_call(TARGET_A, request_id=b"short")
+
+
+def test_exception_and_duplicate_calls_bind_the_exact_request_values() -> None:
+    request_id = bytes.fromhex("12" * 32)
+    fingerprint = bytes.fromhex("34" * 32)
+    payee = bytes.fromhex("56" * 20)
+    amount = 2**90 + 17
+    expiry = 1_900_000_000
+
+    grant = build_grant_exception_call(
+        TARGET_A,
+        request_id=request_id,
+        amount=amount,
+        payee=payee,
+        expiry=expiry,
+    )
+    assert grant.to == TARGET_A
+    assert grant.data[:4] == keccak(b"grantException(bytes32,uint128,address,uint64)")[:4]
+    assert decode(["bytes32", "uint128", "address", "uint64"], grant.data[4:]) == (
+        request_id,
+        amount,
+        "0x" + payee.hex(),
+        expiry,
+    )
+
+    revoke = build_revoke_exception_call(TARGET_A, request_id=request_id)
+    assert revoke.data[:4] == keccak(b"revokeException(bytes32)")[:4]
+    assert decode(["bytes32"], revoke.data[4:]) == (request_id,)
+
+    duplicate = build_allow_duplicate_call(TARGET_A, fingerprint=fingerprint, request_id=request_id)
+    assert duplicate.data[:4] == keccak(b"allowDuplicate(bytes32,bytes32)")[:4]
+    assert decode(["bytes32", "bytes32"], duplicate.data[4:]) == (fingerprint, request_id)
+
+    with pytest.raises(ValueError, match="uint128"):
+        build_grant_exception_call(
+            TARGET_A,
+            request_id=request_id,
+            amount=1 << 128,
+            payee=payee,
+            expiry=expiry,
+        )
 
 
 def test_repay_authorization_keeps_proposal_values_exact() -> None:

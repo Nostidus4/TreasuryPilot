@@ -283,6 +283,29 @@ class GovernanceService:
         )
         return int(str(result), 16)
 
+    async def read_used_today(self, chain_id: int, module_address: bytes, asset: bytes) -> int:
+        """Read the authoritative on-chain PAY counter for one asset (action 1)."""
+        if len(module_address) != 20 or len(asset) != 20:
+            raise GovernanceFailure("MODULE_NOT_READY", 409, "Treasury module is unavailable.")
+        selector = keccak(b"usedToday(uint8,address)")[:4]
+        result = await self._read(
+            chain_id,
+            "eth_call",
+            [
+                {
+                    "to": _address(module_address),
+                    "data": _hex(selector + encode(["uint8", "address"], [1, _address(asset)])),
+                },
+                "latest",
+            ],
+        )
+        try:
+            return int(str(result), 16)
+        except (TypeError, ValueError):
+            raise GovernanceFailure(
+                "CHAIN_READ_INVALID", 503, "PAY usage could not be read from the treasury module."
+            ) from None
+
     async def _rpc_first(
         self,
         chain: Any,
