@@ -13,6 +13,7 @@ from treasurypilot_api.agent import models as agent_models  # noqa: F401
 from treasurypilot_api.audit import models as audit_models  # noqa: F401
 from treasurypilot_api.chain import models as chain_models  # noqa: F401
 from treasurypilot_api.compliance import models as compliance_models  # noqa: F401
+from treasurypilot_api.copilot import models as copilot_models  # noqa: F401
 from treasurypilot_api.database import Base
 from treasurypilot_api.events import models as event_models  # noqa: F401
 from treasurypilot_api.execution import models as execution_models  # noqa: F401

@@ -26,6 +26,12 @@ from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
+from treasurypilot_api.copilot.api import (
+    CopilotAnswerer,
+    CopilotRepository,
+    SqlAlchemyCopilotRepository,
+)
+from treasurypilot_api.copilot.api import router as copilot_router
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.execution.routes import router as execution_router
 from treasurypilot_api.identity.api import problem_response
@@ -260,6 +266,8 @@ def create_app(
     evidence_repository: EvidenceRepository | None = None,
     notification_repository: NotificationRepository | None = None,
     notification_preferences_repository: NotificationPreferencesRepository | None = None,
+    copilot_repository: CopilotRepository | None = None,
+    copilot_answerer: CopilotAnswerer | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
     fx_quote_provider: FxQuoteProvider | None = None,
@@ -366,6 +374,9 @@ def create_app(
         payee_repository = SqlAlchemyPayeeRepository(sessions)
     if notification_preferences_repository is None and sessions is not None:
         notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
+
+    if copilot_repository is None and sessions is not None:
+        copilot_repository = SqlAlchemyCopilotRepository(sessions)
 
     if mfa_service is None and sessions is not None:
         # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
@@ -479,6 +490,9 @@ def create_app(
     app.state.request_sessions = sessions
     app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
+    app.state.copilot_repository = copilot_repository
+    # No default answerer: it needs the worker's tool loop, so the API answers 503 until wired.
+    app.state.copilot_answerer = copilot_answerer
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
@@ -549,6 +563,7 @@ def create_app(
     app.include_router(recurring_schedules_router)
     app.include_router(invoice_api_keys_router)
     app.include_router(notification_preferences_router)
+    app.include_router(copilot_router)
     app.include_router(invoice_documents_router)
     app.include_router(invoice_inbound_email_router)
     app.include_router(telegram_router)
