@@ -9371,6 +9371,13 @@ export interface operations {
           'application/json': components['schemas']['HTTPValidationError'];
         };
       };
+      /** @description RECOVERY_UNAVAILABLE: the resume/cancel task was not queued */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   safe_deployment_transaction_v1_orgs__organization_id__safes_deploy_tx_post: {

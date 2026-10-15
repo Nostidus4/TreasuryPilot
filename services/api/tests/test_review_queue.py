@@ -305,7 +305,6 @@ async def _exercise_review_queue(database_url: str) -> None:
             assert await escalate_overdue(session, now=now + timedelta(hours=2)) == 1
             assert OrganizationRole.OWNER.value in uncertain.assigned_roles
             assert await escalate_overdue(session, now=now + timedelta(hours=2)) == 0
-
             uncertain_id = uncertain.id
             # Escalated Owner can act, not only view (spec 8.3).
             assert _allowed_actions(uncertain, owner) == []
@@ -778,6 +777,65 @@ async def _exercise_review_queue(database_url: str) -> None:
             owner,
         )
         assert queued[-1] == ("CANCEL", REQUEST_ID, USER_ID)
+
+        # POLICY_BLOCK offers RETRY only once steps are completed, to the routed roles.
+        async with sessions() as session, session.begin():
+            row = await session.get(ReviewItem, policy_id)
+            assert row is not None
+            assert "RETRY" not in _allowed_actions(row, owner)
+            row.completed_steps = [{"seq": 1, "status": "Confirmed"}]
+            assert _allowed_actions(row, owner)[-1] == "RETRY"
+            assert "RETRY" not in _allowed_actions(row, operator)
+        async with sessions() as session:
+            version = (await session.get(ReviewItem, policy_id)).version  # type: ignore[union-attr]
+        with pytest.raises(AuthFailure, match="REVIEW_ITEM_NOT_FOUND"):
+            await act_on_review_item(
+                ORG_ID,
+                policy_id,
+                ReviewActionRequest(action="RETRY", version=version),
+                request,
+                Response(),
+                operator,
+            )
+
+        class _BrokenQueue:
+            def enqueue(self, action: str, request_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+                raise RuntimeError("broker down")
+
+        app.state.partial_recovery_queue = _BrokenQueue()
+        with pytest.raises(AuthFailure, match="RECOVERY_UNAVAILABLE"):
+            await act_on_review_item(
+                ORG_ID,
+                policy_id,
+                ReviewActionRequest(action="RETRY", version=version),
+                request,
+                Response(),
+                owner,
+            )
+        app.state.partial_recovery_queue = _Queue()
+        retried = await act_on_review_item(
+            ORG_ID,
+            policy_id,
+            ReviewActionRequest(action="RETRY", version=version),
+            request,
+            Response(),
+            owner,
+        )
+        assert queued[-1] == ("RETRY", REQUEST_ID, USER_ID)
+        assert retried["item"]["status"] == "Open"
+
+        # A plan that is no longer partial refuses RETRY instead of resolving the item.
+        async with sessions() as session, session.begin():
+            await session.execute(text("UPDATE plans SET status = 'Superseded'"))
+        with pytest.raises(AuthFailure, match="ACTION_NOT_ALLOWED"):
+            await act_on_review_item(
+                ORG_ID,
+                policy_id,
+                ReviewActionRequest(action="RETRY", version=version),
+                request,
+                Response(),
+                owner,
+            )
     finally:
         await engine.dispose()
 

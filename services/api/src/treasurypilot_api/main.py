@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -256,6 +257,9 @@ def _auth_service(
     )
 
 
+logger = logging.getLogger(__name__)
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -511,6 +515,8 @@ def create_app(
     app.state.partial_recovery_queue = partial_recovery_queue or build_partial_recovery_queue(
         settings
     )
+    if app.state.partial_recovery_queue is None:
+        logger.warning("partial recovery queue not configured; RETRY/CANCEL return 503")
     # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
     # three they respond 503 FX_UNAVAILABLE.
     app.state.fx_quote_provider = fx_quote_provider

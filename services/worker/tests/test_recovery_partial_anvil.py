@@ -45,9 +45,11 @@ class AnvilSigner:
     def __init__(self, url: str, targets: dict[str, tuple[str, int]]) -> None:
         self.url, self.targets = url, targets  # step id -> (recipient, wei)
         self.sent: dict[str, dict[str, Any]] = {}
+        self.calls: list[str] = []  # step id per call, even for replays
 
     async def sign_and_send(self, request: dict[str, Any]) -> dict[str, Any]:
         key = request["plan"]["steps"][request["stepSeq"]]["stepId"]
+        self.calls.append(key)
         if key not in self.sent:
             to, wei = self.targets[key]
             nonce = int(
@@ -132,6 +134,9 @@ def test_at07_resume_after_blocked_pay_sends_only_the_pay(
         assert (await _seq._go(database_url, signer, run, gate)).status == "Completed"
 
         assert gate.checked == [1]
+        # A re-sent refill would still be a replay by step id, so count signer calls and
+        # transactions rows per step: one each.
+        assert sorted(signer.calls) == sorted(signer.sent)
         assert len(signer.sent) == 2
         assert _balance(anvil_url, REFILL_TO) == refill_before + 1000  # exactly one refill
         assert _balance(anvil_url, PAY_TO) == pay_before + 7
@@ -145,6 +150,13 @@ def test_at07_resume_after_blocked_pay_sends_only_the_pay(
             ("REFILL", "Confirmed"),
             ("PAY", "Confirmed"),
         ]
+        txs = await _seq._sql(
+            database_url,
+            "SELECT o.kind::text AS kind, count(*) AS n FROM transactions t "
+            "JOIN operations o ON o.id = t.operation_id WHERE o.request_id = $1 GROUP BY o.kind",
+            run.request_id,
+        )
+        assert {t["kind"]: t["n"] for t in txs} == {"REFILL": 1, "PAY": 1}
         status = await _seq._sql(
             database_url, "SELECT status FROM payment_requests WHERE id = $1", run.request_id
         )
