@@ -32,6 +32,7 @@ abstract contract TreasuryPilotStorage is ITreasuryPilotModule {
     mapping(bytes32 => bool) public stepUsed;
     mapping(bytes32 => bool) public fingerprintPaid;
     mapping(bytes32 => mapping(address => bool)) public refilledFor;
+    mapping(address => mapping(address => bool)) internal _refillPath; // operational from => operational to (SC-L06)
     mapping(bytes32 => Exception) public exceptions;
     mapping(bytes32 => bytes32) public duplicateAllowedFor;
     mapping(bytes32 => BorrowAuthorization) public borrowAuthorizations;

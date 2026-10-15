@@ -68,7 +68,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory sig = _sign(att);
         bytes memory approverSig = _sign(ap);
         vm.startPrank(executor);
-        gate.refill(ap, approverSig, REFILL_STEP, address(op1), 100e6, att, sig);
+        gate.refill(ap, approverSig, REFILL_STEP, address(treasury), address(op1), 100e6, att, sig);
         gate.pay(ap, approverSig, PAY_STEP, ap.amount, att, sig);
         vm.stopPrank();
         require(token.balanceOf(vendor) == 100e6, "paid");
@@ -87,7 +87,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         gate.pay(ap, approverSig, PAY_STEP, 75e6, att, attSig);
 
         require(token.balanceOf(vendor) == 75e6, "fresh quote amount not paid");
-        require(module.usedToday(module.PAY()) == 75e6, "counter not updated by actual amount");
+        require(module.usedToday(module.PAY(), address(token)) == 75e6, "counter not updated by actual amount");
     }
 
     function testAttestedExecutorRejectsFreshQuoteAboveSignedMaximum() external {

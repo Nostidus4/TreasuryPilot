@@ -117,7 +117,7 @@ contract TreasuryHandler {
         bool cancelled = module.requestCancelled(ap.requestId);
         bool duplicateAllowed = module.duplicateAllowedFor(ap.fingerprint) == ap.requestId;
         (uint64 activeFrom, bool payeeActive) = module.payees(vendor);
-        uint256 beforeUsed = module.usedToday(module.PAY());
+        uint256 beforeUsed = module.usedToday(module.PAY(), address(token));
         uint256 beforeRecipient = token.balanceOf(vendor);
         (uint128 exAmount, uint64 exExpiry, uint64 exVersion, address exPayee, bool exUsed) =
             module.exceptions(ap.requestId);
@@ -150,12 +150,12 @@ contract TreasuryHandler {
         bytes32 step = _step();
         uint256 amount = seed % 3000e6 + 1;
         I.Mandate memory m = module.mandate();
-        uint256 beforeUsed = module.usedToday(module.REFILL());
+        uint256 beforeUsed = module.usedToday(module.REFILL(), address(token));
         bool active = _active();
         bool cancelled = module.requestCancelled(ap.requestId);
         bool previouslyRefilled = module.refilledFor(ap.requestId, ap.payingWallet);
         vm.prank(executor);
-        try module.refill(ap, sig, step, ap.payingWallet, amount) {
+        try module.refill(ap, sig, step, owner, ap.payingWallet, amount) {
             ++successes;
             _flag(4, token.balanceOf(owner) < module.bufferOf(owner));
             _flag(5, previouslyRefilled || ++stepCount[step] > 1);
@@ -217,9 +217,9 @@ contract TreasuryHandler {
 
     function configure(uint256 seed) external {
         I.Mandate memory beforeM = module.mandate();
-        uint256 payUsed = module.usedToday(module.PAY());
-        uint256 refillUsed = module.usedToday(module.REFILL());
-        uint256 supplyUsed = module.usedToday(module.SUPPLY());
+        uint256 payUsed = module.usedToday(module.PAY(), address(token));
+        uint256 refillUsed = module.usedToday(module.REFILL(), address(token));
+        uint256 supplyUsed = module.usedToday(module.SUPPLY(), address(token));
         // An owner renews an expired mandate; without this a 366-day warp would
         // leave every later action reverting for the rest of the run.
         uint64 expiresAt = block.timestamp > beforeM.expiresAt ? uint64(block.timestamp + 30 days) : beforeM.expiresAt;
@@ -238,8 +238,9 @@ contract TreasuryHandler {
         try module.configureMandate(m) {
             _flag(
                 8,
-                module.usedToday(module.PAY()) != payUsed || module.usedToday(module.REFILL()) != refillUsed
-                    || module.usedToday(module.SUPPLY()) != supplyUsed
+                module.usedToday(module.PAY(), address(token)) != payUsed
+                    || module.usedToday(module.REFILL(), address(token)) != refillUsed
+                    || module.usedToday(module.SUPPLY(), address(token)) != supplyUsed
                     || module.mandate().version != beforeM.version + 1
             );
         } catch {}
@@ -273,7 +274,7 @@ contract TreasuryHandler {
         (uint64 activeFrom, bool active) = module.payees(vendor);
         if (
             !active || block.timestamp < activeFrom || token.balanceOf(op1) <= module.bufferOf(op1)
-                || module.remainingToday(module.PAY()) == 0
+                || module.remainingToday(module.PAY(), address(token)) == 0
         ) return;
         bytes32 step = successfulSteps[seed % successfulSteps.length];
         bytes memory signature = _signature(ap);

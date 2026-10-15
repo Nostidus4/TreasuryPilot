@@ -42,13 +42,14 @@ contract PlanAttestedExecutor {
         ITreasuryPilotModule.PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,
+        address fromWallet,
         address toWallet,
         uint256 amount,
         H.PlanAttestation calldata att,
         bytes calldata attSig
     ) external {
         _consume(ap.requestId, stepId, amount, att, attSig);
-        module.refill(ap, approverSig, stepId, toWallet, amount);
+        module.refill(ap, approverSig, stepId, fromWallet, toWallet, amount);
     }
 
     /// @param requestId 0x0 for a liquidity plan, as in the attestation.

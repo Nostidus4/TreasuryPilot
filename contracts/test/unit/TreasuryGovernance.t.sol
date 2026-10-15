@@ -99,9 +99,12 @@ contract TreasuryGovernanceTest is TreasuryFixture {
 
     function testChangingVersionDoesNotResetCounters() external {
         _pay(_approval(1, 100e6), bytes32(uint256(1)));
-        uint256 beforeUsed = module.usedToday(module.PAY());
+        uint256 beforeUsed = module.usedToday(module.PAY(), address(token));
         _owner(abi.encodeCall(module.configureMandate, (config)));
-        require(module.mandate().version == 2 && module.usedToday(module.PAY()) == beforeUsed, "counter reset");
+        require(
+            module.mandate().version == 2 && module.usedToday(module.PAY(), address(token)) == beforeUsed,
+            "counter reset"
+        );
     }
 
     function testApproversCannotBecomeEmptyAndUpdatesAreIdempotent() external {
@@ -183,7 +186,7 @@ contract TreasuryGovernanceTest is TreasuryFixture {
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.RequestCancelled.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(3)), address(op1), 1e6);
+        module.refill(ap, sig, bytes32(uint256(3)), address(treasury), address(op1), 1e6);
         _pay(_approval(4, 1e6), bytes32(uint256(4)));
         vm.expectRevert(E.AlreadyPaid.selector);
         vm.prank(approver);
