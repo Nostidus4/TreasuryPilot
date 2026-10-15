@@ -98,6 +98,18 @@ Do not enable the `local` or `ci` profiles; anvil is not needed. `worker` and `s
 - Current limitation: only the web wallet uses Sepolia today. No backend code reads `CHAIN_RPC_URL` yet, and `deployments/chains.json` stays empty until the treasury module is deployed to Sepolia and the manifest format gap in `deployments/README.md` is reconciled (the API config requires >= 2 distinct RPC URLs and a deployed `TREASURY_MODULE_IMPLEMENTATION`).
 - Gas: the deployer, policy/signer and operational wallets need Sepolia ETH from a faucet ([Google Cloud Web3 faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) or [pk910](https://sepolia-faucet.pk910.de)). Test USDC for Aave comes from the [Aave faucet](https://app.aave.com/faucet/). Check `infra/scripts/check-sepolia-deploy.sh` and `deployments/11155111.json` for supply-cap caveats.
 
+## Deploying to a testnet VM
+
+One cloud VM runs the stack against Sepolia behind Caddy (automatic TLS), using images that the `Publish images` workflow (`.github/workflows/images.yml`) pushes to GHCR on every merge to `main`, tagged `ghcr.io/<owner>/treasurypilot-{api,worker,signer,web}:<git-sha>`. The `web` image is built for Sepolia (`VITE_CHAIN_ID=11155111`, public RPC).
+
+1. VM: Docker Engine with Compose >= 2.24, DNS `A` record for `APP_DOMAIN` pointing at it. Firewall: allow inbound 22 (ideally your IP only), 80 and 443; deny everything else. Compose publishes only Caddy on 80/443; `web`, `api`, MinIO and Redis bind `127.0.0.1` only, and the signer publishes nothing.
+2. Clone the repo at the commit to deploy and create the gitignored `infra/env/.env` from `infra/env/.env.example`: set `APP_DOMAIN`, `GHCR_OWNER`, `SUPABASE_DATABASE_URL`, `AI_DATABASE_URL`, `SEPOLIA_RPC_URL`, replace every local default password and keystore path. For private images run `docker login ghcr.io` first.
+3. `infra/scripts/deploy-testnet.sh <full-git-sha>` validates the config, pulls the images, runs `migrate`, then starts the stack with `--profile testnet --no-build`. To roll back, run it again with an earlier SHA.
+
+Caddy serves `/api/*` (prefix stripped) from `api` and everything else from `web`.
+
+Known gaps: `deployments/chains.json` stays empty until #31 publishes the Sepolia manifest (Aave test USDC and Pool come from it); MinIO presigned document URLs still use `S3_PUBLIC_ENDPOINT_URL=http://localhost:9000`, so document downloads are not reachable from outside the VM yet.
+
 ## Money
 
 Amounts are integers in base units everywhere (ADR-014). Never use floats for money.

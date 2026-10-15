@@ -1,0 +1,59 @@
+# Opt-in VM overlay (ADR-008): Caddy TLS front door + prebuilt GHCR images tagged with the git SHA.
+# Usage (see DEVELOPMENT.md "Deploying to a testnet VM"), normally via infra/scripts/deploy-testnet.sh:
+#   docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml \
+#     -f infra/compose.sepolia.yaml -f infra/compose.testnet.yaml --profile testnet up -d --no-build
+# Never enable the local/ci profiles here: no Anvil on a testnet VM.
+# Only caddy publishes host ports (80/443). The base file binds web/api/minio/redis to 127.0.0.1 only, and
+# the signer publishes nothing (internal network only).
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    profiles: [testnet]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [public]
+
+  migrate:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-api:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-api:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+    environment:
+      TP_CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
+
+  worker:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-worker:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  worker-ai:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-worker:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  worker-webhooks:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-worker:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  beat:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-worker:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  signer:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-signer:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+  # The published web image is built with the Sepolia chain id and public RPC (images.yml).
+  web:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-web:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
+
+volumes:
+  caddy-data:
+  caddy-config:

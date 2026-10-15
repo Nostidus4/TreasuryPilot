@@ -1,0 +1,69 @@
+name: Publish images
+
+# Builds the deployable images and pushes them to GHCR tagged with the git SHA (and `main`).
+# Pull requests only build (no push) so Dockerfile breakage shows up before merge.
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'infra/compose.testnet.yaml'
+      - 'packages/**'
+      - 'services/**'
+      - '.dockerignore'
+      - 'pnpm-lock.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/images.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: services/api/Dockerfile
+          - name: worker
+            dockerfile: services/worker/Dockerfile
+          - name: signer
+            dockerfile: services/signer/Dockerfile
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            # Web bundle targets Sepolia with the public RPC (see infra/compose.sepolia.yaml).
+            build_args: |
+              VITE_CHAIN_ID=11155111
+              VITE_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Compute image name
+        id: img
+        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/treasurypilot-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ steps.img.outputs.repo }}:${{ github.sha }}
+            ${{ steps.img.outputs.repo }}:main
+          build-args: ${{ matrix.build_args }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
