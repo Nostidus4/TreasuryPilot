@@ -1,7 +1,7 @@
 {
   "case_id": "cp-003",
   "prompt_version": "copilot.v1",
-  "model": "scripted-reference",
+  "model": "claude-sonnet-5-5",
   "case_sha256": "92e482381fd85d1b60e4405f4cb9e463796538906c3967cc3aeabd961076dc14",
   "recorded_at": "2026-10-15",
   "responses": [
@@ -10,20 +10,33 @@
       "text": null,
       "tool_calls": [
         {
-          "id": "t1",
+          "id": "toolu_01GKCYZcqMqfba7sRwEE64c2",
           "name": "deterministic_tool",
           "input": {}
         }
       ],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 163,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01LWkrif8MwPJdEpMbWik3CC",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 229,
+      "output_tokens": 98
     },
     {
       "stop_reason": "end_turn",
-      "text": "{\"answer\": \"From the cited figures (base units): shortage is 190000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "text": "{\"answer\":\"The minimum O1 funding shortage for r1 is 190000000 token base units. The tool reports this as the minimum shortage. It doesn't show its inputs, so I can't confirm from the result that it assumes zero other holds and keeps r1's hard buffer. This is a read-only figure. It doesn't authorise or trigger any payment, approval or scheduling. Any action has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.minimum_shortage.shortage\"}]}",
       "tool_calls": [],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 363,
+      "output_tokens": 188
     }
   ]
 }

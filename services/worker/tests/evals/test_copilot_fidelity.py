@@ -1,4 +1,4 @@
-"""The Copilot fidelity runner on the committed recordings and on tampered ones (AGT-016)."""
+"""The Copilot fidelity runner on scripted fixtures, tampered ones and the committed live run (AGT-016)."""
 
 import json
 import shutil
@@ -23,7 +23,9 @@ from treasurypilot_worker.evals.copilot_fidelity import (
 )
 
 DATASET = REPO_ROOT / "evals" / "copilot"
-RECORDINGS = DATASET / "recorded" / "copilot.v1"
+# Scripted reference answers (not model output): a known-faithful baseline for the scorer.
+RECORDINGS = Path(__file__).parent / "fixtures" / "copilot_scripted"
+LIVE_REPORT = REPO_ROOT / "docs" / "evidence" / "copilot-fidelity.md"
 
 
 def _run(recordings: Path) -> list:
@@ -38,7 +40,7 @@ def _run(recordings: Path) -> list:
     return run_cases(adapter, cases, provider)
 
 
-def test_committed_recordings_cover_all_twenty_cases_faithfully() -> None:
+def test_scripted_answers_cover_all_twenty_cases_faithfully() -> None:
     scores = _run(RECORDINGS)
     assert len(scores) == 20
     assert [s.case_id for s in scores if not s.passed] == []
@@ -79,8 +81,15 @@ def test_missing_recording_is_refused(tmp_path: Path) -> None:
 
 def test_main_recorded_writes_report(tmp_path: Path) -> None:
     out = tmp_path / "report.md"
-    assert main(["--mode", "recorded", "--strict", "--out", str(out)]) == 0
+    args = ["--mode", "recorded", "--recordings", str(RECORDINGS), "--strict", "--out", str(out)]
+    assert main(args) == 0
     assert "numerically faithful: 20/20" in out.read_text()
+
+
+def test_committed_live_report_is_reproduced_offline(tmp_path: Path) -> None:
+    out = tmp_path / "report.md"
+    main(["--mode", "recorded", "--out", str(out)])
+    assert out.read_text() == LIVE_REPORT.read_text()
 
 
 def test_live_mode_needs_a_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

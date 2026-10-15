@@ -12,8 +12,8 @@ Modes share one code path above the provider:
   deterministic. A recording is refused when its prompt version or case file hash changed.
 * live: calls the configured provider (needs ANTHROPIC_API_KEY); with `--record` it rewrites the
   recordings from that run.
-* scripted: no model. Builds reference answers that quote the expected numbers, to keep the
-  committed baseline recordings reproducible (`--record` writes them). Not a measurement.
+* scripted: no model. Builds reference answers that quote the expected numbers, used as the
+  scorer's test fixtures (`--record --recordings <dir>` writes them). Not a measurement.
 
 `auto` (the default) is live when the key is set, otherwise recorded.
 """

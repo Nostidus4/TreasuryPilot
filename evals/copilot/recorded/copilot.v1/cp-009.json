@@ -1,7 +1,7 @@
 {
   "case_id": "cp-009",
   "prompt_version": "copilot.v1",
-  "model": "scripted-reference",
+  "model": "claude-sonnet-5-5",
   "case_sha256": "949bee4575276fe48c13efb3f097a1786cadefb39c3f5890ce8a37f3dbcec540",
   "recorded_at": "2026-10-15",
   "responses": [
@@ -10,20 +10,33 @@
       "text": null,
       "tool_calls": [
         {
-          "id": "t1",
+          "id": "toolu_01DUxhwnkCAiMmTzaTNweJgH",
           "name": "deterministic_tool",
           "input": {}
         }
       ],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 142,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01R7WLRtVzduenth1LXbAnmZ",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 216,
+      "output_tokens": 30
     },
     {
       "stop_reason": "end_turn",
-      "text": "{\"answer\": \"From the cited figures (base units): remaining_daily_pay is 100000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "text": "{\"answer\":\"The remaining daily PAY budget today is 100000000 base units. This is the tool's remaining_daily_pay figure. As you said, REFILL usage does not consume the PAY counter, so I made no adjustment for it.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.remaining_daily_pay.remaining_daily_pay\"}]}",
       "tool_calls": [],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 290,
+      "output_tokens": 231
     }
   ]
 }

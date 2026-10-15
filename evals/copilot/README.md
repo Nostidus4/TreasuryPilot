@@ -31,5 +31,6 @@ A case passes when the answer holds every expected number exactly, no number out
 engine output, a citation, and a refusal exactly when `must_refuse`. Failures are listed in
 `docs/evidence/copilot-fidelity.md`. Replayed responses live in `recorded/<prompt version>/`
 and are refused when the prompt version or case file changes. The committed recordings are
-**scripted reference answers, not model output**; the measured result needs a live run
-(`make eval-copilot-record`, requires `ANTHROPIC_API_KEY`).
+a live `claude-sonnet-5-5` run (2026-10-15); re-record with `make eval-copilot-record`
+(requires `ANTHROPIC_API_KEY`). Scripted reference answers, used only to test the scorer,
+are in `services/worker/tests/evals/fixtures/copilot_scripted/`.

@@ -1,7 +1,7 @@
 {
   "case_id": "cp-002",
   "prompt_version": "copilot.v1",
-  "model": "scripted-reference",
+  "model": "claude-sonnet-5-5",
   "case_sha256": "a8d327636a76eb7633f503325f4dc750680cda134f296c5ea4620f137f43effa",
   "recorded_at": "2026-10-15",
   "responses": [
@@ -10,20 +10,33 @@
       "text": null,
       "tool_calls": [
         {
-          "id": "t1",
+          "id": "toolu_018k1VnRCjRodAsqMYSoXYwL",
           "name": "deterministic_tool",
           "input": {}
         }
       ],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 163,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01Rjy4rigmHMuigaXT5KsihN",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 227,
+      "output_tokens": 74
     },
     {
       "stop_reason": "end_turn",
-      "text": "{\"answer\": \"From the cited figures (base units): shortage is 0.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "text": "{\"answer\":\"The tool reports a minimum shortage of \\\"0\\\" base units. With no other holds, r1 has no O1 funding shortage while keeping its hard buffer. The tool gave only this figure. It did not give r1's balance, the buffer size, or the token. This is read-only information and does not grant permission to execute anything. Any payment, approval or scheduling has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.minimum_shortage.shortage\"}]}",
       "tool_calls": [],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 335,
+      "output_tokens": 179
     }
   ]
 }

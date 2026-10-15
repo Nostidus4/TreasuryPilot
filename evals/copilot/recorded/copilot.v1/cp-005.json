@@ -1,7 +1,7 @@
 {
   "case_id": "cp-005",
   "prompt_version": "copilot.v1",
-  "model": "scripted-reference",
+  "model": "claude-sonnet-5-5",
   "case_sha256": "3739969523c244e9ecd65114706927b99a5e15d456a07d76745dd4be3fe4954d",
   "recorded_at": "2026-10-15",
   "responses": [
@@ -10,20 +10,33 @@
       "text": null,
       "tool_calls": [
         {
-          "id": "t1",
+          "id": "toolu_01LZ1sjtsoAsrvdCKtWrJCVN",
           "name": "deterministic_tool",
           "input": {}
         }
       ],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 219,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01Lxm8MnMim6MgzULVbkzdKG",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 344,
+      "output_tokens": 158
     },
     {
       "stop_reason": "end_turn",
-      "text": "{\"answer\": \"From the cited figures (base units): remaining_daily_pay_after_r1 is 100000000; early_amount is 180000000; forgone_discount is 20000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "text": "{\"answer\":\"If r1 is paid today at face value, the tool shows 100000000 base units of today's PAY budget remaining. The tool's approved options give an early-payment amount of 180000000 base units for r2. The discount forgone against r2's standard amount is 20000000 base units. That discount excludes fees and forgone interest. This only reports the figures. It doesn't say the early payment should be taken, and I can't pay, approve or schedule anything. Any payment would have to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.remaining_daily_pay_after_r1.remaining_daily_pay_after_r1\"},{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.approved_options.early_amount\"},{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.approved_options.forgone_discount\"}]}",
       "tool_calls": [],
-      "input_tokens": 10,
-      "output_tokens": 10
+      "input_tokens": 597,
+      "output_tokens": 312
     }
   ]
 }
