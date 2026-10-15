@@ -101,6 +101,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(minutes=5),
                 "options": {"queue": "core"},
             },
+            "auto-match-reconciliations": {
+                "task": "treasurypilot.reconciliation.auto_match",
+                "schedule": timedelta(minutes=1),
+                "options": {"queue": "core", "expires": 55},
+            },
             "expire-mandates": {
                 "task": "treasurypilot.mandates.expire",
                 "schedule": timedelta(minutes=10),

@@ -223,7 +223,7 @@ class Organization(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     auto_match: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true"
+        Boolean, nullable=False, default=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

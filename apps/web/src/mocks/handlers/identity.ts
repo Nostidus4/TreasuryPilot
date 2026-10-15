@@ -248,7 +248,7 @@ export const identityHandlers = [
         country: body.country ?? 'VN',
         displayTz: body.displayTz ?? 'Asia/Ho_Chi_Minh',
         soloMode: false,
-        autoMatch: true,
+        autoMatch: false,
         treasuries: [],
       };
       db.orgs.push(org);

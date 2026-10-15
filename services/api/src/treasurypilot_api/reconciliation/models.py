@@ -61,6 +61,15 @@ class Reconciliation(Base):
     note: Mapped[str | None] = mapped_column(Text)
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     eas_uid: Mapped[str | None] = mapped_column(String(66))
+    # Discrepancy resolution needs a Finance note and an Owner acknowledgment (M11-D9).
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    owner_ack_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    owner_ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReconciliationLine(Base):
