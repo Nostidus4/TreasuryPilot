@@ -63,6 +63,11 @@ MANDATE_OUTPUTS = [
 ]
 
 
+# Fixed per process: calldata embeds validUntil, so rebuilding a request across a
+# second boundary would otherwise change the payload and trip PAYLOAD_MISMATCH.
+VALID_UNTIL = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+
+
 def _make_request(
     *,
     amount: int = 123,
@@ -94,7 +99,7 @@ def _make_request(
         "stepAmounts": [amount],
         "policyVersion": "0x" + "66" * 32,
         "executor": executor.address,
-        "validUntil": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
+        "validUntil": VALID_UNTIL,
         "nonce": nonce,
         "evidenceDigest": "0x" + "77" * 32,
     }
@@ -172,7 +177,7 @@ def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
         "stepAmounts": [amount],
         "policyVersion": "0x" + "66" * 32,
         "executor": EXECUTOR.address,
-        "validUntil": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
+        "validUntil": VALID_UNTIL,
         "nonce": nonce,
         "evidenceDigest": "0x" + "77" * 32,
     }
