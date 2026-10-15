@@ -366,6 +366,12 @@ class SigningService:
                 or gas_limit * fees.max_fee_per_gas > fee_cap
             ):
                 raise SignerFault("FEE_CAP_EXCEEDED")
+            # Nothing is reserved or signed when the executor cannot pay the worst-case fee.
+            balance = _rpc_quantity(
+                await self._rpc.call("eth_getBalance", [account.address, "latest"])
+            )
+            if balance < gas_limit * fees.max_fee_per_gas:
+                raise SignerFault("INSUFFICIENT_GAS")
             pending_nonce = _rpc_quantity(
                 await self._rpc.call("eth_getTransactionCount", [account.address, "pending"])
             )

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     # (raw base units) and does not actually fund executor gas.
     gas_swap_max_amount_in: int | None = None
     gas_swap_slippage_bps: int = 100
+    # Executor balance below which a LowGas alert is emitted (EXE-010): 0.005 native token.
+    low_gas_threshold_wei: int = 5 * 10**15
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.

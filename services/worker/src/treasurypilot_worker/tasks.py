@@ -47,6 +47,7 @@ from treasurypilot_worker.locks import (
     create_worker_pool,
     treasury_advisory_xact_lock,
 )
+from treasurypilot_worker.low_gas import check_low_gas
 from treasurypilot_worker.mandate_expiry import expire_mandates
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
 from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
@@ -143,6 +144,25 @@ def expire_mandate_versions() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for mandate expiry")
     return asyncio.run(_expire_mandates(database_url))
+
+
+async def _check_low_gas(database_url: str, threshold_wei: int) -> dict[str, int]:
+    connection = await asyncpg.connect(_asyncpg_database_url(database_url))
+    try:
+        return await check_low_gas(
+            connection, lambda urls: build_rpc_client(decode_rpc_urls(urls)), threshold_wei
+        )
+    finally:
+        await connection.close()
+
+
+@app.task(name="treasurypilot.execution.check_low_gas", queue="core")
+def check_low_gas_task() -> dict[str, int]:
+    """Alert operators when an executor's native balance falls below the threshold."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for the low-gas check")
+    return asyncio.run(_check_low_gas(settings.database_url, settings.low_gas_threshold_wei))
 
 
 async def _auto_match(database_url: str) -> dict[str, int]:

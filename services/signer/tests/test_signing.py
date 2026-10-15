@@ -398,6 +398,8 @@ class FakeRpc:
             if self.revert_simulation:
                 raise RpcFailure(method, reverted=True)
             return "0x"
+        if method == "eth_getBalance":
+            return hex(10**18)
         if method == "eth_estimateGas":
             return "0x5208"
         if method == "eth_getTransactionCount":
@@ -628,6 +630,15 @@ def test_signer_fee_ceiling_applies_without_a_plan_fee_cap() -> None:
     with pytest.raises(SignerFault, match="FEE_CAP_EXCEEDED"):
         asyncio.run(service.sign_and_send(request))
     assert node.sent == []
+
+
+def test_insufficient_executor_gas_refuses_before_reserving() -> None:
+    service, node, store = _service(rpc=FakeRpc(overrides={"eth_getBalance": "0x1"}))
+
+    with pytest.raises(SignerFault, match="INSUFFICIENT_GAS"):
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert node.sent == []
+    assert not store.uses
 
 
 @pytest.mark.parametrize(
