@@ -67,6 +67,19 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "AllowDuplicateRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "AllowDuplicateRequest",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "properties": {
           "expiresAt": {
@@ -1381,6 +1394,19 @@
         ],
         "title": "GovernanceTxPurpose",
         "type": "string"
+      },
+      "GrantExceptionRequest": {
+        "properties": {
+          "expiryHours": {
+            "default": 72,
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Expiryhours",
+            "type": "integer"
+          }
+        },
+        "title": "GrantExceptionRequest",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3069,6 +3095,19 @@
         },
         "required": ["from", "to"],
         "title": "RefillPath",
+        "type": "object"
+      },
+      "RejectExceptionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "RejectExceptionRequest",
         "type": "object"
       },
       "RenewRequest": {
@@ -7936,6 +7975,69 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/{request_id}/allow-duplicate-tx": {
+      "post": {
+        "operationId": "allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowDuplicateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Allow Duplicate V1 Orgs  Organization Id  Requests  Request Id  Allow Duplicate Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Allow Duplicate",
+        "tags": ["mandate exceptions"]
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data": {
       "get": {
         "operationId": "get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get",
@@ -8317,6 +8419,238 @@
         },
         "summary": "Get Request Evidence",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception": {
+      "get": {
+        "operationId": "get_exception_v1_orgs__organization_id__requests__request_id__exception_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/grant-tx": {
+      "post": {
+        "operationId": "grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantExceptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Grant Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Grant Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/reject": {
+      "post": {
+        "operationId": "reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectExceptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reject Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Reject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/revoke-tx": {
+      "post": {
+        "operationId": "revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Revoke Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Exception",
+        "tags": ["mandate exceptions"]
       }
     },
     "/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm": {

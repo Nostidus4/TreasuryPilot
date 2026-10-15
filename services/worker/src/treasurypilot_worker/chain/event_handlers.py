@@ -110,11 +110,46 @@ async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent
         "UPDATE exceptions e SET status = 'Granted', version = e.version + 1, updated_at = now() "
         "FROM payment_requests r WHERE r.id = e.request_id AND r.treasury_id = $1 "
         "AND r.onchain_request_id = $2 AND e.status = 'Proposed' AND e.payee = $3 "
-        "AND e.amount = $4",
+        "AND e.amount = $4 AND e.mandate_onchain_version = $5 "
+        "AND date_trunc('second', e.expiry) = to_timestamp($6)",
         event.treasury_id,
         _bytes(event.payload["requestId"]),
         _bytes(event.payload["payee"]),
         Decimal(event.payload["amount"]),
+        int(event.payload["version"]),
+        int(event.payload["expiry"]),
+    )
+
+
+async def _exception_revoked(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    await connection.execute(
+        "UPDATE exceptions e SET status = 'Revoked', version = e.version + 1, updated_at = now() "
+        "FROM payment_requests r WHERE r.id = e.request_id AND r.treasury_id = $1 "
+        "AND r.onchain_request_id = $2 AND e.status = 'Granted'",
+        event.treasury_id,
+        _bytes(event.payload["requestId"]),
+    )
+
+
+async def _exception_consumed(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    if event.payload.get("usedException") is not True:
+        return
+    await connection.execute(
+        "UPDATE exceptions e SET status = 'Consumed', version = e.version + 1, updated_at = now() "
+        "FROM payment_requests r WHERE r.id = e.request_id AND r.treasury_id = $1 "
+        "AND r.onchain_request_id = $2 AND e.status = 'Granted'",
+        event.treasury_id,
+        _bytes(event.payload["requestId"]),
+    )
+
+
+async def _mandate_configured(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    await connection.execute(
+        "UPDATE exceptions SET status = 'Invalidated', version = version + 1, updated_at = now() "
+        "WHERE treasury_id = $1 AND mandate_onchain_version <> $2 "
+        "AND status IN ('Requested', 'Proposed', 'Granted')",
+        event.treasury_id,
+        int(event.payload["version"]),
     )
 
 
@@ -154,6 +189,9 @@ registry.on_event(MODULE, "PayeeDeactivated", _payee_deactivated)
 registry.on_event(MODULE, "Paused", _paused)
 registry.on_event(MODULE, "Resumed", _resumed)
 registry.on_event(MODULE, "ExceptionGranted", _exception_granted)
+registry.on_event(MODULE, "ExceptionRevoked", _exception_revoked)
+registry.on_event(MODULE, "PaymentExecuted", _exception_consumed)
+registry.on_event(MODULE, "MandateConfigured", _mandate_configured)
 registry.on_event(MODULE, "RequestCancelled", _request_cancelled)
 registry.on_event(SAFE_EXEC, "ExecutionSuccess", _governance_outcome("Executed"))
 registry.on_event(SAFE_EXEC, "ExecutionFailure", _governance_outcome("Failed"))

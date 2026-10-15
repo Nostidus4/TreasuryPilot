@@ -68,6 +68,7 @@ from treasurypilot_api.invoices.fx import FxQuoteProvider
 from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.exceptions import router as mandate_exceptions_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -467,6 +468,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(treasury_router)
     app.include_router(governance_router)
+    app.include_router(mandate_exceptions_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)
