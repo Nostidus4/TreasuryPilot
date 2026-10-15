@@ -1,7 +1,7 @@
 """Record one notification per mandate expiry milestone.
 
-Revision ID: 20261015_0052
-Revises: 20261015_0051
+Revision ID: 20261015_0053
+Revises: 20261015_0052
 """
 
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0052"
-down_revision: str | None = "20261015_0051"
+revision: str = "20261015_0053"
+down_revision: str | None = "20261015_0052"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
