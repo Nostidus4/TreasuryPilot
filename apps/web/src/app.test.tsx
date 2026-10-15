@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { expect, test } from 'vitest';
 
 import { db } from '@/mocks/db';
+import { server } from '@/mocks/server';
 import { renderApp } from '@/test/render';
 
 const BASE = '/o/org_northwind';
@@ -124,6 +126,33 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getAllByText('Sepolia').length).toBeGreaterThan(0);
   expect(within(position).getAllByText('TEST').length).toBeGreaterThan(0);
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
+});
+
+test('negative savings are rendered with their negative sign', async () => {
+  server.use(
+    http.get('*/v1/orgs/org_northwind/metrics/savings', () =>
+      HttpResponse.json({
+        totals: { baseline: '1000000', actual: '1100000', saved: '-100000' },
+        perRequest: [
+          {
+            requestId: 'req_negative_savings',
+            invoiceNumber: 'NEG-2026-001',
+            vendorName: 'Negative Savings Vendor',
+            baseline: '1000000',
+            actual: '1100000',
+            saved: '-100000',
+          },
+        ],
+        methodology: 'Actual payment exceeded the due-date baseline.',
+      }),
+    ),
+  );
+  renderApp(`${BASE}/metrics`);
+
+  expect(
+    await screen.findByText('Savings against baseline B1'),
+  ).toBeInTheDocument();
+  expect(await screen.findAllByText('-0.10')).toHaveLength(2);
 });
 
 test('the position card shows the reserve breakdown and what is available to supply', async () => {
