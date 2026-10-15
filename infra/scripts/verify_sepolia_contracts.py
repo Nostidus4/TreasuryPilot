@@ -86,8 +86,13 @@ def _forge_verify(
     except OSError:
         raise RuntimeError("Cannot run forge; install the pinned Foundry toolchain") from None
     if result.returncode:
+        api_key = environment["ETHERSCAN_API_KEY"]
+        detail = ((result.stderr or "") + (result.stdout or "")).replace(api_key, "***").strip()
+        if "already verified" in detail.lower():  # keeps re-runs idempotent
+            return
         raise RuntimeError(
-            f"Etherscan verification failed for {contract} (forge exit {result.returncode})"
+            f"Etherscan verification failed for {contract} (forge exit {result.returncode}):\n"
+            f"{detail}"
         )
 
 

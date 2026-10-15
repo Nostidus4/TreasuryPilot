@@ -720,3 +720,23 @@ def test_sepolia_verifier_rejects_runtime_drift_before_etherscan(
         verifier.verify(path)
 
     assert forge_calls == []
+
+
+def test_sepolia_forge_verify_surfaces_scrubbed_errors_and_tolerates_reruns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = load_script("verify_sepolia_contracts")
+    monkeypatch.setenv("ETHERSCAN_API_KEY", "test-key")
+    stderr = "boom key=test-key"
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=1, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(verifier.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError) as error:
+        verifier._forge_verify("0x" + "11" * 20, "src/X.sol:X", "https://rpc.example")
+    assert "boom" in str(error.value)
+    assert "test-key" not in str(error.value)
+
+    stderr = "Error: Contract is Already Verified"
+    verifier._forge_verify("0x" + "11" * 20, "src/X.sol:X", "https://rpc.example")

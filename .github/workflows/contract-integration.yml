@@ -100,7 +100,9 @@ jobs:
           kill "$(cat /tmp/treasurypilot-anvil-repeat.pid)"
       - name: Exercise make deploy-local and validate its manifest
         run: |
+          rm -f deployments/31337.json deployments/predictions/31337.json
           make deploy-local
+          test -f deployments/31337.json
           .venv/bin/python - <<'PY'
           import json
           from pathlib import Path
