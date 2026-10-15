@@ -32,6 +32,7 @@ _IN_FLIGHT = (
 class ResumeResult:
     status: ResumeStatus
     plan_id: UUID | None = None
+    treasury_id: UUID | None = None  # routes the follow-up task to the treasury's shard
 
 
 @dataclass(frozen=True)
@@ -52,16 +53,17 @@ async def resume_partial(
     """Reopen a request whose plan stopped part-way so only its unfinished steps run again."""
 
     async with pool.acquire() as connection, connection.transaction():
-        plan_id = await connection.fetchval(
-            "SELECT id FROM plans WHERE request_id = $1 AND status = 'PartiallyCompleted' "
-            "FOR UPDATE",
+        plan = await connection.fetchrow(
+            "SELECT id, treasury_id FROM plans WHERE request_id = $1 "
+            "AND status = 'PartiallyCompleted' FOR UPDATE",
             request_id,
         )
-        if plan_id is None:
+        if plan is None:
             return ResumeResult("NotPartial")
+        plan_id, treasury_id = plan["id"], plan["treasury_id"]
         # Unknown/in-flight operations are M12's to resolve first (BR-060); never re-send them.
         if await connection.fetchval(_IN_FLIGHT, request_id):
-            return ResumeResult("InFlight", plan_id)
+            return ResumeResult("InFlight", plan_id, treasury_id)
         # A Reverted/Abandoned step needs a re-plan, and only RETRY-able review items resolve here.
         if await connection.fetchval(
             "SELECT 1 FROM operations WHERE request_id = $1 "
@@ -73,7 +75,7 @@ async def resume_partial(
             request_id,
             list(_RETRYABLE_TYPES),
         ):
-            return ResumeResult("NotRetryable", plan_id)
+            return ResumeResult("NotRetryable", plan_id, treasury_id)
         if not await transition_request(
             connection,
             request_id,
@@ -82,12 +84,12 @@ async def resume_partial(
             "partial plan resumed",
             actor_id,
         ):
-            return ResumeResult("NotPartial", plan_id)
+            return ResumeResult("NotPartial", plan_id, treasury_id)
         await connection.execute(
             "UPDATE plans SET status = 'Executing', updated_at = now() WHERE id = $1", plan_id
         )
         await _resolve_items(connection, request_id, "RETRY", actor_id)
-    return ResumeResult("Resumed", plan_id)
+    return ResumeResult("Resumed", plan_id, treasury_id)
 
 
 async def cancel_partial(

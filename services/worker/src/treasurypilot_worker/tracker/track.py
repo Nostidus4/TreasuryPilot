@@ -53,11 +53,11 @@ async def track_transactions(
     *,
     client_factory: ClientFactory = build_rpc_client,
     now: datetime | None = None,
-    on_confirmed: Callable[[uuid.UUID], None] | None = None,
+    on_confirmed: Callable[[uuid.UUID, uuid.UUID], None] | None = None,
 ) -> dict[str, int]:
     """Poll every unfinished transaction once; returns how many changed state.
 
-    ``on_confirmed(plan_id)`` is called when an operation of an attested plan became Confirmed, so
+    ``on_confirmed(plan_id, treasury_id)`` is called when an operation of an attested plan became Confirmed, so
     the plan's next step does not wait for the sweep. It is best effort: the sweep is the backstop.
     """
 
@@ -91,10 +91,16 @@ async def track_transactions(
         await pool.close()
 
 
-def _enqueue_sequencing(plan_id: uuid.UUID) -> None:
+def _enqueue_sequencing(plan_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
     from treasurypilot_worker.celery_app import app  # imported late: tasks import this package
+    from treasurypilot_worker.config import get_settings
+    from treasurypilot_worker.routing import treasury_queue
 
-    app.send_task("treasurypilot.execution.sequence_plan", args=[str(plan_id)], queue="core")
+    app.send_task(
+        "treasurypilot.execution.sequence_plan",
+        args=[str(plan_id)],
+        queue=treasury_queue(treasury_id, get_settings().treasury_queue_shards),
+    )
 
 
 def track_transactions_sync(database_url: str) -> dict[str, int]:
@@ -102,18 +108,21 @@ def track_transactions_sync(database_url: str) -> dict[str, int]:
 
 
 async def _announce_confirmed(
-    pool: asyncpg.Pool, operation_id: uuid.UUID, on_confirmed: Callable[[uuid.UUID], None]
+    pool: asyncpg.Pool,
+    operation_id: uuid.UUID,
+    on_confirmed: Callable[[uuid.UUID, uuid.UUID], None],
 ) -> None:
-    plan_id = await pool.fetchval(
-        "SELECT a.plan_id FROM operations o JOIN payment_requests r ON r.id = o.request_id "
+    row = await pool.fetchrow(
+        "SELECT a.plan_id, r.treasury_id FROM operations o JOIN payment_requests r ON r.id = o.request_id "
         "JOIN attestations a ON a.request_id = r.onchain_request_id "
         "WHERE o.id = $1 AND o.status = 'Confirmed' ORDER BY a.created_at DESC LIMIT 1",
         operation_id,
     )
-    if plan_id is None:
+    if row is None:
         return
+    plan_id = row["plan_id"]
     try:
-        on_confirmed(plan_id)
+        on_confirmed(plan_id, row["treasury_id"])
     except Exception:
         logger.exception("could not enqueue sequencing of plan %s; the sweep will", plan_id)
 

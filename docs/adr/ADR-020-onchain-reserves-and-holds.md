@@ -27,3 +27,9 @@ Funds approved for one payment request must not be spendable by another request 
 - Commitment amount is not tied to the paid amount: paying more than the reserved amount is bounded only by the post-call check against other commitments.
 - Deploy script and backend integration (reserve on approval, beginExecution on start, release on outcome, funding-deficit reporting) are not part of this change.
 - `tools/check_mutations.py` is hard-wired to the module and `TreasuryInvariantTest`; mutation checks for this contract's `_enforce` are not added.
+
+## Addendum: ThresholdApprovalExecutor trust model (#87)
+- `pay` is operator-only (`msg.sender == operator`); the module accepts calls only from the executor, so a direct `module.pay` by the operator EOA or anyone else reverts `NotExecutor`.
+- The executor does not compose with `PlanAttestedExecutor` or `ReserveHoldExecutor`. Using several needs a new combined executor and `configureMandate`.
+- Refill and supply are not exposed, so they are unavailable while it is the mandate executor; Safe T must switch executors to use them.
+- `k` counts approver addresses and the band is chosen by the signed `ap.amount`.
