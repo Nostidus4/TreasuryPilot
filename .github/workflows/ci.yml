@@ -48,6 +48,7 @@ jobs:
           services/worker/tests/test_event_indexer_integration.py
           services/worker/tests/test_recovery_resolve.py
           services/worker/tests/test_recovery_partial_anvil.py
+          services/worker/tests/test_recovery_crash_suite.py
 
   audit-evidence-postgres:
     runs-on: ubuntu-latest
