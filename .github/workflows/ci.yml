@@ -290,6 +290,20 @@ jobs:
   scenario-anvil:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tp
+          POSTGRES_PASSWORD: tp
+          POSTGRES_DB: tp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tp -d tp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -327,6 +341,12 @@ jobs:
           exit 1
       - name: Deploy contracts to Anvil
         run: infra/scripts/deploy-local.sh
+      - name: AT-04 gas-shortage swap on the TEST ROUTER (planner, sequencer, tracker, real module)
+        env:
+          TP_TEST_ANVIL_URL: http://127.0.0.1:8545
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
+          TP_REQUIRE_INTEGRATION: '1'
+        run: uv run pytest -q -rs services/worker/tests/executor/test_swap_for_gas_anvil.py
       - name: Run every scenario on Anvil
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545

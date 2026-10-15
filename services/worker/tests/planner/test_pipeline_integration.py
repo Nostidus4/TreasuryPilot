@@ -922,8 +922,8 @@ async def test_a_gas_shortage_adds_a_test_router_swap_that_is_persisted_and_enco
     assert [r["action"] for r in rows][0] == SWAP_IN and len(rows) == 3  # SWAP, REFILL, PAY
     swap = rows[0]
     assert swap["venue"] == "TEST_ROUTER" and bytes(swap["to_address"]) == bytes.fromhex(ROUTER[2:])
-    # Shortfall = 2 base steps x 1000 - 500 = 1500, at 1% slippage: minOut covers it.
-    assert int(swap["min_out"]) >= 1_500 and int(swap["amount"]) < 1_600
+    # Shortfall = 3 steps (the swap's own gas included) x 1000 - 500 = 2500, at 1% slippage.
+    assert int(swap["min_out"]) >= 2_500 and int(swap["amount"]) < 2_600
     assert all(r["min_out"] is None and r["venue"] is None for r in rows[1:])
 
     loaded = await load_plan(pool, plan_id)

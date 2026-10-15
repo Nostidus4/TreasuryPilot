@@ -3990,6 +3990,18 @@
           "toAddress": {
             "title": "Toaddress",
             "type": "string"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "const": "TEST_ROUTER",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
           }
         },
         "required": [
