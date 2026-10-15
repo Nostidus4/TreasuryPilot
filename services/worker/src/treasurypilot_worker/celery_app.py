@@ -104,6 +104,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=60),
                 "options": {"queue": "core", "expires": 55},
             },
+            "snapshot-daily": {
+                "task": "treasurypilot.chain.snapshot_daily",
+                "schedule": crontab(hour=0, minute=0),
+                "options": {"queue": "core"},
+            },
             "index-chain-events": {
                 "task": "treasurypilot.chain.index-events",
                 "schedule": timedelta(seconds=6),

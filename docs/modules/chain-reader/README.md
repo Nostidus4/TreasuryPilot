@@ -44,7 +44,7 @@ M06 is the system's **only window onto the chain**. Every other module reads cha
 
 | Table | Columns | Notes |
 |---|---|---|
-| `snapshots` | id, treasury_id, purpose enum(PLAN, PRE_STEP, DASHBOARD, READBACK), block_number, block_hash, block_timestamp, observed_at, provider, data jsonb, coverage, missing jsonb | immutable; DASHBOARD rows pruned after 7 days |
+| `snapshots` | id, treasury_id, purpose enum(PLAN, PRE_STEP, DASHBOARD, READBACK, DAILY), block_number, block_hash, block_timestamp, observed_at, provider, data jsonb, coverage, missing jsonb | immutable; DASHBOARD rows pruned after 7 days |
 | `transactions` | id, operation_id, chain_id, tx_hash, nonce, from_address, replaced_by_tx_id, status enum(Submitted, Pending, Confirmed, Reverted, Dropped, Unknown), block_number, block_hash, confirmations, revert_selector, gas_used, effective_gas_price, fee_wei, submitted_at, last_seen_pending_at, confirmed_at, crosscheck enum(NotRun, Match, Mismatch) | unique(chain_id, tx_hash) |
 | `observed_events` | id, treasury_id, chain_id, stream enum(MODULE, SAFE_CONFIG, SAFE_EXEC, TOKEN), block_number, block_hash, tx_hash, log_index, address, event_name, payload jsonb, classification null, observed_at, removed bool | unique(chain_id, tx_hash, log_index) |
 | `index_cursors` *(new)* | treasury_id, stream, last_block, last_block_hash, updated_at | PK(treasury_id, stream) |

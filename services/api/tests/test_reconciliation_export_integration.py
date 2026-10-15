@@ -166,6 +166,18 @@ async def _seed(url: str) -> None:
                 ORG_A, T_A, b"\x01" * 32, datetime.fromisoformat(stamp).replace(tzinfo=UTC),
                 json.dumps({"aave": {"a_token_balance": str(balance)}}),
             )  # fmt: skip
+        await _request(
+            pool, ORG_A, T_A, a, "INV-W1", [("WITHDRAW", 800, USDC)], "2026-12-10 10:00:00"
+        )
+        for stamp, balance in (("2026-11-30 12:00:00", 1000), ("2026-12-31 12:00:00", 100)):
+            await pool.execute(
+                "INSERT INTO snapshots (id, org_id, treasury_id, purpose, block_number, "
+                "block_hash, block_timestamp, provider, data, coverage, missing) VALUES "
+                "(gen_random_uuid(), $1, $2, 'DAILY', 1, $3, $4, 'p', $5::jsonb, 'COMPLETE', "
+                "'[]')",
+                ORG_A, T_A, b"\x01" * 32, datetime.fromisoformat(stamp).replace(tzinfo=UTC),
+                json.dumps({"aave": {"a_token_balance": str(balance)}}),
+            )  # fmt: skip
         await pool.execute(
             "UPDATE reconciliations SET status = 'Matched', matched_by = 'USER' "
             "WHERE request_id = $1",
@@ -307,7 +319,7 @@ def test_org_account_mappings_override_journal_and_are_scoped(url: str) -> None:
     client = _client(url, "Finance")
     mappings = f"/v1/orgs/{ORG_A}/reconciliation/account-mappings"
     body = {"items": [{"classification": "EXTERNAL_EXPENSE", "side": "DEBIT",
-                       "accountCode": "=7000", "accountName": "Vendor costs"}]}  # fmt: skip
+                       "accountCode": "7000", "accountName": "Vendor costs"}]}  # fmt: skip
     put = client.put(mappings, json=body)
     assert put.status_code == 200
     by_slot = {(i["classification"], i["side"]): i for i in put.json()["items"]}
@@ -315,7 +327,7 @@ def test_org_account_mappings_override_journal_and_are_scoped(url: str) -> None:
     assert by_slot[("EXTERNAL_EXPENSE", "CREDIT")]["source"] == "DEFAULT"
     journal = _rows(_get(url, "2026-10-01", "2026-10-02", "journal"))
     pay = [r for r in journal if r[2] == "EXTERNAL_EXPENSE"]
-    assert {r[3] for r in pay} == {"'=7000", "1110"}  # overridden debit, default credit
+    assert {r[3] for r in pay} == {"7000", "1110"}  # overridden debit, default credit
     assert (
         client.put(
             mappings, json={"items": [{**body["items"][0], "classification": "NOPE"}]}
@@ -325,3 +337,54 @@ def test_org_account_mappings_override_journal_and_are_scoped(url: str) -> None:
     assert _client(url, "Owner").get(mappings).status_code == 403
     assert client.put(mappings, json={"items": []}).status_code == 200  # reset to defaults
     assert client.get(mappings).json()["items"][0]["source"] == "DEFAULT"
+
+
+def test_non_positive_interest_is_dropped_with_a_note(url: str) -> None:
+    response = _get(url, "2026-12-01", "2026-12-31")
+    assert response.status_code == 200
+    assert not any(r[4] == "SUPPLY_INTEREST" for r in _rows(response))  # 100 - 1000 + 800 < 0
+    assert "SUPPLY_INTEREST omitted" in response.headers["X-Export-Notes"]
+
+
+def test_interest_needs_snapshots_near_the_period_boundaries(url: str) -> None:
+    # The only snapshots are 5+ days before this period, beyond the 1-day tolerance.
+    response = _get(url, "2026-10-05", "2026-10-10")
+    assert not any(r[4] == "SUPPLY_INTEREST" for r in _rows(response))
+    assert "no snapshots near period" in response.headers["X-Export-Notes"]
+
+
+def test_mapping_endpoints_require_finance_or_admin(url: str) -> None:
+    mappings = f"/v1/orgs/{ORG_A}/reconciliation/account-mappings"
+    for role in ("Owner", "Operator"):
+        client = _client(url, role)
+        assert client.get(mappings).status_code == 403
+        assert client.put(mappings, json={"items": []}).status_code == 403
+
+
+def test_mapping_put_validates_and_audits(url: str) -> None:
+    client = _client(url, "Finance")
+    mappings = f"/v1/orgs/{ORG_A}/reconciliation/account-mappings"
+    item = {"classification": "FEE", "side": "DEBIT", "accountCode": "6100", "accountName": "F"}
+    assert client.put(mappings, json={"items": [item, item]}).status_code == 422  # duplicate slot
+    for bad in ("a b", "=7000"):
+        assert (
+            client.put(mappings, json={"items": [{**item, "accountCode": bad}]}).status_code == 422
+        )
+
+    async def audit_rows() -> int:
+        pool = await create_worker_pool(url.replace("+asyncpg", ""), min_size=1, max_size=1)
+        try:
+            return int(
+                await pool.fetchval(
+                    "SELECT count(*) FROM audit_log WHERE action = $1 AND org_id = $2",
+                    "reconciliation.account_mappings_replaced",
+                    ORG_A,
+                )
+            )
+        finally:
+            await pool.close()
+
+    before = asyncio.run(audit_rows())
+    assert client.put(mappings, json={"items": [item]}).status_code == 200
+    assert asyncio.run(audit_rows()) == before + 1
+    assert client.put(mappings, json={"items": []}).status_code == 200

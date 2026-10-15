@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
@@ -14,10 +15,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.audit.events import AuditEvent, log_audit_event
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.execution.models import Transaction
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole
+from treasurypilot_api.identity.models import Organization, OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.mandate.models import Vendor
@@ -29,7 +32,10 @@ from treasurypilot_api.reconciliation.models import (
 from treasurypilot_api.treasury.models import Asset, Treasury
 from treasurypilot_core.money import BaseUnits
 
+logger = logging.getLogger(__name__)
+
 ETH_DECIMALS = 18
+SNAPSHOT_TOLERANCE = timedelta(days=1)
 MAX_PERIOD_DAYS = 366
 
 # Generic default mapping (M11-D6): class -> (debit, credit) as (code, name).
@@ -212,7 +218,7 @@ SELECT cls, chain_id, asset_address, SUM(amt)::text AS total FROM (
 _SNAPSHOT_SQL = text(
     """
 SELECT block_timestamp, (data->'aave'->>'a_token_balance')::numeric AS balance FROM snapshots
-WHERE treasury_id = :treasury AND data->'aave'->>'a_token_balance' IS NOT NULL
+WHERE treasury_id = :treasury AND coverage = 'COMPLETE' AND data->'aave'->>'a_token_balance' IS NOT NULL
     AND block_timestamp < :before
 ORDER BY block_timestamp DESC LIMIT 1
 """
@@ -232,14 +238,16 @@ WHERE o.status = 'Confirmed' AND o.treasury_id = :treasury
 
 async def load_interest(
     session: AsyncSession, org_id: uuid.UUID, start: date, end: date
-) -> list[ExportLine]:
-    """Supply interest per treasury: aToken growth between the snapshots bracketing the period
-    minus net supplied. shortcut: needs a snapshot before the period and one before its end,
-    otherwise no line is emitted; add a scheduled DASHBOARD snapshot at each UTC midnight."""
+) -> tuple[list[ExportLine], list[str]]:
+    """Supply interest per treasury: aToken growth between the COMPLETE snapshots bracketing the
+    period minus net supplied. Each bracketing snapshot must lie within a day before its boundary
+    (the daily UTC-midnight DAILY snapshot guarantees that); otherwise no line is emitted and a
+    note is returned so the export can say why."""
 
     opens = datetime.combine(start, time.min, UTC)
     closes = datetime.combine(end + timedelta(days=1), time.min, UTC)
     lines: list[ExportLine] = []
+    notes: list[str] = []
     treasuries = await session.execute(
         select(Treasury.id, Asset.symbol, Asset.decimals)
         .join(Asset, Asset.id == Treasury.asset_id)
@@ -253,14 +261,31 @@ async def load_interest(
         last = (
             await session.execute(_SNAPSHOT_SQL, {"treasury": treasury, "before": closes})
         ).one_or_none()
-        if first is None or last is None or last.block_timestamp <= first.block_timestamp:
+        if first is None and last is None:
+            continue  # never snapshotted with an aToken: not a lending treasury
+        if (
+            first is None
+            or last is None
+            or first.block_timestamp < opens - SNAPSHOT_TOLERANCE
+            or last.block_timestamp < closes - SNAPSHOT_TOLERANCE
+            or last.block_timestamp <= first.block_timestamp
+        ):
+            notes.append(
+                f"SUPPLY_INTEREST omitted for treasury {treasury}: no snapshots near period"
+            )
+            logger.warning(
+                "supply interest omitted for treasury %s: no snapshots near period", treasury
+            )
             continue
         net = await session.scalar(
             _NET_SUPPLIED_SQL,
             {"treasury": treasury, "opened": first.block_timestamp, "closed": last.block_timestamp},
         )
         earned = int(last.balance) - int(first.balance) - int(net or 0)
-        if earned > 0:  # a negative residue is rounding or missing flows, never booked as income
+        if earned <= 0:  # rounding or missing flows: never booked as income, but never silent
+            notes.append(f"SUPPLY_INTEREST omitted for treasury {treasury}: computed {earned}")
+            logger.warning("supply interest for treasury %s is not positive (%s)", treasury, earned)
+        else:
             lines.append(
                 ExportLine(
                     day=end,
@@ -277,7 +302,7 @@ async def load_interest(
                     matched_by="",
                 )
             )
-    return lines
+    return lines, notes
 
 
 async def load_mapping(session: AsyncSession, org_id: uuid.UUID) -> Mapping:
@@ -395,7 +420,9 @@ async def export_reconciliation(
             lines, expected = await load_lines(
                 session, member.organization_id, period_from, period_to
             )
-            interest = await load_interest(session, member.organization_id, period_from, period_to)
+            interest, notes = await load_interest(
+                session, member.organization_id, period_from, period_to
+            )
             mapping = await load_mapping(session, member.organization_id)
         body = render(lines, export_format, expected, mapping, interest)
     except ExportAssetUnknown as exc:
@@ -419,14 +446,17 @@ async def export_reconciliation(
     return Response(
         body,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            **({"X-Export-Notes": "; ".join(notes)} if notes else {}),
+        },
     )
 
 
 class MappingItem(BaseModel):
     classification: str = Field(pattern="^[A-Z_]{1,32}$")
     side: str = Field(pattern="^(DEBIT|CREDIT)$")
-    account_code: str = Field(alias="accountCode", min_length=1, max_length=32)
+    account_code: str = Field(alias="accountCode", pattern=r"^[0-9A-Za-z._-]+$", max_length=32)
     account_name: str = Field(alias="accountName", min_length=1, max_length=100)
 
     model_config = {"populate_by_name": True}
@@ -513,6 +543,12 @@ async def put_account_mappings(
             detail=f"Unknown classes {unknown}." if unknown else "Duplicate class and side.",
         )
     async with _sessions(request)() as session, session.begin():
+        # Serialize concurrent replaces of the same org so the unique slot never trips.
+        await session.execute(
+            select(Organization.id)
+            .where(Organization.id == member.organization_id)
+            .with_for_update()
+        )
         await session.execute(
             delete(AccountMapping).where(AccountMapping.org_id == member.organization_id)
         )
@@ -527,16 +563,13 @@ async def put_account_mappings(
             )
             for i in body.items
         )
-        await log_audit_event(
+        await write_audit(
             session,
-            AuditEvent(
-                org_id=member.organization_id,
-                actor_id=member.user_id,
-                action="reconciliation.account_mappings_replaced",
-                entity_type="organization",
-                entity_id=member.organization_id,
-                data={"count": len(body.items)},
-            ),
+            org_id=member.organization_id,
+            actor=AuditActor(AuditActorType.USER, member.user_id),
+            action="reconciliation.account_mappings_replaced",
+            entity=AuditEntity("organization", member.organization_id),
+            data={"count": len(body.items)},
         )
         await session.flush()
         return _effective(await load_mapping(session, member.organization_id))

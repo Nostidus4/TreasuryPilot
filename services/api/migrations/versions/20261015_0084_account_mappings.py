@@ -33,7 +33,23 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("org_id", "classification", "side", name="uq_account_mappings_slot"),
     )
+    # DAILY snapshots (UTC midnight, never pruned) back the supply-interest export line.
+    op.drop_constraint("ck_snapshots_purpose", "snapshots", type_="check")
+    op.create_check_constraint(
+        "ck_snapshots_purpose",
+        "snapshots",
+        "purpose IN ('PLAN', 'PRE_STEP', 'DASHBOARD', 'READBACK', 'DAILY')",
+    )
 
 
 def downgrade() -> None:
+    op.execute("ALTER TABLE snapshots DISABLE TRIGGER snapshots_immutable")
+    op.execute("DELETE FROM snapshots WHERE purpose = 'DAILY'")
+    op.execute("ALTER TABLE snapshots ENABLE TRIGGER snapshots_immutable")
+    op.drop_constraint("ck_snapshots_purpose", "snapshots", type_="check")
+    op.create_check_constraint(
+        "ck_snapshots_purpose",
+        "snapshots",
+        "purpose IN ('PLAN', 'PRE_STEP', 'DASHBOARD', 'READBACK')",
+    )
     op.drop_table("account_mappings")

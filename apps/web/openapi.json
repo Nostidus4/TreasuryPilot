@@ -2495,7 +2495,7 @@
         "properties": {
           "accountCode": {
             "maxLength": 32,
-            "minLength": 1,
+            "pattern": "^[0-9A-Za-z._-]+$",
             "title": "Accountcode",
             "type": "string"
           },
