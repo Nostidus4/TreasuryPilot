@@ -30,6 +30,16 @@ from treasurypilot_api.treasury.service import (
     WalletInput,
     coverage_allows_execution,
 )
+from treasurypilot_api.treasury.state import (
+    ActivityView,
+    BudgetView,
+    MandateSummaryView,
+    PositionView,
+    QueuesView,
+    StalenessView,
+    TreasuryExtras,
+    load_extras,
+)
 from treasurypilot_api.treasury.sync import asset_id
 
 
@@ -198,6 +208,10 @@ class WalletView(ApiModel):
     safe_address: str
     owners: list[str]
     threshold: int
+    # Base units from the latest chain snapshot (TRS-009); left out when it has no reading.
+    balance: str | None = None
+    buffer: str | None = None
+    target: str | None = None
 
 
 class CoverageView(ApiModel):
@@ -275,9 +289,30 @@ class TreasuryResponse(ApiModel):
     treasury: TreasuryView
     wallets: list[WalletView]
     warnings: list[WarningView]
+    # Dashboard parts (TRS-009). Serialized only when set: `mandate` is null for "none set",
+    # the chain-backed parts are left out while no chain snapshot exists.
+    mandate: MandateSummaryView | None = None
+    budgets: list[BudgetView] | None = None
+    staleness: StalenessView | None = None
+    position: PositionView | None = None
+    queues: QueuesView | None = None
+    activity: list[ActivityView] | None = None
 
     @classmethod
-    def from_record(cls, record: TreasuryRecord) -> TreasuryResponse:
+    def from_record(
+        cls, record: TreasuryRecord, extras: TreasuryExtras | None = None
+    ) -> TreasuryResponse:
+        parts: dict[str, object] = {}
+        if extras is not None:
+            parts = {
+                "mandate": extras.mandate,
+                "queues": extras.queues,
+                "activity": extras.activity,
+            }
+            for name in ("budgets", "staleness", "position"):
+                if (value := getattr(extras, name)) is not None:
+                    parts[name] = value
+        figures = extras.wallets if extras is not None else {}
         return cls(
             treasury=TreasuryView(
                 id=record.id,
@@ -296,6 +331,15 @@ class TreasuryResponse(ApiModel):
                     safe_address=wallet.safe_address,
                     owners=list(wallet.owners),
                     threshold=wallet.threshold,
+                    **(
+                        {
+                            "balance": found.balance,
+                            "buffer": found.buffer,
+                            "target": found.target,
+                        }
+                        if (found := figures.get(wallet.safe_address.lower()))
+                        else {}
+                    ),
                 )
                 for wallet in record.wallets
             ],
@@ -303,6 +347,7 @@ class TreasuryResponse(ApiModel):
                 WarningView(code=w.code, message=w.message, wallets=list(w.wallets))
                 for w in record.warnings
             ],
+            **parts,  # type: ignore[arg-type]
         )
 
 
@@ -407,7 +452,41 @@ async def list_treasuries(
     return TreasuriesResponse(items=items)
 
 
-@router.get("/orgs/{organization_id}/treasuries/{treasury_id}", response_model=TreasuryResponse)
+async def _extras(
+    request: Request, member: MemberAccess, record: TreasuryRecord
+) -> TreasuryExtras | None:
+    """The dashboard parts; None where no request storage is configured (the stored treasury
+    alone is still served)."""
+
+    sessions = getattr(request.app.state, "request_sessions", None)
+    if sessions is None:
+        return None
+    configuration: PlatformConfiguration = request.app.state.platform_configuration
+    asset = next(
+        (
+            item
+            for chain in configuration.chains
+            if chain.chain_id == record.chain_id
+            for item in chain.assets
+            if asset_id(chain.chain_id, item.address) == record.asset_id
+        ),
+        None,
+    )
+    async with sessions() as session:
+        return await load_extras(
+            session,
+            record,
+            roles=frozenset(str(role) for role in member.roles),
+            symbol=asset.symbol if asset is not None else "tokens",
+            decimals=asset.decimals if asset is not None else 0,
+        )
+
+
+@router.get(
+    "/orgs/{organization_id}/treasuries/{treasury_id}",
+    response_model=TreasuryResponse,
+    response_model_exclude_unset=True,
+)
 async def get_treasury(
     treasury_id: uuid.UUID,
     request: Request,
@@ -424,7 +503,7 @@ async def get_treasury(
             title="Treasury not found",
             detail="The treasury does not exist in this organization.",
         ) from None
-    return TreasuryResponse.from_record(record)
+    return TreasuryResponse.from_record(record, await _extras(request, member, record))
 
 
 @router.post(

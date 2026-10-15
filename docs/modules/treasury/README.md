@@ -50,7 +50,7 @@ The chain deployment manifest must include `TREASURY_MODULE_IMPLEMENTATION` and 
 |---|---|---|---|
 | GET | `/chains` | auth | |
 | POST | `/orgs/{o}/treasuries` | OWN, ADM | 422 `NOT_A_SAFE`, `WRONG_CHAIN`, `DUPLICATE_WALLET`, `UNSUPPORTED_ASSET`, `SAFE_VERSION_UNSUPPORTED`, `OWNER_SETS_DIFFER` (warning) |
-| GET | `/orgs/{o}/treasuries/{t}` | ANY | |
+| GET | `/orgs/{o}/treasuries/{t}` | ANY | 404 `TREASURY_NOT_FOUND`. Serves the whole dashboard state (TRS-009, `treasury/state.py`): wallet balances, mandate, budgets, position, queues, activity and `staleness`, read from the latest chain snapshot; see API_SPEC section 2 |
 | POST | `/orgs/{o}/treasuries/{t}/module/deploy-tx` | OWN | `{mandate, buffers}` → `{governanceTx, operationalGovernanceTxs[], predictedModuleAddress}`; T calls factory.createDeterministic + enableModule in one MultiSend, O1/O2 each receive their own enableModule Safe transaction |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/refresh` | OWN, ADM | 503 `RPC_UNAVAILABLE` |
 | POST | `/orgs/{o}/treasuries/{t}/coverage/acknowledge` | OWN | `{reason}`; 409 `COVERAGE_COMPLETE` |
