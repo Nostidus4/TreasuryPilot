@@ -89,6 +89,18 @@ Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK o
 
 Code: `treasurypilot_worker.recovery.resolve.resolve_operation(pool, rpc, operation_id)`, called per in-flight operation by the scan (§7.1). A receipt is left to the tracker. `stepUsed` (read 3 blocks deep) makes the operation Confirmed. A hash that is unseen and whose nonce is unused, silent for 10 min, returns the operation to NotSubmitted so the executor replays the same step id. Otherwise it stays Unknown and, after 30 min of silence, opens one UNCERTAIN_TX item (`TX_UNKNOWN`); resolving evidence later sets `evidence_resolved`. Rows are locked transactions-then-operation (the tracker's order) and re-checked first: a receipt, a final status or a newer mempool sighting recorded meanwhile aborts the change. RPC errors or undecodable answers return Unclear and change nothing. Replay resets in-flight rows to Submitted with a fresh clock (the signer returns the same hash, so no new row is inserted). A Pending tx seen in the mempool is left alone, not escalated or replaced. Not done, all left to the tracker: tracing a consumed nonce to its block (nonce scan), `requestPaid`, the secondary-provider receipt cross-check, and Reverted.
 
+Traceability (RCV-002, #164):
+
+| Requirement | Evidence |
+|---|---|
+| Step used on chain becomes Confirmed without resubmission | `test_step_used_on_chain_confirms_without_resubmission`, Anvil: `test_anvil_step_used_confirms_without_resubmission` |
+| Never-broadcast operation is resubmitted with the same step id | `test_never_broadcast_is_replayed_with_the_same_step_id`, Anvil: `test_anvil_never_broadcast_returns_to_not_submitted` |
+| Receipt is left to the tracker (BR-060 order) | `test_receipt_or_mempool_is_left_to_the_tracker`, Anvil: `test_anvil_receipt_is_left_to_the_tracker` |
+| Escalate to UNCERTAIN_TX after 30 min, treasury stays blocked | `test_consumed_nonce_without_evidence_escalates_after_30_minutes`, Anvil: `test_anvil_consumed_nonce_without_evidence_escalates` |
+| Never guess on RPC failure | `test_rpc_errors_and_empty_answers_never_fall_through` |
+
+All in `services/worker/tests/test_recovery_resolve.py` (CI: Anvil + Postgres job). The Anvil tests stub the module with `anvil_setCode` (a fixed `stepUsed` answer), not the real contract.
+
 ### 8.2 Retry classifier (RCV-005)
 
 | Error | Class | Action |
