@@ -782,12 +782,14 @@ const coveredByReserve = new Set(['Approved', 'Scheduled']);
 
 export function RunwayChart({
   forecast,
+  includeDrafts,
   requests,
   requestHref,
   units,
   walletLabel,
 }: {
   forecast: Forecast;
+  includeDrafts: boolean;
   requests: PaymentRequest[];
   requestHref: (id: string) => string;
   units: Units;
@@ -803,9 +805,10 @@ export function RunwayChart({
       .filter(
         (request) =>
           request.dueDate.slice(0, 10) === day.date &&
-          ['Approved', 'Scheduled', 'AwaitingApproval'].includes(
+          (['Approved', 'Scheduled', 'AwaitingApproval'].includes(
             request.status,
-          ),
+          ) ||
+            (includeDrafts && request.status === 'Draft')),
       )
       .sort((a, b) => Number(BigInt(b.amount) - BigInt(a.amount))),
   );
@@ -976,7 +979,7 @@ export function RunwayChart({
                     className="cursor-pointer"
                     onClick={() => navigate(requestHref(request.id))}
                   >
-                    <title>{`${request.vendorName} · ${money(request.amount, units)}`}</title>
+                    <title>{`${request.vendorName} · ${money(request.amount, units)}${request.status === 'Draft' ? ` · ${t('Draft')}` : ''}`}</title>
                   </rect>
                 );
               });
@@ -1046,6 +1049,11 @@ export function RunwayChart({
                       hatched={!coveredByReserve.has(request.status)}
                     />
                     <span>{request.vendorName}</span>
+                    {request.status === 'Draft' && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('Draft')}
+                      </span>
+                    )}
                     <span className="num text-muted-foreground">
                       −{formatUnits(request.amount, units.decimals)}
                     </span>
@@ -1072,6 +1080,11 @@ export function RunwayChart({
             <span className="inline-flex items-center gap-1.5 text-xs">
               <Swatch color="var(--chart-3)" hatched /> {t('Awaiting approval')}
             </span>
+            {includeDrafts && (
+              <span className="inline-flex items-center gap-1.5 text-xs">
+                <Swatch color="var(--chart-3)" hatched /> {t('Drafts included')}
+              </span>
+            )}
           </div>
         )}
       </div>

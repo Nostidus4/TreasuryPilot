@@ -136,12 +136,18 @@ export const useTreasurySetup = (orgId: string, treasuryId: string | undefined) 
   });
 };
 
-export const useForecast = (orgId: string, treasuryId: string) =>
+export const useForecast = (
+  orgId: string,
+  treasuryId: string,
+  includeDrafts = false,
+) =>
   useOrgQuery<Forecast>(
     orgId,
     'treasury',
-    [treasuryId, 'forecast'],
-    `/treasuries/${treasuryId}/forecast`,
+    [treasuryId, 'forecast', String(includeDrafts)],
+    `/treasuries/${treasuryId}/forecast${
+      includeDrafts ? '?includeDrafts=true' : ''
+    }`,
   );
 
 export const useBorrowProposal = (
