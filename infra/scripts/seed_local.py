@@ -315,7 +315,7 @@ async def seed_database(
         ("INV-TEST-004", "globex", "Paid", 250, "safeO2"),
         ("INV-TEST-005", "initech", "Rejected", 90, "safeO1"),
     )
-    for number, (invoice_no, key, status, amount, wallet) in enumerate(invoices, start=1):
+    for number, (invoice_no, key, status, amount, wallet_key) in enumerate(invoices, start=1):
         request = sid(f"request:{invoice_no}")
         vendor, payee = payee_ids[key]
         issued = (now - timedelta(days=10 - number)).date()
@@ -334,7 +334,7 @@ async def seed_database(
             "ON CONFLICT (id) DO UPDATE SET asset_id = EXCLUDED.asset_id",
             id=request, org=org, t=treasury, chain=CHAIN_ID, v=vendor, p=payee, no=invoice_no,
             issued=issued, due=issued + timedelta(days=30), amount=amount * BASE_UNITS, asset=token,
-            w=wallet_ids[wallet], fp=fingerprint, status=status, u=owner_user,
+            w=wallet_ids[wallet_key], fp=fingerprint, status=status, u=owner_user,
         )  # fmt: skip
         snapshot = {"invoiceNo": invoice_no, "amount": str(amount * BASE_UNITS), "test": True}
         await _run(
