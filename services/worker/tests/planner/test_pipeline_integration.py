@@ -319,7 +319,9 @@ def _chain(world: World, *, wallet_balance: int = 100) -> Snapshot:
         purpose=SnapshotPurpose.PLAN,
         block_number=100,
         block_hash="0x" + "ab" * 32,
-        block_timestamp=datetime.now(UTC),
+        # Taken after plan_request fixed its clock, so stamp it in the past: a second-boundary
+        # crossing would otherwise make the snapshot "from the future" (SNAPSHOT_STALE).
+        block_timestamp=datetime.now(UTC) - timedelta(seconds=5),
         provider="fake",
         data=data,
         coverage="COMPLETE",
