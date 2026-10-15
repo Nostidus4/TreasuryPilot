@@ -724,10 +724,11 @@ test('fee policy: owner accepts the proposal in two clicks and sees it in histor
 
   expect(await screen.findByText(/90th percentile fee/i)).toBeInTheDocument();
   expect(screen.getByText(/plans per day/i)).toBeInTheDocument();
-  await user.click(screen.getByRole('radio', { name: /system proposal/i }));
+  await user.click(screen.getByRole('radio', { name: /fast/i }));
   await user.click(screen.getByRole('button', { name: /^accept$/i }));
-  expect(await screen.findByText('System proposal')).toBeInTheDocument();
   await waitFor(() => expect(db.feePolicy.history[0].by).toBe('You'));
+  expect(db.feePolicy.active?.preset).toBe('FAST');
+  expect(await screen.findByText('Preset Fast')).toBeInTheDocument();
 });
 
 test('fee policy: a held plan shows its fee and deadline and can be paid', async () => {
@@ -745,5 +746,31 @@ test('fee policy: a held plan shows its fee and deadline and can be paid', async
   await waitFor(() =>
     expect(screen.queryByText(/is waiting on a network fee/i)).toBeNull(),
   );
-  expect(db.feePolicy.history[0].label).toMatch(/held plan/i);
+  expect(db.feePolicy.history[0].kind).toBe('PLAN_FEE');
+});
+
+test('fee policy: deferring keeps the plan held', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/settings/fees`);
+
+  const banner = await screen.findByText(/is waiting on a network fee/i);
+  const alert = banner.closest('[role="status"]') as HTMLElement;
+  await user.click(within(alert).getByRole('button', { name: /defer/i }));
+  await waitFor(() =>
+    expect(within(alert).getByRole('button', { name: /defer/i })).toBeEnabled(),
+  );
+  expect(db.feeReviews).toHaveLength(1);
+});
+
+test('fee policy: an auditor sees the held plan without decision buttons', async () => {
+  renderApp(`${T}/settings/fees`, {
+    beforeRender: () => {
+      db.members[0].roles = ['AUD'];
+    },
+  });
+
+  const banner = await screen.findByText(/is waiting on a network fee/i);
+  const alert = banner.closest('[role="status"]') as HTMLElement;
+  expect(alert).toHaveTextContent(/only an owner, finance or operator/i);
+  expect(within(alert).queryByRole('button')).toBeNull();
 });

@@ -207,6 +207,6 @@ test('WEB-024 owner accepts the fee proposal and Finance pays a held plan', asyn
   await page.getByRole('button', { name: /Pay now at/ }).click();
   await expect(page.getByText('is waiting on a network fee')).toBeHidden();
 
-  await page.getByRole('button', { name: 'Accept' }).click();
-  await expect(page.getByText('System proposal').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText('Preset Normal').first()).toBeVisible();
 });

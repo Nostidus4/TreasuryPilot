@@ -3,6 +3,7 @@ import { HttpResponse, sse, type RequestHandler } from 'msw';
 import { formatUnits } from '@/lib/money';
 import type {
   CopilotMessage,
+  FeePresetId,
   OperationsMetrics,
   SavingsMetrics,
   ServerEvent,
@@ -143,6 +144,8 @@ export const operationHandlers: RequestHandler[] = [
   route('get', '/orgs/:orgId/review-items', ({ params, query }) => {
     requireOrg(params.orgId);
     const status = query.get('status');
+    if (query.get('type') === 'FEE_APPROVAL')
+      return { items: northwind(params.orgId) ? db.feeReviews : [] };
     return {
       items: northwind(params.orgId)
         ? db.reviewItems.filter((item) => !status || item.status === status)
@@ -404,51 +407,56 @@ export const operationHandlers: RequestHandler[] = [
     return db.feePolicy;
   }),
 
-  route<{ preset?: string }>(
+  route<{ proposalId?: string; preset?: FeePresetId }>(
     'post',
     '/orgs/:orgId/treasuries/:tId/fee-policy/accept',
     ({ params, body }) => {
       requireOrg(params.orgId);
-      const preset = db.feePolicy.presets.find(
-        (item) => item.id === body.preset,
-      );
-      if (body.preset && !preset) fail(422, 'VALIDATION', 'Unknown preset.');
-      const chosen = preset ?? db.feePolicy.proposal;
-      db.feePolicy.current = {
-        maxFeeGwei: chosen.maxFeeGwei,
-        priorityGwei: chosen.priorityGwei,
-        source: preset
-          ? `Preset “${preset.label}”, accepted just now`
-          : 'System proposal, accepted just now',
+      const proposal = db.feePolicy.proposal;
+      if (!proposal || proposal.id !== body.proposalId)
+        fail(409, 'FEE_PROPOSAL_STALE', 'Reload the current fee proposal.');
+      const { id, basis, proposedAt, ...row } = proposal;
+      void basis;
+      void proposedAt;
+      const accepted = {
+        ...row,
+        preset: body.preset ?? 'NORMAL',
+        acceptedAt: new Date().toISOString(),
       };
+      db.feePolicy.active = accepted;
+      db.feePolicy.proposal = null;
       db.feePolicy.history.unshift({
-        id: `fee_h${db.feePolicy.history.length + 1}`,
-        at: new Date().toISOString(),
+        kind: 'POLICY',
+        id,
+        at: accepted.acceptedAt,
         by: 'You',
-        label: preset ? `Preset “${preset.label}”` : 'System proposal',
-        detail: `max ${chosen.maxFeeGwei} gwei · priority ${chosen.priorityGwei} gwei`,
+        preset: accepted.preset,
+        maxFeeMultiplierBps: accepted.maxFeeMultiplierBps,
+        perPlanThresholdWei: accepted.perPlanThresholdWei,
+        dailyBudgetWei: accepted.dailyBudgetWei,
       });
-      return { active: db.feePolicy.current };
+      return { active: accepted };
     },
   ),
 
   ...(['accept', 'defer'] as const).map((action) =>
     route('post', `/orgs/:orgId/plans/:pId/fee/${action}`, ({ params }) => {
       requireOrg(params.orgId);
-      const held = db.feePolicy.heldPlans.find((p) => p.planId === params.pId);
+      const held = db.feeReviews.find((item) => item.planId === params.pId);
       if (!held)
-        fail(409, 'FEE_NOT_HELD', 'This plan is not waiting on a fee.');
-      db.feePolicy.heldPlans = db.feePolicy.heldPlans.filter(
-        (p) => p.planId !== params.pId,
-      );
-      if (action === 'accept')
+        fail(404, 'FEE_REVIEW_NOT_FOUND', 'The held plan is unavailable.');
+      if (action === 'accept') {
+        db.feeReviews = db.feeReviews.filter((item) => item !== held);
         db.feePolicy.history.unshift({
-          id: `fee_h${db.feePolicy.history.length + 1}`,
+          kind: 'PLAN_FEE',
+          id: `fee_${held.id}`,
           at: new Date().toISOString(),
           by: 'You',
-          label: `Held plan ${held.title}`,
-          detail: `cap ${formatUnits(held.estimatedFeeWei, 18)} ETH`,
+          planId: params.pId,
+          estimatedFeeWei: held.feeEstimateWei ?? '0',
+          acceptedCapWei: held.feeEstimateWei ?? '0',
         });
+      }
       return { planId: params.pId };
     }),
   ),

@@ -1,13 +1,16 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
-import { api } from '@/lib/api/http';
+import { api, errorMessage, isApiError } from '@/lib/api/http';
+import type { components } from '@/lib/api/schema';
+import { t } from '@/lib/i18n';
 import type {
   BorrowProposal,
   Chain,
   Coverage,
   FeePolicy,
-  FeeSetting,
+  FeePolicyResponse,
+  FeeReviewItem,
   Forecast,
   GovernanceTx,
   Hex,
@@ -184,27 +187,84 @@ export const useBorrowProposal = (
     `/treasuries/${treasuryId}/borrow-proposals/${id}`,
   );
 
+const num = (value: unknown, fallback = 0) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const wei = (value: unknown) =>
+  typeof value === 'string' && /^\d+$/.test(value) ? value : '0';
+
+/** Maps the backend fee-policy response to what the page renders; tolerates missing parts. */
+export function normalizeFeePolicy(
+  data: Partial<FeePolicyResponse> | null | undefined,
+): FeePolicy {
+  const proposal = data?.proposal ?? null;
+  return {
+    proposalId: proposal?.id ?? null,
+    active: data?.active ?? null,
+    proposal,
+    basis: {
+      avgPlanFeeWei: wei(proposal?.basis?.avgPlanFee7dWei),
+      p90PlanFeeWei: wei(proposal?.basis?.p90PlanFee7dWei),
+      plansPerDay: num(proposal?.basis?.plansPerDay7d),
+    },
+    spentTodayWei: wei(data?.spentTodayWei),
+    history: data?.history ?? [],
+  };
+}
+
+/** Fee acceptance needs a recent second factor; the web app has no step-up prompt yet. */
+export const feeErrorMessage = (error: unknown) =>
+  isApiError(error, 'STEP_UP_REQUIRED')
+    ? t(
+        'Step-up required: confirm your second factor (POST /v1/me/mfa/step-up), then try again.',
+      )
+    : errorMessage(error);
+
 export const useFeePolicy = (orgId: string, treasuryId: string) =>
-  useOrgQuery<FeePolicy>(
+  useQuery<FeePolicy>({
+    queryKey: ['org', orgId, 'treasury', treasuryId, 'fees'],
+    queryFn: async ({ signal }) =>
+      normalizeFeePolicy(
+        await api.get<FeePolicyResponse>(
+          `${base(orgId, treasuryId)}/fee-policy`,
+          {
+            signal,
+          },
+        ),
+      ),
+  });
+
+/** Plans held for a fee decision are the open FEE_APPROVAL items of the review queue. */
+export const useHeldFeePlans = (orgId: string, treasuryId: string) =>
+  useOrgQuery<{ items: FeeReviewItem[] }>(
     orgId,
-    'treasury',
-    [treasuryId, 'fees'],
-    `/treasuries/${treasuryId}/fee-policy`,
+    'review',
+    ['fee-approval'],
+    '/review-items',
+    {
+      query: { status: 'Open', type: 'FEE_APPROVAL' },
+      select: (data) => ({
+        items: data.items.filter(
+          (item) =>
+            item.treasuryId === treasuryId &&
+            item.planId &&
+            item.feeEstimateWei !== null,
+        ),
+      }),
+    },
   );
 
 export const useAcceptFeePolicy = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (input: { preset?: string }) =>
-    api.post<{ active: FeeSetting }>(
-      `${base(orgId, treasuryId)}/fee-policy/accept`,
-      input,
-    ),
+  useOrgMutation(
+    orgId,
+    (input: components['schemas']['FeePolicyAcceptRequest']) =>
+      api.post<{ active: unknown }>(
+        `${base(orgId, treasuryId)}/fee-policy/accept`,
+        input,
+      ),
   );
 
-export const usePlanFeeDecision = (
-  orgId: string,
-  treasuryId: string,
-  action: 'accept' | 'defer',
-) =>
+// useOrgMutation refreshes every org query, which includes the review queue behind held plans.
+export const usePlanFeeDecision = (orgId: string, action: 'accept' | 'defer') =>
   useOrgMutation(orgId, (planId: string) =>
     api.post<{ planId: string }>(
       `/orgs/${orgId}/plans/${planId}/fee/${action}`,

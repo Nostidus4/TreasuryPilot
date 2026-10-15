@@ -546,6 +546,10 @@ async def _exercise_review_queue(database_url: str) -> None:
             ORG_ID, second_plan_id, PlanFeeActionRequest(), request, operator
         )
         assert accepted_plan["acceptedCapWei"] == "7"
+        history = (await get_fee_policy(ORG_ID, treasury_id, request, finance))["history"]
+        assert history[0]["kind"] == "PLAN_FEE" and history[0]["acceptedCapWei"] == "7"
+        assert [e["at"] for e in history] == sorted((e["at"] for e in history), reverse=True)
+        assert next(e for e in history if e["kind"] == "POLICY")["preset"] == "FAST"
         async with sessions() as session:
             fee_item = await session.scalar(
                 select(ReviewItem).where(ReviewItem.plan_id == second_plan_id)
