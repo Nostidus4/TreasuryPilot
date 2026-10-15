@@ -1,7 +1,7 @@
 """persist indexed token movements and safety signals
 
-Revision ID: 20261015_0050
-Revises: 20261015_0049
+Revision ID: 20261015_0051
+Revises: 20261015_0050
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0050"
-down_revision: str | None = "20261015_0049"
+revision: str = "20261015_0051"
+down_revision: str | None = "20261015_0050"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
