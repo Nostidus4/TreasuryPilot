@@ -1030,8 +1030,10 @@ test('an over-cap request shows the Owner a signable exception; after execution 
   expect(await screen.findByText('OVER_PER_REQUEST_LIMIT')).toBeInTheDocument();
   expect(screen.getByText('Invoice approved')).toBeInTheDocument();
   expect(screen.getAllByText(/^Due /).length).toBeGreaterThan(1);
-  expect(screen.getByText('Over the limit by')).toBeInTheDocument();
-  expect(screen.getByText('AI summary of the request')).toBeInTheDocument();
+  expect(await screen.findByText('Over the limit by')).toBeInTheDocument();
+  expect(
+    await screen.findByText('AI summary of the request'),
+  ).toBeInTheDocument();
 
   await user.click(
     await screen.findByRole('button', {
