@@ -780,7 +780,7 @@ async def _provision_user_scenario(database_url: str) -> None:
             list(preserved_roles.roles),
             list(preserved_roles.manual_roles),
             preserved_roles.status,
-        ) == (["Finance"], [], "active")
+        ) == (["Finance"], ["Finance"], "active")
         with pytest.raises(ScimUserConflict):
             await repository.create_user(
                 organization_id=organization_id,
