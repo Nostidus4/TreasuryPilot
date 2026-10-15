@@ -129,6 +129,7 @@ stateDiagram-v2
   Paying --> Paid: PAY confirmed at depth
   Paying --> NeedsReview: Unknown / discrepancy
   NeedsReview --> Scheduled: resolved
+  NeedsReview --> Preparing: RESUME_PARTIAL (SYSTEM)
   Approved --> Expired: approval expiry passed (SYSTEM)
   Scheduled --> Expired
   AwaitingAuthority --> Expired

@@ -648,18 +648,18 @@ def _stopped_after_refill(url: str) -> tuple[PlanRun, FakeSigner, FakeGate]:
     return run, signer, gate
 
 
-async def _resume(url: str, request: uuid.UUID) -> Any:
+async def _resume(url: str, request: uuid.UUID, actor: uuid.UUID | None = None) -> Any:
     pool = await create_worker_pool(url, min_size=1, max_size=1)
     try:
-        return await resume_partial(pool, request)
+        return await resume_partial(pool, request, actor)
     finally:
         await pool.close()
 
 
-async def _cancel(url: str, request: uuid.UUID) -> Any:
+async def _cancel(url: str, request: uuid.UUID, actor: uuid.UUID | None = None) -> Any:
     pool = await create_worker_pool(url, min_size=1, max_size=1)
     try:
-        return await cancel_partial(pool, request)
+        return await cancel_partial(pool, request, actor)
     finally:
         await pool.close()
 
@@ -686,6 +686,15 @@ def test_resume_sends_only_the_unfinished_pay_after_revalidation(database_url: s
     assert [r["status"] for r in rows] == ["Resolved"]
     plan = asyncio.run(_sql(database_url, "SELECT status FROM plans WHERE id = $1", run.plan_id))
     assert plan[0]["status"] == "Executing"
+    events = asyncio.run(
+        _sql(
+            database_url,
+            'SELECT "from", "to", actor_type FROM request_status_events WHERE request_id = $1 '
+            "AND \"to\" = 'Preparing'",
+            run.request_id,
+        )
+    )
+    assert [(e["from"], e["actor_type"]) for e in events] == [("NeedsReview", "SYSTEM")]
     # Not partial any more: a second resume is refused.
     assert asyncio.run(_resume(database_url, run.request_id)).status == "NotPartial"
 
@@ -710,3 +719,75 @@ def test_cancel_reports_funds_left_in_place(database_url: str) -> None:
     assert report.cancelled and report.funds_left_in_place
     assert report.completed_steps == ("0x" + run.steps[0].step_id.hex(),)
     assert _request_status(database_url, run) == "Cancelled"
+
+
+def test_cancel_closes_plan_resolves_items_and_audits(database_url: str) -> None:
+    run, _, _ = _stopped_after_refill(database_url)
+    report = asyncio.run(_cancel(database_url, run.request_id))
+    assert report.cancelled and "not reversed" in report.summary
+    plan = asyncio.run(_sql(database_url, "SELECT status FROM plans WHERE id = $1", run.plan_id))
+    assert plan[0]["status"] == "Superseded"
+    items = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT status, resolution FROM review_items WHERE request_id = $1",
+            run.request_id,
+        )
+    )
+    assert [(i["status"], i["resolution"]) for i in items] == [("Resolved", "CANCEL")]
+    # A second cancel finds no PartiallyCompleted plan.
+    assert not asyncio.run(_cancel(database_url, run.request_id)).cancelled
+
+
+def test_cancel_without_a_partial_plan_is_refused(database_url: str) -> None:
+    assert not asyncio.run(_cancel(database_url, uuid.uuid4())).cancelled
+
+
+def test_cancel_refuses_while_an_operation_is_in_flight(database_url: str) -> None:
+    run, _, _ = _stopped_after_refill(database_url)
+    _tracker_says(database_url, run.steps[0], "Unknown")
+    report = asyncio.run(_cancel(database_url, run.request_id))
+    assert not report.cancelled and report.in_flight_steps == ("0x" + run.steps[0].step_id.hex(),)
+    assert _request_status(database_url, run) == "NeedsReview"
+
+
+@pytest.mark.parametrize("status", ["Reverted", "Abandoned"])
+def test_resume_refuses_a_reverted_or_abandoned_step(database_url: str, status: str) -> None:
+    run, _, _ = _stopped_after_refill(database_url)
+    _tracker_says(database_url, run.steps[0], status)
+    assert asyncio.run(_resume(database_url, run.request_id)).status == "NotRetryable"
+    assert _request_status(database_url, run) == "NeedsReview"
+
+
+def test_resume_refuses_non_retryable_review_items(database_url: str) -> None:
+    run, _, _ = _stopped_after_refill(database_url)
+    asyncio.run(
+        _sql(
+            database_url,
+            "UPDATE review_items SET type = 'DISCREPANCY' WHERE request_id = $1",
+            run.request_id,
+        )
+    )
+    assert asyncio.run(_resume(database_url, run.request_id)).status == "NotRetryable"
+
+
+def test_two_concurrent_resumes_resume_exactly_once(database_url: str) -> None:
+    run, _, _ = _stopped_after_refill(database_url)
+
+    async def both() -> list[Any]:
+        return list(
+            await asyncio.gather(
+                _resume(database_url, run.request_id), _resume(database_url, run.request_id)
+            )
+        )
+
+    statuses = sorted(r.status for r in asyncio.run(both()))
+    assert statuses == ["NotPartial", "Resumed"]
+    events = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT 1 FROM request_status_events WHERE request_id = $1 AND \"to\" = 'Preparing'",
+            run.request_id,
+        )
+    )
+    assert len(events) == 1

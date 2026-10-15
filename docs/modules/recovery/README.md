@@ -71,7 +71,7 @@ Load in-flight operations → mark their treasuries blocked → for each: `resol
 
 ### 7.2 Partial completion (AT-07)
 
-Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK or DISCREPANCY) with completed steps → action **REPLAN**: M10 creates a new plan for the remaining steps (same step ids) → validated/attested → executes only those. Action **CANCEL**: request Cancelled; funds stay where the refill put them; the report says so (no automatic reverse refill).
+Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK or DISCREPANCY) with completed steps → action **RETRY** (types POLICY_BLOCK and INFRA only): the same plan resumes, `RESUME_PARTIAL` NeedsReview → Preparing, Confirmed steps are skipped and the first unfinished step is re-validated (`recovery/partial.py`; refused while an operation is in flight, or if any is Reverted/Abandoned or another review type is open). Action **REPLAN** (plan-shape changes): M10 creates a new plan for the remaining steps (same step ids) → validated/attested → executes only those. Action **CANCEL** (refused while an operation is in flight): request Cancelled, plan Superseded, open items resolved CANCEL; funds stay where the refill put them; the report says so (no automatic reverse refill).
 
 ## 8. Algorithms
 
@@ -114,7 +114,7 @@ Code: `treasurypilot_worker.recovery.retry`. The executor wraps each pre-broadca
 | UNCERTAIN_TX | Operator (+ Owner informed) | ACKNOWLEDGE after resolution only |
 | DISCREPANCY | Finance + Owner | ACKNOWLEDGE, MARK_MATCHED |
 | AI_REJECTED | Operator | REPLAN (deterministic), CANCEL |
-| INFRA | Operator | RETRY |
+| INFRA | Operator | RETRY (resumes the same plan if it is PartiallyCompleted) |
 | UNEXPECTED_OUTFLOW | Owner, Finance | ACKNOWLEDGE |
 
 SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCERTAIN_TX 1 h, others 48 h; overdue items escalate to Owner.

@@ -62,6 +62,7 @@ from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
+from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -758,6 +759,47 @@ def sequence_plan_task(plan_id: str) -> dict[str, Any]:
     except SignerUnavailable as error:
         # The same step_id is replayed on retry, so a second attempt cannot double-pay.
         raise RetryableTaskError(f"signer unavailable: {error}") from error
+
+
+async def _partial_action(
+    action: Callable[..., Awaitable[Any]], request_id: str, actor_id: str | None
+) -> Any:
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for partial-plan recovery")
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        return await action(pool, uuid.UUID(request_id), uuid.UUID(actor_id) if actor_id else None)
+    finally:
+        await pool.close()
+
+
+@app.task(name="treasurypilot.recovery.resume_partial", queue="core")
+def resume_partial_task(request_id: str, actor_id: str | None = None) -> dict[str, str | None]:
+    """INTERNAL: resume a PartiallyCompleted plan, then enqueue its next step (RCV-003).
+
+    Not user-facing; the review-item RETRY action endpoint is RCV-004 follow-up work.
+    """
+
+    result = asyncio.run(_partial_action(resume_partial, request_id, actor_id))
+    plan_id = str(result.plan_id) if result.plan_id else None
+    if result.status == "Resumed":
+        sequence_plan_task.delay(str(result.plan_id))
+    return {"status": result.status, "plan_id": plan_id}
+
+
+@app.task(name="treasurypilot.recovery.cancel_partial", queue="core")
+def cancel_partial_task(request_id: str, actor_id: str | None = None) -> dict[str, Any]:
+    """INTERNAL: cancel a PartiallyCompleted plan; funds of confirmed steps stay (RCV-003)."""
+
+    report = asyncio.run(_partial_action(cancel_partial, request_id, actor_id))
+    return {
+        "cancelled": report.cancelled,
+        "plan_id": str(report.plan_id) if report.plan_id else None,
+        "completed_steps": list(report.completed_steps),
+        "in_flight_steps": list(report.in_flight_steps),
+        "summary": report.summary,
+    }
 
 
 # Plans whose request is still executing and whose newest operation is Confirmed, awaiting replay

@@ -118,21 +118,30 @@ def _refusal_intent(code: str) -> ReviewIntent:
     return ReviewIntent(review.kind if review else "INFRA", code, (code,))
 
 
-async def _transition(
-    connection: asyncpg.Connection, request_id: UUID, to: str, sources: tuple[str, ...], why: str
+async def transition_request(
+    connection: asyncpg.Connection,
+    request_id: UUID,
+    to: str,
+    sources: tuple[str, ...],
+    why: str,
+    actor_id: UUID | None = None,
 ) -> bool:
+    """Move a request and write its status event; USER actor when ``actor_id`` is given."""
+
     row = await connection.fetchrow(
         "WITH old AS (SELECT id, status FROM payment_requests "
         "WHERE id = $1 AND status = ANY($2::text[]) FOR UPDATE), "
         "upd AS (UPDATE payment_requests r SET status = $3, version = r.version + 1, "
         "updated_at = now() FROM old WHERE r.id = old.id RETURNING r.id) "
         'INSERT INTO request_status_events (id, request_id, "from", "to", actor_type, '
-        "actor_id, reason) SELECT gen_random_uuid(), old.id, old.status, $3, 'SYSTEM', NULL, $4 "
+        "actor_id, reason) SELECT gen_random_uuid(), old.id, old.status, $3, "
+        "CASE WHEN $5::uuid IS NULL THEN 'SYSTEM' ELSE 'USER' END, $5::uuid, $4 "
         "FROM old JOIN upd USING (id) RETURNING request_id",
         request_id,
         list(sources),
         to,
         why,
+        actor_id,
     )
     return row is not None
 
@@ -143,7 +152,7 @@ async def _stop(
     """Open one review item and move the request to NeedsReview; completed steps stay (BR-054)."""
 
     async with pool.acquire() as connection, connection.transaction():
-        moved = await _transition(
+        moved = await transition_request(
             connection,
             run.request_id,
             "NeedsReview",
@@ -298,7 +307,7 @@ async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:
 
 async def _mark(pool: asyncpg.Pool, run: PlanRun, to: str, sources: tuple[str, ...]) -> None:
     async with pool.acquire() as connection, connection.transaction():
-        await _transition(connection, run.request_id, to, sources, f"PAY step {to.lower()}")
+        await transition_request(connection, run.request_id, to, sources, f"PAY step {to.lower()}")
 
 
 __all__ = ["Gate", "PlanRun", "SequenceResult", "Verifier", "sequence_plan"]

@@ -296,3 +296,24 @@ def test_event_indexer_is_scheduled_every_six_seconds_on_core_queue() -> None:
     assert entry["task"] == "treasurypilot.chain.index-events"
     assert entry["schedule"] == timedelta(seconds=6)
     assert entry["options"]["queue"] == "core"
+
+
+def test_resume_partial_task_enqueues_sequencing_only_when_resumed(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import uuid
+    from types import SimpleNamespace
+
+    from treasurypilot_worker import tasks
+
+    plan = uuid.uuid4()
+    status = {"v": "Resumed"}
+
+    async def fake(_action, _request, _actor):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(status=status["v"], plan_id=plan)
+
+    sent: list[str] = []
+    monkeypatch.setattr(tasks, "_partial_action", fake)
+    monkeypatch.setattr(tasks.sequence_plan_task, "delay", sent.append)
+    assert tasks.resume_partial_task(str(uuid.uuid4()))["status"] == "Resumed"
+    status["v"] = "InFlight"
+    tasks.resume_partial_task(str(uuid.uuid4()))
+    assert sent == [str(plan)]
