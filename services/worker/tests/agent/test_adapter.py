@@ -282,7 +282,11 @@ def test_tool_loop_executes_tools_and_feeds_results_back(
     follow_up = provider.calls[1][0].messages
     assert follow_up[-2].content == (ToolCall("t1", "get_snapshot", {"treasury_id": "tr-1"}),)
     assert follow_up[-1].content == (
-        ToolResult("t1", '{"treasury_id": "tr-1", "balance": "6000"}', is_error=False),
+        ToolResult(
+            "t1",
+            '{"tool_call_id":"t1","result":{"treasury_id":"tr-1","balance":"6000"}}',
+            is_error=False,
+        ),
     )
     assert [c.name for c in result.tool_calls] == ["get_snapshot"]  # type: ignore[attr-defined]
 

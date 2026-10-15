@@ -73,12 +73,18 @@ def _numbers(text: str) -> set[str]:
 def post_check(output: CopilotAnswer, tool_calls: Sequence[ToolCallRecord]) -> None:
     """Raise `PostCheckFailed` unless each number of the answer is in a cited, successful result."""
 
-    results = {call.id: call.result for call in tool_calls if not call.is_error}
+    ok = [call for call in tool_calls if not call.is_error]
+    results = {call.id: call.result for call in ok}
     cited: set[str] = set()
     for citation in output.citations:
-        if citation.tool_call_id not in results:
-            raise PostCheckFailed(f"citation {citation.tool_call_id!r} is not a tool result")
-        cited |= _numbers(results[citation.tool_call_id])
+        key = citation.tool_call_id
+        if key not in results:
+            # Tolerate a tool name only when exactly one successful call of it ran this turn.
+            same_name = [call for call in ok if call.name == key]
+            if len(same_name) != 1:
+                raise PostCheckFailed(f"citation {key!r} is not a tool result")
+            key = same_name[0].id
+        cited |= _numbers(results[key])
     if loose := sorted(_numbers(output.answer) - cited):
         raise PostCheckFailed(f"numbers not found in cited tool results: {loose}")
 

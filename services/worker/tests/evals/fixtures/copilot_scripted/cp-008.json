@@ -1,6 +1,6 @@
 {
   "case_id": "cp-008",
-  "prompt_version": "copilot.v1",
+  "prompt_version": "copilot.v2",
   "model": "scripted-reference",
   "case_sha256": "b7b0a20f4e981748175dd5f0d99d5165e16ee75a3abad4ff1d8ebdefd0bf4036",
   "recorded_at": "2026-10-15",
