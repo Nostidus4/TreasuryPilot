@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import seed_local  # noqa: E402
 
+from treasurypilot_api.mandate.configuration import MandateConfig  # noqa: E402
 from treasurypilot_api.treasury import sync as seed_sync  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
@@ -69,6 +70,9 @@ async def _run_twice(url: str, tmp: Path, monkeypatch: pytest.MonkeyPatch) -> li
                 }
                 module = await c.scalar(text("SELECT module_address FROM treasuries"))
                 safes = set(await c.scalars(text("SELECT safe_address FROM treasury_wallets")))
+                mandate = await c.scalar(text("SELECT config FROM mandate_versions"))
+            # The API (forecast, mandate pages) parses the stored config strictly.
+            assert MandateConfig.model_validate(mandate).limits is not None
             results.append((counts, module, safes))
     finally:
         await engine.dispose()

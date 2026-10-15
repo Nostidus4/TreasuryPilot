@@ -204,16 +204,33 @@ async def seed_database(
             addr=b(manifest[field]), owners=json.dumps([manifest["demoOwner"]]), u=owner_user,
         )  # fmt: skip
 
-    limits = {"perRequest": str(2000 * BASE_UNITS), "daily": str(10000 * BASE_UNITS)}
+    def units(amount: int) -> str:
+        return str(amount * BASE_UNITS)
+
+    def wallet(field: str) -> str:
+        return str(manifest[field]).lower()
+
+    # MandateConfig shape (the API rejects unknown keys); values mirror Deploy.s.sol `_setup`.
+    has_pool = int(manifest.get("aavePool") or "0x0", 16) != 0
     config = {
         "validFrom": int(valid_from.timestamp()),
         "expiresAt": int(expires.timestamp()),
         "payeeCoolingSeconds": 300,
         "executor": executor,
         "guardian": guardian,
-        "pay": limits,
-        "refill": {"perRequest": str(2500 * BASE_UNITS), "daily": str(12000 * BASE_UNITS)},
-        "supply": {"perRequest": "0", "daily": "0"},
+        "limits": {
+            "PAY": {"perRequest": units(2000), "daily": units(10000)},
+            "REFILL": {"perRequest": units(2500), "daily": units(12000)},
+        },
+        "supplyLimits": {
+            "perRequest": units(5000) if has_pool else "0",
+            "daily": units(20000) if has_pool else "0",
+        },
+        "buffers": [
+            {"wallet": wallet("safeT"), "minimum": units(1000)},
+            {"wallet": wallet("safeO1"), "minimum": units(10), "target": units(150)},
+            {"wallet": wallet("safeO2"), "minimum": units(10), "target": units(150)},
+        ],
         "approvalMaxAge": 14 * 86400,
         "approvers": [approver],
     }
