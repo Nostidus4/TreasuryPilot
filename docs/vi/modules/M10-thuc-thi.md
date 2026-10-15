@@ -14,7 +14,7 @@ M10 là **phòng máy**: quyết định *khi nào* hành động, chạy pipeli
 | Executor outbox: ghi thao tác trước khi ký, ghi tx hash trước mọi việc khác | Theo dõi receipt (M06) |
 | Chạy từng bước với PRE_STEP + SIMULATION + cổng hậu điều kiện | Luật hậu điều kiện và đối soát (M11) |
 | Signer (khóa executor, kiểm attestation, hàng nonce, thay thế giao dịch) và endpoint sentinel | Phục hồi Unknown/dở dang (M12) |
-| Sổ gas, cảnh báo hết gas, áp chính sách phí (EXE-012) | Contract (M04) |
+| Sổ gas, áp chính sách phí (EXE-012) | Contract (M04) |
 | Run-now; bước swap (P2) | KMS, swap production, bridge, chia worker (Later) |
 
 ## 2. Feature, yêu cầu, luật
@@ -88,6 +88,8 @@ Dừng ở bước k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, b
 ## 9. Cấu hình
 
 Chu kỳ lập lịch 15 phút + event · chu kỳ thực thi 60 giây · lead time 24 giờ (demo 2 phút) *(mặc định, OQ-06)* · AI 20 giây rồi dự phòng (BR-055) · attestation 15 phút · thay thế theo mức phí (NORMAL: sau 60 giây, +12,5 %, không vượt trần) · ngưỡng hết gas: executor 0,05 ETH, sentinel 0,01 ETH, khóa biên nhận 0,01 ETH (Sepolia) · Celery `acks_late`, `reject_on_worker_lost`, visibility timeout 1 giờ.
+
+Hết gas (EXE-010): trước khi ký, signer đọc `eth_getBalance` của executor và từ chối `INSUFFICIENT_GAS` nếu thấp hơn phí xấu nhất `gas_limit × maxFeePerGas` (không đọc được số dư thì đóng an toàn, `CHAIN_RPC_UNAVAILABLE`); yêu cầu dừng với review INFRA. Worker quét mỗi 5 phút các địa chỉ đã gửi tx trong 30 ngày, cùng `TP_EXECUTOR_ADDRESS` và tùy chọn `TP_SENTINEL_ADDRESS`, `TP_EAS_RECEIPT_ADDRESS`; dưới `TP_LOW_GAS_THRESHOLD_WEI` (mặc định 0,005, một ngưỡng chung cho mọi vai trò và chain) thì phát một sự kiện `LowGas`, tối đa 1 lần mỗi 24 giờ cho mỗi treasury và địa chỉ.
 
 ## 10. Bảo mật
 
