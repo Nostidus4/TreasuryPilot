@@ -87,7 +87,31 @@ Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK o
 4. Still unclear after 30 min → ESCALATED: review item UNCERTAIN_TX (Operator + Owner), treasury stays blocked
 ```
 
-Code: `treasurypilot_worker.recovery.resolve.resolve_operation(pool, rpc, operation_id)`, called per in-flight operation by the scan (§7.1). A receipt is left to the tracker. `stepUsed` (read 3 blocks deep) makes the operation Confirmed. A hash that is unseen and whose nonce is unused, silent for 10 min, returns the operation to NotSubmitted so the executor replays the same step id. Otherwise it stays Unknown and, after 30 min of silence, opens one UNCERTAIN_TX item (`TX_UNKNOWN`); resolving evidence later sets `evidence_resolved`. Rows are locked transactions-then-operation (the tracker's order) and re-checked first: a receipt, a final status or a newer mempool sighting recorded meanwhile aborts the change. RPC errors or undecodable answers return Unclear and change nothing. Replay resets in-flight rows to Submitted with a fresh clock (the signer returns the same hash, so no new row is inserted). A Pending tx seen in the mempool is left alone, not escalated or replaced. Not done, all left to the tracker: tracing a consumed nonce to its block (nonce scan), `requestPaid`, the secondary-provider receipt cross-check, and Reverted.
+Code: `treasurypilot_worker.recovery.resolve.resolve_operation(pool, rpc, operation_id)`, called per in-flight operation by the scan (§7.1).
+
+- **Receipt (step 1).** A receipt on the primary or the secondary provider (`RpcClient.receipt_anywhere`) is left to the tracker, which confirms or reverts it (Unknown rows included) once both providers agree; the resolver reports `Receipt`. "No receipt" is claimed only when every provider answered; an error from either returns Unclear and changes nothing.
+- **Module flags (step 3).** `stepUsed[stepId]`, or `requestPaid[onchain_request_id]` for a PAY step, read 3 blocks deep, makes the operation Confirmed (our hashes become Dropped). The flags are not re-watched for reorgs.
+- **Never broadcast (step 2).** A hash that is unseen and whose nonce is unused, silent for 10 min, returns the operation to NotSubmitted so the executor replays the same step id (the signer returns the same hash, so no new row is inserted and rows restart as Submitted with a fresh clock). A replay the signer refuses as terminal (e.g. `ATTESTATION_EXPIRED`) ends `Abandoned` in the executor (`executor.outbox.execute_step`, `TERMINAL_REFUSALS`), not in the resolver.
+- **Consumed nonce (step 2).** The nonce is traced to its block by binary search over the executor's historical `eth_getTransactionCount` (about 15 calls) bounded to the last `TRACE_WINDOW` (7200) blocks, then read from that block. Only a block 3 confirmations deep is classified. If that transaction reverted the operation is `Reverted`; if it succeeded without using the step (flags checked first), our signed transaction can never be mined and the operation is `Abandoned`. Both record `NONCE_CONSUMED_BY <hash>` and drop our rows. Too recent, older than the window, unreadable history or a block without the transaction stays unresolved.
+- **Otherwise** it stays Unknown and, after 30 min of silence, opens one UNCERTAIN_TX item (`TX_UNKNOWN`); resolving evidence later sets `evidence_resolved`. Rows are locked transactions-then-operation (the tracker's order) and re-checked first: a receipt, a final status or a newer mempool sighting recorded meanwhile aborts the change. A Pending tx seen in the mempool is left alone. RPC errors or undecodable answers return Unclear.
+
+Remaining limits: the nonce trace needs providers that keep historical state for `TRACE_WINDOW` blocks (otherwise the operation escalates to a human); a single-provider chain never gets a tracker cross-check, so its receipts are not finalized by the tracker.
+
+Traceability (RCV-002, #164):
+
+| Requirement | Evidence |
+|---|---|
+| Step used on chain becomes Confirmed without resubmission | `test_step_used_on_chain_confirms_without_resubmission`; Anvil with a deployed contract true only for one step id: `test_anvil_step_used_confirms_without_resubmission` |
+| `requestPaid` confirms a PAY step | `test_request_paid_on_chain_confirms_a_pay_step`, Anvil: `test_anvil_request_paid_confirms_a_pay_step` |
+| Never-broadcast operation is resubmitted with the same step id | `test_never_broadcast_is_replayed_with_the_same_step_id`, Anvil: `test_anvil_never_broadcast_returns_to_not_submitted` |
+| Replay refused as ATTESTATION_EXPIRED ends Abandoned | `test_replay_refused_as_attestation_expired_ends_abandoned` |
+| Receipt is left to the tracker (BR-060 order), primary or secondary | `test_receipt_or_mempool_is_left_to_the_tracker`, `test_secondary_provider_receipt_is_left_to_the_tracker`, Anvil: `test_anvil_receipt_is_left_to_the_tracker` (stepUsed true, receipt wins) |
+| Reverted receipt is not stranded in Unknown | Anvil: `test_anvil_reverted_receipt_is_reverted_by_the_tracker` |
+| Consumed nonce traced to its tx: Reverted / Abandoned, bounded | `test_consumed_nonce_traced_to_a_reverted_transaction_is_reverted`, `..._unrelated_success_is_abandoned`, `test_nonce_trace_is_bounded_and_waits_for_confirmations`, Anvil: `test_anvil_consumed_nonce_is_traced_to_its_block` |
+| Escalate to UNCERTAIN_TX after 30 min, treasury stays blocked | `test_consumed_nonce_without_evidence_escalates_after_30_minutes`, Anvil: `test_anvil_consumed_nonce_without_evidence_escalates` (asserts the execution-cycle gate) |
+| Never guess on RPC failure | `test_rpc_errors_and_empty_answers_never_fall_through` |
+
+All in `services/worker/tests/test_recovery_resolve.py` (CI: Anvil + Postgres job).
 
 ### 8.2 Retry classifier (RCV-005)
 

@@ -287,6 +287,19 @@ class RpcClient:
         address = "0x" + str(word).removeprefix("0x").rjust(64, "0")[-40:].lower()
         return None if int(address, 16) == 0 else address
 
+    async def receipt_anywhere(self, tx_hash: str) -> Any:
+        """The first receipt any provider has, else None.
+
+        Unlike ``call`` this never fails over past an error: "no receipt" is only claimed when
+        every provider answered, because callers act on its absence.
+        """
+
+        for provider in self.providers:
+            receipt = await self._call_provider(provider, "eth_getTransactionReceipt", [tx_hash])
+            if receipt:
+                return receipt
+        return None
+
     async def crosscheck_receipt(self, tx_hash: str) -> CrossCheck:
         """Compare the primary's receipt with the secondary's receipt and canonical block (M06-D1).
 
