@@ -14,7 +14,7 @@ The contracts are the **final authority over money** (AP-1). Every rule marked *
 | `TreasuryPilotModule` (one clone per treasury) enabled on Safes T, O1, O2 | Generic execution, `delegatecall`, owner/module changes |
 | `TreasuryPilotModuleFactory` (EIP-1167 clones) | Upgradeability (replace = disable old + enable new) |
 | Stablecoin moves: `refill` T→Ox, `pay` Ox→payee | Native-token (gas) transfers — **none** in M1 (M04-D10) |
-| Mandate, approvers, payees (with cooling), limits, buffers, targets, counters, replay protection, exceptions, duplicate overrides, pause/revoke | Reserves/holds on-chain (F-028, Later), n-of-m approvals (F-029, Later), signed quotes (F-065, Later), on-chain plan attestation (SC-L04, Later) |
+| Mandate, approvers, payees (with cooling), limits, buffers, targets, counters, replay protection, exceptions, duplicate overrides, pause/revoke | Reserves/holds on-chain (F-028, opt-in `ReserveHoldExecutor`, section 17), n-of-m approvals (F-029, Later), signed quotes (F-065, Later), on-chain plan attestation (SC-L04, Later) |
 | `TestUSDC` (labelled TEST) for local/CI | Real DEX integration |
 | `TestRouter` + `swapForGas` — **P2, optional** | Bridge |
 
@@ -470,3 +470,7 @@ maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-
 Verification matches `PlanAttestation` of M08 section 6.3 and the golden vectors: domain `TreasuryPilot Policy` v1 with `chainId` and the module clone as `verifyingContract`; a signature from `policySigner` (raw ECDSA or ERC-1271); `executor == msg.sender`; `requestId` matches; `stepId` is in `stepIds` and the amount the call moves equals the parallel `stepAmounts[i]` (`stepAmounts.length == stepIds.length`), so the operator cannot choose another amount; `block.timestamp <= validUntil`. The nonce binds to its `planHash` on first use and every step of that plan shares it. A different plan with a used nonce reverts. Errors: `AttestationInvalid`, `AttestationExpired`, `NonceReused`, `NotExecutor`.
 
 Limits: the contract trusts the signed `planHash` (one step cannot recompute it), and the policy key and operator are immutable, so rotating either means deploying a new executor and calling `configureMandate`. Deployment scripts are not changed by this ticket.
+
+## 17. On-chain reserves and execution holds (SC-L01, opt-in)
+
+`ReserveHoldExecutor(module, operator)` is an opt-in `mandate.executor` that tracks a reservation (R) and execution hold (L) per request and reverts any spend that leaves a wallet below `bufferOf + committed` (`CommittedFundsBreach`). It lives outside the module, so the module ABI and layout are unchanged. The operator reserves, begins execution (R to L) and may release only once the module shows the request paid or cancelled; the Safe T owner can release anything, singly or with `releaseMany`. Debt-service reserve and the full off-chain PaymentReserve are not enforced on-chain, and deploy-script and backend integration are not done. Design, trust model and known gaps: [ADR-020](../../adr/ADR-020-onchain-reserves-and-holds.md).
