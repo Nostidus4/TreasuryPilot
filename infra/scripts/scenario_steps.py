@@ -29,7 +29,12 @@ from treasurypilot_core.domain.fee_policy import (
 )
 
 OWNER, EXECUTOR, GUARDIAN, PAYEE, OUTSIDER = ANVIL[0], ANVIL[1], ANVIL[3], ANVIL[4], ANVIL[6]
-APPROVER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"  # Anvil #2
+# Anvil's published dev mnemonic; deriving account #2 keeps a literal key out of the repo.
+Account.enable_unaudited_hdwallet_features()
+APPROVER_KEY = Account.from_mnemonic(
+    "test test test test test test test test test test test junk",
+    account_path="m/44'/60'/0'/0/2",
+).key.to_0x_hex()
 APPROVAL_TYPE = (
     "(bytes32,bytes32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64,"
     "bytes32,uint64,bool)"
