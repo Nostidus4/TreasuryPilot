@@ -106,6 +106,10 @@ class ReceiptPublisher(Protocol):
         """Hand the signed transaction to the node."""
         ...
 
+    def nonce_consumed(self, nonce: int) -> bool:
+        """True once the receipt account's mined nonce count has passed ``nonce``."""
+        ...
+
     def pending(self, tx_hash: bytes) -> bool:
         """True while the node still knows the transaction (mempool or mined)."""
         ...
@@ -195,6 +199,9 @@ class Web3ReceiptPublisher:
 
     def broadcast(self, raw_tx: bytes) -> None:
         self.web3.eth.send_raw_transaction(raw_tx)
+
+    def nonce_consumed(self, nonce: int) -> bool:
+        return int(self.web3.eth.get_transaction_count(self.account.address, "latest")) > nonce
 
     def pending(self, tx_hash: bytes) -> bool:
         try:
@@ -402,6 +409,11 @@ async def publish_receipts(
                     await _confirm(pool, due["org_id"], request_id, row_id, uid)
                     counts["confirmed"] += 1
                     continue
+            nonce = claim["nonce"]
+            if nonce is not None and await asyncio.to_thread(publisher.nonce_consumed, nonce):
+                # The shared receipt key moved past our nonce and our tx (checked above) did not
+                # mine with it, so it never can: take a fresh nonce instead of failing forever.
+                nonce = None
             receipt = build_receipt(facts)
             if not await asyncio.wait_for(
                 finality.is_final(facts["chain_id"], bytes(facts["tx_hash"])), _RPC_TIMEOUT
@@ -409,7 +421,7 @@ async def publish_receipts(
                 await pool.execute(_DEFER, row_id, NOT_FINAL_RECHECK)
                 counts["waiting"] += 1
                 continue
-            signed = await asyncio.to_thread(publisher.sign, receipt, claim["nonce"])
+            signed = await asyncio.to_thread(publisher.sign, receipt, nonce)
             tx_hash = signed.tx_hash
             # Persist the hash before broadcasting: a crash in between leaves a Sent row whose
             # transaction the node never saw, which the stale path resends safely.

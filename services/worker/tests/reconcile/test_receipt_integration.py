@@ -65,6 +65,8 @@ class FakePublisher:
         self.mined = True
         self.reverted = False
         self.known = True
+        self.consumed = False
+        self.min_broadcasts = 1  # broadcasts needed before ``result`` can show a mined tx
 
     @property
     def sent(self) -> list[PaymentReceipt]:
@@ -84,11 +86,14 @@ class FakePublisher:
     def pending(self, tx_hash: bytes) -> bool:
         return self.known
 
+    def nonce_consumed(self, nonce: int) -> bool:
+        return self.consumed
+
     def result(self, tx_hash: bytes) -> bytes | None:
         assert tx_hash == _SENT_TX
         if self.reverted:
             raise ReceiptReverted("reverted")
-        return _UID if self.mined and self.broadcasts else None
+        return _UID if self.mined and self.broadcasts >= self.min_broadcasts else None
 
 
 async def _paid_request(pool: Any) -> Any:
@@ -299,6 +304,35 @@ def test_a_stale_but_still_pending_transaction_is_deferred_not_resent(database_u
         row = await _row(pool, request)
         assert row["status"] == "Sent" and row["deferred"]
         assert publisher.broadcasts == 1 and len(publisher.signed) == 1
+
+    _run(database_url, scenario)
+
+
+def test_a_nonce_consumed_by_another_request_is_replaced_with_a_fresh_one(
+    database_url: str,
+) -> None:
+    async def scenario(pool: Any) -> None:
+        request, finality, publisher = await _paid_request(pool), FakeFinality(), FakePublisher()
+        publisher.mined, publisher.min_broadcasts = False, 2
+        await _sweep(pool, finality, publisher)  # A signs nonce 7 and broadcasts
+        assert publisher.broadcasts == 1
+        # A's tx is dropped, then request B's tx mines with nonce 7 on the shared receipt key.
+        publisher.known, publisher.consumed = False, True
+        await pool.execute(
+            "UPDATE chain_attestations SET next_attempt_at = now(), "
+            "updated_at = now() - interval '1 hour' WHERE request_id = $1",
+            request,
+        )
+        await _sweep(pool, finality, publisher)
+        assert (await _row(pool, request))["status"] == "Failed"
+        publisher.mined = True
+        await _make_due(pool, request)
+        await _sweep(pool, finality, publisher)
+        row = await _row(pool, request)
+        assert row["status"] == "Confirmed" and publisher.broadcasts == 2
+        mine = "0x" + (request.bytes * 2).hex()
+        signed = [nonce for r, nonce in publisher.signed if r.request_id == mine]
+        assert signed == [None, None]  # fresh nonce on the resend, not the consumed one
 
     _run(database_url, scenario)
 
