@@ -279,6 +279,14 @@ def test_contract_suite_covers_every_shared_manifest_case() -> None:
         assert any(pattern.search(chunk) for chunk in tests), case_id
 
 
+def test_report_lists_every_manifest_case() -> None:
+    report = (
+        MATRIX_PATH.parents[3] / "docs/testing/policy-contract-differential-report.md"
+    ).read_text(encoding="utf-8")
+    for case_id in CASES:
+        assert f"| `{case_id}` |" in report, case_id
+
+
 def test_python_fixture_limits_match_contract_fixture() -> None:
     source = FIXTURE.read_text(encoding="utf-8")
     expected = (
