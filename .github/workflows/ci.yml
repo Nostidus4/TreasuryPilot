@@ -151,6 +151,7 @@ jobs:
           services/api/tests/test_operations_metrics.py
           services/api/tests/test_savings_report.py
           services/worker/tests/test_exception_draft_integration.py
+          services/api/tests/test_usage_metering.py
           -q
 
   quality:

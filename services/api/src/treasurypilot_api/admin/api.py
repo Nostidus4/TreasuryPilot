@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -14,7 +14,8 @@ from pydantic import AwareDatetime, Field, computed_field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant
+from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant, UsageMonthly
+from treasurypilot_api.admin.usage import parse_month, recompute_month
 from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
@@ -48,6 +49,33 @@ class TenantHealth(ApiModel):
     status: str
     active_members: int
     treasuries: int
+
+
+class UsageView(ApiModel):
+    org_id: uuid.UUID
+    month: str
+    paid_count: int
+    paid_volume: str  # integer base units as a decimal string
+
+
+class UsageList(ApiModel):
+    items: list[UsageView]
+
+
+def _usage_view(row: UsageMonthly) -> UsageView:
+    return UsageView(
+        org_id=row.org_id,
+        month=row.month.strftime("%Y-%m"),
+        paid_count=row.paid_count,
+        paid_volume=str(int(row.paid_volume)),
+    )
+
+
+def _month_param(value: str) -> date:
+    try:
+        return parse_month(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class SupportGrantRequest(ApiModel):
@@ -224,6 +252,34 @@ def create_admin_router(
                 )
             response = _view(org, *await _counts(session, tenant_id))
         return response
+
+    @router.get("/usage", response_model=UsageList)
+    async def usage(
+        month: str = Query(pattern=r"^\d{4}-\d{2}$"),
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> UsageList:
+        first = _month_param(month)
+        async with db_sessions() as session:
+            rows = await session.scalars(
+                select(UsageMonthly)
+                .where(UsageMonthly.month == first)
+                .order_by(UsageMonthly.org_id)
+            )
+            return UsageList(items=[_usage_view(r) for r in rows])
+
+    @router.post("/usage/{month}/recompute", response_model=UsageList)
+    async def recompute_usage(
+        month: str,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> UsageList:
+        first = _month_param(month)
+        async with db_sessions() as session, session.begin():
+            rows = await recompute_month(session, first)
+            result = UsageList(items=[_usage_view(r) for r in rows])
+        logger.info("admin.usage_recomputed", extra={"actor": actor, "month": month})
+        return result
 
     @router.get("/tenants/{tenant_id}/support", response_model=SupportSummary)
     async def support_summary(

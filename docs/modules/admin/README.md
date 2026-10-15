@@ -41,7 +41,7 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 ## 7–8. Flows and algorithms
 
-Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: monthly job over `request_status_events` (Paid) and `reconciliation_lines` (EXTERNAL_EXPENSE).
+Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: `POST /admin/usage/{YYYY-MM}/recompute` rebuilds `usage_monthly` from `request_status_events` (each request counts once, in the UTC month of its first Paid event, at its integer base-unit amount); `GET /admin/usage?month=` reads it. Recompute is idempotent. `reconciliation_lines` (EXTERNAL_EXPENSE) is not metered yet.
 
 ## 9. Configuration
 

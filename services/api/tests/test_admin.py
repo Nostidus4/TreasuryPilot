@@ -395,5 +395,10 @@ def test_admin_route_surface_cannot_sign_or_move_funds() -> None:
         ("/admin/tenants/{tenant_id}/health", "GET"),
         ("/admin/tenants/{tenant_id}/suspend", "POST"),
         ("/admin/tenants/{tenant_id}/support", "GET"),
+        ("/admin/usage", "GET"),
+        ("/admin/usage/{month}/recompute", "POST"),
     }
-    assert all(method == "GET" or path.endswith("/suspend") for path, method in admin_routes)
+    assert all(
+        method == "GET" or path.endswith(("/suspend", "/recompute"))
+        for path, method in admin_routes
+    )

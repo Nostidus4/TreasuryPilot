@@ -5538,6 +5538,44 @@
         "title": "UploadResponse",
         "type": "object"
       },
+      "UsageList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UsageView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "UsageList",
+        "type": "object"
+      },
+      "UsageView": {
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "paidCount": {
+            "title": "Paidcount",
+            "type": "integer"
+          },
+          "paidVolume": {
+            "title": "Paidvolume",
+            "type": "string"
+          }
+        },
+        "required": ["orgId", "month", "paidCount", "paidVolume"],
+        "title": "UsageView",
+        "type": "object"
+      },
       "UserView": {
         "properties": {
           "displayName": {
@@ -6399,6 +6437,87 @@
           }
         },
         "summary": "Suspend Tenant",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/usage": {
+      "get": {
+        "operationId": "usage_admin_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Usage",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/usage/{month}/recompute": {
+      "post": {
+        "operationId": "recompute_usage_admin_usage__month__recompute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recompute Usage",
         "tags": ["platform-admin"]
       }
     },
