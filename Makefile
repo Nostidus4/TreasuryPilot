@@ -40,6 +40,8 @@ help:
 	@echo "  make eval-copilot    Check Copilot answers against engine numbers (recorded model)"
 	@echo "  make eval-copilot-record  Live Copilot run that rewrites the recordings (needs ANTHROPIC_API_KEY)"
 	@echo "  make eval-redteam    Run the red-team invoices through extraction (recorded model)"
+	@echo "  make bench           Planner benchmark B0 vs B1 vs B2 (live, recorded or stand-in; build/bench)"
+	@echo "  make bench-record    Live B2 run (needs ANTHROPIC_API_KEY) that stores the model turns"
 
 .PHONY: eval-extraction eval-extraction-record
 eval-extraction:
@@ -63,6 +65,14 @@ eval-copilot-record:
 .PHONY: eval-redteam
 eval-redteam:
 	uv run --frozen python -m treasurypilot_worker.redteam --out docs/evidence/redteam-results.md
+
+.PHONY: bench
+bench:
+	uv run --frozen python -m treasurypilot_worker.planner_bench
+
+.PHONY: bench-record
+bench-record:
+	uv run --frozen python -m treasurypilot_worker.planner_bench --mode live --record
 
 bootstrap:
 	uv sync
