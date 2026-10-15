@@ -31,6 +31,7 @@ import {
   RunwayChart,
   SafeBullets,
 } from '@/features/treasury/overview-charts';
+import { PendingTransactions } from '@/features/treasury/pending-transactions';
 import { PauseDialog } from '@/features/treasury/status-banner';
 import { useAssetInfo } from '@/lib/api/chains';
 import type { TreasuryState } from '@/lib/api/types';
@@ -436,6 +437,8 @@ function Overview({ state }: { state: TreasuryState }) {
           </Card>
         </div>
       </div>
+
+      <PendingTransactions />
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Controls state={state} />

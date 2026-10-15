@@ -580,7 +580,8 @@ export interface ReviewItem {
     | 'UNKNOWN_OPERATION'
     | 'FAILED_STEP'
     | 'VERIFICATION_MISMATCH'
-    | 'FEE_ACCEPTANCE';
+    | 'FEE_ACCEPTANCE'
+    | 'UNEXPECTED_OUTFLOW';
   title: string;
   detail: string;
   status: 'Open' | 'Resolved';
@@ -589,10 +590,15 @@ export interface ReviewItem {
   planId?: string;
   roles: Role[];
   actions: Array<
+<<<<<<< HEAD
     components['schemas']['ReviewAction'] | 'RESOLVE' | 'EDIT_REAPPROVE'
   >;
   /** Optimistic-concurrency token; echoed back when acting. */
   version: components['schemas']['ReviewActionRequest']['version'];
+=======
+    'RETRY' | 'CANCEL' | 'RESOLVE' | 'EDIT_REAPPROVE' | 'ACKNOWLEDGE'
+  >;
+>>>>>>> 4c491193 (feat(web): add unexpected outflow banner and pending transactions list)
   resolution?: { action: string; note: string; at: string };
 }
 

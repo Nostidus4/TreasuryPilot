@@ -548,6 +548,59 @@ test('an expired mandate stays visible and links Owners to review it', async () 
   ).toBeInTheDocument();
 });
 
+test('an open unexpected-outflow review item raises a banner linking to the queue', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.reviewItems.push({
+        id: 'rev_outflow',
+        type: 'UNEXPECTED_OUTFLOW',
+        title: 'Unexpected outflow',
+        detail: '1,000.00 USDC left the Treasury Safe outside any plan.',
+        status: 'Open',
+        createdAt: new Date().toISOString(),
+        roles: ['OWN'],
+        actions: ['ACKNOWLEDGE'],
+      });
+    },
+  });
+
+  expect(await screen.findByText('Unexpected outflow')).toBeInTheDocument();
+  expect(screen.getByText(/left the Treasury Safe/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
+    'href',
+    `${BASE}/review`,
+  );
+});
+
+test('the dashboard lists sent-but-unconfirmed transactions of executing plans', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      const plan = db.plans.find((item) => item.id === 'pln_0421')!;
+      plan.status = 'Executing';
+      Object.assign(plan.steps[0], {
+        status: 'Pending',
+        txHash: `0x${'ab'.repeat(32)}`,
+      });
+    },
+  });
+
+  expect(await screen.findByText('Pending transactions')).toBeInTheDocument();
+  expect(
+    await screen.findByText('Sent — waiting for the network'),
+  ).toBeInTheDocument();
+});
+
+test('the pending transactions list is empty when nothing is executing', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.plans.forEach((plan) => {
+        if (plan.status === 'Executing') plan.status = 'Completed';
+      });
+    },
+  });
+  expect(await screen.findByText('Nothing pending')).toBeInTheDocument();
+});
+
 test('a manual request validates the amount before it reaches the API', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/requests/new`);

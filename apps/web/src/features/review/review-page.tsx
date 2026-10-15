@@ -48,6 +48,7 @@ const typeLabel: Record<ReviewItem['type'], string> = {
   FAILED_STEP: 'Failed step',
   VERIFICATION_MISMATCH: 'Verification mismatch',
   FEE_ACCEPTANCE: 'Fee acceptance',
+  UNEXPECTED_OUTFLOW: 'Unexpected outflow',
 };
 
 const actionLabel: Record<ReviewItem['actions'][number], string> = {
@@ -62,6 +63,7 @@ const actionLabel: Record<ReviewItem['actions'][number], string> = {
   MARK_MATCHED: 'Mark as matched',
   RESOLVE: 'Mark resolved',
   EDIT_REAPPROVE: 'Edit and re-approve',
+  ACKNOWLEDGE: 'Acknowledge',
 };
 
 /** Shown when the item changed under the user: acting again needs fresh data. */
