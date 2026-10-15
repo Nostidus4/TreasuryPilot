@@ -312,14 +312,21 @@ services:
       dockerfile: services/signer/Dockerfile
     environment:
       TP_ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
       CHAIN_RPC_URL: http://anvil:8545
+      TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+      TP_ALLOWED_CHAIN_IDS: ${TP_SIGNER_ALLOWED_CHAIN_IDS:-[31337,11155111]}
+      TP_TRUSTED_POLICY_SIGNERS: ${TP_TRUSTED_POLICY_SIGNERS:-[]}
+      TP_EXECUTOR_KEYSTORE_MAP: ${TP_EXECUTOR_KEYSTORE_MAP:-}
+      TP_EXECUTOR_KEYSTORE_PASSWORD_FILE: /run/secrets/executor_keystore_password
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       SENTRY_DSN: ${SENTRY_DSN_SIGNER:-}
       TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
       TP_TELEGRAM_ALERT_CHAT_ID: ${TP_TELEGRAM_ALERT_CHAT_ID:-}
     depends_on:
-      redis:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    secrets: [executor_keystore, executor_keystore_password]
     healthcheck:
       test:
         [
@@ -371,6 +378,12 @@ secrets:
     file: ${TP_POLICY_KEYSTORE_FILE:-/dev/null}
   policy_keystore_password:
     file: ${TP_POLICY_KEYSTORE_PASSWORD_FILE:-/dev/null}
+  # Each treasury id in TP_EXECUTOR_KEYSTORE_MAP resolves to an encrypted keystore path.
+  # Local M1 deployments may map multiple treasury ids to the same shared executor key.
+  executor_keystore:
+    file: ${TP_EXECUTOR_KEYSTORE_FILE:-/dev/null}
+  executor_keystore_password:
+    file: ${TP_EXECUTOR_KEYSTORE_PASSWORD_FILE:-/dev/null}
 
 networks:
   public:

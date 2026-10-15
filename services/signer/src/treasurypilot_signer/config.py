@@ -1,17 +1,44 @@
+import json
 from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Any
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from treasurypilot_core.observability import LogFormat
+from treasurypilot_core.observability import LogFormat  # type: ignore[import-untyped]
 
 
 class Settings(BaseSettings):
-    """Runtime settings loaded from environment variables."""
+    """Runtime configuration for the internal signing boundary."""
 
     model_config = SettingsConfigDict(env_prefix="TP_", case_sensitive=False)
 
     log_level: str = "INFO"
     log_format: LogFormat = "json"
+    signer_shared_secret: str = ""
+    allowed_chain_ids: list[int] = Field(default_factory=lambda: [31337, 11155111])
+    trusted_policy_signers: list[str] = Field(default_factory=list)
+    executor_keystore_map: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
+    executor_keystore_password_file: Path | None = None
+    chain_rpc_url: str = Field(default="", validation_alias="CHAIN_RPC_URL")
+    database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    signer_database_url: str | None = None
+
+    @field_validator("executor_keystore_map", mode="before")
+    @classmethod
+    def parse_keystore_map(cls, value: Any) -> dict[str, str]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict):
+            raise ValueError("executor keystore map must be a JSON object")
+        return {str(key): str(path) for key, path in value.items()}
+
+    @property
+    def effective_database_url(self) -> str | None:
+        return self.signer_database_url or self.database_url
 
 
 @lru_cache

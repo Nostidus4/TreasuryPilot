@@ -10,7 +10,7 @@ def test_health() -> None:
     assert response.json()["service"] == "signer"
 
 
-def test_signing_endpoint_is_not_exposed_before_exe_005() -> None:
+def test_signing_endpoint_is_exposed_and_validates_its_request() -> None:
     response = TestClient(app).post("/sign-and-send", json={})
 
-    assert response.status_code == 404
+    assert response.status_code == 422
