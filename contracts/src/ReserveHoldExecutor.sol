@@ -91,20 +91,24 @@ contract ReserveHoldExecutor {
         emit HoldStarted(requestId, amount);
     }
 
-    /// @notice Release on a known outcome. A reservation can be cancelled by the operator or the owner. A hold
-    /// is released by the operator only once the module shows the request paid or cancelled; otherwise only the
-    /// Safe T owner may release it, by declaring the outcome failed. No timeout path exists.
+    /// @notice The Safe T owner releases any commitment unconditionally (declares the outcome failed). The
+    /// operator may release only once the module shows the request paid or cancelled. No timeout path exists.
     function release(bytes32 requestId) external {
         IModuleState s = _state();
         bool isOwner = msg.sender == s.safeT();
         if (!isOwner && msg.sender != operator) revert NotOwner();
-        Commitment memory c = commitments[requestId];
-        if (c.wallet == address(0)) revert NotRegistered();
-        if (!isOwner && c.held > 0 && !s.requestPaid(requestId) && !s.requestCancelled(requestId)) {
-            revert ReleaseNotAllowed();
+        if (!isOwner && !s.requestPaid(requestId) && !s.requestCancelled(requestId)) revert ReleaseNotAllowed();
+        if (commitments[requestId].wallet == address(0)) revert NotRegistered();
+        _release(requestId, isOwner);
+    }
+
+    /// @notice Owner-only bulk clean-up of squatted or stale ids; unregistered ids are skipped so one race
+    /// does not fail the batch.
+    function releaseMany(bytes32[] calldata requestIds) external {
+        if (msg.sender != _state().safeT()) revert NotOwner();
+        for (uint256 i; i < requestIds.length; ++i) {
+            if (commitments[requestIds[i]].wallet != address(0)) _release(requestIds[i], true);
         }
-        _clear(requestId, c);
-        emit Released(requestId, c.reserved, c.held, isOwner);
     }
 
     function pay(
@@ -113,13 +117,11 @@ contract ReserveHoldExecutor {
         bytes32 stepId,
         uint256 paymentAmount
     ) external onlyOperator {
+        // Effects first: the request's own commitment is consumed before the others are protected. Only a
+        // commitment on the paying wallet is cleared; one on another wallet is left for release() once the
+        // module shows the request paid, because clearing it would not free the funds this payment spends.
+        if (commitments[ap.requestId].wallet == ap.payingWallet) _release(ap.requestId, false);
         module.pay(ap, approverSig, stepId, paymentAmount);
-        // The request is paid: its own commitment is consumed before the others are protected.
-        Commitment memory c = commitments[ap.requestId];
-        if (c.wallet != address(0)) {
-            _clear(ap.requestId, c);
-            emit Released(ap.requestId, c.reserved, c.held, false);
-        }
         _enforce(ap.asset, ap.payingWallet);
     }
 
@@ -162,10 +164,12 @@ contract ReserveHoldExecutor {
         return IModuleState(address(module));
     }
 
-    function _clear(bytes32 requestId, Commitment memory c) internal {
+    function _release(bytes32 requestId, bool byOwner) internal {
+        Commitment memory c = commitments[requestId];
         reservedOf[c.asset][c.wallet] -= c.reserved;
         heldOf[c.asset][c.wallet] -= c.held;
         delete commitments[requestId];
+        emit Released(requestId, c.reserved, c.held, byOwner);
     }
 
     function _enforceSource() internal view {

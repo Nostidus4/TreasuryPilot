@@ -80,10 +80,9 @@ contract ReserveHandler {
         bytes32 id = _id(seed);
         bool byOwner = seed % 2 == 0;
         bool known = module.requestPaid(id) || module.requestCancelled(id);
-        bool wasHeld = expectedHeld[id] > 0;
         vm.prank(byOwner ? owner : executor);
         try gate.release(id) {
-            _flag(4, !byOwner && wasHeld && !known); // a hold needs a known outcome or the owner
+            _flag(4, !byOwner && !known); // the operator needs a known outcome; the owner does not
             expectedReserved[id] = 0;
             expectedHeld[id] = 0;
         } catch {}
@@ -115,8 +114,11 @@ contract ReserveHandler {
         vm.prank(executor);
         try gate.pay(ap, sig, step, amount) {
             ++pays;
-            expectedReserved[id] = 0;
-            expectedHeld[id] = 0;
+            (address committedWallet,,,) = gate.commitments(id);
+            if (committedWallet == address(0)) {
+                expectedReserved[id] = 0;
+                expectedHeld[id] = 0;
+            }
         } catch {
             ++blockedSpends;
         }

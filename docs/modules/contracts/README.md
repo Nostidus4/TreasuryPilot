@@ -473,13 +473,4 @@ Limits: the contract trusts the signed `planHash` (one step cannot recompute it)
 
 ## 17. On-chain reserves and execution holds (SC-L01, opt-in)
 
-`ReserveHoldExecutor(module, operator)` stores a reservation (R) and execution hold (L) per request (`commitments[requestId] = {asset, wallet, reserved, held}`) and totals per `(asset, wallet)`. Safe T opts in by setting it as `mandate.executor`. Like section 16 it lives outside the module (about 100 bytes under EIP-170), so the module ABI and storage layout are unchanged and no Python or web ABI consumer is affected. It can be composed with `PlanAttestedExecutor` by pointing that executor's `module` at this contract, which mirrors the same call signatures (untested).
-
-| Function | Behaviour |
-|---|---|
-| `reserve(requestId, asset, wallet, amount)` (operator) | Approval. Requires `balance - bufferOf - committed >= amount`, so a funding deficit reverts `InsufficientUncommitted` and is reported by the backend. Fund the wallet first (refill) or reserve on Safe T. |
-| `beginExecution(requestId)` (operator) | Execution start. R becomes L; the committed total does not change, so nothing is counted twice. |
-| `release(requestId)` | Operator or Safe T owner cancels a plain reservation. A hold is released by the operator only once the module shows the request paid or cancelled; otherwise only the owner can release it by declaring the outcome failed. There is no timeout release. |
-| `pay`, `refill`, `supply`, `swapForGas`, `repay` (operator) | Forward to the module, then require `balance(wallet) >= bufferOf + committed` for the spending wallet (`CommittedFundsBreach`). `pay` first clears the paid request's own commitment. `withdraw`, `borrow` add cash and pass through. |
-
-Invariant R1 (acceptance criterion): for each wallet, reserved plus held never exceeds balance minus buffer on the executor path. `test/invariant/ReserveHoldInvariant.t.sol` also checks the per-request ledger against the totals (R2) and R-to-L and release rules (R3). Limits: protection covers only spends routed through this executor (a direct Safe transaction by the owner is outside the module); the operator can reserve capacity (griefing) but the owner can always release.
+`ReserveHoldExecutor(module, operator)` is an opt-in `mandate.executor` that tracks a reservation (R) and execution hold (L) per request and reverts any spend that leaves a wallet below `bufferOf + committed` (`CommittedFundsBreach`). It lives outside the module, so the module ABI and layout are unchanged. The operator reserves, begins execution (R to L) and may release only once the module shows the request paid or cancelled; the Safe T owner can release anything, singly or with `releaseMany`. Debt-service reserve and the full off-chain PaymentReserve are not enforced on-chain, and deploy-script and backend integration are not done. Design, trust model and known gaps: [ADR-020](../../adr/ADR-020-onchain-reserves-and-holds.md).
