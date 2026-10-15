@@ -3122,7 +3122,7 @@ async def approve_request(
             required = await _required_approvals(session, row)
             collected = int(
                 await session.scalar(
-                    select(func.count(func.distinct(PaymentApproval.approver_address))).where(
+                    select(func.count(func.distinct(PaymentApproval.approver_user_id))).where(
                         PaymentApproval.request_id == row.id,
                         PaymentApproval.revision == row.current_revision,
                         PaymentApproval.status == ApprovalStatus.VALID.value,
@@ -3133,7 +3133,7 @@ async def approve_request(
             )
             progress = {"collected": collected, "required": required}
             if collected < required:
-                # Threshold band: the request stays AwaitingApproval until k distinct approvers signed.
+                # Threshold band: the request stays AwaitingApproval until k distinct approvers (users, not wallets) signed.
                 await write_audit(
                     session,
                     org_id=organization_id,

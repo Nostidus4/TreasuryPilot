@@ -58,7 +58,7 @@ class _Banded:
 
 
 async def _run(database_url: str) -> None:
-    first, second = Account.create(), Account.create()
+    first, second, linked = Account.create(), Account.create(), Account.create()
     engine, sessions = create_session_factory(database_url)
     try:
         async with engine.begin() as connection:
@@ -72,6 +72,14 @@ async def _run(database_url: str) -> None:
             await connection.execute(
                 text("INSERT INTO wallet_links (id, user_id, address) VALUES (:id, :u, :a)"),
                 {"id": uuid.uuid4(), "u": SECOND, "a": bytes.fromhex(second.address[2:])},
+            )
+            await connection.execute(  # a second wallet of the first approver
+                text("INSERT INTO wallet_links (id, user_id, address) VALUES (:id, :u, :a)"),
+                {
+                    "id": uuid.uuid4(),
+                    "u": uuid.UUID("00000000-0000-7000-8000-000000000102"),
+                    "a": bytes.fromhex(linked.address[2:]),
+                },
             )
         app = FastAPI()
         app.state.request_sessions = sessions
@@ -119,6 +127,11 @@ async def _run(database_url: str) -> None:
                 _member(approver_one),
             )
         assert error.value.code == "APPROVAL_EXISTS"
+
+        # The same human through another linked wallet does not count twice.
+        _t, _s, _e, again = await approve(linked, approver_one, "k1-other-wallet")
+        assert again["request"]["status"] == "AwaitingApproval"  # type: ignore[index]
+        assert again["approvalProgress"] == {"collected": 1, "required": 2}
 
         await asyncio.sleep(1.1)  # the second approver signs the same typed data, same expiry
         typed2, _sig, expiry2, result = await approve(second, SECOND, "k2")

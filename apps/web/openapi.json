@@ -137,6 +137,30 @@
         "title": "ApiKeyCreate",
         "type": "object"
       },
+      "ApprovalBand": {
+        "additionalProperties": false,
+        "properties": {
+          "k": {
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "upTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upto"
+          }
+        },
+        "required": ["k"],
+        "title": "ApprovalBand",
+        "type": "object"
+      },
       "ApprovalEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -2182,6 +2206,20 @@
               }
             ],
             "title": "Actions"
+          },
+          "approvalBands": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApprovalBand"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvalbands"
           },
           "approvalMaxAge": {
             "default": 1209600,
