@@ -48,10 +48,8 @@ def _rpc(url: str, method: str, params: list[object]) -> Any:
 
 
 def _artifact(name: str) -> dict[str, Any]:
-    matches = list(_OUT.rglob(f"{name}.json"))
-    if len(matches) != 1:
-        raise FileNotFoundError(f"expected one Foundry artifact for {name}, found {len(matches)}")
-    return json.loads(matches[0].read_text(encoding="utf-8"))
+    path = _OUT / f"{name}.sol" / f"{name}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -115,7 +113,11 @@ def anvil_url() -> Iterator[str]:
         yield url
     finally:
         process.terminate()
-        process.wait(timeout=5)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
 
 
 def _bytecode(artifact: dict[str, Any]) -> str:
@@ -198,7 +200,8 @@ def test_app_built_two_of_three_governance_bundle_executes_on_safe_141(
     create_proxy = _calldata(
         "createProxyWithNonce(address,bytes,uint256)",
         ["address", "bytes", "uint256"],
-        [singleton, setup, 247],
+        # Fresh salt per run so TP_TEST_GOVERNANCE_ANVIL_URL may point at a persistent chain.
+        [singleton, setup, time.time_ns()],
     )
     prediction = bytes.fromhex(
         _rpc(

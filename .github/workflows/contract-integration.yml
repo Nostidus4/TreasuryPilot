@@ -7,7 +7,9 @@ on:
         'deployments/**',
         'infra/scripts/**',
         'packages/py-core/**',
-        'services/api/src/treasurypilot_api/mandate/governance.py',
+        'services/api/src/treasurypilot_api/mandate/**',
+        'services/api/pyproject.toml',
+        'uv.lock',
         'services/api/tests/test_governance_anvil.py',
         '.github/workflows/contract-integration.yml',
       ]
@@ -19,7 +21,9 @@ on:
         'deployments/**',
         'infra/scripts/**',
         'packages/py-core/**',
-        'services/api/src/treasurypilot_api/mandate/governance.py',
+        'services/api/src/treasurypilot_api/mandate/**',
+        'services/api/pyproject.toml',
+        'uv.lock',
         'services/api/tests/test_governance_anvil.py',
         '.github/workflows/contract-integration.yml',
       ]
