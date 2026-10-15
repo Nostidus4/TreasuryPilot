@@ -1,3 +1,5 @@
+import { useQueries } from '@tanstack/react-query';
+
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api, apiUrl } from '@/lib/api/http';
 import type {
@@ -36,6 +38,16 @@ export const usePlan = (orgId: string, planId: string, live = true) =>
       refetchInterval: live ? false : 2_000,
     },
   );
+
+/** Same cache entries as usePlan, fetched for several plans at once. */
+export const usePlanDetails = (orgId: string, planIds: string[]) =>
+  useQueries({
+    queries: planIds.map((planId) => ({
+      queryKey: ['org', orgId, 'plans', 'detail', planId, null],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api.get<PlanDetail>(`/orgs/${orgId}/plans/${planId}`, { signal }),
+    })),
+  });
 
 export const useRunNow = (orgId: string, treasuryId: string) =>
   useOrgMutation(orgId, () =>

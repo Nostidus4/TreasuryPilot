@@ -133,7 +133,10 @@ export function StatusBanners() {
   if (!state) return null;
   const { status, pauseReason } = state.treasury;
   const outflows = (review.data?.items ?? []).filter(
-    (item) => item.type === 'UNEXPECTED_OUTFLOW' && item.status === 'Open',
+    (item) =>
+      item.type === 'UNEXPECTED_OUTFLOW' &&
+      item.status === 'Open' &&
+      item.treasuryId === scope.treasuryId,
   );
 
   const startResume = () =>
@@ -218,7 +221,7 @@ export function StatusBanners() {
             </Button>
           }
         >
-          {outflows[0].detail}
+          {t('Funds left the Treasury Safe outside any plan.')}
           {outflows.length > 1 &&
             ` ${t('{{count}} more in the review queue.', { count: outflows.length - 1 })}`}
         </Alert>
