@@ -25,7 +25,7 @@ contract DirectCallBypassTest is TreasuryFixture {
         I.PaymentApproval memory ap = _approval(1, 100e6);
         vm.expectRevert(E.ApprovalInvalid.selector);
         vm.prank(executor);
-        module.pay(ap, abi.encode(approver, bytes("")), bytes32(uint256(1)));
+        module.pay(ap, abi.encode(approver, bytes("")), bytes32(uint256(1)), ap.amount);
         require(module.usedToday(module.PAY()) == 0 && !module.requestPaid(ap.requestId), "unauthorized state");
     }
 
@@ -33,7 +33,7 @@ contract DirectCallBypassTest is TreasuryFixture {
         I.PaymentApproval memory ap = _approval(1, 1e6);
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.NotExecutor.selector);
-        module.pay(ap, sig, bytes32(uint256(1)));
+        module.pay(ap, sig, bytes32(uint256(1)), ap.amount);
         vm.expectRevert(E.NotExecutor.selector);
         module.refill(ap, sig, bytes32(uint256(1)), address(op1), 1);
         vm.expectRevert(E.NotExecutor.selector);
@@ -54,7 +54,7 @@ contract DirectCallBypassTest is TreasuryFixture {
 
     function testDirectPausedCoolingDailyLimitAndCancelledRequestsRevertDocumentedErrors() external {
         _owner(abi.encodeCall(module.pause, ()));
-        _expectPayError(_approval(1, 1), E.NotActive.selector);
+        _expectPayError(_approval(1, 1), E.MandatePaused.selector);
         _owner(abi.encodeCall(module.resume, ()));
         _owner(abi.encodeCall(module.addPayee, (vendor)));
         _expectPayError(_approval(1, 1), E.PayeeCooling.selector);
@@ -100,6 +100,6 @@ contract DirectCallBypassTest is TreasuryFixture {
     function _expectInvalid(I.PaymentApproval memory ap, bytes memory sig) internal {
         vm.expectRevert(E.ApprovalInvalid.selector);
         vm.prank(executor);
-        module.pay(ap, sig, bytes32(uint256(1)));
+        module.pay(ap, sig, bytes32(uint256(1)), ap.amount);
     }
 }

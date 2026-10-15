@@ -3,6 +3,12 @@
 **Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/execution/` · **Code:** `services/worker/.../{trigger,planning,executor}`, `services/signer/` · **Epic:** `[EPIC] M10 · Orchestration & Execution`
 **ADRs:** ADR-004 (outbox), ADR-006 (signer), ADR-007 (Celery/Redis), ADR-016 (attestation + simulation), ADR-017 (sentinel) · **Decisions:** M10-D1 … M10-D14 (§14)
 
+### EXE-003 trigger integration contract
+
+The worker schedules a 15-minute scheduling sweep, a 60-second safety sweep, and a one-second delayed-payee activation sweep. A durable `ExecutionCycleRequested` outbox event is enqueued after API approval and indexed `Resumed`, `ExceptionGranted`, ERC-20 inflow, or payee activation events. The outbox publisher forwards those events to the core queue; task IDs include the outbox event ID. Every execution and scheduling cycle uses the shared nonblocking `treasury_advisory_xact_lock`, then checks readiness, pause state, active mandate, coverage acknowledgment, Unknown operations, and an already executing operation. Skip reasons are stable structured log fields.
+
+The cycle API exposes `CycleScheduleProvider`, `ScheduleWriter`, and `PlanStarter` protocols so EXE-004 can supply its persisted M07 schedule reader and idempotent plan-claim/enqueue callback. Those tables and the consumer are not present on this branch. Until EXE-004 supplies them, the worker deliberately logs `SCHEDULE_PROVIDER_UNAVAILABLE` after passing gates and does not start a plan. Fee-acceptance handlers should call `append_execution_cycle_requested` in the transaction that records acceptance. The ERC-20 hook watches the treasury's configured token; native-coin inflows have no log hook in this indexer and are observed by the 60-second safety cycle. End-to-end “approved request starts executing within 5 seconds” remains unproven until the EXE-004 consumer is integrated.
+
 ---
 
 ## 1. Purpose and boundaries
@@ -51,7 +57,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 | `plan_steps` | id, plan_id, seq, step_id, action, from_wallet, to_address, asset, amount, status enum(Pending, Submitted, Confirmed, Verified, Reverted, Skipped) | unique(step_id) across active plans |
 | `operations` (outbox) | id, treasury_id, plan_step_id, request_id, step_id, kind, payload jsonb (to, data, value 0), idempotency_key, status enum(NotSubmitted, Submitted, Pending, Confirmed, Reverted, Unknown, Abandoned), attempts, last_error, created_at | unique(step_id) |
 | `transactions` | M06 §4 | one operation → 1..n transactions (replacements) |
-| `gas_ledger` | id, treasury_id, transaction_id, payer enum(EXECUTOR, SENTINEL, RECEIPT), fee_wei, reverted, day | |
+| `gas_ledger` | id, treasury_id, transaction_id, payer enum(EXECUTOR, SENTINEL, RECEIPT), fee_wei, reverted, day | executor receipts are upserted by the tracker using the mined block's UTC day; a reorg removes the stale ledger row |
 | `signer.nonces` *(signer schema)* | address, next_nonce, updated_at | the only nonce allocator |
 | `signer.attestation_uses` | M08 §4.2 | |
 
@@ -79,7 +85,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 
 | Method | Endpoint | Request → Response | Errors |
 |---|---|---|---|
-| POST | `/sign-and-send` | `{plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED{selector}`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `INSUFFICIENT_GAS` |
+| POST | `/sign-and-send` | `{treasuryId, plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `SIGNER_KEY_UNAVAILABLE` |
 | POST | `/replace` | `{txHash, fees}` → `{txHash, nonce}` (same nonce, same payload, higher fees) | `NOT_PENDING`, `FEE_CAP_EXCEEDED` |
 | POST | `/sentinel/pause` | `{treasuryId}` → `{txHash}` | `NOT_CONFIGURED` |
 | GET | `/sentinel/address`, `/health` | → addresses and gas balances only | |
@@ -161,6 +167,10 @@ O1 = 20 tUSDC, buffer 10, target 10 (UC-02 values), invoice 100. Engine: Shortag
 - t0+41 s (3 blocks) Confirmed, cross-check Match; post-condition: O1 = 110, T −90 → PASSED.
 - PAY: PRE_STEP ALLOW (110 − 100 = 10 ≥ 10), op#2 → Submitted (nonce 42) → Confirmed → PASSED → request Paid; EAS receipt queued.
 
+### 8.5 Fee estimate and daily usage (EXE-012)
+
+Before attestation, estimate each step with `eth_estimateGas` and sum `gasEstimate × maxFeePerGas` in integer wei. The current UTC day's executor spend is the sum of `gas_ledger.fee_wei` where `payer = EXECUTOR`; the tracker records confirmed and reverted transactions at the mined block's UTC date and removes the row if that inclusion is reorged out. A plan proceeds only if its estimate fits both the Owner-accepted per-plan threshold and the remaining daily budget. See M03 §8.6–8.7 for the proposal, wait, and review rules.
+
 ## 9. Configuration and defaults
 
 | Parameter | Default |
@@ -173,6 +183,16 @@ O1 = 20 tUSDC, buffer 10, target 10 (UC-02 values), invoice 100. Engine: Shortag
 | Replacement | per fee preset (NORMAL: after 60 s, +12.5 %, capped by accepted fee) |
 | Low-gas thresholds | executor 0.05 ETH, sentinel 0.01 ETH, receipt key 0.01 ETH (Sepolia) |
 | Celery | `acks_late`, `reject_on_worker_lost`, visibility timeout 1 h |
+
+The signer accepts `X-Signer-Secret` only on the internal network. Configure
+`TP_TRUSTED_POLICY_SIGNERS` and `TP_ALLOWED_CHAIN_IDS` as JSON arrays, and map every treasury UUID
+to an encrypted keystore path in `TP_EXECUTOR_KEYSTORE_MAP` (JSON object). The signer reads the
+password from `TP_EXECUTOR_KEYSTORE_PASSWORD_FILE`. M1 may map multiple treasury IDs to one
+keystore. Missing signer configuration fails closed. The database migration creates the `signer`
+schema and `treasurypilot_signer` role; signer connections execute as that role, which has write
+access only to the signer nonce and attestation-use tables. The migration grants role membership
+to the migration login; if the signer uses a different login, the database administrator must
+grant `treasurypilot_signer` to that login before startup.
 
 ## 10. Security
 

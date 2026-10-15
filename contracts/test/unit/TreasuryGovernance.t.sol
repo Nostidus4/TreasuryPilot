@@ -151,14 +151,14 @@ contract TreasuryGovernanceTest is TreasuryFixture {
         module.pause();
         vm.prank(guardian);
         module.pause();
-        _expectPayError(_approval(1, 1e6), E.NotActive.selector);
+        _expectPayError(_approval(1, 1e6), E.MandatePaused.selector);
         vm.expectRevert(E.NotOwner.selector);
         vm.prank(guardian);
         module.resume();
         _owner(abi.encodeCall(module.resume, ()));
         _owner(abi.encodeCall(module.revoke, ()));
         _owner(abi.encodeCall(module.configureMandate, (config)));
-        _expectPayError(_approval(1, 1e6), E.NotActive.selector);
+        _expectPayError(_approval(1, 1e6), E.MandateRevoked.selector);
         vm.expectRevert(E.NotPaused.selector);
         vm.prank(address(treasury));
         module.resume();

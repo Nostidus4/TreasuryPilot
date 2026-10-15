@@ -44,6 +44,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  signer:
+    environment: *supabase-environment
+    networks: [public, internal]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   # worker-ai must use a least-privilege role, never the core credential, and the local postgres
   # is gone, so AI_DATABASE_URL is required here (a silent empty value would misconfigure it).
   worker-ai:

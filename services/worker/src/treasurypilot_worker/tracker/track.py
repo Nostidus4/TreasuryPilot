@@ -9,8 +9,8 @@ they are ``REORG_WINDOW`` blocks deep and demoted to ``Pending`` when the block 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -23,6 +23,7 @@ from treasurypilot_worker.chain.rpc import (
     RpcClient,
     RpcResponseError,
     build_rpc_client,
+    decode_rpc_urls,
 )
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -63,7 +64,7 @@ async def track_transactions(
         changed = 0
         for row in rows:
             urls = row["rpc_urls"]
-            client = clients.setdefault(str(urls), client_factory(_urls(urls)))
+            client = clients.setdefault(str(urls), client_factory(decode_rpc_urls(urls)))
             try:
                 changed += await _track_one(pool, client, row, now)
             except Exception:
@@ -76,10 +77,6 @@ async def track_transactions(
 
 def track_transactions_sync(database_url: str) -> dict[str, int]:
     return asyncio.run(track_transactions(database_url))
-
-
-def _urls(value: Any) -> list[str]:
-    return list(json.loads(value) if isinstance(value, str) else value)
 
 
 async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, now: datetime) -> int:
@@ -191,6 +188,25 @@ async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, no
             row["operation_id"],
             last_error,
         )
+        if new["status"] in FINAL and new["fee_wei"] is not None and new["confirmed_at"]:
+            # Executor outbox transactions are the spend source for M03's daily budget. Upsert
+            # on each confirmed re-scan so a later reorg can remove this canonical-chain fact.
+            await connection.execute(
+                "INSERT INTO gas_ledger (id, treasury_id, transaction_id, payer, payer_address, "
+                "fee_wei, reverted, day) SELECT $1, o.treasury_id, $2, 'EXECUTOR', $3, $4, "
+                "$5, ($6::timestamptz AT TIME ZONE 'UTC')::date FROM operations o WHERE o.id = $7 "
+                "ON CONFLICT (transaction_id) DO UPDATE SET payer_address = EXCLUDED.payer_address, "
+                "fee_wei = EXCLUDED.fee_wei, reverted = EXCLUDED.reverted, day = EXCLUDED.day",
+                uuid.uuid4(),
+                row["id"],
+                row["from_address"],
+                new["fee_wei"],
+                new["status"] == "Reverted",
+                new["confirmed_at"],
+                row["operation_id"],
+            )
+        else:
+            await connection.execute("DELETE FROM gas_ledger WHERE transaction_id = $1", row["id"])
     return int(new["status"] != row["status"])
 
 

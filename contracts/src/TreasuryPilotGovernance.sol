@@ -32,8 +32,10 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
 
     function _onlyExecutor() internal view {
         if (msg.sender != _mandate.executor) revert E.NotExecutor();
-        if (status != Status.Active) revert E.NotActive();
-        if (block.timestamp < _mandate.validFrom || block.timestamp > _mandate.expiresAt) revert E.MandateExpired();
+        if (status == Status.Paused) revert E.MandatePaused();
+        if (status == Status.Revoked) revert E.MandateRevoked();
+        if (block.timestamp < _mandate.validFrom) revert E.NotActive();
+        if (block.timestamp > _mandate.expiresAt) revert E.MandateExpired();
     }
 
     /// @inheritdoc ITreasuryPilotModule

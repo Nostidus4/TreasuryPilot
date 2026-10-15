@@ -179,13 +179,40 @@ period; magic links become eligible after use or expiry plus their configured pe
 Each deleted session or magic link leaves a receipt containing only the SHA-256 digest
 of its random row UUID, type and deletion time; it never hashes or stores the email,
 token, user id, IP or user agent. The global hold is intentionally conservative;
-subject-specific deletion requests and holds remain a separate follow-up.
+it also freezes subject erasure while authentication artifacts are part of the request.
+
+`request_subject_deletion()` disables the account immediately and queues its
+profile-erasure request; `set_subject_legal_hold()` records a subject-level hold on the
+same row (it raises `ValueError` for an unknown user). The worker locks
+that row before changing identity data, so a concurrent hold cannot pass a deletion that
+already owns the lock. A held request stays pending until the hold is released. If the
+user's email appears as a whole address in immutable audit evidence (case-insensitive;
+`bob@x.com` does not match `bobob@x.com`), the request is marked for review and
+the account is left intact; the audit chain is never rewritten. The audit scan runs in its
+own transaction before any lock is taken, and a dry run applies the same scan, so its
+`examined` count only includes requests a real run would erase. Blocked requests are not
+retried automatically (the evidence is immutable); every run logs how many await review, and a
+new `request_subject_deletion()` clears the block after the review. Otherwise the worker
+disables the account, replaces its email with a generated `.invalid` address, clears the
+display name, bumps the user version, and removes current sessions, magic links, pending
+invitations addressed to the email, organization memberships, wallet/SSO/MFA credentials
+and user notification targets/preferences. Rows are deleted first and receipts are built
+from the deleted ids, so no row is removed without one. It writes a `subject` receipt and
+separate hash-only receipts for deleted sessions, magic links and invitations, then removes
+the request/hold row. Receipt inserts are chunked (5000 rows). The `subject` receipt is
+an HMAC-SHA256 of the user UUID keyed by `TP_RETENTION_RECEIPT_KEY` (at least 32 bytes,
+never rotated or reused), so the receipt cannot be matched by enumerating UUIDs without
+the key; the CLI refuses to erase a subject without it. Memberships are deleted without the
+last-owner guard that member removal applies, because erasure cannot be refused; an
+organization may be left without an owner and needs an administrator. No original email,
+display name or token is kept in a receipt. The UUID remains on financial and immutable
+audit rows where it is needed for historical attribution; those records are not erased by
+this workflow.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
-a day). This follow-up adds user-wide session and magic-link retention. Subject-level
-deletion requests and holds, and a policy for financial records and immutable audit
-evidence after their storage models land, remain out of scope. CMP-L03 remains open
-until those slices are designed and implemented.
+a day). This follow-up adds user-wide authentication retention and a bounded profile
+erasure request/hold path. A policy for financial records and immutable audit evidence
+remains out of scope, so CMP-L03 stays open for that design and its acceptance tests.
 
 ## 16. Travel Rule exchange (CMP-L02)
 
@@ -195,6 +222,13 @@ reference and state; originator/beneficiary details are stored only as an AES-GC
 bound to the organization and case id. The provider receives party data only after threshold
 qualification and a durable case has been created. Data changes for an existing request fail
 closed so a completed exchange cannot be reused for different payment terms.
+A below-threshold transfer is also persisted, as a `NOT_REQUIRED` case with the effective
+threshold, and that decision is honored on retries. `COMPLETED`, `SELF_HOSTED` and
+`NOT_REQUIRED` are final and cannot be overwritten by later provider replies.
+
+`ValidationContext.travel_rule_clear` is `None` when the preflight was not run (the rule is a
+no-op until a caller wires `travel_rule_before_pay`), and `False` when the service holds the
+payment, which blocks PAY with `DATA_MISSING`.
 
 `TP_TRAVEL_RULE_THRESHOLDS` is a JSON object of jurisdiction to currency to nonnegative integer
 minor-unit threshold, for example `{"US":{"USD":30000},"GB":{"USD":30000}}`. Values are
@@ -223,11 +257,12 @@ statuses fail closed. The API sends an exchange only after an approver's signatu
 on-chain approver membership have been verified.
 
 The approval route holds new approvals until the exchange completes. The worker's last
-pre-signing PAY simulation also requires a `travel_rule_clear` result from preflight, even
-when an approval signature is already present. Missing clearance blocks before any RPC
-simulation. The M10 planning/operation producer (EXE-004/007) is not implemented here yet,
-so no production PAY task currently calls `travel_rule_before_pay` and propagates that result;
-that integration is required before the full execution gate is covered.
+pre-signing PAY simulation also blocks with `DATA_MISSING` before any RPC call when the context
+carries `travel_rule_clear=False`, even when an approval signature is already present; `None`
+(preflight not run) is a no-op, as in `ValidationContext`. REFILL is not gated. The M10
+planning/operation producer (EXE-004/007) is not implemented here yet, so no production PAY task
+currently calls `travel_rule_before_pay` and propagates that result; that integration is required
+before the full execution gate is covered.
 
 Invoice approval builds the exchange data from the organization's legal name and country,
 vendor name and country, the active payee address, and the request's fiat amount/currency.
@@ -235,3 +270,10 @@ Vendor country is optional at entry, but is required to evaluate jurisdiction th
 Missing jurisdiction, fiat valuation or threshold coverage holds approval with
 `TRAVEL_RULE_HOLD`; a qualifying transfer also requires both parties' legal identity before
 exchange. The application does not infer a country or convert a crypto amount.
+
+Deliberate consequence: existing vendors have a NULL country, so approving any payment to
+them is held with `TRAVEL_RULE_HOLD` until a country is recorded, even for amounts that would
+fall below every threshold. The applicable threshold is the lower of the origin and beneficiary
+jurisdictions' limits, so it cannot be determined (and "no rule applies" cannot be recorded)
+without the beneficiary country; the system fails closed rather than guess. Set the vendor
+country to release the hold.
