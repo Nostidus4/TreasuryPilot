@@ -11,7 +11,7 @@ from uuid import UUID
 import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
-from treasurypilot_core.eip712 import PAY, REFILL, SWAP_IN, WITHDRAW
+from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 from treasurypilot_worker.chain.rpc import RpcClient
@@ -20,10 +20,10 @@ from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.executor.simulation import SimulationContext, build_calldata
 from treasurypilot_worker.planner.context import ContextInputs
 
-# SUPPLY has no ExecutionPlan wire mapping yet (see ExecutionPlan.message).
 _ACTIONS = {
     PAY: Action.PAY,
     REFILL: Action.REFILL,
+    SUPPLY: Action.SUPPLY,
     WITHDRAW: Action.WITHDRAW,
     SWAP_IN: Action.SWAP,
 }
@@ -33,12 +33,13 @@ _ACTIONS = {
 class LoadedPlan:
     plan_id: UUID
     treasury_id: UUID
-    request_id: UUID
+    request_id: UUID | None  # None for a liquidity plan, which serves no request
     plan_step_ids: tuple[UUID, ...]  # plan_steps.id in seq order
     plan: ExecutionPlan
     typed_data: dict[str, Any]
     signature: bytes
     valid_until: datetime
+    liquidity_cycle_id: bytes | None = None
 
     @property
     def executor(self) -> str:
@@ -66,7 +67,13 @@ async def load_plan(pool: asyncpg.Pool, plan_id: UUID) -> LoadedPlan | None:
         "SELECT id, treasury_id FROM payment_requests WHERE onchain_request_id = $1",
         attestation["request_id"],
     )
-    if not rows or request is None or any(r["action"] not in _ACTIONS for r in rows):
+    cycle = await pool.fetchrow(
+        "SELECT treasury_id, liquidity_cycle_id FROM plans WHERE id = $1 AND request_id IS NULL",
+        plan_id,
+    )
+    if not rows or (request is None and cycle is None):
+        return None
+    if any(r["action"] not in _ACTIONS for r in rows):
         return None
     first = rows[0]
     typed = attestation["typed_data"]
@@ -93,13 +100,14 @@ async def load_plan(pool: asyncpg.Pool, plan_id: UUID) -> LoadedPlan | None:
     )
     return LoadedPlan(
         plan_id=plan_id,
-        treasury_id=request["treasury_id"],
-        request_id=request["id"],
+        treasury_id=request["treasury_id"] if request is not None else cycle["treasury_id"],
+        request_id=request["id"] if request is not None else None,
         plan_step_ids=tuple(r["id"] for r in rows),
         plan=plan,
         typed_data=typed if isinstance(typed, dict) else json.loads(typed),
         signature=bytes(attestation["signature"]),
         valid_until=attestation["valid_until"],
+        liquidity_cycle_id=None if cycle is None else bytes(cycle["liquidity_cycle_id"]),
     )
 
 

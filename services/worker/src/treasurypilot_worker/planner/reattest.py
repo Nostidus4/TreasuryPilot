@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
-from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -17,7 +15,8 @@ from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.planner.context import ContextInputs, build_context, scope_for
 from treasurypilot_worker.planner.pipeline import evidence_digest
 
-AttestFn = Callable[[UUID, Mapping[str, Any], Decision, str, datetime], Awaitable[None]]
+# (plan_id, plan message, decision, evidence digest, now[, liquidity_cycle_id= for a liquidity plan])
+AttestFn = Callable[..., Awaitable[None]]
 
 
 def reattest_fn(
@@ -49,8 +48,11 @@ def reattest_fn(
         decision = validate_plan(remaining, context)
         if decision.decision != "ALLOW":
             return decision
+        cycle = {} if loaded.liquidity_cycle_id is None else {
+            "liquidity_cycle_id": "0x" + loaded.liquidity_cycle_id.hex()
+        }  # fmt: skip
         await attest(
-            loaded.plan_id, loaded.plan.message(), decision, evidence_digest(snapshot), now
+            loaded.plan_id, loaded.plan.message(), decision, evidence_digest(snapshot), now, **cycle
         )
         renewed = await load_plan(pool, loaded.plan_id)  # the newest attestation, with its steps
         assert renewed is not None

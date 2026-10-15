@@ -11,6 +11,7 @@ from treasurypilot_core.eip712 import (
     PAY,
     PLAN_TYPE,
     REFILL,
+    SUPPLY,
     WITHDRAW,
     liquidity_cycle_id,
     plan_hash,
@@ -136,4 +137,34 @@ def test_an_execution_plan_hashes_like_the_typescript_oracle() -> None:
     assert (
         "0x" + plan_hash(m["requestId"], m["treasury"], m["chainId"], m["steps"]).hex()
         == (vector["planHash"])
+    )
+
+
+def test_a_liquidity_execution_plan_hashes_like_the_typescript_oracle() -> None:
+    vector = PLANS["liquidity"]
+    actions = {SUPPLY: Action.SUPPLY, WITHDRAW: Action.WITHDRAW}
+    plan = ExecutionPlan(
+        request_id=bytes.fromhex(vector["requestId"][2:]),
+        treasury=vector["treasury"],
+        chain_id=vector["chainId"],
+        steps=[
+            PlanStep(
+                seq=s["seq"],
+                step_id=bytes.fromhex(s["stepId"][2:]),
+                action=actions[s["action"]],
+                from_wallet=s["from"],
+                to=s["to"],
+                asset=s["asset"],
+                amount=BaseUnits(int(s["amount"])),
+            )
+            for s in vector["steps"]
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+    m = plan.message()
+
+    assert (
+        "0x" + plan_hash(m["requestId"], m["treasury"], m["chainId"], m["steps"]).hex()
+        == vector["planHash"]
     )

@@ -158,7 +158,7 @@ async def _pending_operations(
     return [
         PendingTransaction(
             operation_id=str(r.id),
-            request_id=str(r.request_id),
+            request_id=str(r.request_id or ""),  # a liquidity operation has no request
             kind=r.kind.value,
             status=r.status.value,
         )

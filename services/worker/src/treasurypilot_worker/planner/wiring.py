@@ -46,6 +46,7 @@ def build_attest(settings: Settings) -> AttestFn:
         decision: Decision,
         digest: str,
         now: datetime,
+        liquidity_cycle_id: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             attest,
@@ -57,6 +58,7 @@ def build_attest(settings: Settings) -> AttestFn:
             executor=executor,
             evidence_digest=digest,
             now=now,
+            liquidity_cycle_id=liquidity_cycle_id,
         )
 
     return issue

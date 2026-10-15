@@ -69,7 +69,7 @@ async def resolve_operation(
     op = await pool.fetchrow(
         "SELECT o.id, o.step_id, o.kind, o.status, o.request_id, t.module_address, "
         "r.onchain_request_id FROM operations o JOIN treasuries t ON t.id = o.treasury_id "
-        "JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
+        "LEFT JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
         operation_id,
     )
     if op is None or op["status"] not in _IN_FLIGHT:
@@ -269,6 +269,10 @@ async def _close(
 
 
 async def _escalate(pool: asyncpg.Pool, op: asyncpg.Record, now: datetime) -> None:
+    if op["request_id"] is None:
+        # shortcut: review items are keyed by request (ck_review_items_subject), so a liquidity
+        # operation gets no item, only this error log; Unknown still blocks the cycles.
+        logger.error("liquidity operation %s unresolved: UNCERTAIN_TX", op["id"])
     async with pool.acquire() as connection, connection.transaction():
         await connection.execute(
             "UPDATE operations SET status = 'Unknown' WHERE id = $1 "

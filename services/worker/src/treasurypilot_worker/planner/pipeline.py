@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
-from typing import Any, Protocol
+from typing import Protocol
 
 import asyncpg  # type: ignore[import-untyped]
 from web3 import Web3
@@ -52,8 +52,10 @@ from treasurypilot_worker.planner.inputs import (
     InputsUnavailable,
     PlanInputs,
     load_inputs,
+    load_liquidity_inputs,
     plan_steps,
     probe_plan,
+    reserve_withdrawal,
 )
 from treasurypilot_worker.recovery.retry import ReviewIntent
 
@@ -90,8 +92,9 @@ class PlannerDeps:
     executor: str
     # ExecutionPlan -> estimated plan fee in integer wei
     estimate_fee: Callable[[uuid.UUID, ExecutionPlan], Awaitable[int]]
-    # signs and stores the attestation (plan message, decision, evidence digest, now)
-    attest: Callable[[uuid.UUID, Mapping[str, Any], Decision, str, datetime], Awaitable[None]]
+    # signs and stores the attestation (plan message, decision, evidence digest, now); a liquidity
+    # plan also passes ``liquidity_cycle_id=`` (its stepId key)
+    attest: Callable[..., Awaitable[None]]
     ai: AiProposer | None = None
     # Set where a configured test router can cover an executor gas shortage (F-064).
     gas_swap: GasSwapDeps | None = None
@@ -118,6 +121,9 @@ def _build_plan(
     item: ScheduledItem,
     source: str,
     snapshot_id: str,
+    *,
+    withdraw: int = 0,
+    a_token: str = "",
 ) -> ExecutionPlan:
     pay = probe.steps[-1]
     return ExecutionPlan(
@@ -133,9 +139,32 @@ def _build_plan(
             refill=int(item.refill),
             refill_from=item.refill_from,
             pay=int(pay_amount(request, item.day)),
+            withdraw=withdraw,
+            a_token=a_token,
         ),
         planner_source=source,  # type: ignore[arg-type]
         evidence_ids=[f"snapshot:{snapshot_id}"],
+    )
+
+
+async def insert_plan_validation(
+    connection: asyncpg.Connection, plan_id: uuid.UUID, decision: Decision
+) -> None:
+    """Record the PLAN-stage validation of a plan (also used by the liquidity cycle)."""
+
+    await connection.execute(
+        "INSERT INTO validations (id, plan_id, step_seq, stage, decision, primary_code, "
+        "reason_codes, warnings, checks, policy_version, snapshot_block) "
+        "VALUES ($1, $2, NULL, 'PLAN', $3, $4, $5, $6, $7::jsonb, $8, $9)",
+        uuid7(),
+        plan_id,
+        decision.decision,
+        decision.primary.value if decision.primary else None,
+        [c.value for c in decision.codes],
+        [c.value for c in decision.warnings],
+        json.dumps(decision.model_dump(mode="json")["checks"]),
+        decision.policy_version,
+        decision.snapshot_block,
     )
 
 
@@ -290,6 +319,7 @@ async def plan_request(
     try:
         async with pool.acquire() as connection:
             inputs = await load_inputs(connection, treasury_id, request_id, chain, now=current)
+            reserve = await load_liquidity_inputs(connection, treasury_id)
     except InputsUnavailable as error:
         return await _expire(pool, plan_id, error)
     context = Context(context_inputs, chain, int(current.timestamp()), head)
@@ -349,7 +379,17 @@ async def plan_request(
         )
         if item is not None:
             target = next(r for r in inputs.requests if r.id == target_id)
-            plan = _build_plan(probe, target, item, source, str(chain.id))
+            # EXE-014: a refill that would break the reserve is preceded by a pool withdrawal.
+            withdraw = reserve_withdrawal(inputs, reserve, chain.data, int(item.refill), target_id)
+            plan = _build_plan(
+                probe,
+                target,
+                item,
+                source,
+                str(chain.id),
+                withdraw=withdraw,
+                a_token=str((chain.data.get("aave") or {}).get("a_token", "")),
+            )
         else:
             refusal = _not_today(deterministic, target_id)
     return await _finish(
@@ -526,20 +566,7 @@ async def _finish(
             estimate,
         )
         if decision is not None:
-            await connection.execute(
-                "INSERT INTO validations (id, plan_id, step_seq, stage, decision, primary_code, "
-                "reason_codes, warnings, checks, policy_version, snapshot_block) "
-                "VALUES ($1, $2, NULL, 'PLAN', $3, $4, $5, $6, $7::jsonb, $8, $9)",
-                uuid7(),
-                plan_id,
-                decision.decision,
-                decision.primary.value if decision.primary else None,
-                [c.value for c in decision.codes],
-                [c.value for c in decision.warnings],
-                json.dumps(decision.model_dump(mode="json")["checks"]),
-                decision.policy_version,
-                decision.snapshot_block,
-            )
+            await insert_plan_validation(connection, plan_id, decision)
         for intent in reviews:
             codes = intent.reason_codes or (intent.primary_code,)
             await _insert_review(

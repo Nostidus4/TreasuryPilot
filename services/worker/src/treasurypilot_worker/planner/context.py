@@ -14,6 +14,8 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.domain.utc_days import utc_day_number
+from treasurypilot_core.engine.liquidity import liquidity_position
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import (
     Action,
@@ -25,11 +27,19 @@ from treasurypilot_core.policy import (
     Limits,
     MandateView,
     PayeeView,
+    PolicyConfig,
     PolicyState,
     RequestView,
     ValidationContext,
 )
 from treasurypilot_worker.chain.snapshot import Snapshot, SnapshotScope
+from treasurypilot_worker.planner.inputs import (
+    NO_SCHEDULE,
+    LiquidityInputs,
+    engine_snapshot,
+    liquidity_policy,
+    load_liquidity_inputs,
+)
 
 _MANDATE_STATUS = ("Active", "Paused", "Revoked")
 _COVERAGE = ("COMPLETE", "PARTIAL_ACK", "PARTIAL", "NONE")
@@ -55,6 +65,8 @@ class ContextInputs:
     screening_hit: bool = False
     screening_clear: bool = False
     travel_rule_clear: bool | None = None
+    # Set for a liquidity plan (no request): the reserve its SUPPLY is checked against.
+    liquidity: LiquidityInputs | None = None
 
 
 def scope_for(plan: ExecutionPlan, inputs: ContextInputs) -> SnapshotScope:
@@ -114,8 +126,32 @@ def _chain_snapshot(
     )
 
 
+def _reserve(snapshot: Snapshot, inputs: ContextInputs, now: int) -> tuple[BaseUnits, BaseUnits]:
+    """(payment_reserve, available_for_supply) of a liquidity plan; zero otherwise (fail closed)."""
+
+    liquidity = inputs.liquidity
+    if liquidity is None:
+        return BaseUnits(0), BaseUnits(0)
+    data = snapshot.data
+    position = liquidity_position(
+        engine_snapshot(data, inputs.safe_t, list(liquidity.operational), day=utc_day_number(now)),
+        liquidity.requests,
+        NO_SCHEDULE,
+        liquidity_policy(data, liquidity.config),
+    )
+    # The validator checks the floor (buffer) on its own, so it is not part of this figure.
+    return (
+        BaseUnits(
+            int(position.payment_reserve)
+            + int(position.debt_service_reserve)
+            + int(position.execution_holds)
+        ),
+        position.available_for_supply,
+    )
+
+
 def _policy_state(
-    snapshot: Snapshot, plan: ExecutionPlan, inputs: ContextInputs
+    snapshot: Snapshot, plan: ExecutionPlan, inputs: ContextInputs, now: int
 ) -> PolicyState | None:
     data = snapshot.data
     try:
@@ -124,6 +160,7 @@ def _policy_state(
         fingerprint = data.get("fingerprints", {}).get("0x" + (inputs.fingerprint or b"").hex(), {})
         exception = request["exception"]
         aave = data.get("aave", {})
+        payment_reserve, available_for_supply = _reserve(snapshot, inputs, now)
         return PolicyState(
             pay_limits=_limits(mandate["pay"]),
             refill_limits=_limits(mandate["refill"]),
@@ -131,11 +168,10 @@ def _policy_state(
             balances={k: _units(v) for k, v in data["balances"].items()},
             buffers={k: _units(v) for k, v in data["buffers"].items()},
             targets={k: _units(v) for k, v in data["targets"].items()},
-            # shortcut: the module has no SUPPLY usage read yet, so 0; add it with the SUPPLY flow.
             used_today={
                 "PAY": _units(used["PAY"]),
                 "REFILL": _units(used["REFILL"]),
-                "SUPPLY": _units(0),
+                "SUPPLY": _units(used.get("SUPPLY", 0)),
             },
             request_paid=bool(request["paid"]),
             step_used=tuple(
@@ -155,8 +191,9 @@ def _policy_state(
                 mandate_version=exception["mandate_version"],
                 used=exception["used"],
             ),
-            # shortcut: payment_reserve and available_for_supply are only read for SUPPLY; left 0
-            # they block it (fail closed) until the liquidity flow supplies them.
+            # Only a liquidity plan has a reserve; for any other plan a SUPPLY step fails closed.
+            payment_reserve=payment_reserve,
+            available_for_supply=available_for_supply,
             a_token_balance=_units(aave.get("a_token_balance", 0)),
             pool_liquidity=_units(aave.get("available_liquidity", 0)),
         )
@@ -189,7 +226,12 @@ def build_context(
             "screening_hit": inputs.screening_hit,
             "screening_clear": inputs.screening_clear,
             "travel_rule_clear": inputs.travel_rule_clear,
-            "policy_state": _policy_state(snapshot, plan, inputs),
+            "policy_state": _policy_state(snapshot, plan, inputs, now),
+            "config": PolicyConfig(
+                min_supply=int(inputs.liquidity.config.get("minSupply", 0))
+                if inputs.liquidity
+                else 0
+            ),
         }
     )
 
@@ -266,18 +308,7 @@ async def load_inputs(
         row["id"],
         row["current_revision"],
     )
-    paused = await pool.fetchval(
-        "SELECT paused FROM backend_pause WHERE treasury_id = $1", treasury_id
-    )
-    circuit = await pool.fetchval(
-        "SELECT EXISTS (SELECT 1 FROM chain_safety_signals WHERE treasury_id = $1 "
-        "AND signal_type = 'CIRCUIT_BREAKER' AND consumed_at IS NULL AND invalidated_at IS NULL)",
-        treasury_id,
-    )
-    unknown = await pool.fetchval(
-        "SELECT count(*) FROM operations WHERE treasury_id = $1 AND status = 'Unknown'",
-        treasury_id,
-    )
+    paused, circuit, unknown = await _safety(pool, treasury_id)
     results = [
         await pool.fetchval(
             "SELECT result::text FROM screenings WHERE org_id = $1 AND chain_id = $2 "
@@ -307,6 +338,58 @@ async def load_inputs(
         circuit_open=bool(circuit),
         screening_hit="HIT" in results,
         screening_clear=bool(results) and all(r == "CLEAR" for r in results),
+    )
+
+
+async def _safety(pool: asyncpg.Pool, treasury_id: UUID) -> tuple[bool, bool, int]:
+    """(pause requested, circuit open, unknown operations) of a treasury."""
+
+    paused = await pool.fetchval(
+        "SELECT paused FROM backend_pause WHERE treasury_id = $1", treasury_id
+    )
+    circuit = await pool.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM chain_safety_signals WHERE treasury_id = $1 "
+        "AND signal_type = 'CIRCUIT_BREAKER' AND consumed_at IS NULL AND invalidated_at IS NULL)",
+        treasury_id,
+    )
+    unknown = await pool.fetchval(
+        "SELECT count(*) FROM operations WHERE treasury_id = $1 AND status = 'Unknown'",
+        treasury_id,
+    )
+    return bool(paused), bool(circuit), int(unknown)
+
+
+async def load_liquidity_context(
+    pool: asyncpg.Pool, treasury_id: UUID, *, executor: str
+) -> ContextInputs:
+    """The off-chain half of the context for a liquidity plan, which serves no request."""
+
+    row = await pool.fetchrow(
+        "SELECT t.chain_id, "
+        "(SELECT '0x' || encode(sw.safe_address, 'hex') FROM treasury_wallets sw "
+        " WHERE sw.treasury_id = t.id AND sw.role = 'SOURCE') AS safe_t, "
+        "'0x' || encode(a.address, 'hex') AS asset "
+        "FROM treasuries t JOIN assets a ON a.id = t.asset_id WHERE t.id = $1",
+        treasury_id,
+    )
+    if row is None or row["safe_t"] is None:
+        raise LookupError("treasury or its source Safe not found")
+    paused, circuit, unknown = await _safety(pool, treasury_id)
+    async with pool.acquire() as connection:
+        liquidity = await load_liquidity_inputs(connection, treasury_id)
+    return ContextInputs(
+        chain_id=row["chain_id"],
+        safe_t=row["safe_t"],
+        asset=row["asset"],
+        executor=executor,
+        request=None,
+        approval=None,
+        fingerprint=None,
+        unknown_operations=unknown,
+        pause_requested=paused,
+        circuit_open=circuit,
+        screening_clear=True,  # no payee: SUPPLY and WITHDRAW only move Safe T's own funds
+        liquidity=liquidity,
     )
 
 

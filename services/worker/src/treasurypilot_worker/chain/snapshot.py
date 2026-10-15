@@ -33,7 +33,7 @@ MULTICALL3: Final = "0xcA11bde05977b3631167028862bE2a173976CA11"
 MAX_AGE: Final = timedelta(seconds=30)
 MAX_BLOCKS_BEHIND: Final = 2
 DASHBOARD_RETENTION: Final = timedelta(days=7)
-_PAY, _REFILL = 1, 2  # module action ids
+_PAY, _REFILL, _SUPPLY = 1, 2, 4  # module action ids
 _ZERO: Final = "0x" + "00" * 20
 _AGGREGATE3: Final = bytes(Web3.keccak(text="aggregate3((address,bool,bytes)[])")[:4])
 _RESERVE = (
@@ -196,6 +196,15 @@ def _state_reads(target: SnapshotTarget, scope: SnapshotScope) -> list[_Read]:
             "usedToday(uint8,address)",
             "uint256",
             _REFILL,
+            asset,
+            shape=_amount,
+        ),
+        _read(
+            "module/used_today/SUPPLY",
+            module,
+            "usedToday(uint8,address)",
+            "uint256",
+            _SUPPLY,
             asset,
             shape=_amount,
         ),

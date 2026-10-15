@@ -189,6 +189,13 @@ class DbPlanStarter:
             treasury_id,
             now - DRAFT_TIMEOUT,
         )
+        # An open liquidity plan owns Safe T's funds: request plans wait for it (EXE-014).
+        if await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM plans WHERE treasury_id = $1 AND request_id IS NULL "
+            "AND status IN ('Draft', 'Attested'))",
+            treasury_id,
+        ):
+            return False
         plan_id = await connection.fetchval(
             f"""
             INSERT INTO plans (id, org_id, treasury_id, request_id)

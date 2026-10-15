@@ -115,6 +115,8 @@ jobs:
         run: uv run pytest services/worker/tests/test_partitioning.py services/worker/tests/test_locks.py
       - name: Planning pipeline PostgreSQL integration
         run: uv run pytest services/worker/tests/planner/test_pipeline_integration.py
+      - name: Liquidity cycle PostgreSQL integration
+        run: uv run pytest services/worker/tests/planner/test_liquidity_cycle_integration.py
       - name: Circuit breaker PostgreSQL integration
         run: uv run pytest services/worker/tests/test_circuit_breaker_integration.py
       - name: Low-gas sweep PostgreSQL integration

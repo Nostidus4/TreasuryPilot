@@ -53,7 +53,7 @@ class PlanRun:
     """An attested plan: ``steps`` in seq order, valid until ``valid_until`` (attestation expiry)."""
 
     plan_id: UUID
-    request_id: UUID
+    request_id: UUID | None  # None for a liquidity plan: no request moves, a stop opens no review
     steps: tuple[StepExecution, ...]
     valid_until: datetime
 
@@ -152,6 +152,21 @@ async def _stop(
 ) -> SequenceResult:
     """Open one review item and move the request to NeedsReview; completed steps stay (BR-054)."""
 
+    if run.request_id is None:  # a liquidity plan serves no request: free the cycle, no review
+        # a reverted/abandoned step spent its step id: PartiallyCompleted moves the cycle counter
+        spent = completed or intent.primary_code in ("STEP_REVERTED", "STEP_ABANDONED")
+        await pool.execute(
+            "UPDATE plans SET status = $2, chosen_reason = left(coalesce(chosen_reason, '') || "
+            "' | stopped: ' || $3, 500), updated_at = now() "
+            "WHERE id = $1 AND status IN ('Attested', 'Executing')",
+            run.plan_id,
+            "PartiallyCompleted" if spent else "Superseded",
+            intent.primary_code,
+        )
+        logger.error("liquidity plan %s stopped: %s", run.plan_id, intent.primary_code)
+        return SequenceResult(
+            "PartiallyCompleted" if spent else "Blocked", intent.primary_code, completed
+        )
     async with pool.acquire() as connection, connection.transaction():
         moved = await transition_request(
             connection,
@@ -256,6 +271,7 @@ async def sequence_plan(
         # Paying first so both state-machine events are recorded, even for a resumed plan.
         await _mark(pool, run, "Paying", ("Preparing",))
         async with pool.acquire() as connection, connection.transaction():
+            assert run.request_id is not None
             await transition_request(
                 connection, run.request_id, "Paid", ("Paying",), "PAY step paid"
             )
@@ -305,6 +321,9 @@ async def _post_condition(
 
 
 async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:
+    if run.request_id is None:  # a liquidity plan is active exactly while its plan is open
+        plan_status = await pool.fetchval("SELECT status FROM plans WHERE id = $1", run.plan_id)
+        return "Preparing" if plan_status in ("Attested", "Executing") else plan_status
     status: str | None = await pool.fetchval(
         "SELECT status FROM payment_requests WHERE id = $1", run.request_id
     )
@@ -312,6 +331,7 @@ async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:
 
 
 async def _mark(pool: asyncpg.Pool, run: PlanRun, to: str, sources: tuple[str, ...]) -> None:
+    assert run.request_id is not None  # only a PAY step moves a request
     async with pool.acquire() as connection, connection.transaction():
         await transition_request(connection, run.request_id, to, sources, f"PAY step {to.lower()}")
 

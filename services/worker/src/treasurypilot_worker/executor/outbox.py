@@ -100,7 +100,7 @@ class StepExecution:
     """One attested plan step, ready for the signer. ``sign_request`` is the /sign-and-send body."""
 
     treasury_id: UUID
-    request_id: UUID
+    request_id: UUID | None  # None for a step of a liquidity plan
     plan_step_id: UUID
     step_id: bytes
     kind: str  # operation_kind: PAY | REFILL | SWAP | WITHDRAW | SUPPLY

@@ -147,6 +147,9 @@ async def _last_week_plan_fees(
         .join(GasLedger, GasLedger.transaction_id == Transaction.id)
         .where(
             Operation.treasury_id == treasury_id,
+            # shortcut: liquidity operations (no request) are left out, they would collapse into
+            # one NULL group; group by plan once operations carry a plan id.
+            Operation.request_id.is_not(None),
             GasLedger.treasury_id == treasury_id,
             GasLedger.payer == "EXECUTOR",
             GasLedger.day >= today - timedelta(days=6),

@@ -63,6 +63,7 @@ class CycleResult:
     started: bool
     reason: CycleSkipReason | None = None
     request_id: uuid.UUID | None = None
+    liquidity_plan_id: uuid.UUID | None = None  # the Draft liquidity plan this cycle claimed
 
 
 class CycleScheduleProvider(Protocol):
@@ -84,6 +85,16 @@ class PlanStarter(Protocol):
         *,
         now: datetime,
     ) -> bool: ...
+
+
+class LiquidityStarter(Protocol):
+    async def start(
+        self,
+        connection: asyncpg.Connection,
+        treasury_id: uuid.UUID,
+        *,
+        now: datetime,
+    ) -> uuid.UUID | None: ...
 
 
 class ScheduleWriter(Protocol):
@@ -181,9 +192,13 @@ async def run_execution_cycle(
     lock_for: LockFactory,
     schedule_provider: CycleScheduleProvider | None,
     plan_starter: PlanStarter | None,
+    liquidity_starter: LiquidityStarter | None = None,
     now: datetime | None = None,
 ) -> CycleResult:
     """Run one treasury cycle under the nonblocking advisory lock.
+
+    When no request is eligible, ``liquidity_starter`` may claim at most one liquidity plan
+    (EXE-014). The executing-plan gate above already keeps it out while a plan is executing.
 
     The lock covers gate reads, request selection, and the planner's idempotent
     claim/start callback. The callback must not perform slow RPC or LLM work while
@@ -216,7 +231,16 @@ async def run_execution_cycle(
             connection, treasury_id, now=current
         )
         if selection.candidate is None:
-            result = CycleResult(treasury_id, False, selection.skip_reason)
+            liquidity_plan = (
+                await liquidity_starter.start(connection, treasury_id, now=current)
+                if liquidity_starter is not None
+                and selection.skip_reason is CycleSkipReason.NO_ELIGIBLE_REQUEST
+                else None
+            )
+            if liquidity_plan is not None:
+                result = CycleResult(treasury_id, True, liquidity_plan_id=liquidity_plan)
+            else:
+                result = CycleResult(treasury_id, False, selection.skip_reason)
             _log_result(result)
             return result
         if plan_starter is None:
@@ -270,6 +294,8 @@ def _log_result(result: CycleResult, *, cycle: str = "execution") -> None:
         fields["skip_reason"] = result.reason.value
     if result.request_id is not None:
         fields["request_id"] = str(result.request_id)
+    if result.liquidity_plan_id is not None:
+        fields["liquidity_plan_id"] = str(result.liquidity_plan_id)
     # Sweeps visit every treasury; the missing-provider skip is aggregated by the caller.
     level = (
         logging.DEBUG
