@@ -101,106 +101,16 @@ Traceability (RCV-002, #164):
 
 | Requirement | Evidence |
 |---|---|
-| Step used on chain becomes Confirmed without resubmission | `test_step_used_on_chain_confirms_without_resubmission`; Anvil with a deployed contract true only for one step id: `test_anvil_step_used_confirms_without_resubmission` |
-| `requestPaid` confirms a PAY step | `test_request_paid_on_chain_confirms_a_pay_step`, Anvil: `test_anvil_request_paid_confirms_a_pay_step` |
-| Never-broadcast operation is resubmitted with the same step id | `test_never_broadcast_is_replayed_with_the_same_step_id`, Anvil: `test_anvil_never_broadcast_returns_to_not_submitted` |
-| Replay refused as ATTESTATION_EXPIRED ends Abandoned | `test_replay_refused_as_attestation_expired_ends_abandoned` |
-| Receipt is left to the tracker (BR-060 order), primary or secondary | `test_receipt_or_mempool_is_left_to_the_tracker`, `test_secondary_provider_receipt_is_left_to_the_tracker`, Anvil: `test_anvil_receipt_is_left_to_the_tracker` (stepUsed true, receipt wins) |
-| Reverted receipt is not stranded in Unknown | Anvil: `test_anvil_reverted_receipt_is_reverted_by_the_tracker` |
-| Consumed nonce traced to its tx: Reverted / Abandoned, bounded | `test_consumed_nonce_traced_to_a_reverted_transaction_is_reverted`, `..._unrelated_success_is_abandoned`, `test_nonce_trace_is_bounded_and_waits_for_confirmations`, Anvil: `test_anvil_consumed_nonce_is_traced_to_its_block` |
-| Escalate to UNCERTAIN_TX after 30 min, treasury stays blocked | `test_consumed_nonce_without_evidence_escalates_after_30_minutes`, Anvil: `test_anvil_consumed_nonce_without_evidence_escalates` (asserts the execution-cycle gate) |
-| Never guess on RPC failure | `test_rpc_errors_and_empty_answers_never_fall_through` |
+| Worker killed at points around the signer call and the DB write | 24 in-process iterations: 6 crash points (`before_signer`, `after_reserve`, `after_sign`, `after_broadcast`, `mid_commit`, `after_submit_commit`) x 4 runs each. The schedule is a seeded shuffle with fixed coverage (`TP_CRASH_SEED`, default 169, printed with the schedule). The crash is an in-process `BaseException` out of `sequence_plan`; the pool is dropped so uncommitted work rolls back |
+| Real process death | `test_process_death_never_double_pays`: a child process runs `execute_step` and calls `os._exit` at `after_sign`, `after_broadcast`, `mid_commit` and `after_submit_commit` (connection lost mid-transaction, no `finally` blocks) |
+| State after the death | asserted before the restart: operation status, `attempts`, `transactions` rows and mined PAYs (e.g. `mid_commit` leaves `NotSubmitted`, zero rows, one mined transfer) |
+| Restart and recovery | startup `scan_in_flight`, `sequence_plan`, `track_transactions`, `sequence_plan` to Paid; a duplicate `execute_step` on a Submitted/Confirmed operation |
+| Exactly one PAY, request Paid | one mined transfer to the iteration's recipient; one `transactions` row whose hash and nonce equal the mined tx; the signer's stored hash equals it too; `attempts` is 2 (1 after `after_submit_commit`); request `Paid`, one `Confirmed` operation |
+| The worker's own idempotency is tested, not the signer's replay | the restarted worker reaches the signer exactly once (zero times after `after_submit_commit`), and a duplicate `execute_step` on a Confirmed operation makes no signer call. Removing the `status != 'NotSubmitted'` early return in `execute_step` fails both tests |
 
-All in `services/worker/tests/test_recovery_resolve.py` (CI: Anvil + Postgres job).
+The signer stand-in (`crash_support.StoreSigner`) runs on the real `SignerStore` and mirrors the `SigningService` order: reserve under (attestation nonce, step id), persist the raw tx (`record_signed`), broadcast; a replay rebroadcasts the stored bytes and treats "already known" or a mined nonce as success; a reservation with no raw tx is re-signed with the same nonce.
 
-### 8.2 Retry classifier (RCV-005)
-
-| Error | Class | Action |
-|---|---|---|
-| RPC 5xx, timeout before broadcast, connection reset | retryable | backoff 2 s × 2ⁿ, max 6 |
-| `nonce too low` | retryable after resync | signer resyncs nonce; same payload |
-| `replacement underpriced` | retryable | bump per policy |
-| Signer typed refusal (`PAYLOAD_MISMATCH`, `ATTESTATION_*`) | terminal | review item AI_REJECTED / POLICY_BLOCK |
-| `SIMULATION_REVERTED` | terminal for this plan | review POLICY_BLOCK |
-| `INSUFFICIENT_GAS` | terminal until funded | review INFRA, low-gas alert |
-| Anything after broadcast without receipt | **not retried** | → tracker/Unknown path |
-
-Ids (request, step, operation, idempotency key) never change across attempts (BR-061).
-
-Code: `treasurypilot_worker.recovery.retry`. The executor wraps each pre-broadcast step in `run_with_retry`, which passes the same frozen `OperationIds` to every attempt and returns a `Stop` with a `ReviewIntent` (type, primary code) that the executor persists via `create_for_outcome`. Exhaustion is `INFRA` / `RETRY_EXHAUSTED`; post-broadcast errors are `UNCERTAIN_TX` / `TX_UNKNOWN`; unknown errors stop as `INFRA` / `UNCLASSIFIED_ERROR` (fail closed).
-
-### 8.3 Routing table
-
-| Type | Role | Allowed actions |
-|---|---|---|
-| NEEDS_AUTHORITY (over cap) | Owner | GRANT_EXCEPTION (→ M03), CANCEL |
-| POLICY_BLOCK payee/limit/budget | Owner | REPLAN (after policy edit), CANCEL |
-| POLICY_BLOCK amount/payee/approval | Operator → Approver | EDIT_REQUEST (re-approval), CANCEL |
-| FEE_APPROVAL | Finance, Operator, Owner | ACCEPT_FEE, defer |
-| UNCERTAIN_TX | Operator (+ Owner informed) | ACKNOWLEDGE after resolution only |
-| DISCREPANCY | Finance + Owner | ACKNOWLEDGE, MARK_MATCHED |
-| AI_REJECTED | Operator | REPLAN (deterministic), CANCEL |
-| INFRA | Operator | RETRY (resumes the same plan if it is PartiallyCompleted) |
-| UNEXPECTED_OUTFLOW | Owner, Finance | ACKNOWLEDGE |
-
-SLA: NEEDS_AUTHORITY 24 h, FEE_APPROVAL until the last safe execution time, UNCERTAIN_TX 1 h, others 48 h; overdue items escalate to Owner.
-
-`create_for_outcome` is the transaction-scoped queue adapter. It returns no item for
-ALLOW and uses the open `(request_id, type)` uniqueness rule for every other
-outcome, so repeated or concurrent reports share one actionable item. Review
-actions check the routed role and item version under a row lock. UNCERTAIN_TX
-acknowledgment stays unavailable until chain evidence marks the item resolved.
-The downstream command for actions such as CANCEL and GRANT_EXCEPTION is wired by
-the corresponding request and mandate flows; the queue records the reviewed
-decision and does not execute a chain transaction itself.
-
-### 8.4 Circuit rules (BR-065 defaults)
-
-| Rule | Threshold | Action |
-|---|---|---|
-| Contract rejections (reverts or simulation reverts) | ≥ 3 in 10 min | PAUSE |
-| AI plan out of mandate (AI_PLAN_REJECTED) | ≥ 1 | PAUSE |
-| Coverage drop (COMPLETE → other) | any | PAUSE |
-| Post-condition DISCREPANCY | any | PAUSE |
-| Unexpected outflow (BR-069) | any | ALERT (PAUSE if > 20 % of wallet balance) |
-
-PAUSE = backend pause + sentinel on-chain pause (ADR-017) + notify Owner. Cool-down 30 min before the same rule alerts again. Only the Owner resumes.
-
-Implementation (RCV-006): worker task `treasurypilot.recovery.circuit_breaker` runs every 60 s (`recovery/circuit.py`). Rejections are `operations` that are `Reverted` or carry `SIMULATION_REVERTED` in the window (by `created_at`); AI_PLAN_REJECTED counts `AI_REJECTED` review items; DISCREPANCY and UNEXPECTED_OUTFLOW consume the pending `CIRCUIT_BREAKER` signals the verifier and indexer raise; COVERAGE_DROP compares `treasuries.coverage` with the last value stored in `circuit_rules.state`. Each trip writes a `circuit_events` row (signal rules are deduplicated per signal, windowed rules by the 30-min cool-down); PAUSE upserts `backend_pause`, emits `CircuitBreakerTripped` (Owner, Guardian) and calls the signer sentinel. Outflow percentage uses the latest stored snapshot balance of the moved wallet; with no snapshot it fails closed (PAUSE). Owners tighten via `PUT /v1/orgs/{org}/treasuries/{t}/circuit/rules/{rule}` (Owner + step-up; only REJECTIONS count/window and the outflow percent, tighten-only; there is no disable flag); history at `GET .../circuit/events`.
-
-Windowed rules count only rejections newer than the rule's last trip (so a spent rejection cannot re-trip it after the cool-down), as distinct plan steps (reverts) or distinct requests (AI_REJECTED). Signal rules (DISCREPANCY, UNEXPECTED_OUTFLOW) record every signal in `circuit_events` and pause each time, but emit `CircuitBreakerTripped` once per 30-min cool-down per rule (signals in one cycle collapse into one notification). The Owner's on-chain resume (indexer `Resumed`) consumes the `CIRCUIT_BREAKER` signals already turned into events, which unblocks planning; nothing else consumes them.
-
-Sentinel retry: every cycle, if the backend pause is still `Requested` on-chain and the latest PAUSE event has `details.onchain` empty, `NOT_CONFIGURED` or `SENTINEL_FAILED`, the worker calls the sentinel again and stamps the result (the signer is idempotent via `alreadyPaused`). If the sentinel is never configured, the on-chain pause never becomes `Effective`, so `resume-tx` is refused: the Owner lifts the backend-only pause with `POST .../pause/cancel`, or a Guardian submits the Guardian Safe pause tx from the notification (after which `resume-tx` works).
-
-Known gap: the on-chain pause only happens when the signer has a sentinel target for the treasury (`/sentinel/pause`). Without one, or if it fails, the backend pause still blocks the worker, `circuit_events.details.onchain` records `NOT_CONFIGURED` or `SENTINEL_FAILED`, and a Guardian must submit the Guardian Safe pause from the notification. Resume stays Owner-only (`POST .../resume-tx`).
-
-## 9. Configuration and defaults
-
-Scan interval 60 s; escalation after 30 min; retry max 6; SLAs per §8.3; circuit rules per §8.4 (Owner can tighten, not disable PAUSE rules in M1).
-
-## 10. Security
-
-| Threat | Control |
-|---|---|
-| Double payment after crash | outbox + chain evidence resolution + contract replay flags; RCV-007 |
-| Retry storms | backoff + max attempts + circuit breaker |
-| Wrong person resolves | routed role check; Owner-only for authority |
-| AI deciding recovery | none — deterministic only (BR-058) |
-| Stale actions | optimistic version → STALE_ITEM |
-
-## 11. Failure scenarios
-
-Worker killed mid-flight → scan + resolution; RPC down during recovery → remain blocked (never guess); sentinel unavailable → backend pause still holds, human guardian prompted.
-
-Traceability (RCV-007, #169): `services/worker/tests/test_recovery_crash_suite.py::test_executor_crash_never_double_pays` (CI: Anvil + Postgres job, ~9 s).
-
-| Requirement | Evidence |
-|---|---|
-| Worker killed at randomized points around the signer call and the DB write | 20 iterations; the order of 5 crash points (`before_signer`, `after_sign`, `after_broadcast`, `mid_commit`, `after_commit`, 4 runs each) is shuffled by `TP_CRASH_SEED` (default 169, printed with the schedule). The crash is an in-process `BaseException` out of `sequence_plan`; the pool is dropped so uncommitted work rolls back |
-| Restart and recovery | startup `scan_in_flight`, then `sequence_plan` again (the stand-in signer replays the stored raw tx by step id), then `track_transactions`, then `sequence_plan` to Paid |
-| Exactly one PAY on-chain, request Paid | per iteration: one mined transfer to the iteration's recipient (block scan) and recipient balance equal to the amount; `payment_requests.status = 'Paid'`, one `Confirmed` operation. Mutating the signer to re-sign on retry fails the suite with `2 PAY transfers mined` |
-
-Limits: the worker is simulated in process, not a killed Celery process, and the signer is a stand-in that signs once per step id with an Anvil dev key. `TreasuryPilotModule` and its `requestPaid`/`stepUsed` flags are not deployed here (covered separately in RCV-002 and the contract tests).
+Limits: the real `SigningService` is not driven (it needs a deployed module, a trusted policy signer and attestation fixtures), so its attestation, mandate and fee checks are not exercised. Each PAY is a plain ETH transfer from an Anvil dev key; `TreasuryPilotModule` and its on-chain `stepUsed`/`requestPaid` guards are covered by RCV-002 and the contract tests. `after_submit_commit` stops after the Submitted commit; a crash between operation `Confirmed` and request `Paid` is not injected here.
 
 ## 12. Test plan
 
