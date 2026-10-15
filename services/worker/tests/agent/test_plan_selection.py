@@ -111,6 +111,48 @@ def test_better_ai_plan_is_chosen_with_engine_amounts() -> None:
     assert "value +" in sel.chosen_reason
 
 
+def test_reason_names_missed_deadline_win() -> None:
+    snap = _snapshot()
+    det = schedule_edf(REQS, snap, POLICY).model_copy(update={"items": ()})  # pays nothing
+    sel = select_plan(det, _proposal(("a", "b")), REQS, snap, POLICY, TODAY)
+    assert sel.planner_source == "AI"
+    assert "2 fewer missed deadlines" in sel.chosen_reason
+
+
+def test_ai_order_cannot_exceed_refill_source_limit() -> None:
+    snap = _snapshot().model_copy(
+        update={
+            "operational": {
+                "ops": WalletState(
+                    address="ops", balance=BaseUnits(0), buffer=BaseUnits(0), target=BaseUnits(0)
+                )
+            },
+            "source": WalletState(
+                address="safe", balance=BaseUnits(600), buffer=BaseUnits(0), target=BaseUnits(0)
+            ),
+        }
+    )
+    items = build_ai_plan(_proposal(("b", "a")), REQS, snap, POLICY, TODAY)
+    # Source holds 600: only one request can be refilled and paid.
+    assert len(items) == 1
+    assert sum(int(i.refill) for i in items) <= 600
+
+
+def test_needs_exception_request_outside_exception_requests_stays_unpaid() -> None:
+    big = ApprovedRequest(
+        id="big",
+        paying_wallet="ops",
+        payee="payee",
+        amount=BaseUnits(20_000),
+        approved_seq=2,
+        terms=PaymentTerms(net_due_day=5),
+    )
+    reqs = [*REQS, big]
+    snap = _snapshot()
+    items = build_ai_plan(_proposal(("big", "a", "b")), reqs, snap, POLICY, TODAY)
+    assert "big" not in {i.request_id for i in items}
+
+
 def test_deferral_delays_payment_to_engine_day() -> None:
     snap = _snapshot()
     ai = _proposal(

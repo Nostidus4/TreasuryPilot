@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from collections.abc import Sequence
 from datetime import date
 from typing import Literal
 
@@ -28,7 +29,7 @@ class PlanSelection:
 
 def build_ai_plan(
     proposal: PlanProposal,
-    requests: list[ApprovedRequest],
+    requests: Sequence[ApprovedRequest],
     snapshot: Snapshot,
     policy: PolicyView,
     today: date,
@@ -55,10 +56,20 @@ def build_ai_plan(
     return schedule_in_order(priority, not_before, requests, snapshot, policy)
 
 
+def _gain(ai: PlanScore, det: PlanScore) -> str:
+    """Describe the first score component where the AI plan wins (score[2] is negated value)."""
+
+    if ai[1] < det[1]:
+        return f"{det[1] - ai[1]} fewer missed deadlines"
+    if ai[2] < det[2]:
+        return f"value +{det[2] - ai[2]}"
+    return f"{det[3] - ai[3]} fewer transactions"
+
+
 def select_plan(
     deterministic: Schedule,
     proposal: PlanProposal | PlanProposalRejected | None,
-    requests: list[ApprovedRequest],
+    requests: Sequence[ApprovedRequest],
     snapshot: Snapshot,
     policy: PolicyView,
     today: date,
@@ -88,7 +99,6 @@ def select_plan(
     ai_score = score(ai_items, requests, snapshot, policy)
     log.info("plan comparison: ai=%s deterministic=%s", ai_score, det_score)
     if ai_score[0] == 0 and ai_score < det_score:
-        gain = det_score[2] - ai_score[2]  # score[2] is negated value
-        reason = f"AI plan scored better: value +{gain}, score {ai_score} vs {det_score}"
+        reason = f"AI plan scored better: {_gain(ai_score, det_score)}, score {ai_score} vs {det_score}"
         return PlanSelection("AI", ai_items, reason, det_score, ai_score)
     return keep(f"AI plan not better: score {ai_score} vs {det_score}", ai_score)
