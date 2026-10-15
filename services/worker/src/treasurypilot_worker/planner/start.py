@@ -66,6 +66,7 @@ class DbScheduleWriter:
         if org_id is None:
             return False
         items: list[dict[str, Any]] = []
+        # Cooldown parameter is `now` (not `now - REPLAN_COOLDOWN`): the provider's `live` set filters it.
         for order, row in enumerate(await connection.fetch(_CANDIDATES, treasury_id, now)):
             deadline = _pay_by(row["due_at"], PaymentTerms.model_validate(as_json(row["terms"])))
             items.append(
@@ -76,11 +77,17 @@ class DbScheduleWriter:
                     "deadline": deadline.isoformat(),
                 }
             )
-        # M05 §5: a request in a schedule is Scheduled (Approved -> Scheduled, SYSTEM).
+        # M05 §5: Approved -> Scheduled (SYSTEM) once the window is open; far-future requests
+        # stay Approved so they remain editable (the pipeline also moves them when a plan starts).
+        open_ids = [
+            uuid.UUID(item["requestId"])
+            for item in items
+            if now >= datetime.fromisoformat(item["scheduledFor"])
+        ]
         for moved in await connection.fetch(
             "UPDATE payment_requests SET status = 'Scheduled', version = version + 1, "
             "updated_at = now() WHERE id = ANY($1::uuid[]) AND status = 'Approved' RETURNING id",
-            [uuid.UUID(item["requestId"]) for item in items],
+            open_ids,
         ):
             await connection.execute(
                 'INSERT INTO request_status_events (id, request_id, "from", "to", actor_type, '
@@ -118,9 +125,8 @@ class DbScheduleProvider:
 
     The schedule is refreshed first (no new row when unchanged), so an approval just made is
     in it without waiting for the 15-minute scheduling cycle, and the latest `schedules` row
-    is always "today's". Items in plan cooldown or with an open plan are skipped. Fallback: a
-    treasury with no schedule row (writer stored nothing, e.g. not Ready/Paused) uses the live
-    candidates in due-date order, so execution is never blocked on the first scheduling cycle.
+    is always "today's" (never a stale row). Items in plan cooldown or with an open plan are skipped; a treasury
+    with no schedule row has nothing to run.
     """
 
     def __init__(self, lead_time: timedelta = timedelta(hours=24)) -> None:
@@ -143,23 +149,14 @@ class DbScheduleProvider:
         await self._writer.refresh_treasury(connection, treasury_id, now=now)
         rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
         live = {row["id"] for row in rows}
+        rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
+        live = {row["id"] for row in rows}
         latest = await connection.fetchval(
             "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at DESC LIMIT 1",
             treasury_id,
         )
-        if latest is None:
-            items = []
-            for row in rows:
-                day = _pay_by(row["due_at"], PaymentTerms.model_validate(as_json(row["terms"])))
-                items.append(
-                    {
-                        "requestId": str(row["id"]),
-                        "scheduledFor": (day - self.lead_time).isoformat(),
-                        "deadline": day.isoformat(),
-                    }
-                )
-        else:
-            items = as_json(latest)
+        # The refresh above ran for a Ready/Paused treasury, so a row exists unless it was empty.
+        items = as_json(latest) if latest is not None else []
         for order, item in enumerate(items):
             request_id = uuid.UUID(item["requestId"])
             if request_id in live and now >= datetime.fromisoformat(item["scheduledFor"]):
