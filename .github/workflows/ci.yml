@@ -345,7 +345,7 @@ jobs:
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545
           TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
-        run: uv run pytest -q services/worker/tests/executor/test_swap_for_gas_anvil.py
+        run: uv run pytest -q -rs services/worker/tests/executor/test_swap_for_gas_anvil.py
       - name: Run every scenario on Anvil
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545

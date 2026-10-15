@@ -58,13 +58,22 @@ _trk = _load("at04_tracker_fixtures", _TESTS / "test_tracker_integration.py")
 import scenario_steps as steps  # noqa: E402
 
 USDC = 10**6
+
+
+def _unavailable(reason: str) -> None:
+    """Skip locally, but fail in CI so a missing prerequisite cannot pass silently."""
+    if os.environ.get("CI"):
+        pytest.fail(f"AT-04 prerequisite missing in CI: {reason}")
+    pytest.skip(reason)
+
+
 EXECUTOR = steps.EXECUTOR
 
 
 @pytest.fixture(scope="module")
 def database_url() -> Iterator[str]:
     if "TP_TEST_DATABASE_URL" not in os.environ:
-        pytest.skip("TP_TEST_DATABASE_URL is required for AT-04")
+        _unavailable("TP_TEST_DATABASE_URL is required for AT-04")
     url = os.environ["TP_TEST_DATABASE_URL"]
     config = Config(str(_pipe.API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(_pipe.API_ROOT / "migrations"))
@@ -79,14 +88,14 @@ def database_url() -> Iterator[str]:
 def _artifact(name: str) -> str:
     path = _ROOT / "contracts" / "out" / f"{name}.sol" / f"{name}.json"
     if not path.exists():
-        pytest.skip(f"forge build the contracts first ({path})")
+        _unavailable(f"forge build the contracts first ({path})")
     return str(json.loads(path.read_text())["bytecode"]["object"])
 
 
 def _chain(anvil: str) -> steps.Chain:
     manifest = _ROOT / "deployments" / "31337.json"
     if not manifest.exists() or "TP_TEST_ANVIL_URL" not in os.environ:
-        pytest.skip("AT-04 needs TP_TEST_ANVIL_URL and a deploy-local.sh deployment")
+        _unavailable("AT-04 needs TP_TEST_ANVIL_URL and a deploy-local.sh deployment")
     return steps.Chain(
         {
             "rpc_url": anvil,
@@ -122,6 +131,7 @@ class ModuleSigner:
         self.calls += 1
         c = self.c
         seq = request["stepSeq"]
+        assert seq in (0, 1, 2), f"unexpected step {seq}"
         if seq == 0:  # SWAP: the calldata the planner and worker encoded
             tx = {"from": EXECUTOR, "to": c.module, "data": request["payload"]["data"]}
             tx_hash = steps.rpc(c.url, "eth_sendTransaction", [tx])
@@ -219,11 +229,12 @@ async def _scenario(pool: Any, database_url: str, anvil: str, c: steps.Chain) ->
     )
     signer, gate, client = ModuleSigner(c, approval, refill), _seq.FakeGate(), _trk._client(anvil)
     result = None
-    for _ in range(3):
+    for _ in range(8):  # bounded: SWAP, REFILL, PAY need one round each plus a final pass
         result = await sequence_plan(pool, signer, run, gate, verifier=_seq._Passed())  # type: ignore[arg-type]
+        if result.status in ("Completed", "Failed", "Blocked"):
+            break
         _trk._mine(anvil, 4)
         await track_transactions(database_url, client_factory=lambda _urls: client)
-    result = await sequence_plan(pool, signer, run, gate, verifier=_seq._Passed())  # type: ignore[arg-type]
 
     assert result.status == "Completed", result
     assert signer.calls == 3
