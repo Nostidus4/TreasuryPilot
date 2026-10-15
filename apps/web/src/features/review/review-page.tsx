@@ -155,7 +155,9 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
             </CardContent>
           </Card>
 
-          {aiDraft && <ExceptionDraftView aiDraft={aiDraft} />}
+          {aiDraft && (
+            <ExceptionDraftView aiDraft={aiDraft} />
+          )}
 
           {exception.status === 'GovernancePending' &&
             exception.governanceTxId && (
