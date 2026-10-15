@@ -40,3 +40,4 @@ infra/env/.env
 test-results/
 playwright-report/
 deployments/local/
+docs/evidence/scenarios/

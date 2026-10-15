@@ -1,0 +1,9 @@
+name: pause
+adr019: D10
+chain_id: 31337
+requires: [anvil, deployment]
+# Replay needs a fresh module: `make deploy-local` (resume is a Safe-owner transaction).
+steps: [guardian_pause]
+must_show:
+  - The guardian pauses the module with one transaction
+  - The module status reads Paused on chain afterwards

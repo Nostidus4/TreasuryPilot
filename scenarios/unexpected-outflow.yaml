@@ -1,0 +1,6 @@
+name: unexpected-outflow
+adr019: M19-D5
+chain_id: 31337
+requires: [anvil, deployment, chain-reader-alerts]
+must_show:
+  - A transfer from Safe T outside TreasuryPilot raises an unexpected-outflow alert

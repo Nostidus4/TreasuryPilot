@@ -1,0 +1,7 @@
+name: over-cap-exception
+adr019: D5
+chain_id: 31337
+requires: [anvil, deployment, planner, executor-pipeline]
+must_show:
+  - A payment above the per-request cap is blocked
+  - An owner-granted exception lets the same payment through once

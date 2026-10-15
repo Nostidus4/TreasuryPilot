@@ -1,0 +1,6 @@
+name: fee-spike
+adr019: M19-D5
+chain_id: 31337
+requires: [anvil, deployment, executor-pipeline, fee-policy-runtime]
+must_show:
+  - A base-fee spike above the fee policy pauses sending and records the reason
