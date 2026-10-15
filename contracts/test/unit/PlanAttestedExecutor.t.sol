@@ -68,11 +68,24 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes memory sig = _sign(att);
         bytes memory approverSig = _sign(ap);
         vm.startPrank(executor);
-        gate.refill(ap, approverSig, REFILL_STEP, address(op1), 100e6, att, sig);
+        gate.refill(ap, approverSig, REFILL_STEP, address(treasury), address(op1), 100e6, att, sig);
         gate.pay(ap, approverSig, PAY_STEP, ap.amount, att, sig);
         vm.stopPrank();
         require(token.balanceOf(vendor) == 100e6, "paid");
         require(gate.nonceBoundTo(1) == att.planHash, "nonce bound");
+    }
+
+    function testOperationalSourceRefillThroughTheGate() external {
+        _owner(abi.encodeCall(module.setRefillPath, (address(op2), address(op1), true)));
+        vm.prank(address(op1));
+        token.transfer(address(1), 9990e6);
+        I.PaymentApproval memory ap = _approval(902, 100e6);
+        H.PlanAttestation memory att = _att(ap, 1);
+        bytes memory approverSig = _sign(ap);
+        bytes memory sig = _sign(att);
+        vm.prank(executor);
+        gate.refill(ap, approverSig, REFILL_STEP, address(op2), address(op1), 100e6, att, sig);
+        require(token.balanceOf(address(op2)) == 10000e6 - 100e6, "source debited");
     }
 
     function testAttestedExecutorPaysFreshQuoteAmountWithinSignedMaximum() external {
@@ -87,7 +100,7 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         gate.pay(ap, approverSig, PAY_STEP, 75e6, att, attSig);
 
         require(token.balanceOf(vendor) == 75e6, "fresh quote amount not paid");
-        require(module.usedToday(module.PAY()) == 75e6, "counter not updated by actual amount");
+        require(module.usedToday(module.PAY(), address(token)) == 75e6, "counter not updated by actual amount");
     }
 
     function testAttestedExecutorRejectsFreshQuoteAboveSignedMaximum() external {

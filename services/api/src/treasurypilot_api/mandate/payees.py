@@ -523,7 +523,7 @@ class ReplacePayeeAddressRequest(DeactivationRequest):
 
 
 class ScreeningView(ApiModel):
-    result: str
+    result: ScreeningResult
     source_ref: str | None
     provider: str
     checked_at: datetime
@@ -536,7 +536,7 @@ class PayeeView(ApiModel):
     vendor_id: uuid.UUID
     label: str
     address: str
-    status: str
+    status: PayeeStatus
     oob_method: str | None
     oob_note: str | None
     oob_verified_by: uuid.UUID | None
@@ -555,7 +555,7 @@ class PayeeView(ApiModel):
             vendor_id=row.vendor_id,
             label=row.label,
             address=f"0x{row.address.hex()}",
-            status=row.status,
+            status=PayeeStatus(row.status),
             oob_method=row.oob_method,
             oob_note=row.oob_note,
             oob_verified_by=row.oob_verified_by,
@@ -564,7 +564,7 @@ class PayeeView(ApiModel):
             active_from=row.active_from,
             created_at=row.created_at,
             screening=ScreeningView(
-                result=screening.result.value,
+                result=screening.result,
                 source_ref=screening.source_ref,
                 provider=screening.provider,
                 checked_at=screening.checked_at,
@@ -581,6 +581,15 @@ class PayeeResponse(ApiModel):
 
 class PayeeListResponse(ApiModel):
     items: list[PayeeView]
+
+
+class PayeeTxResponse(ApiModel):
+    governance_tx: dict[str, object]
+
+
+class ReplacePayeeAddressResponse(ApiModel):
+    payee: PayeeView
+    deactivation_governance_tx: dict[str, object]
 
 
 # ---------------------------------------------------------------- helpers
@@ -892,6 +901,7 @@ async def verify_oob(
 @router.post(
     "/{payee_id}/registration-tx",
     status_code=201,
+    response_model=PayeeTxResponse,
     openapi_extra={"x-organization-scoped": True},
 )
 async def build_registration_tx(
@@ -977,6 +987,7 @@ async def build_registration_tx(
 @router.post(
     "/{payee_id}/deactivation-tx",
     status_code=201,
+    response_model=PayeeTxResponse,
     openapi_extra={"x-organization-scoped": True},
 )
 async def build_deactivation_tx(
@@ -1042,6 +1053,7 @@ async def build_deactivation_tx(
 @router.post(
     "/{payee_id}/replace-address",
     status_code=201,
+    response_model=ReplacePayeeAddressResponse,
     openapi_extra={"x-organization-scoped": True},
 )
 async def replace_payee_address(

@@ -173,7 +173,11 @@ class Chain:
         self, approval: tuple[Any, ...], step: str, amount: int
     ) -> tuple[str, list[str], list[Any]]:
         return self._approved(
-            "refill", approval, step, [approval[4], amount], ["address", "uint256"]
+            "refill",
+            approval,
+            step,
+            [self.treasury, approval[4], amount],
+            ["address", "address", "uint256"],
         )
 
     def refill(self, approval: tuple[Any, ...], step: str, amount: int) -> dict[str, Any]:

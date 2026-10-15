@@ -72,9 +72,13 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,
+        address fromWallet,
         address toWallet,
         uint256 amount
     ) external onlyExecutor nonReentrant {
+        if (fromWallet != safeT && !_refillPath[fromWallet][toWallet]) {
+            revert E.RefillPathNotAllowed();
+        }
         verifyApproval(ap, approverSig);
         _requireUnpaid(ap.requestId);
         _requireUnusedStep(stepId);
@@ -86,19 +90,14 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         uint256 day = block.timestamp / 1 days;
         bytes32 key = _counterKey(REFILL, ap.asset, day);
         if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverRefillDaily();
-        _requireFloor(ap.asset, safeT, amount, true);
+        _requireFloor(ap.asset, fromWallet, amount, true);
         uint256 beforeTo = _balance(ap.asset, toWallet);
-        // Bound without adding two attacker-controlled uint256 values.
-        uint256 target = targetOf(ap.asset, toWallet);
-        if (ap.amount > type(uint256).max - target) revert E.RefillExceedsNeed();
-        uint256 bound = ap.amount + target;
-        if (beforeTo > bound || amount > bound - beforeTo) revert E.RefillExceedsNeed();
+        // ap.amount is a uint256: an overflowing sum reverts (checked arithmetic), it never wraps.
+        if (beforeTo + amount > ap.amount + targetOf(ap.asset, toWallet)) revert E.RefillExceedsNeed();
         stepUsed[stepId] = true;
         refilledFor[ap.requestId][toWallet] = true;
         usedOn[key] += amount;
-        _transfer(ap.asset, safeT, toWallet, amount);
-        if (_balance(ap.asset, safeT) < bufferOf(ap.asset, safeT)) revert E.SourceBufferBreach();
-        if (_balance(ap.asset, toWallet) > bound) revert E.RefillExceedsNeed();
+        _transfer(ap.asset, fromWallet, toWallet, amount);
         emit RefillExecuted(ap.requestId, stepId, toWallet, amount, day);
     }
 
@@ -259,18 +258,8 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
     }
 
     /// @inheritdoc ITreasuryPilotModule
-    function usedToday(uint8 action) public view returns (uint256) {
-        return usedToday(action, asset);
-    }
-
-    /// @inheritdoc ITreasuryPilotModule
     function usedToday(uint8 action, address asset_) public view returns (uint256) {
         return usedOn[_counterKey(action, asset_, block.timestamp / 1 days)];
-    }
-
-    /// @inheritdoc ITreasuryPilotModule
-    function remainingToday(uint8 action) external view returns (uint256) {
-        return remainingToday(action, asset);
     }
 
     /// @inheritdoc ITreasuryPilotModule
@@ -327,10 +316,6 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
 
     function _balance(address asset_, address wallet) internal view returns (uint256) {
         return IERC20(asset_).balanceOf(wallet);
-    }
-
-    function _transfer(address from, address to, uint256 amount) internal {
-        _transfer(asset, from, to, amount);
     }
 
     function _transfer(address asset_, address from, address to, uint256 amount) internal {

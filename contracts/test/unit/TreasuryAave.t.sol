@@ -32,7 +32,10 @@ contract TreasuryAaveTest is TreasuryFixture {
         vm.prank(executor);
         module.supply(bytes32(uint256(1)), 4);
         require(token.balanceOf(address(treasury)) == beforeCash, "cash rollback");
-        require(module.usedToday(module.SUPPLY()) == 0 && !module.stepUsed(bytes32(uint256(1))), "effects rollback");
+        require(
+            module.usedToday(module.SUPPLY(), address(token)) == 0 && !module.stepUsed(bytes32(uint256(1))),
+            "effects rollback"
+        );
         require(pool.aToken().scaledBalanceOf(address(treasury)) == 0, "share rollback");
         require(token.allowance(address(treasury), address(pool)) == 0, "allowance rollback");
     }
@@ -45,7 +48,9 @@ contract TreasuryAaveTest is TreasuryFixture {
         require(pool.aToken().balanceOf(address(treasury)) == 500e6, "aToken cash");
         require(token.allowance(address(treasury), address(pool)) == 0, "supply allowance");
         require(
-            module.usedToday(module.SUPPLY()) == 500e6 && module.usedToday(module.PAY()) == 0, "separate supply cap"
+            module.usedToday(module.SUPPLY(), address(token)) == 500e6
+                && module.usedToday(module.PAY(), address(token)) == 0,
+            "separate supply cap"
         );
         vm.prank(executor);
         module.withdraw(bytes32(uint256(2)), 500e6);

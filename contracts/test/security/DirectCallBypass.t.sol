@@ -26,7 +26,10 @@ contract DirectCallBypassTest is TreasuryFixture {
         vm.expectRevert(E.ApprovalInvalid.selector);
         vm.prank(executor);
         module.pay(ap, abi.encode(approver, bytes("")), bytes32(uint256(1)), ap.amount);
-        require(module.usedToday(module.PAY()) == 0 && !module.requestPaid(ap.requestId), "unauthorized state");
+        require(
+            module.usedToday(module.PAY(), address(token)) == 0 && !module.requestPaid(ap.requestId),
+            "unauthorized state"
+        );
     }
 
     function testDirectRandomCallerCannotPayRefillSupplyWithdrawBorrowRepayOrGovern() external {
@@ -35,7 +38,7 @@ contract DirectCallBypassTest is TreasuryFixture {
         vm.expectRevert(E.NotExecutor.selector);
         module.pay(ap, sig, bytes32(uint256(1)), ap.amount);
         vm.expectRevert(E.NotExecutor.selector);
-        module.refill(ap, sig, bytes32(uint256(1)), address(op1), 1);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), address(op1), 1);
         vm.expectRevert(E.NotExecutor.selector);
         module.supply(bytes32(uint256(1)), 1);
         vm.expectRevert(E.NotExecutor.selector);
@@ -73,11 +76,11 @@ contract DirectCallBypassTest is TreasuryFixture {
         bytes memory sig = _sign(ap);
         vm.expectRevert(E.WrongRefillTarget.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(1)), vendor, 1);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), vendor, 1);
         _owner(abi.encodeCall(module.setBuffer, (address(treasury), token.balanceOf(address(treasury)), 0)));
         vm.expectRevert(E.SourceBufferBreach.selector);
         vm.prank(executor);
-        module.refill(ap, sig, bytes32(uint256(1)), address(op1), 1);
+        module.refill(ap, sig, bytes32(uint256(1)), address(treasury), address(op1), 1);
     }
 
     function testFuzzAnyOneOf13SignedFieldsCannotBeMutated(uint8 selector, uint256 mutation) external {

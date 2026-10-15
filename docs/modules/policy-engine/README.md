@@ -214,6 +214,7 @@ The table is generated from `treasurypilot_core.policy.REASON_CODES` (POL-001); 
 | 3 | Approval | `WRONG_PAYMENT_OPTION` | B | `WrongPaymentOption()` | ADR-019 |  |
 | 4 | Wallet path | `NOT_OPERATIONAL_WALLET` | B | `NotOperationalWallet()` | BR-019 |  |
 | 4 | Wallet path | `WRONG_REFILL_TARGET` | B | `WrongRefillTarget()` | BR-012 |  |
+| 4 | Wallet path | `REFILL_PATH_NOT_ALLOWED` | B | `RefillPathNotAllowed()` | BR-012 |  |
 | 5 | Replay | `REQUEST_ALREADY_PAID` | B | `RequestAlreadyPaid()` | BR-061 |  |
 | 5 | Replay | `STEP_ALREADY_EXECUTED` | B | `StepAlreadyExecuted()` | BR-061 |  |
 | 5 | Replay | `REQUEST_CANCELLED` | B | `RequestCancelled()` | BR-077 | off-chain status Cancelled or on-chain `requestCancelled` |

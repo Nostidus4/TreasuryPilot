@@ -1,6 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Plus, ShieldCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -30,18 +30,23 @@ import {
 } from '@/components/ui/menus';
 import { Alert } from '@/components/ui/misc';
 import {
+  useCreateVendor,
   usePayees,
   usePayeeTx,
   useProposePayee,
+  useReplacePayeeAddress,
   useVerifyPayeeOob,
 } from '@/features/controls/api';
 import { useTreasuryScope } from '@/features/orgs/org-scope';
 import { useVendors } from '@/features/requests/api';
 import { errorMessage, isApiError } from '@/lib/api/http';
+import type { components } from '@/lib/api/schema';
 import type { Payee } from '@/lib/api/types';
 import { formatDate } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { payeeStatus } from '@/lib/status';
+
+type OobMethod = components['schemas']['OobMethod'];
 
 const NEW_VENDOR = '__new__';
 
@@ -55,13 +60,15 @@ function ProposeDialog({
   const scope = useTreasuryScope();
   const vendors = useVendors(scope.orgId);
   const propose = useProposePayee(scope.orgId, scope.treasuryId);
+  const createVendor = useCreateVendor(scope.orgId);
   const [vendorId, setVendorId] = useState<string>();
   const [vendorName, setVendorName] = useState('');
   const [label, setLabel] = useState('');
   const [address, setAddress] = useState('');
-  const fieldErrors = isApiError(propose.error)
+  const failure = propose.error ?? createVendor.error;
+  const fieldErrors = isApiError(failure)
     ? Object.fromEntries(
-        (propose.error.problem.errors ?? []).map((item) => [
+        (failure.problem.errors ?? []).map((item) => [
           item.field,
           item.message,
         ]),
@@ -73,6 +80,7 @@ function ProposeDialog({
     setLabel('');
     setAddress('');
     propose.reset();
+    createVendor.reset();
   };
 
   return (
@@ -98,21 +106,26 @@ function ProposeDialog({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            propose.mutate(
-              {
-                vendorId: vendorId === NEW_VENDOR ? undefined : vendorId,
-                vendorName: vendorId === NEW_VENDOR ? vendorName : undefined,
-                label,
-                address: address.trim(),
-              },
-              {
-                onSuccess: () => {
-                  toast.success(t('Payee proposed — screening started'));
-                  onOpenChange(false);
-                  reset();
-                },
-              },
-            );
+            void (async () => {
+              try {
+                const id =
+                  vendorId === NEW_VENDOR
+                    ? (await createVendor.mutateAsync(vendorName.trim())).vendor
+                        .id
+                    : vendorId;
+                if (!id) return;
+                await propose.mutateAsync({
+                  vendorId: id,
+                  label: label.trim() || t('Receiving wallet'),
+                  address: address.trim(),
+                });
+                toast.success(t('Payee proposed — screening started'));
+                onOpenChange(false);
+                reset();
+              } catch {
+                // The mutation hooks expose the error to the form.
+              }
+            })();
           }}
         >
           <Field
@@ -169,8 +182,8 @@ function ProposeDialog({
               onChange={(event) => setAddress(event.target.value)}
             />
           </Field>
-          {propose.isError && Object.keys(fieldErrors).length === 0 && (
-            <Alert tone="danger">{errorMessage(propose.error)}</Alert>
+          {failure && Object.keys(fieldErrors).length === 0 && (
+            <Alert tone="danger">{errorMessage(failure)}</Alert>
           )}
         </form>
         <DialogFooter>
@@ -179,7 +192,7 @@ function ProposeDialog({
             type="submit"
             form="propose-payee"
             variant="primary"
-            loading={propose.isPending}
+            loading={propose.isPending || createVendor.isPending}
           >
             {t('Propose payee')}
           </Button>
@@ -199,13 +212,15 @@ const oobMethods = [
 function VerifyDialog({
   onClose,
   payee,
+  vendorName,
 }: {
   onClose: () => void;
   payee: Payee | null;
+  vendorName: string;
 }) {
   const scope = useTreasuryScope();
   const verify = useVerifyPayeeOob(scope.orgId, scope.treasuryId);
-  const [method, setMethod] = useState('PHONE');
+  const [method, setMethod] = useState<OobMethod>('PHONE');
   const [note, setNote] = useState('');
   return (
     <Dialog open={payee !== null} onOpenChange={(open) => !open && onClose()}>
@@ -215,7 +230,7 @@ function VerifyDialog({
           <DialogDescription>
             {t(
               'Confirm this address with {{vendor}} through a channel that does not depend on the invoice or email that supplied it.',
-              { vendor: payee?.vendorName ?? '' },
+              { vendor: vendorName },
             )}
           </DialogDescription>
         </DialogHeader>
@@ -246,7 +261,7 @@ function VerifyDialog({
             <Select
               id="oob-method"
               value={method}
-              onValueChange={setMethod}
+              onValueChange={(value) => setMethod(value as OobMethod)}
               options={oobMethods.map((item) => ({
                 ...item,
                 label: t(item.label),
@@ -283,12 +298,139 @@ function VerifyDialog({
   );
 }
 
+type Change = { kind: 'deactivate' | 'replace'; payee: Payee };
+
+/** Owner-only: deactivation, or an address change that restarts cooling. */
+function ChangeDialog({
+  change,
+  onClose,
+  vendorName,
+}: {
+  change: Change | null;
+  onClose: () => void;
+  vendorName: string;
+}) {
+  const scope = useTreasuryScope();
+  const navigate = useNavigate();
+  const deactivate = usePayeeTx(scope.orgId, scope.treasuryId);
+  const replacement = useReplacePayeeAddress(scope.orgId, scope.treasuryId);
+  const [reason, setReason] = useState('');
+  const [address, setAddress] = useState('');
+  const replacing = change?.kind === 'replace';
+  const mutation = replacing ? replacement : deactivate;
+  const done = (txId: string) => {
+    toast.success(t('Governance transaction created'));
+    setReason('');
+    setAddress('');
+    onClose();
+    navigate(`${scope.base}/governance/${txId}`);
+  };
+  const submit = () => {
+    if (!change) return;
+    if (replacing)
+      replacement.mutate(
+        { id: change.payee.id, address: address.trim(), reason },
+        { onSuccess: (r) => done(r.deactivationGovernanceTx.id) },
+      );
+    else
+      deactivate.mutate(
+        { id: change.payee.id, kind: 'deactivation', reason },
+        { onSuccess: (r) => done(r.governanceTx.id) },
+      );
+  };
+  return (
+    <Dialog
+      open={change !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          mutation.reset();
+          onClose();
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {replacing ? t('Change payee address') : t('Deactivate payee')}
+          </DialogTitle>
+          <DialogDescription>
+            {replacing
+              ? t(
+                  '{{vendor}} will stop being payable at the current address once the Safe owners sign the deactivation. The new address is screened, confirmed with the vendor and registered like a new payee, then waits out the full cooling period before it can be paid. Payments to {{vendor}} are on hold until then.',
+                  { vendor: vendorName },
+                )
+              : t(
+                  'Requests to {{vendor}} can no longer be paid once the Safe owners sign.',
+                  { vendor: vendorName },
+                )}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          id="change-payee"
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          {replacing && (
+            <Field htmlFor="replace-address" label={t('New wallet address')}>
+              <Input
+                id="replace-address"
+                className="num"
+                placeholder="0x…"
+                value={address}
+                onChange={(event) => setAddress(event.target.value)}
+              />
+            </Field>
+          )}
+          <Field
+            htmlFor="change-reason"
+            label={t('Reason')}
+            error={mutation.isError ? errorMessage(mutation.error) : undefined}
+          >
+            <Textarea
+              id="change-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </Field>
+        </form>
+        <DialogFooter>
+          <Button onClick={onClose}>{t('Cancel')}</Button>
+          <Button
+            type="submit"
+            form="change-payee"
+            variant={replacing ? 'primary' : 'danger'}
+            loading={mutation.isPending}
+            disabled={!reason.trim() || (replacing && !address.trim())}
+          >
+            {replacing
+              ? t('Create deactivation transaction')
+              : t('Deactivate payee')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Payee registry (WEB-006): propose → screen → verify → register → cool down. */
 export function PayeesPage() {
   const scope = useTreasuryScope();
   const navigate = useNavigate();
   const query = usePayees(scope.orgId, scope.treasuryId);
+  const vendors = useVendors(scope.orgId);
+  const vendorNames = useMemo(
+    () => new Map((vendors.data?.items ?? []).map((v) => [v.id, v.name])),
+    [vendors.data],
+  );
+  const nameOf = useCallback(
+    (payee: Payee) => vendorNames.get(payee.vendorId) ?? t('Vendor'),
+    [vendorNames],
+  );
   const payeeTx = usePayeeTx(scope.orgId, scope.treasuryId);
+  const [change, setChange] = useState<Change | null>(null);
   const [proposeOpen, setProposeOpen] = useState(false);
   const [verifying, setVerifying] = useState<Payee | null>(null);
   const isOwner = scope.can('OWN');
@@ -296,7 +438,7 @@ export function PayeesPage() {
   const { mutate: createTx } = payeeTx;
 
   const columns = useMemo<Array<ColumnDef<Payee, unknown>>>(() => {
-    const openTx = (payee: Payee, kind: 'registration' | 'deactivation') =>
+    const openTx = (payee: Payee, kind: 'registration') =>
       createTx(
         { id: payee.id, kind },
         {
@@ -309,10 +451,10 @@ export function PayeesPage() {
       {
         id: 'vendor',
         header: t('Vendor'),
-        accessorFn: (row) => `${row.vendorName} ${row.label} ${row.address}`,
+        accessorFn: (row) => `${nameOf(row)} ${row.label} ${row.address}`,
         cell: ({ row }) => (
           <div className="min-w-0">
-            <p className="font-medium">{row.original.vendorName}</p>
+            <p className="font-medium">{nameOf(row.original)}</p>
             <p className="truncate text-xs text-muted-foreground">
               {row.original.label}
             </p>
@@ -333,26 +475,24 @@ export function PayeesPage() {
       {
         id: 'screening',
         header: t('Screening'),
-        accessorFn: (row) => row.screening.result,
+        accessorFn: (row) => row.screening?.result ?? 'PENDING',
         meta: { hideOnMobile: true },
         cell: ({ row }) => {
-          const { result, checkedAt } = row.original.screening;
+          const { result, checkedAt } = row.original.screening ?? {};
           return (
             <div>
               <Badge
                 tone={
-                  result === 'CLEAR'
-                    ? 'success'
-                    : result === 'HIT'
-                      ? 'danger'
-                      : 'neutral'
+                  result === 'CLEAR' ? 'success' : result ? 'danger' : 'neutral'
                 }
               >
                 {result === 'CLEAR'
                   ? t('Clear')
                   : result === 'HIT'
                     ? t('Hit')
-                    : t('Running')}
+                    : result === 'ERROR'
+                      ? t('Could not complete')
+                      : t('Running')}
               </Badge>
               {checkedAt && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -369,7 +509,12 @@ export function PayeesPage() {
         accessorKey: 'status',
         cell: ({ row }) => (
           <div className="flex flex-wrap items-center gap-1.5">
-            <StatusBadge meta={payeeStatus(row.original.status)} />
+            <StatusBadge
+              meta={payeeStatus(
+                row.original.status,
+                Boolean(row.original.oobVerifiedAt),
+              )}
+            />
             {row.original.status === 'Cooling' && row.original.activeFrom && (
               <CountdownChip
                 label={t('Payable in')}
@@ -387,14 +532,25 @@ export function PayeesPage() {
         cell: ({ row }) => {
           const payee = row.original;
           if (!isOwner) return null;
-          if (payee.status === 'AwaitingVerification') {
+          if (payee.status === 'AwaitingOwner' && !payee.oobVerifiedAt) {
             return (
               <Button size="sm" onClick={() => setVerifying(payee)}>
                 {t('Record check')}
               </Button>
             );
           }
-          if (payee.status === 'AwaitingRegistration') {
+          if (payee.status === 'AwaitingOwner') {
+            if (payee.registrationTxId)
+              return (
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    navigate(`${base}/governance/${payee.registrationTxId}`)
+                  }
+                >
+                  {t('View transaction')}
+                </Button>
+              );
             return (
               <Button
                 size="sm"
@@ -405,7 +561,7 @@ export function PayeesPage() {
               </Button>
             );
           }
-          if (payee.status === 'Active') {
+          if (payee.status === 'Active' || payee.status === 'Cooling') {
             return (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -413,7 +569,7 @@ export function PayeesPage() {
                     variant="ghost"
                     size="icon-sm"
                     aria-label={t('Actions for {{vendor}}', {
-                      vendor: payee.vendorName,
+                      vendor: nameOf(payee),
                     })}
                   >
                     <MoreHorizontal aria-hidden="true" />
@@ -421,8 +577,13 @@ export function PayeesPage() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
+                    onSelect={() => setChange({ kind: 'replace', payee })}
+                  >
+                    {t('Change address (restarts cooling)')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     destructive
-                    onSelect={() => openTx(payee, 'deactivation')}
+                    onSelect={() => setChange({ kind: 'deactivate', payee })}
                   >
                     {t('Deactivate (governance transaction)')}
                   </DropdownMenuItem>
@@ -434,7 +595,7 @@ export function PayeesPage() {
         },
       },
     ];
-  }, [base, createTx, isOwner, navigate]);
+  }, [base, createTx, isOwner, nameOf, navigate]);
 
   return (
     <Page
@@ -483,7 +644,16 @@ export function PayeesPage() {
         </QueryBoundary>
       </Card>
       <ProposeDialog open={proposeOpen} onOpenChange={setProposeOpen} />
-      <VerifyDialog payee={verifying} onClose={() => setVerifying(null)} />
+      <VerifyDialog
+        payee={verifying}
+        vendorName={verifying ? nameOf(verifying) : ''}
+        onClose={() => setVerifying(null)}
+      />
+      <ChangeDialog
+        change={change}
+        vendorName={change ? nameOf(change.payee) : ''}
+        onClose={() => setChange(null)}
+      />
     </Page>
   );
 }

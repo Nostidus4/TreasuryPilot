@@ -129,11 +129,12 @@ contract ReserveHoldExecutor {
         ITreasuryPilotModule.PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,
+        address fromWallet,
         address toWallet,
         uint256 amount
     ) external onlyOperator {
-        module.refill(ap, approverSig, stepId, toWallet, amount);
-        _enforce(ap.asset, _state().safeT());
+        module.refill(ap, approverSig, stepId, fromWallet, toWallet, amount);
+        _enforce(ap.asset, fromWallet);
     }
 
     function supply(bytes32 stepId, uint256 amount) external onlyOperator {

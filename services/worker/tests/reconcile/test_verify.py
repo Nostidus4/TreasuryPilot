@@ -26,7 +26,7 @@ B = 100
 _SIGS = {
     "balanceOf(address)": ("uint256", "bal"),
     "stepUsed(bytes32)": ("bool", "stepUsed"),
-    "usedToday(uint8)": ("uint256", "usedToday"),
+    "usedToday(uint8,address)": ("uint256", "usedToday"),
     "requestPaid(bytes32)": ("bool", "requestPaid"),
     "refilledFor(bytes32,address)": ("bool", "refilledFor"),
     "aToken()": ("address", "aToken"),
@@ -131,7 +131,7 @@ def pay_chain(step_id: bytes = b"\x09" * 32, payee_gets: int = 1000) -> FakeChai
     chain.set(B - 1, "bal", ASSET, OP, value=5000)
     chain.set(B, "bal", ASSET, OP, value=4000)
     chain.set(B, "bal", ASSET, PAYEE, value=payee_gets)
-    chain.set(B, "usedToday", 1, value=1000)
+    chain.set(B, "usedToday", 1, ASSET, value=1000)
     chain.set(B, "requestPaid", "0x" + REQUEST.hex(), value=True)
     chain.set(B, "stepUsed", "0x" + step_id.hex(), value=True)
     return chain
@@ -187,9 +187,9 @@ def test_concurrent_outflow_and_mixed_flows_are_subtracted() -> None:
 
 def test_used_today_is_a_floor_so_a_day_rollover_passes() -> None:
     chain = pay_chain()
-    chain.set(B - 1, "usedToday", 1, value=9000)  # yesterday's counter, reset at B
+    chain.set(B - 1, "usedToday", 1, ASSET, value=9000)  # yesterday's counter, reset at B
     assert run(chain, step(Action.PAY, OP, PAYEE)).result == "PASSED"
-    chain.set(B, "usedToday", 1, value=999)
+    chain.set(B, "usedToday", 1, ASSET, value=999)
     assert run(chain, step(Action.PAY, OP, PAYEE)).diffs == {
         "used_today": {"expected": 1000, "observed": 999}
     }

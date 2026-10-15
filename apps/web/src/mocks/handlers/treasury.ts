@@ -17,6 +17,7 @@ import {
   ADDR,
   applyMandate,
   CHAINS,
+  clearScreening,
   createGovernanceTx,
   DAY,
   db,
@@ -25,11 +26,13 @@ import {
   iso,
   logActivity,
   markGovernanceSubmitted,
+  oobPending,
   refreshQueues,
   safeTxTypedData,
   schedule,
   startCooling,
   usdc,
+  vendorName,
 } from '@/mocks/db';
 
 import {
@@ -845,12 +848,7 @@ export const treasuryHandlers = [
     };
   }),
 
-  route<{
-    vendorId?: string;
-    vendorName?: string;
-    label?: string;
-    address?: string;
-  }>(
+  route<{ vendorId?: string; label?: string; address?: string }>(
     'post',
     `${T}/payees`,
     ({ params, body }) => {
@@ -878,44 +876,30 @@ export const treasuryHandlers = [
           'This address is already registered or proposed for this treasury.',
         );
       }
-      let vendor = db.vendors.find((item) => item.id === body.vendorId);
-      if (!vendor) {
-        const name = body.vendorName?.trim();
-        if (!name)
-          fail(
-            422,
-            'VALIDATION',
-            'Choose a vendor or enter a new vendor name.',
-            [{ field: 'vendorId', message: 'Choose a vendor.' }],
-          );
-        vendor = {
-          id: `vnd_${db.vendors.length}`,
-          name,
-          payeeAddress: null,
-          payeeStatus: null,
-        };
-        db.vendors.push(vendor);
-      }
+      const vendor = db.vendors.find((item) => item.id === body.vendorId);
+      if (!vendor) fail(404, 'NOT_FOUND', 'Vendor not found.');
       const payee: Payee = {
         id: `pay_${db.payees.length}_${Date.now()}`,
         treasuryId: params.tId,
         vendorId: vendor.id,
-        vendorName: vendor.name,
         label: body.label?.trim() || 'Receiving wallet',
         address,
         status: 'Screening',
-        screening: { result: 'PENDING' },
-        oobVerified: false,
+        screening: null,
+        ...oobPending,
+        registrationTxId: null,
+        activeFrom: null,
         createdAt: isoNow(),
       };
       db.payees.unshift(payee);
+      // The real API screens inside the POST; the delay keeps the Screening
+      // state observable in the mock.
       schedule(2000, () => {
         const hit = address.toLowerCase().endsWith('dead');
-        payee.screening = {
-          result: hit ? 'HIT' : 'CLEAR',
-          checkedAt: isoNow(),
-        };
-        payee.status = hit ? 'ScreeningHit' : 'AwaitingVerification';
+        payee.screening = hit
+          ? { ...clearScreening(isoNow()), result: 'HIT' }
+          : clearScreening(isoNow());
+        payee.status = hit ? 'ScreeningFailed' : 'AwaitingOwner';
         emit('governance', payee.id);
       });
       return { payee };
@@ -929,7 +913,7 @@ export const treasuryHandlers = [
     ({ params, body }) => {
       requireTreasury(params);
       const payee = find(db.payees, (item) => item.id === params.id, 'Payee');
-      if (payee.status !== 'AwaitingVerification')
+      if (payee.status !== 'AwaitingOwner' || payee.oobVerifiedAt)
         fail(
           409,
           'NOT_AWAITING_OWNER',
@@ -941,8 +925,12 @@ export const treasuryHandlers = [
           'VALIDATION',
           'Record how you confirmed the address with the vendor.',
         );
-      payee.oobVerified = true;
-      payee.status = 'AwaitingRegistration';
+      Object.assign(payee, {
+        oobMethod: body.method,
+        oobNote: body.note,
+        oobVerifiedBy: 'usr_linh',
+        oobVerifiedAt: isoNow(),
+      });
       return { payee };
     },
   ),
@@ -950,7 +938,7 @@ export const treasuryHandlers = [
   route('post', `${T}/payees/:id/registration-tx`, ({ params }) => {
     const state = requireTreasury(params);
     const payee = find(db.payees, (item) => item.id === params.id, 'Payee');
-    if (payee.screening.result !== 'CLEAR' || !payee.oobVerified)
+    if (payee.screening?.result !== 'CLEAR' || !payee.oobVerifiedAt)
       fail(
         409,
         'SCREENING_NOT_CLEAR',
@@ -963,10 +951,11 @@ export const treasuryHandlers = [
         ),
       };
     }
+    const name = vendorName(payee.vendorId);
     const tx = createGovernanceTx({
       kind: 'ADD_PAYEE',
-      title: `Register payee ${payee.vendorName}`,
-      summary: `Adds ${payee.vendorName} as a payee. Payments stay blocked until the cooling period ends after execution.`,
+      title: `Register payee ${name}`,
+      summary: `Adds ${name} as a payee. Payments stay blocked until the cooling period ends after execution.`,
       treasuryId: params.tId,
       calls: [
         {
@@ -977,7 +966,7 @@ export const treasuryHandlers = [
           method: 'addPayee',
           params: [
             { name: 'payee', type: 'address', value: payee.address },
-            { name: 'label', type: 'string', value: payee.vendorName },
+            { name: 'label', type: 'string', value: name },
           ],
           data: h32(`add-${payee.id}`),
         },
@@ -987,31 +976,76 @@ export const treasuryHandlers = [
     return { governanceTx: governanceView(tx) };
   }),
 
-  route('post', `${T}/payees/:id/deactivation-tx`, ({ params }) => {
-    const state = requireTreasury(params);
-    const payee = find(db.payees, (item) => item.id === params.id, 'Payee');
-    const tx = createGovernanceTx({
-      kind: 'DEACTIVATE_PAYEE',
-      title: `Deactivate payee ${payee.vendorName}`,
-      summary: `Removes ${payee.vendorName} (${payee.label}) from the payee registry. Requests to this address can no longer be paid.`,
-      treasuryId: params.tId,
-      calls: [
-        {
-          to: state.treasury.moduleAddress,
-          toLabel: 'TreasuryPilot module',
-          value: '0',
-          operation: 0,
-          method: 'removePayee',
-          params: [{ name: 'payee', type: 'address', value: payee.address }],
-          data: h32(`remove-${payee.id}`),
-        },
-      ],
-      effect: () => {
-        payee.status = 'Deactivated';
-      },
-    });
-    return { governanceTx: governanceView(tx) };
-  }),
+  route<{ reason?: string }>(
+    'post',
+    `${T}/payees/:id/deactivation-tx`,
+    ({ params, body }) => {
+      const state = requireTreasury(params);
+      const payee = find(db.payees, (item) => item.id === params.id, 'Payee');
+      if (!body.reason?.trim())
+        fail(422, 'VALIDATION', 'Give a reason for the deactivation.', [
+          { field: 'reason', message: 'Give a reason.' },
+        ]);
+      if (payee.status !== 'Cooling' && payee.status !== 'Active')
+        fail(
+          409,
+          'PAYEE_NOT_REGISTERED',
+          'Only a registered payee can be deactivated on-chain.',
+        );
+      return { governanceTx: governanceView(deactivationTx(state, payee)) };
+    },
+    { status: 201 },
+  ),
+
+  route<{ address?: string; reason?: string }>(
+    'post',
+    `${T}/payees/:id/replace-address`,
+    ({ params, body }) => {
+      const state = requireTreasury(params);
+      const old = find(db.payees, (item) => item.id === params.id, 'Payee');
+      if (old.status !== 'Cooling' && old.status !== 'Active')
+        fail(
+          409,
+          'PAYEE_NOT_REGISTERED',
+          'Only a registered payee address can be replaced.',
+        );
+      if (!isAddress(body.address))
+        fail(
+          422,
+          'ADDRESS_INVALID',
+          'The replacement must be a valid address.',
+          [{ field: 'address', message: 'Enter a valid 0x address.' }],
+        );
+      const address = body.address;
+      if (sameAddress(old.address, address))
+        fail(
+          409,
+          'ADDRESS_UNCHANGED',
+          'Choose a different address to restart the payee cooling period.',
+        );
+      if (!body.reason?.trim())
+        fail(422, 'VALIDATION', 'Give a reason for the change.', [
+          { field: 'reason', message: 'Give a reason.' },
+        ]);
+      const payee: Payee = {
+        ...old,
+        id: `pay_${db.payees.length}_${Date.now()}`,
+        address,
+        status: 'AwaitingOwner',
+        screening: clearScreening(isoNow()),
+        ...oobPending,
+        registrationTxId: null,
+        activeFrom: null,
+        createdAt: isoNow(),
+      };
+      db.payees.unshift(payee);
+      return {
+        payee,
+        deactivationGovernanceTx: governanceView(deactivationTx(state, old)),
+      };
+    },
+    { status: 201 },
+  ),
 
   /* ───────────── Governance transactions (mandate module §6) ───────────── */
 
@@ -1156,3 +1190,30 @@ export const treasuryHandlers = [
     return { status: tx.status };
   }),
 ];
+
+function deactivationTx(
+  state: ReturnType<typeof requireTreasury>,
+  payee: Payee,
+) {
+  const name = vendorName(payee.vendorId);
+  return createGovernanceTx({
+    kind: 'DEACTIVATE_PAYEE',
+    title: `Deactivate payee ${name}`,
+    summary: `Removes ${name} (${payee.label}) from the payee registry. Requests to this address can no longer be paid.`,
+    treasuryId: payee.treasuryId,
+    calls: [
+      {
+        to: state.treasury.moduleAddress,
+        toLabel: 'TreasuryPilot module',
+        value: '0',
+        operation: 0,
+        method: 'removePayee',
+        params: [{ name: 'payee', type: 'address', value: payee.address }],
+        data: h32(`remove-${payee.id}`),
+      },
+    ],
+    effect: () => {
+      payee.status = 'Deactivated';
+    },
+  });
+}

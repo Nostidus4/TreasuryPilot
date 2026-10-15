@@ -4048,6 +4048,25 @@ export interface components {
     PayeeResponse: {
       payee: components['schemas']['PayeeView'];
     };
+    /**
+     * PayeeStatus
+     * @enum {string}
+     */
+    PayeeStatus:
+      | 'Proposed'
+      | 'Screening'
+      | 'ScreeningFailed'
+      | 'AwaitingOwner'
+      | 'Cooling'
+      | 'Active'
+      | 'Deactivated';
+    /** PayeeTxResponse */
+    PayeeTxResponse: {
+      /** Governancetx */
+      governanceTx: {
+        [key: string]: unknown;
+      };
+    };
     /** PayeeView */
     PayeeView: {
       /** Activefrom */
@@ -4077,8 +4096,7 @@ export interface components {
       /** Registrationtxid */
       registrationTxId: string | null;
       screening: components['schemas']['ScreeningView'] | null;
-      /** Status */
-      status: string;
+      status: components['schemas']['PayeeStatus'];
       /**
        * Treasuryid
        * Format: uuid
@@ -4440,6 +4458,14 @@ export interface components {
       /** Reason */
       reason: string;
     };
+    /** ReplacePayeeAddressResponse */
+    ReplacePayeeAddressResponse: {
+      /** Deactivationgovernancetx */
+      deactivationGovernanceTx: {
+        [key: string]: unknown;
+      };
+      payee: components['schemas']['PayeeView'];
+    };
     /** RequestBulkCreate */
     RequestBulkCreate: {
       /** Requests */
@@ -4773,6 +4799,11 @@ export interface components {
       /** Saved */
       saved: string;
     };
+    /**
+     * ScreeningResult
+     * @enum {string}
+     */
+    ScreeningResult: 'CLEAR' | 'HIT' | 'ERROR';
     /** ScreeningView */
     ScreeningView: {
       /**
@@ -4782,8 +4813,7 @@ export interface components {
       checkedAt: string;
       /** Provider */
       provider: string;
-      /** Result */
-      result: string;
+      result: components['schemas']['ScreeningResult'];
       /** Sourceref */
       sourceRef: string | null;
       /** Ttluntil */
@@ -10419,9 +10449,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['PayeeTxResponse'];
         };
       };
       /** @description Validation Error */
@@ -10454,9 +10482,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['PayeeTxResponse'];
         };
       };
       /** @description Validation Error */
@@ -10493,9 +10519,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['ReplacePayeeAddressResponse'];
         };
       };
       /** @description Validation Error */
