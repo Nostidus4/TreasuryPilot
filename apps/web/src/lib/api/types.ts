@@ -588,6 +588,8 @@ export interface ReviewItem {
   planId?: string;
   roles: Role[];
   actions: Array<'RETRY' | 'CANCEL' | 'RESOLVE' | 'EDIT_REAPPROVE'>;
+  /** Optimistic-concurrency token; echoed back when acting. */
+  version?: number;
   resolution?: { action: string; note: string; at: string };
 }
 

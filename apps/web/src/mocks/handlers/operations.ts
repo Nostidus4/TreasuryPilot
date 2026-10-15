@@ -153,7 +153,7 @@ export const operationHandlers: RequestHandler[] = [
     };
   }),
 
-  route<{ action: string; note?: string }>(
+  route<{ action: string; note?: string; version?: number }>(
     'post',
     '/orgs/:orgId/review-items/:id/actions',
     ({ params, body }) => {
@@ -163,12 +163,16 @@ export const operationHandlers: RequestHandler[] = [
         (entry) => entry.id === params.id,
         'Review item',
       );
-      if (item.status !== 'Open')
+      if (
+        item.status !== 'Open' ||
+        (body.version !== undefined && body.version !== item.version)
+      )
         fail(
           409,
           'STALE_ITEM',
           'This item was already handled. Reload the queue.',
         );
+      item.version = (item.version ?? 1) + 1;
       if (!body.note?.trim())
         fail(422, 'VALIDATION', 'Add a note. It is recorded in the audit log.');
       if (body.action === 'RETRY') {

@@ -1283,6 +1283,7 @@ export function seed(): Db {
       },
       {
         id: 'rev_unknown',
+        version: 1,
         type: 'UNKNOWN_OPERATION',
         title: 'Refill to Payroll Safe has no confirmed outcome',
         detail:

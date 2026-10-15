@@ -774,3 +774,37 @@ test('fee policy: an auditor sees the held plan without decision buttons', async
   expect(alert).toHaveTextContent(/only an owner, finance or operator/i);
   expect(within(alert).queryByRole('button')).toBeNull();
 });
+
+test('acting on a stale review item prompts a refresh and sends the version', async () => {
+  const user = userEvent.setup();
+  let posted: { version?: number } | undefined;
+  server.use(
+    http.post(
+      '*/v1/orgs/:orgId/review-items/:id/actions',
+      async ({ request }) => {
+        posted = (await request.json()) as { version?: number };
+        return HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Conflict',
+            status: 409,
+            code: 'STALE_ITEM',
+            detail: 'Reload the review item before acting.',
+          },
+          {
+            status: 409,
+            headers: { 'content-type': 'application/problem+json' },
+          },
+        );
+      },
+    ),
+  );
+  renderApp(`${BASE}/review?item=rev_unknown`);
+
+  await user.type(await screen.findByLabelText('Note'), 'checked explorer');
+  await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+  expect(await screen.findByText('This item changed')).toBeInTheDocument();
+  expect(posted?.version).toBe(1);
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+});

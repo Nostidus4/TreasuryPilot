@@ -1,4 +1,5 @@
 import { TriangleAlert } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -27,7 +28,7 @@ import {
   useReviewItems,
 } from '@/features/operations/api';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { errorMessage } from '@/lib/api/http';
+import { errorMessage, isApiError } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -47,6 +48,30 @@ const actionLabel: Record<ReviewItem['actions'][number], string> = {
   RESOLVE: 'Mark resolved',
   EDIT_REAPPROVE: 'Edit and re-approve',
 };
+
+/** Shown when the item changed under the user: acting again needs fresh data. */
+function StalePrompt({ orgId }: { orgId: string }) {
+  const queryClient = useQueryClient();
+  return (
+    <Alert
+      tone="warning"
+      title={t('This item changed')}
+      action={
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => {
+            void queryClient.invalidateQueries({ queryKey: ['org', orgId] });
+          }}
+        >
+          {t('Refresh')}
+        </Button>
+      }
+    >
+      {t('Someone else may have handled it. Refresh to see the latest state.')}
+    </Alert>
+  );
+}
 
 /**
  * One-time exception (F-025). Granting is a governance transaction (M16-D3):
@@ -165,8 +190,12 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                       ]}
                     />
                   </Field>
-                  {grant.isError && (
-                    <Alert tone="danger">{errorMessage(grant.error)}</Alert>
+                  {isApiError(grant.error, 'STALE_ITEM') ? (
+                    <StalePrompt orgId={scope.orgId} />
+                  ) : (
+                    grant.isError && (
+                      <Alert tone="danger">{errorMessage(grant.error)}</Alert>
+                    )
                   )}
                   <Button
                     variant="primary"
@@ -242,6 +271,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
   const [action, setAction] = useState<string>(item.actions[0] ?? 'RESOLVE');
   const [note, setNote] = useState('');
   const allowed = scope.can(...item.roles);
+  const stale = isApiError(act.error, 'STALE_ITEM');
 
   if (!allowed) {
     return (
@@ -266,7 +296,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
           onSubmit={(event) => {
             event.preventDefault();
             act.mutate(
-              { id: item.id, action, note },
+              { id: item.id, action, note, version: item.version },
               {
                 onSuccess: () => {
                   toast.success(
@@ -291,10 +321,11 @@ function ActionPanel({ item }: { item: ReviewItem }) {
               }))}
             />
           </Field>
+          {stale && <StalePrompt orgId={scope.orgId} />}
           <Field
             htmlFor="review-note"
             label={t('Note')}
-            error={act.isError ? errorMessage(act.error) : undefined}
+            error={act.isError && !stale ? errorMessage(act.error) : undefined}
           >
             <Textarea
               id="review-note"
