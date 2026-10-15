@@ -23,6 +23,8 @@ import asyncpg  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 
+from treasurypilot_core.domain import PaymentTerms
+from treasurypilot_core.engine import InvalidTerms, validate_terms
 from treasurypilot_core.ids import uuid7
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_worker.agent import (
@@ -67,6 +69,26 @@ class SuspiciousInstruction(_Strict):
     page: int = Field(ge=1)
 
 
+class LateFeeExtraction(_Strict):
+    kind: str
+    amount_text: str | None = None
+    rate_bps: int | None = None
+    period_days: int | None = None
+    cap_text: str | None = None
+
+
+class TermsExtraction(_Strict):
+    """Payment terms as printed (AGT-005). `uncertain` means a human must choose."""
+
+    discount_bps: int | None = None
+    discount_days: int | None = None
+    net_days: int | None = None
+    late_fee: LateFeeExtraction | None = None
+    priority_note: str | None = None
+    uncertain: bool
+    uncertain_reason: str | None = None
+
+
 class InvoiceExtraction(_Strict):
     vendor_name: Located | None
     invoice_no: Located | None
@@ -75,6 +97,7 @@ class InvoiceExtraction(_Strict):
     amount_text: Located | None
     currency: Located | None
     payee_address_as_found: Located | None
+    terms: TermsExtraction | None
     invoice_count_in_document: int = Field(ge=1)
     suspicious_instructions: list[SuspiciousInstruction]
 
@@ -115,6 +138,46 @@ def prefill_values(
         if base_units and base_units < 1 << 256:  # zero is not a payable amount
             values["amount"] = int(base_units)
     return values
+
+
+def terms_values(extraction: InvoiceExtraction, *, decimals: int) -> dict[str, Any] | None:
+    """Provisional (unconfirmed) terms for the draft, or None when a human must choose.
+
+    The model's `uncertain` flag is advisory: the terms must also pass the engine model
+    and `validate_terms`. `priority_note` is untrusted text and is never copied.
+    """
+
+    terms = extraction.terms
+    if terms is None or terms.uncertain or terms.net_days is None:
+        return None
+    if (terms.discount_bps is None) != (terms.discount_days is None):
+        return None  # half a discount is ambiguous, not "no discount"
+
+    def units(text: str | None) -> int | None:
+        return None if text is None else int(BaseUnits.parse(text, decimals))
+
+    try:
+        fee = terms.late_fee
+        parsed = PaymentTerms.model_validate(
+            {
+                "net_due_day": terms.net_days,
+                "discount_bps": terms.discount_bps or 0,
+                "discount_deadline_day": terms.discount_days,
+                "late_fee": None
+                if fee is None
+                else {
+                    "kind": fee.kind,
+                    "amount": units(fee.amount_text),
+                    "rate_bps": fee.rate_bps,
+                    "period_days": fee.period_days,
+                    "cap": units(fee.cap_text),
+                },
+            }
+        )
+        validate_terms(parsed)
+    except (ValueError, InvalidTerms):  # pydantic's ValidationError is a ValueError
+        return None
+    return parsed.model_dump(mode="json", exclude_none=True)
 
 
 def _iso_date(value: str | None) -> date | None:
@@ -213,6 +276,7 @@ _EXTRACTED = """
 UPDATE payment_requests SET extraction_status = 'Extracted',
   invoice_no = COALESCE(invoice_no, $2), issue_date = COALESCE(issue_date, $3),
   due_at = COALESCE(due_at, $4), amount = COALESCE(amount, $5),
+  terms = COALESCE(terms, $6::jsonb),
   version = version + 1, updated_at = now()
 WHERE id = $1 AND extraction_status = 'Extracting' AND extraction_confirmed_by IS NULL
 """
@@ -292,6 +356,8 @@ def extract_invoice_document(
         result.output, asset_symbol=job.asset_symbol, decimals=job.decimals, pages=job.pages
     )
 
+    terms = terms_values(result.output, decimals=job.decimals)  # stays unconfirmed (INV-008)
+
     async def save(connection: asyncpg.Connection) -> str:
         async with connection.transaction():
             updated = await connection.execute(
@@ -301,6 +367,7 @@ def extract_invoice_document(
                 values.get("issue_date"),
                 values.get("due_at"),
                 values.get("amount"),
+                None if terms is None else json.dumps(terms),
             )
             if updated != "UPDATE 1":
                 return "skipped"  # confirmed or settled by someone else meanwhile

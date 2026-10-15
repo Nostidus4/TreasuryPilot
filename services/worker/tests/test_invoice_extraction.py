@@ -10,6 +10,7 @@ from treasurypilot_worker.invoices.extraction import (
     fallback_flag_evidence,
     llm_flag_evidence,
     prefill_values,
+    terms_values,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -119,3 +120,43 @@ def test_keyword_fallback_ignores_ordinary_invoices_images_and_broken_pdfs() -> 
     )
     assert fallback_flag_evidence("image/png", b"\x89PNG", []) is None
     assert fallback_flag_evidence("application/pdf", b"not a pdf", []) is None
+
+
+def _terms(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "discount_bps": 200,
+        "discount_days": 10,
+        "net_days": 30,
+        "uncertain": False,
+    }
+    return {**base, **overrides}
+
+
+def test_two_ten_net_thirty_becomes_engine_terms() -> None:
+    extraction = _extraction(terms=_terms())
+
+    assert terms_values(extraction, decimals=6) == {
+        "net_due_day": 30,
+        "discount_bps": 200,
+        "discount_deadline_day": 10,
+    }
+
+
+def test_late_fee_text_is_parsed_to_base_units() -> None:
+    fee = {"kind": "fixed", "amount_text": "25.5"}
+    values = terms_values(_extraction(terms=_terms(late_fee=fee)), decimals=6)
+
+    assert values is not None and values["late_fee"] == {"kind": "fixed", "amount": "25500000"}
+
+
+def test_uncertain_or_invalid_terms_are_not_applied() -> None:
+    for terms in (
+        _terms(uncertain=True, uncertain_reason="net 30 or net 45?"),
+        _terms(net_days=None),
+        _terms(discount_days=None),  # half a discount
+        _terms(discount_days=45),  # deadline after net due
+        _terms(discount_bps=20_000),
+        _terms(late_fee={"kind": "fixed", "amount_text": "1,5"}),
+    ):
+        assert terms_values(_extraction(terms=terms), decimals=6) is None, terms
+    assert terms_values(_extraction(), decimals=6) is None
