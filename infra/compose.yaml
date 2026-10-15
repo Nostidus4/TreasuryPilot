@@ -326,6 +326,9 @@ services:
       TP_TRUSTED_POLICY_SIGNERS: ${TP_TRUSTED_POLICY_SIGNERS:-[]}
       TP_EXECUTOR_KEYSTORE_MAP: ${TP_EXECUTOR_KEYSTORE_MAP:-}
       TP_EXECUTOR_KEYSTORE_PASSWORD_FILE: /run/secrets/executor_keystore_password
+      TP_SENTINEL_KEYSTORE_PATH: /run/secrets/sentinel_keystore
+      TP_SENTINEL_KEYSTORE_PASSWORD_FILE: /run/secrets/sentinel_keystore_password
+      TP_SENTINEL_TARGETS: ${TP_SENTINEL_TARGETS:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       SENTRY_DSN: ${SENTRY_DSN_SIGNER:-}
       TP_TELEGRAM_BOT_TOKEN: ${TP_TELEGRAM_BOT_TOKEN:-}
@@ -333,7 +336,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    secrets: [executor_keystore, executor_keystore_password]
+    secrets:
+      [executor_keystore, executor_keystore_password, sentinel_keystore, sentinel_keystore_password]
     healthcheck:
       test:
         [
@@ -391,6 +395,11 @@ secrets:
     file: ${TP_EXECUTOR_KEYSTORE_FILE:-/dev/null}
   executor_keystore_password:
     file: ${TP_EXECUTOR_KEYSTORE_PASSWORD_FILE:-/dev/null}
+  # Pause-only sentinel key, separate from the executor key; unused until TP_SENTINEL_TARGETS is set.
+  sentinel_keystore:
+    file: ${TP_SENTINEL_KEYSTORE_FILE:-/dev/null}
+  sentinel_keystore_password:
+    file: ${TP_SENTINEL_KEYSTORE_PASSWORD_FILE:-/dev/null}
 
 networks:
   public:

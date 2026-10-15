@@ -87,8 +87,8 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 |---|---|---|---|
 | POST | `/sign-and-send` | `{treasuryId, plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `SIGNER_KEY_UNAVAILABLE`, `NOT_CONFIGURED` (no keystore mapped for the treasury) |
 | POST | `/replace` | `{txHash, fees}` → `{txHash, nonce}` (same nonce, same payload, higher fees) | `NOT_PENDING`, `FEE_CAP_EXCEEDED` |
-| POST | `/sentinel/pause` | `{treasuryId}` → `{txHash}` | `NOT_CONFIGURED` |
-| GET | `/sentinel/address`, `/health` | → addresses and gas balances only | |
+| POST | `/sentinel/pause` | `{treasuryId}` → `{txHash, alreadyPaused}` (`txHash` null when already paused) | `NOT_CONFIGURED`, `UNAUTHORIZED`, `CHAIN_NOT_ALLOWED`, `SIMULATION_REVERTED`, `SIGNER_KEY_UNAVAILABLE` |
+| GET | `/sentinel/address`, `/health` | → addresses and gas balances only | `NOT_CONFIGURED` (address) |
 
 ## 7. Flows
 
@@ -188,7 +188,16 @@ The signer accepts `X-Signer-Secret` only on the internal network. Configure
 `TP_TRUSTED_POLICY_SIGNERS` and `TP_ALLOWED_CHAIN_IDS` as JSON arrays, and map every treasury UUID
 to an encrypted keystore path in `TP_EXECUTOR_KEYSTORE_MAP` (JSON object). The signer reads the
 password from `TP_EXECUTOR_KEYSTORE_PASSWORD_FILE`. M1 may map multiple treasury IDs to one
-keystore. Missing signer configuration fails closed. The database migration creates the `signer`
+keystore. Missing signer configuration fails closed.
+
+The sentinel uses a separate keystore (`TP_SENTINEL_KEYSTORE_PATH`,
+`TP_SENTINEL_KEYSTORE_PASSWORD_FILE`) and `TP_SENTINEL_TARGETS`, a JSON object mapping each
+treasury UUID to its `guardianSafe` and `module` (neither may be the zero address, and they must
+differ). It can only send `GuardianSafe.execTransaction(module, 0, pause(), CALL, ...)` signed as
+a Safe owner (approved-by-sender signature); the request carries no target or calldata. Setting
+targets makes both the keystore and `CHAIN_RPC_URL` mandatory at startup; with none set the
+endpoint answers `NOT_CONFIGURED`. `/health` reports the sentinel's gas balance, but the
+low-gas threshold alert is not implemented yet. The database migration creates the `signer`
 schema and `treasurypilot_signer` role; signer connections execute as that role, which has write
 access only to the signer nonce and attestation-use tables. The migration grants role membership
 to the migration login; if the signer uses a different login, the database administrator must

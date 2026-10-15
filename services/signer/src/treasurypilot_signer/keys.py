@@ -50,3 +50,24 @@ class ExecutorKeys:
         if self._password_file is None or not self._password_file.is_file():
             raise ExecutorKeyUnavailable("TP_EXECUTOR_KEYSTORE_PASSWORD_FILE is missing")
         return {t: self.for_treasury(t).address for t in self._paths}
+
+
+class SentinelKey:
+    """The pause-only key: a separate keystore from the executor's."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._path = settings.sentinel_keystore_path
+        self._password_file = settings.sentinel_keystore_password_file
+
+    def load(self) -> LocalAccount:
+        if self._path is None or self._password_file is None:
+            raise ExecutorKeyNotConfigured
+        try:
+            private_key = Account.decrypt(
+                self._path.read_text(), self._password_file.read_text().strip()
+            )
+            account: LocalAccount = Account.from_key(private_key)
+            return account
+        except (OSError, ValueError) as error:
+            # Do not forward decoder errors; some implementations include key material.
+            raise ExecutorKeyUnavailable from error
