@@ -281,7 +281,10 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
 
     function _compareRefill(string memory caseId, I.PaymentApproval memory ap, uint256 amount) internal {
         _compare(
-            caseId, abi.encodeCall(module.refill, (ap, _sign(ap), keccak256(bytes(caseId)), ap.payingWallet, amount))
+            caseId,
+            abi.encodeCall(
+                module.refill, (ap, _sign(ap), keccak256(bytes(caseId)), address(treasury), ap.payingWallet, amount)
+            )
         );
     }
 

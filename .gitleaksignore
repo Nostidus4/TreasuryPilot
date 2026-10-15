@@ -6,3 +6,6 @@
 b133afc466925b69a8be394cf8cf3010977903c9:services/signer/tests/test_keys.py:generic-api-key:26
 # Published Anvil account key in the scenario runner commit later replaced by a mnemonic derivation (#67).
 9573cdf7f8ddcce921abb9e006d621cdc7b434dd:infra/scripts/scenario_steps.py:generic-api-key:32
+# Published Anvil account 0 in the crash-suite commits later replaced by a mnemonic derivation (#169).
+0fc38f4fa5ec78090297d9b1225bdcdaaba595e4:services/worker/tests/test_recovery_crash_suite.py:generic-api-key:53
+f04e6931f7588496daa8c7ddf843874473b2c73a:services/worker/tests/crash_support.py:generic-api-key:30
