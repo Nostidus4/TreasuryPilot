@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Docker secrets in the core worker only; unset means no attestation can be issued.
     policy_keystore_path: Path | None = None
     policy_keystore_password_file: Path | None = None
+    # Internal signer service (EXE-007): base URL and the shared secret it requires.
+    signer_url: str | None = None
+    signer_shared_secret: SecretStr | None = None
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.
