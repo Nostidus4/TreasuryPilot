@@ -58,12 +58,14 @@ async def _sweep(database_url: str) -> None:
 
         now = datetime.now(UTC)
         mandate_ids = {
-            name: uuid.uuid4() for name in ("seven_day", "two_day", "one_hour", "expired")
+            name: uuid.uuid4()
+            for name in ("seven_day", "two_day", "one_hour", "catch_up", "expired")
         }
         expiries = {
             "seven_day": now + timedelta(days=6),
             "two_day": now + timedelta(hours=47),
             "one_hour": now + timedelta(minutes=30),
+            "catch_up": now + timedelta(minutes=30),
             "expired": now - timedelta(hours=1),
         }
         for index, name in enumerate(mandate_ids, start=1):
@@ -83,7 +85,7 @@ async def _sweep(database_url: str) -> None:
         await connection.close()
 
         assert await _run_sweep(database_url) == {
-            "warnings_emitted": 3,
+            "warnings_emitted": 6,
             "mandates_expired": 1,
         }
         assert await _run_sweep(database_url) == {"warnings_emitted": 0, "mandates_expired": 0}
@@ -101,6 +103,9 @@ async def _sweep(database_url: str) -> None:
                 (mandate_ids["seven_day"], 168),
                 (mandate_ids["two_day"], 48),
                 (mandate_ids["one_hour"], 1),
+                (mandate_ids["catch_up"], 168),
+                (mandate_ids["catch_up"], 48),
+                (mandate_ids["catch_up"], 1),
             }
             assert (
                 await connection.fetchval(
@@ -121,7 +126,7 @@ async def _sweep(database_url: str) -> None:
                     "AND type IN ('MandateExpiring', 'MandateExpired')",
                     org_id,
                 )
-                == 4
+                == 7
             )
             assert (
                 await connection.fetchval(
@@ -129,7 +134,7 @@ async def _sweep(database_url: str) -> None:
                     "AND status = 'Active'",
                     treasury_id,
                 )
-                == 3
+                == 4
             )
         finally:
             await connection.close()

@@ -7,13 +7,13 @@ import asyncpg  # type: ignore[import-untyped]
 _WARN_EXPIRING = """
 WITH due AS (
     SELECT m.id AS mandate_version_id, m.org_id, m.treasury_id,
-           min(w.warning_hours) AS warning_hours
+           w.warning_hours
     FROM mandate_versions AS m
     CROSS JOIN (VALUES (168::smallint), (48::smallint), (1::smallint)) AS w(warning_hours)
     WHERE m.status = 'Active'
       AND m.expires_at > now()
       AND m.expires_at <= now() + make_interval(hours => w.warning_hours)
-    GROUP BY m.id, m.org_id, m.treasury_id
+    GROUP BY m.id, m.org_id, m.treasury_id, w.warning_hours
 ), claimed AS (
     INSERT INTO mandate_expiry_notifications (mandate_version_id, org_id, warning_hours)
     SELECT mandate_version_id, org_id, warning_hours FROM due
