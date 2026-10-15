@@ -47,7 +47,7 @@ _FUNCTIONS: dict[int, tuple[str, Sequence[str]]] = {
     PAY: ("pay", (_APPROVAL, "bytes", "bytes32", "uint256", _ATTESTATION, "bytes")),
     REFILL: (
         "refill",
-        (_APPROVAL, "bytes", "bytes32", "address", "uint256", _ATTESTATION, "bytes"),
+        (_APPROVAL, "bytes", "bytes32", "address", "address", "uint256", _ATTESTATION, "bytes"),
     ),
     SUPPLY: ("supply", ("bytes32", "bytes32", "uint256", _ATTESTATION, "bytes")),
     WITHDRAW: ("withdraw", ("bytes32", "bytes32", "uint256", _ATTESTATION, "bytes")),
@@ -235,10 +235,11 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
                 _address(approval[4]) == step_to,
                 _address(approval[5]) == step_asset,
                 bytes(args[2]) == step_id,
-                _address(args[3]) == step_to,
-                int(args[4]) == step_amount,
+                _address(args[3]) == step_from,
+                _address(args[4]) == step_to,
+                int(args[5]) == step_amount,
             )
-        attestation_position = 4 if action == PAY else 5
+        attestation_position = 4 if action == PAY else 6
     else:
         checks = (
             bytes(args[0]) == request_id,
@@ -336,6 +337,9 @@ class SigningService:
             if request.payload.to.lower() != expected_target:
                 raise SignerFault("PAYLOAD_MISMATCH")
             if action == REFILL:
+                # Operational-source refills (contract-allowed via a refill path) are planned by the
+                # engine (ENG-L01) but the worker validator and RefillPathSet indexing are not wired,
+                # so only Safe T sources are signed.
                 safe_t_selector = "0x" + keccak(b"safeT()")[:4].hex()
                 safe_t_data = await self._rpc.call(
                     "eth_call", [{"to": treasury, "data": safe_t_selector}, "latest"]

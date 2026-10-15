@@ -18,6 +18,7 @@ from treasurypilot_worker.agent.call_log import (
 from treasurypilot_worker.agent.config import AiConfig, AiTask, TaskConfig
 from treasurypilot_worker.agent.errors import (
     AiBudgetExceeded,
+    AiError,
     AiSchemaError,
     AiTimeout,
     AiToolLimitExceeded,
@@ -110,7 +111,7 @@ class AiAdapter:
         except Exception as error:
             # Any failure is logged before re-raising; a failed write raises AiCallLogError.
             call_id = self._log(task, org_id, prompt, run, None, error)
-            if isinstance(error, PostCheckFailed):
+            if isinstance(error, AiError):
                 error.ai_call_id = call_id
             raise
         ai_call_id = self._log(task, org_id, prompt, run, parsed, None)

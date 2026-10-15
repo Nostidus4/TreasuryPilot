@@ -4,7 +4,7 @@
 (PartiallyCompleted -> Executing). It sends nothing: the next ``sequence_plan`` call skips every
 Confirmed step (their operation rows exist, so a refill is never repeated) and re-reads and
 re-validates the first unfinished step with ``Gate.pre_step`` before signing it. The caller
-(the internal celery task today; the review-item RETRY action is RCV-004) then enqueues
+(the celery task the review-item RETRY action enqueues) then enqueues
 ``treasurypilot.execution.sequence_plan``; the 15 s sweep also picks the plan up.
 """
 

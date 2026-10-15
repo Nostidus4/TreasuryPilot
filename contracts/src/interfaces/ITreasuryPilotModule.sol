@@ -122,6 +122,7 @@ interface ITreasuryPilotModule {
     event RequestCancelled(bytes32 indexed requestId, address indexed by);
     event Resumed();
     event Revoked();
+    event RefillPathSet(address indexed from, address indexed to, bool allowed);
     event RefillExecuted(
         bytes32 indexed requestId, bytes32 indexed stepId, address indexed toWallet, uint256 amount, uint256 day
     );
@@ -188,14 +189,18 @@ interface ITreasuryPilotModule {
     /// @notice Pay the signed amount (the early one while open). A signed `isFiat` approval may pay 1..that cap.
     function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 paymentAmount)
         external;
-    /// @notice Executor refills only the approved operational wallet, once per request.
+    /// @notice Executor refills the approved operational wallet, once per request, from Safe T or from an
+    /// operational wallet on a Safe T-allowed path. The source keeps its own buffer.
     function refill(
         PaymentApproval calldata ap,
         bytes calldata approverSig,
         bytes32 stepId,
+        address fromWallet,
         address toWallet,
         uint256 amount
     ) external;
+    /// @notice Only Safe T may allow or revoke an operational-to-operational refill path.
+    function setRefillPath(address from, address to, bool allowed) external;
     /// @notice Executor supplies the sole asset to the sole pool, preserving Safe T's floor.
     function supply(bytes32 stepId, uint256 amount) external;
     /// @notice Executor withdraws only into Safe T.
@@ -216,9 +221,7 @@ interface ITreasuryPilotModule {
     function mandate() external view returns (Mandate memory);
     function operationalList() external view returns (address[] memory);
     function payeeStatus(address payee) external view returns (PayeeState state, uint64 activeFrom);
-    function usedToday(uint8 action) external view returns (uint256);
     function usedToday(uint8 action, address asset) external view returns (uint256);
-    function remainingToday(uint8 action) external view returns (uint256);
     function remainingToday(uint8 action, address asset) external view returns (uint256);
     function isAssetAllowed(address asset) external view returns (bool);
     function bufferOf(address asset, address wallet) external view returns (uint256);

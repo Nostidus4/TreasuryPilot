@@ -34,6 +34,7 @@ MODULE_ERRORS = {
     "RequestCancelled()",
     "StepAlreadyExecuted()",
     "WrongRefillTarget()",
+    "RefillPathNotAllowed()",
     "AlreadyRefilledForRequest()",
     "OverRefillPerRequest()",
     "OverRefillDaily()",

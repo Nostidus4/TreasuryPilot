@@ -94,12 +94,14 @@ contract MaliciousTokenTest is TreasuryFixture {
             address(module), abi.encodeCall(module.pay, (outer, _sign(outer), bytes32(uint256(1)), outer.amount))
         );
         require(!evil.callbackSucceeded() && !module.requestPaid(inner.requestId), "reentrant payment");
-        require(token.balanceOf(vendor) == 100e6 && module.usedToday(module.PAY()) == 100e6, "outer payment");
+        require(
+            token.balanceOf(vendor) == 100e6 && module.usedToday(module.PAY(), address(token)) == 100e6, "outer payment"
+        );
     }
 
     function _assertUnchanged(I.PaymentApproval memory ap) internal view {
         require(!module.requestPaid(ap.requestId) && !module.stepUsed(keccak256("rejected step")), "replay rollback");
-        require(module.usedToday(module.PAY()) == 0 && token.balanceOf(vendor) == 0, "payment rollback");
+        require(module.usedToday(module.PAY(), address(token)) == 0 && token.balanceOf(vendor) == 0, "payment rollback");
         require(token.balanceOf(address(op1)) == 10000e6, "sender rollback");
     }
 }

@@ -47,7 +47,7 @@ def forecast(
         raise ValueError(f"days must be between 1 and {_MAX_FORECAST_DAYS}")
 
     source = snapshot.source
-    # Same rule as liquidity_position: refills come from Safe T only.
+    # Same rule as liquidity_position: Safe T is the snapshot source.
     if source.balance != snapshot.safe_usdc:
         raise ValueError("snapshot.source must be Safe T: its balance differs from safe_usdc")
     balances = {source.address: int(source.balance)}
@@ -81,7 +81,11 @@ def forecast(
             if request is None:
                 raise ValueError(f"schedule contains unknown request {item.request_id!r}")
             wallet = snapshot.operational[request.paying_wallet]
-            source_address = source.address
+            source_address = (
+                snapshot.operational[item.refill_from].address
+                if item.refill_from
+                else source.address
+            )
             target_address = wallet.address
             refill_amount = int(item.refill)
             if refill_amount:

@@ -779,3 +779,22 @@ def test_list_and_get_payee() -> None:
         missing = client.get(f"{PAYEES}/{uuid.uuid4()}")
     assert listed.status_code == 200 and listed.json() == {"items": []}
     assert missing.status_code == 404 and missing.json()["code"] == "PAYEE_NOT_FOUND"
+
+
+def test_payee_openapi_contract_is_fully_typed() -> None:
+    client, _ = make_client()
+    with client:
+        spec = client.get("/openapi.json").json()
+    schemas = spec["components"]["schemas"]
+    base = "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}"
+    for suffix, model in (
+        ("registration-tx", "PayeeTxResponse"),
+        ("deactivation-tx", "PayeeTxResponse"),
+        ("replace-address", "ReplacePayeeAddressResponse"),
+    ):
+        ok = spec["paths"][f"{base}/{suffix}"]["post"]["responses"]["201"]
+        assert ok["content"]["application/json"]["schema"]["$ref"].endswith(f"/{model}")
+    assert set(schemas["PayeeTxResponse"]["required"]) == {"governanceTx"}
+    status = schemas["PayeeStatus"]["enum"]
+    assert status == [s.value for s in PayeeStatus]
+    assert schemas["ScreeningResult"]["enum"] == ["CLEAR", "HIT", "ERROR"]

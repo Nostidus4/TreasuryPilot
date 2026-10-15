@@ -147,6 +147,13 @@ abstract contract TreasuryPilotGovernance is TreasuryPilotStorage, EIP712, Reent
     }
 
     /// @inheritdoc ITreasuryPilotModule
+    function setRefillPath(address from, address to, bool allowed) external onlyOwner {
+        if (!isOperational[from] || from == to) revert E.InvalidConfiguration(); // `to` is checked by refill
+        _refillPath[from][to] = allowed;
+        emit RefillPathSet(from, to, allowed);
+    }
+
+    /// @inheritdoc ITreasuryPilotModule
     function setAssetBuffer(address asset_, address wallet, uint256 buffer, uint256 target)
         external
         onlyOwner

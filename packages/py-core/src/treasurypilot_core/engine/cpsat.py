@@ -209,6 +209,9 @@ def schedule_cpsat(
             status="OPTIMAL",
         )
     edf = schedule_edf(ordered, snapshot, policy)
+    if snapshot.refill_paths:
+        # shortcut: the CP-SAT model has one (Safe T) source; extend it when paths are in use.
+        return _fallback(edf, "operational refill paths are only planned by EDF")
     try:
         return _solve(
             ordered,
@@ -523,7 +526,7 @@ def _build_schedule(
     for index, day, refill, value in chosen:
         by_day.setdefault(day, []).append((index, refill, value))
 
-    state = _SimulationState(dict(snapshot.operational), snapshot.source)
+    state = _SimulationState.start(snapshot, ordered)
     items: list[ScheduledItem] = []
     binding: set[str] = set()
     unpaid = set(range(len(ordered)))

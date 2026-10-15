@@ -101,7 +101,7 @@ def _answers() -> dict[tuple[str, str], Answer]:
             lambda args: [{SAFE_T: 1000, OP_1: 110, OP_2: 5, A_TOKEN: 7777}[args[0].lower()]],
         ),
         (MODULE, "status()"): (["uint8"], const(0)),
-        (MODULE, "usedToday(uint8)"): (["uint256"], lambda args: [{1: 40, 2: 15}[args[0]]]),
+        (MODULE, "usedToday(uint8,address)"): (["uint256"], lambda args: [{1: 40, 2: 15}[args[0]]]),
         (MODULE, "bufferOf(address,address)"): (["uint256"], const(10)),
         (MODULE, "targetOf(address,address)"): (["uint256"], const(100)),
         (MODULE, "isApprover(address)"): (["bool"], const(True)),

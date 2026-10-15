@@ -8,7 +8,8 @@ import pytest
 
 from treasurypilot_worker.agent.errors import AiBudgetExceeded, AiTimeout, AiUnavailable
 from treasurypilot_worker.agent.plan_proposer import PlanProposal, PlanProposalRejected
-from treasurypilot_worker.planner.ai import CeleryAiProposer, outcome_from_payload
+from treasurypilot_worker.planner import ai as ai_module
+from treasurypilot_worker.planner.ai import CeleryAiProposer, outcome_from_payload, run_proposal
 
 CALL = str(uuid.uuid4())
 
@@ -55,3 +56,18 @@ def test_timeout_and_transport_failures_are_outages() -> None:
 
     assert isinstance(_propose(timeout).result, AiTimeout)
     assert isinstance(_propose(broker_down).result, AiUnavailable)
+
+
+def test_every_logged_ai_failure_hands_its_call_id_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing(*_: Any, **__: Any) -> Any:
+        error = AiTimeout("deadline")
+        error.ai_call_id = CALL
+        raise error
+
+    monkeypatch.setattr(ai_module, "propose_plan", failing)
+    monkeypatch.setattr(ai_module, "build_tools", lambda *_: [])
+    payload = run_proposal(None, None, org_id="o", treasury_id="t", eligible_ids=["a"])  # type: ignore[arg-type]
+
+    assert payload == {"error": "AI_TIMEOUT", "ai_call_id": CALL}
+    outcome = outcome_from_payload(payload)
+    assert isinstance(outcome.result, AiTimeout) and str(outcome.ai_call_id) == CALL

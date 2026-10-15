@@ -15,7 +15,7 @@ The engine is the **only place where amounts and schedules are computed** (BR-03
 | Liquidity calculator: Available, FundingDeficit, Shortage, PreferredRefill, SourceCapacity, Cap, refill decision | Deciding *whether* a step is allowed (M08 validator does that, using engine numbers) |
 | Payment-terms model and value function (discounts, late fees) | Extracting terms from text (M09) |
 | Scheduler: B1 baseline (EDF) and B2 optimizer (CP-SAT) + exhaustive oracle for tests | Calling the LLM; the AI proposes orderings that the engine scores (M09 → M07) |
-| Plan scoring, binding constraints, infeasibility reasons; pure FX conversion and depeg guard (F-041) | Multi-asset (F-015, Later), Oi→Oj refills (F-059, Later) |
+| Plan scoring, binding constraints, infeasibility reasons; pure FX conversion and depeg guard (F-041) | Multi-asset (F-015, Later), Oi→Oj refill *execution* (F-059: the plan builder, validator and signer still use Safe T only) |
 | 7-day forecast (P2) | |
 
 ## 2. Features, requirements and rules
@@ -163,6 +163,8 @@ else:                             → stop (OVER_REFILL_DAILY, else OVER_REFILL_
 | Bound stop | 0 | 300 | 50 | 40 | 60 | 390 | 410 | 110 | 2,500 | stop REFILL_BOUND |
 
 Note on row a: the source document expected 350; with the contract bound (M04-D4) the engine refills 250 and the other held request refills for itself when it is processed. The goldens in ENG-002/ENG-003 use these updated values.
+
+**Operational sources (ENG-L01, F-059).** `Snapshot.refill_paths` carries the Owner-allowlisted `(from, to)` pairs (contracts README §18; empty by default, so behaviour is unchanged). Safe T is always tried first. Only when Safe T stops with `SOURCE_INSUFFICIENT` does EDF try the wallets with a path into the paying wallet, largest surplus first (ties by address), through the same `decide_refill` with `source_protected` = the amounts of that wallet's own approved requests it has not yet paid. A lender therefore never drops below `buffer + own pending obligations`; the obligation is released when its payment is scheduled. The chosen lender is `ScheduledItem.refill_from` (`None` = Safe T). One source per request, as the contract allows one refill per request. Each obligation is reserved at its worst case over the horizon, `amount_due` including any late fee (a conservative bound; the scheduled debit is `pay_amount`), and released by the same amount once the payment is scheduled. CP-SAT returns the EDF schedule as `FALLBACK` and the oracle raises when paths are present (their model has a single source). Property test: `tests/test_operational_refills.py`.
 
 ### 8.2 Value of paying on day `p` (M07-D1, D2)
 

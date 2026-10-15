@@ -56,7 +56,7 @@ contract AcceptanceTest is TreasuryFixture {
         bytes memory signature = _sign(ap);
         vm.expectRevert(E.AlreadyRefilledForRequest.selector);
         vm.prank(executor);
-        module.refill(ap, signature, bytes32(uint256(3)), address(op1), 1);
+        module.refill(ap, signature, bytes32(uint256(3)), address(treasury), address(op1), 1);
         _pay(ap, bytes32(uint256(2)));
     }
 
