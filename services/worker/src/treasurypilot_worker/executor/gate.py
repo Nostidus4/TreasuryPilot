@@ -41,15 +41,28 @@ class PlanGate:
     # Re-validates and re-attests the plan from step ``seq`` on (the planner pipeline, EXE-004).
     reattest_fn: Callable[[int], Awaitable[PlanRun | Decision]]
     snapshot_fn: SnapshotFn
+    treasury_id: UUID | None = None
 
     @classmethod
     def for_treasury(cls, pool: asyncpg.Pool, treasury_id: UUID, **fields) -> PlanGate:  # type: ignore[no-untyped-def]
         async def snapshot(scope: SnapshotScope) -> Snapshot:
             return await take_snapshot(pool, treasury_id, SnapshotPurpose.PRE_STEP, scope)
 
-        return cls(pool=pool, snapshot_fn=snapshot, **fields)
+        return cls(pool=pool, snapshot_fn=snapshot, treasury_id=treasury_id, **fields)
 
     async def pre_step(self, seq: int) -> Decision:
+        # CHR-006 / chain-reader §8.4: pending PRE_STEP_REVALIDATION signals are read before the
+        # snapshot (which is always fresh), and consumed once this validation has been recorded,
+        # whether it allows or blocks. Signals arriving meanwhile stay pending for the next step.
+        signal_ids: list[UUID] = []
+        if self.treasury_id is not None:
+            rows = await self.pool.fetch(
+                "SELECT id FROM chain_safety_signals WHERE treasury_id = $1 "
+                "AND signal_type = 'PRE_STEP_REVALIDATION' AND consumed_at IS NULL "
+                "AND invalidated_at IS NULL",
+                self.treasury_id,
+            )
+            signal_ids = [row["id"] for row in rows]
         snapshot = await self.snapshot_fn(scope_for(self.plan, self.inputs))
         head = int(await self.rpc.call("eth_blockNumber", []), 16)
         context = build_context(
@@ -61,6 +74,12 @@ class PlanGate:
         )
         decision = validate_step(self.plan, seq, context)
         await record_validation(self.pool, self.plan_id, decision)
+        if signal_ids:
+            await self.pool.execute(
+                "UPDATE chain_safety_signals SET consumed_at = now() "
+                "WHERE id = ANY($1::uuid[]) AND consumed_at IS NULL AND invalidated_at IS NULL",
+                signal_ids,
+            )
         if decision.decision != "ALLOW":
             return decision
         base = self.simulation

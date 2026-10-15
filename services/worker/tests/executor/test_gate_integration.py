@@ -299,3 +299,80 @@ def test_lagging_snapshot_is_stale() -> None:
     context = build_context(old, plan, _inputs(b"\xab" * 32), now=int(time.time()), head_block=105)
     decision = validate_step(plan, 0, context)
     assert decision.decision == "BLOCK" and "SNAPSHOT_STALE" in map(str, decision.codes)
+
+
+async def _signal_outflow(pool: Any) -> uuid.UUID:
+    event, movement, signal = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await pool.execute(
+        "INSERT INTO observed_events (id, treasury_id, chain_id, stream, block_number, block_hash, "
+        "tx_hash, log_index, address, event_name, payload) VALUES ($1, $2, $3, 'TOKEN', 103, "
+        "decode(repeat('01', 32), 'hex'), $4, 0, $5, 'Transfer', '{}'::jsonb)",
+        event, _seq._TREASURY, CHAIN, event.bytes * 2, b"\x33" * 20,
+    )  # fmt: skip
+    await pool.execute(
+        'INSERT INTO token_movements (id, treasury_id, event_id, wallet, direction, counterparty, amount, "class") '
+        "VALUES ($1, $2, $3, $4, 'OUT', $4, 50, 'UNEXPECTED_OUTFLOW')",
+        movement, _seq._TREASURY, event, b"\x33" * 20,
+    )  # fmt: skip
+    await pool.execute(
+        "INSERT INTO chain_safety_signals (id, treasury_id, observed_event_id, token_movement_id, "
+        "signal_type, payload) VALUES ($1, $2, $3, $4, 'PRE_STEP_REVALIDATION', '{}'::jsonb)",
+        signal, _seq._TREASURY, event, movement,
+    )  # fmt: skip
+    return signal
+
+
+def _pay_after_outflow(database_url: str, pay_wallet_balance: int, expect: str) -> None:
+    async def scenario() -> None:
+        run = await _new_run(database_url)
+        _STEP_IDS[:] = [s.step_id for s in run.steps]
+        plan, inputs, rpc = _plan(run), _inputs(b"\xab" * 32), FakeRpc(head=101)
+        snapshots = [
+            _snapshot(100, wallet_balance=100, refilled=False),
+            _snapshot(100, wallet_balance=pay_wallet_balance, refilled=True),
+        ]
+        pool = await create_worker_pool(database_url, min_size=1, max_size=3)
+
+        async def snapshot_fn(scope: Any) -> Snapshot:
+            return snapshots.pop(0)
+
+        async def no_renewal(seq: int) -> Any:
+            raise AssertionError("not expired")
+
+        gate = PlanGate.for_treasury(
+            pool, _seq._TREASURY, rpc=rpc, plan_id=run.plan_id, plan=plan, inputs=inputs,
+            simulation=_simulation(inputs), reattest_fn=no_renewal,
+        )  # fmt: skip
+        gate.snapshot_fn = snapshot_fn
+        try:
+            await sequence_plan(pool, FakeSigner(), run, gate, _Passed())  # REFILL
+            await pool.execute(
+                "UPDATE operations SET status = 'Confirmed' WHERE step_id = $1",
+                run.steps[0].step_id,
+            )
+            # The PAY is pending when the indexer records an outflow from the paying wallet.
+            signal = await _signal_outflow(pool)
+            await sequence_plan(pool, FakeSigner(), run, gate, _Passed())
+            decision = await pool.fetchval(
+                "SELECT decision FROM validations WHERE plan_id = $1 AND step_seq = 1 "
+                "AND stage = 'PRE_STEP'",
+                run.plan_id,
+            )
+            assert decision == expect
+            assert await pool.fetchval(
+                "SELECT consumed_at IS NOT NULL FROM chain_safety_signals WHERE id = $1", signal
+            )
+        finally:
+            await pool.close()
+
+    asyncio.run(scenario())
+
+
+def test_outflow_signal_blocks_the_pending_pay_on_the_new_balance(database_url: str) -> None:
+    _pay_after_outflow(database_url, pay_wallet_balance=900, expect="BLOCK")
+
+
+def test_outflow_signal_without_impact_lets_the_pay_pass_and_is_consumed(
+    database_url: str,
+) -> None:
+    _pay_after_outflow(database_url, pay_wallet_balance=1050, expect="ALLOW")
