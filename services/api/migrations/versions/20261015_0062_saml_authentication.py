@@ -1,7 +1,7 @@
 """Add organization-scoped SAML identity links and one-time login state.
 
-Revision ID: 20261015_0061
-Revises: 20261015_0060
+Revision ID: 20261015_0062
+Revises: 20261015_0061
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0061"
-down_revision: str | None = "20261015_0060"
+revision: str = "20261015_0062"
+down_revision: str | None = "20261015_0061"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
