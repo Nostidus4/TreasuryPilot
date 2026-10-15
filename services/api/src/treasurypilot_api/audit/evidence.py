@@ -13,7 +13,7 @@ import json
 import re
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -80,14 +80,28 @@ class FlagEvidence(StrictModel):
     ack_note: str | None = None
 
 
+class PlanStepEvidence(StrictModel):
+    seq: int
+    step_id: str
+    action: int
+    chain_id: int
+    from_address: str
+    to_address: str
+    asset_address: str
+    amount: str
+
+
 class PlanEvidence(StrictModel):
+    plan_id: uuid.UUID | None = None
+    status: str | None = None
     planner_source: str
     plan_hash: str | None = None
-    steps: list[dict[str, Any]] = Field(default_factory=list)
+    steps: list[PlanStepEvidence] = Field(default_factory=list)
 
 
 class ValidationEvidence(StrictModel):
     id: uuid.UUID | None = None
+    plan_id: uuid.UUID | None = None
     stage: str
     decision: str
     reason_codes: list[str] = Field(default_factory=list)
@@ -150,6 +164,29 @@ class VerificationEvidence(StrictModel):
         return _tx_hash(value)
 
 
+class ReconciliationLineEvidence(StrictModel):
+    classification: str
+    tx_hash: str
+    asset_address: str | None = None
+    amount: str
+    block_number: int | None = None
+    day: date | None = None
+
+    @field_validator("tx_hash")
+    @classmethod
+    def valid_hash(cls, value: str) -> str:
+        return _tx_hash(value)
+
+
+class ReconciliationEvidence(StrictModel):
+    status: str
+    version: int
+    matched_by: str | None = None
+    matched_at: datetime | None = None
+    finalized_at: datetime | None = None
+    lines: list[ReconciliationLineEvidence] = Field(default_factory=list)
+
+
 class EvidenceBundle(StrictModel):
     schema_version: Literal["evidence-bundle.v1"] = "evidence-bundle.v1"
     status: Literal["VALID"] = "VALID"
@@ -164,7 +201,7 @@ class EvidenceBundle(StrictModel):
     operations: list[dict[str, Any]] = Field(default_factory=list)
     transactions: list[TransactionEvidence] | None = None
     verifications: list[VerificationEvidence] = Field(default_factory=list)
-    reconciliation: dict[str, Any] | None = None
+    reconciliation: ReconciliationEvidence | None = None
     eas_uid: str | None = None
     coverage: dict[str, Any] = Field(default_factory=dict)
     fixture_labels: list[str] = Field(default_factory=list)

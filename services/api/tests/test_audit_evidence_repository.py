@@ -264,6 +264,8 @@ def _fixture(*, status: str, with_transaction: bool) -> tuple[dict[str, Any], uu
                 "plans": [
                     {
                         "id": plan_id,
+                        "attestation_id": uuid.uuid4(),
+                        "status": "Completed",
                         "planner_source": "DETERMINISTIC",
                         "plan_hash": plan_hash,
                     }

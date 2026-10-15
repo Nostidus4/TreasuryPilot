@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import jsonschema
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -28,6 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 API_ROOT = Path(__file__).parents[1]
 CHAIN_ID = 11155111
+SCHEMA_PATH = API_ROOT / "src/treasurypilot_api/audit/evidence-bundle.v1.schema.json"
 
 
 class _FixtureReceiptVerifier:
@@ -68,6 +70,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         paid_request_id, blocked_request_id = uuid.uuid4(), uuid.uuid4()
         operation_id, plan_id = uuid.uuid4(), uuid.uuid4()
         blocked_plan_id, attestation_id = uuid.uuid4(), uuid.uuid4()
+        multi_request_id = uuid.uuid4()
         plan_step_id, reconciliation_id = uuid.uuid4(), uuid.uuid4()
         now = datetime.now(UTC)
         issue_date = date.today()
@@ -148,6 +151,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
             for request_id, invoice_no, status, onchain_id in (
                 (paid_request_id, "INV-PAID", "Paid", onchain_request_id),
                 (blocked_request_id, "INV-BLOCKED", "NeedsReview", None),
+                (multi_request_id, "INV-MULTI", "NeedsReview", None),
             ):
                 await connection.execute(
                     text(
@@ -270,15 +274,23 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                     "version": bytes.fromhex("01" * 32),
                 },
             )
-            for pid, req, source, plan_status, att in (
-                (plan_id, paid_request_id, "DETERMINISTIC", "Completed", attestation_id),
-                (blocked_plan_id, blocked_request_id, None, "Blocked", None),
+            multi_plan_ids = [uuid.uuid4() for _ in range(3)]
+            for pid, req, source, plan_status, att, age in (
+                (plan_id, paid_request_id, "DETERMINISTIC", "Completed", attestation_id, 0),
+                # A later empty Draft must not hide the attested plan.
+                (uuid.uuid4(), paid_request_id, None, "Draft", None, 5),
+                (blocked_plan_id, blocked_request_id, None, "Blocked", None, 0),
+                # Expired -> Superseded (decided, has validations) -> empty Draft: only one
+                # plan per request may be open, so the decided one is Superseded.
+                (multi_plan_ids[0], multi_request_id, None, "Expired", None, 0),
+                (multi_plan_ids[1], multi_request_id, None, "Superseded", None, 1),
+                (multi_plan_ids[2], multi_request_id, None, "Draft", None, 2),
             ):
                 await connection.execute(
                     text(
                         "INSERT INTO plans (id, org_id, treasury_id, request_id, planner_source, "
-                        "plan_hash, status, attestation_id) VALUES (:id, :org, :treasury, :req, "
-                        ":source, :hash, :status, :att)"
+                        "plan_hash, status, attestation_id, created_at) VALUES (:id, :org, "
+                        ":treasury, :req, :source, :hash, :status, :att, :created)"
                     ),
                     {
                         "id": pid,
@@ -289,6 +301,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                         "hash": plan_hash if att else None,
                         "status": plan_status,
                         "att": att,
+                        "created": now + timedelta(hours=age),
                     },
                 )
             await connection.execute(
@@ -301,6 +314,19 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                 {
                     "id": uuid.uuid4(),
                     "plan_id": blocked_plan_id,
+                    "version": bytes.fromhex("01" * 32),
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO validations (id, plan_id, stage, decision, reason_codes, "
+                    "warnings, checks, policy_version, snapshot_block) VALUES (:id, :plan_id, "
+                    "'PLAN', 'BLOCK', ARRAY['POLICY_BLOCK']::text[], ARRAY[]::text[], "
+                    "'[]'::jsonb, :version, 122)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "plan_id": multi_plan_ids[1],
                     "version": bytes.fromhex("01" * 32),
                 },
             )
@@ -329,6 +355,15 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                 ),
                 {"id": uuid.uuid4(), "op": operation_id},
             )
+            # A later UNKNOWN must not displace the definitive PASSED verdict.
+            await connection.execute(
+                text(
+                    "INSERT INTO verifications (id, operation_id, block_number, expected, "
+                    "observed, diffs, result, at) VALUES (:id, :op, 124, '{}'::jsonb, "
+                    "'{}'::jsonb, '[]'::jsonb, 'UNKNOWN', :at)"
+                ),
+                {"id": uuid.uuid4(), "op": operation_id, "at": now + timedelta(hours=1)},
+            )
             await connection.execute(
                 text(
                     "INSERT INTO reconciliations (id, org_id, treasury_id, request_id, status) "
@@ -341,15 +376,43 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                     "req": paid_request_id,
                 },
             )
+            for classification, to_address, asset, amount in (
+                (
+                    "EXTERNAL_EXPENSE",
+                    "decode(repeat('22', 20), 'hex')",
+                    "decode(repeat('11', 20), 'hex')",
+                    250000,
+                ),
+                ("FEE", "NULL", "NULL", 10),
+            ):
+                await connection.execute(
+                    text(
+                        "INSERT INTO reconciliation_lines (id, reconciliation_id, classification, "
+                        "operation_id, transaction_id, tx_hash, from_address, to_address, "
+                        f"asset_address, amount, block_number) SELECT :id, :rec, :class, "
+                        f"operation_id, id, tx_hash, from_address, {to_address}, {asset}, "
+                        f":amount, block_number FROM transactions"
+                    ),
+                    {
+                        "id": uuid.uuid4(),
+                        "rec": reconciliation_id,
+                        "class": classification,
+                        "amount": amount,
+                    },
+                )
+            # Zero-line reconciliation whose free-text note carries PII.
             await connection.execute(
                 text(
-                    "INSERT INTO reconciliation_lines (id, reconciliation_id, classification, "
-                    "operation_id, transaction_id, tx_hash, from_address, to_address, "
-                    "asset_address, amount, block_number) SELECT :id, :rec, 'EXTERNAL_EXPENSE', "
-                    "operation_id, id, tx_hash, from_address, decode(repeat('22', 20), 'hex'), "
-                    "decode(repeat('11', 20), 'hex'), 250000, block_number FROM transactions"
+                    "INSERT INTO reconciliations (id, org_id, treasury_id, request_id, status, "
+                    "note) VALUES (:id, :org, :treasury, :req, 'Pending', "
+                    "'call note-private@example.test')"
                 ),
-                {"id": uuid.uuid4(), "rec": reconciliation_id},
+                {
+                    "id": uuid.uuid4(),
+                    "org": organization_id,
+                    "treasury": treasury_id,
+                    "req": multi_request_id,
+                },
             )
 
         repository = SqlAlchemyEvidenceRepository(
@@ -373,10 +436,29 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         assert "TEST_ASSET" in paid.fixture_labels
         assert paid.plan is not None
         assert paid.plan.planner_source == "DETERMINISTIC"
-        assert [step["seq"] for step in paid.plan.steps] == [0]
+        assert [step.seq for step in paid.plan.steps] == [0]
         assert paid.reconciliation is not None
-        assert paid.reconciliation["status"] == "Matched"
+        assert paid.reconciliation.status == "Matched"
+        assert [line.classification for line in paid.reconciliation.lines] == [
+            "EXTERNAL_EXPENSE",
+            "FEE",
+        ]
+        assert paid.plan.status == "Completed" and paid.plan.plan_id == plan_id
         assert paid.verifications[0].details["independentVerifier"] == "PASSED"
+        again = await repository.export_request(
+            organization_id=organization_id, request_id=paid_request_id
+        )
+        # generated_at is part of the seal, so compare the content that must be stable.
+        assert again.reconciliation == paid.reconciliation
+        multi = await repository.export_request(
+            organization_id=organization_id, request_id=multi_request_id
+        )
+        assert multi.plan is not None and multi.plan.status == "Superseded"
+        assert multi.plan.plan_id == multi_plan_ids[1]
+        assert multi.reconciliation is not None and multi.reconciliation.lines == []
+        assert "note-private@example.test" not in json.dumps(
+            multi.model_dump(mode="json", by_alias=True)
+        )
         assert blocked.transactions is None
         assert blocked.plan is not None and blocked.plan.steps == []
         assert [v.decision for v in blocked.validations] == ["BLOCK"]
@@ -385,7 +467,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         # Acceptance: every tx hash in the bundle (and in reconciliation) is a real
         # confirmed `transactions` row with a block.
         bundle_hashes = {tx.tx_hash for tx in paid.transactions}
-        bundle_hashes |= {line["tx_hash"] for line in paid.reconciliation["lines"]}
+        bundle_hashes |= {line.tx_hash for line in paid.reconciliation.lines}
         async with engine.connect() as connection:
             rows = (
                 (
@@ -417,6 +499,11 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         with pytest.raises(EvidenceBundleInvalid):
             await unresolved.export_request(
                 organization_id=organization_id, request_id=paid_request_id
+            )
+        schema = json.loads((SCHEMA_PATH).read_text())
+        for bundle in (paid, blocked, multi):
+            jsonschema.validate(
+                bundle.model_dump(mode="json", by_alias=True, exclude_none=True), schema
             )
         return paid.model_dump(mode="json", by_alias=True, exclude_none=True)
     finally:

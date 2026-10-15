@@ -19,7 +19,7 @@
     "operations": {"type": "array", "items": {"type": "object", "propertyNames": {"pattern": "^(?!(email|Email|EMAIL|phone|Phone|PHONE|telephone|Telephone|contact|Contact|CONTACT|contactName|ContactName|contact_name|Contact_name|contactEmail|ContactEmail|contact_email|Contact_email|rawSignature|RawSignature|raw_signature|signature|Signature|signature_bytes|Signature_bytes|sig|Sig)$).+$"}}},
     "transactions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/transaction"}},
     "verifications": {"type": "array", "items": {"$ref": "#/$defs/verification"}},
-    "reconciliation": {"type": "object"},
+    "reconciliation": {"$ref": "#/$defs/reconciliation"},
     "easUid": {"type": "string"},
     "coverage": {"type": "object"},
     "fixtureLabels": {"type": "array", "items": {"type": "string"}},
@@ -59,15 +59,48 @@
         "ackNote": {"type": ["string", "null"]}
       }
     },
+    "planStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["seq", "stepId", "action", "chainId", "fromAddress", "toAddress", "assetAddress", "amount"],
+      "properties": {
+        "seq": {"type": "integer", "minimum": 0}, "stepId": {"type": "string"}, "action": {"type": "integer"},
+        "chainId": {"type": "integer", "minimum": 1}, "fromAddress": {"type": "string"},
+        "toAddress": {"type": "string"}, "assetAddress": {"type": "string"},
+        "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}
+      }
+    },
     "plan": {
       "type": "object", "additionalProperties": false,
       "required": ["plannerSource", "steps"],
-      "properties": {"plannerSource": {"type": "string"}, "planHash": {"type": ["string", "null"]}, "steps": {"type": "array", "items": {"type": "object", "propertyNames": {"pattern": "^(?!(email|Email|EMAIL|phone|Phone|PHONE|telephone|Telephone|contact|Contact|CONTACT|contactName|ContactName|contact_name|Contact_name|contactEmail|ContactEmail|contact_email|Contact_email|rawSignature|RawSignature|raw_signature|signature|Signature|signature_bytes|Signature_bytes|sig|Sig)$).+$"}}}}
+      "properties": {
+        "planId": {"type": ["string", "null"], "format": "uuid"}, "status": {"type": ["string", "null"]},
+        "plannerSource": {"type": "string"}, "planHash": {"type": ["string", "null"]},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/planStep"}}
+      }
+    },
+    "reconciliationLine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["classification", "txHash", "amount"],
+      "properties": {
+        "classification": {"type": "string"}, "txHash": {"type": "string", "pattern": "^0x[0-9a-f]{64}$"},
+        "assetAddress": {"type": ["string", "null"]}, "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "blockNumber": {"type": ["integer", "null"], "minimum": 0}, "day": {"type": ["string", "null"], "format": "date"}
+      }
+    },
+    "reconciliation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "version", "lines"],
+      "properties": {
+        "status": {"type": "string"}, "version": {"type": "integer"}, "matchedBy": {"type": ["string", "null"]},
+        "matchedAt": {"type": ["string", "null"], "format": "date-time"},
+        "finalizedAt": {"type": ["string", "null"], "format": "date-time"},
+        "lines": {"type": "array", "items": {"$ref": "#/$defs/reconciliationLine"}}
+      }
     },
     "validation": {
       "type": "object", "additionalProperties": false,
       "required": ["stage", "decision", "reasonCodes", "checks"],
-      "properties": {"id": {"type": ["string", "null"], "format": "uuid"}, "stage": {"type": "string"}, "decision": {"type": "string"}, "reasonCodes": {"type": "array", "items": {"type": "string"}}, "checks": {"type": "array", "items": {"type": "object", "propertyNames": {"pattern": "^(?!(email|Email|EMAIL|phone|Phone|PHONE|telephone|Telephone|contact|Contact|CONTACT|contactName|ContactName|contact_name|Contact_name|contactEmail|ContactEmail|contact_email|Contact_email|rawSignature|RawSignature|raw_signature|signature|Signature|signature_bytes|Signature_bytes|sig|Sig)$).+$"}}}}
+      "properties": {"id": {"type": ["string", "null"], "format": "uuid"}, "planId": {"type": ["string", "null"], "format": "uuid"}, "stage": {"type": "string"}, "decision": {"type": "string"}, "reasonCodes": {"type": "array", "items": {"type": "string"}}, "checks": {"type": "array", "items": {"type": "object", "propertyNames": {"pattern": "^(?!(email|Email|EMAIL|phone|Phone|PHONE|telephone|Telephone|contact|Contact|CONTACT|contactName|ContactName|contact_name|Contact_name|contactEmail|ContactEmail|contact_email|Contact_email|rawSignature|RawSignature|raw_signature|signature|Signature|signature_bytes|Signature_bytes|sig|Sig)$).+$"}}}}
     },
     "aiCall": {
       "type": "object", "additionalProperties": false,

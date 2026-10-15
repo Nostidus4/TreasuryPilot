@@ -93,6 +93,7 @@ _plans = Table(
     Column("planner_source", String(16)),
     Column("plan_hash", LargeBinary),
     Column("status", String(24)),
+    Column("attestation_id", PGUUID(as_uuid=True)),
     Column("created_at", DateTime(timezone=True)),
 )
 _plan_steps = Table(
@@ -492,10 +493,6 @@ class SqlAlchemyEvidenceRepository:
                 ).mappings()
             )
             attested_plan_id = attestation_row["plan_id"] if attestation_row is not None else None
-            plan_row = next(
-                (row for row in plan_rows if row["id"] == attested_plan_id),
-                plan_rows[-1] if plan_rows else None,
-            )
             plan_ids = {row["id"] for row in plan_rows}
             if attested_plan_id is not None:
                 plan_ids.add(attested_plan_id)
@@ -511,6 +508,24 @@ class SqlAlchemyEvidenceRepository:
                 )
                 if plan_ids
                 else []
+            )
+            # Attested plan wins (by attestation link or status); else the newest plan that
+            # was actually decided, so an empty later Draft cannot hide a Blocked plan.
+            validated_plan_ids = {row["plan_id"] for row in validation_rows}
+            plan_row = next(
+                (
+                    row
+                    for row in reversed(plan_rows)
+                    if row["id"] == attested_plan_id or row["attestation_id"] is not None
+                ),
+                None,
+            ) or next(
+                (
+                    row
+                    for row in reversed(plan_rows)
+                    if row["planner_source"] is not None or row["id"] in validated_plan_ids
+                ),
+                plan_rows[-1] if plan_rows else None,
             )
             step_rows = (
                 list(
@@ -532,7 +547,12 @@ class SqlAlchemyEvidenceRepository:
                         await session.execute(
                             select(_verifications)
                             .where(_verifications.c.operation_id.in_(operation_ids))
-                            .order_by(_verifications.c.at, _verifications.c.id)
+                            # Last row wins: definitive verdicts sort after UNKNOWN.
+                            .order_by(
+                                _verifications.c.result != "UNKNOWN",
+                                _verifications.c.at,
+                                _verifications.c.id,
+                            )
                         )
                     ).mappings()
                     if operation_ids
@@ -563,6 +583,8 @@ class SqlAlchemyEvidenceRepository:
                             .order_by(
                                 _reconciliation_lines.c.block_number,
                                 _reconciliation_lines.c.tx_hash,
+                                _reconciliation_lines.c.classification,
+                                _reconciliation_lines.c.amount,
                             )
                         )
                     ).mappings()
@@ -598,6 +620,7 @@ class SqlAlchemyEvidenceRepository:
                 "validations": [
                     {
                         "id": row["id"],
+                        "plan_id": row["plan_id"],
                         "stage": row["stage"],
                         "decision": row["decision"],
                         "reason_codes": row["reason_codes"],
@@ -669,6 +692,8 @@ class SqlAlchemyEvidenceRepository:
 
             if plan_row is not None:
                 source["plan"] = {
+                    "plan_id": plan_row["id"],
+                    "status": plan_row["status"],
                     "planner_source": plan_row["planner_source"] or "UNKNOWN",
                     "plan_hash": _hex(plan_row["plan_hash"]),
                     "steps": [
@@ -686,6 +711,9 @@ class SqlAlchemyEvidenceRepository:
                     ],
                 }
             if reconciliation_row is not None:
+                exported_hashes = {tx["tx_hash"] for tx in source.get("transactions", [])}
+                if any(_hex(row["tx_hash"]) not in exported_hashes for row in reconciliation_lines):
+                    raise EvidenceBundleInvalid("reconciliation line tx hash is not in the bundle")
                 source["eas_uid"] = reconciliation_row["eas_uid"]
                 source["reconciliation"] = {
                     "status": reconciliation_row["status"],
