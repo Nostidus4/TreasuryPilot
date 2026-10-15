@@ -38,11 +38,13 @@ PAYMENT_APPROVAL_TYPE = [
     {"name": "deadline", "type": "uint64"},
     {"name": "termsHash", "type": "bytes32"},
     {"name": "expiry", "type": "uint64"},
+    {"name": "isFiat", "type": "bool"},
 ]
 PLAN_ATTESTATION_TYPE = [
     {"name": "planHash", "type": "bytes32"},
     {"name": "requestId", "type": "bytes32"},
     {"name": "stepIds", "type": "bytes32[]"},
+    {"name": "stepAmounts", "type": "uint256[]"},
     {"name": "policyVersion", "type": "bytes32"},
     {"name": "executor", "type": "address"},
     {"name": "validUntil", "type": "uint64"},
@@ -87,7 +89,7 @@ def _typed_data(
 def payment_approval_typed_data(
     message: Mapping[str, Any], *, chain_id: int, verifying_contract: str
 ) -> dict[str, Any]:
-    """The 13-field PaymentApproval; ``verifying_contract`` is the module clone, never the factory."""
+    """The 14-field PaymentApproval; ``verifying_contract`` is the module clone, never the factory."""
     return _typed_data(
         "PaymentApproval",
         PAYMENT_APPROVAL_TYPE,

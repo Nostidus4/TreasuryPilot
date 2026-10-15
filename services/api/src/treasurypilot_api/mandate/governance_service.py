@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import uuid
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
-from eth_abi import encode
+from eth_abi import decode, encode
 from eth_hash.auto import keccak
 from eth_utils import to_checksum_address
 from sqlalchemy import func, select, text
@@ -18,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.compliance.kyb import KybRequired, KybService
 from treasurypilot_api.identity.models import WalletLink
+from treasurypilot_api.mandate.activation import build_mandate_calls
+from treasurypilot_api.mandate.configuration import build_bundle_preview
 from treasurypilot_api.mandate.governance import (
     GovernanceCall,
     SafeTransaction,
@@ -35,6 +40,9 @@ from treasurypilot_api.mandate.models import (
     GovernanceTx,
     GovernanceTxPurpose,
     GovernanceTxStatus,
+    MandateStatusEvent,
+    MandateVersion,
+    MandateVersionStatus,
 )
 from treasurypilot_api.treasury.config import (
     PlatformConfiguration,
@@ -61,6 +69,17 @@ _EXECUTION_EVENTS = {
     "0x" + keccak(b"ExecutionSuccess(bytes32,uint256)").hex(): GovernanceTxStatus.EXECUTED,
     "0x" + keccak(b"ExecutionFailure(bytes32,uint256)").hex(): GovernanceTxStatus.FAILED,
 }
+_ASSET_POLICY_SET_TOPIC = (
+    "0x" + keccak(b"AssetPolicySet(address,bool,uint128,uint128,uint128,uint128)").hex()
+)
+
+
+class _ActivationBlocked(Exception):
+    """Mandate read-back can never succeed; the version must move to Discrepancy."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
 
 
 class GovernanceFailure(Exception):
@@ -75,8 +94,103 @@ def _address(raw: bytes) -> str:
     return to_checksum_address("0x" + raw.hex())
 
 
+def _address_bytes(value: Any) -> bytes:
+    if isinstance(value, bytes):
+        raw = value
+    elif isinstance(value, str):
+        raw = bytes.fromhex(value.removeprefix("0x"))
+    else:
+        raise ValueError("chain response address is malformed")
+    if len(raw) != 20:
+        raise ValueError("chain response address is malformed")
+    return raw
+
+
 def _hex(raw: bytes) -> str:
     return "0x" + raw.hex()
+
+
+def _config_int(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("boolean is not a base-unit amount")
+    return int(value)
+
+
+def _config_timestamp(value: Any) -> int:
+    if not isinstance(value, str):
+        raise ValueError("mandate timestamp is missing")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("mandate timestamp must include a timezone")
+    return int(parsed.astimezone(UTC).timestamp())
+
+
+def _config_limit(config: Mapping[str, Any], name: str) -> tuple[int, int]:
+    raw = config.get(name)
+    if raw is None:
+        return (0, 0)
+    if not isinstance(raw, Mapping):
+        raise ValueError(f"{name} limits are malformed")
+    return (_config_int(raw.get("perRequest", 0)), _config_int(raw.get("daily", 0)))
+
+
+def _projection_hash(value: Mapping[str, Any]) -> bytes:
+    def json_default(item: object) -> str:
+        if isinstance(item, bytes):
+            return _hex(item)
+        raise TypeError(f"unsupported projection value: {type(item).__name__}")
+
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=json_default,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).digest()
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return _hex(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _asset_policy_events(
+    receipt: Mapping[str, Any], module_address: bytes
+) -> dict[str, tuple[bool, int, int, int, int]]:
+    """Return the final AssetPolicySet values emitted by this execution receipt."""
+    policies: dict[str, tuple[bool, int, int, int, int]] = {}
+    for log in receipt.get("logs", []):
+        if not isinstance(log, Mapping):
+            continue
+        topics = log.get("topics", [])
+        if (
+            str(log.get("address", "")).lower() != _address(module_address).lower()
+            or not isinstance(topics, list)
+            or len(topics) < 2
+            or str(topics[0]).lower() != _ASSET_POLICY_SET_TOPIC
+        ):
+            continue
+        try:
+            asset = "0x" + str(topics[1]).removeprefix("0x")[-40:].lower()
+            raw = bytes.fromhex(str(log.get("data", "")).removeprefix("0x"))
+            enabled, pay_request, pay_daily, refill_request, refill_daily = decode(
+                ["bool", "uint128", "uint128", "uint128", "uint128"], raw
+            )
+        except Exception:
+            continue
+        policies[asset] = (
+            bool(enabled),
+            int(pay_request),
+            int(pay_daily),
+            int(refill_request),
+            int(refill_daily),
+        )
+    return policies
 
 
 class GovernanceService:
@@ -168,6 +282,29 @@ class GovernanceService:
             chain_id, "eth_call", [{"to": _address(safe), "data": _NONCE_SELECTOR}, "latest"]
         )
         return int(str(result), 16)
+
+    async def read_used_today(self, chain_id: int, module_address: bytes, asset: bytes) -> int:
+        """Read the authoritative on-chain PAY counter for one asset (action 1)."""
+        if len(module_address) != 20 or len(asset) != 20:
+            raise GovernanceFailure("MODULE_NOT_READY", 409, "Treasury module is unavailable.")
+        selector = keccak(b"usedToday(uint8,address)")[:4]
+        result = await self._read(
+            chain_id,
+            "eth_call",
+            [
+                {
+                    "to": _address(module_address),
+                    "data": _hex(selector + encode(["uint8", "address"], [1, _address(asset)])),
+                },
+                "latest",
+            ],
+        )
+        try:
+            return int(str(result), 16)
+        except (TypeError, ValueError):
+            raise GovernanceFailure(
+                "CHAIN_READ_INVALID", 503, "PAY usage could not be read from the treasury module."
+            ) from None
 
     async def _rpc_first(
         self,
@@ -653,6 +790,516 @@ class GovernanceService:
                 if current is not None and current.module_address == module:
                     current.status = TreasuryStatus.READY
 
+    async def _module_view(
+        self,
+        chain_id: int,
+        module: bytes,
+        signature: str,
+        return_types: list[str],
+        argument_types: list[str] | None = None,
+        arguments: list[Any] | None = None,
+        *,
+        block_tag: str = "latest",
+    ) -> tuple[Any, ...]:
+        data = keccak(signature.encode("ascii"))[:4]
+        if argument_types:
+            data += encode(argument_types, arguments or [])
+        result = await self._read(
+            chain_id,
+            "eth_call",
+            [{"to": _address(module), "data": _hex(data)}, block_tag],
+        )
+        try:
+            raw = bytes.fromhex(str(result).removeprefix("0x"))
+            return decode(return_types, raw)
+        except Exception as exc:
+            raise RpcUnavailable(f"malformed {signature} response from chain {chain_id}") from exc
+
+    async def _record_mandate_activation(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID
+    ) -> None:
+        try:
+            await self._read_back_mandate_activation(organization_id=organization_id, tx_id=tx_id)
+        except (_ActivationBlocked, KeyError, ValueError, TypeError) as exc:
+            # A permanent failure must surface to Owners instead of leaving PendingActivation forever.
+            code = exc.code if isinstance(exc, _ActivationBlocked) else "MANDATE_CONFIG_INVALID"
+            logger.warning("mandate activation blocked", extra={"tx_id": str(tx_id), "code": code})
+            await self._mark_activation_discrepancy(
+                organization_id=organization_id, tx_id=tx_id, code=code, detail=str(exc)
+            )
+
+    async def _mark_activation_discrepancy(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID, code: str, detail: str
+    ) -> None:
+        from treasurypilot_api.recovery.review_queue import create_for_mandate_discrepancy
+
+        async with self._sessions() as session, session.begin():
+            tx = await self._row(session, organization_id, tx_id)
+            current = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.id == tx.entity_id,
+                    MandateVersion.org_id == organization_id,
+                    MandateVersion.status == MandateVersionStatus.PENDING_ACTIVATION,
+                )
+                .with_for_update()
+            )
+            if current is None:
+                return
+            current.status = MandateVersionStatus.DISCREPANCY
+            await create_for_mandate_discrepancy(
+                session,
+                mandate_version=current,
+                primary_code=code,
+                actual={"detail": detail},
+            )
+            session.add(
+                MandateStatusEvent(
+                    org_id=organization_id,
+                    mandate_version_id=current.id,
+                    from_status=MandateVersionStatus.PENDING_ACTIVATION,
+                    to_status=MandateVersionStatus.DISCREPANCY,
+                    tx_hash=tx.exec_tx_hash,
+                )
+            )
+
+    async def _read_back_mandate_activation(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID
+    ) -> None:
+        async with self._sessions() as session:
+            tx = await self._row(session, organization_id, tx_id)
+            if (
+                tx.purpose != GovernanceTxPurpose.MANDATE
+                or tx.status != GovernanceTxStatus.EXECUTED
+                or tx.entity_type != "mandate_version"
+                or tx.entity_id is None
+                or tx.exec_tx_hash is None
+            ):
+                return
+            mandate = await session.scalar(
+                select(MandateVersion).where(
+                    MandateVersion.id == tx.entity_id,
+                    MandateVersion.org_id == organization_id,
+                    MandateVersion.treasury_id == tx.treasury_id,
+                )
+            )
+            treasury = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == tx.treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            asset = (
+                await session.scalar(select(Asset).where(Asset.id == treasury.asset_id))
+                if treasury is not None
+                else None
+            )
+            wallets = list(
+                await session.scalars(
+                    select(TreasuryWallet).where(
+                        TreasuryWallet.treasury_id == tx.treasury_id,
+                        TreasuryWallet.org_id == organization_id,
+                    )
+                )
+            )
+            versions = list(
+                await session.scalars(
+                    select(MandateVersion).where(
+                        MandateVersion.treasury_id == tx.treasury_id,
+                        MandateVersion.org_id == organization_id,
+                    )
+                )
+            )
+            chain_assets = list(
+                await session.scalars(select(Asset).where(Asset.chain_id == tx.chain_id))
+            )
+        if mandate is None or mandate.status != MandateVersionStatus.PENDING_ACTIVATION:
+            return
+        if (
+            treasury is None
+            or treasury.module_address is None
+            or asset is None
+            or asset.address is None
+        ):
+            raise _ActivationBlocked(
+                "MANDATE_METADATA_MISSING", "Treasury module or asset metadata is missing."
+            )
+
+        chain = next(
+            (
+                item
+                for item in self._configuration.chains
+                if item.chain_id == tx.chain_id and item.enabled
+            ),
+            None,
+        )
+        if chain is None:
+            raise _ActivationBlocked("MANDATE_CHAIN_DISABLED", "The treasury chain is not enabled.")
+        receipt = await self._read(
+            tx.chain_id, "eth_getTransactionReceipt", [_hex(tx.exec_tx_hash)]
+        )
+        if not isinstance(receipt, dict) or receipt.get("blockNumber") is None:
+            return
+        try:
+            receipt_block = int(str(receipt["blockNumber"]), 16)
+            latest_block = int(str(await self._read(tx.chain_id, "eth_blockNumber", [])), 16)
+        except (TypeError, ValueError) as exc:
+            raise RpcUnavailable(f"malformed confirmation response for {tx.id}") from exc
+        if latest_block - receipt_block + 1 < chain.confirmations:
+            return
+        receipt_block_tag = hex(receipt_block)
+
+        async def confirmed_view(
+            module: bytes,
+            signature: str,
+            return_types: list[str],
+            argument_types: list[str] | None = None,
+            arguments: list[Any] | None = None,
+        ) -> tuple[Any, ...]:
+            return await self._module_view(
+                tx.chain_id,
+                module,
+                signature,
+                return_types,
+                argument_types,
+                arguments,
+                block_tag=receipt_block_tag,
+            )
+
+        policy_events = _asset_policy_events(receipt, treasury.module_address)
+
+        config = dict(mandate.config)
+        previous = next(
+            (dict(item.config) for item in versions if item.status == MandateVersionStatus.ACTIVE),
+            {},
+        )
+        limits = config.get("limits")
+        if not isinstance(limits, Mapping):
+            raise _ActivationBlocked("MANDATE_CONFIG_INVALID", "Mandate limits are missing.")
+        pay = _config_limit(limits, "PAY")
+        refill = _config_limit(limits, "REFILL")
+        supply = _config_limit(config, "supplyLimits")
+        expected_mandate = (
+            _config_timestamp(config.get("validFrom")),
+            _config_timestamp(config.get("expiresAt")),
+            _config_int(config.get("payeeCoolingSeconds", 0)),
+            bytes.fromhex(str(config["executor"]).removeprefix("0x")),
+            bytes.fromhex(str(config.get("guardian") or ("0x" + "00" * 20)).removeprefix("0x")),
+            pay,
+            refill,
+            _config_int(config.get("approvalMaxAge", 0)),
+            supply,
+        )
+        actual_mandate = await confirmed_view(
+            treasury.module_address,
+            "mandate()",
+            [
+                "(uint64,uint64,uint64,uint32,address,address,(uint128,uint128),"
+                "(uint128,uint128),uint32,(uint128,uint128))"
+            ],
+        )
+        observed_version = int(actual_mandate[0][0])
+        actual_mandate_config = tuple(actual_mandate[0][1:])
+
+        current_approvers = {
+            str(value).lower() for value in config.get("approvers", []) if isinstance(value, str)
+        }
+        previous_approvers = {
+            str(value).lower() for value in previous.get("approvers", []) if isinstance(value, str)
+        }
+        approver_addresses = sorted(current_approvers | previous_approvers)
+        expected_approvers = [[value, value in current_approvers] for value in approver_addresses]
+        actual_approvers: list[list[Any]] = []
+        for value in approver_addresses:
+            approved = await confirmed_view(
+                treasury.module_address,
+                "isApprover(address)",
+                ["bool"],
+                ["address"],
+                [value],
+            )
+            actual_approvers.append([value, bool(approved[0])])
+
+        expected_buffers: list[list[Any]] = []
+        actual_buffers: list[list[Any]] = []
+        configured_buffers = {
+            str(item.get("wallet", "")).lower(): item
+            for item in config.get("buffers", [])
+            if isinstance(item, Mapping)
+        }
+        for wallet in sorted(wallets, key=lambda item: item.safe_address):
+            wallet_address = _address(wallet.safe_address).lower()
+            configured = configured_buffers.get(wallet_address, {})
+            expected_pair = [
+                wallet_address,
+                _config_int(configured.get("minimum", 0)),
+                _config_int(configured.get("target", 0)),
+            ]
+            buffer_value = await confirmed_view(
+                treasury.module_address,
+                "bufferOf(address)",
+                ["uint256"],
+                ["address"],
+                [wallet_address],
+            )
+            target_value = await confirmed_view(
+                treasury.module_address,
+                "targetOf(address)",
+                ["uint256"],
+                ["address"],
+                [wallet_address],
+            )
+            expected_buffers.append(expected_pair)
+            actual_buffers.append([wallet_address, int(buffer_value[0]), int(target_value[0])])
+
+        metadata = {
+            str(item.id): "0x" + item.address.hex()
+            for item in chain_assets
+            if item.address is not None and not item.is_native
+        }
+        old_policies = {
+            str(item.get("assetId")): item
+            for item in previous.get("assetPolicies", [])
+            if isinstance(item, Mapping)
+        }
+        new_policies = {
+            str(item.get("assetId")): item
+            for item in config.get("assetPolicies", [])
+            if isinstance(item, Mapping)
+        }
+        configure_selector = (
+            "0x"
+            + keccak(
+                b"configureMandate((uint64,uint64,uint32,address,address,(uint128,uint128),"
+                b"(uint128,uint128),uint32,(uint128,uint128)))"
+            )[:4].hex()
+        )
+        mandate_reconfigured = any(
+            isinstance(call, Mapping)
+            and str(call.get("data", "")).lower().startswith(configure_selector)
+            for call in tx.calls
+        )
+        expected_assets: list[list[Any]] = []
+        actual_assets: list[list[Any]] = []
+        for asset_id in sorted(old_policies.keys() | new_policies.keys()):
+            address = metadata.get(asset_id)
+            if address is None:
+                raise _ActivationBlocked(
+                    "MANDATE_METADATA_MISSING", f"Asset {asset_id} has no on-chain address."
+                )
+            policy = new_policies.get(asset_id, {})
+            enabled = asset_id in new_policies
+            policy_limits = policy.get("limits", {}) if enabled else {}
+            expected_pay_limits = _config_limit(policy_limits, "PAY")
+            expected_refill_limits = _config_limit(policy_limits, "REFILL")
+            policy_was_changed = mandate_reconfigured or old_policies.get(
+                asset_id
+            ) != new_policies.get(asset_id)
+            observed_policy = policy_events.get(address.lower())
+            if not policy_was_changed:
+                # This unchanged policy was verified when its previous mandate became Active.
+                observed_policy = (
+                    enabled,
+                    *expected_pay_limits,
+                    *expected_refill_limits,
+                )
+            is_allowed = await confirmed_view(
+                treasury.module_address,
+                "isAssetAllowed(address)",
+                ["bool"],
+                ["address"],
+                [address],
+            )
+            expected_asset_buffers = {
+                str(item.get("wallet", "")).lower(): item
+                for item in policy.get("buffers", [])
+                if isinstance(item, Mapping)
+            }
+            for wallet in sorted(wallets, key=lambda item: item.safe_address):
+                wallet_address = _address(wallet.safe_address).lower()
+                expected_buffer = expected_asset_buffers.get(wallet_address, {})
+                expected_pair = [
+                    wallet_address,
+                    _config_int(expected_buffer.get("minimum", 0)),
+                    _config_int(expected_buffer.get("target", 0)),
+                ]
+                buffer_value = await confirmed_view(
+                    treasury.module_address,
+                    "bufferOf(address,address)",
+                    ["uint256"],
+                    ["address", "address"],
+                    [address, wallet_address],
+                )
+                target_value = await confirmed_view(
+                    treasury.module_address,
+                    "targetOf(address,address)",
+                    ["uint256"],
+                    ["address", "address"],
+                    [address, wallet_address],
+                )
+                expected_assets.append(
+                    [
+                        address.lower(),
+                        enabled,
+                        enabled,
+                        *expected_pay_limits,
+                        *expected_refill_limits,
+                        *expected_pair,
+                    ]
+                )
+                actual_assets.append(
+                    [
+                        address.lower(),
+                        bool(is_allowed[0]),
+                        observed_policy[0] if observed_policy is not None else None,
+                        *(observed_policy[1:] if observed_policy is not None else [None] * 4),
+                        wallet_address,
+                        int(buffer_value[0]),
+                        int(target_value[0]),
+                    ]
+                )
+
+        supply_was_configured = any(
+            isinstance(item.config.get("supplyLimits"), Mapping)
+            and (
+                _config_int(item.config["supplyLimits"].get("perRequest", 0)) > 0
+                or _config_int(item.config["supplyLimits"].get("daily", 0)) > 0
+            )
+            for item in versions
+        )
+        actual_pool = await confirmed_view(treasury.module_address, "aavePool()", ["address"])
+        actual_a_token = await confirmed_view(treasury.module_address, "aToken()", ["address"])
+        actual_pool_address = _address_bytes(actual_pool[0])
+        actual_a_token_address = _address_bytes(actual_a_token[0])
+        expected_pool = bytes(20)
+        expected_a_token = bytes(20)
+        aave_identity_matches = True
+        if supply_was_configured or actual_pool_address != bytes(20):
+            manifest = next(
+                (item for item in self._configuration.manifests if item.chain_id == tx.chain_id),
+                None,
+            )
+            pool = next(
+                (
+                    item
+                    for item in (manifest.deployments if manifest else ())
+                    if item.name == "AAVE_POOL"
+                ),
+                None,
+            )
+            if pool is None:
+                aave_identity_matches = False
+            else:
+                pool = await self._verified_deployment(tx.chain_id, "AAVE_POOL", pool.version)
+                reserve = await confirmed_view(
+                    pool.address_bytes,
+                    "getReserveData(address)",
+                    [
+                        "(uint256,uint128,uint128,uint128,uint128,uint128,uint40,uint16,address,"
+                        "address,address,address,uint128,uint128,uint128)"
+                    ],
+                    ["address"],
+                    [_address(asset.address)],
+                )
+                expected_pool = pool.address_bytes
+                expected_a_token = _address_bytes(reserve[0][8])
+                token_underlying = await confirmed_view(
+                    expected_a_token,
+                    "UNDERLYING_ASSET_ADDRESS()",
+                    ["address"],
+                )
+                token_pool = await confirmed_view(expected_a_token, "POOL()", ["address"])
+                aave_identity_matches = (
+                    actual_pool_address == expected_pool
+                    and actual_a_token_address == expected_a_token
+                    and _address_bytes(token_underlying[0]) == asset.address
+                    and _address_bytes(token_pool[0]) == expected_pool
+                )
+        elif actual_a_token_address != bytes(20):
+            aave_identity_matches = False
+
+        expected_projection: dict[str, Any] = {
+            "mandate": _json_safe(expected_mandate),
+            "approvers": expected_approvers,
+            "buffers": expected_buffers,
+            "assetPolicies": expected_assets,
+            "aavePool": _hex(expected_pool),
+            "aToken": _hex(expected_a_token),
+            "aaveIdentity": True,
+        }
+        actual_projection: dict[str, Any] = {
+            "mandate": _json_safe(actual_mandate_config),
+            "approvers": actual_approvers,
+            "buffers": actual_buffers,
+            "assetPolicies": actual_assets,
+            "aavePool": _hex(actual_pool_address),
+            "aToken": _hex(actual_a_token_address),
+            "aaveIdentity": aave_identity_matches,
+        }
+        matches = _projection_hash(expected_projection) == _projection_hash(actual_projection)
+        event_hash = tx.exec_tx_hash
+        async with self._sessions() as session, session.begin():
+            current = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.id == mandate.id,
+                    MandateVersion.org_id == organization_id,
+                    MandateVersion.status == MandateVersionStatus.PENDING_ACTIVATION,
+                )
+                .with_for_update()
+            )
+            if current is None:
+                return
+            current.onchain_version = observed_version if observed_version else None
+            if matches:
+                previous_active = list(
+                    await session.scalars(
+                        select(MandateVersion)
+                        .where(
+                            MandateVersion.treasury_id == tx.treasury_id,
+                            MandateVersion.org_id == organization_id,
+                            MandateVersion.status == MandateVersionStatus.ACTIVE,
+                        )
+                        .with_for_update()
+                    )
+                )
+                for item in previous_active:
+                    item.status = MandateVersionStatus.SUPERSEDED
+                    session.add(
+                        MandateStatusEvent(
+                            org_id=organization_id,
+                            mandate_version_id=item.id,
+                            from_status=MandateVersionStatus.ACTIVE,
+                            to_status=MandateVersionStatus.SUPERSEDED,
+                            tx_hash=event_hash,
+                        )
+                    )
+                current.status = MandateVersionStatus.ACTIVE
+                current.activated_at = datetime.now(UTC)
+                to_status = MandateVersionStatus.ACTIVE
+            else:
+                current.status = MandateVersionStatus.DISCREPANCY
+                to_status = MandateVersionStatus.DISCREPANCY
+                from treasurypilot_api.recovery.review_queue import (
+                    create_for_mandate_discrepancy,
+                )
+
+                await create_for_mandate_discrepancy(
+                    session,
+                    mandate_version=current,
+                    primary_code="MANDATE_READBACK_MISMATCH",
+                    expected=expected_projection,
+                    actual=actual_projection,
+                )
+            session.add(
+                MandateStatusEvent(
+                    org_id=organization_id,
+                    mandate_version_id=current.id,
+                    from_status=MandateVersionStatus.PENDING_ACTIVATION,
+                    to_status=to_status,
+                    tx_hash=event_hash,
+                )
+            )
+
     async def create(
         self,
         *,
@@ -662,6 +1309,8 @@ class GovernanceService:
         purpose: GovernanceTxPurpose,
         calls: list[GovernanceCall],
         safe_address: bytes | None = None,
+        entity_type: str | None = None,
+        entity_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         if safe_address is None:
             treasury, wallet = await self._source(organization_id, treasury_id)
@@ -768,6 +1417,8 @@ class GovernanceService:
                 chain_id=treasury.chain_id,
                 safe_address=wallet.safe_address,
                 purpose=purpose,
+                entity_type=entity_type,
+                entity_id=entity_id,
                 calls=[item.as_json() for item in calls],
                 to=tx.to,
                 value=tx.value,
@@ -793,6 +1444,128 @@ class GovernanceService:
             governance_tx_id=row.id,
             refresh_chain=False,
         )
+
+    async def create_mandate_activation(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        treasury_id: uuid.UUID,
+        mandate_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Create a Safe transaction for a Draft and move it into PendingActivation."""
+        async with self._sessions() as session, session.begin():
+            mandate = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.id == mandate_id,
+                    MandateVersion.treasury_id == treasury_id,
+                    MandateVersion.org_id == organization_id,
+                )
+                .with_for_update()
+            )
+            if mandate is None:
+                raise GovernanceFailure("MANDATE_NOT_FOUND", 404, "Mandate version not found.")
+            if mandate.status != MandateVersionStatus.DRAFT:
+                raise GovernanceFailure(
+                    "MANDATE_NOT_DRAFT",
+                    409,
+                    "Only a Draft mandate can be submitted for activation.",
+                )
+            treasury = await session.scalar(
+                select(Treasury).where(
+                    Treasury.id == treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            if treasury is None:
+                raise GovernanceFailure("TREASURY_NOT_FOUND", 404, "Treasury not found.")
+            if treasury.module_address is None:
+                raise GovernanceFailure(
+                    "MODULE_NOT_READY",
+                    409,
+                    "Deploy and enable the treasury module before activation.",
+                )
+            active = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.treasury_id == treasury_id,
+                    MandateVersion.org_id == organization_id,
+                    MandateVersion.status == MandateVersionStatus.ACTIVE,
+                )
+                .order_by(MandateVersion.version.desc())
+                .limit(1)
+            )
+            chain_assets = await session.scalars(
+                select(Asset).where(Asset.chain_id == treasury.chain_id)
+            )
+            asset_metadata: dict[str, dict[str, object]] = {
+                str(asset.id): {"address": _address(asset.address)}
+                for asset in chain_assets
+                if asset.address is not None and not asset.is_native
+            }
+            previous = dict(active.config) if active is not None else None
+            current = dict(mandate.config)
+            preview = build_bundle_preview(previous, current, asset_metadata=asset_metadata)
+            preview_calls = preview["calls"]
+            if not isinstance(preview_calls, list) or not all(
+                isinstance(item, dict) for item in preview_calls
+            ):
+                raise GovernanceFailure(
+                    "MANDATE_CALL_INVALID", 422, "Mandate call preview is malformed."
+                )
+            if not preview_calls:
+                raise GovernanceFailure(
+                    "NO_CHANGES", 409, "This mandate version has no on-chain changes to activate."
+                )
+            try:
+                encoded_calls = build_mandate_calls(
+                    treasury.module_address,
+                    preview_calls,
+                )
+            except ValueError as exc:
+                raise GovernanceFailure("MANDATE_CALL_INVALID", 422, str(exc)) from None
+            supply_limits = _config_limit(current, "supplyLimits")
+            if any(supply_limits):
+                configured_pool = await self._module_view(
+                    treasury.chain_id, treasury.module_address, "aavePool()", ["address"]
+                )
+                if _address_bytes(configured_pool[0]) == bytes(20):
+                    raise GovernanceFailure(
+                        "AAVE_POOL_REQUIRED",
+                        409,
+                        "SUPPLY requires a treasury module initialized with an Aave pool.",
+                    )
+            # The row lock is held across create so concurrent submissions cannot both create a Safe tx.
+            created = await self.create(
+                organization_id=organization_id,
+                treasury_id=treasury_id,
+                user_id=user_id,
+                purpose=GovernanceTxPurpose.MANDATE,
+                calls=encoded_calls,
+                entity_type="mandate_version",
+                entity_id=mandate.id,
+            )
+            tx_id = uuid.UUID(str(created["id"]))
+            mandate.status = MandateVersionStatus.PENDING_ACTIVATION
+            mandate.governance_tx_id = tx_id
+            session.add(
+                MandateStatusEvent(
+                    org_id=organization_id,
+                    mandate_version_id=mandate.id,
+                    from_status=MandateVersionStatus.DRAFT,
+                    to_status=MandateVersionStatus.PENDING_ACTIVATION,
+                    by_user_id=user_id,
+                )
+            )
+            version = mandate.version
+        return created | {
+            "mandate": {
+                "id": str(mandate_id),
+                "version": version,
+                "status": MandateVersionStatus.PENDING_ACTIVATION.value,
+            },
+            "bundlePreview": preview,
+        }
 
     async def _row(
         self,
@@ -924,6 +1697,11 @@ class GovernanceService:
         elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MODULE_SETUP:
             # Retry the module reconciliation if a transient RPC failure skipped it earlier.
             await self._record_module_event(organization_id=organization_id, tx_id=governance_tx_id)
+        elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MANDATE:
+            # Retry read-back after confirmations if the first receipt check was too early.
+            await self._record_mandate_activation(
+                organization_id=organization_id, tx_id=governance_tx_id
+            )
         if next_status is not None:
             async with self._sessions() as session, session.begin():
                 row = await self._row(session, organization_id, governance_tx_id)
@@ -941,9 +1719,14 @@ class GovernanceService:
                     if next_status == GovernanceTxStatus.READY:
                         row.exec_tx_hash = None
             if next_status == GovernanceTxStatus.EXECUTED:
-                await self._record_module_event(
-                    organization_id=organization_id, tx_id=governance_tx_id
-                )
+                if purpose == GovernanceTxPurpose.MODULE_SETUP:
+                    await self._record_module_event(
+                        organization_id=organization_id, tx_id=governance_tx_id
+                    )
+                elif purpose == GovernanceTxPurpose.MANDATE:
+                    await self._record_mandate_activation(
+                        organization_id=organization_id, tx_id=governance_tx_id
+                    )
 
     async def sign(
         self,

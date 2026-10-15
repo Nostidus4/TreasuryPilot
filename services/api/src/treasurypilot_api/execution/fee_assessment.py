@@ -11,11 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from treasurypilot_api.execution.models import GasLedger
 from treasurypilot_api.invoices.models import PaymentRequest
-from treasurypilot_api.mandate.models import TreasuryFeePolicy
+from treasurypilot_api.mandate.models import FeeAcceptance, TreasuryFeePolicy
 from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.recovery.review_queue import ReviewType, create_for_outcome
 from treasurypilot_api.treasury.models import Treasury
-from treasurypilot_core.domain.fee_policy import FeeAssessment, FeeDecision, assess_fee
+from treasurypilot_core.domain.fee_policy import (
+    FeeAssessment,
+    FeeDecision,
+    assess_fee,
+    enforce_fee_cap,
+)
 
 
 class FeePolicyUnavailable(ValueError):
@@ -35,14 +40,22 @@ async def assess_plan_fee(
     plan_id: uuid.UUID,
     estimated_fee_wei: int,
     last_safe_execution_at: datetime,
+    in_flight_estimate_wei: int = 0,
     now: datetime | None = None,
 ) -> PlanFeeAssessment:
     """Evaluate actual gas estimate against accepted thresholds and create last-day review.
 
     Callers hold the treasury row lock while computing the plan (M10's single-flight
     guarantee); this function re-locks it defensively before reading policy and spend.
-    The daily counter is the gas ledger total attributed to the mined block's UTC day.
+    The daily counter is the gas ledger total attributed to the mined block's UTC day plus
+    ``in_flight_estimate_wei``: the caller's estimates for other plans already attested but not
+    yet in the ledger, so concurrent plans cannot all pass against the same remaining budget.
+    A plan with an Owner-accepted fee cap proceeds while its estimate fits that cap (raising
+    ``ValueError("FEE_CAP_EXCEEDED")`` otherwise, so it must be replanned) and never re-opens a
+    review item.
     """
+    # shortcut: in-flight spend is caller-supplied until plans/operations record their estimate;
+    # then sum it here instead.
 
     current = now or datetime.now(UTC)
     current = current.replace(tzinfo=UTC) if current.tzinfo is None else current.astimezone(UTC)
@@ -63,6 +76,19 @@ async def assess_plan_fee(
     )
     if policy is None:
         raise FeePolicyUnavailable("Owner has not accepted a fee policy")
+    cap = await session.scalar(
+        select(FeeAcceptance.accepted_cap_wei).where(
+            FeeAcceptance.plan_id == plan_id, FeeAcceptance.org_id == request.org_id
+        )
+    )
+    if cap is not None:
+        enforce_fee_cap(actual_fee_wei=estimated_fee_wei, accepted_cap_wei=int(cap))
+        return PlanFeeAssessment(
+            FeeAssessment(
+                FeeDecision.PROCEED, "FEE_ACCEPTED", estimated_fee_wei, 0, policy.daily_budget_wei
+            ),
+            None,
+        )
     spent = await session.scalar(
         select(func.coalesce(func.sum(GasLedger.fee_wei), 0)).where(
             GasLedger.treasury_id == request.treasury_id,
@@ -73,7 +99,7 @@ async def assess_plan_fee(
     result = assess_fee(
         estimated_fee_wei=estimated_fee_wei,
         per_plan_threshold_wei=policy.per_plan_threshold_wei,
-        spent_today_wei=int(spent or 0),
+        spent_today_wei=int(spent or 0) + in_flight_estimate_wei,
         daily_budget_wei=policy.daily_budget_wei,
         last_safe_execution_at=last_safe_execution_at,
         now=current,

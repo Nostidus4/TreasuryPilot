@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from typing import Protocol, cast
@@ -21,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from treasurypilot_api.agent.models import Extraction
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
@@ -75,6 +77,16 @@ class ObjectStorage(Protocol):
 
 class ExtractionQueue(Protocol):
     def enqueue(self, request_id: uuid.UUID, document_id: uuid.UUID, job_id: str) -> str: ...
+
+
+@dataclass(frozen=True)
+class InitialRequestFlag:
+    """A deterministic risk flag to commit atomically with a newly uploaded draft."""
+
+    code: str
+    severity: RequestFlagSeverity
+    evidence: dict[str, object]
+    source: RequestFlagSource
 
 
 class MinioObjectStorage:
@@ -209,7 +221,7 @@ def _inspect_document(body: bytes, filename: str) -> tuple[str, int]:
     raise ValueError("File content or extension is not a supported PDF, PNG or JPEG")
 
 
-async def _read_document(file: UploadFile) -> tuple[bytes, str, int]:
+async def read_document(file: UploadFile) -> tuple[bytes, str, int]:
     data = bytearray()
     while chunk := await file.read(64 * 1024):
         data.extend(chunk)
@@ -305,25 +317,19 @@ async def _previous_upload(
     return previous, document
 
 
-@router.post("/upload", status_code=202, openapi_extra={"x-organization-scoped": True})
-async def upload_invoice_document(
-    organization_id: uuid.UUID,
+async def create_invoice_document_draft(
+    *,
     request: Request,
-    treasury_id: uuid.UUID = Form(),  # noqa: B008
-    file: UploadFile = File(),  # noqa: B008
-    idempotency_key: str | None = Header(
-        default=None, alias="Idempotency-Key", min_length=1, max_length=255
-    ),
-    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    document: tuple[bytes, str, int],
+    idempotency_key: str,
+    uploaded_by: uuid.UUID | None,
+    initial_flags: tuple[InitialRequestFlag, ...] = (),
+    bind_treasury: bool = True,
 ) -> UploadResponse:
-    if idempotency_key is None:
-        raise _fail(
-            400,
-            "IDEMPOTENCY_KEY_REQUIRED",
-            "Idempotency key required",
-            "Provide an Idempotency-Key for this upload.",
-        )
-    body, mime, pages = await _read_document(file)
+    """Store an already-inspected document and enqueue the existing extraction path."""
+    body, mime, pages = document
     digest = hashlib.sha256(body).digest()
     storage = _storage(request)
     queue = _queue(request)
@@ -331,9 +337,7 @@ async def upload_invoice_document(
 
     async with factory() as session:
         treasury = await session.scalar(
-            select(Treasury).where(
-                Treasury.id == treasury_id, Treasury.org_id == member.organization_id
-            )
+            select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
         )
         if treasury is None:
             raise _fail(404, "TREASURY_NOT_FOUND", "Treasury not found", "Treasury not found.")
@@ -348,11 +352,12 @@ async def upload_invoice_document(
                 "The treasury payment asset is unavailable.",
             )
 
-    payload_hash = hashlib.sha256(treasury_id.bytes + digest).digest()
-    replay = await _previous_upload(factory, member.organization_id, idempotency_key, payload_hash)
+    # Email retries must replay even if the org re-pointed its intake treasury meanwhile.
+    payload_hash = hashlib.sha256((treasury_id.bytes if bind_treasury else b"") + digest).digest()
+    replay = await _previous_upload(factory, organization_id, idempotency_key, payload_hash)
     if replay is None:
         request_id, document_id = uuid7(), uuid7()
-        object_key = f"organizations/{member.organization_id}/requests/{request_id}/{document_id}"
+        object_key = f"organizations/{organization_id}/requests/{request_id}/{document_id}"
         try:
             await run_in_threadpool(storage.put, object_key, body, mime)
         except Exception as error:
@@ -365,7 +370,7 @@ async def upload_invoice_document(
 
         row = PaymentRequest(
             id=request_id,
-            org_id=member.organization_id,
+            org_id=organization_id,
             treasury_id=treasury.id,
             chain_id=treasury.chain_id,
             vendor_id=None,
@@ -379,9 +384,9 @@ async def upload_invoice_document(
             extraction_status=ExtractionStatus.EXTRACTING.value,
             status=RequestStatus.DRAFT.value,
             current_revision=1,
-            created_by=member.user_id,
-            last_edited_by=member.user_id,
-            onchain_request_id=_request_id(member.organization_id, request_id),
+            created_by=uploaded_by,
+            last_edited_by=uploaded_by,
+            onchain_request_id=_request_id(organization_id, request_id),
             idempotency_key=idempotency_key,
             idempotency_payload_hash=payload_hash,
         )
@@ -389,7 +394,7 @@ async def upload_invoice_document(
             id=uuid7(),
             request_id=request_id,
             revision=1,
-            edited_by=member.user_id,
+            edited_by=uploaded_by,
             snapshot={
                 "treasuryId": str(treasury.id),
                 "vendorId": None,
@@ -402,7 +407,7 @@ async def upload_invoice_document(
             },
             reason="invoice document uploaded",
         )
-        document = RequestDocument(
+        document_row = RequestDocument(
             id=document_id,
             request_id=request_id,
             storage_key=object_key,
@@ -410,29 +415,43 @@ async def upload_invoice_document(
             mime=mime,
             size=len(body),
             pages=pages,
-            uploaded_by=member.user_id,
+            uploaded_by=uploaded_by,
         )
         try:
             async with factory() as write_session, write_session.begin():
-                write_session.add_all([row, revision, document])
+                write_session.add_all([row, revision, document_row])
+                # RequestFlag has a composite FK to RequestRevision. Flush these parents first;
+                # SQLAlchemy cannot infer their order without mapped ORM relationships.
+                await write_session.flush()
+                write_session.add_all(
+                    RequestFlag(
+                        id=uuid7(),
+                        request_id=request_id,
+                        revision=1,
+                        code=flag.code,
+                        severity=flag.severity.value,
+                        evidence=flag.evidence,
+                        source=flag.source.value,
+                        status=RequestFlagStatus.OPEN.value,
+                    )
+                    for flag in initial_flags
+                )
         except Exception as error:
             try:
                 await run_in_threadpool(storage.delete, object_key)
             except Exception:
-                # shortcut: an object may stay orphaned; needs a periodic reconciliation job.
+                # An object may stay orphaned; a periodic reconciliation job can remove it.
                 logger.exception("Failed to delete orphaned document %s", object_key)
             if not isinstance(error, IntegrityError):
                 raise
-            # A concurrent upload with the same key won the race: treat this one as its replay.
-            replay = await _previous_upload(
-                factory, member.organization_id, idempotency_key, payload_hash
-            )
+            # A concurrent upload with the same key won the race: treat it as a replay.
+            replay = await _previous_upload(factory, organization_id, idempotency_key, payload_hash)
             if replay is None:
                 raise
     confirmed = False
     if replay is not None:
-        previous, document = replay
-        request_id, document_id = previous.id, document.id
+        previous, document_row = replay
+        request_id, document_id = previous.id, document_row.id
         confirmed = previous.extraction_confirmed_at is not None
 
     job_id = uuid.uuid5(uuid.NAMESPACE_URL, f"treasurypilot:invoice-extract:{request_id}").hex
@@ -454,6 +473,35 @@ async def upload_invoice_document(
     )
 
 
+@router.post("/upload", status_code=202, openapi_extra={"x-organization-scoped": True})
+async def upload_invoice_document(
+    organization_id: uuid.UUID,
+    request: Request,
+    treasury_id: uuid.UUID = Form(),  # noqa: B008
+    file: UploadFile = File(),  # noqa: B008
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=255
+    ),
+    member: MemberAccess = Depends(_require_operator),  # noqa: B008
+) -> UploadResponse:
+    if idempotency_key is None:
+        raise _fail(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Idempotency key required",
+            "Provide an Idempotency-Key for this upload.",
+        )
+    body, mime, pages = await read_document(file)
+    return await create_invoice_document_draft(
+        request=request,
+        organization_id=member.organization_id,
+        treasury_id=treasury_id,
+        document=(body, mime, pages),
+        idempotency_key=idempotency_key,
+        uploaded_by=member.user_id,
+    )
+
+
 @router.post("/{request_id}/extraction/confirm", openapi_extra={"x-organization-scoped": True})
 async def confirm_extraction(
     organization_id: uuid.UUID,
@@ -466,7 +514,6 @@ async def confirm_extraction(
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     scope: tuple[uuid.UUID, bytes] | None = None
-    multi_invoice = payload.invoice_count_in_document > 1
     try:
         async with factory() as session, session.begin():
             row = await session.scalar(
@@ -485,7 +532,33 @@ async def confirm_extraction(
                     "Request not editable",
                     "Only upload drafts can be confirmed.",
                 )
-            if multi_invoice:
+            if row.extraction_status == ExtractionStatus.EXTRACTING.value:
+                raise _fail(
+                    409,
+                    "EXTRACTION_PENDING",
+                    "Extraction pending",
+                    "The document is still being extracted; confirm once it settles.",
+                )
+            document = await session.scalar(
+                select(RequestDocument)
+                .where(RequestDocument.request_id == row.id)
+                .order_by(RequestDocument.created_at.desc(), RequestDocument.id.desc())
+                .limit(1)
+            )
+            extraction = (
+                await session.scalar(
+                    select(Extraction).where(Extraction.document_id == document.id)
+                )
+                if document is not None
+                else None
+            )
+            stored = extraction.fields.get("invoice_count_in_document") if extraction else None
+            # A malformed stored count is ignored so the operator's own report still decides.
+            if isinstance(stored, int) and not isinstance(stored, bool) and stored >= 1:
+                reported_count = max(stored, payload.invoice_count_in_document)
+            else:
+                reported_count = payload.invoice_count_in_document
+            if reported_count > 1:
                 open_flag = await session.scalar(
                     select(RequestFlag.id)
                     .where(
@@ -503,7 +576,7 @@ async def confirm_extraction(
                             revision=row.current_revision,
                             code="MULTI_INVOICE_DOCUMENT",
                             severity=RequestFlagSeverity.HIGH.value,
-                            evidence={"invoiceCountInDocument": payload.invoice_count_in_document},
+                            evidence={"invoiceCountInDocument": reported_count},
                             source=RequestFlagSource.AI.value,
                             status=RequestFlagStatus.OPEN.value,
                         )
@@ -517,9 +590,6 @@ async def confirm_extraction(
                     payee_id=payload.payee_id,
                     asset_id=row.asset_id,
                     paying_wallet_id=None,
-                )
-                document = await session.scalar(
-                    select(RequestDocument).where(RequestDocument.request_id == row.id)
                 )
                 if document is None:
                     raise _fail(

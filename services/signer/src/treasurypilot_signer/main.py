@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from hmac import compare_digest
@@ -23,6 +24,8 @@ from treasurypilot_signer.models import ErrorResponse, SignRequest
 from treasurypilot_signer.rpc import JsonRpc
 from treasurypilot_signer.service import SignerFault, SigningService
 from treasurypilot_signer.store import SignerStore
+
+logger = logging.getLogger(__name__)
 
 
 class HealthResponse(BaseModel):
@@ -81,6 +84,8 @@ def create_app(
                 rpc,
                 key_store.for_treasury,
             )
+        elif signer_override is None:
+            logger.error("signer is unconfigured: DATABASE_URL and CHAIN_RPC_URL are required")
         try:
             yield
         finally:
@@ -92,8 +97,12 @@ def create_app(
     app.router.lifespan_context = lifespan
 
     @app.get("/health", response_model=HealthResponse)
-    async def health() -> HealthResponse:
-        return HealthResponse(status="ok", service="signer", version=__version__)
+    async def health(request: Request) -> JSONResponse:
+        configured = getattr(request.app.state, "signing_service", None) is not None
+        body = HealthResponse(
+            status="ok" if configured else "unconfigured", service="signer", version=__version__
+        )
+        return JSONResponse(status_code=200 if configured else 503, content=body.model_dump())
 
     @app.post("/sign-and-send", response_model=dict[str, str | int])
     async def sign_and_send(
@@ -107,12 +116,12 @@ def create_app(
                 content=ErrorResponse(code="SIGNER_NOT_CONFIGURED").model_dump(),
             )
         if x_signer_secret is None or not compare_digest(
-            x_signer_secret, settings.signer_shared_secret
+            x_signer_secret.encode("utf-8"), settings.signer_shared_secret.encode("utf-8")
         ):
             return JSONResponse(
                 status_code=401, content=ErrorResponse(code="UNAUTHORIZED").model_dump()
             )
-        signing_service: SigningService | None = request.app.state.signing_service
+        signing_service: SigningService | None = getattr(request.app.state, "signing_service", None)
         if signing_service is None:
             return JSONResponse(
                 status_code=503,

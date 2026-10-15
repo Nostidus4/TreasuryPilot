@@ -176,7 +176,8 @@ class PostgresToolBackend:
         async def read(connection: asyncpg.Connection) -> PolicyRow | None:
             mandate = await connection.fetchrow(
                 "SELECT version, config FROM mandate_versions "
-                "WHERE org_id = $1 AND treasury_id = $2 AND status = 'Active'",
+                "WHERE org_id = $1 AND treasury_id = $2 AND status = 'Active' "
+                "AND expires_at > now()",
                 org_id,
                 treasury_id,
             )

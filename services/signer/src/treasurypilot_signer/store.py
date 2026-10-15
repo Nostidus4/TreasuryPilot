@@ -18,6 +18,8 @@ class StepAlreadyUsed(Exception):
 class ReservedNonce:
     transaction_nonce: int
     replacement: bool
+    tx_hash: str | None = None
+    raw_transaction: bytes | None = None
 
 
 class SignerStore:
@@ -60,7 +62,7 @@ class SignerStore:
                 if binding is not None and bytes(binding["plan_hash"]) != plan_hash:
                     raise NonceAlreadyBound
                 existing = await connection.fetchrow(
-                    "SELECT plan_hash, payload_hash, transaction_nonce "
+                    "SELECT plan_hash, payload_hash, transaction_nonce, tx_hash, raw_transaction "
                     "FROM signer.attestation_uses WHERE nonce = $1 AND step_id = $2 FOR UPDATE",
                     attestation_nonce,
                     step_id,
@@ -71,7 +73,13 @@ class SignerStore:
                         or bytes(existing["payload_hash"]) != payload_hash
                     ):
                         raise StepAlreadyUsed
-                    return ReservedNonce(int(existing["transaction_nonce"]), True)
+                    raw = existing["raw_transaction"]
+                    return ReservedNonce(
+                        int(existing["transaction_nonce"]),
+                        True,
+                        existing["tx_hash"],
+                        bytes(raw) if raw is not None else None,
+                    )
 
                 transaction_nonce = max(pending_nonce, int(lane["next_nonce"]))
                 await connection.execute(
@@ -93,3 +101,41 @@ class SignerStore:
                     datetime.now(UTC),
                 )
                 return ReservedNonce(transaction_nonce, False)
+
+    async def record_signed(
+        self, *, attestation_nonce: int, step_id: bytes, tx_hash: str, raw_transaction: bytes
+    ) -> None:
+        # Persisted before broadcast so a replay returns the original hash and rebroadcasts
+        # the same bytes instead of signing a second transaction with new fees.
+        await self._pool.execute(
+            "UPDATE signer.attestation_uses SET tx_hash = $3, raw_transaction = $4 "
+            "WHERE nonce = $1 AND step_id = $2",
+            attestation_nonce,
+            step_id,
+            tx_hash,
+            raw_transaction,
+        )
+
+    async def release(
+        self, *, attestation_nonce: int, step_id: bytes, executor: bytes, transaction_nonce: int
+    ) -> None:
+        """Undo a reservation whose transaction the node definitively rejected."""
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    "SELECT 1 FROM signer.nonces WHERE address = $1 FOR UPDATE", executor
+                )
+                await connection.execute(
+                    "DELETE FROM signer.attestation_uses WHERE nonce = $1 AND step_id = $2",
+                    attestation_nonce,
+                    step_id,
+                )
+                # shortcut: a gap remains if a later nonce was already reserved, upgrade to a
+                # per-lane free list if concurrent failures become common.
+                await connection.execute(
+                    "UPDATE signer.nonces SET next_nonce = $2, updated_at = $3 "
+                    "WHERE address = $1 AND next_nonce = $2 + 1",
+                    executor,
+                    transaction_nonce,
+                    datetime.now(UTC),
+                )

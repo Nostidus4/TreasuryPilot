@@ -1,0 +1,116 @@
+{
+  "valid_pay": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "cap_exact": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "cap_plus_one": {
+    "validator_decision": "NEEDS_APPROVAL",
+    "primary": "OVER_PER_REQUEST_LIMIT",
+    "contract_success": false,
+    "contract_error": "OverPerRequestLimit()"
+  },
+  "daily_limit": {
+    "validator_decision": "BLOCK",
+    "primary": "OVER_DAILY_LIMIT",
+    "contract_success": false,
+    "contract_error": "OverDailyLimit()"
+  },
+  "unknown_payee": {
+    "validator_decision": "BLOCK",
+    "primary": "PAYEE_UNKNOWN",
+    "contract_success": false,
+    "contract_error": "PayeeUnknown()"
+  },
+  "cooling_before_edge": {
+    "validator_decision": "BLOCK",
+    "primary": "PAYEE_COOLING",
+    "contract_success": false,
+    "contract_error": "PayeeCooling()"
+  },
+  "cooling_at_edge": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "mandate_paused": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_PAUSED",
+    "contract_success": false,
+    "contract_error": "MandatePaused()"
+  },
+  "approval_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "APPROVAL_EXPIRED",
+    "contract_success": false,
+    "contract_error": "ApprovalExpired()"
+  },
+  "refill_bound": {
+    "validator_decision": "BLOCK",
+    "primary": "REFILL_EXCEEDS_NEED",
+    "contract_success": false,
+    "contract_error": "RefillExceedsNeed()"
+  },
+  "valid_exception": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "invalid_exception": {
+    "validator_decision": "BLOCK",
+    "primary": "EXCEPTION_INVALID",
+    "contract_success": false,
+    "contract_error": "ExceptionInvalid()"
+  },
+  "duplicate_blocked": {
+    "validator_decision": "BLOCK",
+    "primary": "DUPLICATE_FINGERPRINT",
+    "contract_success": false,
+    "contract_error": "DuplicateFingerprint()"
+  },
+  "duplicate_allowed": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "mandate_revoked": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_REVOKED",
+    "contract_success": false,
+    "contract_error": "MandateRevoked()"
+  },
+  "mandate_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_EXPIRED",
+    "contract_success": false,
+    "contract_error": "MandateExpired()"
+  },
+  "mandate_not_started": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_NOT_ACTIVE",
+    "contract_success": false,
+    "contract_error": "NotActive()"
+  },
+  "mandate_revoked_and_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_REVOKED",
+    "contract_success": false,
+    "contract_error": "MandateRevoked()"
+  },
+  "mandate_paused_and_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_PAUSED",
+    "contract_success": false,
+    "contract_error": "MandatePaused()"
+  }
+}

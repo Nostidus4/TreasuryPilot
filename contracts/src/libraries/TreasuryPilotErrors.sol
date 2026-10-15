@@ -22,6 +22,8 @@ library TreasuryPilotErrors {
     error NotOwnerOrApprover();
     error NotExecutor();
     error NotActive();
+    error MandatePaused();
+    error MandateRevoked();
     error MandateExpired();
     error ApprovalInvalid();
     error ApprovalExpired();

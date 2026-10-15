@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.invoices.models import PaymentRequest
+from treasurypilot_api.mandate.models import MandateVersion
 from treasurypilot_api.recovery.models import ReviewItem
 
 
@@ -157,7 +159,7 @@ async def create_for_outcome(
         )
         .on_conflict_do_nothing(
             index_elements=[ReviewItem.request_id, ReviewItem.type],
-            index_where=ReviewItem.status == "Open",
+            index_where=text("status = 'Open'"),
         )
     )
     # Re-point an existing open item at a newer request version so it stays actionable.
@@ -167,7 +169,17 @@ async def create_for_outcome(
             ReviewItem.request_id == request.id,
             ReviewItem.type == kind.value,
             ReviewItem.status == "Open",
-            ReviewItem.request_version < request.version,
+            or_(
+                ReviewItem.request_version < request.version,
+                # An open fee review tracks the latest estimate of the same request version.
+                and_(
+                    ReviewItem.type == ReviewType.FEE_APPROVAL.value,
+                    or_(
+                        ReviewItem.plan_id.is_distinct_from(plan_id),
+                        ReviewItem.fee_estimate_wei.is_distinct_from(fee_estimate_wei),
+                    ),
+                ),
+            ),
         )
         .values(
             request_version=request.version,
@@ -189,6 +201,66 @@ async def create_for_outcome(
     )
     if item is None:
         raise RuntimeError("open review item missing after idempotent insert")
+    return item
+
+
+async def create_for_mandate_discrepancy(
+    session: AsyncSession,
+    *,
+    mandate_version: MandateVersion,
+    primary_code: str,
+    reason_codes: tuple[str, ...] = (),
+    expected: Mapping[str, object] | None = None,
+    actual: Mapping[str, object] | None = None,
+    now: datetime | None = None,
+) -> ReviewItem:
+    """Idempotently open an Owner/Finance discrepancy item for a mandate read-back mismatch."""
+    kind = ReviewType.DISCREPANCY
+    route = route_for(kind, primary_code)
+    if route.sla is None:
+        raise ValueError("DISCREPANCY route requires an SLA")
+    current = now or datetime.now(UTC)
+    statement = (
+        insert(ReviewItem)
+        .values(
+            id=uuid7(),
+            org_id=mandate_version.org_id,
+            treasury_id=mandate_version.treasury_id,
+            request_id=None,
+            request_version=None,
+            mandate_version_id=mandate_version.id,
+            plan_id=None,
+            type=kind.value,
+            primary_code=primary_code,
+            reason_codes=list(reason_codes),
+            completed_steps=[],
+            assigned_roles=[role.value for role in route.roles],
+            status=ReviewStatus.OPEN.value,
+            sla_due_at=current + route.sla,
+            evidence_resolved=False,
+            evidence={
+                **({"expected": dict(expected)} if expected is not None else {}),
+                **({"actual": dict(actual)} if actual is not None else {}),
+            },
+        )
+        .on_conflict_do_nothing(
+            index_elements=[ReviewItem.mandate_version_id, ReviewItem.type],
+            index_where=(ReviewItem.status == ReviewStatus.OPEN.value)
+            & ReviewItem.mandate_version_id.is_not(None),
+        )
+    )
+    await session.execute(statement)
+    item = await session.scalar(
+        select(ReviewItem)
+        .where(
+            ReviewItem.mandate_version_id == mandate_version.id,
+            ReviewItem.type == kind.value,
+            ReviewItem.status == ReviewStatus.OPEN.value,
+        )
+        .execution_options(populate_existing=True)
+    )
+    if item is None:
+        raise RuntimeError("open mandate discrepancy item missing after idempotent insert")
     return item
 
 

@@ -32,7 +32,7 @@ from treasurypilot_core.eip712 import (
 )
 from treasurypilot_signer.config import Settings
 from treasurypilot_signer.main import create_app
-from treasurypilot_signer.models import SignRequest
+from treasurypilot_signer.models import Fees, SignRequest
 from treasurypilot_signer.rpc import JsonRpc, RpcFailure
 from treasurypilot_signer.service import SignerFault, SigningService
 from treasurypilot_signer.store import NonceAlreadyBound, ReservedNonce, StepAlreadyUsed
@@ -47,7 +47,7 @@ SAFE_T = "0x" + "66" * 20
 PAYEE = "0x" + "77" * 20
 LIQUIDITY_ID = "0x" + "55" * 32
 REQUEST_ID = "0x" + "00" * 32
-ATTESTATION_ABI = "(bytes32,bytes32,bytes32[],bytes32,address,uint64,uint256,bytes32)"
+ATTESTATION_ABI = "(bytes32,bytes32,bytes32[],uint256[],bytes32,address,uint64,uint256,bytes32)"
 MANDATE_OUTPUTS = [
     "uint64",
     "uint64",
@@ -90,6 +90,7 @@ def _make_request(
         "planHash": "0x" + plan_hash(REQUEST_ID, MODULE, chain_id, [step]).hex(),
         "requestId": REQUEST_ID,
         "stepIds": [step["stepId"]],
+        "stepAmounts": [amount],
         "policyVersion": "0x" + "66" * 32,
         "executor": executor.address,
         "validUntil": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
@@ -102,6 +103,7 @@ def _make_request(
         bytes.fromhex(message["planHash"][2:]),
         bytes.fromhex(REQUEST_ID[2:]),
         [bytes.fromhex(step["stepId"][2:])],
+        [amount],
         bytes.fromhex(message["policyVersion"][2:]),
         executor.address,
         message["validUntil"],
@@ -166,6 +168,7 @@ def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
         "planHash": "0x" + plan_hash(payment_request_id, MODULE, 31337, [step]).hex(),
         "requestId": payment_request_id,
         "stepIds": [step["stepId"]],
+        "stepAmounts": [amount],
         "policyVersion": "0x" + "66" * 32,
         "executor": EXECUTOR.address,
         "validUntil": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
@@ -188,11 +191,13 @@ def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
         int((datetime.now(UTC) + timedelta(minutes=10)).timestamp()),
         bytes.fromhex(("0x" + "bb" * 32)[2:]),
         int((datetime.now(UTC) + timedelta(minutes=10)).timestamp()),
+        False,
     )
     attestation = (
         bytes.fromhex(message["planHash"][2:]),
         bytes.fromhex(payment_request_id[2:]),
         [bytes.fromhex(step["stepId"][2:])],
+        [amount],
         bytes.fromhex(message["policyVersion"][2:]),
         EXECUTOR.address,
         message["validUntil"],
@@ -201,13 +206,16 @@ def _make_payment_request(*, refill: bool, nonce: int = 88) -> SignRequest:
     )
     args: list[Any] = [approval, b"approver-signature", bytes.fromhex(step["stepId"][2:])]
     types = [
-        "(bytes32,bytes32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64,bytes32,uint64)",
+        "(bytes32,bytes32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64,bytes32,uint64,bool)",
         "bytes",
         "bytes32",
     ]
     if refill:
         args.extend([step_to, amount])
         types.extend(["address", "uint256"])
+    else:
+        args.append(amount)
+        types.append("uint256")
     args.extend([attestation, signature])
     types.extend([ATTESTATION_ABI, "bytes"])
     function_name = "refill" if refill else "pay"
@@ -231,7 +239,8 @@ class FakeStore:
     def __init__(self) -> None:
         self.bindings: dict[int, bytes] = {}
         self.uses: dict[tuple[int, bytes], tuple[bytes, bytes, int]] = {}
-        self.sends_started = 0
+        self.signed: dict[tuple[int, bytes], tuple[str, bytes]] = {}
+        self.released = 0
 
     async def reserve(
         self,
@@ -253,19 +262,43 @@ class FakeStore:
         if prior is not None:
             if prior[:2] != (plan_hash, payload_hash):
                 raise StepAlreadyUsed
-            return ReservedNonce(prior[2], True)
+            tx_hash, raw = self.signed.get(key, (None, None))
+            return ReservedNonce(prior[2], True, tx_hash, raw)
         self.uses[key] = (plan_hash, payload_hash, pending_nonce)
         return ReservedNonce(pending_nonce, False)
 
+    async def record_signed(
+        self, *, attestation_nonce: int, step_id: bytes, tx_hash: str, raw_transaction: bytes
+    ) -> None:
+        self.signed[(attestation_nonce, step_id)] = (tx_hash, raw_transaction)
+
+    async def release(
+        self, *, attestation_nonce: int, step_id: bytes, executor: bytes, transaction_nonce: int
+    ) -> None:
+        del executor, transaction_nonce
+        self.uses.pop((attestation_nonce, step_id))
+        self.signed.pop((attestation_nonce, step_id), None)
+        self.released += 1
+
 
 class FakeRpc:
-    def __init__(self, *, revert_simulation: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        revert_simulation: bool = False,
+        send_failure: RpcFailure | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> None:
         self.revert_simulation = revert_simulation
+        self.send_failure = send_failure
+        self.overrides = overrides or {}
         self.sent: list[str] = []
         self.calls: list[str] = []
 
     async def call(self, method: str, params: Sequence[Any]) -> Any:
         self.calls.append(method)
+        if method in self.overrides:
+            return self.overrides[method]
         if method == "eth_chainId":
             return "0x7a69"
         if method == "eth_getCode":
@@ -302,6 +335,8 @@ class FakeRpc:
             return "0x0"
         if method == "eth_sendRawTransaction":
             self.sent.append(params[0])
+            if self.send_failure is not None:
+                raise self.send_failure
             return "0x" + f"{len(self.sent):064x}"
         raise AssertionError(method)
 
@@ -311,10 +346,13 @@ def _service(
     rpc: FakeRpc | None = None,
     store: FakeStore | None = None,
     executor: LocalAccount = EXECUTOR,
+    settings: Settings | None = None,
 ) -> tuple[SigningService, FakeRpc, FakeStore]:
     node = rpc or FakeRpc()
     database = store or FakeStore()
-    settings = Settings(allowed_chain_ids=[31337], trusted_policy_signers=[POLICY.address])
+    settings = settings or Settings(
+        allowed_chain_ids=[31337], trusted_policy_signers=[POLICY.address]
+    )
     return SigningService(settings, database, node, lambda _treasury: executor), node, database
 
 
@@ -431,6 +469,82 @@ def test_same_step_payload_can_be_resigned_with_its_original_transaction_nonce()
 
     assert first.nonce == replacement.nonce == 0
     assert len(node.sent) == 2
+
+
+def test_replay_returns_the_original_hash_and_rebroadcasts_the_stored_transaction() -> None:
+    service, node, _ = _service()
+    first = asyncio.run(service.sign_and_send(_make_request()))
+    changed_fees = _make_request().model_copy(
+        update={"fees": Fees(maxFeePerGas=2, maxPriorityFeePerGas=1, feeCapWei=10**18)}
+    )
+    replay = asyncio.run(service.sign_and_send(changed_fees))
+
+    assert replay.tx_hash == first.tx_hash
+    assert node.sent[0] == node.sent[1]
+
+
+def test_rejected_broadcast_releases_the_reservation_for_a_retry() -> None:
+    rejected = RpcFailure("eth_sendRawTransaction", rejected=True)
+    node = FakeRpc(send_failure=rejected)
+    service, _, store = _service(rpc=node)
+
+    with pytest.raises(SignerFault, match="BROADCAST_FAILED"):
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert store.released == 1
+    assert store.uses == {}
+
+    node.send_failure = None
+    assert asyncio.run(service.sign_and_send(_make_request())).nonce == 0
+
+
+def test_ambiguous_broadcast_failure_keeps_the_reservation() -> None:
+    node = FakeRpc(send_failure=RpcFailure("eth_sendRawTransaction"))
+    service, _, store = _service(rpc=node)
+
+    with pytest.raises(SignerFault, match="BROADCAST_FAILED"):
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert store.released == 0
+    assert len(store.uses) == 1
+
+
+def test_signer_fee_ceiling_applies_without_a_plan_fee_cap() -> None:
+    request = _make_request()
+    request.plan.pop("feeCapWei")
+    service, node, _ = _service(
+        settings=Settings(
+            allowed_chain_ids=[31337], trusted_policy_signers=[POLICY.address], max_fee_cap_wei=1
+        )
+    )
+
+    with pytest.raises(SignerFault, match="FEE_CAP_EXCEEDED"):
+        asyncio.run(service.sign_and_send(request))
+    assert node.sent == []
+
+
+@pytest.mark.parametrize(
+    ("method", "value"),
+    [("eth_chainId", 5), ("eth_estimateGas", "nope"), ("eth_getTransactionCount", None)],
+)
+def test_malformed_rpc_results_are_an_rpc_fault(method: str, value: Any) -> None:
+    service, node, _ = _service(rpc=FakeRpc(overrides={method: value}))
+
+    with pytest.raises(SignerFault) as raised:
+        asyncio.run(service.sign_and_send(_make_request()))
+    assert raised.value.code == "CHAIN_RPC_UNAVAILABLE"
+    assert raised.value.status_code == 503
+    assert node.sent == []
+
+
+def test_non_ascii_shared_secret_is_unauthorized_not_a_server_error() -> None:
+    app = create_app(settings_override=Settings(signer_shared_secret="expected-secret"))
+    payload = _make_request().model_dump(mode="json", by_alias=True)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/sign-and-send", json=payload, headers={"X-Signer-Secret": "sécret".encode("latin-1")}
+        )
+
+    assert response.status_code == 401
 
 
 def test_non_allowlisted_chain_is_refused_before_rpc_or_broadcast() -> None:

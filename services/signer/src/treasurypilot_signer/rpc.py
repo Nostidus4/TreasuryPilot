@@ -8,10 +8,22 @@ import aiohttp
 
 
 class RpcFailure(RuntimeError):
-    def __init__(self, method: str, *, reverted: bool = False, already_known: bool = False) -> None:
+    def __init__(
+        self,
+        method: str,
+        *,
+        reverted: bool = False,
+        already_known: bool = False,
+        nonce_too_low: bool = False,
+        rejected: bool = False,
+    ) -> None:
         super().__init__(method)
         self.reverted = reverted
         self.already_known = already_known
+        self.nonce_too_low = nonce_too_low
+        # True only when the node answered with a JSON-RPC error; transport failures and
+        # timeouts are ambiguous because the node may still have accepted the transaction.
+        self.rejected = rejected
 
 
 class JsonRpc:
@@ -55,6 +67,8 @@ class JsonRpc:
                 method,
                 reverted="revert" in message,
                 already_known="already known" in message or "known transaction" in message,
+                nonce_too_low="nonce too low" in message,
+                rejected=True,
             )
         if "result" not in body:
             raise RpcFailure(method)

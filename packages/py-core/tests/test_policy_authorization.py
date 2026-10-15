@@ -12,6 +12,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from treasurypilot_core.eip712 import ERC1271_MAGIC_VALUE, payment_approval_typed_data
 from treasurypilot_core.money import BaseUnits
@@ -57,6 +58,7 @@ def _request(**update: Any) -> RequestView:
         "paying_wallet": O1,
         "payee": PAYEE,
         "amount": BaseUnits(1_500),
+        "fiat_amount_minor_units": None,
         "early_amount": BaseUnits(0),
         "early_pay_by": 0,
         "deadline": NOW + 86_400,
@@ -79,6 +81,7 @@ def _typed(request: RequestView, **update: Any) -> dict[str, Any]:
         "deadline": request.deadline,
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": NOW + 14 * 86_400,
+        "isFiat": request.fiat_amount_minor_units is not None,
     } | update
 
 
@@ -177,6 +180,7 @@ def _ctx(**update: Any) -> ValidationContext:
         "circuit_open": False,
         "screening_hit": False,
         "screening_clear": True,
+        "travel_rule_clear": True,
     }
     return ValidationContext.model_validate(fields | update)
 
@@ -194,6 +198,51 @@ def test_a_valid_plan_passes_every_check() -> None:
 
     assert all(c.passed for c in checks), _failing(checks)
     assert {"approval_signature", "payee_active", "plan_shape"} <= {c.name for c in checks}
+
+
+def test_fiat_plan_may_execute_the_fresh_quote_amount_under_the_signed_cap() -> None:
+    request = _request(fiat_amount_minor_units=12_000)
+    checks = authorization_checks(
+        _plan(pay=1_201), _ctx(request=request, approval=_approval(_typed(request)))
+    )
+
+    assert _failing(checks) == []
+
+
+def test_fiat_plan_cannot_exceed_the_signed_stablecoin_cap() -> None:
+    request = _request(fiat_amount_minor_units=12_000)
+    checks = authorization_checks(
+        _plan(pay=1_501), _ctx(request=request, approval=_approval(_typed(request)))
+    )
+
+    assert _failing(checks) == [C.PLAN_MALFORMED]
+
+
+def test_a_non_fiat_plan_must_pay_the_signed_amount_exactly() -> None:
+    checks = authorization_checks(_plan(pay=1_499), _ctx())
+
+    assert _failing(checks) == [C.PLAN_MALFORMED]
+
+
+def test_the_signed_fiat_flag_must_match_the_request() -> None:
+    fiat = _request(fiat_amount_minor_units=12_000)
+    for request, typed in (
+        (fiat, _typed(fiat, isFiat=False)),
+        (_request(), _typed(_request(), isFiat=True)),
+    ):
+        checks = authorization_checks(
+            _plan(pay=request.amount), _ctx(request=request, approval=_approval(typed))
+        )
+
+        assert C.APPROVAL_STALE in {c.code for c in checks}
+
+
+def test_a_request_view_must_state_whether_it_is_fiat() -> None:
+    fields = _request().model_dump()
+    del fields["fiat_amount_minor_units"]
+
+    with pytest.raises(ValidationError):
+        RequestView.model_validate(fields)
 
 
 def _flag(raised_at: datetime, severity: Literal["LOW", "HIGH"] = "HIGH") -> FlagView:
@@ -516,6 +565,17 @@ def test_screening_provider_error_fails_with_data_missing() -> None:
     assert _failing(authorization_checks(_plan(), _ctx(screening_clear=False))) == [C.DATA_MISSING]
 
 
+def test_missing_travel_rule_preflight_blocks_pay() -> None:
+    checks = authorization_checks(_plan(), _ctx(travel_rule_clear=False))
+
+    assert _failing(checks) == [C.DATA_MISSING]
+    assert next(check for check in checks if check.name == "travel_rule_clear").passed is False
+
+
+def test_unevaluated_travel_rule_preflight_does_not_block_pay() -> None:
+    assert _failing(authorization_checks(_plan(), _ctx(travel_rule_clear=None))) == []
+
+
 def test_screening_hit_reports_only_screening_hit() -> None:
     ctx = _ctx(screening_hit=True, screening_clear=False)
     assert _failing(authorization_checks(_plan(), ctx)) == [C.SCREENING_HIT]
@@ -571,6 +631,54 @@ def test_valid_exception_only_lifts_per_request_limit() -> None:
     result = validate_plan(_plan(), _ctx(policy_state=state))
     assert result.decision == "ALLOW", result.codes
     assert C.OVER_PER_REQUEST_LIMIT not in result.codes
+
+
+def _fiat_ctx(**state: Any) -> ValidationContext:
+    request = _request(fiat_amount_minor_units=12_000)
+    return _ctx(
+        request=request,
+        approval=_approval(_typed(request)),
+        policy_state=_policy_state(**state),
+    )
+
+
+def test_validator_allows_a_fiat_payment_below_the_signed_cap() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    result = validate_plan(_plan(pay=1_201), _fiat_ctx())
+
+    assert result.decision == "ALLOW", result.codes
+    assert C.WRONG_PAYMENT_OPTION not in result.codes
+
+
+@pytest.mark.parametrize("pay", [0, 1_501])
+def test_validator_rejects_a_fiat_payment_outside_zero_to_cap(pay: int) -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    result = validate_plan(_plan(pay=pay), _fiat_ctx())
+
+    assert result.decision == "BLOCK"
+    assert C.WRONG_PAYMENT_OPTION in result.codes
+
+
+def test_validator_rejects_a_non_fiat_payment_below_the_signed_amount() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    result = validate_plan(_plan(pay=1_499), _ctx(policy_state=_policy_state()))
+
+    assert result.decision == "BLOCK"
+    assert C.WRONG_PAYMENT_OPTION in result.codes
+
+
+def test_fiat_exception_matches_the_signed_amount_not_the_quoted_amount() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    limits = {"pay_limits": {"per_request": 1_000, "daily": 10_000}}
+    granted = validate_plan(_plan(pay=1_201), _fiat_ctx(exception=_exception(1_500), **limits))
+    quoted = validate_plan(_plan(pay=1_201), _fiat_ctx(exception=_exception(1_201), **limits))
+
+    assert granted.decision == "ALLOW", granted.codes
+    assert C.EXCEPTION_INVALID in quoted.codes
 
 
 def test_supply_cannot_reduce_payment_reserve() -> None:
@@ -641,6 +749,14 @@ def test_liquidity_plans_keep_mandate_executor_and_screening_checks() -> None:
     for action in (Action.SUPPLY, Action.WITHDRAW):
         plan = _liquidity_plan(action)
         assert _failing(authorization_checks(plan, _ctx(request=None, approval=None))) == []
+        assert (
+            _failing(
+                authorization_checks(
+                    plan, _ctx(request=None, approval=None, travel_rule_clear=False)
+                )
+            )
+            == []
+        )
         bad = {
             C.MANDATE_REVOKED: {"snapshot": _snapshot(mandate=_mandate(status="Revoked"))},
             C.MANDATE_PAUSED: {"snapshot": _snapshot(mandate=_mandate(status="Paused"))},

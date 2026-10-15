@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     chain_rpc_url: str = Field(default="", validation_alias="CHAIN_RPC_URL")
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     signer_database_url: str | None = None
+    # Signer-side ceiling on gas_limit * maxFeePerGas; the plan's feeCapWei is not covered by the
+    # attested plan hash, so it can only lower this value.
+    max_fee_cap_wei: int = Field(default=10**17, ge=0)
 
     @field_validator("executor_keystore_map", mode="before")
     @classmethod

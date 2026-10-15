@@ -3,6 +3,12 @@
 **Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/execution/` · **Code:** `services/worker/.../{trigger,planning,executor}`, `services/signer/` · **Epic:** `[EPIC] M10 · Orchestration & Execution`
 **ADRs:** ADR-004 (outbox), ADR-006 (signer), ADR-007 (Celery/Redis), ADR-016 (attestation + simulation), ADR-017 (sentinel) · **Decisions:** M10-D1 … M10-D14 (§14)
 
+### EXE-003 trigger integration contract
+
+The worker schedules a 15-minute scheduling sweep, a 60-second safety sweep, and a one-second delayed-payee activation sweep. A durable `ExecutionCycleRequested` outbox event is enqueued after API approval and indexed `Resumed`, `ExceptionGranted`, ERC-20 inflow, or payee activation events. The outbox publisher forwards those events to the core queue; task IDs include the outbox event ID. Every execution and scheduling cycle uses the shared nonblocking `treasury_advisory_xact_lock`, then checks readiness, pause state, active mandate, coverage acknowledgment, Unknown operations, and an already executing operation. Skip reasons are stable structured log fields.
+
+The cycle API exposes `CycleScheduleProvider`, `ScheduleWriter`, and `PlanStarter` protocols so EXE-004 can supply its persisted M07 schedule reader and idempotent plan-claim/enqueue callback. Those tables and the consumer are not present on this branch. Until EXE-004 supplies them, the worker deliberately logs `SCHEDULE_PROVIDER_UNAVAILABLE` after passing gates and does not start a plan. Fee-acceptance handlers should call `append_execution_cycle_requested` in the transaction that records acceptance. The ERC-20 hook watches the treasury's configured token; native-coin inflows have no log hook in this indexer and are observed by the 60-second safety cycle. End-to-end “approved request starts executing within 5 seconds” remains unproven until the EXE-004 consumer is integrated.
+
 ---
 
 ## 1. Purpose and boundaries

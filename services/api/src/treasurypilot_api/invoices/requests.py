@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
+from treasurypilot_api.events.writer import append_execution_cycle_requested
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Organization, OrganizationRole, WalletLink, uuid7
@@ -519,6 +520,7 @@ def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> Select[tuple[dict[str
         .where(
             MandateVersion.treasury_id == treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -541,17 +543,22 @@ def _expected_version(if_match: str | None) -> int:
 
 
 INSTRUCTION_TEXT_CODE = "INSTRUCTION_TEXT"  # written by the worker (M09); carried across revisions
+INBOUND_EMAIL_SENDER_UNVERIFIED_CODE = "INBOUND_EMAIL_SENDER_UNVERIFIED"
+PERSISTENT_REVISION_FLAG_CODES = (
+    INSTRUCTION_TEXT_CODE,
+    INBOUND_EMAIL_SENDER_UNVERIFIED_CODE,
+)
 
 
-async def carry_forward_instruction_flags(session: AsyncSession, row: PaymentRequest) -> None:
-    """Re-open the worker's INSTRUCTION_TEXT flag on the current revision; it never supersedes."""
+async def carry_forward_persistent_flags(session: AsyncSession, row: PaymentRequest) -> None:
+    """Re-open persistent high-risk flags on the current revision after an edit."""
     await session.flush()  # fk_flags_request_revision needs the new revision row
     old_flags = (
         await session.scalars(
             select(RequestFlag).where(
                 RequestFlag.request_id == row.id,
                 RequestFlag.revision < row.current_revision,
-                RequestFlag.code == INSTRUCTION_TEXT_CODE,
+                RequestFlag.code.in_(PERSISTENT_REVISION_FLAG_CODES),
                 RequestFlag.status.in_(
                     [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
                 ),
@@ -583,14 +590,14 @@ async def supersede_open_flags(
         .where(
             RequestFlag.request_id == row.id,
             RequestFlag.revision < row.current_revision,
-            RequestFlag.code.not_in((INSTRUCTION_TEXT_CODE, *keep)),
+            RequestFlag.code.not_in((*PERSISTENT_REVISION_FLAG_CODES, *keep)),
             RequestFlag.status.in_(
                 [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
             ),
         )
         .values(status=RequestFlagStatus.SUPERSEDED.value)
     )
-    await carry_forward_instruction_flags(session, row)
+    await carry_forward_persistent_flags(session, row)
 
 
 async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequest) -> None:
@@ -2583,6 +2590,7 @@ async def _approval_typed_data(
         .where(
             MandateVersion.treasury_id == row.treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -2624,6 +2632,9 @@ async def _approval_typed_data(
             "paying_wallet": "0x" + wallet.safe_address.hex(),
             "payee": "0x" + payee.address.hex(),
             "amount": int(row.amount),
+            "fiat_amount_minor_units": (
+                None if row.fiat_amount_minor_units is None else int(row.fiat_amount_minor_units)
+            ),
             "early_amount": early_amount,
             "early_pay_by": early_pay_by,
             "deadline": deadline,
@@ -2906,6 +2917,13 @@ async def approve_request(
             session.add(approval)
             previous_status = row.status
             row.status = RequestStatus.APPROVED.value
+            append_execution_cycle_requested(
+                session,
+                organization_id=organization_id,
+                treasury_id=row.treasury_id,
+                entity_type="payment_request",
+                entity_id=row.id,
+            )
             session.add(
                 RequestStatusEvent(
                     id=uuid7(),
@@ -3073,7 +3091,7 @@ async def renew_request(
                 reason="renewed after expiry",
             )
         )
-        await carry_forward_instruction_flags(session, row)
+        await carry_forward_persistent_flags(session, row)
         session.add(
             RequestStatusEvent(
                 id=uuid7(),

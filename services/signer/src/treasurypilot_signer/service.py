@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
@@ -24,8 +25,10 @@ from treasurypilot_signer.models import SignRequest, SignResponse
 from treasurypilot_signer.rpc import RpcFailure
 from treasurypilot_signer.store import NonceAlreadyBound, StepAlreadyUsed
 
-_APPROVAL = "(bytes32,bytes32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64,bytes32,uint64)"
-_ATTESTATION = "(bytes32,bytes32,bytes32[],bytes32,address,uint64,uint256,bytes32)"
+logger = logging.getLogger(__name__)
+
+_APPROVAL = "(bytes32,bytes32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64,bytes32,uint64,bool)"
+_ATTESTATION = "(bytes32,bytes32,bytes32[],uint256[],bytes32,address,uint64,uint256,bytes32)"
 _MANDATE_OUTPUTS = [
     "uint64",
     "uint64",
@@ -39,7 +42,7 @@ _MANDATE_OUTPUTS = [
     "(uint128,uint128)",
 ]
 _FUNCTIONS: dict[int, tuple[str, Sequence[str]]] = {
-    PAY: ("pay", (_APPROVAL, "bytes", "bytes32", _ATTESTATION, "bytes")),
+    PAY: ("pay", (_APPROVAL, "bytes", "bytes32", "uint256", _ATTESTATION, "bytes")),
     REFILL: (
         "refill",
         (_APPROVAL, "bytes", "bytes32", "address", "uint256", _ATTESTATION, "bytes"),
@@ -69,9 +72,38 @@ class Store(Protocol):
         pending_nonce: int,
     ) -> Any: ...
 
+    async def record_signed(
+        self, *, attestation_nonce: int, step_id: bytes, tx_hash: str, raw_transaction: bytes
+    ) -> None: ...
+
+    async def release(
+        self, *, attestation_nonce: int, step_id: bytes, executor: bytes, transaction_nonce: int
+    ) -> None: ...
+
 
 class Rpc(Protocol):
     async def call(self, method: str, params: Sequence[Any]) -> Any: ...
+
+
+def _rpc_hex(value: Any, *, min_bytes: int = 0, quantity: bool = False) -> str:
+    """Validate an RPC result as 0x-prefixed hex; a malformed node reply is an RPC fault."""
+    if (
+        not isinstance(value, str)
+        or not value.startswith("0x")
+        or len(value) < 3
+        or (not quantity and len(value) % 2)
+        or len(value) - 2 < 2 * min_bytes
+    ):
+        raise SignerFault("CHAIN_RPC_UNAVAILABLE", 503)
+    try:
+        int(value[2:], 16)
+    except ValueError as error:
+        raise SignerFault("CHAIN_RPC_UNAVAILABLE", 503) from error
+    return value
+
+
+def _rpc_quantity(value: Any) -> int:
+    return int(_rpc_hex(value, quantity=True), 16)
 
 
 def _bytes32(value: Any) -> bytes:
@@ -103,6 +135,7 @@ def _check_embedded_attestation(encoded: Sequence[Any], message: Mapping[str, An
         _bytes32(message["planHash"]),
         _bytes32(message["requestId"]),
         [_bytes32(item) for item in message["stepIds"]],
+        [int(item) for item in message["stepAmounts"]],
         _bytes32(message["policyVersion"]),
         _address(message["executor"]),
         int(message["validUntil"]),
@@ -113,11 +146,12 @@ def _check_embedded_attestation(encoded: Sequence[Any], message: Mapping[str, An
         bytes(encoded[0]),
         bytes(encoded[1]),
         [bytes(item) for item in encoded[2]],
-        bytes(encoded[3]),
-        str(encoded[4]).lower(),
-        int(encoded[5]),
+        [int(item) for item in encoded[3]],
+        bytes(encoded[4]),
+        str(encoded[5]).lower(),
         int(encoded[6]),
-        bytes(encoded[7]),
+        int(encoded[7]),
+        bytes(encoded[8]),
     )
     if actual != expected:
         raise SignerFault("PAYLOAD_MISMATCH")
@@ -153,7 +187,7 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
     if action in (PAY, REFILL):
         approval = args[0]
         # PaymentApproval: requestId, invoiceHash, fingerprint, treasury, payingWallet,
-        # asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry.
+        # asset, payee, amount, earlyAmount, earlyPayBy, deadline, termsHash, expiry, isFiat.
         if action == PAY:
             checks = (
                 bytes(approval[0]) == request_id,
@@ -161,8 +195,12 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
                 _address(approval[4]) == step_from,
                 _address(approval[5]) == step_asset,
                 bytes(args[2]) == step_id,
-                int(approval[7]) == step_amount,
                 _address(approval[6]) == step_to,
+                int(args[3]) == step_amount,
+                # Fiat-quoted approvals cap the payment; otherwise it must be exact.
+                step_amount <= int(approval[7])
+                if approval[13]
+                else step_amount == int(approval[7]),
             )
         else:
             # REFILL transfers from the module's Safe T to an operational wallet. Its
@@ -177,7 +215,7 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
                 _address(args[3]) == step_to,
                 int(args[4]) == step_amount,
             )
-        attestation_position = 3 if action == PAY else 5
+        attestation_position = 4 if action == PAY else 5
     else:
         checks = (
             bytes(args[0]) == request_id,
@@ -233,8 +271,11 @@ class SigningService:
                 # The database check below binds this nonce atomically with the step-use row.
                 bind_nonce=lambda _nonce, plan_hash_value: plan_hash_value,
             )
-        except Exception as error:
+        except (ValueError, KeyError, TypeError) as error:  # binascii.Error is a ValueError
             raise SignerFault("ATTESTATION_INVALID") from error
+        except Exception as error:
+            logger.exception("attestation verification failed unexpectedly")
+            raise SignerFault("SIGNER_INTERNAL_ERROR", 500) from error
         if reason is not None:
             code = str(reason)
             if code not in {"ATTESTATION_INVALID", "ATTESTATION_EXPIRED", "NONCE_REUSED"}:
@@ -251,17 +292,21 @@ class SigningService:
             raise SignerFault("ATTESTATION_INVALID")
 
         try:
-            actual_chain_id = int(str(await self._rpc.call("eth_chainId", [])), 16)
+            actual_chain_id = _rpc_quantity(await self._rpc.call("eth_chainId", []))
             if actual_chain_id != chain_id:
                 raise SignerFault("CHAIN_NOT_ALLOWED")
-            module_code = await self._rpc.call("eth_getCode", [treasury, "latest"])
-            if module_code in (None, "0x", "0x0"):
+            module_code = _rpc_hex(
+                await self._rpc.call("eth_getCode", [treasury, "latest"]), quantity=True
+            )
+            if module_code in ("0x", "0x0"):
                 raise SignerFault("PAYLOAD_MISMATCH")
             mandate_call = "0x" + keccak(b"mandate()")[:4].hex()
             mandate_data = await self._rpc.call(
                 "eth_call", [{"to": treasury, "data": mandate_call}, "latest"]
             )
-            mandate = decode(_MANDATE_OUTPUTS, bytes.fromhex(mandate_data[2:]), strict=True)
+            mandate = decode(
+                _MANDATE_OUTPUTS, bytes.fromhex(_rpc_hex(mandate_data)[2:]), strict=True
+            )
             expected_target = str(mandate[4]).lower()
             if request.payload.to.lower() != expected_target:
                 raise SignerFault("PAYLOAD_MISMATCH")
@@ -270,7 +315,7 @@ class SigningService:
                 safe_t_data = await self._rpc.call(
                     "eth_call", [{"to": treasury, "data": safe_t_selector}, "latest"]
                 )
-                safe_t = _address("0x" + str(safe_t_data)[-40:])
+                safe_t = _address("0x" + _rpc_hex(safe_t_data, min_bytes=20)[-40:])
                 if safe_t != _address(step["from"]):
                     raise SignerFault("PAYLOAD_MISMATCH")
 
@@ -281,19 +326,23 @@ class SigningService:
                 "data": request.payload.data,
             }
             await self._rpc.call("eth_call", [call, "latest"])
-            gas_estimate = int(str(await self._rpc.call("eth_estimateGas", [call])), 16)
+            gas_estimate = _rpc_quantity(await self._rpc.call("eth_estimateGas", [call]))
             gas_limit = max(gas_estimate, (gas_estimate * 120 + 99) // 100)
             fees = request.fees
-            accepted_cap = int(plan.get("feeCapWei", fees.fee_cap_wei))
-            fee_cap = min(accepted_cap, fees.fee_cap_wei)
+            # plan.feeCapWei is outside the attested plan hash and the request's own cap is
+            # caller-controlled, so neither may raise the signer's configured ceiling.
+            fee_cap = min(
+                int(plan.get("feeCapWei", self._settings.max_fee_cap_wei)),
+                fees.fee_cap_wei,
+                self._settings.max_fee_cap_wei,
+            )
             if (
                 fees.max_fee_per_gas < fees.max_priority_fee_per_gas
                 or gas_limit * fees.max_fee_per_gas > fee_cap
             ):
                 raise SignerFault("FEE_CAP_EXCEEDED")
-            pending_nonce = int(
-                str(await self._rpc.call("eth_getTransactionCount", [account.address, "pending"])),
-                16,
+            pending_nonce = _rpc_quantity(
+                await self._rpc.call("eth_getTransactionCount", [account.address, "pending"])
             )
         except SignerFault:
             raise
@@ -325,30 +374,55 @@ class SigningService:
         except StepAlreadyUsed as error:
             raise SignerFault("PAYLOAD_MISMATCH", 409) from error
 
-        transaction = {
-            "chainId": chain_id,
-            "nonce": reserved.transaction_nonce,
-            "to": request.payload.to,
-            "value": 0,
-            "data": request.payload.data,
-            "gas": gas_limit,
-            "maxFeePerGas": fees.max_fee_per_gas,
-            "maxPriorityFeePerGas": fees.max_priority_fee_per_gas,
-            "type": 2,
-        }
-        signed = account.sign_transaction(transaction)
-        raw_transaction = cast(
-            bytes,
-            getattr(signed, "raw_transaction", getattr(signed, "rawTransaction", b"")),
-        )
-        try:
-            tx_hash = await self._rpc.call(
-                "eth_sendRawTransaction", ["0x" + bytes(raw_transaction).hex()]
+        if reserved.raw_transaction is not None:
+            # Replay: rebroadcast the original signed bytes and never sign again with new fees.
+            raw_transaction = bytes(reserved.raw_transaction)
+            tx_hash = str(reserved.tx_hash)
+        else:
+            transaction = {
+                "chainId": chain_id,
+                "nonce": reserved.transaction_nonce,
+                "to": request.payload.to,
+                "value": 0,
+                "data": request.payload.data,
+                "gas": gas_limit,
+                "maxFeePerGas": fees.max_fee_per_gas,
+                "maxPriorityFeePerGas": fees.max_priority_fee_per_gas,
+                "type": 2,
+            }
+            signed = account.sign_transaction(transaction)
+            raw_transaction = bytes(
+                cast(
+                    bytes,
+                    getattr(signed, "raw_transaction", getattr(signed, "rawTransaction", b"")),
+                )
             )
+            tx_hash = "0x" + keccak(raw_transaction).hex()
+            await self._store.record_signed(
+                attestation_nonce=int(attestation_message["nonce"]),
+                step_id=step_id,
+                tx_hash=tx_hash,
+                raw_transaction=raw_transaction,
+            )
+        try:
+            await self._rpc.call("eth_sendRawTransaction", ["0x" + raw_transaction.hex()])
         except RpcFailure as error:
-            if error.already_known:
-                tx_hash = "0x" + keccak(bytes(raw_transaction)).hex()
+            # The hash is deterministic, so "already known" (or, on replay, a mined nonce)
+            # means this exact transaction is already with the node.
+            if error.already_known or (reserved.replacement and error.nonce_too_low):
+                pass
+            elif error.rejected and not reserved.replacement:
+                # Definitive rejection: free the nonce so later transactions are not stalled.
+                await self._store.release(
+                    attestation_nonce=int(attestation_message["nonce"]),
+                    step_id=step_id,
+                    executor=bytes.fromhex(account.address[2:]),
+                    transaction_nonce=reserved.transaction_nonce,
+                )
+                raise SignerFault("BROADCAST_FAILED", 503) from error
             else:
+                # Ambiguous (timeout/transport) or replay: keep the reservation; a retry
+                # rebroadcasts the stored raw transaction.
                 raise SignerFault("BROADCAST_FAILED", 503) from error
         return SignResponse(
             txHash=tx_hash, nonce=reserved.transaction_nonce, **{"from": account.address}

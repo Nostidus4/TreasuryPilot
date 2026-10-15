@@ -15,10 +15,14 @@ from collections.abc import Sequence
 from typing import Any, Final
 
 import asyncpg  # type: ignore[import-untyped]
-from eth_abi import decode
 from eth_utils import keccak
 
-from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent, registry
+from treasurypilot_worker.chain.event_handlers import (
+    HandlerRegistry,
+    IndexedEvent,
+    reclassify_unmatched_outflows,
+    registry,
+)
 from treasurypilot_worker.chain.events import (
     EVENTS,
     MODULE,
@@ -27,7 +31,12 @@ from treasurypilot_worker.chain.events import (
     TOKEN,
     decode_log,
 )
-from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client
+from treasurypilot_worker.chain.rpc import (
+    RpcClient,
+    RpcResponseError,
+    build_rpc_client,
+    decode_rpc_urls,
+)
 from treasurypilot_worker.chain.safe_config import SafeConfigReader, refresh_safe_config_snapshots
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -62,7 +71,7 @@ async def index_events(
         changed = 0
         for treasury in treasuries:
             urls = treasury["rpc_urls"]
-            rpc = client_factory(list(json.loads(urls) if isinstance(urls, str) else urls))
+            rpc = client_factory(decode_rpc_urls(urls))
             addresses = {
                 MODULE: [bytes(treasury["module_address"])],
                 SAFE_CONFIG: [bytes(safe) for safe in treasury["safes"]],
@@ -103,6 +112,14 @@ async def index_events(
                             treasury_id=treasury["id"],
                         )
                     changed += count
+                    if stream == TOKEN:
+                        # The executor may store a tx hash after its Transfer was indexed.
+                        changed += await reclassify_unmatched_outflows(
+                            pool,
+                            treasury["id"],
+                            a_token_address=a_token,
+                            aave_pool_address=aave_pool,
+                        )
                 except Exception:
                     # One failing stream or provider answer must not stall the others.
                     logger.exception("indexing %s of treasury %s failed", stream, treasury["id"])
@@ -131,11 +148,16 @@ async def _lending_addresses(rpc: RpcClient, module: bytes) -> tuple[bytes | Non
                     "latest",
                 ],
             )
-            raw = bytes.fromhex(str(result).removeprefix("0x"))
-            address = bytes.fromhex(decode(["address"], raw)[0].removeprefix("0x"))
-            values.append(address if any(address) else None)
-        except (ValueError, TypeError, IndexError) as error:
-            raise ValueError(f"module {getter} returned an invalid address") from error
+        except RpcResponseError:
+            # Every provider reverted: lending is not configured. Transport errors propagate.
+            values.append(None)
+            continue
+        raw = bytes.fromhex(str(result or "0x").removeprefix("0x"))
+        if len(raw) != 32 or any(raw[:12]):  # empty or malformed return data: also "not configured"
+            values.append(None)
+            continue
+        address = raw[12:]
+        values.append(address if any(address) else None)
     return values[0], values[1]
 
 

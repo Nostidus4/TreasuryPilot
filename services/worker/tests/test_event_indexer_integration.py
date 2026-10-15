@@ -321,6 +321,14 @@ def _emit_transfer(url: str, token_address: str, sender: str, recipient: str, am
 
 def test_module_and_safe_events_update_application_state(anvil_url: str, database_url: str) -> None:
     activation = int(time.time()) + 3600
+    exception_expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
     _emit(
         anvil_url,
         MODULE_ADDR,
@@ -334,7 +342,10 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         MODULE_ADDR,
         "ExceptionGranted",
         REQUEST_ID,
-        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, activation, 1]),
+        data=encode(
+            ["uint128", "address", "uint64", "uint64"],
+            [1000, PAYEE_ADDR, exception_expiry, 1],
+        ),
     )
     cancel = _emit(anvil_url, MODULE_ADDR, "RequestCancelled", REQUEST_ID, _address_topic(SENDER))
     _emit(
@@ -409,6 +420,79 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         )
     )["p"]
     assert json.loads(supplied) == {"stepId": "0x" + "01" * 32, "amount": "5000000", "day": "20000"}
+
+
+def test_exception_revocation_consumption_and_mandate_invalidation(
+    anvil_url: str, database_url: str
+) -> None:
+    expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "ExceptionGranted",
+        REQUEST_ID,
+        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, expiry, 1]),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Granted"
+    )
+
+    _emit(anvil_url, MODULE_ADDR, "ExceptionRevoked", REQUEST_ID)
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Revoked"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "PaymentExecuted",
+        REQUEST_ID,
+        b"\x01" * 32,
+        b"\x02" * 32,
+        data=encode(
+            ["address", "address", "uint256", "uint256", "bool", "bool"],
+            [SENDER, PAYEE_ADDR, 1000, 20_000, True, False],
+        ),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Consumed"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url, MODULE_ADDR, "MandateConfigured", data=encode(["uint64", "uint64"], [2, expiry])
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Invalidated"
+    )
 
 
 def test_rereading_the_same_range_creates_no_duplicates_or_repeat_effects(
@@ -606,7 +690,7 @@ def test_supply_asset_transfer_is_classified_as_lending(anvil_url: str, database
 
     result, _ = asyncio.run(_index(anvil_url, database_url, a_token=ATOKEN_ADDR))
     movement = asyncio.run(_one(database_url, 'SELECT "class", direction FROM token_movements'))
-    assert result["changed"] == 1
+    assert result["changed"] == 2  # Resumed + Transfer
     assert movement["class"] == "LENDING"
     assert movement["direction"] == "OUT"
     assert (
@@ -660,7 +744,7 @@ def test_unplanned_atoken_transfer_from_source_is_an_unexpected_outflow(
         )
     )["n"]
 
-    assert result["changed"] == 1
+    assert result["changed"] == 2  # Resumed + Transfer
     assert movement["class"] == "UNEXPECTED_OUTFLOW"
     assert movement["direction"] == "OUT"
     assert signals == 2
@@ -672,3 +756,99 @@ def test_event_signatures_match_the_published_topics() -> None:
     assert "0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e" in EVENTS[SAFE_EXEC]
     assert "0x" + keccak(text="Paused(address)").hex() in EVENTS[MODULE]
     assert "0x" + keccak(text="Transfer(address,address,uint256)").hex() in EVENTS["TOKEN"]
+
+
+def test_pay_transfer_to_a_non_payee_in_an_operation_tx_is_still_an_unexpected_outflow(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    tx = _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    asyncio.run(_record_operation(database_url, tx, "PAY"))
+    _mine(anvil_url)
+
+    asyncio.run(_index(anvil_url, database_url))
+
+    assert asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == (
+        "UNEXPECTED_OUTFLOW"
+    )
+
+
+def test_outflow_later_matched_to_an_operation_is_reclassified_and_its_alert_retracted(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    tx = _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, PAYEE_ADDR, 10_000_000)
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    assert asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == (
+        "UNEXPECTED_OUTFLOW"
+    )
+
+    asyncio.run(_record_operation(database_url, tx, "PAY"))
+    result, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert result["changed"] == 1
+    assert (
+        asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == "AGENT"
+    )
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM chain_safety_signals WHERE invalidated_at IS NULL",
+            )
+        )["n"]
+        == 0
+    )
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events "
+                "WHERE type = 'UnexpectedOutflow' AND failed_at IS NOT NULL",
+            )
+        )["n"]
+        == 1
+    )
+
+
+def test_a_readded_transfer_clears_its_earlier_acknowledgement(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    asyncio.run(
+        _one(
+            database_url,
+            "WITH ack AS (UPDATE token_movements SET acknowledged_by = $1, "
+            "acknowledged_at = now(), acknowledgement_reason = 'mine' RETURNING 1), "
+            "moved AS (UPDATE observed_events SET block_hash = decode(repeat('01', 32), 'hex') "
+            "WHERE stream = 'TOKEN' RETURNING 1) SELECT 1",
+            uuid.UUID(USER),
+        )
+    )
+
+    asyncio.run(_index(anvil_url, database_url))
+
+    row = asyncio.run(
+        _one(database_url, "SELECT acknowledged_at, acknowledgement_reason FROM token_movements")
+    )
+    assert row["acknowledged_at"] is None and row["acknowledgement_reason"] is None
+
+
+def test_unreadable_lending_getters_mean_lending_is_not_configured() -> None:
+    from treasurypilot_worker.chain.indexer import _lending_addresses
+    from treasurypilot_worker.chain.rpc import RpcResponseError
+
+    class Reverts:
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            raise RpcResponseError(3, "execution reverted")
+
+    class Empty:
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            return "0x"
+
+    assert asyncio.run(_lending_addresses(Reverts(), bytes(20))) == (None, None)  # type: ignore[arg-type]
+    assert asyncio.run(_lending_addresses(Empty(), bytes(20))) == (None, None)  # type: ignore[arg-type]
