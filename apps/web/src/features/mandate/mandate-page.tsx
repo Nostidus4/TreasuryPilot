@@ -793,6 +793,12 @@ export function MandatePage() {
   const chains = useChains();
   const canEdit = scope.can('OWN');
   const active = mandates.data?.items.find((item) => item.status === 'Active');
+  const pending = mandates.data?.items.find(
+    (item) => item.status === 'PendingActivation',
+  );
+  const discrepancy = mandates.data?.items.find(
+    (item) => item.status === 'Discrepancy',
+  );
 
   return (
     <Page
@@ -808,6 +814,29 @@ export function MandatePage() {
           <QueryBoundary query={treasury}>
             {(state) => (
               <div className="grid gap-6">
+                {discrepancy && (
+                  <Alert
+                    tone="danger"
+                    title={t('v{{version}} does not match the chain', {
+                      version: discrepancy.version,
+                    })}
+                  >
+                    {t(
+                      'After signing, the on-chain mandate differs from what was approved here, so v{{version}} was not activated. The agent keeps the previous mandate. Review the mismatch in the review queue before creating a new version.',
+                      { version: discrepancy.version },
+                    )}
+                  </Alert>
+                )}
+                {!canEdit && pending && (
+                  <Alert
+                    tone="warning"
+                    title={t('v{{version}} is waiting for signatures', {
+                      version: pending.version,
+                    })}
+                  >
+                    {t('It is not active until the chain confirms it.')}
+                  </Alert>
+                )}
                 {!canEdit && (
                   <Alert tone="neutral" title={t('View only')}>
                     {t('Only Safe owners can change the mandate.')}

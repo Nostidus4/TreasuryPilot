@@ -235,7 +235,9 @@ export type MandateStatus =
   | 'PendingActivation'
   | 'Active'
   | 'Superseded'
-  | 'Expired';
+  | 'Expired'
+  | 'Revoked'
+  | 'Discrepancy';
 
 export interface MandateAssetPolicy {
   assetId: string;
