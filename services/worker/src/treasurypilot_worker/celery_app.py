@@ -11,6 +11,7 @@ from treasurypilot_core.observability import configure_logging
 from treasurypilot_core.tracing import configure_tracing
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.metrics import start_metrics_server
+from treasurypilot_worker.routing import shard_queues
 from treasurypilot_worker.runtime import SafeTask
 
 
@@ -32,7 +33,10 @@ def create_celery_app() -> Celery:
         task_default_exchange="core",
         task_default_routing_key="core",
         task_queues=(
-            Queue("core", exchange=core_exchange, routing_key="core"),
+            *(
+                Queue(name, exchange=core_exchange, routing_key=name)
+                for name in shard_queues(settings.treasury_queue_shards)
+            ),
             Queue("ai", exchange=ai_exchange, routing_key="ai"),
             Queue("webhooks", exchange=webhooks_exchange, routing_key="webhooks"),
         ),

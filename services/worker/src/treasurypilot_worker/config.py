@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     visibility_timeout_seconds: int = 3600
+    # Core queue shards keyed by treasury hash (NFR-SCAL-03); 1 keeps the single `core` queue.
+    treasury_queue_shards: int = Field(default=1, ge=1)
     # Relative to the working directory: the repo root locally, /app in the worker image.
     ai_config_path: Path = Path("config/ai.yaml")
     # Compose sets DATABASE_URL unprefixed; empty means this process has no DB access.
