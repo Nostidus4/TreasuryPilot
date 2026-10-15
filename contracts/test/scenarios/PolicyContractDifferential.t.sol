@@ -107,8 +107,35 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
         _comparePay("duplicate_allowed", duplicate);
     }
 
+    function test_differential_revokedMandate() external {
+        _owner(abi.encodeCall(module.revoke, ()));
+        _comparePay("mandate_revoked", _approval(115, 1e6));
+    }
+
+    function test_differential_expiredMandate() external {
+        vm.warp(config.expiresAt + 1);
+        _comparePay("mandate_expired", _approval(116, 1e6));
+    }
+
+    function test_differential_notStartedMandate() external {
+        vm.warp(config.validFrom - 1);
+        _comparePay("mandate_not_started", _approval(117, 1e6));
+    }
+
+    function test_differential_revokedAndExpiredMandate() external {
+        _owner(abi.encodeCall(module.revoke, ()));
+        vm.warp(config.expiresAt + 1);
+        _comparePay("mandate_revoked_and_expired", _approval(118, 1e6));
+    }
+
+    function test_differential_pausedAndExpiredMandate() external {
+        _owner(abi.encodeCall(module.pause, ()));
+        vm.warp(config.expiresAt + 1);
+        _comparePay("mandate_paused_and_expired", _approval(119, 1e6));
+    }
+
     function _comparePay(string memory caseId, I.PaymentApproval memory ap) internal {
-        _compare(caseId, abi.encodeCall(module.pay, (ap, _sign(ap), keccak256(bytes(caseId)))));
+        _compare(caseId, abi.encodeCall(module.pay, (ap, _sign(ap), keccak256(bytes(caseId)), ap.amount)));
     }
 
     function _compareRefill(string memory caseId, I.PaymentApproval memory ap, uint256 amount) internal {

@@ -128,7 +128,12 @@ REASON_CODES: dict[PolicyReasonCode, ReasonInfo] = {
     PolicyReasonCode.ASSET_MISMATCH: _info(
         _G.SAFETY_GATE, "BR-014", note="the contract reverts `ApprovalInvalid`"
     ),
-    PolicyReasonCode.MANDATE_NOT_ACTIVE: _info(_G.LIFECYCLE, "BR-015, BR-062", "NotActive()"),
+    PolicyReasonCode.MANDATE_NOT_ACTIVE: _info(
+        _G.LIFECYCLE,
+        "BR-015, BR-062",
+        "NotActive()",
+        note="`NotActive()` only means `block.timestamp < validFrom`",
+    ),
     PolicyReasonCode.MANDATE_PAUSED: _info(_G.LIFECYCLE, "BR-015, BR-062", "MandatePaused()"),
     PolicyReasonCode.MANDATE_REVOKED: _info(_G.LIFECYCLE, "BR-015, BR-062", "MandateRevoked()"),
     PolicyReasonCode.MANDATE_EXPIRED: _info(_G.LIFECYCLE, "BR-015", "MandateExpired()"),

@@ -198,7 +198,7 @@ The table is generated from `treasurypilot_core.policy.REASON_CODES` (POL-001); 
 | 1 | Safety gate | `DATA_MISSING` | B | — | FR-411 |  |
 | 1 | Safety gate | `CHAIN_MISMATCH` | B | — | BR-014 |  |
 | 1 | Safety gate | `ASSET_MISMATCH` | B | — | BR-014 | the contract reverts `ApprovalInvalid` |
-| 2 | Lifecycle | `MANDATE_NOT_ACTIVE` | B | `NotActive()` | BR-015, BR-062 |  |
+| 2 | Lifecycle | `MANDATE_NOT_ACTIVE` | B | `NotActive()` | BR-015, BR-062 | `NotActive()` only means `block.timestamp < validFrom` |
 | 2 | Lifecycle | `MANDATE_PAUSED` | B | `MandatePaused()` | BR-015, BR-062 |  |
 | 2 | Lifecycle | `MANDATE_REVOKED` | B | `MandateRevoked()` | BR-015, BR-062 |  |
 | 2 | Lifecycle | `MANDATE_EXPIRED` | B | `MandateExpired()` | BR-015 |  |

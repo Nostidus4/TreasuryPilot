@@ -82,5 +82,35 @@
     "primary": null,
     "contract_success": true,
     "contract_error": null
+  },
+  "mandate_revoked": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_REVOKED",
+    "contract_success": false,
+    "contract_error": "MandateRevoked()"
+  },
+  "mandate_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_EXPIRED",
+    "contract_success": false,
+    "contract_error": "MandateExpired()"
+  },
+  "mandate_not_started": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_NOT_ACTIVE",
+    "contract_success": false,
+    "contract_error": "NotActive()"
+  },
+  "mandate_revoked_and_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_REVOKED",
+    "contract_success": false,
+    "contract_error": "MandateRevoked()"
+  },
+  "mandate_paused_and_expired": {
+    "validator_decision": "BLOCK",
+    "primary": "MANDATE_PAUSED",
+    "contract_success": false,
+    "contract_error": "MandatePaused()"
   }
 }

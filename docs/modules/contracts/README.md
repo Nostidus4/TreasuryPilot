@@ -202,7 +202,7 @@ function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 st
 
 | # | Check | Error | Rule |
 |---|---|---|---|
-| 1 | caller is executor, status Active, `validFrom ≤ now ≤ expiresAt` | `NotExecutor` / `NotActive` / `MandatePaused` / `MandateRevoked` / `MandateExpired` | BR-062 |
+| 1 | caller is executor, status Active, `validFrom ≤ now ≤ expiresAt` | `NotExecutor` / `NotActive` / `MandatePaused` / `MandateRevoked` / `MandateExpired` (`NotActive` only means `now < validFrom`; precedence: Paused, Revoked, NotActive, Expired) | BR-062 |
 | 2 | approval valid: domain, `treasury == this`, `asset == asset`, `now ≤ ap.expiry`, signer is a **current** approver (ECDSA or ERC-1271) | `ApprovalInvalid` / `ApprovalExpired` / `NotApprover` | BR-001/003/004 |
 | 3 | `!requestPaid[ap.requestId]`; `!requestCancelled[ap.requestId]` | `RequestAlreadyPaid` / `RequestCancelled` | BR-061, BR-077 |
 | 4 | `!stepUsed[stepId]` | `StepAlreadyExecuted` | BR-061 |

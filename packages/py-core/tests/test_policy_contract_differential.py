@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from eth_account.messages import encode_typed_data
 from treasurypilot_core.eip712 import payment_approval_typed_data
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import (
+    REASON_CODES,
     Action,
     ApprovalView,
     ChainSnapshot,
@@ -51,6 +53,8 @@ CONTRACT_TEST = (
 )
 CASES: dict[str, dict[str, Any]] = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
 UNKNOWN_PAYEE = "0x" + "00" * 18 + "abcd"
+PER_REQUEST_LIMIT, DAILY_LIMIT = 2000 * 10**6, 10000 * 10**6
+FIXTURE = Path(__file__).resolve().parents[3] / "contracts/test/helpers/TreasuryFixture.sol"
 
 
 def _request(*, amount: int, payee: str) -> RequestView:
@@ -67,6 +71,7 @@ def _request(*, amount: int, payee: str) -> RequestView:
             "early_amount": BaseUnits(0),
             "early_pay_by": 0,
             "deadline": NOW + 86_400,
+            "fiat_amount_minor_units": None,
         }
     )
 
@@ -86,6 +91,7 @@ def _approval(request: RequestView, expiry: int) -> ApprovalView:
         "deadline": request.deadline,
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": expiry,
+        "isFiat": False,
     }
     full = payment_approval_typed_data(typed, chain_id=CHAIN, verifying_contract=TREASURY)
     signature = APPROVER.sign_message(encode_typed_data(full_message=full)).signature
@@ -104,13 +110,13 @@ def _approval(request: RequestView, expiry: int) -> ApprovalView:
     )
 
 
-def _mandate(status: str) -> MandateView:
+def _mandate(status: str, *, valid_from: int, expires_at: int) -> MandateView:
     return MandateView.model_validate(
         {
             "status": status,
             "version": 1,
-            "valid_from": NOW - 86_400,
-            "expires_at": NOW + 86_400,
+            "valid_from": valid_from,
+            "expires_at": expires_at,
             "executor": EXECUTOR,
         }
     )
@@ -156,6 +162,7 @@ def _context_and_plan(case_id: str) -> tuple[Any, Any, int]:
     payee = PAYEE
     active_from = NOW - 600
     mandate_status = "Active"
+    valid_from, expires_at = NOW - 86_400, NOW + 86_400
     approval_expiry = NOW + 14 * 86_400
     used_today = 0
     fingerprint_paid = False
@@ -177,6 +184,16 @@ def _context_and_plan(case_id: str) -> tuple[Any, Any, int]:
         active_from = NOW
     elif case_id == "mandate_paused":
         mandate_status = "Paused"
+    elif case_id == "mandate_revoked":
+        mandate_status = "Revoked"
+    elif case_id == "mandate_expired":
+        expires_at = NOW - 1
+    elif case_id == "mandate_not_started":
+        valid_from = NOW + 1
+    elif case_id == "mandate_revoked_and_expired":
+        mandate_status, expires_at = "Revoked", NOW - 1
+    elif case_id == "mandate_paused_and_expired":
+        mandate_status, expires_at = "Paused", NOW - 1
     elif case_id == "approval_expired":
         approval_expiry = NOW - 1
     elif case_id == "refill_bound":
@@ -206,7 +223,7 @@ def _context_and_plan(case_id: str) -> tuple[Any, Any, int]:
             "read_at": NOW - 5,
             "safe_t": SAFE_T,
             "asset": ASSET,
-            "mandate": _mandate(mandate_status),
+            "mandate": _mandate(mandate_status, valid_from=valid_from, expires_at=expires_at),
             "approvers": [APPROVER.address],
             "payees": (
                 {payee.lower(): PayeeView(active=True, active_from=active_from)}
@@ -217,7 +234,7 @@ def _context_and_plan(case_id: str) -> tuple[Any, Any, int]:
         }
     )
     state = PolicyState(
-        pay_limits=Limits(per_request=2000 * 10**6, daily=10000 * 10**6),
+        pay_limits=Limits(per_request=PER_REQUEST_LIMIT, daily=DAILY_LIMIT),
         refill_limits=Limits(per_request=2500 * 10**6, daily=12000 * 10**6),
         supply_limits=Limits(per_request=5000 * 10**6, daily=20000 * 10**6),
         balances={O1.lower(): BaseUnits(10000 * 10**6), SAFE_T.lower(): BaseUnits(30000 * 10**6)},
@@ -252,8 +269,23 @@ def _context_and_plan(case_id: str) -> tuple[Any, Any, int]:
 
 
 def test_contract_suite_covers_every_shared_manifest_case() -> None:
-    source = CONTRACT_TEST.read_text(encoding="utf-8")
-    assert all(f'"{case_id}"' in source for case_id in CASES)
+    tests = [
+        chunk
+        for chunk in CONTRACT_TEST.read_text(encoding="utf-8").split("function ")
+        if chunk.startswith("test")
+    ]
+    for case_id in CASES:
+        pattern = re.compile(rf'_compare(?:Pay|Refill)\("{case_id}"')
+        assert any(pattern.search(chunk) for chunk in tests), case_id
+
+
+def test_python_fixture_limits_match_contract_fixture() -> None:
+    source = FIXTURE.read_text(encoding="utf-8")
+    expected = (
+        f"I.Limits(uint128({PER_REQUEST_LIMIT // 10**6} * _assetUnit()), "
+        f"uint128({DAILY_LIMIT // 10**6} * _assetUnit()))"
+    )
+    assert expected in source
 
 
 @pytest.mark.parametrize("case_id", CASES)
@@ -270,3 +302,4 @@ def test_validator_matches_contract_differential_matrix(case_id: str) -> None:
     if signature is not None:
         decoded = decode_revert(error_selector(signature))
         assert decoded[-1] == PolicyReasonCode(case["primary"])
+        assert signature in REASON_CODES[PolicyReasonCode(case["primary"])].contract_errors
