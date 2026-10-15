@@ -309,4 +309,5 @@ async def get_request_evidence(
             title="Evidence bundle is invalid",
             detail="The bundle failed an integrity check (e.g. an unresolved transaction hash); "
             "it was withheld.",
+            extensions={"evidenceStatus": "INVALID"},
         ) from exc
