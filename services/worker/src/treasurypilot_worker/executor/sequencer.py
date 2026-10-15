@@ -38,6 +38,7 @@ from treasurypilot_worker.executor.outbox import (
     TreasuryPaused,
     execute_step,
 )
+from treasurypilot_worker.reconcile.build import build_reconciliation
 from treasurypilot_worker.recovery.retry import ReviewIntent, classify
 
 logger = logging.getLogger(__name__)
@@ -254,7 +255,12 @@ async def sequence_plan(
     if any(step.kind == "PAY" for step in run.steps):
         # Paying first so both state-machine events are recorded, even for a resumed plan.
         await _mark(pool, run, "Paying", ("Preparing",))
-        await _mark(pool, run, "Paid", ("Paying",))
+        async with pool.acquire() as connection, connection.transaction():
+            await transition_request(
+                connection, run.request_id, "Paid", ("Paying",), "PAY step paid"
+            )
+            # Must raise, never swallow: a failed build has to roll Paid back (REC-002).
+            await build_reconciliation(connection, run.request_id)
     return SequenceResult("Completed", completed=len(run.steps))
 
 
