@@ -51,7 +51,7 @@ export const usePlanDetails = (orgId: string, planIds: string[]) =>
 
 export const useRunNow = (orgId: string, treasuryId: string) =>
   useOrgMutation(orgId, () =>
-    api.post<{ jobId: string; planId: string }>(
+    api.post<{ jobId: string }>(
       `/orgs/${orgId}/treasuries/${treasuryId}/run-now`,
       undefined,
       { idempotent: true },

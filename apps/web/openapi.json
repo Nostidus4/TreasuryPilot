@@ -4502,6 +4502,18 @@
         "title": "RoleUpdateRequest",
         "type": "object"
       },
+      "RunNowResponse": {
+        "properties": {
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": ["jobId"],
+        "title": "RunNowResponse",
+        "type": "object"
+      },
       "SafeCall": {
         "properties": {
           "data": {
@@ -13883,6 +13895,77 @@
         },
         "summary": "Revoke Tx",
         "tags": ["pause"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/run-now": {
+      "post": {
+        "description": "Enqueue one execution cycle through the outbox, behind the scheduler's gates.",
+        "operationId": "run_now_v1_orgs__organization_id__treasuries__treasury_id__run_now_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Now",
+        "tags": ["execution"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements": {

@@ -129,14 +129,10 @@ export const operationHandlers: RequestHandler[] = [
       const plan = db.plans.find(
         (item) => item.treasuryId === params.tId && item.status === 'Validated',
       );
-      if (!plan)
-        fail(
-          409,
-          'NOTHING_TO_RUN',
-          'There is no validated plan waiting to run.',
-        );
+      // The API has no NOTHING_TO_RUN: it enqueues a cycle and the planner finds the work.
+      if (!plan) return { jobId: `job_${crypto.randomUUID()}` };
       startExecution(plan);
-      return { jobId: `job_${plan.id}`, planId: plan.id };
+      return { jobId: `job_${plan.id}` };
     },
     { status: 202 },
   ),

@@ -5,29 +5,39 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import Field
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.events.models import DomainEvent
+from treasurypilot_api.events.writer import append_execution_cycle_requested
 from treasurypilot_api.execution.models import (
     Attestation,
     ExecutionPlanStep,
     IndexStream,
     ObservedEvent,
     Operation,
+    OperationStatus,
     Transaction,
+    TransactionStatus,
 )
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.rbac import MemberAccess, require_member
+from treasurypilot_api.identity.models import OrganizationRole
+from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.models import PaymentRequest
-from treasurypilot_api.mandate.models import Vendor
-from treasurypilot_api.treasury.models import Treasury
+from treasurypilot_api.mandate.models import (
+    BackendPause,
+    MandateVersion,
+    MandateVersionStatus,
+    Vendor,
+)
+from treasurypilot_api.treasury.models import Coverage, Treasury, TreasuryStatus
 from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW, plan_hash
 
 logger = logging.getLogger(__name__)
@@ -529,3 +539,153 @@ async def get_execution_plan(
         raise _not_found()
     async with _sessions(request)() as session:
         return await _plan_detail(session, organization_id=organization_id, plan_id=plan_id)
+
+
+class RunNowResponse(ApiModel):
+    job_id: uuid.UUID
+
+
+# Operator or Owner (docs/modules/execution README, identity README).
+_require_run_now = require_role(OrganizationRole.OPERATOR, OrganizationRole.OWNER)
+_RUN_NOW_ENTITY = "RunNow"
+_RUN_NOW_NAMESPACE = uuid.UUID("5d0a2c7e-3c3b-4c0a-9a43-1f1f6b7f0e48")
+
+
+def _run_now_blocked(code: str, detail: str) -> AuthFailure:
+    return AuthFailure(
+        status=409, code=code, title=code.replace("_", " ").capitalize(), detail=detail
+    )
+
+
+async def _run_now_gate(session: AsyncSession, treasury: Treasury) -> None:
+    """The scheduler's gates (worker trigger/cycles.py), mapped to API error codes.
+
+    The order is deliberate: paused is checked first, so a paused treasury always says so.
+    """
+    paused = await session.scalar(
+        select(BackendPause.paused).where(BackendPause.treasury_id == treasury.id)
+    )
+    if treasury.status is TreasuryStatus.PAUSED or paused:
+        raise _run_now_blocked("TREASURY_PAUSED", "The treasury is paused.")
+    if treasury.status is not TreasuryStatus.READY:
+        raise _run_now_blocked("TREASURY_NOT_READY", "The treasury is not ready.")
+    now = datetime.now(UTC)
+    if not await session.scalar(
+        select(
+            exists().where(
+                MandateVersion.treasury_id == treasury.id,
+                MandateVersion.org_id == treasury.org_id,
+                MandateVersion.status == MandateVersionStatus.ACTIVE,
+                MandateVersion.valid_from <= now,
+                MandateVersion.expires_at > now,
+            )
+        )
+    ):
+        raise _run_now_blocked("MANDATE_NOT_ACTIVE", "The treasury has no active mandate.")
+    acknowledged = (
+        treasury.coverage is Coverage.PARTIAL
+        and treasury.coverage_ack_by is not None
+        and treasury.coverage_ack_at is not None
+        and bool((treasury.coverage_ack_reason or "").strip())
+    )
+    if treasury.coverage is not Coverage.COMPLETE and not acknowledged:
+        raise _run_now_blocked("COVERAGE_INCOMPLETE", "Treasury coverage is incomplete.")
+    if await session.scalar(
+        select(
+            exists().where(
+                Operation.treasury_id == treasury.id,
+                (Operation.status == OperationStatus.UNKNOWN)
+                | exists().where(
+                    Transaction.operation_id == Operation.id,
+                    Transaction.status == TransactionStatus.UNKNOWN,
+                ),
+            )
+        )
+    ):
+        raise _run_now_blocked("UNKNOWN_OPERATION_PENDING", "An operation has an unknown outcome.")
+    executing = await session.scalar(
+        select(
+            exists().where(
+                Operation.treasury_id == treasury.id,
+                Operation.status.in_(
+                    [
+                        OperationStatus.NOT_SUBMITTED,
+                        OperationStatus.SUBMITTED,
+                        OperationStatus.PENDING,
+                    ]
+                ),
+            )
+        )
+    ) or await session.scalar(
+        text("SELECT EXISTS (SELECT 1 FROM plans WHERE treasury_id = :t AND status = 'Executing')"),
+        {"t": treasury.id},
+    )
+    if executing:
+        raise _run_now_blocked("EXECUTING_PLAN_EXISTS", "A plan is already executing.")
+
+
+@router.post(
+    "/orgs/{organization_id}/treasuries/{treasury_id}/run-now",
+    response_model=RunNowResponse,
+    status_code=202,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def run_now(
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    request: Request,
+    member: Annotated[MemberAccess, Depends(_require_run_now)],
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
+) -> RunNowResponse:
+    """Enqueue one execution cycle through the outbox, behind the scheduler's gates."""
+    if idempotency_key is None:
+        raise AuthFailure(
+            status=400,
+            code="IDEMPOTENCY_KEY_REQUIRED",
+            title="Idempotency key required",
+            detail="Provide an Idempotency-Key for this run-now request.",
+        )
+    if member.organization_id != organization_id:
+        raise _not_found_treasury()
+    # One event per (treasury, key): its id is the job id, so a replay returns the same job.
+    # Idempotency relies on the advisory lock below: domain_events has no unique constraint.
+    entity_id = uuid.uuid5(_RUN_NOW_NAMESPACE, f"{treasury_id}:{idempotency_key}")
+    async with _sessions(request)() as session, session.begin():
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"), {"k": str(entity_id)}
+        )
+        treasury = await session.scalar(
+            select(Treasury).where(Treasury.id == treasury_id, Treasury.org_id == organization_id)
+        )
+        if treasury is None:
+            raise _not_found_treasury()
+        existing = await session.scalar(
+            select(DomainEvent.id).where(
+                DomainEvent.org_id == organization_id,
+                DomainEvent.entity_type == _RUN_NOW_ENTITY,
+                DomainEvent.entity_id == entity_id,
+            )
+        )
+        if existing is not None:
+            return RunNowResponse(job_id=existing)
+        await _run_now_gate(session, treasury)
+        event = append_execution_cycle_requested(
+            session,
+            organization_id=organization_id,
+            treasury_id=treasury_id,
+            entity_type=_RUN_NOW_ENTITY,
+            entity_id=entity_id,
+        )
+        await session.flush()
+        return RunNowResponse(job_id=event.id)
+
+
+def _not_found_treasury() -> AuthFailure:
+    return AuthFailure(
+        status=404,
+        code="TREASURY_NOT_FOUND",
+        title="Treasury not found",
+        detail="The treasury does not exist or is not available to this organization.",
+    )
