@@ -19,6 +19,7 @@ from treasurypilot_api.audit.evidence import EvidenceRepository
 from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceRepository
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
+from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.api import problem_response
@@ -235,6 +236,7 @@ def create_app(
     admin_sessions: async_sessionmaker[AsyncSession] | None = None,
     screening_service: ScreeningService | None = None,
     kyb_service: KybService | None = None,
+    travel_rule_service: TravelRuleService | None = None,
     vendor_repository: VendorRepository | None = None,
     payee_repository: PayeeRepository | None = None,
     field_cipher: FieldCipher | None = None,
@@ -296,6 +298,20 @@ def create_app(
         kyb_service = build_kyb_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
         )
+    # One field cipher shared by every service; a missing key makes each of them fail closed.
+    core_cipher: CoreFieldCipher | None = None
+    if engine is not None or sessions is not None:
+        try:
+            core_cipher = CoreFieldCipher(FieldEncryptionKey.from_environment())
+        except EncryptionConfigurationError:
+            core_cipher = None
+    if travel_rule_service is None and engine is not None:
+        travel_rule_service = build_travel_rule_service(
+            settings.environment,
+            async_sessionmaker(engine, expire_on_commit=False),
+            thresholds_json=settings.travel_rule_thresholds,
+            cipher=core_cipher,
+        )
 
     if mandate_repository is None and engine is not None:
         mandate_repository = SqlAlchemyMandateRepository(
@@ -311,15 +327,11 @@ def create_app(
             async_sessionmaker(engine, expire_on_commit=False)
         )
     if telegram_repository is None and engine is not None:
-        try:
-            cipher: CoreFieldCipher | None = CoreFieldCipher(FieldEncryptionKey.from_environment())
-        except EncryptionConfigurationError:
-            # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
-            cipher = None
+        # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
         chat_hash_key = settings.telegram_chat_hash_key
         telegram_repository = SqlAlchemyTelegramRepository(
             async_sessionmaker(engine, expire_on_commit=False),
-            cipher=cipher,
+            cipher=core_cipher,
             # A dedicated, rotation-independent key: changing it would let one chat
             # link to a second account (see the uniqueness hash in telegram.py).
             hash_key=chat_hash_key.get_secret_value().encode() if chat_hash_key else None,
@@ -332,16 +344,10 @@ def create_app(
         notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
 
     if mfa_service is None and sessions is not None:
-        try:
-            mfa_cipher: CoreFieldCipher | None = CoreFieldCipher(
-                FieldEncryptionKey.from_environment()
-            )
-        except EncryptionConfigurationError:
-            # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
-            mfa_cipher = None
+        # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
         mfa_service = MfaService(
             repository=SqlAlchemyMfaRepository(sessions),
-            cipher=mfa_cipher,
+            cipher=core_cipher,
             secret=settings.session_secret.get_secret_value().encode()
             if settings.session_secret
             else LOCAL_SESSION_SECRET,
@@ -413,6 +419,7 @@ def create_app(
     app.state.audit_repository = audit_repository
     app.state.screening_service = screening_service
     app.state.kyb_service = kyb_service
+    app.state.travel_rule_service = travel_rule_service
     app.state.vendor_repository = vendor_repository
     app.state.payee_repository = payee_repository
     app.state.field_cipher = field_cipher

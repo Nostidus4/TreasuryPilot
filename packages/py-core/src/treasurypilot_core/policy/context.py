@@ -223,5 +223,8 @@ class ValidationContext(FrozenModel):
     circuit_open: bool
     screening_hit: bool
     screening_clear: bool = False
+    # None: Travel Rule preflight was not run (not enforced here). False: the service reports
+    # the PAY held, which blocks. True: non-qualifying, attested self-hosted, or completed.
+    travel_rule_clear: bool | None = None
     policy_state: PolicyState | None = None
     config: PolicyConfig = PolicyConfig()

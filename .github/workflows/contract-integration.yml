@@ -79,6 +79,10 @@ jobs:
           version: '0.11.3'
       - run: pnpm install --frozen-lockfile
       - run: uv sync --frozen
+      - name: Differential policy validator and contract cases (POL-004)
+        run: |
+          uv run pytest -q packages/py-core/tests/test_policy_contract_differential.py
+          cd contracts && forge test --match-contract PolicyContractDifferentialTest -vv
       - name: Deploy Safes, module, factory, test token and local EAS
         working-directory: contracts
         env:

@@ -296,7 +296,7 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         vm.warp(uint256(config.expiresAt) + 1);
         _expectPayError(_approval(1, 1e6), E.MandateExpired.selector);
         vm.warp(uint256(config.validFrom) - 1);
-        _expectPayError(_approval(1, 1e6), E.MandateExpired.selector);
+        _expectPayError(_approval(1, 1e6), E.NotActive.selector);
     }
 
     function testEarlyAmountAtBoundaryAndStandardOneSecondLater() external {
