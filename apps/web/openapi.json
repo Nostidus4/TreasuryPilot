@@ -1353,14 +1353,12 @@
           "reconciliation": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ReconciliationEvidence"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Reconciliation"
+            ]
           },
           "request": {
             "$ref": "#/components/schemas/BundleRequest"
@@ -3583,14 +3581,36 @@
             ],
             "title": "Planhash"
           },
+          "planId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planid"
+          },
           "plannerSource": {
             "title": "Plannersource",
             "type": "string"
           },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "steps": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PlanStepEvidence"
             },
             "title": "Steps",
             "type": "array"
@@ -3630,6 +3650,55 @@
         },
         "required": ["items"],
         "title": "PlanList",
+        "type": "object"
+      },
+      "PlanStepEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "integer"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "assetAddress": {
+            "title": "Assetaddress",
+            "type": "string"
+          },
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "fromAddress": {
+            "title": "Fromaddress",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stepId": {
+            "title": "Stepid",
+            "type": "string"
+          },
+          "toAddress": {
+            "title": "Toaddress",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "stepId",
+          "action",
+          "chainId",
+          "fromAddress",
+          "toAddress",
+          "assetAddress",
+          "amount"
+        ],
+        "title": "PlanStepEvidence",
         "type": "object"
       },
       "PlanStepView": {
@@ -3858,6 +3927,118 @@
           "stepCount"
         ],
         "title": "PlanView",
+        "type": "object"
+      },
+      "ReconciliationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalizedat"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationLineEvidence"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "matchedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matchedat"
+          },
+          "matchedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matchedby"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["status", "version"],
+        "title": "ReconciliationEvidence",
+        "type": "object"
+      },
+      "ReconciliationLineEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "assetAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assetaddress"
+          },
+          "blockNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocknumber"
+          },
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          },
+          "txHash": {
+            "title": "Txhash",
+            "type": "string"
+          }
+        },
+        "required": ["classification", "txHash", "amount"],
+        "title": "ReconciliationLineEvidence",
         "type": "object"
       },
       "RecurrenceCadence": {
@@ -5868,6 +6049,18 @@
               }
             ],
             "title": "Id"
+          },
+          "planId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planid"
           },
           "reasonCodes": {
             "items": {

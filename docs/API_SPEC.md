@@ -168,7 +168,7 @@
 | POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | Flag a discrepancy | FIN | `{note}` → reconciliation view | 422 `NOTE_REQUIRED`; 409 `INVALID_STATE`; 412 |
 | POST | `/orgs/{o}/reconciliations/{id}/resolve` | Resolve a Discrepancy: FIN sends `{note}`, OWN sends `{acknowledge: true}` (separate users unless solo mode) | FIN, OWN | → reconciliation view | 403; 409 `INVALID_STATE`, `SEPARATE_OWNER_REQUIRED`, `NOT_FINALIZED`; 412 |
 | GET | `/orgs/{o}/exports/reconciliation.csv` | CSV/journal export | FIN, AUD | `?from=&to=&treasuryId=&format=csv\|journal` → file | |
-| GET | `/orgs/{o}/requests/{rId}/evidence` | Evidence bundle | FIN, AUD, ADM | → JSON (schema `evidence-bundle.v1`) | |
+| GET | `/orgs/{o}/requests/{rId}/evidence` | Evidence bundle | FIN, AUD, ADM | → JSON (schema `evidence-bundle.v1`; plan adds `planId`/`status`, validations add `planId`, and `plan`/`reconciliation` use camelCase inner keys, all additive) | |
 | GET | `/orgs/{o}/audit-log` | Audit records in `seq` order | AUD, OWN, ADM | `?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` | 422 naive `from`/`to` |
 | GET | `/orgs/{o}/audit-log/verify` | Hash-chain check | AUD, OWN | → `{status: INTACT\|BROKEN, checked, brokenAt}` | |
 | GET | `/orgs/{o}/metrics/operations` | Operational metrics | OWN, FIN, AUD | `?from=&to=` → `{metrics}` | |

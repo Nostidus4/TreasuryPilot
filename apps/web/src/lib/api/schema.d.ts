@@ -3078,10 +3078,7 @@ export interface components {
        */
       organizationId: string;
       plan?: components['schemas']['PlanEvidence'] | null;
-      /** Reconciliation */
-      reconciliation?: {
-        [key: string]: unknown;
-      } | null;
+      reconciliation?: components['schemas']['ReconciliationEvidence'] | null;
       request: components['schemas']['BundleRequest'];
       /**
        * Schemaversion
@@ -4017,12 +4014,14 @@ export interface components {
     PlanEvidence: {
       /** Planhash */
       planHash?: string | null;
+      /** Planid */
+      planId?: string | null;
       /** Plannersource */
       plannerSource: string;
+      /** Status */
+      status?: string | null;
       /** Steps */
-      steps?: {
-        [key: string]: unknown;
-      }[];
+      steps?: components['schemas']['PlanStepEvidence'][];
     };
     /** PlanFeeActionRequest */
     PlanFeeActionRequest: {
@@ -4033,6 +4032,25 @@ export interface components {
     PlanList: {
       /** Items */
       items: components['schemas']['PlanView'][];
+    };
+    /** PlanStepEvidence */
+    PlanStepEvidence: {
+      /** Action */
+      action: number;
+      /** Amount */
+      amount: string;
+      /** Assetaddress */
+      assetAddress: string;
+      /** Chainid */
+      chainId: number;
+      /** Fromaddress */
+      fromAddress: string;
+      /** Seq */
+      seq: number;
+      /** Stepid */
+      stepId: string;
+      /** Toaddress */
+      toAddress: string;
     };
     /** PlanStepView */
     PlanStepView: {
@@ -4132,6 +4150,36 @@ export interface components {
        * Format: uuid
        */
       treasuryId: string;
+    };
+    /** ReconciliationEvidence */
+    ReconciliationEvidence: {
+      /** Finalizedat */
+      finalizedAt?: string | null;
+      /** Lines */
+      lines?: components['schemas']['ReconciliationLineEvidence'][];
+      /** Matchedat */
+      matchedAt?: string | null;
+      /** Matchedby */
+      matchedBy?: string | null;
+      /** Status */
+      status: string;
+      /** Version */
+      version: number;
+    };
+    /** ReconciliationLineEvidence */
+    ReconciliationLineEvidence: {
+      /** Amount */
+      amount: string;
+      /** Assetaddress */
+      assetAddress?: string | null;
+      /** Blocknumber */
+      blockNumber?: number | null;
+      /** Classification */
+      classification: string;
+      /** Day */
+      day?: string | null;
+      /** Txhash */
+      txHash: string;
     };
     /**
      * RecurrenceCadence
@@ -4929,6 +4977,8 @@ export interface components {
       decision: string;
       /** Id */
       id?: string | null;
+      /** Planid */
+      planId?: string | null;
       /** Reasoncodes */
       reasonCodes?: string[];
       /** Stage */
