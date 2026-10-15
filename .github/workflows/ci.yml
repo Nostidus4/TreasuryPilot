@@ -77,6 +77,10 @@ jobs:
         run: uv run pytest services/worker/tests/test_mandate_expiry.py
       - name: Outbox executor PostgreSQL integration
         run: uv run pytest services/worker/tests/executor/test_outbox_integration.py
+      - name: Step sequencer PostgreSQL integration
+        run: uv run pytest services/worker/tests/executor/test_sequencer_integration.py
+      - name: Plan gate PostgreSQL integration
+        run: uv run pytest services/worker/tests/executor/test_gate_integration.py
 
   retention-integration:
     runs-on: ubuntu-latest
