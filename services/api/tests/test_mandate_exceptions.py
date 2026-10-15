@@ -10,12 +10,12 @@ from eth_abi import decode
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.config import Settings
-from treasurypilot_api.identity.auth import SessionAccess, UserRecord
+from treasurypilot_api.identity.auth import AuthFailure, SessionAccess, UserRecord
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import RequestStatus
 from treasurypilot_api.main import create_app
 from treasurypilot_api.mandate import exceptions
-from treasurypilot_api.mandate.models import PayeeStatus
+from treasurypilot_api.mandate.models import ExceptionStatus, GovernanceTxStatus, PayeeStatus
 
 ORG_ID = uuid.UUID("00000000-0000-4000-8000-000000000111")
 TREASURY_ID = uuid.UUID("00000000-0000-4000-8000-000000000222")
@@ -254,3 +254,66 @@ def test_exception_grant_uses_exact_request_terms_and_caps_expiry(
     assert stored_exception.amount == 150
     assert stored_exception.payee == PAYEE_ADDRESS
     assert stored_exception.expiry == min(approval_expiry, mandate_expiry).replace(microsecond=0)
+
+
+def test_pay_limits_refuse_missing_or_disabled_asset_policy() -> None:
+    other = uuid.UUID("00000000-0000-4000-8000-000000000999")
+    for policies in ([], [{"assetId": str(other), "enabled": False}]):
+        with pytest.raises(AuthFailure) as caught:
+            exceptions._pay_limits(
+                {"assetPolicies": policies}, asset_id=other, primary_asset_id=ASSET_ID
+            )
+        assert caught.value.code == "ASSET_NOT_ENABLED"
+
+
+def test_approval_expiry_falls_back_when_signed_expiry_is_unparseable() -> None:
+    fallback = datetime.now(UTC) + timedelta(days=1)
+    approval = SimpleNamespace(typed_data={"message": {"expiry": "soon"}}, expires_at=fallback)
+    assert exceptions._approval_expiry([approval]) == fallback  # type: ignore[list-item]
+
+
+def test_reject_granted_exception_reports_active(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _governance, _sessions = _client(monkeypatch, context=_context(), daily_used=0)
+    granted = SimpleNamespace(status=ExceptionStatus.GRANTED)
+
+    async def scalar(*_: object, **__: object) -> object:
+        return granted
+
+    monkeypatch.setattr(FakeSession, "scalar", scalar)
+    with client:
+        response = client.post(
+            f"/v1/orgs/{ORG_ID}/requests/{REQUEST_ID}/exception/reject", json={"reason": "no"}
+        )
+    assert response.status_code == 409
+    assert response.json()["code"] == "EXCEPTION_ACTIVE"
+
+
+def test_reject_proposed_exception_with_failed_grant_tx_is_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _governance, _sessions = _client(monkeypatch, context=_context(), daily_used=0)
+    proposed = SimpleNamespace(
+        id=uuid.uuid4(),
+        status=ExceptionStatus.PROPOSED,
+        governance_tx_id=GOVERNANCE_TX_ID,
+        version=1,
+        reason=None,
+        request_id=REQUEST_ID,
+        mandate_onchain_version=7,
+        amount=150,
+        payee=PAYEE_ADDRESS,
+        expiry=datetime.now(UTC),
+        updated_by=None,
+    )
+    results = iter([proposed, GovernanceTxStatus.FAILED])
+
+    async def scalar(*_: object, **__: object) -> object:
+        return next(results)
+
+    monkeypatch.setattr(FakeSession, "scalar", scalar)
+    with client:
+        response = client.post(
+            f"/v1/orgs/{ORG_ID}/requests/{REQUEST_ID}/exception/reject", json={"reason": "no"}
+        )
+    assert response.status_code == 200
+    assert response.json()["exception"]["status"] == "Rejected"

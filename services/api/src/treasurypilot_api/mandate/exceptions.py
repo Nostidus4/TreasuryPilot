@@ -32,7 +32,9 @@ from treasurypilot_api.mandate.governance import (
 from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
 from treasurypilot_api.mandate.models import (
     ExceptionStatus,
+    GovernanceTx,
     GovernanceTxPurpose,
+    GovernanceTxStatus,
     MandateException,
     MandateVersion,
     MandateVersionStatus,
@@ -138,19 +140,38 @@ def _pay_limits(
             if not isinstance(policy, dict) or str(policy.get("assetId")) != str(asset_id):
                 continue
             if not policy.get("enabled", False):
-                return 0, 0
+                break
             limits = policy.get("limits", {})
             pay = limits.get("PAY", {}) if isinstance(limits, dict) else {}
             if not isinstance(pay, dict):
                 return 0, 0
             return int(pay.get("perRequest", 0)), int(pay.get("daily", 0))
-        return 0, 0
+        raise _fail(409, "ASSET_NOT_ENABLED", "The request asset is not enabled in the mandate.")
 
     limits = config.get("limits", {})
     pay = limits.get("PAY", {}) if isinstance(limits, dict) else {}
     if not isinstance(pay, dict):
         return 0, 0
     return int(pay.get("perRequest", 0)), int(pay.get("daily", 0))
+
+
+_ACTIVE_GOVERNANCE_STATUSES = (
+    GovernanceTxStatus.COLLECTING,
+    GovernanceTxStatus.READY,
+    GovernanceTxStatus.SUBMITTED,
+)
+
+
+async def _grant_tx_pending(session: AsyncSession, row: MandateException) -> bool:
+    """A Proposed exception is retryable once its grant tx failed, was replaced or cancelled."""
+    status = await session.scalar(
+        select(GovernanceTx.status).where(GovernanceTx.id == row.governance_tx_id)
+    )
+    return status not in {
+        GovernanceTxStatus.FAILED,
+        GovernanceTxStatus.SUPERSEDED,
+        GovernanceTxStatus.CANCELLED,
+    }
 
 
 async def _request_context(
@@ -216,7 +237,7 @@ def _approval_expiry(approvals: list[PaymentApproval]) -> datetime | None:
             try:
                 expiries.append(datetime.fromtimestamp(int(message["expiry"]), UTC))
             except (TypeError, ValueError, OSError):
-                continue
+                expiries.append(approval.expires_at)
         else:
             expiries.append(approval.expires_at)
     # One current, unexpired approval is sufficient in M1, so bind the exception to the
@@ -431,7 +452,14 @@ async def grant_exception(
                 )
                 .with_for_update()
             )
-            if existing is not None and existing.status != ExceptionStatus.REQUESTED:
+            if (
+                existing is not None
+                and existing.status != ExceptionStatus.REQUESTED
+                and (
+                    existing.status != ExceptionStatus.PROPOSED
+                    or await _grant_tx_pending(session, existing)
+                )
+            ):
                 raise _fail(
                     409, "EXCEPTION_EXISTS", "This request already has an active exception."
                 )
@@ -513,6 +541,13 @@ async def reject_exception(
     if context is None:
         raise _fail(404, "REQUEST_NOT_FOUND", "Payment request not found.")
     payment, _treasury, payee, _asset, mandate = context
+    if (
+        payment.status in {status.value for status in TERMINAL_REQUEST_STATUSES}
+        or payment.status == RequestStatus.PAID.value
+    ):
+        raise _fail(
+            409, "REQUEST_NOT_ACTIVE", "A terminal or paid request cannot receive an exception."
+        )
     if payment.amount is None or mandate.onchain_version is None:
         raise _fail(409, "REQUEST_NOT_READY", "Payment request has no active mandate terms.")
     sessions = _sessions(request)
@@ -530,7 +565,17 @@ async def reject_exception(
             )
             .with_for_update()
         )
-        if row is not None and row.status != ExceptionStatus.REQUESTED:
+        if row is not None and row.status == ExceptionStatus.GRANTED:
+            raise _fail(
+                409,
+                "EXCEPTION_ACTIVE",
+                "The exception is already granted on-chain; revoke it instead.",
+            )
+        if (
+            row is not None
+            and row.status == ExceptionStatus.PROPOSED
+            and await _grant_tx_pending(session, row)
+        ):
             raise _fail(
                 409,
                 "EXCEPTION_TX_PENDING",
@@ -592,45 +637,54 @@ async def revoke_exception(
     if payment.onchain_request_id is None:
         raise _fail(409, "REQUEST_NOT_READY", "Payment request has no on-chain identifier.")
     sessions = _sessions(request)
-    async with sessions() as session:
-        row = await session.scalar(
-            select(MandateException).where(
-                MandateException.request_id == payment.id,
-                MandateException.treasury_id == payment.treasury_id,
-                MandateException.org_id == member.organization_id,
-                MandateException.status == ExceptionStatus.GRANTED,
-                MandateException.expiry > datetime.now(UTC),
-            )
-        )
-    if row is None:
-        raise _fail(409, "NOT_GRANTED", "Only a live granted exception can be revoked.")
     try:
-        call = build_revoke_exception_call(
-            _module_address(treasury), request_id=bytes(payment.onchain_request_id)
-        )
-        governance = await _governance(request).create(
-            organization_id=member.organization_id,
-            treasury_id=payment.treasury_id,
-            user_id=member.user_id,
-            purpose=GovernanceTxPurpose.EXCEPTION_REVOKE,
-            calls=[call],
-            entity_type="exception",
-            entity_id=row.id,
-        )
-    except GovernanceFailure as exc:
-        raise _governance_failure(exc) from None
-    except RpcUnavailable:
-        raise _fail(503, "RPC_UNAVAILABLE", "Safe state could not be read from chain.") from None
-
-    governance_tx = governance.get("governanceTx", governance)
-    async with sessions() as session, session.begin():
-        current = await session.scalar(
-            select(MandateException).where(MandateException.id == row.id).with_for_update()
-        )
-        if current is not None and current.status == ExceptionStatus.GRANTED:
-            current.governance_tx_id = uuid.UUID(str(governance_tx["id"]))
-            current.version += 1
-            current.updated_by = member.user_id
+        async with sessions() as session, session.begin():
+            # Same lock as grant/reject so concurrent revokes cannot create two governance txs.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"mandate-exception:{payment.id}"},
+            )
+            row = await session.scalar(
+                select(MandateException)
+                .where(
+                    MandateException.request_id == payment.id,
+                    MandateException.treasury_id == payment.treasury_id,
+                    MandateException.org_id == member.organization_id,
+                    MandateException.status == ExceptionStatus.GRANTED,
+                    MandateException.expiry > datetime.now(UTC),
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise _fail(409, "NOT_GRANTED", "Only a live granted exception can be revoked.")
+            if row.governance_tx_id is not None and await session.scalar(
+                select(GovernanceTx.id).where(
+                    GovernanceTx.id == row.governance_tx_id,
+                    GovernanceTx.purpose == GovernanceTxPurpose.EXCEPTION_REVOKE,
+                    GovernanceTx.status.in_(_ACTIVE_GOVERNANCE_STATUSES),
+                )
+            ):
+                raise _fail(
+                    409,
+                    "EXCEPTION_TX_PENDING",
+                    "A revoke governance transaction is already pending.",
+                )
+            call = build_revoke_exception_call(
+                _module_address(treasury), request_id=bytes(payment.onchain_request_id)
+            )
+            governance = await _governance(request).create(
+                organization_id=member.organization_id,
+                treasury_id=payment.treasury_id,
+                user_id=member.user_id,
+                purpose=GovernanceTxPurpose.EXCEPTION_REVOKE,
+                calls=[call],
+                entity_type="exception",
+                entity_id=row.id,
+            )
+            governance_tx = governance.get("governanceTx", governance)
+            row.governance_tx_id = uuid.UUID(str(governance_tx["id"]))
+            row.version += 1
+            row.updated_by = member.user_id
             await log_audit_event(
                 session,
                 AuditEvent(
@@ -638,13 +692,17 @@ async def revoke_exception(
                     actor_id=member.user_id,
                     action="exception.revoke_requested",
                     entity_type="exception",
-                    entity_id=current.id,
+                    entity_id=row.id,
                     data={
                         "requestId": str(payment.id),
-                        "governanceTxId": str(current.governance_tx_id),
+                        "governanceTxId": str(row.governance_tx_id),
                     },
                 ),
             )
+    except GovernanceFailure as exc:
+        raise _governance_failure(exc) from None
+    except RpcUnavailable:
+        raise _fail(503, "RPC_UNAVAILABLE", "Safe state could not be read from chain.") from None
     return {"governanceTx": governance}
 
 
@@ -716,7 +774,7 @@ async def allow_duplicate(
                 entity_id=payment.id,
                 data={
                     "fingerprint": "0x" + bytes(payment.fingerprint).hex(),
-                    "governanceTxId": str(governance.get("id")),
+                    "governanceTxId": str(governance.get("governanceTx", governance).get("id")),
                     "reason": payload.reason,
                 },
             ),

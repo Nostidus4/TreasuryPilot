@@ -146,7 +146,7 @@ async def _exception_consumed(connection: asyncpg.Connection, event: IndexedEven
 async def _mandate_configured(connection: asyncpg.Connection, event: IndexedEvent) -> None:
     await connection.execute(
         "UPDATE exceptions SET status = 'Invalidated', version = version + 1, updated_at = now() "
-        "WHERE treasury_id = $1 AND mandate_onchain_version <> $2 "
+        "WHERE treasury_id = $1 AND mandate_onchain_version < $2 "
         "AND status IN ('Requested', 'Proposed', 'Granted')",
         event.treasury_id,
         int(event.payload["version"]),
