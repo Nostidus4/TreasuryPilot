@@ -175,12 +175,15 @@ class Web3ReceiptPublisher:
             ),
         )
         function = self.contract.functions.attest(request)
+        use_nonce = (
+            nonce
+            if nonce is not None
+            else self.web3.eth.get_transaction_count(self.account.address, "pending")
+        )
         transaction = function.build_transaction(
             {
                 "from": self.account.address,
-                "nonce": nonce
-                if nonce is not None
-                else self.web3.eth.get_transaction_count(self.account.address, "pending"),
+                "nonce": use_nonce,
                 "chainId": self.web3.eth.chain_id,
                 "gas": function.estimate_gas({"from": self.account.address}),
                 "gasPrice": self.web3.eth.gas_price,
