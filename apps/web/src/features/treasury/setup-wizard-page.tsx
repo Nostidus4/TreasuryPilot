@@ -1,7 +1,7 @@
 import { Check, RotateCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { decodeEventLog, parseAbi } from 'viem';
+import { decodeEventLog, isAddress, parseAbi } from 'viem';
 import { usePublicClient } from 'wagmi';
 
 import { Address } from '@/components/domain/chain';
@@ -35,8 +35,9 @@ import {
 } from '@/features/treasury/api';
 import { useChains } from '@/lib/api/chains';
 import { errorMessage, isApiError } from '@/lib/api/http';
-import type { TreasuryState } from '@/lib/api/types';
+import type { Chain, TreasuryState } from '@/lib/api/types';
 import { mockApiEnabled } from '@/lib/env';
+import { assetLabel } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useWallet } from '@/lib/wallet/wallet-context';
@@ -45,6 +46,9 @@ import { parseUnits } from '@/lib/money';
 const safeFactoryAbi = parseAbi([
   'event ProxyCreation(address indexed proxy, address singleton)',
 ]);
+
+/** Flip once MDT-010 can deploy and verify the Guardian Safe. */
+const GUARDIAN_VERIFICATION_AVAILABLE: boolean = false;
 
 const steps = [
   {
@@ -59,7 +63,9 @@ const steps = [
   { title: 'Coverage', detail: 'Check that nothing else can move the funds.' },
   {
     title: 'Guardian Safe',
-    detail: 'Setup is pending until Sentinel verification is available.',
+    detail: GUARDIAN_VERIFICATION_AVAILABLE
+      ? 'Who can pause in an emergency.'
+      : 'Setup is pending until Sentinel verification is available.',
   },
 ] as const;
 
@@ -114,6 +120,10 @@ function defaultModuleDraft(roles: string[], executor = ''): ModuleDraft {
     ),
   };
 }
+
+/** A network whose assets are all test assets: drives the option label and the warning. */
+const isTestChain = (chain: Chain) =>
+  chain.assets.length > 0 && chain.assets.every((asset) => asset.isTest);
 
 function readModuleDraft(treasuryId: string): Partial<ModuleDraft> {
   try {
@@ -398,11 +408,7 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
   const summary: SetupSummaryData = {
     name: draft.name.trim(),
     chain: summaryChain?.name,
-    asset:
-      summaryAsset &&
-      (summaryAsset.isTest
-        ? `${summaryAsset.symbol} · TEST`
-        : summaryAsset.symbol),
+    asset: summaryAsset && assetLabel(summaryAsset),
     safes: safeRoles.map(({ role, label }) => ({
       role,
       label,
@@ -451,11 +457,9 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                         }
                         options={items.map((item) => ({
                           value: String(item.chainId),
-                          label:
-                            item.assets.length > 0 &&
-                            item.assets.every((asset) => asset.isTest)
-                              ? `${item.name} · TEST`
-                              : item.name,
+                          label: isTestChain(item)
+                            ? `${item.name} · TEST`
+                            : item.name,
                         }))}
                       />
                     </Field>
@@ -468,18 +472,15 @@ function CreateSteps({ onCreated }: { onCreated: (id: string) => void }) {
                         }
                         options={(chain?.assets ?? []).map((asset) => ({
                           value: asset.id,
-                          label: asset.isTest
-                            ? `${asset.symbol} · TEST`
-                            : asset.symbol,
+                          label: assetLabel(asset),
                         }))}
                       />
                     </Field>
                   </div>
-                  {chain?.assets.find((asset) => asset.id === assetId)
-                    ?.isTest && (
+                  {chain && isTestChain(chain) && (
                     <Alert tone="warning" title={t('Test network')}>
                       {t(
-                        '{{chain}} is a test network. Amounts shown in this treasury have no real value. The selected asset is labelled TEST.',
+                        '{{chain}} is a test network. Amounts shown in this treasury have no real value. Its assets are labelled TEST.',
                         { chain: chain.name },
                       )}
                     </Alert>
@@ -853,6 +854,16 @@ function ModuleStep({
         )}
       />
       <CardContent className="grid gap-4">
+        {!GUARDIAN_VERIFICATION_AVAILABLE && (
+          <Alert
+            tone="warning"
+            title={t('Guardian Safe verification is pending')}
+          >
+            {t(
+              'The guardian address is included in the module settings, but this app cannot verify that it is a Safe controlled by the human guardian and pause-only Sentinel. You can enable the module now, but the Guardian Safe step stays blocked until that setup can be verified.',
+            )}
+          </Alert>
+        )}
         {governance.isPending && <Skeleton className="h-20" />}
         {governance.isError && (
           <Alert tone="danger">{errorMessage(governance.error)}</Alert>
@@ -870,14 +881,6 @@ function ModuleStep({
               {t(
                 'Amounts are entered in {{asset}} and sent to the API as integer base units. Use the executor address configured for this organization.',
                 { asset: state.treasury.asset.symbol },
-              )}
-            </Alert>
-            <Alert
-              tone="warning"
-              title={t('Guardian Safe verification is pending')}
-            >
-              {t(
-                'The guardian address below is included in the module settings, but this app cannot verify that it is a Safe controlled by the human guardian and pause-only Sentinel. The Guardian Safe step will stay blocked until that setup can be verified.',
               )}
             </Alert>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1178,7 +1181,11 @@ function CoverageStep({
 }
 
 function GuardianStep({ state }: { state: TreasuryState }) {
-  const configuredAddress = readModuleDraft(state.treasury.id).guardian?.trim();
+  const draftGuardian = readModuleDraft(state.treasury.id).guardian?.trim();
+  const configuredAddress =
+    draftGuardian && isAddress(draftGuardian)
+      ? draftGuardian
+      : state.wallets.find((wallet) => wallet.role === 'GUARDIAN')?.safeAddress;
   return (
     <Card>
       <CardHeader
@@ -1221,7 +1228,7 @@ function GuardianStep({ state }: { state: TreasuryState }) {
       <CardFooter>
         <Button
           variant="primary"
-          disabled
+          disabled={!GUARDIAN_VERIFICATION_AVAILABLE}
           aria-describedby="guardian-setup-dependency"
         >
           {t('Finish setup — Guardian verification required')}
@@ -1341,12 +1348,13 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
               ? 4
               : 3;
         const current = stage ?? derived;
+        const guardian = state.wallets.find(
+          (wallet) => wallet.role === 'GUARDIAN',
+        );
         const summary: SetupSummaryData = {
           name: state.treasury.name,
           chain: state.treasury.chainName,
-          asset: state.treasury.asset.isTest
-            ? `${state.treasury.asset.symbol} · TEST`
-            : state.treasury.asset.symbol,
+          asset: assetLabel(state.treasury.asset),
           safes: safeRoles.map(({ role, label }) => ({
             role,
             label,
@@ -1365,9 +1373,10 @@ function ResumeSteps({ treasuryId }: { treasuryId: string }) {
                 : state.coverage.acknowledged
                   ? t('Partial, acknowledged')
                   : t('Partial'),
-          // A stored address alone does not prove Sentinel ownership or health.
-          // MDT-010 is still required before this can be shown as complete.
-          guardianPending: true,
+          // An address alone does not prove Sentinel ownership or health: only a
+          // GUARDIAN wallet on an Active treasury counts as verified.
+          guardian: guardian?.safeAddress,
+          guardianPending: !guardian || state.treasury.status !== 'Active',
         };
         return (
           <Layout current={current} summary={summary}>

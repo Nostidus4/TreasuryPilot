@@ -645,6 +645,25 @@ test('the unsupported Guardian step stays pending and cannot finish setup', asyn
     }),
   ).toBeDisabled();
   expect(screen.getByText(/MDT-010/i)).toBeInTheDocument();
+  expect(screen.getByText('Verification pending')).toBeInTheDocument();
+});
+
+test('a malformed stored guardian address is not shown as module settings', async () => {
+  renderApp(`${BASE}/treasuries/new?t=trs_main`, {
+    beforeRender: () => {
+      window.sessionStorage.setItem(
+        'treasurypilot.module-draft.trs_main',
+        JSON.stringify({ guardian: 'not-an-address' }),
+      );
+    },
+  });
+
+  expect(
+    await screen.findByText(/guardian setup pending/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/address included in module settings/i),
+  ).not.toBeInTheDocument();
 });
 
 test('module setup creates a governance transaction for each treasury Safe', async () => {
@@ -675,6 +694,9 @@ test('module setup creates a governance transaction for each treasury Safe', asy
   });
   expect(
     await screen.findByText(/Enable the TreasuryPilot module on O1/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText('Guardian Safe verification is pending'),
   ).toBeInTheDocument();
   await user.click(
     screen.getAllByRole('button', { name: /sign with wallet/i })[0],
