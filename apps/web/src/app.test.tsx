@@ -1036,7 +1036,9 @@ test('mandate editor: the summary matches the saved base units, a looser change 
   // The preview is built from the stored draft, so it equals what the API got.
   const draft = db.mandates.trs_main.find((item) => item.status === 'Draft')!;
   expect(draft.config.limits.PAY.perRequest).toBe('2500500000');
-  expect((await screen.findAllByText(/2,?500\.5/)).length).toBeGreaterThan(0);
+  expect(
+    await screen.findByText(/A single payment can be at most 2,?500\.50 USDC/),
+  ).toBeInTheDocument();
   expect(screen.getAllByText(/looser/i).length).toBeGreaterThan(0);
 
   const create = screen.getByRole('button', {
@@ -1056,6 +1058,80 @@ test('mandate editor: the summary matches the saved base units, a looser change 
   expect(
     db.mandates.trs_main.find((item) => item.version === draft.version)!.status,
   ).toBe('PendingActivation');
+});
+
+async function saveMandateDraft(
+  user: ReturnType<typeof userEvent.setup>,
+  values: Record<string, string>,
+) {
+  for (const [id, value] of Object.entries(values)) {
+    const field = await screen.findByLabelText(/.*/, {
+      selector: `[id="${id}"]`,
+    });
+    await user.clear(field);
+    await user.type(field, value);
+  }
+  await user.click(screen.getByRole('button', { name: /save draft/i }));
+  await screen.findByText(/Changes against the active mandate/);
+}
+
+const createTx = () =>
+  screen.getByRole('button', { name: 'Create governance transaction' });
+const confirmBox = () =>
+  screen.queryByRole('checkbox', {
+    name: 'I understand this loosens the mandate',
+  });
+
+test('mandate editor: a stricter-only change needs no confirmation', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/mandate`);
+  await saveMandateDraft(user, { 'limits.PAY.perRequest': '1500' });
+
+  expect(confirmBox()).not.toBeInTheDocument();
+  expect(createTx()).toBeEnabled();
+});
+
+test('mandate editor: a mixed looser and stricter change is gated', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/mandate`);
+  await saveMandateDraft(user, {
+    'limits.PAY.perRequest': '1500',
+    'limits.PAY.daily': '12000',
+  });
+
+  expect(confirmBox()).toBeInTheDocument();
+  expect(createTx()).toBeDisabled();
+  expect(
+    screen.getByText('Confirm the looser change above to continue.'),
+  ).toBeInTheDocument();
+});
+
+test('mandate editor: editing after confirming, or re-saving, resets the confirmation', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/mandate`);
+  await saveMandateDraft(user, { 'limits.PAY.perRequest': '2500' });
+
+  await user.click(confirmBox()!);
+  expect(createTx()).toBeEnabled();
+
+  // Editing any field drops the preview; saving again needs a fresh confirmation.
+  const field = screen.getByLabelText(/.*/, {
+    selector: '[id="limits.PAY.perRequest"]',
+  });
+  await user.clear(field);
+  await user.type(field, '2600');
+  expect(confirmBox()).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /save draft/i }));
+  await screen.findByText(/Changes against the active mandate/);
+  expect(confirmBox()).not.toBeChecked();
+  expect(createTx()).toBeDisabled();
+
+  // Re-saving without edits also resets a ticked box.
+  await user.click(confirmBox()!);
+  await user.click(screen.getByRole('button', { name: /save draft/i }));
+  await screen.findByText(/Changes against the active mandate/);
+  expect(confirmBox()).not.toBeChecked();
+  expect(createTx()).toBeDisabled();
 });
 
 test('mandate editor is read-only for non-owners', async () => {

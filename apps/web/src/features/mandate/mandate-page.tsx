@@ -15,6 +15,7 @@ import {
   CardFooter,
   CardHeader,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/controls';
 import { Field, Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/misc';
 import {
@@ -259,6 +260,7 @@ function Editor({
     setPreview(undefined);
     setConfirmLooser(false);
   };
+  // Mixed diffs (some looser, some stricter) are gated on purpose: any looser entry needs confirmation.
   const looser = preview?.diff.some((entry) => entry.direction === 'LOOSER');
 
   const build = (): MandateConfig | null => {
@@ -769,12 +771,15 @@ function Editor({
                     {t(
                       'This draft loosens at least one control. Owners will see the same comparison before they sign.',
                     )}
-                    <label className="mt-2 flex items-center gap-2 font-medium">
-                      <input
-                        type="checkbox"
+                    <label
+                      htmlFor="confirm-looser"
+                      className="mt-2 flex items-center gap-2 font-medium"
+                    >
+                      <Checkbox
+                        id="confirm-looser"
                         checked={confirmLooser}
-                        onChange={(event) =>
-                          setConfirmLooser(event.target.checked)
+                        onCheckedChange={(checked) =>
+                          setConfirmLooser(checked === true)
                         }
                       />
                       {t('I understand this loosens the mandate')}
@@ -799,6 +804,11 @@ function Editor({
                 >
                   {t('Create governance transaction')}
                 </Button>
+                {looser && !confirmLooser && (
+                  <p className="text-sm text-muted-foreground">
+                    {t('Confirm the looser change above to continue.')}
+                  </p>
+                )}
               </CardFooter>
             </>
           )}

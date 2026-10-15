@@ -23,4 +23,7 @@ test('WEB-005 owner drafts a looser mandate, confirms it and hands off to govern
     .check();
   await create.click();
   await expect(page).toHaveURL(/\/governance\//);
+  await expect(page.getByText('Awaiting signatures').first()).toBeVisible();
+  await page.getByRole('link', { name: 'Mandate' }).first().click();
+  await expect(page.getByText('Pending activation').first()).toBeVisible();
 });
