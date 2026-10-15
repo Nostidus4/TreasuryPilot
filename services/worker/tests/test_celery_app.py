@@ -282,6 +282,16 @@ def test_transaction_tracker_is_scheduled_every_six_seconds_on_core_queue() -> N
     assert entry["options"]["queue"] == "core"
 
 
+def test_daily_snapshot_is_scheduled_at_utc_midnight() -> None:
+    entry = app.conf.beat_schedule["snapshot-daily"]
+
+    assert entry["task"] == "treasurypilot.chain.snapshot_daily"
+    assert entry["schedule"].hour == {0}
+    assert entry["schedule"].minute == {0}
+    assert app.conf.timezone == "UTC"
+    assert entry["options"]["queue"] == "core"
+
+
 def test_dashboard_snapshots_are_scheduled_every_minute() -> None:
     entry = app.conf.beat_schedule["snapshot-dashboards"]
 

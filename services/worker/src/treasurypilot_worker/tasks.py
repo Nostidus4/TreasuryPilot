@@ -26,7 +26,7 @@ from treasurypilot_worker.chain.event_handlers import (
 from treasurypilot_worker.chain.indexer import index_events_sync
 from treasurypilot_worker.chain.rpc import build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
-from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
+from treasurypilot_worker.chain.snapshot import snapshot_daily_sync, snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.executor.gate import PlanGate
 from treasurypilot_worker.executor.outbox import (
@@ -239,6 +239,16 @@ def snapshot_dashboards_task() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for dashboard snapshots")
     return {"snapshots_written": snapshot_dashboards_sync(database_url)}
+
+
+@app.task(name="treasurypilot.chain.snapshot_daily", queue="core")
+def snapshot_daily_task() -> dict[str, int]:
+    """Store a retained UTC-midnight snapshot per live treasury (supply interest, REC-004)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for daily snapshots")
+    return {"snapshots_written": snapshot_daily_sync(database_url)}
 
 
 @app.task(name="treasurypilot.chain.index-events", queue="core")

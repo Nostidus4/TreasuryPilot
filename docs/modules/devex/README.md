@@ -42,7 +42,7 @@ F-160 (FR-927), F-161 (FR-928, NFR-MAINT-01/03), F-162 (FR-929, BR-095), F-163 (
 | `make openapi` | export OpenAPI and regenerate the TS client |
 | `make deploy-local` / `make deploy-sepolia` | contracts via CREATE2 (SC-016) |
 | `scenario run <name>` | demo-main, over-cap-exception, injected-invoice, crash-recovery, pause, unexpected-outflow *(added)*, fee-spike *(added)* |
-| `make reliability` | 30 runs demo-main on Anvil + N on Sepolia → `docs/evidence/reliability-<date>.md` |
+| `make reliability` | 30 runs demo-main on Anvil (`LOCAL_RUNS`) + `TESTNET_RUNS`=N on Sepolia (0% until the runner can drive Sepolia; same-day rerun overwrites) → `docs/evidence/reliability-<date>.md` |
 | `make bench`, `make eval-extraction`, `make redteam`, `make eval-validate` | AI evals (M09, M20) |
 
 ## 6. CI workflows
