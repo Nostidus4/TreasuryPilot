@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +13,9 @@ from eth_hash.auto import keccak
 
 from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
+    BorrowAuthorizationProposal,
     GovernanceCall,
+    RepayAuthorizationProposal,
     build_allow_duplicate_call,
     build_borrow_authorization_call,
     build_cancel_request_call,
@@ -49,14 +52,14 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
     minimum_health_factor = 1_350_000_000_000_000_000
     maximum_rate_ray = 512_000_000_000_000_000_000_000_000
 
-    call = build_borrow_authorization_call(
-        TARGET_A,
+    proposal = BorrowAuthorizationProposal(
         plan_id=PLAN,
         amount=amount,
         expiry=expiry,
         min_health_factor=minimum_health_factor,
         max_rate_ray=maximum_rate_ray,
     )
+    call = build_borrow_authorization_call(TARGET_A, proposal=proposal)
 
     assert call.to == TARGET_A
     assert call.value == 0
@@ -68,6 +71,26 @@ def test_borrow_authorization_keeps_proposal_values_exact() -> None:
         minimum_health_factor,
         maximum_rate_ray,
     )
+
+    # The exact proposal call is retained in both the governance record and the Safe
+    # transaction data that owners sign.
+    row = GovernanceTx(purpose=GovernanceTxPurpose.MANDATE, calls=[call.as_json()])
+    assert row.calls == [
+        {
+            "to": "0x" + TARGET_A.hex(),
+            "value": "0",
+            "data": "0x" + call.data.hex(),
+            "operation": 0,
+        }
+    ]
+    typed_message = build_safe_transaction([call]).typed_data(
+        chain_id=11155111, safe_address=SAFE, nonce=7
+    )["message"]
+    assert typed_message["to"] == "0x" + TARGET_A.hex()
+    assert typed_message["data"] == "0x" + call.data.hex()
+
+    with pytest.raises(FrozenInstanceError):
+        proposal.amount = amount + 1  # type: ignore[misc]
 
 
 def test_cancel_request_call_encodes_module_selector_and_request_id() -> None:
@@ -125,7 +148,9 @@ def test_repay_authorization_keeps_proposal_values_exact() -> None:
     amount = 2**200 + 9
     expiry = 1_823_456_789
 
-    call = build_repay_authorization_call(TARGET_B, plan_id=PLAN, amount=amount, expiry=expiry)
+    call = build_repay_authorization_call(
+        TARGET_B, proposal=RepayAuthorizationProposal(PLAN, amount, expiry)
+    )
 
     assert call.data[:4] == keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
     assert decode(["bytes32", "uint256", "uint64"], call.data[4:]) == (
@@ -139,10 +164,17 @@ def test_repay_authorization_keeps_proposal_values_exact() -> None:
     "kwargs, message",
     [
         ({"plan_id": b"short"}, "bytes32"),
+        ({"plan_id": bytearray(PLAN)}, "bytes32"),
+        ({"plan_id": "11" * 16}, "bytes32"),
+        ({"amount": 1.0}, "int"),
+        ({"amount": True}, "int"),
+        ({"expiry": 1.0}, "int"),
         ({"amount": 0}, "positive"),
         ({"amount": 1 << 256}, "uint256"),
         ({"expiry": 0}, "uint64"),
         ({"expiry": 1 << 64}, "uint64"),
+        ({"min_health_factor": 1.5}, "int"),
+        ({"max_rate_ray": True}, "int"),
         ({"min_health_factor": 0}, "positive"),
         ({"min_health_factor": 1 << 256}, "uint256"),
         ({"max_rate_ray": 0}, "positive"),
@@ -162,13 +194,18 @@ def test_borrow_authorization_rejects_invalid_values(
     values.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        build_borrow_authorization_call(TARGET_A, **values)  # type: ignore[arg-type]
+        BorrowAuthorizationProposal(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
     "kwargs, message",
     [
         ({"plan_id": b"short"}, "bytes32"),
+        ({"plan_id": bytearray(PLAN)}, "bytes32"),
+        ({"plan_id": "11" * 16}, "bytes32"),
+        ({"amount": 1.0}, "int"),
+        ({"amount": True}, "int"),
+        ({"expiry": 1.0}, "int"),
         ({"amount": 0}, "positive"),
         ({"amount": 1 << 256}, "uint256"),
         ({"expiry": 0}, "uint64"),
@@ -182,7 +219,7 @@ def test_repay_authorization_rejects_invalid_values(
     values.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        build_repay_authorization_call(TARGET_B, **values)  # type: ignore[arg-type]
+        RepayAuthorizationProposal(**values)  # type: ignore[arg-type]
 
 
 def test_direct_call_keeps_safe_call_fields() -> None:
