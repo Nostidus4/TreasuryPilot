@@ -1838,7 +1838,13 @@ export function newReviewItem(
 export function reviewView(item: MockReviewItem, roles: Role[]): ReviewItem {
   const { evidenceResolved, ...view } = item;
   const mine = roles.map((role) => roleNames[role]);
-  const routed = reviewRoute(item.type, item.primaryCode).actions;
+  const routed: ReviewAction[] = [
+    ...reviewRoute(item.type, item.primaryCode).actions,
+    // A partial plan can resume (recovery §7.2).
+    ...(item.type === 'POLICY_BLOCK' && item.completedSteps.length > 0
+      ? (['RETRY'] as const)
+      : []),
+  ];
   const visible = item.assignedRoles.some((role) => mine.includes(role));
   view.allowedActions =
     item.status === 'Open' && visible
