@@ -227,8 +227,22 @@ def _plan_well_formed(i: _Inputs) -> bool:
     shortcut: stepId is not recomputed until POL-005 ships `step_id`; add it to this check then.
     """
     steps, snap = list(i.plan.steps), i.ctx.snapshot
-    actions = [s.action for s in steps]
-    if actions and all(action in (Action.SUPPLY, Action.WITHDRAW) for action in actions):
+    swap = steps[0] if steps and steps[0].action == Action.SWAP else None
+    if swap is not None and not (
+        _same(swap.from_wallet, snap.safe_t)
+        and _same(swap.asset, snap.asset)
+        and swap.amount > 0
+        and swap.min_out is not None
+        and swap.min_out > 0
+        and swap.venue == "TEST_ROUTER"
+    ):
+        return False
+    actions = [s.action for s in (steps[1:] if swap else steps)]
+    if (
+        swap is None
+        and actions
+        and all(action in (Action.SUPPLY, Action.WITHDRAW) for action in actions)
+    ):
         return (
             [s.seq for s in steps] == list(range(len(steps)))
             and actions in _PLAN_SHAPES

@@ -557,6 +557,9 @@ export interface PlanStep {
   txHash?: Hex;
   confirmations?: number;
   verification?: 'VERIFIED' | 'MISMATCH';
+  /** SWAP only: the labelled router (never a production one) and the output bound. */
+  venue?: 'TEST_ROUTER';
+  minOut?: string;
   updatedAt: string;
 }
 

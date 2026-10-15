@@ -97,6 +97,8 @@ def _step(action: Action) -> PlanStep:
         to=WALLET,
         asset="0x" + "a1" * 20,
         amount=BaseUnits(90),
+        min_out=BaseUnits(80) if action is Action.SWAP else None,
+        venue="TEST_ROUTER" if action is Action.SWAP else None,
     )
 
 
@@ -314,8 +316,7 @@ def test_every_module_error_blocks_with_its_decoded_code(anvil_url: str, error: 
 def test_a_succeeding_call_is_allowed_for_every_action(anvil_url: str) -> None:
     _install(anvil_url, "00")  # STOP
     for action in Action:
-        if action is not Action.SWAP:
-            assert _simulate(anvil_url, action).decision == "ALLOW"
+        assert _simulate(anvil_url, action).decision == "ALLOW"
 
 
 def test_an_unreachable_node_blocks_as_unavailable() -> None:
@@ -369,3 +370,28 @@ def _store_and_check(url: str, anvil_url: str) -> None:
     assert row["reason_codes"] == ["SIMULATION_REVERTED", "NOT_IN_APPROVER_SET"]
     assert bytes(row["policy_version"]) == CTX.policy_version and row["snapshot_block"] == 42
     assert json.loads(row["checks"])[0]["name"] == "simulation"
+
+
+def test_swap_for_gas_calldata_matches_the_shared_vector() -> None:
+    """The Foundry test executes this exact calldata on the real module (SwapForGasCalldata.t.sol)."""
+    vector = json.loads(
+        (
+            Path(__file__).parents[4] / "contracts/test/vectors/swap-for-gas-calldata.json"
+        ).read_text()
+    )
+    step = _step(Action.SWAP).model_copy(
+        update={
+            "step_id": bytes.fromhex(vector["stepId"][2:]),
+            "amount": BaseUnits(int(vector["amountIn"])),
+            "min_out": BaseUnits(int(vector["minOut"])),
+        }
+    )
+
+    assert "0x" + build_calldata(step, CTX).hex() == vector["calldata"]
+
+
+def test_a_swap_step_without_min_out_cannot_be_encoded() -> None:
+    step = _step(Action.SWAP).model_copy(update={"min_out": None})
+
+    with pytest.raises(ValueError, match="minOut"):
+        build_calldata(step, CTX)

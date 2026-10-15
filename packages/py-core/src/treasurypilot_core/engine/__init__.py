@@ -3,6 +3,14 @@
 from .cpsat import schedule_cpsat
 from .fiat_fx import FiatPaymentBlocked, propose_fiat_payment
 from .forecast import forecast
+from .gas_swap import (
+    GAS_SWAP_VENUE,
+    GasQuote,
+    GasSwap,
+    GasSwapInfeasible,
+    plan_gas_swap,
+    swap_min_out,
+)
 from .liquidity import (
     available,
     cap,
@@ -23,6 +31,12 @@ from .scoring import binding_constraints, compare_plans, exception_values, score
 from .solver import SOLVERS, Solver, SolverName, get_solver
 
 __all__ = [
+    "GAS_SWAP_VENUE",
+    "GasQuote",
+    "GasSwap",
+    "GasSwapInfeasible",
+    "plan_gas_swap",
+    "swap_min_out",
     "SOLVERS",
     "Solver",
     "SolverName",

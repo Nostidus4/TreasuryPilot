@@ -9,15 +9,19 @@ from datetime import datetime
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
+from eth_abi import decode
+from eth_hash.auto import keccak
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset, estimate_plan_fee_wei
+from treasurypilot_core.engine import GAS_SWAP_VENUE, GasQuote
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.attestation import attest, load_policy_key
 from treasurypilot_worker.celery_app import app
-from treasurypilot_worker.chain.rpc import build_rpc_client, decode_rpc_urls
+from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.snapshot import SnapshotPurpose, SnapshotScope, take_snapshot
 from treasurypilot_worker.config import Settings
 from treasurypilot_worker.planner.ai import PROPOSE_TASK, CeleryAiProposer
+from treasurypilot_worker.planner.gas import GasSwapDeps
 from treasurypilot_worker.planner.pipeline import PlannerDeps
 from treasurypilot_worker.planner.reattest import AttestFn
 
@@ -56,6 +60,27 @@ def build_attest(settings: Settings) -> AttestFn:
     return issue
 
 
+async def _view(rpc: RpcClient, to: str, signature: str, output: str) -> Any:
+    data = "0x" + keccak(signature.encode())[:4].hex()
+    raw = await rpc.call("eth_call", [{"to": to, "data": data}, "latest"])
+    return decode([output], bytes.fromhex(raw.removeprefix("0x")))[0]
+
+
+async def read_test_router_quote(rpc: RpcClient, module: str) -> GasQuote | None:
+    """The module's configured test router and its fixed rate; None when none is configured."""
+
+    router = str(await _view(rpc, module, "swapRouter()", "address"))
+    if int(router, 16) == 0:
+        return None
+    return GasQuote(
+        source=GAS_SWAP_VENUE,
+        router=router,
+        token_out=str(await _view(rpc, router, "tokenOut()", "address")),
+        numerator=int(await _view(rpc, router, "numerator()", "uint256")),
+        denominator=int(await _view(rpc, router, "denominator()", "uint256")),
+    )
+
+
 def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
     if not (settings.executor_address and settings.database_url):
         raise RuntimeError("TP_EXECUTOR_ADDRESS and DATABASE_URL are required for planning")
@@ -64,6 +89,14 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
     async def snapshot(treasury_id: uuid.UUID, scope: SnapshotScope) -> Any:
         taken = await take_snapshot(pool, treasury_id, SnapshotPurpose.PLAN, scope)
         return taken, taken.block_number  # read at "latest": the head is the snapshot block
+
+    async def treasury_rpc(treasury_id: uuid.UUID) -> RpcClient:
+        urls = await pool.fetchval(
+            "SELECT c.rpc_urls FROM treasuries t JOIN chains c ON c.chain_id = t.chain_id "
+            "WHERE t.id = $1",
+            treasury_id,
+        )
+        return build_rpc_client(decode_rpc_urls(urls))
 
     async def estimate_fee(treasury_id: uuid.UUID, plan: ExecutionPlan) -> int:
         row = await pool.fetchrow(
@@ -88,10 +121,24 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
         )
         return payload
 
+    gas_swap = None
+    if settings.gas_swap_max_amount_in is not None:
+
+        async def balance(treasury_id: uuid.UUID) -> int:
+            rpc = await treasury_rpc(treasury_id)
+            return int(await rpc.call("eth_getBalance", [executor, "latest"]), 16)
+
+        async def quote(treasury_id: uuid.UUID, module: str) -> GasQuote | None:
+            return await read_test_router_quote(await treasury_rpc(treasury_id), module)
+
+        gas_swap = GasSwapDeps(
+            balance, quote, settings.gas_swap_slippage_bps, settings.gas_swap_max_amount_in
+        )
     return PlannerDeps(
         take_snapshot=snapshot,
         executor=executor,
         estimate_fee=estimate_fee,
         attest=build_attest(settings),
         ai=CeleryAiProposer(ask) if settings.planning_ai_enabled else None,
+        gas_swap=gas_swap,
     )

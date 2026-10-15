@@ -14,6 +14,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI, Request
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.execution.routes import (
@@ -522,3 +523,62 @@ def test_plan_timeline_reads_only_same_chain_transactions_from_postgres(
         asyncio.run(_read_routes(database_url, expect_transaction=expect_transaction))
     finally:
         command.downgrade(config, "base")
+
+
+_COPY_AS_SWAP = (
+    "INSERT INTO plan_steps (id, attestation_id, plan_id, seq, step_id, action, request_id, "
+    "treasury_address, chain_id, from_address, to_address, asset_address, amount, min_out, venue) "
+    "SELECT :id, attestation_id, plan_id, 7, decode(repeat('5e', 32), 'hex'), :action, request_id, "
+    "treasury_address, chain_id, from_address, to_address, asset_address, amount, "
+    "CAST(:min_out AS numeric), :venue FROM plan_steps WHERE id = :source"
+)
+
+
+async def _swap_rows(database_url: str) -> None:
+    engine, _sessions = create_session_factory(database_url)
+    try:
+        for fields in (
+            {"action": 3, "min_out": None, "venue": None},
+            {"action": 3, "min_out": "100", "venue": "UNISWAP"},
+            {"action": 3, "min_out": "0", "venue": "TEST_ROUTER"},
+            {"action": 1, "min_out": "5", "venue": None},  # only a swap carries swap fields
+        ):
+            with pytest.raises(IntegrityError):
+                async with engine.begin() as connection:
+                    await connection.execute(
+                        text(_COPY_AS_SWAP), {"id": uuid.uuid4(), "source": PLAN_STEP_ID, **fields}
+                    )
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(_COPY_AS_SWAP),
+                {
+                    "id": uuid.uuid4(),
+                    "source": PLAN_STEP_ID,
+                    "action": 3,
+                    "min_out": "100",
+                    "venue": "TEST_ROUTER",
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+def test_swap_step_rows_need_min_out_and_the_test_router_label() -> None:
+    if "TP_TEST_DATABASE_URL" not in os.environ:
+        pytest.skip("TP_TEST_DATABASE_URL is required for plan timeline integration tests")
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    config = _alembic_config(database_url)
+    command.upgrade(config, "head")
+    try:
+        asyncio.run(_seed(database_url))
+        asyncio.run(_swap_rows(database_url))
+    finally:
+        command.downgrade(config, "base")
+
+
+def test_plan_step_view_carries_the_test_router_label() -> None:
+    step = _step("Planned", "SWAP").model_copy(update={"venue": "TEST_ROUTER", "min_out": "190"})
+
+    body = step.model_dump(by_alias=True, mode="json")
+
+    assert body["kind"] == "SWAP" and body["venue"] == "TEST_ROUTER" and body["minOut"] == "190"

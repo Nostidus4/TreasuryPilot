@@ -25,3 +25,5 @@ The `request` plan is WITHDRAW → REFILL → PAY; the `liquidity` plan is one S
 `requestId = 0x0` and the liquidity cycle id (built from `liquidityCycle`, M08 §8.4) as
 `stepIdSource`. `treasury` is the module clone, the same address as the approval `treasury`. Python checks it in
 `packages/py-core/tests/test_plan_hash.py`.
+
+`swap-for-gas-calldata.json` (EXE-011) is the exact `swapForGas(stepId, amountIn, minOut)` calldata the worker builds for a SWAP step and the signer accepts. Pytest (`services/worker/tests/executor/test_simulation.py`, `services/signer/tests/test_signing.py`) checks both sides against the file; `SwapForGasCalldata.t.sol` executes it on the real module against a `TestRouter` priced 2:1.

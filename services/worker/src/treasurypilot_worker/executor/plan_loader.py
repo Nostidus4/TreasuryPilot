@@ -10,7 +10,7 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
-from treasurypilot_core.eip712 import PAY, REFILL, WITHDRAW
+from treasurypilot_core.eip712 import PAY, REFILL, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 from treasurypilot_worker.executor.outbox import StepExecution
@@ -18,8 +18,13 @@ from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.executor.simulation import SimulationContext, build_calldata
 from treasurypilot_worker.planner.context import ContextInputs
 
-# SUPPLY/SWAP have no ExecutionPlan wire mapping yet (see ExecutionPlan.message).
-_ACTIONS = {PAY: Action.PAY, REFILL: Action.REFILL, WITHDRAW: Action.WITHDRAW}
+# SUPPLY has no ExecutionPlan wire mapping yet (see ExecutionPlan.message).
+_ACTIONS = {
+    PAY: Action.PAY,
+    REFILL: Action.REFILL,
+    WITHDRAW: Action.WITHDRAW,
+    SWAP_IN: Action.SWAP,
+}
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,8 @@ async def load_plan(pool: asyncpg.Pool, plan_id: UUID) -> LoadedPlan | None:
                 to=_hex(r["to_address"]),
                 asset=_hex(r["asset_address"]),
                 amount=BaseUnits(int(r["amount"])),
+                min_out=None if r["min_out"] is None else BaseUnits(int(r["min_out"])),
+                venue=r["venue"],
             )
             for r in rows
         ],

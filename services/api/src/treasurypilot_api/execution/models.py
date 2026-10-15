@@ -272,6 +272,11 @@ class ExecutionPlanStep(Base):
         CheckConstraint("octet_length(to_address) = 20", name="ck_plan_steps_to_length"),
         CheckConstraint("octet_length(asset_address) = 20", name="ck_plan_steps_asset_length"),
         CheckConstraint("amount >= 0", name="ck_plan_steps_amount_nonnegative"),
+        CheckConstraint(
+            "(action = 3 AND min_out IS NOT NULL AND min_out > 0 AND venue IS NOT NULL AND venue = 'TEST_ROUTER')"
+            " OR (action <> 3 AND min_out IS NULL AND venue IS NULL)",
+            name="ck_plan_steps_swap_fields",
+        ),
         UniqueConstraint("attestation_id", "seq", name="uq_plan_steps_attestation_seq"),
         UniqueConstraint("attestation_id", "step_id", name="uq_plan_steps_attestation_step"),
         Index("ix_plan_steps_plan", "plan_id", "seq"),
@@ -293,6 +298,8 @@ class ExecutionPlanStep(Base):
     to_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     asset_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    min_out: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    venue: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

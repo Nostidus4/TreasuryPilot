@@ -53,8 +53,8 @@ INSERT INTO attestations (
 _INSERT_PLAN_STEP = """
 INSERT INTO plan_steps (
     id, attestation_id, plan_id, seq, step_id, action, request_id, treasury_address,
-    chain_id, from_address, to_address, asset_address, amount
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    chain_id, from_address, to_address, asset_address, amount, min_out, venue
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 """
 
 
@@ -132,6 +132,7 @@ async def _insert(
                 signature,
                 signer,
             )
+            swaps = plan.get("swaps", {})  # minOut and venue of SWAP steps, outside the plan hash
             steps = [
                 (
                     uuid7(),
@@ -147,6 +148,8 @@ async def _insert(
                     _address(step["to"]),
                     _address(step["asset"]),
                     int(step["amount"]),
+                    swaps[step["stepId"]]["minOut"] if step["stepId"] in swaps else None,
+                    swaps[step["stepId"]]["venue"] if step["stepId"] in swaps else None,
                 )
                 for step in plan["steps"]
             ]

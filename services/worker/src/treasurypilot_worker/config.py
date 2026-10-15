@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     planning_ai_enabled: bool = True
     planning_ai_timeout_seconds: float = 20.0
     execution_lead_time_seconds: int = 86_400
+    # Swap-for-gas on the test router (EXE-011): off unless the per-swap cap is set. The cap
+    # mirrors the module's configureSwap limit, which has no on-chain getter.
+    gas_swap_max_amount_in: int | None = None
+    gas_swap_slippage_bps: int = 100
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.

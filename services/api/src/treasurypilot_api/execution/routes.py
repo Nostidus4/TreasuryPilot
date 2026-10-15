@@ -100,6 +100,9 @@ class PlanStepView(ApiModel):
     tx_hash: str | None
     confirmations: int | None
     verification: Literal["VERIFIED", "MISMATCH"] | None = None
+    # SWAP only: the labelled router (never a production one) and the engine's output bound.
+    venue: Literal["TEST_ROUTER"] | None = None
+    min_out: str | None = None
     updated_at: datetime
 
 
@@ -385,7 +388,7 @@ async def _plan_detail(
             "REFILL": "Refill treasury reserve",
             "SUPPLY": "Supply treasury reserve",
             "WITHDRAW": "Withdraw treasury reserve",
-            "SWAP": "Swap treasury assets",
+            "SWAP": "Swap for gas (TEST ROUTER)",
         }[kind]
         event_rows: list[ObservedEvent] = []
         if tx is not None:
@@ -431,6 +434,8 @@ async def _plan_detail(
                     "tx_hash": ("0x" + tx.tx_hash.hex()) if tx is not None else None,
                     "confirmations": tx.confirmations if tx is not None else None,
                     "verification": verification,
+                    "venue": signed_step.venue,
+                    "min_out": _base_units(signed_step.min_out),
                     "updated_at": updated_at,
                 }
             )

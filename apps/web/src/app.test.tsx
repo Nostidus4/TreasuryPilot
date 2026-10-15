@@ -100,6 +100,24 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   );
 });
 
+test('a swap-for-gas step is labelled as the test router', async () => {
+  renderApp(`${T}/plans/pln_0421`);
+
+  const plan = db.plans.find((item) => item.id === 'pln_0421')!;
+  Object.assign(plan.steps[0], {
+    kind: 'SWAP',
+    title: 'Swap for gas (TEST ROUTER)',
+    venue: 'TEST_ROUTER',
+    minOut: '1000',
+  });
+
+  const timeline = await screen.findByRole('list', {
+    name: /execution steps/i,
+  });
+  expect(await within(timeline).findByText('TEST ROUTER')).toBeInTheDocument();
+  expect(within(timeline).getAllByText('TEST ROUTER')).toHaveLength(1);
+});
+
 test('a new user creates an organization and lands on the checklist', async () => {
   const user = userEvent.setup();
   renderApp('/verify?token=mock.new.person%40example.com', { signedIn: false });

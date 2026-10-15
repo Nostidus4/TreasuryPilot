@@ -3828,6 +3828,8 @@ export interface components {
        * @enum {string}
        */
       kind: 'REFILL' | 'PAY' | 'SUPPLY' | 'WITHDRAW' | 'SWAP';
+      /** Minout */
+      minOut?: string | null;
       /** Reason */
       reason: string;
       /** Requestid */
@@ -3859,6 +3861,8 @@ export interface components {
        * Format: date-time
        */
       updatedAt: string;
+      /** Venue */
+      venue?: 'TEST_ROUTER' | null;
       /** Verification */
       verification?: ('VERIFIED' | 'MISMATCH') | null;
     };

@@ -14,6 +14,7 @@ from treasurypilot_core.eip712 import (
     PAY,
     REFILL,
     SUPPLY,
+    SWAP_IN,
     WITHDRAW,
     plan_attestation_typed_data,
     plan_hash,
@@ -27,7 +28,7 @@ ATTESTATION_TTL = timedelta(minutes=15)  # M08-D2
 _POLICY_DOMAIN = "TreasuryPilot Policy"
 _ZERO_REQUEST_ID = "0x" + "00" * 32
 # M08 §8.4 stepId wallet per action: the step's side that is the TreasuryPilot wallet.
-_STEP_ID_WALLET = {PAY: "from", REFILL: "to", SUPPLY: "from", WITHDRAW: "to"}
+_STEP_ID_WALLET = {PAY: "from", REFILL: "to", SWAP_IN: "from", SUPPLY: "from", WITHDRAW: "to"}
 
 # (nonce, planHash) -> the planHash the nonce is bound to after the call. The signer binds an
 # unseen nonce atomically (INSERT ... ON CONFLICT DO NOTHING on a unique nonce, in the same

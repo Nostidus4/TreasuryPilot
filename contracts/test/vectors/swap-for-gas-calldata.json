@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "description": "swapForGas calldata as the worker builds and the signer accepts it (EXE-011); Foundry executes it on the module against a TestRouter priced 2:1",
+  "stepId": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "amountIn": "100000000",
+  "minOut": "190000000",
+  "calldata": "0x24be5c115e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e0000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000000b532b80"
+}

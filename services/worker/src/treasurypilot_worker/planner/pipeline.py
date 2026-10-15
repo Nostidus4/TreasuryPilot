@@ -42,6 +42,12 @@ from treasurypilot_worker.chain.snapshot import Snapshot as ChainRead
 from treasurypilot_worker.chain.snapshot import SnapshotScope
 from treasurypilot_worker.planner.context import ContextInputs, build_context, scope_for
 from treasurypilot_worker.planner.context import load_inputs as load_context_inputs
+from treasurypilot_worker.planner.gas import (
+    GasSwapDeps,
+    GasSwapInfeasible,
+    GasSwapUnavailable,
+    with_gas_swap,
+)
 from treasurypilot_worker.planner.inputs import (
     InputsUnavailable,
     PlanInputs,
@@ -87,6 +93,8 @@ class PlannerDeps:
     # signs and stores the attestation (plan message, decision, evidence digest, now)
     attest: Callable[[uuid.UUID, Mapping[str, Any], Decision, str, datetime], Awaitable[None]]
     ai: AiProposer | None = None
+    # Set where a configured test router can cover an executor gas shortage (F-064).
+    gas_swap: GasSwapDeps | None = None
 
 
 @dataclass(frozen=True)
@@ -406,6 +414,20 @@ async def _finish(
     estimate: int | None = None
     chain = context.chain
     request = context.inputs.request
+    if plan is not None and deps.gas_swap is not None:
+        try:
+            plan = await with_gas_swap(
+                deps.gas_swap,
+                treasury_id,
+                plan,
+                required_wei=await deps.estimate_fee(treasury_id, plan),
+                safe_t=context.inputs.safe_t,
+                asset=context.inputs.asset,
+            )
+        except (GasSwapUnavailable, GasSwapInfeasible) as error:
+            # Fail closed: a plan the executor cannot pay for must not be attested.
+            plan, refusal = None, ("INFRA", "GAS_SHORTAGE_UNCOVERED")
+            reason = f"{reason}; gas shortage: {error}"
     if plan is None:
         assert refusal is not None
         kind, code = refusal

@@ -11,6 +11,9 @@ The cycle API exposes `CycleScheduleProvider`, `ScheduleWriter`, and `PlanStarte
 
 ---
 
+
+**Swap for gas (EXE-011, F-064).** When the executor's native balance is below the plan's estimated fee, the planner prepends one `SWAP` step (module action `SWAP_IN`, Safe T → test router) built by the engine (`engine/gas_swap.py`): `amount_in` is the smallest cash amount whose `minOut` (the router quote less `TP_GAS_SWAP_SLIPPAGE_BPS`, rounded down) covers the shortfall, capped by `TP_GAS_SWAP_MAX_AMOUNT_IN` (the module's per-swap limit, which has no on-chain getter; unset disables swapping). The quote comes from the module's configured `swapRouter()` and its fixed `numerator()/denominator()`. A shortage with no quote or an over-cap swap is not attested (INFRA review, `GAS_SHORTAGE_UNCOVERED`). `minOut` and the `TEST_ROUTER` venue are persisted on `plan_steps` (`min_out`, `venue`, migration 0068) and travel in the sign request as `plan.swaps[stepId]`, outside the hashed plan; the signer checks the calldata `swapForGas(stepId, amountIn, minOut)` against them. The executor's `swapForGas` takes no attestation, so `minOut` is bounded by the signer and the module, not by the plan hash. The API and web label the step `TEST ROUTER`. The validator accepts a leading SWAP only (Safe T source, test-router venue, `minOut > 0`) and checks the source buffer; the swap limits are enforced on-chain only. The fee estimate that sizes the swap excludes the swap step's own gas.
+
 ## 1. Purpose and boundaries
 
 M10 is the **engine room**: it decides *when* to act, runs the planning pipeline, and moves each attested step through the outbox, the signer and the chain — one request at a time per treasury — without ever paying twice.

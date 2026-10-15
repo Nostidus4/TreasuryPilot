@@ -120,7 +120,11 @@ def _step(request: uuid.UUID, kind: str) -> StepExecution:
     )
 
 
-async def _new_run(url: str, valid_for: timedelta = timedelta(minutes=5)) -> PlanRun:
+async def _new_run(
+    url: str,
+    valid_for: timedelta = timedelta(minutes=5),
+    kinds: tuple[str, ...] = ("REFILL", "PAY"),
+) -> PlanRun:
     pool = await create_worker_pool(url, min_size=1, max_size=1)
     request = uuid.uuid4()
     try:
@@ -140,7 +144,7 @@ async def _new_run(url: str, valid_for: timedelta = timedelta(minutes=5)) -> Pla
         )
     finally:
         await pool.close()
-    steps = (_step(request, "REFILL"), _step(request, "PAY"))
+    steps = tuple(_step(request, kind) for kind in kinds)
     return PlanRun(uuid.uuid4(), request, steps, datetime.now(UTC) + valid_for)
 
 
@@ -200,6 +204,26 @@ def test_steps_run_in_order_and_pay_confirmation_marks_paid(database_url: str) -
 
     _tracker_says(database_url, run.steps[1], "Confirmed")
     assert asyncio.run(_go(database_url, signer, run, gate)).status == "Completed"
+    assert _request_status(database_url, run) == "Paid"
+
+
+def test_a_plan_with_a_swap_for_gas_step_runs_it_first_and_completes(database_url: str) -> None:
+    run = asyncio.run(_new_run(database_url, kinds=("SWAP", "REFILL", "PAY")))
+    signer, gate = FakeSigner(), FakeGate()
+
+    for index, step in enumerate(run.steps):
+        assert asyncio.run(_go(database_url, signer, run, gate)).status == "Waiting"
+        assert gate.checked == list(range(index + 1)) and signer.calls == index + 1
+        _tracker_says(database_url, step, "Confirmed")
+    assert asyncio.run(_go(database_url, signer, run, gate)).status == "Completed"
+    kinds = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT kind FROM operations WHERE request_id = $1 ORDER BY created_at",
+            run.request_id,
+        )
+    )
+    assert [str(row["kind"]) for row in kinds] == ["SWAP", "REFILL", "PAY"]
     assert _request_status(database_url, run) == "Paid"
 
 
