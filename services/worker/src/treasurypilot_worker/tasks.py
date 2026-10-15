@@ -23,9 +23,11 @@ from treasurypilot_worker.chain.event_handlers import (
     activate_due_payees as activate_due_payees_in_pool,
 )
 from treasurypilot_worker.chain.indexer import index_events_sync
+from treasurypilot_worker.chain.rpc import build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.executor.gate import PlanGate
 from treasurypilot_worker.executor.outbox import (
     HttpSignerClient,
     SignerRefused,
@@ -33,6 +35,8 @@ from treasurypilot_worker.executor.outbox import (
     StepExecution,
     execute_step,
 )
+from treasurypilot_worker.executor.plan_loader import load_plan, plan_run, simulation_context
+from treasurypilot_worker.executor.sequencer import PlanRun, sequence_plan
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
 from treasurypilot_worker.invoices.extraction import extract_invoice_document
 from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
@@ -49,6 +53,7 @@ from treasurypilot_worker.notify.publisher import publish_from_pool
 from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
+from treasurypilot_worker.planner.context import load_inputs
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -603,3 +608,120 @@ def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
     except SignerUnavailable as error:
         # Same step_id on retry: the signer replays the original transaction, never a new one.
         raise RetryableTaskError(f"signer unavailable: {error}") from error
+
+
+class PlanNotExecutable(Exception):
+    """The plan cannot be turned into signer requests yet; nothing was validated or sent."""
+
+
+def plan_fees() -> dict[str, int]:
+    """The signer's ``fees`` body (maxFeePerGas, maxPriorityFeePerGas, feeCapWei).
+
+    shortcut: no fee estimation exists in the worker yet (the accepted cap lives in the API's
+    fee_acceptances); until EXE-005 supplies it the driver refuses to run rather than guess.
+    """
+
+    raise PlanNotExecutable("fee estimation is not wired")
+
+
+async def _reattest_unavailable(seq: int) -> Any:
+    # shortcut: re-attestation belongs to the planner pipeline (#146); until it exists an expired
+    # attestation stops the plan for review instead of being renewed.
+    from treasurypilot_core.policy import Decision, PolicyReasonCode
+
+    return Decision(
+        decision="BLOCK",
+        primary=PolicyReasonCode.ATTESTATION_EXPIRED,
+        codes=[PolicyReasonCode.ATTESTATION_EXPIRED],
+        warnings=[],
+        checks=[],
+        stage="PRE_STEP",
+        step_seq=seq,
+        policy_version=b"\x00" * 32,
+        snapshot_block=0,
+    )
+
+
+async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
+    settings = get_settings()
+    secret = settings.signer_shared_secret
+    assert settings.signer_url and secret  # checked by sequence_plan_task
+    signer = HttpSignerClient(settings.signer_url, secret.get_secret_value())
+    pool = await create_worker_pool(settings.database_url or "", min_size=1, max_size=3)
+    try:
+        loaded = await load_plan(pool, plan_id)
+        if loaded is None:
+            return {"status": "NoPlan"}
+        async with treasury_advisory_xact_lock(pool, loaded.treasury_id) as lock:
+            if lock is None:  # another worker is advancing this treasury; the sweep retries
+                return {"status": "Locked"}
+            inputs = await load_inputs(
+                pool, loaded.plan, loaded.treasury_id, executor=loaded.executor
+            )
+            run: PlanRun = plan_run(loaded, inputs, plan_fees())
+            urls = await pool.fetchval(
+                "SELECT rpc_urls FROM chains WHERE chain_id = $1", loaded.plan.chain_id
+            )
+            gate = PlanGate.for_treasury(
+                pool,
+                loaded.treasury_id,
+                rpc=build_rpc_client(decode_rpc_urls(urls)),
+                plan_id=plan_id,
+                plan=loaded.plan,
+                inputs=inputs,
+                simulation=simulation_context(loaded, inputs),
+                reattest_fn=_reattest_unavailable,
+            )
+            result = await sequence_plan(pool, signer, run, gate)
+            return {"status": result.status, "code": result.code, "completed": result.completed}
+    finally:
+        await pool.close()
+
+
+@app.task(name="treasurypilot.execution.sequence_plan", queue="core")
+def sequence_plan_task(plan_id: str) -> dict[str, Any]:
+    """Advance one attested plan by at most one step (EXE-008)."""
+
+    settings = get_settings()
+    if not (settings.database_url and settings.signer_url and settings.signer_shared_secret):
+        raise RuntimeError("DATABASE_URL, TP_SIGNER_URL and TP_SIGNER_SHARED_SECRET are required")
+    try:
+        return asyncio.run(_sequence_plan(uuid.UUID(plan_id)))
+    except PlanNotExecutable as error:
+        logger.warning("plan %s not executable: %s", plan_id, error)
+        return {"status": "NotExecutable"}
+    except SignerUnavailable as error:
+        # The same step_id is replayed on retry, so a second attempt cannot double-pay.
+        raise RetryableTaskError(f"signer unavailable: {error}") from error
+
+
+# Plans whose request is still executing and whose newest operation is Confirmed, awaiting replay
+# after a crash (NotSubmitted) or not started: the tracker's trigger may have been lost.
+_SWEEP_SQL = (
+    "SELECT DISTINCT ON (a.plan_id) a.plan_id FROM attestations a "
+    "JOIN payment_requests r ON r.onchain_request_id = a.request_id "
+    "WHERE r.status IN ('Preparing', 'Paying') AND COALESCE((SELECT o.status::text "
+    "FROM operations o WHERE o.request_id = r.id ORDER BY o.created_at DESC, o.id DESC LIMIT 1), "
+    "'Confirmed') IN ('Confirmed', 'NotSubmitted') ORDER BY a.plan_id, a.created_at DESC"
+)
+
+
+@app.task(name="treasurypilot.execution.sequence_plans_sweep", queue="core")
+def sequence_plans_sweep() -> dict[str, int]:
+    """Re-enqueue plans that are ready for their next step (backstop for the tracker)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for plan sequencing")
+
+    async def ids() -> list[uuid.UUID]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            return [row["plan_id"] for row in await pool.fetch(_SWEEP_SQL)]
+        finally:
+            await pool.close()
+
+    plan_ids = asyncio.run(ids())
+    for plan_id in plan_ids:
+        sequence_plan_task.delay(str(plan_id))
+    return {"plans": len(plan_ids)}

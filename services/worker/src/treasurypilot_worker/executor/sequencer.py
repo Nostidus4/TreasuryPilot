@@ -6,8 +6,11 @@ the transaction; the caller re-runs the plan and the next step is then re-valida
 fresh snapshot (``Gate.pre_step``) before anything is signed. ``plan_steps`` carries no status,
 so progress is derived from the ``operations`` rows (one per ``step_id``).
 
-Not wired here: the REC-001 post-condition gate (M10-D6) and building the ``Gate`` from a
-snapshot (the planner owns that context); Confirmed is the only wait condition for now.
+The request must be Preparing/Paying on every call and again right before a step is sent, so a
+cancel or review stop that landed meanwhile is honoured. The concrete ``Gate`` is
+``executor.gate.PlanGate``; the Celery driver is ``tasks.sequence_plan_task``.
+
+Not wired here: the REC-001 post-condition gate (M10-D6); Confirmed is the only wait condition.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from treasurypilot_worker.recovery.retry import ReviewIntent, classify
 
 logger = logging.getLogger(__name__)
 
-SequenceStatus = Literal["Completed", "Waiting", "PartiallyCompleted", "Blocked"]
+SequenceStatus = Literal["Completed", "Waiting", "PartiallyCompleted", "Blocked", "Inactive"]
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,7 @@ class SequenceResult:
 
 
 _OPEN = ("Submitted", "Pending", "Unknown")
+_ACTIVE = ("Preparing", "Paying")  # the only request states in which a step may be sent
 # Mirrors treasurypilot_api.recovery.review_queue routing for the kinds raised here (tested).
 _POLICY_EDIT_CODES = frozenset(
     {"AMOUNT_CHANGED", "PAYEE_CHANGED", "APPROVAL_INVALID", "APPROVAL_EXPIRED"}
@@ -122,13 +126,15 @@ async def _stop(
     """Open one review item and move the request to NeedsReview; completed steps stay (BR-054)."""
 
     async with pool.acquire() as connection, connection.transaction():
-        await _transition(
+        moved = await _transition(
             connection,
             run.request_id,
             "NeedsReview",
             ("Planning", "Preparing", "Paying"),
             f"execution stopped: {intent.primary_code}",
         )
+        if not moved:  # cancelled or already reviewed meanwhile: no second item
+            return SequenceResult("Inactive", intent.primary_code, completed)
         request = await connection.fetchrow(
             "SELECT org_id, treasury_id, version FROM payment_requests WHERE id = $1",
             run.request_id,
@@ -172,10 +178,13 @@ async def sequence_plan(
 ) -> SequenceResult:
     """Advance the plan by at most one step; see the module docstring."""
 
+    if (request_status := await _request_status(pool, run)) not in _ACTIVE:
+        return SequenceResult("Inactive", request_status)
     for seq, step in enumerate(run.steps):
-        status = await pool.fetchval(
-            "SELECT status FROM operations WHERE step_id = $1", step.step_id
+        row = await pool.fetchrow(
+            "SELECT status, attempts FROM operations WHERE step_id = $1", step.step_id
         )
+        status = row["status"] if row else None
         if status == "Confirmed":
             continue
         if status in _OPEN:
@@ -185,14 +194,21 @@ async def sequence_plan(
         if status in ("Reverted", "Abandoned"):
             return await _stop(pool, run, ReviewIntent("INFRA", f"STEP_{status.upper()}"), seq)
 
-        if clock() >= run.valid_until:  # attestation expired before this step (M10 §5)
-            renewed = await gate.reattest(seq)
-            if isinstance(renewed, Decision):
-                return await _stop(pool, run, _intent(renewed), seq)
-            run, step = renewed, renewed.steps[seq]
-        decision = await gate.pre_step(seq)
-        if decision.decision != "ALLOW":
-            return await _stop(pool, run, _intent(decision), seq)
+        # A NotSubmitted row with attempts was already validated and sent: replay it as is, the
+        # signer answers by step_id (re-validating or re-attesting could strand a sent step).
+        if not (row and row["attempts"] > 0):
+            if clock() >= run.valid_until:  # attestation expired before this step (M10 §5)
+                renewed = await gate.reattest(seq)
+                if isinstance(renewed, Decision):
+                    return await _stop(pool, run, _intent(renewed), seq)
+                run, step = renewed, renewed.steps[seq]
+            decision = await gate.pre_step(seq)
+            if decision.decision != "ALLOW":
+                return await _stop(pool, run, _intent(decision), seq)
+        # shortcut: re-checked, not locked, through the operation insert (execute_step owns its
+        # transaction); a cancel in that window is caught by the signer's attestation checks.
+        if (request_status := await _request_status(pool, run)) not in _ACTIVE:
+            return SequenceResult("Inactive", request_status, seq)
         try:
             await execute_step(pool, signer, step)
         except SignerRefused as error:
@@ -202,8 +218,17 @@ async def sequence_plan(
         return SequenceResult("Waiting", completed=seq)
 
     if any(step.kind == "PAY" for step in run.steps):
-        await _mark(pool, run, "Paid", ("Preparing", "Paying"))
+        # Paying first so both state-machine events are recorded, even for a resumed plan.
+        await _mark(pool, run, "Paying", ("Preparing",))
+        await _mark(pool, run, "Paid", ("Paying",))
     return SequenceResult("Completed", completed=len(run.steps))
+
+
+async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:
+    status: str | None = await pool.fetchval(
+        "SELECT status FROM payment_requests WHERE id = $1", run.request_id
+    )
+    return status
 
 
 async def _mark(pool: asyncpg.Pool, run: PlanRun, to: str, sources: tuple[str, ...]) -> None:

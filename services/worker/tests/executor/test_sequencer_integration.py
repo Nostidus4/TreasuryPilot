@@ -18,7 +18,7 @@ from alembic.config import Config
 
 from treasurypilot_api.recovery.review_queue import ReviewType, route_for
 from treasurypilot_core.policy import Check, Decision, PolicyReasonCode
-from treasurypilot_worker.executor.outbox import SignerRefused, StepExecution
+from treasurypilot_worker.executor.outbox import SignerRefused, SignerUnavailable, StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun, _route, sequence_plan
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -246,18 +246,16 @@ def test_expired_attestation_is_renewed_or_stops(database_url: str) -> None:
     assert result.status == "PartiallyCompleted" and gate.reattested == [1]
     assert signer.calls == 1
 
+    # A stopped request is not advanced even by a valid renewal: a fresh plan takes that path.
+    run = asyncio.run(_new_run(database_url))
+    asyncio.run(_go(database_url, signer, run, gate))
+    _tracker_says(database_url, run.steps[0], "Confirmed")
+    gate.reattested.clear()
     gate.renewed = PlanRun(
         run.plan_id, run.request_id, run.steps, datetime.now(UTC) + timedelta(hours=2)
     )
-    asyncio.run(
-        _sql(
-            database_url,
-            "UPDATE payment_requests SET status = 'Preparing' WHERE id = $1",
-            run.request_id,
-        )
-    )
     assert asyncio.run(_go(database_url, signer, run, gate, clock=later)).status == "Waiting"
-    assert gate.reattested == [1, 1] and signer.calls == 2
+    assert gate.reattested == [1] and signer.calls == 3
 
 
 def test_terminal_refusal_and_reverted_step_open_review(database_url: str) -> None:
@@ -283,3 +281,97 @@ def test_worker_routing_matches_api() -> None:
             api = route_for(ReviewType(kind), code)
             roles, sla = _route(kind, code)
             assert roles == [r.value for r in api.roles] and sla == api.sla
+
+
+@pytest.mark.parametrize("status", ["NeedsReview", "Cancelled"])
+def test_inactive_request_is_never_signed(database_url: str, status: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    asyncio.run(
+        _sql(
+            database_url,
+            "UPDATE payment_requests SET status = $2 WHERE id = $1",
+            run.request_id,
+            status,
+        )
+    )
+    result = asyncio.run(_go(database_url, signer, run, gate))
+    assert (result.status, result.code) == ("Inactive", status)
+    assert signer.calls == 0 and gate.checked == []
+
+
+def test_cancel_during_validation_is_honoured_before_signing(database_url: str) -> None:
+    run, signer = asyncio.run(_new_run(database_url)), FakeSigner()
+
+    class CancellingGate(FakeGate):
+        async def pre_step(self, seq: int) -> Decision:
+            await _sql(
+                database_url,
+                "UPDATE payment_requests SET status = 'Cancelled' WHERE id = $1",
+                run.request_id,
+            )
+            return await super().pre_step(seq)
+
+    result = asyncio.run(_go(database_url, signer, run, CancellingGate()))
+    assert (result.status, result.code) == ("Inactive", "Cancelled") and signer.calls == 0
+
+
+def test_stop_after_concurrent_cancel_opens_no_review_item(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    gate.verdict = _decision("BLOCK", PolicyReasonCode.SOURCE_BUFFER_BREACH)
+
+    class CancellingGate(FakeGate):
+        async def pre_step(self, seq: int) -> Decision:
+            await _sql(
+                database_url,
+                "UPDATE payment_requests SET status = 'Cancelled' WHERE id = $1",
+                run.request_id,
+            )
+            return gate.verdict
+
+    result = asyncio.run(_go(database_url, signer, run, CancellingGate()))
+    assert result.status == "Inactive"
+    assert not asyncio.run(
+        _sql(database_url, "SELECT 1 FROM review_items WHERE request_id = $1", run.request_id)
+    )
+
+
+def test_unsent_attempted_step_is_replayed_without_the_gate(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    signer.fail_with = SignerUnavailable("timeout")
+    with pytest.raises(SignerUnavailable):
+        asyncio.run(_go(database_url, signer, run, gate))
+    assert gate.checked == [0]
+    signer.fail_with = None
+    gate.verdict = _decision(
+        "BLOCK", PolicyReasonCode.SOURCE_BUFFER_BREACH
+    )  # would stop a gate run
+
+    assert asyncio.run(_go(database_url, signer, run, gate)).status == "Waiting"
+    assert gate.checked == [0] and signer.calls == 2
+
+
+def test_paid_goes_through_paying_with_both_events(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    for step in run.steps:
+        asyncio.run(_go(database_url, signer, run, gate))
+        _tracker_says(database_url, step, "Confirmed")
+    # Resumed after a lost Paying mark: still Preparing when the plan completes.
+    asyncio.run(
+        _sql(
+            database_url,
+            "UPDATE payment_requests SET status = 'Preparing' WHERE id = $1",
+            run.request_id,
+        )
+    )
+    assert asyncio.run(_go(database_url, signer, run, gate)).status == "Completed"
+    events = asyncio.run(
+        _sql(
+            database_url,
+            'SELECT "from", "to" FROM request_status_events WHERE request_id = $1 ORDER BY at',
+            run.request_id,
+        )
+    )
+    assert [(e["from"], e["to"]) for e in events][-2:] == [
+        ("Preparing", "Paying"),
+        ("Paying", "Paid"),
+    ]

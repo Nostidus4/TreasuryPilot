@@ -53,8 +53,13 @@ async def track_transactions(
     *,
     client_factory: ClientFactory = build_rpc_client,
     now: datetime | None = None,
+    on_confirmed: Callable[[uuid.UUID], None] | None = None,
 ) -> dict[str, int]:
-    """Poll every unfinished transaction once; returns how many changed state."""
+    """Poll every unfinished transaction once; returns how many changed state.
+
+    ``on_confirmed(plan_id)`` is called when an operation of an attested plan became Confirmed, so
+    the plan's next step does not wait for the sweep. It is best effort: the sweep is the backstop.
+    """
 
     now = now or datetime.now(UTC)
     pool = await create_worker_pool(database_url, min_size=1, max_size=2)
@@ -74,7 +79,10 @@ async def track_transactions(
             urls = row["rpc_urls"]
             client = clients.setdefault(str(urls), client_factory(decode_rpc_urls(urls)))
             try:
-                changed += await _track_one(pool, client, row, now)
+                moved = await _track_one(pool, client, row, now)
+                changed += moved
+                if moved and on_confirmed is not None:
+                    await _announce_confirmed(pool, row["operation_id"], on_confirmed)
             except Exception:
                 # One bad transaction or provider answer must not stall the others.
                 logger.exception("tracking transaction %s failed", row["id"])
@@ -83,8 +91,31 @@ async def track_transactions(
         await pool.close()
 
 
+def _enqueue_sequencing(plan_id: uuid.UUID) -> None:
+    from treasurypilot_worker.celery_app import app  # imported late: tasks import this package
+
+    app.send_task("treasurypilot.execution.sequence_plan", args=[str(plan_id)], queue="core")
+
+
 def track_transactions_sync(database_url: str) -> dict[str, int]:
-    return asyncio.run(track_transactions(database_url))
+    return asyncio.run(track_transactions(database_url, on_confirmed=_enqueue_sequencing))
+
+
+async def _announce_confirmed(
+    pool: asyncpg.Pool, operation_id: uuid.UUID, on_confirmed: Callable[[uuid.UUID], None]
+) -> None:
+    plan_id = await pool.fetchval(
+        "SELECT a.plan_id FROM operations o JOIN payment_requests r ON r.id = o.request_id "
+        "JOIN attestations a ON a.request_id = r.onchain_request_id "
+        "WHERE o.id = $1 AND o.status = 'Confirmed' ORDER BY a.created_at DESC LIMIT 1",
+        operation_id,
+    )
+    if plan_id is None:
+        return
+    try:
+        on_confirmed(plan_id)
+    except Exception:
+        logger.exception("could not enqueue sequencing of plan %s; the sweep will", plan_id)
 
 
 async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, now: datetime) -> int:
