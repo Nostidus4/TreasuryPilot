@@ -37,6 +37,8 @@ help:
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
 	@echo "  make eval-redteam    Run the red-team invoices through extraction (recorded model)"
+	@echo "  make bench           Planner benchmark B0 vs B1 vs B2 (live, recorded or stand-in; build/bench)"
+	@echo "  make bench-record    Live B2 run (needs ANTHROPIC_API_KEY) that stores the model turns"
 
 .PHONY: eval-validate
 eval-validate:
@@ -45,6 +47,14 @@ eval-validate:
 .PHONY: eval-redteam
 eval-redteam:
 	uv run --frozen python -m treasurypilot_worker.redteam --out docs/evidence/redteam-results.md
+
+.PHONY: bench
+bench:
+	uv run --frozen python -m treasurypilot_worker.planner_bench
+
+.PHONY: bench-record
+bench-record:
+	uv run --frozen python -m treasurypilot_worker.planner_bench --mode live --record
 
 bootstrap:
 	uv sync
