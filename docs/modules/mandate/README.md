@@ -134,7 +134,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
 | POST | `/…/payees/{id}/replace-address` | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `PAYEE_NOT_REGISTERED`, `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT`; 503 `DATA_MISSING` |
-| GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |
+| GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft}` (`aiDraft`: `null` or `{source: "AI"\|"TEMPLATE", draft: {summary, reasons[{text, evidence_ids}], alternatives}}`) | 404 |
 | POST | `/orgs/{o}/requests/{r}/exception/grant-tx` | OWN | `{expiryHours?: 72}` → `{governanceTx}` | 409 `NOT_OVER_CAP`, `DAILY_LIMIT_WOULD_EXCEED`, `PAYEE_NOT_ACTIVE` |
 | POST | `/orgs/{o}/requests/{r}/exception/reject` | OWN | `{reason}` → `{exception: Rejected}` | |
 | POST | `/orgs/{o}/requests/{r}/exception/revoke-tx` | OWN | → `{governanceTx}` | 409 `NOT_GRANTED` |

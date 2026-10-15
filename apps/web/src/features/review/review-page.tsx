@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 
 import { Amount } from '@/components/domain/amount';
 import { KeyValueList, UsageBar } from '@/components/domain/display';
-import { AiExplanation } from '@/components/domain/status';
 import { EmptyState, QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
 import {
@@ -27,6 +26,7 @@ import {
   useReviewAction,
   useReviewItems,
 } from '@/features/operations/api';
+import { ExceptionDraftView } from '@/features/review/exception-draft';
 import { useOrgScope } from '@/features/orgs/org-scope';
 import { errorMessage, isApiError } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
@@ -156,9 +156,7 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
           </Card>
 
           {aiDraft && (
-            <AiExplanation title={t('AI summary of the request')}>
-              {aiDraft}
-            </AiExplanation>
+            <ExceptionDraftView aiDraft={aiDraft} />
           )}
 
           {exception.status === 'GovernancePending' &&

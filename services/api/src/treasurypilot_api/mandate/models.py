@@ -555,6 +555,8 @@ class MandateException(VersionedMixin, Base):
         UUID(as_uuid=True), ForeignKey("ai_calls.id", ondelete="RESTRICT")
     )
     reason: Mapped[str | None] = mapped_column(Text)
+    # AI or template draft for the Owner (AGT-011): {source, draft{summary, reasons, alternatives}}.
+    draft: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class GuardianSetup(VersionedMixin, Base):
