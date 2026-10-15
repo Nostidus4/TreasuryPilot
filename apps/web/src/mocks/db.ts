@@ -1965,13 +1965,13 @@ export function startExecution(plan: PlanDetail) {
     logActivity(
       plan.treasuryId,
       'agent',
-      `Plan ${plan.id} finished: every step verified on-chain`,
+      `Plan ${plan.id} finished: every step matched its available module event fields`,
       `plans/${plan.id}`,
     );
     notify({
       kind: 'execution',
       title: 'Plan completed',
-      body: `${plan.id}: all ${plan.steps.length} steps verified.`,
+      body: `${plan.id}: ${plan.steps.length} steps matched their available module event fields.`,
       href: `plans/${plan.id}`,
     });
     refreshQueues();

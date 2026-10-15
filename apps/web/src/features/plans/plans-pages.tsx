@@ -298,12 +298,8 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                     )}
                   >
                     {step.verification === 'VERIFIED'
-                      ? t(
-                          'Receipt cross-check passed: independent providers agree',
-                        )
-                      : t(
-                          'Receipt cross-check mismatch: providers disagree on the receipt',
-                        )}
+                      ? t(verificationMessage(step.kind, true))
+                      : t(verificationMessage(step.kind, false))}
                   </span>
                 )}
                 {step.status !== 'Planned' && (
@@ -333,6 +329,20 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
   );
 }
 
+function verificationMessage(kind: PlanStep['kind'], matched: boolean): string {
+  if (kind === 'PAY') {
+    return matched
+      ? 'Payment event matches request, payer, recipient, and amount'
+      : 'Payment event is ambiguous, has the wrong event kind, or does not match request, payer, recipient, and amount';
+  }
+  if (kind === 'REFILL') {
+    return matched
+      ? 'Refill event matches request, destination, and amount'
+      : 'Refill event is ambiguous, has the wrong event kind, or does not match request, destination, and amount';
+  }
+  return 'Liquidity event is ambiguous, has the wrong event kind, or has a different amount';
+}
+
 export function PlanDetailPage() {
   const scope = useTreasuryScope();
   const { p: planId = '' } = useParams();
@@ -340,7 +350,7 @@ export function PlanDetailPage() {
   const runNow = useRunNow(scope.orgId, scope.treasuryId);
   const plan = query.data;
   const done = plan?.steps.filter(
-    (step) => step.status === 'Verified' || step.status === 'Final',
+    (step) => step.verification === 'VERIFIED',
   ).length;
 
   return (
@@ -431,7 +441,7 @@ export function PlanDetailPage() {
                     <p className="num text-xl font-medium">
                       {done}/{data.stepCount}{' '}
                       <span className="font-sans text-base font-normal text-muted-foreground">
-                        {t('steps verified')}
+                        {t('steps with matching event fields')}
                       </span>
                     </p>
                   </div>
@@ -441,7 +451,7 @@ export function PlanDetailPage() {
               {data.status === 'PartiallyCompleted' && (
                 <Alert tone="warning" title={t('Partially completed')}>
                   {t(
-                    '{{done}} of {{total}} steps are verified on-chain. The remaining steps were not completed; see each step for its state.',
+                    '{{done}} of {{total}} steps have matching module event fields. The remaining steps were not completed; see each step for its state.',
                     { done: done ?? 0, total: data.steps.length },
                   )}
                 </Alert>
@@ -460,7 +470,7 @@ export function PlanDetailPage() {
                 <CardHeader
                   title={t('Steps')}
                   description={t(
-                    'Executed in this order. Each step is verified on-chain before the next is sent.',
+                    'Payment events are checked against the request, payer, recipient, and amount. Refill events are checked against the request, destination, and amount; other signed fields may be absent from module events.',
                   )}
                 />
                 <CardContent>

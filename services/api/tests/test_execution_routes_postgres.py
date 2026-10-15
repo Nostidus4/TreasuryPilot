@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from pathlib import Path
@@ -25,7 +26,7 @@ from treasurypilot_api.execution.routes import (
 )
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
-from treasurypilot_core.eip712 import plan_hash
+from treasurypilot_core.eip712 import SWAP_IN, plan_hash
 
 API_ROOT = Path(__file__).parents[1]
 ORG_ID = uuid.UUID("00000000-0000-7000-8000-000000000010")
@@ -129,6 +130,22 @@ def test_liquidity_events_do_not_claim_recipient_verification_without_recipient_
     assert _step_verification(signed_step, [event]) == "MISMATCH"
 
 
+def test_swap_event_is_not_marked_mismatched_without_supported_event_fields() -> None:
+    signed_step = SimpleNamespace(
+        step_id=STEP_ID,
+        action=SWAP_IN,
+        request_id=SIGNED_REQUEST_ID,
+        from_address=EXPECTED_FROM,
+        to_address=EXPECTED_TO,
+        amount=975,
+    )
+    event = SimpleNamespace(
+        event_name="SwapExecuted",
+        payload={"stepId": "0x" + STEP_ID.hex(), "amount": "975"},
+    )
+    assert _step_verification(signed_step, [event]) is None
+
+
 def test_plan_status_only_claims_states_supported_by_persisted_rows() -> None:
     assert _plan_status(["Planned"], 1) == "Proposed"
     assert _plan_status(["Pending"], 1) == "Executing"
@@ -152,7 +169,12 @@ def _alembic_config(database_url: str) -> Config:
     return config
 
 
-async def _seed(database_url: str) -> None:
+async def _seed(
+    database_url: str,
+    *,
+    transaction_chain_id: int = 31337,
+    add_matching_module_event: bool = False,
+) -> None:
     engine, _sessions = create_session_factory(database_url)
     try:
         async with engine.begin() as connection:
@@ -168,6 +190,12 @@ async def _seed(database_url: str) -> None:
                 text(
                     "INSERT INTO chains (chain_id, name, is_testnet, confirmations, explorer_url, rpc_urls) "
                     "VALUES (31337, 'Anvil', true, 3, 'https://explorer.invalid', '[\"http://rpc\"]')"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO chains (chain_id, name, is_testnet, confirmations, explorer_url, rpc_urls) "
+                    "VALUES (31338, 'Other Anvil', true, 3, 'https://other-explorer.invalid', '[\"http://rpc\"]')"
                 )
             )
             await connection.execute(
@@ -238,11 +266,15 @@ async def _seed(database_url: str) -> None:
                 text(
                     "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address, "
                     "status, block_number, block_hash, confirmations, last_seen_pending_at, crosscheck) "
-                    "VALUES (:id, :operation, 31337, decode(repeat('44', 32), 'hex'), 1, "
+                    "VALUES (:id, :operation, :chain_id, decode(repeat('44', 32), 'hex'), 1, "
                     "decode(repeat('55', 20), 'hex'), 'Pending', 123, decode(repeat('66', 32), 'hex'), "
                     "2, now(), 'Match')"
                 ),
-                {"id": TRANSACTION_ID, "operation": OPERATION_ID},
+                {
+                    "id": TRANSACTION_ID,
+                    "operation": OPERATION_ID,
+                    "chain_id": transaction_chain_id,
+                },
             )
             await connection.execute(
                 text(
@@ -273,11 +305,34 @@ async def _seed(database_url: str) -> None:
                     "plan": PLAN_ID,
                 },
             )
+            if add_matching_module_event:
+                await connection.execute(
+                    text(
+                        "INSERT INTO observed_events (id, treasury_id, chain_id, stream, block_number, "
+                        "block_hash, tx_hash, log_index, address, event_name, payload) VALUES "
+                        "(:id, :treasury, 31337, 'MODULE', 123, decode(repeat('66', 32), 'hex'), "
+                        "decode(repeat('44', 32), 'hex'), 0, :module, 'PaymentExecuted', CAST(:payload AS jsonb))"
+                    ),
+                    {
+                        "id": uuid.uuid4(),
+                        "treasury": TREASURY_ID,
+                        "module": MODULE_ADDRESS,
+                        "payload": json.dumps(
+                            {
+                                "stepId": "0x" + STEP_ID.hex(),
+                                "requestId": "0x" + SIGNED_REQUEST_ID.hex(),
+                                "payingWallet": "0x" + EXPECTED_FROM.hex(),
+                                "payee": "0x" + EXPECTED_TO.hex(),
+                                "amount": "975",
+                            }
+                        ),
+                    },
+                )
     finally:
         await engine.dispose()
 
 
-async def _read_routes(database_url: str) -> None:
+async def _read_routes(database_url: str, *, expect_transaction: bool) -> None:
     engine, sessions = create_session_factory(database_url)
     app = FastAPI()
     app.include_router(router)
@@ -313,11 +368,11 @@ async def _read_routes(database_url: str) -> None:
         assert step["from"] == "0x" + EXPECTED_FROM.hex()
         assert step["status"] == "Pending"
         assert step["amount"] == "975"
-        # A provider-to-provider receipt match alone is not evidence that the signed
-        # recipient and amount were executed; no module log is present in this fixture.
+        # A provider-to-provider receipt match alone cannot establish execution of
+        # the signed fields; only a same-chain module event may do that.
         assert step["verification"] is None
-        assert step["txHash"] == "0x" + "44" * 32
-        assert step["confirmations"] == 2
+        assert step["txHash"] == ("0x" + "44" * 32 if expect_transaction else None)
+        assert step["confirmations"] == (2 if expect_transaction else None)
         assert body["attestation"]["planHash"] == "0x" + SIGNED_PLAN_HASH.hex()
 
         with pytest.raises(AuthFailure) as exc_info:
@@ -336,14 +391,28 @@ async def _read_routes(database_url: str) -> None:
         await engine.dispose()
 
 
-def test_plan_timeline_reads_live_records_from_postgres() -> None:
+@pytest.mark.parametrize(
+    ("transaction_chain_id", "add_matching_module_event", "expect_transaction"),
+    [(31337, False, True), (31338, True, False)],
+)
+def test_plan_timeline_reads_only_same_chain_transactions_from_postgres(
+    transaction_chain_id: int,
+    add_matching_module_event: bool,
+    expect_transaction: bool,
+) -> None:
     if "TP_TEST_DATABASE_URL" not in os.environ:
         pytest.skip("TP_TEST_DATABASE_URL is required for plan timeline integration tests")
     database_url = os.environ["TP_TEST_DATABASE_URL"]
     config = _alembic_config(database_url)
     command.upgrade(config, "head")
     try:
-        asyncio.run(_seed(database_url))
-        asyncio.run(_read_routes(database_url))
+        asyncio.run(
+            _seed(
+                database_url,
+                transaction_chain_id=transaction_chain_id,
+                add_matching_module_event=add_matching_module_event,
+            )
+        )
+        asyncio.run(_read_routes(database_url, expect_transaction=expect_transaction))
     finally:
         command.downgrade(config, "base")

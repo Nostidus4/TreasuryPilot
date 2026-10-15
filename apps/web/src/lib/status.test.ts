@@ -9,8 +9,10 @@ test('uses the mandatory status wording', () => {
   expect(stepStatus('Submitted').label).toBe('Sent — waiting for the network');
   expect(stepStatus('Pending').label).toBe('Sent — waiting for the network');
   expect(stepStatus('Confirmed').label).toBe('Confirmed on-chain — verifying');
-  expect(stepStatus('Verified', 3).label).toBe('Paid · 3 confirmations');
-  expect(stepStatus('Final', 64).label).toBe('Paid · 64 confirmations · Final');
+  expect(stepStatus('Verified', 3).label).toBe(
+    'Event matched checked fields · 3 confirmations',
+  );
+  expect(stepStatus('Final', 64).label).toBe('Final · 64 confirmations');
   expect(stepStatus('Unknown').label).toBe(
     'Checking the chain — no new payment will be sent',
   );

@@ -177,7 +177,14 @@ def _step_verification(
 
     event = matches[0]
     kind = _ACTION_KIND.get(step.action)
-    if kind is None or event.event_name != _EVENT_ACTION.get(kind):
+    if kind is None:
+        return "MISMATCH"
+    expected_event = _EVENT_ACTION.get(kind)
+    if expected_event is None:
+        # No module event is currently mapped for swaps, so their signed fields
+        # cannot be verified from the indexed event stream.
+        return None
+    if event.event_name != expected_event:
         return "MISMATCH"
     payload = event.payload
     expected_request = "0x" + step.request_id.hex()
@@ -325,7 +332,10 @@ async def _plan_detail(
             (
                 await session.scalars(
                     select(Transaction)
-                    .where(Transaction.operation_id.in_(operation_ids))
+                    .where(
+                        Transaction.operation_id.in_(operation_ids),
+                        Transaction.chain_id == first_step.chain_id,
+                    )
                     .order_by(Transaction.submitted_at.desc(), Transaction.id.desc())
                 )
             ).all()
