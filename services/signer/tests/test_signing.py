@@ -632,6 +632,16 @@ def test_signer_fee_ceiling_applies_without_a_plan_fee_cap() -> None:
     assert node.sent == []
 
 
+def test_owner_accepted_plan_fee_cap_is_enforced_by_the_signer() -> None:
+    request = _make_request()
+    request.plan["feeCapWei"] = 1  # the accepted cap, far below gas_limit * maxFeePerGas
+    service, node, store = _service()
+
+    with pytest.raises(SignerFault, match="FEE_CAP_EXCEEDED"):
+        asyncio.run(service.sign_and_send(request))
+    assert node.sent == [] and not store.uses
+
+
 def test_insufficient_executor_gas_refuses_before_reserving() -> None:
     service, node, store = _service(rpc=FakeRpc(overrides={"eth_getBalance": "0x1"}))
 

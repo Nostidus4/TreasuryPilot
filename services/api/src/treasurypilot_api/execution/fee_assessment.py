@@ -1,4 +1,8 @@
-"""Apply an accepted treasury fee policy before a plan is attested (EXE-012)."""
+"""API-side reference for the fee check of EXE-012; not on the production path.
+
+The worker planner (`planner/pipeline.py::_fee_assessment`) is what holds and attests plans. This
+helper mirrors it for ORM callers and is exercised by `test_review_queue.py`.
+"""
 
 from __future__ import annotations
 

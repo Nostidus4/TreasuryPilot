@@ -163,3 +163,31 @@ def test_executor_cap_fails_closed_when_fee_is_over_the_accepted_limit() -> None
     enforce_fee_cap(actual_fee_wei=1_000, accepted_cap_wei=1_000)
     with pytest.raises(ValueError, match="FEE_CAP_EXCEEDED"):
         enforce_fee_cap(actual_fee_wei=1_001, accepted_cap_wei=1_000)
+
+
+def test_spec_8_7_example_end_to_end() -> None:
+    """Mandate §8.7 (NORMAL): avg 0.0004 ETH, 10 plans/day, spike to 0.002 ETH."""
+    eth = 10**18
+    proposal = propose_fee_policy(
+        plan_fees_wei=[4 * eth // 10_000] * (7 * 10),
+        plans_last_7d=7 * 10,  # 10 plans/day over 7 days
+        base_fee_per_gas_wei=30_000_000_000,
+        priority_fees_wei=[1],
+    )
+    assert proposal.per_plan_threshold_wei == 12 * eth // 10_000  # 0.0012 ETH
+    assert proposal.daily_budget_wei == 12 * eth // 1_000  # max(0.012, 0.0024)
+    now = datetime(2026, 10, 15, 10, tzinfo=UTC)
+    spike = {
+        "estimated_fee_wei": 2 * eth // 1_000,
+        "per_plan_threshold_wei": proposal.per_plan_threshold_wei,
+        "spent_today_wei": 0,
+        "daily_budget_wei": proposal.daily_budget_wei,
+    }
+    due_in_5_days = assess_fee(**spike, last_safe_execution_at=now + timedelta(days=5), now=now)
+    due_today = assess_fee(**spike, last_safe_execution_at=now, now=now)
+    assert (due_in_5_days.decision, due_in_5_days.reason_code) == (
+        FeeDecision.DEFER,
+        "FEE_ABOVE_THRESHOLD",
+    )
+    assert due_today.decision is FeeDecision.AWAITING_FEE_ACCEPTANCE
+    assert fee_in_asset_base_units(spike["estimated_fee_wei"], 3_000 * 10**6) == 6 * 10**6
