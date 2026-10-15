@@ -180,6 +180,7 @@ def _ctx(**update: Any) -> ValidationContext:
         "circuit_open": False,
         "screening_hit": False,
         "screening_clear": True,
+        "travel_rule_clear": True,
     }
     return ValidationContext.model_validate(fields | update)
 
@@ -564,6 +565,17 @@ def test_screening_provider_error_fails_with_data_missing() -> None:
     assert _failing(authorization_checks(_plan(), _ctx(screening_clear=False))) == [C.DATA_MISSING]
 
 
+def test_missing_travel_rule_preflight_blocks_pay() -> None:
+    checks = authorization_checks(_plan(), _ctx(travel_rule_clear=False))
+
+    assert _failing(checks) == [C.DATA_MISSING]
+    assert next(check for check in checks if check.name == "travel_rule_clear").passed is False
+
+
+def test_unevaluated_travel_rule_preflight_does_not_block_pay() -> None:
+    assert _failing(authorization_checks(_plan(), _ctx(travel_rule_clear=None))) == []
+
+
 def test_screening_hit_reports_only_screening_hit() -> None:
     ctx = _ctx(screening_hit=True, screening_clear=False)
     assert _failing(authorization_checks(_plan(), ctx)) == [C.SCREENING_HIT]
@@ -737,6 +749,14 @@ def test_liquidity_plans_keep_mandate_executor_and_screening_checks() -> None:
     for action in (Action.SUPPLY, Action.WITHDRAW):
         plan = _liquidity_plan(action)
         assert _failing(authorization_checks(plan, _ctx(request=None, approval=None))) == []
+        assert (
+            _failing(
+                authorization_checks(
+                    plan, _ctx(request=None, approval=None, travel_rule_clear=False)
+                )
+            )
+            == []
+        )
         bad = {
             C.MANDATE_REVOKED: {"snapshot": _snapshot(mandate=_mandate(status="Revoked"))},
             C.MANDATE_PAUSED: {"snapshot": _snapshot(mandate=_mandate(status="Paused"))},
