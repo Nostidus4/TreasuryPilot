@@ -97,6 +97,10 @@ def test_seeded_dataset_metrics() -> None:
     assert m.reverts_by_selector == {"08c379a0": 1}
     assert [p.paid for p in m.series] == [0, 1, 1]
     assert [p.volume for p in m.series] == ["0", "1000", "2000"]
+    assert [p.completed for p in m.series] == [0, 1, 1]
+    assert [p.on_time for p in m.series] == [0, 1, 0]
+    assert [p.interventions for p in m.series] == [0, 1, 3]
+    assert [p.fees_wei for p in m.series] == ["0", "100", "350"]
 
 
 def test_latency_by_phase() -> None:

@@ -4923,9 +4923,25 @@
       },
       "SeriesPoint": {
         "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
           "date": {
             "title": "Date",
             "type": "string"
+          },
+          "feesWei": {
+            "title": "Feeswei",
+            "type": "string"
+          },
+          "interventions": {
+            "title": "Interventions",
+            "type": "integer"
+          },
+          "onTime": {
+            "title": "Ontime",
+            "type": "integer"
           },
           "paid": {
             "title": "Paid",
@@ -4936,7 +4952,15 @@
             "type": "string"
           }
         },
-        "required": ["date", "paid", "volume"],
+        "required": [
+          "date",
+          "paid",
+          "volume",
+          "completed",
+          "onTime",
+          "interventions",
+          "feesWei"
+        ],
         "title": "SeriesPoint",
         "type": "object"
       },

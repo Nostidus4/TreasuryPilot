@@ -18,7 +18,10 @@ test('WEB-018 metrics and savings pages render charts and API-backed numbers', a
 
   for (const name of [
     /completion rate and the on-time rate/,
-    /network fees paid/,
+    /fees paid, by transaction/,
+    /network fees paid for each day/,
+    /Completed per day/,
+    /Interventions per day/,
     /payment volume executed/,
     /number of payments executed/,
   ]) {

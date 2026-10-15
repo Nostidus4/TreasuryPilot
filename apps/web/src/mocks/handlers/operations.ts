@@ -477,6 +477,10 @@ export const operationHandlers: RequestHandler[] = [
             .slice(0, 10),
           paid,
           volume: usdc(paid * 870),
+          completed: paid,
+          onTime: paid > 0 ? paid - 1 : 0,
+          interventions: paid > 3 ? 1 : 0,
+          feesWei: String(paid * 130_000_000_000_000),
         };
       });
       return {
@@ -499,6 +503,9 @@ export const operationHandlers: RequestHandler[] = [
                 },
               },
               series,
+              latencyByPhase: {},
+              rejectionsByReason: {},
+              revertsBySelector: {},
             }
           : {
               paymentsCount: 0,
@@ -512,6 +519,9 @@ export const operationHandlers: RequestHandler[] = [
               txCount: 0,
               fees: { totalWei: '0', byStepType: {} },
               series,
+              latencyByPhase: {},
+              rejectionsByReason: {},
+              revertsBySelector: {},
             },
       };
     },
