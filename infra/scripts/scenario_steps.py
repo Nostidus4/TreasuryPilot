@@ -502,10 +502,8 @@ def fee_spike_defers(ctx: dict[str, Any]) -> dict[str, Any]:
     )
     _check(sent is None, "payment was sent during the fee spike")
     cleared, receipt = pay_if_accepted(set_base_fee(base))
-    _check(
-        cleared.decision is FeeDecision.PROCEED and receipt is not None,
-        "fee did not clear after the spike",
-    )
+    if cleared.decision is not FeeDecision.PROCEED or receipt is None:
+        raise ScenarioError("fee did not clear after the spike")
     pay_tx = receipt["transactionHash"]
     _paid(amount, c, ap, before)
     return {"step": "fee_spike_defers", "decision": held.decision.value, "reason": held.reason_code,
