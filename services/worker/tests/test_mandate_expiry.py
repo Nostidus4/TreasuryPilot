@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from treasurypilot_worker.mandate_expiry import expire_mandates
+from treasurypilot_worker.mandate_expiry import _LOCK_KEY, expire_mandates
 
 API_ROOT = Path(__file__).parents[2] / "api"
 
@@ -28,7 +28,7 @@ async def _sweep(database_url: str) -> None:
     connection = await asyncpg.connect(
         database_url.replace("postgresql+asyncpg://", "postgresql://")
     )
-    org_id, user_id, asset_id, treasury_id = (uuid.uuid4() for _ in range(4))
+    org_id, user_id, asset_id = (uuid.uuid4() for _ in range(3))
     chain_id = await connection.fetchval("SELECT COALESCE(MAX(chain_id), 100000) + 1 FROM chains")
     try:
         await connection.execute(
@@ -44,13 +44,6 @@ async def _sweep(database_url: str) -> None:
             "VALUES ($1, $2, decode(repeat('11', 20), 'hex'), 'EXP', 6, 'Test')",
             asset_id,
             chain_id,
-        )
-        await connection.execute(
-            "INSERT INTO treasuries (id, org_id, chain_id, asset_id) VALUES ($1, $2, $3, $4)",
-            treasury_id,
-            org_id,
-            chain_id,
-            asset_id,
         )
         await connection.execute(
             "INSERT INTO users (id, email) VALUES ($1, $2)", user_id, f"{user_id}@example.test"
@@ -69,6 +62,15 @@ async def _sweep(database_url: str) -> None:
             "expired": now - timedelta(hours=1),
         }
         for index, name in enumerate(mandate_ids, start=1):
+            # uq_mandate_versions_active allows one Active mandate per treasury.
+            treasury_id = uuid.uuid4()
+            await connection.execute(
+                "INSERT INTO treasuries (id, org_id, chain_id, asset_id) VALUES ($1, $2, $3, $4)",
+                treasury_id,
+                org_id,
+                chain_id,
+                asset_id,
+            )
             await connection.execute(
                 "INSERT INTO mandate_versions (id, org_id, treasury_id, version, onchain_version, "
                 "status, config, config_hash, valid_from, expires_at, created_by, activated_at) "
@@ -84,8 +86,18 @@ async def _sweep(database_url: str) -> None:
             )
         await connection.close()
 
+        # An overlapping sweep holding the advisory lock makes this one a no-op.
+        holder = await asyncpg.connect(
+            database_url.replace("postgresql+asyncpg://", "postgresql://")
+        )
+        try:
+            await holder.execute("SELECT pg_advisory_lock($1)", _LOCK_KEY)
+            assert await _run_sweep(database_url) == {"warnings_emitted": 0, "mandates_expired": 0}
+        finally:
+            await holder.close()
+
         assert await _run_sweep(database_url) == {
-            "warnings_emitted": 6,
+            "warnings_emitted": 4,
             "mandates_expired": 1,
         }
         assert await _run_sweep(database_url) == {"warnings_emitted": 0, "mandates_expired": 0}
@@ -99,12 +111,22 @@ async def _sweep(database_url: str) -> None:
                 "WHERE org_id = $1",
                 org_id,
             )
+            # Windows are cumulative, so a late-seen mandate claims every milestone it is inside.
+            milestones = {"seven_day": (168,), "two_day": (168, 48)}
+            milestones |= dict.fromkeys(("one_hour", "catch_up"), (168, 48, 1))
             assert {(row["mandate_version_id"], row["warning_hours"]) for row in warnings} == {
+                (mandate_ids[name], hours) for name, hs in milestones.items() for hours in hs
+            }
+            # ...but only the tightest one is announced.
+            announced = await connection.fetch(
+                "SELECT (payload->>'mandateVersionId')::uuid AS id, (payload->>'warningHours')::int "
+                "AS hours FROM domain_events WHERE org_id = $1 AND type = 'MandateExpiring'",
+                org_id,
+            )
+            assert {(row["id"], row["hours"]) for row in announced} == {
                 (mandate_ids["seven_day"], 168),
                 (mandate_ids["two_day"], 48),
                 (mandate_ids["one_hour"], 1),
-                (mandate_ids["catch_up"], 168),
-                (mandate_ids["catch_up"], 48),
                 (mandate_ids["catch_up"], 1),
             }
             assert (
@@ -115,7 +137,7 @@ async def _sweep(database_url: str) -> None:
                 == "Expired"
             )
             status_event = await connection.fetchrow(
-                'SELECT "from"::text, "to"::text, by_user_id FROM mandate_status_events '
+                "SELECT from_status::text, to_status::text, by_user_id FROM mandate_status_events "
                 "WHERE mandate_version_id = $1",
                 mandate_ids["expired"],
             )
@@ -126,13 +148,12 @@ async def _sweep(database_url: str) -> None:
                     "AND type IN ('MandateExpiring', 'MandateExpired')",
                     org_id,
                 )
-                == 7
+                == 5
             )
             assert (
                 await connection.fetchval(
-                    "SELECT count(*) FROM mandate_versions WHERE treasury_id = $1 "
-                    "AND status = 'Active'",
-                    treasury_id,
+                    "SELECT count(*) FROM mandate_versions WHERE org_id = $1 AND status = 'Active'",
+                    org_id,
                 )
                 == 4
             )

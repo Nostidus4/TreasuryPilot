@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncpg  # type: ignore[import-untyped]
 
+_LOCK_KEY = 0x4D44545F455850  # "MDT_EXP"
+_LIMITS = "SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '30s'"
+
 _WARN_EXPIRING = """
 WITH due AS (
     SELECT m.id AS mandate_version_id, m.org_id, m.treasury_id,
@@ -22,8 +25,14 @@ WITH due AS (
 )
 INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, payload)
 SELECT gen_random_uuid(), c.org_id, m.treasury_id, 'MandateExpiring', 'treasury', m.treasury_id,
-       jsonb_build_object('mandateVersionId', c.mandate_version_id::text)
-FROM claimed AS c
+       jsonb_build_object(
+           'mandateVersionId', c.mandate_version_id::text, 'warningHours', c.warning_hours
+       )
+FROM (
+    SELECT DISTINCT ON (mandate_version_id) mandate_version_id, org_id, warning_hours
+    FROM claimed
+    ORDER BY mandate_version_id, warning_hours
+) AS c
 JOIN mandate_versions AS m ON m.id = c.mandate_version_id AND m.org_id = c.org_id
 RETURNING id
 """
@@ -36,7 +45,7 @@ WITH expired AS (
     RETURNING id, org_id, treasury_id
 ), history AS (
     INSERT INTO mandate_status_events
-        (id, org_id, mandate_version_id, "from", "to", tx_hash, by_user_id)
+        (id, org_id, mandate_version_id, from_status, to_status, tx_hash, by_user_id)
     SELECT gen_random_uuid(), org_id, id, 'Active', 'Expired', NULL, NULL
     FROM expired
     RETURNING mandate_version_id, org_id
@@ -50,10 +59,20 @@ RETURNING id
 """
 
 
-async def expire_mandates(connection: asyncpg.Connection) -> dict[str, int]:
-    """Emit each configured warning once, then expire active mandates atomically."""
-
+async def _phase(connection: asyncpg.Connection, sql: str) -> int:
     async with connection.transaction():
-        warnings = await connection.fetch(_WARN_EXPIRING)
-        expired = await connection.fetch(_EXPIRE)
-    return {"warnings_emitted": len(warnings), "mandates_expired": len(expired)}
+        await connection.execute(_LIMITS)
+        if not await connection.fetchval("SELECT pg_try_advisory_xact_lock($1)", _LOCK_KEY):
+            return 0  # an overlapping sweep holds the lock; the next tick retries
+        return len(await connection.fetch(sql))
+
+
+async def expire_mandates(connection: asyncpg.Connection) -> dict[str, int]:
+    """Emit the tightest due warning once per mandate, then expire lapsed active mandates.
+
+    The phases run in separate transactions so a warning failure never blocks expiry.
+    """
+
+    warnings = await _phase(connection, _WARN_EXPIRING)
+    expired = await _phase(connection, _EXPIRE)
+    return {"warnings_emitted": warnings, "mandates_expired": expired}

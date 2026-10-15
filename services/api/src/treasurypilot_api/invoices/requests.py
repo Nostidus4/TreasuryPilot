@@ -520,6 +520,7 @@ def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> Select[tuple[dict[str
         .where(
             MandateVersion.treasury_id == treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -2584,6 +2585,7 @@ async def _approval_typed_data(
         .where(
             MandateVersion.treasury_id == row.treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)

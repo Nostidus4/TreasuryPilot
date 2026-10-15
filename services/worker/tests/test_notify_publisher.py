@@ -41,9 +41,12 @@ def test_routing_table_covers_documented_notification_events() -> None:
         "CoverageChanged",
         "LowGas",
         "MandateExpiring",
+        "MandateExpired",
         "Discrepancy",
     } <= ROUTING_TABLE.keys()
     assert policy_for_event("NeedsReview:Finance").roles == ("Finance",)
+    for event_type in ("MandateExpiring", "MandateExpired"):
+        assert policy_for_event(event_type).roles == ("Owner", "OrgAdmin")
 
 
 class _FakeTransaction:
