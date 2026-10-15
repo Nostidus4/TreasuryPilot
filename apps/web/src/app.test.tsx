@@ -1021,3 +1021,52 @@ test('a mandate that failed read-back shows Discrepancy, and non-owners see pend
   expect(screen.getAllByText('Discrepancy').length).toBeGreaterThan(0);
   expect(screen.getByText('v8 is waiting for signatures')).toBeInTheDocument();
 });
+
+test('an over-cap request shows the Owner a signable exception; after execution the item closes', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/review?item=rev_512`, { demoWallet: true });
+
+  // Detail: SLA, routing, reason codes, completed steps, engine numbers and AI draft.
+  expect(await screen.findByText('OVER_PER_REQUEST_LIMIT')).toBeInTheDocument();
+  expect(screen.getByText('Invoice approved')).toBeInTheDocument();
+  expect(screen.getAllByText(/^Due /).length).toBeGreaterThan(1);
+  expect(screen.getByText('Over the limit by')).toBeInTheDocument();
+  expect(screen.getByText('AI summary of the request')).toBeInTheDocument();
+
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Create governance transaction to grant',
+    }),
+  );
+  // The grantException transaction is signed in the governance inbox (no EIP-712 here).
+  expect(await screen.findByText(/grantException/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /sign with wallet/i }));
+  await user.click(
+    await screen.findByRole('button', { name: /execute transaction/i }),
+  );
+  await screen.findByText('Executed on-chain', { selector: 'p' });
+
+  await waitFor(() =>
+    expect(db.reviewItems.find((item) => item.id === 'rev_512')?.status).toBe(
+      'Resolved',
+    ),
+  );
+});
+
+test('only Owners get the exception decision; the queue filters by type and flags overdue items', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/review?item=rev_unknown`);
+  expect(await screen.findByText('Overdue')).toBeInTheDocument();
+
+  await user.click(screen.getByRole('combobox', { name: 'Filter by type' }));
+  await user.click(
+    await screen.findByRole('option', { name: 'Exception request' }),
+  );
+  const list = screen.getByRole('complementary', { name: 'Review items' });
+  expect(
+    within(list).getByText(/over the per-request limit/),
+  ).toBeInTheDocument();
+  expect(
+    within(list).queryByText(/no confirmed outcome/),
+  ).not.toBeInTheDocument();
+});

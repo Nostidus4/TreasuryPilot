@@ -155,9 +155,7 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
             </CardContent>
           </Card>
 
-          {aiDraft && (
-            <ExceptionDraftView aiDraft={aiDraft} />
-          )}
+          {aiDraft && <ExceptionDraftView aiDraft={aiDraft} />}
 
           {exception.status === 'GovernancePending' &&
             exception.governanceTxId && (
@@ -367,6 +365,50 @@ function ActionPanel({ item }: { item: ReviewItem }) {
   );
 }
 
+/** SLA, reason codes and the steps already done, from the queue item. */
+function ItemFacts({ item }: { item: ReviewItem }) {
+  const overdue =
+    item.status === 'Open' &&
+    item.slaDueAt !== undefined &&
+    new Date(item.slaDueAt).getTime() < Date.now();
+  return (
+    <div className="mt-3 grid gap-2 text-sm">
+      <p className="flex flex-wrap items-center gap-2 text-muted-foreground">
+        <span>
+          {t('Routed to: {{roles}}', {
+            roles: item.roles.map((role) => t(roleLabels[role])).join(', '),
+          })}
+        </span>
+        {item.slaDueAt && (
+          <span>
+            {t('Due {{when}}', { when: formatDateTime(item.slaDueAt) })}
+          </span>
+        )}
+        {overdue && <Badge tone="danger">{t('Overdue')}</Badge>}
+      </p>
+      {item.reasonCodes && item.reasonCodes.length > 0 && (
+        <p className="flex flex-wrap gap-1.5">
+          {item.reasonCodes.map((code) => (
+            <Badge key={code} tone="neutral" className="font-mono">
+              {code}
+            </Badge>
+          ))}
+        </p>
+      )}
+      {item.completedSteps && item.completedSteps.length > 0 && (
+        <div>
+          <p className="font-medium">{t('Completed steps')}</p>
+          <ul className="list-disc pl-5 text-muted-foreground">
+            {item.completedSteps.map((step) => (
+              <li key={step.label}>{step.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ItemDetail({ item }: { item: ReviewItem }) {
   const scope = useOrgScope();
   return (
@@ -380,6 +422,7 @@ function ItemDetail({ item }: { item: ReviewItem }) {
             </Badge>
           </div>
           <p className="mt-2 text-base text-muted-foreground">{item.detail}</p>
+          <ItemFacts item={item} />
           <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{t(typeLabel[item.type] ?? item.type)}</span>
             <span>{formatDateTime(item.createdAt)}</span>
@@ -434,6 +477,7 @@ export function ReviewPage() {
   const scope = useOrgScope();
   const [params] = useSearchParams();
   const selectedId = params.get('item');
+  const [typeFilter, setTypeFilter] = useState('ALL');
   const query = useReviewItems(scope.orgId);
   const listPath = `${scope.base}/review`;
 
@@ -460,8 +504,11 @@ export function ReviewPage() {
               </Card>
             );
           }
-          const open = items.filter((item) => item.status === 'Open');
-          const resolved = items.filter((item) => item.status === 'Resolved');
+          const shown = items.filter(
+            (item) => typeFilter === 'ALL' || item.type === typeFilter,
+          );
+          const open = shown.filter((item) => item.status === 'Open');
+          const resolved = shown.filter((item) => item.status === 'Resolved');
           const selected = items.find((item) => item.id === selectedId);
           const row = (item: ReviewItem) => (
             <InboxItem
@@ -472,7 +519,11 @@ export function ReviewPage() {
               <p className="text-base font-medium">{item.title}</p>
               <p className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{t(typeLabel[item.type] ?? item.type)}</span>
-                <span>{formatRelative(item.createdAt)}</span>
+                <span>
+                  {item.slaDueAt && item.status === 'Open'
+                    ? t('Due {{when}}', { when: formatRelative(item.slaDueAt) })
+                    : formatRelative(item.createdAt)}
+                </span>
               </p>
             </InboxItem>
           );
@@ -483,6 +534,22 @@ export function ReviewPage() {
               listLabel={t('Review items')}
               list={
                 <>
+                  <div className="border-b p-3">
+                    <Select
+                      aria-label={t('Filter by type')}
+                      value={typeFilter}
+                      onValueChange={setTypeFilter}
+                      options={[
+                        { value: 'ALL', label: t('All types') },
+                        ...[...new Set(items.map((item) => item.type))].map(
+                          (value) => ({
+                            value,
+                            label: t(typeLabel[value] ?? value),
+                          }),
+                        ),
+                      ]}
+                    />
+                  </div>
                   {open.length > 0 && (
                     <InboxGroup label={t('Open')} count={open.length}>
                       {open.map(row)}

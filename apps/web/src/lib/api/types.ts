@@ -593,6 +593,10 @@ export interface ReviewItem {
   >;
   /** Optimistic-concurrency token; echoed back when acting. */
   version: components['schemas']['ReviewActionRequest']['version'];
+  /** Deadline from the routing table (recovery §8.3). */
+  slaDueAt?: string;
+  reasonCodes?: string[];
+  completedSteps?: Array<{ label: string; at?: string }>;
   resolution?: { action: string; note: string; at: string };
 }
 
