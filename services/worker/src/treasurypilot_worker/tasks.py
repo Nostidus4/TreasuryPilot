@@ -61,6 +61,7 @@ from treasurypilot_worker.planner.pipeline import plan_request
 from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
+from treasurypilot_worker.reconcile.auto_match import auto_match_reconciliations
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
@@ -142,6 +143,31 @@ def expire_mandate_versions() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for mandate expiry")
     return asyncio.run(_expire_mandates(database_url))
+
+
+async def _auto_match(database_url: str) -> dict[str, int]:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=2)
+
+    async def finalized_block(chain_id: int) -> int:
+        urls = await pool.fetchval("SELECT rpc_urls FROM chains WHERE chain_id = $1", chain_id)
+        block = await build_rpc_client(decode_rpc_urls(urls)).call(
+            "eth_getBlockByNumber", ["finalized", False]
+        )
+        return int(block["number"], 16)
+
+    try:
+        return await auto_match_reconciliations(pool, finalized_block)
+    finally:
+        await pool.close()
+
+
+@app.task(name="treasurypilot.reconciliation.auto_match", queue="core")
+def auto_match_task() -> dict[str, int]:
+    """Flag verification discrepancies and auto-match finalized, fully evidenced payments."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for reconciliation auto-match")
+    return asyncio.run(_auto_match(database_url))
 
 
 @app.task(name="treasurypilot.system.ai_probe", queue="ai")

@@ -1197,6 +1197,94 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/reconciliations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Reconciliations */
+    get: operations['list_reconciliations_v1_orgs__organization_id__reconciliations_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/reconciliations/{reconciliation_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Reconciliation */
+    get: operations['get_reconciliation_v1_orgs__organization_id__reconciliations__reconciliation_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/reconciliations/{reconciliation_id}/discrepancy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Flag Discrepancy */
+    post: operations['flag_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__discrepancy_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/reconciliations/{reconciliation_id}/match': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Match Reconciliation */
+    post: operations['match_reconciliation_v1_orgs__organization_id__reconciliations__reconciliation_id__match_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/reconciliations/{reconciliation_id}/resolve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Resolve Discrepancy
+     * @description Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record.
+     */
+    post: operations['resolve_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__resolve_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/recurring-payment-schedules': {
     parameters: {
       query?: never;
@@ -3540,6 +3628,11 @@ export interface components {
        */
       validFrom: string;
     };
+    /** NoteRequest */
+    NoteRequest: {
+      /** Note */
+      note?: string | null;
+    };
     /**
      * NotificationCategory
      * @enum {string}
@@ -4235,6 +4328,16 @@ export interface components {
     RequestReason: {
       /** Reason */
       reason: string;
+    };
+    /** ResolveRequest */
+    ResolveRequest: {
+      /**
+       * Acknowledge
+       * @default false
+       */
+      acknowledge: boolean;
+      /** Note */
+      note?: string | null;
     };
     /**
      * ReviewAction
@@ -7448,6 +7551,197 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['PlanFeeActionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_reconciliations_v1_orgs__organization_id__reconciliations_get: {
+    parameters: {
+      query?: {
+        status?: ('Pending' | 'Matched' | 'Discrepancy') | null;
+        from?: string | null;
+        to?: string | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_reconciliation_v1_orgs__organization_id__reconciliations__reconciliation_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reconciliation_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  flag_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__discrepancy_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'if-match'?: string | null;
+      };
+      path: {
+        reconciliation_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NoteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  match_reconciliation_v1_orgs__organization_id__reconciliations__reconciliation_id__match_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'if-match'?: string | null;
+      };
+      path: {
+        reconciliation_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NoteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  resolve_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__resolve_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'if-match'?: string | null;
+      };
+      path: {
+        reconciliation_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResolveRequest'];
       };
     };
     responses: {
