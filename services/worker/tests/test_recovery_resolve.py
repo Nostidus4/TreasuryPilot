@@ -24,10 +24,17 @@ from alembic.config import Config
 from web3 import AsyncHTTPProvider
 
 from treasurypilot_worker.chain.rpc import RpcClient, RpcProvider, RpcResponseError
-from treasurypilot_worker.executor.outbox import execute_step
+from treasurypilot_worker.executor.outbox import SignerRefused, execute_step
 from treasurypilot_worker.locks import create_worker_pool
-from treasurypilot_worker.recovery.resolve import resolve_operation
+from treasurypilot_worker.recovery.resolve import (
+    _REQUEST_PAID,
+    _STEP_USED,
+    TRACE_WINDOW,
+    resolve_operation,
+)
 from treasurypilot_worker.recovery.scan import scan_in_flight
+from treasurypilot_worker.tracker.track import track_transactions
+from treasurypilot_worker.trigger.cycles import _read_gates
 
 _spec = importlib.util.spec_from_file_location(
     "outbox_fixtures", Path(__file__).parent / "executor" / "test_outbox_integration.py"
@@ -51,23 +58,39 @@ class FakeRpc:
 
     def __init__(self) -> None:
         self.receipt: dict[str, str] | None = None
+        self.secondary_receipt: dict[str, str] | None = None
+        self.receipts: dict[str, dict[str, str]] = {}  # by tx hash, wins over `receipt`
         self.in_mempool: bool = False
         self.step_used: bool = False
+        self.request_paid: bool = False
         self.next_nonce: int = 0
+        self.nonce_block: int = 90  # the block whose transaction used the nonce
+        self.block_txs: list[dict[str, str]] = []
+        self.head: int = 100
         self.fail: str | None = None
         self.step_used_raw: str | None = None
+
+    async def receipt_anywhere(self, tx_hash: str) -> Any:
+        if self.fail == "secondary":
+            raise RpcResponseError(-32000, "boom")
+        return await self.call("eth_getTransactionReceipt", [tx_hash]) or self.secondary_receipt
 
     async def call(self, method: str, params: Sequence[Any]) -> Any:
         if method == self.fail:
             raise RpcResponseError(-32000, "boom")
+        if method == "eth_getTransactionReceipt":
+            return self.receipts.get(params[0], self.receipt)
+        if method == "eth_getTransactionCount":  # historical counts rise at `nonce_block`
+            at = params[1]
+            return hex(self.next_nonce if at == "latest" or int(at, 16) >= self.nonce_block else 0)
+        if method == "eth_call":
+            selector = params[0]["data"][:10]
+            flag = self.request_paid if selector == "0x" + _REQUEST_PAID.hex() else self.step_used
+            return self.step_used_raw or "0x" + "00" * 31 + ("01" if flag else "00")
         return {
-            "eth_getTransactionReceipt": self.receipt,
             "eth_getTransactionByHash": {"hash": "0x1"} if self.in_mempool else None,
-            "eth_blockNumber": "0x64",
-            "eth_call": self.step_used_raw
-            if self.step_used_raw is not None
-            else "0x" + "00" * 31 + ("01" if self.step_used else "00"),
-            "eth_getTransactionCount": hex(self.next_nonce),
+            "eth_blockNumber": hex(self.head),
+            "eth_getBlockByNumber": {"transactions": self.block_txs},
         }[method]
 
 
@@ -104,13 +127,19 @@ async def _run(
     nonce: int = 5,
     extra_txs: int = 0,
     reset: bool = True,
+    step_id: bytes | None = None,
+    module: bytes | None = MODULE,
+    request_id: bytes | None = None,
+    sender: bytes = SENDER,
 ) -> tuple[Any, ...]:
     """Register an in-flight operation, resolve it, return (resolution, op, items, step_id)."""
 
-    step_id = uuid.uuid4().bytes * 2
+    step_id = step_id or uuid.uuid4().bytes * 2
     operation_id = uuid.uuid4()
     pool = await create_worker_pool(url, min_size=1, max_size=2)
     try:
+        await pool.execute("UPDATE treasuries SET module_address = $1", module)
+        await pool.execute("UPDATE payment_requests SET onchain_request_id = $1", request_id)
         if reset:  # review items are per request; start each case from a clean queue
             await pool.execute("DELETE FROM review_items WHERE request_id = $1", _REQUEST)
         await pool.execute(
@@ -134,7 +163,7 @@ async def _run(
                 CHAIN_ID,
                 (tx_hash if i == 0 and tx_hash else uuid.uuid4().bytes * 2),
                 nonce,
-                SENDER,
+                sender,
                 status,
                 NOW - timedelta(minutes=age),
             )
@@ -170,18 +199,35 @@ def test_step_used_on_chain_confirms_without_resubmission(database_url: str) -> 
 
 
 def test_without_a_module_the_flag_is_not_read(database_url: str) -> None:
-    async def module(value: bytes | None) -> None:
-        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
-        await pool.execute("UPDATE treasuries SET module_address = $1", value)
-        await pool.close()
-
     rpc = FakeRpc()
     rpc.step_used = True  # would confirm if it were read
-    asyncio.run(module(None))
-    try:
-        resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=2))
-    finally:
-        asyncio.run(module(MODULE))
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=2, module=None))
+    assert (resolution, op["status"]) == ("Unclear", "Unknown")
+
+
+def test_request_paid_on_chain_confirms_a_pay_step(database_url: str) -> None:
+    rpc = FakeRpc()
+    rpc.request_paid = True  # stepUsed is false: a replacement paid the request under another step
+    resolution, op, _, _, txs, _ = asyncio.run(_run(database_url, rpc, request_id=b"\x07" * 32))
+    assert (resolution, op["status"], [t["status"] for t in txs]) == (
+        "Confirmed",
+        "Confirmed",
+        ["Dropped"],
+    )
+    # Without an on-chain request id there is nothing to look up: the flag is not read.
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=2))
+    assert (resolution, op["status"]) == ("Unclear", "Unknown")
+
+
+def test_secondary_provider_receipt_is_left_to_the_tracker(database_url: str) -> None:
+    rpc = FakeRpc()
+    rpc.secondary_receipt = {"status": "0x0"}  # the primary lags; a reverted receipt still counts
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=31))
+    assert (resolution, op["status"]) == ("Receipt", "Unknown")
+    # A secondary that cannot answer is not "no receipt": nothing is decided on the silence.
+    rpc = FakeRpc()
+    rpc.fail = "secondary"
+    resolution, op, *_ = asyncio.run(_run(database_url, rpc, age=31))
     assert (resolution, op["status"]) == ("Unclear", "Unknown")
 
 
@@ -207,6 +253,34 @@ def test_receipt_or_mempool_is_left_to_the_tracker(database_url: str) -> None:
     assert (resolution, op["status"]) == ("Pending", "Unknown")
 
 
+async def _replay(url: str, step_id: bytes, refuse: str | None = None) -> str:
+    """Run the executor again for `step_id`; returns the operation status afterwards."""
+
+    pool = await create_worker_pool(url, min_size=1, max_size=1)
+    try:
+        step = _outbox._step()
+        step = type(step)(
+            **{
+                **step.__dict__,
+                "step_id": step_id,
+                "sign_request": {
+                    **step.sign_request,
+                    "plan": {"steps": [{"stepId": "0x" + step_id.hex()}]},
+                },
+            }
+        )
+        signer = _outbox.FakeSigner()
+        if refuse:
+            signer.fail_with = SignerRefused(refuse)
+        try:
+            await execute_step(pool, signer, step)
+        except SignerRefused:
+            pass
+        return str(await pool.fetchval("SELECT status FROM operations WHERE step_id = $1", step_id))
+    finally:
+        await pool.close()
+
+
 def test_never_broadcast_is_replayed_with_the_same_step_id(database_url: str) -> None:
     rpc = FakeRpc()
     resolution, op, _, step_id, txs, _ = asyncio.run(
@@ -220,29 +294,15 @@ def test_never_broadcast_is_replayed_with_the_same_step_id(database_url: str) ->
         "NEVER_BROADCAST",
     )
 
-    async def replay() -> str:
-        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
-        try:
-            step = _outbox._step()
-            step = type(step)(
-                **{
-                    **step.__dict__,
-                    "step_id": step_id,
-                    "sign_request": {
-                        **step.sign_request,
-                        "plan": {"steps": [{"stepId": "0x" + step_id.hex()}]},
-                    },
-                }
-            )
-            signer = _outbox.FakeSigner()
-            await execute_step(pool, signer, step)
-            return str(
-                await pool.fetchval("SELECT status FROM operations WHERE step_id = $1", step_id)
-            )
-        finally:
-            await pool.close()
+    assert asyncio.run(_replay(database_url, step_id)) == "Submitted"
 
-    assert asyncio.run(replay()) == "Submitted"
+
+def test_replay_refused_as_attestation_expired_ends_abandoned(database_url: str) -> None:
+    resolution, _, _, step_id, *_ = asyncio.run(
+        _run(database_url, FakeRpc(), tx_hash=b"\x01" * 32, status="Pending", age=20)
+    )
+    assert resolution == "NeverBroadcast"
+    assert asyncio.run(_replay(database_url, step_id, refuse="ATTESTATION_EXPIRED")) == "Abandoned"
 
 
 def test_young_silence_is_not_never_broadcast(database_url: str) -> None:
@@ -260,6 +320,48 @@ def test_consumed_nonce_without_evidence_escalates_after_30_minutes(database_url
     rpc.step_used = True
     items = asyncio.run(_run(database_url, rpc, reset=False))[2]
     assert items[0]["evidence_resolved"] is True
+
+
+def _consumed(status: str, *, nonce_block: int = 90) -> FakeRpc:
+    """The executor nonce 5 was used at `nonce_block` by a transaction that is not ours."""
+
+    rpc = FakeRpc()
+    rpc.next_nonce = 6
+    rpc.nonce_block = nonce_block
+    rpc.block_txs = [
+        {"from": "0x" + "cd" * 20, "nonce": "0x5", "hash": "0x" + "ee" * 32},  # other sender
+        {"from": "0x" + SENDER.hex(), "nonce": "0x5", "hash": "0x" + "ff" * 32},
+    ]
+    rpc.receipts["0x" + "ff" * 32] = {"status": status}
+    return rpc
+
+
+def test_consumed_nonce_traced_to_a_reverted_transaction_is_reverted(database_url: str) -> None:
+    resolution, op, items, _, txs, events = asyncio.run(
+        _run(database_url, _consumed("0x0"), age=20)
+    )
+    assert (resolution, op["status"]) == ("Reverted", "Reverted")
+    assert op["last_error"] == "NONCE_CONSUMED_BY 0x" + "ff" * 32
+    assert [t["status"] for t in txs] == ["Dropped"] and events == 1
+
+
+def test_consumed_nonce_traced_to_an_unrelated_success_is_abandoned(database_url: str) -> None:
+    resolution, op, *_ = asyncio.run(_run(database_url, _consumed("0x1"), age=20))
+    assert (resolution, op["status"]) == ("Abandoned", "Abandoned")
+
+
+def test_nonce_trace_is_bounded_and_waits_for_confirmations(database_url: str) -> None:
+    # Used in the last two blocks: not final yet, so not classified.
+    rpc = _consumed("0x1", nonce_block=99)
+    assert asyncio.run(_run(database_url, rpc, age=20))[0] == "Unclear"
+    # Older than the window: left to the 30 minute escalation, not guessed.
+    rpc = _consumed("0x1", nonce_block=1)
+    rpc.head = TRACE_WINDOW + 50
+    assert asyncio.run(_run(database_url, rpc, age=31))[0] == "Escalated"
+    # The block does not contain the transaction (inconsistent provider): never guessed.
+    rpc = _consumed("0x1")
+    rpc.block_txs = []
+    assert asyncio.run(_run(database_url, rpc, age=31))[0] == "Escalated"
 
 
 def test_scan_runs_on_worker_start_and_every_minute(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -451,64 +553,218 @@ def anvil_url() -> Iterator[str]:
         process.wait(timeout=5)
 
 
+def _provider(url: str) -> RpcProvider:
+    return RpcProvider("primary", AsyncHTTPProvider(url, exception_retry_configuration=None))
+
+
 def _client(url: str) -> RpcClient:
-    return RpcClient(
-        [RpcProvider("primary", AsyncHTTPProvider(url, exception_retry_configuration=None))]
-    )
+    return RpcClient([_provider(url)])
 
 
-def _module_returns(url: str, flag: bool) -> None:
-    # Stub module: every call (stepUsed included) answers the 32-byte word `flag`.
-    _chain(
-        url,
-        "anvil_setCode",
-        ["0x" + MODULE.hex(), "0x60" + ("01" if flag else "00") + "60005260206000f3"],
-    )
-    for _ in range(4):  # stepUsed is read CONFIRMATIONS blocks deep
+def _word(value: bytes) -> str:
+    return "7f" + value.ljust(32, b"\0").hex()
+
+
+def _deploy_module(
+    url: str, *, step_id: bytes | None = None, request: bytes | None = None
+) -> bytes:
+    """Deploy a tiny contract: stepUsed(id) is true only for `step_id`, requestPaid(id) only for
+    `request`; any other selector or id reads false. Proves the selectors and the id encoding."""
+
+    def flag(selector: bytes, key: bytes | None) -> str:
+        if key is None:
+            return "6000"  # PUSH1 0
+        # CALLDATALOAD(0)>>224 == selector AND CALLDATALOAD(4) == key
+        return f"600035 60e01c 63{selector.hex()} 14 600435 {_word(key)} 14 16".replace(" ", "")
+
+    body = flag(_STEP_USED, step_id) + flag(_REQUEST_PAID, request) + "17"  # OR
+    runtime = body + "60005260206000f3"  # MSTORE(0) RETURN(0, 32)
+    size = len(runtime) // 2
+    init = f"61{size:04x}80600c6000396000f3"  # copy the runtime (offset 12) and return it
+    sender = _chain(url, "eth_accounts")[0]
+    sent = _chain(url, "eth_sendTransaction", [{"from": sender, "data": "0x" + init + runtime}])
+    for _ in range(4):  # the flags are read CONFIRMATIONS blocks deep; also settles automine
         _chain(url, "evm_mine")
+    address = _chain(url, "eth_getTransactionReceipt", [sent])["contractAddress"]
+    return bytes.fromhex(address[2:])
+
+
+def _fresh_sender(url: str) -> tuple[bytes, int]:
+    """A funded impersonated executor with no history, and its next nonce."""
+
+    sender = uuid.uuid4().bytes + bytes(4)
+    _chain(url, "anvil_setBalance", ["0x" + sender.hex(), hex(10**18)])
+    _chain(url, "anvil_impersonateAccount", ["0x" + sender.hex()])
+    return sender, 0
+
+
+def _send_from(url: str, sender: bytes, **tx: str) -> str:
+    return str(_chain(url, "eth_sendTransaction", [{"from": "0x" + sender.hex(), **tx}]))
 
 
 def test_anvil_receipt_is_left_to_the_tracker(database_url: str, anvil_url: str) -> None:
-    _module_returns(anvil_url, False)
+    # The step flag is true as well: a receipt must take precedence over it.
+    step_id = uuid.uuid4().bytes * 2
+    module = _deploy_module(anvil_url, step_id=step_id)
     mined = _chain(anvil_url, "eth_sendTransaction", [{
         "from": _chain(anvil_url, "eth_accounts")[0], "to": "0x" + "22" * 20, "value": "0x1"
     }])  # fmt: skip
     resolution, op, *_ = asyncio.run(
-        _run(database_url, _client(anvil_url), tx_hash=bytes.fromhex(mined[2:]))  # type: ignore[arg-type]
+        _run(
+            database_url,
+            _client(anvil_url),  # type: ignore[arg-type]
+            tx_hash=bytes.fromhex(mined[2:]),
+            step_id=step_id,
+            module=module,
+        )
     )
     assert (resolution, op["status"]) == ("Receipt", "Unknown")
 
 
+def test_anvil_reverted_receipt_is_reverted_by_the_tracker(
+    database_url: str, anvil_url: str
+) -> None:
+    # PUSH1 0 PUSH1 0 REVERT
+    _chain(anvil_url, "anvil_setCode", ["0x" + "0d" * 20, "0x60006000fd"])
+    reverted = _chain(anvil_url, "eth_sendTransaction", [{
+        "from": _chain(anvil_url, "eth_accounts")[0], "to": "0x" + "0d" * 20, "gas": "0x30000"
+    }])  # fmt: skip
+    for _ in range(3):
+        _chain(anvil_url, "evm_mine")
+    assert _chain(anvil_url, "eth_getTransactionReceipt", [reverted])["status"] == "0x0"
+
+    async def scenario() -> tuple[Any, Any]:
+        resolution, op, *_ = await _run(
+            database_url,
+            _client(anvil_url),  # type: ignore[arg-type]
+            tx_hash=bytes.fromhex(reverted[2:]),
+            sender=bytes.fromhex(_chain(anvil_url, "eth_accounts")[0][2:]),
+            nonce=int(_chain(anvil_url, "eth_getTransactionByHash", [reverted])["nonce"], 16),
+        )
+        # The resolver leaves the receipt to the tracker, which moves the Unknown operation on.
+        client = RpcClient([_provider(anvil_url), _provider(anvil_url)])
+        await track_transactions(database_url, client_factory=lambda _urls: client)
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            return resolution, await pool.fetchval(
+                "SELECT o.status FROM operations o JOIN transactions t ON t.operation_id = o.id "
+                "WHERE t.tx_hash = $1",
+                bytes.fromhex(reverted[2:]),
+            )
+        finally:
+            await pool.close()
+
+    assert asyncio.run(scenario()) == ("Receipt", "Reverted")
+
+
 def test_anvil_step_used_confirms_without_resubmission(database_url: str, anvil_url: str) -> None:
-    _module_returns(anvil_url, True)
-    resolution, op, _, _, txs, _ = asyncio.run(_run(database_url, _client(anvil_url)))  # type: ignore[arg-type]
+    step_id = uuid.uuid4().bytes * 2
+    module = _deploy_module(anvil_url, step_id=step_id)
+    resolution, op, _, _, txs, _ = asyncio.run(
+        _run(database_url, _client(anvil_url), step_id=step_id, module=module)  # type: ignore[arg-type]
+    )
     assert (resolution, op["status"], [t["status"] for t in txs]) == (
         "Confirmed",
         "Confirmed",
         ["Dropped"],
     )
+    # A module that marks another step used (or only the same id under requestPaid) says nothing.
+    step_id = uuid.uuid4().bytes * 2
+    other = _deploy_module(anvil_url, step_id=uuid.uuid4().bytes * 2, request=step_id)
+    resolution, op, *_ = asyncio.run(
+        _run(database_url, _client(anvil_url), step_id=step_id, module=other, age=2)  # type: ignore[arg-type]
+    )
+    assert (resolution, op["status"]) == ("Unclear", "Unknown")
+
+
+def test_anvil_request_paid_confirms_a_pay_step(database_url: str, anvil_url: str) -> None:
+    request = uuid.uuid4().bytes * 2
+    module = _deploy_module(anvil_url, request=request)
+    resolution, op, *_ = asyncio.run(
+        _run(database_url, _client(anvil_url), module=module, request_id=request)  # type: ignore[arg-type]
+    )
+    assert (resolution, op["status"]) == ("Confirmed", "Confirmed")
 
 
 def test_anvil_never_broadcast_returns_to_not_submitted(database_url: str, anvil_url: str) -> None:
-    _module_returns(anvil_url, False)
-    resolution, op, *_ = asyncio.run(_run(database_url, _client(anvil_url), nonce=50))  # type: ignore[arg-type]
+    module = _deploy_module(anvil_url)
+    sender, nonce = _fresh_sender(anvil_url)
+    step_id = uuid.uuid4().bytes * 2
+    resolution, op, *_ = asyncio.run(
+        _run(
+            database_url,
+            _client(anvil_url),  # type: ignore[arg-type]
+            nonce=nonce,
+            sender=sender,
+            step_id=step_id,
+            module=module,
+        )
+    )
     assert (resolution, op["status"], op["last_error"]) == (
         "NeverBroadcast",
         "NotSubmitted",
         "NEVER_BROADCAST",
     )
+    # The executor then replays the same step id (one operation, no duplicate).
+    assert asyncio.run(_replay(database_url, step_id)) == "Submitted"
+    assert asyncio.run(_operations_with_step(database_url, step_id)) == 1
+
+
+async def _operations_with_step(url: str, step_id: bytes) -> int:
+    pool = await create_worker_pool(url, min_size=1, max_size=1)
+    try:
+        return int(
+            await pool.fetchval("SELECT count(*) FROM operations WHERE step_id = $1", step_id)
+        )
+    finally:
+        await pool.close()
+
+
+def test_anvil_consumed_nonce_is_traced_to_its_block(database_url: str, anvil_url: str) -> None:
+    module = _deploy_module(anvil_url)
+    for reverts, expected in ((False, "Abandoned"), (True, "Reverted")):
+        sender, nonce = _fresh_sender(anvil_url)
+        target = "0x" + "0d" * 20 if reverts else "0x" + "22" * 20
+        _chain(anvil_url, "anvil_setCode", ["0x" + "0d" * 20, "0x60006000fd"])
+        _send_from(anvil_url, sender, to="0x" + "22" * 20, value="0x1")  # nonce 0
+        _send_from(anvil_url, sender, to=target, gas="0x30000")  # nonce 1: the one we trace
+        _send_from(anvil_url, sender, to="0x" + "22" * 20, value="0x1")  # nonce 2
+        for _ in range(4):
+            _chain(anvil_url, "evm_mine")
+        resolution, op, _, _, txs, _ = asyncio.run(
+            _run(
+                database_url,
+                _client(anvil_url),  # type: ignore[arg-type]
+                nonce=1,
+                sender=sender,
+                module=module,
+                age=20,
+            )
+        )
+        assert (resolution, op["status"]) == (expected, expected)
+        assert op["last_error"].startswith("NONCE_CONSUMED_BY 0x") and len(txs) == 1
 
 
 def test_anvil_consumed_nonce_without_evidence_escalates(database_url: str, anvil_url: str) -> None:
-    _module_returns(anvil_url, False)
-    sender = "0x" + SENDER.hex()
-    _chain(anvil_url, "anvil_setBalance", [sender, hex(10**18)])
-    _chain(anvil_url, "anvil_impersonateAccount", [sender])
-    _chain(
-        anvil_url, "eth_sendTransaction", [{"from": sender, "to": "0x" + "22" * 20, "value": "0x1"}]
-    )
+    module = _deploy_module(anvil_url)
+    sender, _ = _fresh_sender(anvil_url)
+    # Mined in the newest block: not CONFIRMATIONS deep, so it cannot be classified yet.
+    _send_from(anvil_url, sender, to="0x" + "22" * 20, value="0x1")
     resolution, op, items, *_ = asyncio.run(
-        _run(database_url, _client(anvil_url), nonce=0, age=31)  # type: ignore[arg-type]
+        _run(database_url, _client(anvil_url), nonce=0, sender=sender, module=module, age=31)  # type: ignore[arg-type]
     )
     assert (resolution, op["status"]) == ("Escalated", "Unknown")
     assert [i["status"] for i in items] == ["Open"]
+    # The treasury stays blocked: the execution cycle's gate sees the Unknown operation.
+    assert asyncio.run(_blocked(database_url)) is True
+
+
+async def _blocked(url: str) -> bool:
+    pool = await create_worker_pool(url, min_size=1, max_size=1)
+    try:
+        async with pool.acquire() as connection:
+            state = await _read_gates(connection, _TREASURY, now=NOW)
+        assert state is not None
+        return state.unknown_operation
+    finally:
+        await pool.close()
