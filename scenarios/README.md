@@ -24,3 +24,5 @@ must assert their `must_show` lines in their steps when they become runnable.
 Each run writes `docs/evidence/scenarios/<name>-<UTC time>/run.json` and `evidence-bundle.json`
 (evidence-bundle.v1, validated before writing). Only `pause` is runnable today. The D2, D3 and
 D6-D8 files are stubs (names provisional, Sepolia, all NOT_RUNNABLE) so `list` shows all ten.
+
+For the demo scene-by-scene script (setup, reset, fallbacks, evidence) see [docs/demo-runbook.md](../docs/demo-runbook.md).
