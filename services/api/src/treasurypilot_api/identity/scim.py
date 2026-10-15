@@ -188,6 +188,7 @@ class ScimIdentityRepository(Protocol):
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, Sequence[str]],
+        allow_empty: bool = False,
         now: datetime,
     ) -> None: ...
 
@@ -684,10 +685,11 @@ class SqlAlchemyScimIdentityRepository:
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, Sequence[str]],
+        allow_empty: bool = False,
         now: datetime,
     ) -> None:
-        """Apply the current SCIM allowlist at startup and discard stale assignments."""
-        if organization_id is None:
+        """Reconcile groups with an allowlist, unless empty-map cleanup is explicitly enabled."""
+        if organization_id is None or (not role_map and not allow_empty):
             return
         async with self._sessions() as session, session.begin():
             groups = list(

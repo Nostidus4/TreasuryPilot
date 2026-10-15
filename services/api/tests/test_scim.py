@@ -214,6 +214,7 @@ class MemoryScimRepository:
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, list[str]],
+        allow_empty: bool = False,
         now: datetime,
     ) -> None:
         return None
@@ -273,6 +274,11 @@ def test_scim_configuration_requires_a_long_paired_token_and_organization() -> N
         Settings(
             environment="local",
             scim_group_role_map='{"Ops": ["Operator"]}',
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="local",
+            scim_clear_groups_with_empty_allowlist=True,
         )
 
 

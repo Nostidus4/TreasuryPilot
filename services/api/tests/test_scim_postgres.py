@@ -584,10 +584,32 @@ async def _group_scenario(database_url: str) -> None:
             "active",
         )
 
-        # An explicitly configured empty allowlist revokes groups only for this tenant.
-        # The manual Finance role keeps effective access unchanged, but group removal is audited.
+        # An empty allowlist means group reconciliation was not configured; it must not
+        # silently delete stored groups or revoke their roles during startup.
         await scim_repository.reconcile_group_roles(
-            organization_id=organization_id, role_map={}, now=now + timedelta(seconds=6)
+            organization_id=organization_id,
+            role_map={},
+            now=now + timedelta(seconds=6),
+        )
+        assert (
+            await scim_repository.get_group(
+                organization_id=organization_id, group_id=finance_group.id
+            )
+            is not None
+        )
+        assert await membership(manual_user_id) == (
+            ["Finance"],
+            ["Finance"],
+            [],
+            ["Finance"],
+            "active",
+        )
+
+        # A non-empty replacement allowlist explicitly removes old configured groups.
+        await scim_repository.reconcile_group_roles(
+            organization_id=organization_id,
+            role_map={"Operations": ("Operator",)},
+            now=now + timedelta(seconds=7),
         )
         assert (
             await scim_repository.get_group(
@@ -612,6 +634,33 @@ async def _group_scenario(database_url: str) -> None:
                 {"org": organization_id, "group_id": str(finance_group.id)},
             )
         assert config_removal_audit == 1
+
+        replacement_group = await scim_repository.create_group(
+            organization_id=organization_id,
+            display_name="Finance Team",
+            member_ids=(manual_user_id,),
+            role_map=finance_group_map,
+            now=now + timedelta(seconds=8),
+        )
+        await scim_repository.reconcile_group_roles(
+            organization_id=organization_id,
+            role_map={},
+            allow_empty=True,
+            now=now + timedelta(seconds=9),
+        )
+        assert (
+            await scim_repository.get_group(
+                organization_id=organization_id, group_id=replacement_group.id
+            )
+            is None
+        )
+        assert await membership(manual_user_id) == (
+            ["Finance"],
+            ["Finance"],
+            [],
+            [],
+            "active",
+        )
     finally:
         await engine.dispose()
 

@@ -425,6 +425,7 @@ def create_app(
                     settings.scim_organization_id if settings.scim_configured else None
                 ),
                 role_map=group_role_map,
+                allow_empty=settings.scim_clear_groups_with_empty_allowlist,
                 now=datetime.now(UTC),
             )
         yield

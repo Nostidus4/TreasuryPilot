@@ -68,11 +68,13 @@ class Settings(BaseSettings):
     saml_idp_entity_id: str | None = None
     saml_organization_id: uuid.UUID | None = None
     saml_email_attribute: str = "email"
-    # SCIM is a single-tenant, bearer-authenticated deprovisioning integration.
+    # SCIM is a single-tenant, bearer-authenticated provisioning integration.
     scim_bearer_token: SecretStr | None = None
     scim_organization_id: uuid.UUID | None = None
     # Only configured SCIM group names may grant these non-privileged work roles.
     scim_group_role_map: str = "{}"
+    # Empty maps preserve persisted groups unless their removal is explicitly requested.
+    scim_clear_groups_with_empty_allowlist: bool = False
     resend_api_key: SecretStr | None = None
     resend_from_email: str | None = None
     session_cookie_name: str = "tp_session"
@@ -255,6 +257,8 @@ class Settings(BaseSettings):
             raise ValueError("SCIM group names must be unique ignoring case")
         if group_role_map and not self.scim_configured:
             raise ValueError("SCIM group roles require SCIM bearer token and organization ID")
+        if self.scim_clear_groups_with_empty_allowlist and not self.scim_configured:
+            raise ValueError("Clearing SCIM groups requires SCIM bearer token and organization ID")
         return self
 
     @field_validator("admin_ip_allowlist")
