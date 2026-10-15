@@ -113,11 +113,7 @@ def _context(
     asset = SimpleNamespace(id=ASSET_ID, address=ASSET_ADDRESS)
     mandate = SimpleNamespace(
         onchain_version=7,
-        config={
-            "limits": {
-                "PAY": {"perRequest": str(per_request_cap), "daily": str(daily_cap)}
-            }
-        },
+        config={"limits": {"PAY": {"perRequest": str(per_request_cap), "daily": str(daily_cap)}}},
         expires_at=mandate_expiry or now + timedelta(days=60),
     )
     return payment, treasury, payee, asset, mandate
@@ -165,7 +161,9 @@ def _client(
             session_id=uuid.UUID("00000000-0000-4000-8000-000000000888"),
             step_up_at=datetime.now(UTC),
         )
-        return MemberAccess(access=access, organization_id=organization_id, roles=frozenset({"Owner"}))
+        return MemberAccess(
+            access=access, organization_id=organization_id, roles=frozenset({"Owner"})
+        )
 
     app.dependency_overrides[require_member] = member_override
     return TestClient(app), governance, sessions
@@ -224,6 +222,7 @@ def test_exception_grant_uses_exact_request_terms_and_caps_expiry(
         typed_data={"message": {"expiry": int(approval_expiry.timestamp())}},
         expires_at=approval_expiry,
     )
+
     async def valid_approval_lookup(*_: object, **__: object) -> list[object]:
         return [approval]
 
