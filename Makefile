@@ -36,10 +36,15 @@ help:
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+	@echo "  make eval-redteam    Run the red-team invoices through extraction (recorded model)"
 
 .PHONY: eval-validate
 eval-validate:
 	uv run --frozen python evals/validate.py
+
+.PHONY: eval-redteam
+eval-redteam:
+	uv run --frozen python -m treasurypilot_worker.redteam --out docs/evidence/redteam-results.md
 
 bootstrap:
 	uv sync
