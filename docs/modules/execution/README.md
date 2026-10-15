@@ -295,3 +295,16 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 - Signer payload allowlist adds `module.supply`, `module.withdraw` (and `borrow`/`repay` P2).
 - Demo uses one operational wallet (T + O1).
 - **Tickets:** EXE-004, EXE-005, EXE-007, EXE-008 revised; EXE-014 liquidity cycle (new).
+
+## EXE-012 traceability (fee policy, holds, acceptance)
+
+| Criterion | Code | Tests |
+|---|---|---|
+| Proposal, presets, threshold, daily budget (§8.6) | `packages/py-core/src/treasurypilot_core/domain/fee_policy.py` (`propose_fee_policy`); API `mandate/fees.py` (`get_fee_policy`) | `packages/py-core/tests/test_fee_policy.py` |
+| Owner-only accept, no free-form numbers; reference price | `mandate/fees.py` (`accept_fee_policy`, `set_fee_reference_price`) | `services/api/tests/test_review_queue.py` (fee-policy lifecycle) |
+| Plan estimate, proceed / defer / AwaitingFeeAcceptance (§8.7) | `fee_policy.py` (`estimate_plan_fee_wei`, `assess_fee`); worker `planner/pipeline.py` (`_fee_assessment`); API `execution/fee_assessment.py` | `test_fee_policy.py::test_spec_8_7_example_end_to_end`; `services/worker/tests/planner/test_pipeline_integration.py` (defer without review; FEE_APPROVAL on last day) |
+| Fee accept/defer for Finance/Operator/Owner | `mandate/fees.py` (`/plans/{id}/fee/accept`, `/fee/defer`); `recovery/routes.py` review actions | `test_review_queue.py` |
+| Daily spent-fee counter | `gas_ledger` sum per UTC day plus in-flight estimates (`_fee_assessment`, `assess_plan_fee`) | `test_pipeline_integration.py::test_attested_fees_stop_counting_the_next_day` |
+| Accepted cap respected by the executor | `fee_acceptances` checked by `assess_plan_fee` (`enforce_fee_cap`); signer `service.py` rejects `gas_limit * maxFeePerGas > feeCapWei` | `test_review_queue.py` (cap, FEE_CAP_EXCEEDED); `services/signer/tests/test_signing.py::test_owner_accepted_plan_fee_cap_is_enforced_by_the_signer` |
+
+Known gap: the worker sequencer's `plan_fees()` is not wired yet (EXE-005), so the cap is enforced at planning and at the signer, not yet passed from the worker.
