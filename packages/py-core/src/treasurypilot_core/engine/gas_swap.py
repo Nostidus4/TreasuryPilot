@@ -1,7 +1,10 @@
 """Gas-swap sizing (F-064, EXE-011): how much cash to swap on the test router, and its minOut.
 
-The test router pays ``amount_in * numerator / denominator`` of its output token, which the test
-setup treats as 1 unit per wei of executor gas. Every figure is an integer in base units.
+The test router pays ``amount_in * numerator / denominator`` of its ERC-20 output token to Safe T.
+This is a labelled SIMULATION of gas funding: it assumes 1 tokenOut unit = 1 wei and the rate is in
+raw base units, but the router never sends native coin to the executor, so executor gas is still
+funded manually. Real funding needs a production adapter that unwraps to native (EXE-L02 / #88 /
+#152). Every figure is an integer in base units.
 """
 
 from __future__ import annotations

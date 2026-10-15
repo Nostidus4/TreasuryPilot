@@ -7,6 +7,7 @@ the inputs and builds the step.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from treasurypilot_core.eip712 import SWAP_IN, step_id
 from treasurypilot_core.engine import GasQuote, GasSwapInfeasible, plan_gas_swap
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
+
+logger = logging.getLogger(__name__)
 
 
 class GasSwapUnavailable(RuntimeError):
@@ -26,7 +29,8 @@ class GasSwapDeps:
     native_balance: Callable[[uuid.UUID], Awaitable[int]]  # executor native balance, wei
     quote: Callable[[uuid.UUID, str], Awaitable[GasQuote | None]]  # (treasury, module) -> quote
     slippage_bps: int
-    max_amount_in: int  # the module's per-swap cap (swap limits have no on-chain getter)
+    # the module's per-swap cap (no on-chain getter); None = swapping disabled, shortage only logged
+    max_amount_in: int | None
 
 
 async def with_gas_swap(
@@ -47,6 +51,16 @@ async def with_gas_swap(
 
     balance = await deps.native_balance(treasury_id)
     if balance >= required_wei:
+        return plan
+    if deps.max_amount_in is None:
+        logger.warning(
+            "gas_shortage_swap_disabled",
+            extra={
+                "treasury_id": str(treasury_id),
+                "balance_wei": balance,
+                "required_wei": required_wei,
+            },
+        )
         return plan
     quote = await deps.quote(treasury_id, plan.treasury)
     if quote is None:

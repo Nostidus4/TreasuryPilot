@@ -415,6 +415,8 @@ async def _finish(
     chain = context.chain
     request = context.inputs.request
     if plan is not None and deps.gas_swap is not None:
+        # shortcut: the swap is sized on the fee of the plan WITHOUT the swap step; the fee check
+        # below estimates again WITH it, so the swap's own gas is not covered by the sizing.
         try:
             plan = await with_gas_swap(
                 deps.gas_swap,

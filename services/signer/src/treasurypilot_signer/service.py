@@ -195,6 +195,8 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
 
     checks: Sequence[bool]
     if action == SWAP_IN:
+        # shortcut: minOut/venue come from the unattested plan.swaps (outside plan_hash); fine for
+        # the test router only, production needs minOut in the attestation or an on-chain floor.
         swap = request.plan.get("swaps", {}).get(step["stepId"])
         if swap is None or swap.get("venue") != "TEST_ROUTER" or int(swap["minOut"]) <= 0:
             raise SignerFault("PAYLOAD_MISMATCH")

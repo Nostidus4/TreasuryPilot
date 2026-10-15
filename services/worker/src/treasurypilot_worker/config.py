@@ -55,7 +55,9 @@ class Settings(BaseSettings):
     planning_ai_timeout_seconds: float = 20.0
     execution_lead_time_seconds: int = 86_400
     # Swap-for-gas on the test router (EXE-011): off unless the per-swap cap is set. The cap
-    # mirrors the module's configureSwap limit, which has no on-chain getter.
+    # mirrors the module's configureSwap limit, which has no on-chain getter; it must be <= the
+    # on-chain perRequest (and daily) limit. Test router only: it models 1 tokenOut unit = 1 wei
+    # (raw base units) and does not actually fund executor gas.
     gas_swap_max_amount_in: int | None = None
     gas_swap_slippage_bps: int = 100
     # Telegram bot token: environment only, never logged (SecretStr masks repr).

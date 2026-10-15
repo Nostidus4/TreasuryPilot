@@ -6,7 +6,7 @@ Enforcement must be on-chain (AP-1). The rules include EIP-712 approval verifica
 
 ## Decision
 - Deploy one `TreasuryPilotModule` per treasury and enable it on Safes T, O1 and O2.
-- The module executes only typed actions (`refill`, `pay`, `swapForGas`) through `execTransactionFromModule` on the relevant Safe.
+- The module executes only typed actions (`refill`, `pay`, `swapForGas`) through `execTransactionFromModule` on the relevant Safe. `swapForGas` carries no attestation: its `minOut` is accepted unattested for the TEST ROUTER only (fixed rate, on-chain perRequest/daily caps); production swaps need `minOut` in the attestation or an on-chain price floor (execution README, EXE-011-D1).
 - Governance functions are callable only by Safe T itself (the Owner signs a Safe transaction). `pause` is also callable by the Guardian.
 - The module is not upgradeable in M1. Changing it means a disable/enable by the Owner.
 - Coverage verification (F-012) checks that no other module is enabled.

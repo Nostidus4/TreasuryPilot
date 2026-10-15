@@ -121,19 +121,17 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
         )
         return payload
 
-    gas_swap = None
-    if settings.gas_swap_max_amount_in is not None:
+    async def balance(treasury_id: uuid.UUID) -> int:
+        rpc = await treasury_rpc(treasury_id)
+        return int(await rpc.call("eth_getBalance", [executor, "latest"]), 16)
 
-        async def balance(treasury_id: uuid.UUID) -> int:
-            rpc = await treasury_rpc(treasury_id)
-            return int(await rpc.call("eth_getBalance", [executor, "latest"]), 16)
+    async def quote(treasury_id: uuid.UUID, module: str) -> GasQuote | None:
+        return await read_test_router_quote(await treasury_rpc(treasury_id), module)
 
-        async def quote(treasury_id: uuid.UUID, module: str) -> GasQuote | None:
-            return await read_test_router_quote(await treasury_rpc(treasury_id), module)
-
-        gas_swap = GasSwapDeps(
-            balance, quote, settings.gas_swap_slippage_bps, settings.gas_swap_max_amount_in
-        )
+    # Always wired so a shortage with swapping disabled (max_amount_in None) is logged.
+    gas_swap = GasSwapDeps(
+        balance, quote, settings.gas_swap_slippage_bps, settings.gas_swap_max_amount_in
+    )
     return PlannerDeps(
         take_snapshot=snapshot,
         executor=executor,
