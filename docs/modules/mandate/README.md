@@ -70,7 +70,7 @@ M03 is the **Owner's control room**. It turns what the Owner wants (limits, buff
 stateDiagram-v2
   [*] --> Draft
   Draft --> PendingActivation: bundle Executed on-chain
-  PendingActivation --> Active: read-back equals config_hash
+  PendingActivation --> Active: confirmed on-chain projection matches
   PendingActivation --> Discrepancy: read-back differs
   Active --> Superseded: newer version Active
   Active --> Expired: now > expiresAt
@@ -122,7 +122,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | GET | `/…/treasuries/{t}/mandates` | ANY | → `{items}` | |
 | POST | `/…/treasuries/{t}/mandates` | OWN | `MandateConfig` → `201 {draft, summary, diff, bundlePreview}` | 422 `MANDATE_INCOMPLETE{fields}`, `TARGET_BELOW_BUFFER`, `PER_REQUEST_ABOVE_DAILY`, `EXPIRY_BEFORE_START`, `MANDATE_ALREADY_EXPIRED`, `COOLING_OUT_OF_RANGE`, `UNKNOWN_WALLET`, `NO_APPROVERS`, `AMOUNT_PRECISION` |
 | POST | `/…/mandates/{v}/clone` | OWN | → `201 {draft}` | |
-| POST | `/…/mandates/{v}/governance-tx` | OWN | → `{governanceTx}` (§6.3) | 409 `NOT_DRAFT`, `NO_CHANGES` |
+| POST | `/…/mandates/{v}/governance-tx` | OWN + step-up | → governance transaction fields plus `{mandate, bundlePreview}` (§6.3) | 409 `MANDATE_NOT_DRAFT`, `MODULE_NOT_READY`, `NO_CHANGES`, `AAVE_POOL_REQUIRED`; 422 `MANDATE_CALL_INVALID` |
 | DELETE | `/…/mandates/{v}` | OWN | discard a Draft | 409 `NOT_DRAFT` |
 
 ### 6.2 Payees, exceptions, duplicates, pause
@@ -133,6 +133,7 @@ The Owner can build `addPayee` only after recording the **out-of-band verificati
 | POST | `/…/payees/{id}/verify-oob` | OWN | `{method, note}` → `{payee}` | 409 `NOT_AWAITING_OWNER`, `OOB_ALREADY_VERIFIED` (evidence is recorded once) |
 | POST | `/…/payees/{id}/registration-tx` | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/…/payees/{id}/deactivation-tx` | OWN | `{reason}` → `{governanceTx}` | |
+| POST | `/…/payees/{id}/replace-address` | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `PAYEE_NOT_REGISTERED`, `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT`; 503 `DATA_MISSING` |
 | GET | `/orgs/{o}/requests/{r}/exception` | OWN, OPR, FIN | → `{exception, numbers{amount, cap, dailyUsed, dailyRemainingAfter, valueIfGranted}, aiDraft?}` | 404 |
 | POST | `/orgs/{o}/requests/{r}/exception/grant-tx` | OWN | `{expiryHours?: 72}` → `{governanceTx}` | 409 `NOT_OVER_CAP`, `DAILY_LIMIT_WOULD_EXCEED`, `PAYEE_NOT_ACTIVE` |
 | POST | `/orgs/{o}/requests/{r}/exception/reject` | OWN | `{reason}` → `{exception: Rejected}` | |
@@ -195,7 +196,7 @@ sequenceDiagram
   O2->>API: submitted {txHash}
   C-->>API: ExecutionSuccess + MandateConfigured (M06)
   API->>C: read back mandate(), bufferOf, approvers
-  API-->>API: equal config_hash → Active (else Discrepancy)
+  API-->>API: matching on-chain projection → Active (else Discrepancy)
 ```
 
 ### 7.2 Emergency pause
@@ -207,7 +208,9 @@ sequenceDiagram
 
 ### 7.3 Payee onboarding
 
-Propose (vendor, label, address) → screening (CLEAR within TTL) → Owner calls/meets the vendor and records `verify-oob` → registration bundle → owners sign → executed → `PayeeAdded(activeFrom)` → Cooling (demo 5 min, prod 24 h) → Active.
+Propose (vendor, label, address) → screening (CLEAR within 24 h) → Owner calls/meets the vendor and records `verify-oob` → registration bundle → owners sign → executed → `PayeeAdded(activeFrom)` → Cooling (demo 5 min, prod 24 h) → Active at `activeFrom`. The API stores `activeFrom` from the indexed event and projects Cooling as Active once that timestamp passes.
+
+An address replacement creates a separate payee record for the same vendor and starts the full screening and out-of-band verification flow again. The Owner receives a deactivation governance transaction for the old address; once that transaction is executed, `PayeeDeactivated` marks only the old record Deactivated. Registering the new address starts a fresh cooling period from its own `PayeeAdded(activeFrom)` event; the old payee address is never overwritten in place.
 
 ### 7.4 Exception (UC-06)
 
@@ -229,7 +232,7 @@ Compute the on-chain diff: mandate fields changed → `configureMandate`; approv
 
 ### 8.4 Read-back
 
-After Executed + confirmations: read `mandate()`, `isApprover` for all relevant addresses, `bufferOf/targetOf` for all wallets; build the same canonical config and hash; equal → Active, otherwise Discrepancy (review item, Owner alerted, old version remains Active on our side and execution is blocked by M08 `DATA_MISSING` until resolved).
+After Executed + the chain's configured confirmations: read `mandate()`, `isApprover` for current and removed addresses, primary and secondary asset buffers/targets and allowlists, and the secondary PAY/REFILL caps from `AssetPolicySet` logs in the confirmed execution receipt. Also verify `aavePool()`/`aToken()` and the reserve's underlying/pool identity. Compare a canonical hash of the on-chain projection; off-chain-only settings remain covered by the immutable full `config_hash`. Equal projection → Active and the previous version becomes Superseded. A mismatch → Discrepancy plus an Owner/Finance review item; the previous version remains Active and execution is blocked by M08 `DATA_MISSING` until resolved. SUPPLY limits require a module initialized with an Aave pool; activation rejects a draft that enables SUPPLY when the module has none. A version whose read-back can never succeed (missing asset or module metadata, disabled chain, malformed config) also moves to Discrepancy with a review item. Discrepancy is terminal: Owners resolve it by authoring a new Draft version.
 
 ### 8.5 Exception pre-check
 

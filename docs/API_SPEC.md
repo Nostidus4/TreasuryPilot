@@ -63,8 +63,9 @@
 | POST | `/orgs/{o}/treasuries/{t}/mandates/{v}/activation` 🔁 | Report the submitted tx hash; the system tracks it until Active | OWN | `{txHash}` → `202 {status: PendingActivation}` | |
 | GET | `/orgs/{o}/treasuries/{t}/payees` | List payees | ANY | → `{items[{status, activeFrom, screening}]}` | |
 | POST | `/orgs/{o}/treasuries/{t}/payees` | Propose or add a payee (runs screening) | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `SCREENING_HIT` |
-| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build the Safe tx `addPayee` (cooling starts on-chain) | OWN | → `{safeTx}` | 409 `SCREENING_NOT_CLEAR` |
-| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build the deactivation tx | OWN | → `{safeTx}` | |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build governance tx `addPayee` (cooling starts on-chain) | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build governance tx `deactivatePayee` | OWN | `{reason}` → `{governanceTx}` | 409 `PAYEE_NOT_REGISTERED` |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/replace-address` | Create a new screened payee for the same vendor and build deactivation tx for the old address | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT` |
 | POST | `/orgs/{o}/treasuries/{t}/pause` 🔁 | Backend pause now + sentinel on-chain pause (or Guardian-Safe tx for a human) | OWN, GRD | `{reason}` → `{backendPaused: true, onchain, sentinelTxHash?, guardianSafeTx?}` | |
 | | Governance txs, signatures, fee policy, payee OOB verification, revoke | see docs/modules/mandate §6 | | | |
 | POST | `/orgs/{o}/treasuries/{t}/resume-tx` | Build the resume tx | OWN | → `{safeTx}` | 403 for GRD |

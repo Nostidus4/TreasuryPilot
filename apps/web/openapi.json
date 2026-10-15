@@ -982,6 +982,19 @@
         "title": "CsvImportRowError",
         "type": "object"
       },
+      "DeactivationRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "DeactivationRequest",
+        "type": "object"
+      },
       "DocumentUrlResponse": {
         "properties": {
           "expiresAt": {
@@ -3074,6 +3087,23 @@
           }
         },
         "title": "RenewRequest",
+        "type": "object"
+      },
+      "ReplacePayeeAddressRequest": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason", "address"],
+        "title": "ReplacePayeeAddressRequest",
         "type": "object"
       },
       "RequestBulkCreate": {
@@ -9895,6 +9925,70 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/governance-tx": {
+      "post": {
+        "operationId": "create_mandate_activation_tx_v1_orgs__organization_id__treasuries__treasury_id__mandates__mandate_id__governance_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mandate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mandate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Mandate Activation Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Mandates  Mandate Id  Governance Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Mandate Activation Tx",
+        "tags": ["governance"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx": {
       "post": {
         "operationId": "create_module_setup_v1_orgs__organization_id__treasuries__treasury_id__module_deploy_tx_post",
@@ -10132,6 +10226,80 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/deactivation-tx": {
+      "post": {
+        "operationId": "build_deactivation_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__deactivation_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "payee_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payee Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeactivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Build Deactivation Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Deactivation Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Deactivation Tx",
+        "tags": ["payees"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/registration-tx": {
       "post": {
         "operationId": "build_registration_tx_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__registration_tx_post",
@@ -10168,10 +10336,14 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Build Registration Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Registration Tx Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -10188,6 +10360,80 @@
           }
         },
         "summary": "Build Registration Tx",
+        "tags": ["payees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees/{payee_id}/replace-address": {
+      "post": {
+        "operationId": "replace_payee_address_v1_orgs__organization_id__treasuries__treasury_id__payees__payee_id__replace_address_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "payee_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payee Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplacePayeeAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Replace Payee Address V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Replace Address Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Payee Address",
         "tags": ["payees"],
         "x-organization-scoped": true
       }
