@@ -15,6 +15,9 @@ from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher
 from treasurypilot_worker.agent.factory import get_ai_adapter
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
+from treasurypilot_worker.chain.event_handlers import (
+    activate_due_payees as activate_due_payees_in_pool,
+)
 from treasurypilot_worker.chain.indexer import index_events_sync
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
@@ -22,7 +25,11 @@ from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
 from treasurypilot_worker.invoices.extraction import extract_invoice_document
 from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
-from treasurypilot_worker.locks import _asyncpg_database_url, create_worker_pool
+from treasurypilot_worker.locks import (
+    _asyncpg_database_url,
+    create_worker_pool,
+    treasury_advisory_xact_lock,
+)
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
 from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
 from treasurypilot_worker.notify.delivery import deliver_pending_emails
@@ -32,6 +39,12 @@ from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
+from treasurypilot_worker.trigger.cycles import (
+    CycleResult,
+    CycleSkipReason,
+    run_execution_cycle,
+    run_scheduling_cycle,
+)
 
 
 @app.task(name="treasurypilot.system.core_probe", queue="core")
@@ -220,6 +233,7 @@ class _PublisherRuntime:
 
 
 _publisher = _PublisherRuntime()
+_execution_cycles = _PublisherRuntime()
 _telegram = _PublisherRuntime()
 _chat = _PublisherRuntime()
 _webhooks = _PublisherRuntime()
@@ -234,7 +248,121 @@ def publish_domain_events() -> dict[str, int]:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for domain-event publishing")
-    return {"published": _publisher.publish(database_url)}
+
+    def dispatch(event_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
+        app.send_task(
+            "treasurypilot.execution.run_treasury_cycle",
+            kwargs={"treasury_id": str(treasury_id), "event_id": str(event_id)},
+            task_id=f"execution-cycle:{event_id}",
+            queue="core",
+        )
+
+    async def publish(pool: Any) -> int:
+        async with pool.acquire() as connection:
+            from treasurypilot_worker.notify.publisher import publish_pending_events
+
+            return await publish_pending_events(connection, dispatch_execution_cycle=dispatch)
+
+    return {"published": _publisher.run(database_url, publish)}
+
+
+async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> CycleResult:
+    return await run_execution_cycle(
+        treasury_id,
+        lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+        schedule_provider=None,
+        plan_starter=None,
+    )
+
+
+async def _started_cycles(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> int:
+    return int((await _execute_treasury_cycle(pool, treasury_id)).started)
+
+
+async def _run_all_treasury_cycles(pool: asyncpg.Pool, *, scheduling: bool) -> int:
+    rows = await pool.fetch(
+        "SELECT id FROM treasuries WHERE status IN ('Ready', 'Paused') ORDER BY id"
+    )
+    started = 0
+    unavailable = 0
+    for row in rows:
+        treasury_id = row["id"]
+        try:
+            if scheduling:
+                result = await run_scheduling_cycle(
+                    treasury_id,
+                    lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+                    schedule_writer=None,
+                )
+            else:
+                result = await _execute_treasury_cycle(pool, treasury_id)
+        except Exception:
+            # One treasury's failure must not abort the sweep or tear down the shared pool.
+            logger.exception("treasury_cycle_failed", extra={"treasury_id": str(treasury_id)})
+            continue
+        started += int(result.started)
+        unavailable += result.reason is CycleSkipReason.SCHEDULE_PROVIDER_UNAVAILABLE
+    if unavailable:
+        # Per-treasury results log this at DEBUG; one line per sweep is enough.
+        logger.info(
+            "execution_cycle_schedule_provider_unavailable",
+            extra={"scheduling": scheduling, "treasuries": unavailable},
+        )
+    return started
+
+
+@app.task(name="treasurypilot.execution.activate_due_payees", queue="core")
+def activate_due_payees_task() -> dict[str, int]:
+    """Activate Cooling payees on the first one second tick after active_from."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for payee activation")
+
+    async def activate(pool: asyncpg.Pool) -> int:
+        return await activate_due_payees_in_pool(pool)
+
+    activated = _execution_cycles.run(database_url, activate)
+    return {"payees_activated": activated}
+
+
+@app.task(name="treasurypilot.execution.run_treasury_cycle", queue="core")
+def run_treasury_cycle_task(treasury_id: str, event_id: str | None = None) -> dict[str, int]:
+    """Enter a per-treasury cycle after a durable event enqueue."""
+    del (
+        event_id
+    )  # The outbox event is the enqueue identity; locks/planner claims provide idempotence.
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for execution cycles")
+    cycles_started = _execution_cycles.run(
+        database_url,
+        lambda pool: _started_cycles(pool, uuid.UUID(treasury_id)),
+    )
+    return {"cycles_started": cycles_started}
+
+
+@app.task(name="treasurypilot.execution.scheduling_cycle", queue="core")
+def scheduling_cycle_task() -> dict[str, int]:
+    """Refresh deadline schedules every 15 minutes when the EXE-004 provider is installed."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for execution scheduling")
+    started = _execution_cycles.run(
+        database_url, lambda pool: _run_all_treasury_cycles(pool, scheduling=True)
+    )
+    return {"schedules_refreshed": started}
+
+
+@app.task(name="treasurypilot.execution.safety_cycle", queue="core")
+def safety_cycle_task() -> dict[str, int]:
+    """Run a 60 second safety sweep across all active and paused treasuries."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for execution safety cycles")
+    started = _execution_cycles.run(
+        database_url, lambda pool: _run_all_treasury_cycles(pool, scheduling=False)
+    )
+    return {"cycles_started": started}
 
 
 @app.task(name="treasurypilot.invoices.generate-recurring-drafts", queue="core")

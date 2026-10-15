@@ -16,7 +16,7 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
-from treasurypilot_worker.chain.events import MODULE, SAFE_EXEC
+from treasurypilot_worker.chain.events import MODULE, SAFE_EXEC, TOKEN
 
 
 @dataclass(frozen=True)
@@ -62,15 +62,17 @@ def _bytes(value: str) -> bytes:
 async def _payee_added(connection: asyncpg.Connection, event: IndexedEvent) -> None:
     # Cooling until the on-chain activation time, which the module enforces on payments.
     active_from = datetime.fromtimestamp(int(event.payload["activeFrom"]), UTC)
-    await connection.execute(
+    row = await connection.fetchrow(
         "UPDATE payees SET status = CASE WHEN $3 <= now() THEN 'Active' ELSE 'Cooling' "
         "END::payee_status, active_from = $3, version = version + 1, updated_at = now() "
         "WHERE treasury_id = $1 AND address = $2 AND status = 'AwaitingOwner' "
-        "AND oob_verified_at IS NOT NULL",
+        "AND oob_verified_at IS NOT NULL RETURNING status",
         event.treasury_id,
         _bytes(event.payload["payee"]),
         active_from,
     )
+    if row is not None and row["status"] == "Active":
+        await _enqueue_execution_cycle(connection, event.treasury_id)
 
 
 async def _payee_deactivated(connection: asyncpg.Connection, event: IndexedEvent) -> None:
@@ -97,21 +99,24 @@ async def _paused(connection: asyncpg.Connection, event: IndexedEvent) -> None:
 
 
 async def _resumed(connection: asyncpg.Connection, event: IndexedEvent) -> None:
-    await connection.execute(
+    row = await connection.fetchrow(
         "UPDATE backend_pause SET paused = false, onchain_status = 'NotRequested', "
-        "version = version + 1, updated_at = now() WHERE treasury_id = $1",
+        "version = version + 1, updated_at = now() WHERE treasury_id = $1 "
+        "AND (paused OR onchain_status <> 'NotRequested') RETURNING treasury_id",
         event.treasury_id,
     )
+    if row is not None:
+        await _enqueue_execution_cycle(connection, event.treasury_id)
 
 
 async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent) -> None:
     # Amount and payee must equal the proposal: a different grant is not the one owners reviewed.
-    await connection.execute(
+    row = await connection.fetchrow(
         "UPDATE exceptions e SET status = 'Granted', version = e.version + 1, updated_at = now() "
         "FROM payment_requests r WHERE r.id = e.request_id AND r.treasury_id = $1 "
         "AND r.onchain_request_id = $2 AND e.status = 'Proposed' AND e.payee = $3 "
         "AND e.amount = $4 AND e.mandate_onchain_version = $5 "
-        "AND date_trunc('second', e.expiry) = to_timestamp($6)",
+        "AND date_trunc('second', e.expiry) = to_timestamp($6) RETURNING e.request_id",
         event.treasury_id,
         _bytes(event.payload["requestId"]),
         _bytes(event.payload["payee"]),
@@ -119,6 +124,13 @@ async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent
         int(event.payload["version"]),
         int(event.payload["expiry"]),
     )
+    if row is not None:
+        await _enqueue_execution_cycle(
+            connection,
+            event.treasury_id,
+            entity_type="payment_request",
+            entity_id=row["request_id"],
+        )
 
 
 async def _exception_revoked(connection: asyncpg.Connection, event: IndexedEvent) -> None:
@@ -151,6 +163,62 @@ async def _mandate_configured(connection: asyncpg.Connection, event: IndexedEven
         event.treasury_id,
         int(event.payload["version"]),
     )
+
+
+async def _token_transfer(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    if int(event.payload["value"]) == 0:
+        return
+    sender = _bytes(event.payload["from"])
+    recipient = _bytes(event.payload["to"])
+    matches = await connection.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM treasury_wallets WHERE treasury_id = $1 "
+        "AND safe_address = $2) AND NOT EXISTS (SELECT 1 FROM treasury_wallets "
+        "WHERE treasury_id = $1 AND safe_address = $3)",
+        event.treasury_id,
+        recipient,
+        sender,
+    )
+    if matches:
+        await _enqueue_execution_cycle(connection, event.treasury_id)
+
+
+async def _enqueue_execution_cycle(
+    connection: asyncpg.Connection,
+    treasury_id: UUID,
+    *,
+    entity_type: str = "treasury",
+    entity_id: UUID | None = None,
+) -> None:
+    await connection.execute(
+        "INSERT INTO domain_events "
+        "(id, org_id, treasury_id, type, entity_type, entity_id, payload) "
+        "SELECT gen_random_uuid(), t.org_id, t.id, 'ExecutionCycleRequested', $2, $3, '{}'::jsonb "
+        "FROM treasuries t WHERE t.id = $1",
+        treasury_id,
+        entity_type,
+        entity_id or treasury_id,
+    )
+
+
+async def activate_due_payees(pool: asyncpg.Pool) -> int:
+    """Activate Cooling payees whose on-chain delay elapsed and enqueue a cycle."""
+    async with pool.acquire() as connection, connection.transaction():
+        rows = await connection.fetch(
+            "WITH active AS (UPDATE payees SET status = 'Active'::payee_status, "
+            "version = version + 1, updated_at = now() WHERE status = 'Cooling' "
+            "AND active_from <= now() "
+            # A reorged-out PayeeAdded must not activate (removed events do not reset the row).
+            "AND EXISTS (SELECT 1 FROM observed_events o WHERE o.treasury_id = payees.treasury_id "
+            "AND o.stream = 'MODULE'::index_stream AND o.event_name = 'PayeeAdded' AND NOT o.removed "
+            "AND o.payload->>'payee' = '0x' || encode(payees.address, 'hex')) "
+            "RETURNING id, treasury_id) "
+            "INSERT INTO domain_events "
+            "(id, org_id, treasury_id, type, entity_type, entity_id, payload) "
+            "SELECT gen_random_uuid(), t.org_id, t.id, 'ExecutionCycleRequested', 'payee', "
+            "active.id, '{}'::jsonb FROM active JOIN treasuries t ON t.id = active.treasury_id "
+            "RETURNING id"
+        )
+        return len(rows)
 
 
 async def _request_cancelled(connection: asyncpg.Connection, event: IndexedEvent) -> None:
@@ -195,3 +263,4 @@ registry.on_event(MODULE, "MandateConfigured", _mandate_configured)
 registry.on_event(MODULE, "RequestCancelled", _request_cancelled)
 registry.on_event(SAFE_EXEC, "ExecutionSuccess", _governance_outcome("Executed"))
 registry.on_event(SAFE_EXEC, "ExecutionFailure", _governance_outcome("Failed"))
+registry.on_event(TOKEN, "Transfer", _token_transfer)

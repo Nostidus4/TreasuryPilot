@@ -17,7 +17,14 @@ from typing import Any, Final
 import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent, registry
-from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_CONFIG, SAFE_EXEC, decode_log
+from treasurypilot_worker.chain.events import (
+    EVENTS,
+    MODULE,
+    SAFE_CONFIG,
+    SAFE_EXEC,
+    TOKEN,
+    decode_log,
+)
 from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import SafeConfigReader, refresh_safe_config_snapshots
 from treasurypilot_worker.locks import create_worker_pool
@@ -41,12 +48,13 @@ async def index_events(
     pool = await create_worker_pool(database_url, min_size=1, max_size=2)
     try:
         treasuries = await pool.fetch(
-            "SELECT t.id, t.chain_id, t.module_address, c.rpc_urls, "
+            "SELECT t.id, t.chain_id, t.module_address, asset.address AS asset_address, c.rpc_urls, "
             "COALESCE(array_agg(w.safe_address) FILTER (WHERE w.id IS NOT NULL), '{}') AS safes "
             "FROM treasuries t JOIN chains c USING (chain_id) "
+            "JOIN assets AS asset ON asset.id = t.asset_id "
             "LEFT JOIN treasury_wallets w ON w.treasury_id = t.id "
             "WHERE c.enabled AND t.module_address IS NOT NULL AND t.status <> 'Revoked' "
-            "GROUP BY t.id, c.rpc_urls ORDER BY t.id"
+            "GROUP BY t.id, c.rpc_urls, asset.address ORDER BY t.id"
         )
         changed = 0
         for treasury in treasuries:
@@ -56,6 +64,9 @@ async def index_events(
                 MODULE: [bytes(treasury["module_address"])],
                 SAFE_CONFIG: [bytes(safe) for safe in treasury["safes"]],
                 SAFE_EXEC: [bytes(safe) for safe in treasury["safes"]],
+                TOKEN: [bytes(treasury["asset_address"])]
+                if treasury["asset_address"] is not None
+                else [],
             }
             for stream, stream_addresses in addresses.items():
                 if not stream_addresses:
@@ -118,6 +129,14 @@ async def _index_stream(
 
         # The node's address filter is exact; the re-check below guards a misbehaving provider.
         wanted = {"0x" + address.hex() for address in addresses}
+        topic_filter: list[Any] = [list(abis)]
+        recipients: set[str] = set()
+        if stream == TOKEN:
+            # Token Transfers are unbounded; only those into the treasury's Safes matter.
+            recipients = {"0x" + bytes(safe).hex().rjust(64, "0") for safe in treasury["safes"]}
+            if not recipients:
+                return 0
+            topic_filter += [None, sorted(recipients)]
         logs: list[dict[str, Any]] = []
         for low in range(start, end + 1, CHUNK_BLOCKS):
             logs += await rpc.call(
@@ -127,7 +146,7 @@ async def _index_stream(
                         "fromBlock": hex(low),
                         "toBlock": hex(min(low + CHUNK_BLOCKS - 1, end)),
                         "address": sorted(wanted),
-                        "topics": [list(abis)],
+                        "topics": topic_filter,
                     }
                 ],
             )
@@ -141,6 +160,7 @@ async def _index_stream(
                 or str(log["address"]).lower() not in wanted
                 or not topics
                 or topics[0] not in abis
+                or (recipients and (len(topics) < 3 or topics[2] not in recipients))
             ):
                 continue
             abi = abis[topics[0]]

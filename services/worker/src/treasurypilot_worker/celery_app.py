@@ -61,6 +61,21 @@ def create_celery_app() -> Celery:
                 # A run nobody picked up within one interval is superseded by the next one.
                 "options": {"queue": "core", "expires": 6},
             },
+            "execution-scheduling-cycle": {
+                "task": "treasurypilot.execution.scheduling_cycle",
+                "schedule": timedelta(minutes=15),
+                "options": {"queue": "core", "expires": 14 * 60},
+            },
+            "execution-safety-cycle": {
+                "task": "treasurypilot.execution.safety_cycle",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "core", "expires": 55},
+            },
+            "activate-due-payees": {
+                "task": "treasurypilot.execution.activate_due_payees",
+                "schedule": timedelta(seconds=1),
+                "options": {"queue": "core", "expires": 2},
+            },
             "snapshot-dashboards": {
                 "task": "treasurypilot.chain.snapshot_dashboards",
                 "schedule": timedelta(seconds=60),
