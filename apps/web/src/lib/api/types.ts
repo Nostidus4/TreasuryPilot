@@ -6,6 +6,8 @@
  * Amounts are decimal strings in base units (ADR-014). Addresses are 0x strings.
  */
 
+import type { components } from '@/lib/api/schema';
+
 export type Hex = `0x${string}`;
 export type Role = 'OWN' | 'APR' | 'OPR' | 'FIN' | 'GRD' | 'ADM' | 'AUD';
 
@@ -621,16 +623,74 @@ export interface Reconciliation {
   note?: string;
 }
 
-export interface FeeSetting {
-  maxFeeGwei: number;
-  priorityGwei: number;
+export type FeePresetId = components['schemas']['FeePreset'];
+
+/** Wire shape of GET .../fee-policy (the schema types it as a free-form object). */
+export interface FeePolicyResponse {
+  active: FeePolicyRow | null;
+  proposal:
+    | (FeePolicyRow & {
+        id: string;
+        proposedAt: string;
+        basis: {
+          avgPlanFee7dWei: string;
+          p90PlanFee7dWei: string;
+          plansPerDay7d: number;
+        };
+      })
+    | null;
+  spentTodayWei: string;
+  day: string;
+  history: Array<
+    | {
+        kind: 'POLICY';
+        id: string;
+        at: string;
+        by: string;
+        preset: FeePresetId;
+        maxFeeMultiplierBps: number;
+        perPlanThresholdWei: string;
+        dailyBudgetWei: string;
+      }
+    | {
+        kind: 'PLAN_FEE';
+        id: string;
+        at: string;
+        by: string;
+        planId: string;
+        estimatedFeeWei: string;
+        acceptedCapWei: string;
+      }
+  >;
+}
+
+interface FeePolicyRow {
+  preset: FeePresetId;
+  maxFeeMultiplierBps: number;
+  tipPercentile: number;
+  perPlanThresholdWei: string;
+  dailyBudgetWei: string;
+  acceptedAt: string | null;
+}
+
+/** The review-queue fields the held-plan banner reads (type FEE_APPROVAL). */
+export interface FeeReviewItem {
+  id: string;
+  treasuryId: string;
+  planId: string | null;
+  feeEstimateWei: string | null;
+  slaDueAt: string;
+  type: string;
+  status: string;
 }
 
 export interface FeePolicy {
-  current: FeeSetting & { source: string };
-  proposal: FeeSetting & { rationale: string; proposedAt: string };
-  presets: Array<FeeSetting & { id: string; label: string; note: string }>;
-  observations: Array<{ at: string; baseFeeGwei: number }>;
+  proposalId: string | null;
+  active: FeePolicyRow | null;
+  proposal: FeePolicyRow | null;
+  basis: { avgPlanFeeWei: string; p90PlanFeeWei: string; plansPerDay: number };
+  spentTodayWei: string;
+  history: FeePolicyResponse['history'];
 }
 
 export interface OperationsMetrics {

@@ -13,7 +13,8 @@ import type {
   DecodedCall,
   DiffEntry,
   ExceptionDetail,
-  FeePolicy,
+  FeePolicyResponse,
+  FeeReviewItem,
   Flag,
   GovernanceTx,
   Hex,
@@ -127,7 +128,9 @@ export interface Db {
   reviewItems: ReviewItem[];
   exceptions: Record<string, ExceptionDetail>;
   reconciliations: Reconciliation[];
-  feePolicy: FeePolicy;
+  feePolicy: FeePolicyResponse;
+  /** Real-shape FEE_APPROVAL review items; the review-items mock returns these for that type. */
+  feeReviews: FeeReviewItem[];
   borrowProposals: BorrowProposal[];
   notifications: Notification[];
   copilot: Record<string, CopilotMessage[]>;
@@ -1369,47 +1372,55 @@ export function seed(): Db {
       },
     ],
     feePolicy: {
-      current: {
-        maxFeeGwei: 30,
-        priorityGwei: 2,
-        source: 'Preset “Balanced”, accepted 20 days ago',
+      active: {
+        preset: 'NORMAL',
+        maxFeeMultiplierBps: 20_000,
+        tipPercentile: 50,
+        perPlanThresholdWei: '5400000000000000',
+        dailyBudgetWei: '10800000000000000',
+        acceptedAt: iso(-20 * DAY),
       },
       proposal: {
-        maxFeeGwei: 22,
-        priorityGwei: 1.5,
-        rationale:
-          'The 7-day p90 base fee on Sepolia fell to 14 gwei. A 22 gwei cap still clears 99% of recent blocks and lowers the worst-case fee per plan by about 27%.',
-        proposedAt: iso(-4 * HOUR),
+        id: '0192b1c0-0000-7000-8000-000000000001',
+        preset: 'NORMAL',
+        maxFeeMultiplierBps: 20_000,
+        tipPercentile: 50,
+        perPlanThresholdWei: '5400000000000000',
+        dailyBudgetWei: '10800000000000000',
+        acceptedAt: null,
+        proposedAt: iso(-1 * HOUR),
+        basis: {
+          avgPlanFee7dWei: '1800000000000000',
+          p90PlanFee7dWei: '3100000000000000',
+          plansPerDay7d: 4.5,
+        },
       },
-      presets: [
+      spentTodayWei: '2100000000000000',
+      day: iso(0).slice(0, 10),
+      history: [
         {
-          id: 'economy',
-          label: 'Economy',
-          maxFeeGwei: 16,
-          priorityGwei: 1,
-          note: 'May wait several blocks when the network is busy.',
-        },
-        {
-          id: 'balanced',
-          label: 'Balanced',
-          maxFeeGwei: 30,
-          priorityGwei: 2,
-          note: 'Current setting.',
-        },
-        {
-          id: 'fast',
-          label: 'Fast',
-          maxFeeGwei: 60,
-          priorityGwei: 3,
-          note: 'For deadlines within the hour.',
+          kind: 'POLICY',
+          id: '0192b1c0-0000-7000-8000-0000000000a1',
+          at: iso(-20 * DAY),
+          by: 'Linh Tran',
+          preset: 'NORMAL',
+          maxFeeMultiplierBps: 20_000,
+          perPlanThresholdWei: '5400000000000000',
+          dailyBudgetWei: '10800000000000000',
         },
       ],
-      observations: Array.from({ length: 28 }, (_, index) => ({
-        at: iso(-(27 - index) * 6 * HOUR),
-        baseFeeGwei:
-          Math.round((9 + 5 * Math.sin(index / 2.3) + (index % 5)) * 10) / 10,
-      })),
     },
+    feeReviews: [
+      {
+        id: '0192b1c0-0000-7000-8000-0000000000b1',
+        treasuryId: 'trs_main',
+        planId: '0192b1c0-0000-7000-8000-0000000000c1',
+        feeEstimateWei: '4200000000000000',
+        slaDueAt: iso(3 * HOUR),
+        type: 'FEE_APPROVAL',
+        status: 'Open',
+      },
+    ],
     borrowProposals: [
       {
         id: 'bor_007',

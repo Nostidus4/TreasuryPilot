@@ -1,10 +1,8 @@
-import { format } from 'date-fns';
 import { Check } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { LineSeriesChart } from '@/components/charts';
 import { Amount } from '@/components/domain/amount';
 import { KeyValueList } from '@/components/domain/display';
 import { QueryBoundary } from '@/components/feedback';
@@ -23,17 +21,112 @@ import { useTreasuryScope } from '@/features/orgs/org-scope';
 import {
   useAcceptFeePolicy,
   useBorrowProposal,
+  feeErrorMessage,
   useFeePolicy,
+  useHeldFeePlans,
+  usePlanFeeDecision,
 } from '@/features/treasury/api';
-import { errorMessage } from '@/lib/api/http';
-import type { BorrowProposal } from '@/lib/api/types';
-import { formatDate, formatRelative } from '@/lib/format';
+import type {
+  BorrowProposal,
+  FeePresetId,
+  FeeReviewItem,
+} from '@/lib/api/types';
+import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
-import { formatBps } from '@/lib/money';
+import { formatBps, formatUnits, toBigInt } from '@/lib/money';
 import { cn } from '@/lib/utils';
 
-const PROPOSAL = 'proposal';
-const gwei = (value: number) => `${value} gwei`;
+const eth = (wei: string) => {
+  const value = toBigInt(wei);
+  // Below 6 decimals the amount would render as 0.000000.
+  if (value > 0n && value < 10n ** 12n) return '< 0.000001 ETH';
+  return `${formatUnits(value, 18, { minFraction: 4, maxFraction: 6 })} ETH`;
+};
+
+const PRESETS: Array<{
+  id: FeePresetId;
+  label: string;
+  multiplier: number;
+  tip: number;
+  note: string;
+}> = [
+  {
+    id: 'ECONOMY',
+    label: 'Economy',
+    multiplier: 1.5,
+    tip: 25,
+    note: 'May wait several blocks when the network is busy.',
+  },
+  {
+    id: 'NORMAL',
+    label: 'Normal',
+    multiplier: 2,
+    tip: 50,
+    note: 'Recommended for everyday payments.',
+  },
+  {
+    id: 'FAST',
+    label: 'Fast',
+    multiplier: 3,
+    tip: 75,
+    note: 'For deadlines within the hour.',
+  },
+];
+const presetLabel = (id: FeePresetId) =>
+  PRESETS.find((preset) => preset.id === id)?.label ?? id;
+const multiplierLabel = (bps: number) => `${bps / 10_000}× base fee`;
+
+function HeldPlanBanner({
+  canDecide,
+  held,
+  orgId,
+}: {
+  canDecide: boolean;
+  held: FeeReviewItem;
+  orgId: string;
+}) {
+  const pay = usePlanFeeDecision(orgId, 'accept');
+  const defer = usePlanFeeDecision(orgId, 'defer');
+  const error = pay.error ?? defer.error;
+  const planId = held.planId ?? '';
+  const fee = eth(held.feeEstimateWei ?? '0');
+  return (
+    <Alert
+      tone="warning"
+      title={t('Plan {{id}} is waiting on a network fee', {
+        id: planId.slice(0, 8),
+      })}
+      action={
+        canDecide && (
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              loading={pay.isPending}
+              disabled={defer.isPending}
+              onClick={() => pay.mutate(planId)}
+            >
+              {t('Pay now at {{fee}}', { fee })}
+            </Button>
+            <Button
+              loading={defer.isPending}
+              disabled={pay.isPending}
+              onClick={() => defer.mutate(planId)}
+            >
+              {t('Defer')}
+            </Button>
+          </div>
+        )
+      }
+    >
+      {t('Estimated fee {{fee}}. Decide by {{deadline}}.', {
+        fee,
+        deadline: formatDateTime(held.slaDueAt),
+      })}
+      {!canDecide && ` ${t('Only an Owner, Finance or Operator can decide.')}`}
+      {error && <span role="alert"> {feeErrorMessage(error)}</span>}
+    </Alert>
+  );
+}
 
 /**
  * Fee policy (WEB-024, M16-D11): the system proposes, the Owner accepts it or
@@ -42,9 +135,12 @@ const gwei = (value: number) => `${value} gwei`;
 export function FeesPage() {
   const scope = useTreasuryScope();
   const query = useFeePolicy(scope.orgId, scope.treasuryId);
+  const held = useHeldFeePlans(scope.orgId, scope.treasuryId);
   const accept = useAcceptFeePolicy(scope.orgId, scope.treasuryId);
-  const [choice, setChoice] = useState(PROPOSAL);
+  const [choice, setChoice] = useState<FeePresetId | null>(null);
   const canAccept = scope.can('OWN');
+  // The backend lets Owner, Finance and Operator decide held plans.
+  const canDecide = scope.can('OWN', 'FIN', 'OPR');
 
   return (
     <Page
@@ -54,58 +150,77 @@ export function FeesPage() {
       )}
     >
       <QueryBoundary query={query}>
-        {(policy) => (
-          <div className="grid items-start gap-4 lg:grid-cols-5">
-            <div className="grid gap-4 lg:col-span-3">
-              <Card>
+        {(policy) => {
+          const proposal = policy.proposal;
+          const selected = choice ?? proposal?.preset ?? 'NORMAL';
+          return (
+            <div className="grid items-start gap-4 lg:grid-cols-5">
+              {(held.data?.items.length ?? 0) > 0 && (
+                <div className="grid gap-2 lg:col-span-5">
+                  {held.data?.items.map((item) => (
+                    <HeldPlanBanner
+                      key={item.id}
+                      held={item}
+                      canDecide={canDecide}
+                      orgId={scope.orgId}
+                    />
+                  ))}
+                </div>
+              )}
+              <Card className="lg:col-span-3">
                 <CardHeader
                   title={t('Choose a fee policy')}
-                  description={t(
-                    'Proposed {{when}} from the last 7 days of network fees.',
-                    {
-                      when: formatRelative(policy.proposal.proposedAt),
-                    },
-                  )}
+                  description={
+                    proposal
+                      ? t(
+                          'Proposed from the last 7 days of network fees. Presets other than Normal recalculate the limits when accepted.',
+                        )
+                      : t(
+                          'No current proposal. Ask an Owner to open this page to generate one.',
+                        )
+                  }
                 />
-                <CardContent>
+                <CardContent className="grid gap-4">
+                  <KeyValueList
+                    items={[
+                      {
+                        label: t('Average fee per plan'),
+                        value: eth(policy.basis.avgPlanFeeWei),
+                      },
+                      {
+                        label: t('90th percentile fee per plan'),
+                        value: eth(policy.basis.p90PlanFeeWei),
+                      },
+                      {
+                        label: t('Plans per day'),
+                        value: policy.basis.plansPerDay,
+                      },
+                    ]}
+                  />
                   <RadioGroup
-                    value={choice}
-                    onValueChange={setChoice}
+                    value={selected}
+                    onValueChange={(value) => setChoice(value as FeePresetId)}
                     aria-label={t('Fee policy')}
                     disabled={!canAccept}
                   >
-                    <RadioCard value={PROPOSAL}>
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-medium">
-                          {t('System proposal')}
-                        </span>
-                        <Badge tone="info">{t('Recommended')}</Badge>
-                        <span className="num ml-auto text-base">
-                          {t('max {{max}} · priority {{priority}}', {
-                            max: gwei(policy.proposal.maxFeeGwei),
-                            priority: gwei(policy.proposal.priorityGwei),
-                          })}
-                        </span>
-                      </span>
-                      <span className="mt-1 block text-sm text-muted-foreground">
-                        {policy.proposal.rationale}
-                      </span>
-                    </RadioCard>
-                    {policy.presets.map((preset) => (
+                    {PRESETS.map((preset) => (
                       <RadioCard key={preset.id} value={preset.id}>
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="text-base font-medium">
                             {t(preset.label)}
                           </span>
+                          {proposal?.preset === preset.id && (
+                            <Badge tone="info">{t('Recommended')}</Badge>
+                          )}
                           <span className="num ml-auto text-base">
-                            {t('max {{max}} · priority {{priority}}', {
-                              max: gwei(preset.maxFeeGwei),
-                              priority: gwei(preset.priorityGwei),
+                            {t('max {{max}} · tip at p{{tip}}', {
+                              max: multiplierLabel(preset.multiplier * 10_000),
+                              tip: preset.tip,
                             })}
                           </span>
                         </span>
                         <span className="mt-1 block text-sm text-muted-foreground">
-                          {preset.note}
+                          {t(preset.note)}
                         </span>
                       </RadioCard>
                     ))}
@@ -122,16 +237,17 @@ export function FeesPage() {
                       role="alert"
                       className="mr-auto text-sm text-danger-foreground"
                     >
-                      {errorMessage(accept.error)}
+                      {feeErrorMessage(accept.error)}
                     </p>
                   )}
                   <Button
                     variant="primary"
-                    disabled={!canAccept}
+                    disabled={!canAccept || !policy.proposalId}
                     loading={accept.isPending}
                     onClick={() =>
+                      policy.proposalId &&
                       accept.mutate(
-                        { preset: choice === PROPOSAL ? undefined : choice },
+                        { proposalId: policy.proposalId, preset: selected },
                         {
                           onSuccess: () =>
                             toast.success(t('Fee policy accepted')),
@@ -145,63 +261,90 @@ export function FeesPage() {
                 </CardFooter>
               </Card>
 
-              <Card>
-                <CardHeader
-                  title={t('Network base fee, last 7 days')}
-                  description={t('Observed on the treasury’s chain, in gwei.')}
-                />
-                <CardContent>
-                  <LineSeriesChart
-                    summary={t(
-                      'Line chart of the network base fee over the last 7 days against the current fee cap.',
-                    )}
-                    seriesLabel={t('Base fee')}
-                    xLabel={t('Time')}
-                    yTickFormatter={(value) => String(value)}
-                    references={[
-                      {
-                        value: policy.current.maxFeeGwei,
-                        label: t('Current cap'),
-                      },
-                    ]}
-                    data={policy.observations.map((point) => ({
-                      label: format(new Date(point.at), 'MMM d HH:mm'),
-                      value: point.baseFeeGwei,
-                      display: gwei(point.baseFeeGwei),
-                    }))}
-                  />
+              <Card className="lg:col-span-2">
+                <CardHeader title={t('Active policy')} />
+                <CardContent className="grid gap-4">
+                  {policy.active ? (
+                    <KeyValueList
+                      items={[
+                        {
+                          label: t('Preset'),
+                          value: t(presetLabel(policy.active.preset)),
+                        },
+                        {
+                          label: t('Max fee'),
+                          value: multiplierLabel(
+                            policy.active.maxFeeMultiplierBps,
+                          ),
+                        },
+                        {
+                          label: t('Per-plan threshold'),
+                          value: eth(policy.active.perPlanThresholdWei),
+                        },
+                        {
+                          label: t('Daily budget'),
+                          value: eth(policy.active.dailyBudgetWei),
+                        },
+                        {
+                          label: t('Spent today'),
+                          value: eth(policy.spentTodayWei),
+                        },
+                        {
+                          label: t('Accepted'),
+                          value: policy.active.acceptedAt
+                            ? formatRelative(policy.active.acceptedAt)
+                            : '-',
+                        },
+                      ]}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {t('No fee policy has been accepted yet.')}
+                    </p>
+                  )}
+                  <h3 className="text-sm font-medium">{t('Accepted fees')}</h3>
+                  <ul className="grid gap-2 text-sm">
+                    {policy.history.map((entry) => (
+                      <li key={entry.id}>
+                        {entry.kind === 'POLICY' ? (
+                          <>
+                            <span className="font-medium">
+                              {t('Preset {{preset}}', {
+                                preset: presetLabel(entry.preset),
+                              })}
+                            </span>{' '}
+                            <span className="num">
+                              {multiplierLabel(entry.maxFeeMultiplierBps)}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-medium">
+                              {t('Held plan {{id}}', {
+                                id: entry.planId.slice(0, 8),
+                              })}
+                            </span>{' '}
+                            <span className="num">
+                              {t('cap {{cap}}', {
+                                cap: eth(entry.acceptedCapWei),
+                              })}
+                            </span>
+                          </>
+                        )}
+                        <span className="block text-muted-foreground">
+                          {t('{{by}}, {{when}}', {
+                            by: entry.by,
+                            when: formatRelative(entry.at),
+                          })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
             </div>
-
-            <Card className="lg:col-span-2">
-              <CardHeader title={t('Active policy')} />
-              <CardContent>
-                <KeyValueList
-                  items={[
-                    {
-                      label: t('Max fee per gas'),
-                      value: (
-                        <span className="num font-medium">
-                          {gwei(policy.current.maxFeeGwei)}
-                        </span>
-                      ),
-                    },
-                    {
-                      label: t('Priority fee'),
-                      value: (
-                        <span className="num font-medium">
-                          {gwei(policy.current.priorityGwei)}
-                        </span>
-                      ),
-                    },
-                    { label: t('Source'), value: policy.current.source },
-                  ]}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        )}
+          );
+        }}
       </QueryBoundary>
     </Page>
   );

@@ -196,3 +196,17 @@ test('an unknown execution outcome stays in chain-checking state', async ({
     /failed|error|revert/i,
   );
 });
+
+test('WEB-024 owner accepts the fee proposal and Finance pays a held plan', async ({
+  page,
+}) => {
+  await signIn(page, requesterEmail);
+  await page.goto('/o/org_northwind/t/trs_main/settings/fees');
+
+  await expect(page.getByText('is waiting on a network fee')).toBeVisible();
+  await page.getByRole('button', { name: /Pay now at/ }).click();
+  await expect(page.getByText('is waiting on a network fee')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText('Preset Normal').first()).toBeVisible();
+});

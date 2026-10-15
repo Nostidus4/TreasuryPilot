@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.execution.models import GasLedger, Operation, Transaction
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import OrganizationRole, User, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.mandate.models import FeeAcceptance, FeePreset, TreasuryFeePolicy
@@ -236,6 +236,78 @@ async def _view_for_treasury(
     return active, pending, treasury.chain_id
 
 
+HISTORY_LIMIT = 10
+
+
+async def _history(
+    session: AsyncSession, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
+) -> list[dict[str, object]]:
+    """Newest-first accepted policies and held-plan fee acceptances for this treasury."""
+
+    name = func.coalesce(User.display_name, User.email)
+    policies = await session.execute(
+        select(TreasuryFeePolicy, name)
+        .join(User, User.id == TreasuryFeePolicy.accepted_by)
+        .where(
+            TreasuryFeePolicy.org_id == organization_id,
+            TreasuryFeePolicy.treasury_id == treasury_id,
+            TreasuryFeePolicy.accepted_at.is_not(None),
+        )
+        .order_by(TreasuryFeePolicy.accepted_at.desc())
+        .limit(HISTORY_LIMIT)
+    )
+    plans = await session.execute(
+        select(FeeAcceptance, name)
+        .join(User, User.id == FeeAcceptance.accepted_by)
+        .where(
+            FeeAcceptance.org_id == organization_id,
+            FeeAcceptance.plan_id.in_(
+                select(ReviewItem.plan_id).where(
+                    ReviewItem.org_id == organization_id,
+                    ReviewItem.treasury_id == treasury_id,
+                    ReviewItem.type == "FEE_APPROVAL",
+                )
+            ),
+        )
+        .order_by(FeeAcceptance.at.desc())
+        .limit(HISTORY_LIMIT)
+    )
+    rows: list[tuple[datetime, dict[str, object]]] = []
+    rows.extend(
+        (
+            cast(datetime, policy.accepted_at),
+            {
+                "kind": "POLICY",
+                "id": str(policy.id),
+                "at": cast(datetime, policy.accepted_at).isoformat(),
+                "by": by,
+                "preset": policy.preset.value,
+                "maxFeeMultiplierBps": policy.max_fee_multiplier_bps,
+                "perPlanThresholdWei": str(policy.per_plan_threshold_wei),
+                "dailyBudgetWei": str(policy.daily_budget_wei),
+            },
+        )
+        for policy, by in policies
+    )
+    rows.extend(
+        (
+            acceptance.at,
+            {
+                "kind": "PLAN_FEE",
+                "id": str(acceptance.id),
+                "at": acceptance.at.isoformat(),
+                "by": by,
+                "planId": str(acceptance.plan_id),
+                "estimatedFeeWei": str(acceptance.estimated_fee_wei),
+                "acceptedCapWei": str(acceptance.accepted_cap_wei),
+            },
+        )
+        for acceptance, by in plans
+    )
+    rows.sort(key=lambda row: row[0], reverse=True)
+    return [row for _, row in rows[:HISTORY_LIMIT]]
+
+
 @router.get("/treasuries/{treasury_id}/fee-policy", openapi_extra={"x-organization-scoped": True})
 async def get_fee_policy(
     organization_id: uuid.UUID,
@@ -329,6 +401,9 @@ async def get_fee_policy(
             organization_id=member.organization_id,
             treasury_id=treasury_id,
         )
+        history = await _history(
+            session, organization_id=member.organization_id, treasury_id=treasury_id
+        )
     if current is None:
         raise _failure(404, "TREASURY_NOT_FOUND", "The treasury is unavailable.")
     active, pending, _ = current
@@ -339,6 +414,7 @@ async def get_fee_policy(
         "proposal": _proposal_view(pending),
         "spentTodayWei": str(spent),
         "day": today.isoformat(),
+        "history": history,
     }
 
 
