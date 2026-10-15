@@ -1305,6 +1305,33 @@
         "title": "FactorView",
         "type": "object"
       },
+      "FeePolicyAcceptRequest": {
+        "properties": {
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeePreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposalId": {
+            "format": "uuid",
+            "title": "Proposalid",
+            "type": "string"
+          }
+        },
+        "required": ["proposalId"],
+        "title": "FeePolicyAcceptRequest",
+        "type": "object"
+      },
+      "FeePreset": {
+        "enum": ["ECONOMY", "NORMAL", "FAST"],
+        "title": "FeePreset",
+        "type": "string"
+      },
       "FlagAcknowledgment": {
         "properties": {
           "note": {
@@ -2809,6 +2836,24 @@
         "title": "PlanEvidence",
         "type": "object"
       },
+      "PlanFeeActionRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PlanFeeActionRequest",
+        "type": "object"
+      },
       "RecurrenceCadence": {
         "enum": ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
         "title": "RecurrenceCadence",
@@ -3079,6 +3124,19 @@
           }
         },
         "title": "RecurringSchedulePatch",
+        "type": "object"
+      },
+      "ReferencePriceRequest": {
+        "properties": {
+          "referenceEthPrice": {
+            "maxLength": 78,
+            "pattern": "^[1-9][0-9]*$",
+            "title": "Referenceethprice",
+            "type": "string"
+          }
+        },
+        "required": ["referenceEthPrice"],
+        "title": "ReferencePriceRequest",
         "type": "object"
       },
       "RefillPath": {
@@ -7280,6 +7338,134 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/plans/{plan_id}/fee/accept": {
+      "post": {
+        "operationId": "accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanFeeActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Plan Fee V1 Orgs  Organization Id  Plans  Plan Id  Fee Accept Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Plan Fee",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/plans/{plan_id}/fee/defer": {
+      "post": {
+        "operationId": "defer_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_defer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanFeeActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Defer Plan Fee V1 Orgs  Organization Id  Plans  Plan Id  Fee Defer Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Defer Plan Fee",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/recurring-payment-schedules": {
       "get": {
         "operationId": "list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get",
@@ -9965,6 +10151,188 @@
         },
         "summary": "Refresh Coverage",
         "tags": ["treasury"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy": {
+      "get": {
+        "operationId": "get_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Fee Policy V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fee Policy",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/accept": {
+      "post": {
+        "operationId": "accept_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeePolicyAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Fee Policy V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Accept Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Fee Policy",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/reference-price": {
+      "put": {
+        "operationId": "set_fee_reference_price_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_reference_price_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferencePriceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Fee Reference Price V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Reference Price Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Fee Reference Price",
+        "tags": ["fees"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs": {

@@ -221,6 +221,15 @@ async def _operation_status(database_url: str, operation_id: str) -> str:
     return str(row["status"])
 
 
+async def _gas_ledger(database_url: str, transaction_id: str) -> Any:
+    return await _fetch(
+        database_url,
+        "SELECT payer, payer_address, fee_wei, reverted, day FROM gas_ledger "
+        "WHERE transaction_id = $1",
+        uuid.UUID(transaction_id),
+    )
+
+
 def _nonce(url: str) -> int:
     return int(_rpc(url, "eth_getTransactionCount", [SENDER, "latest"]), 16)
 
@@ -255,6 +264,12 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
         assert row["fee_wei"] == int(receipt["gasUsed"], 16) * int(receipt["effectiveGasPrice"], 16)
         # BR-026: the day is attributed from the mined block's timestamp, not the poll time.
         assert row["confirmed_at"] == datetime.fromtimestamp(int(block["timestamp"], 16), UTC)
+        ledger = await _gas_ledger(database_url, tx_id)
+        assert ledger is not None
+        assert ledger["payer"] == "EXECUTOR"
+        assert ledger["payer_address"] == row["from_address"]
+        assert ledger["fee_wei"] == row["fee_wei"]
+        assert ledger["day"] == row["confirmed_at"].date()
         assert await _operation_status(database_url, operation_id) == "Confirmed"
 
     asyncio.run(scenario())
@@ -372,6 +387,8 @@ def test_reverted_transaction_stores_the_decoded_revert_selector(
         row = await _tx(database_url, tx_id)
         assert (row["status"], bytes(row["revert_selector"])) == ("Reverted", selector)
         assert row["fee_wei"] > 0
+        ledger = await _gas_ledger(database_url, tx_id)
+        assert ledger is not None and ledger["reverted"] is True
         assert await _operation_status(database_url, operation_id) == "Reverted"
         error = (
             await _fetch(
@@ -398,6 +415,7 @@ def test_reorg_that_removes_a_confirmed_transaction_demotes_it_to_pending(
         await _track(database_url, client)
         row = await _tx(database_url, tx_id)
         assert row["status"] == "Confirmed" and row["confirmed_at"] is not None
+        assert await _gas_ledger(database_url, tx_id) is not None
         assert await _operation_status(database_url, operation_id) == "Confirmed"
 
         # Nothing changed on chain: a re-scan leaves the final state alone but keeps counting.
@@ -412,6 +430,7 @@ def test_reorg_that_removes_a_confirmed_transaction_demotes_it_to_pending(
         row = await _tx(database_url, tx_id)
         assert row["status"] == "Pending"
         assert row["confirmed_at"] is None
+        assert await _gas_ledger(database_url, tx_id) is None
         assert await _operation_status(database_url, operation_id) == "Pending"
 
     asyncio.run(scenario())

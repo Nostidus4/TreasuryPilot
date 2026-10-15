@@ -57,7 +57,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 | `plan_steps` | id, plan_id, seq, step_id, action, from_wallet, to_address, asset, amount, status enum(Pending, Submitted, Confirmed, Verified, Reverted, Skipped) | unique(step_id) across active plans |
 | `operations` (outbox) | id, treasury_id, plan_step_id, request_id, step_id, kind, payload jsonb (to, data, value 0), idempotency_key, status enum(NotSubmitted, Submitted, Pending, Confirmed, Reverted, Unknown, Abandoned), attempts, last_error, created_at | unique(step_id) |
 | `transactions` | M06 §4 | one operation → 1..n transactions (replacements) |
-| `gas_ledger` | id, treasury_id, transaction_id, payer enum(EXECUTOR, SENTINEL, RECEIPT), fee_wei, reverted, day | |
+| `gas_ledger` | id, treasury_id, transaction_id, payer enum(EXECUTOR, SENTINEL, RECEIPT), fee_wei, reverted, day | executor receipts are upserted by the tracker using the mined block's UTC day; a reorg removes the stale ledger row |
 | `signer.nonces` *(signer schema)* | address, next_nonce, updated_at | the only nonce allocator |
 | `signer.attestation_uses` | M08 §4.2 | |
 
@@ -166,6 +166,10 @@ O1 = 20 tUSDC, buffer 10, target 10 (UC-02 values), invoice 100. Engine: Shortag
 - t0+5 s REFILL: PRE_STEP ALLOW, SIMULATION ok, op#1 NotSubmitted → Submitted (0xaa…, nonce 41).
 - t0+41 s (3 blocks) Confirmed, cross-check Match; post-condition: O1 = 110, T −90 → PASSED.
 - PAY: PRE_STEP ALLOW (110 − 100 = 10 ≥ 10), op#2 → Submitted (nonce 42) → Confirmed → PASSED → request Paid; EAS receipt queued.
+
+### 8.5 Fee estimate and daily usage (EXE-012)
+
+Before attestation, estimate each step with `eth_estimateGas` and sum `gasEstimate × maxFeePerGas` in integer wei. The current UTC day's executor spend is the sum of `gas_ledger.fee_wei` where `payer = EXECUTOR`; the tracker records confirmed and reverted transactions at the mined block's UTC date and removes the row if that inclusion is reorged out. A plan proceeds only if its estimate fits both the Owner-accepted per-plan threshold and the remaining daily budget. See M03 §8.6–8.7 for the proposal, wait, and review rules.
 
 ## 9. Configuration and defaults
 
