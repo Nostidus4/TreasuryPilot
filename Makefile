@@ -37,6 +37,8 @@ help:
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
 	@echo "  make eval-extraction Score invoice extraction against evals/invoices (recorded or live)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+	@echo "  make eval-copilot    Check Copilot answers against engine numbers (recorded model)"
+	@echo "  make eval-copilot-record  Live Copilot run that rewrites the recordings (needs ANTHROPIC_API_KEY)"
 	@echo "  make eval-redteam    Run the red-team invoices through extraction (recorded model)"
 
 .PHONY: eval-extraction eval-extraction-record
@@ -49,6 +51,14 @@ eval-extraction-record:
 .PHONY: eval-validate
 eval-validate:
 	uv run --frozen python evals/validate.py
+
+.PHONY: eval-copilot
+eval-copilot:
+	uv run --frozen python -m treasurypilot_worker.evals.copilot_fidelity --mode recorded
+
+.PHONY: eval-copilot-record
+eval-copilot-record:
+	uv run --frozen python -m treasurypilot_worker.evals.copilot_fidelity --mode live --record
 
 .PHONY: eval-redteam
 eval-redteam:

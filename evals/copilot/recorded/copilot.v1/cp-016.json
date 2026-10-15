@@ -1,0 +1,42 @@
+{
+  "case_id": "cp-016",
+  "prompt_version": "copilot.v1",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "27fd8df841ec362d6b7d6bc749a391c2ba7a2fe547fc698a2736a5a9cdf8285e",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_016iSE25FXaTV671x97uTP9K",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 157,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01CHEiLWvQQy69ue5eAnFeBi",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 242,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"The liquidity decision gives a supply amount of 2250000000 base units. It gives a required Safe reserve of 1250000000 base units. This is a simulated fixture.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.liquidity_decision.supply_amount\"},{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.liquidity_decision.required_safe_reserve\"}]}",
+      "tool_calls": [],
+      "input_tokens": 327,
+      "output_tokens": 260
+    }
+  ]
+}

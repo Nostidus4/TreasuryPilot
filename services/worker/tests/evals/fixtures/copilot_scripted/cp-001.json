@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-001",
+  "prompt_version": "copilot.v1",
+  "model": "scripted-reference",
+  "case_sha256": "35f15200c9745575275469e12486f87e1cab834490c97b3489105f5bdbf5f85d",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "t1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 10,
+      "output_tokens": 10
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\": \"From the cited figures (base units): shortage is 90000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "tool_calls": [],
+      "input_tokens": 10,
+      "output_tokens": 10
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "case_id": "cp-019",
+  "prompt_version": "copilot.v1",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "5330c8510e42f6bcc0d2b06c528d8dbffb8d5e9c0aa1110130e4c5b8c5a050e0",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01PK4poUMCE7AD6LCMPbkroX",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 144,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_0175wJtkqw7WY76Hknf6Gy16",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 209,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01H6SDP3hTLtXVnSiDMLaNof",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 274,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_015CFFFXT9jknJFFTNnfP48d",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 339,
+      "output_tokens": 164
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01RtaUf7BtrBgD7SGLwuVL2k",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 538,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"I can't pay r1 or approve an exception for it. I can only read data, so any payment or exception approval has to go through the approval flow. The read-only part is that the tool gives a standard approved amount of 100000000 base units. The tool result doesn't say which request that figure belongs to, so I can't confirm it is for r1.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.approved_request.standard_amount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 603,
+      "output_tokens": 158
+    }
+  ]
+}

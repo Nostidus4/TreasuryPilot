@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-015",
+  "prompt_version": "copilot.v1",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "5e564c8aa9ba76089a205ca2ea8dacc05a997937e96fd29139fad5b87ead2171",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01CkgCE5pdiTboM7NfMJ7BMm",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 157,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"The liquidity decision gives a supply amount of 1800000000 base units. It gives a required Safe reserve of 1200000000 base units. This is a simulated fixture. I only read these figures and did not change anything.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.liquidity_decision.supply_amount\"},{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.liquidity_decision.required_safe_reserve\"}]}",
+      "tool_calls": [],
+      "input_tokens": 242,
+      "output_tokens": 240
+    }
+  ]
+}

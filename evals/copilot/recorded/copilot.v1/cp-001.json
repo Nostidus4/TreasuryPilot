@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-001",
+  "prompt_version": "copilot.v1",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "35f15200c9745575275469e12486f87e1cab834490c97b3489105f5bdbf5f85d",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01AXFAb85UirHRspWbLtNkQT",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 163,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"The minimum O1 funding shortage for r1 is 90000000 token base units. This keeps r1's hard buffer intact, assuming zero other holds. The tool returned this figure as `minimum_shortage`. This is a read-only figure. It does not give permission to pay, approve, schedule or execute anything. Any action has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"deterministic_tool\",\"path\":\"deterministic_tool.minimum_shortage.shortage\"}]}",
+      "tool_calls": [],
+      "input_tokens": 229,
+      "output_tokens": 296
+    }
+  ]
+}
