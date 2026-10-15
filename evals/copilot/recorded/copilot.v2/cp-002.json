@@ -1,0 +1,42 @@
+{
+  "case_id": "cp-002",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "a8d327636a76eb7633f503325f4dc750680cda134f296c5ea4620f137f43effa",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_018sJjeLXAWd3PMoJ2VHMsn2",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 163,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01PksGGKT3dn4jGgx8MT5DS6",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 268,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"With zero other holds, the minimum O1 funding shortage for r1 is 0 token base units. The tool reports no shortfall while r1's hard buffer is preserved. This is a read-only figure. It does not grant permission to execute anything, and I can't pay, approve or schedule. Any action would have to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"toolu_018sJjeLXAWd3PMoJ2VHMsn2\",\"path\":\"result.deterministic_tool.minimum_shortage.shortage\"}]}",
+      "tool_calls": [],
+      "input_tokens": 372,
+      "output_tokens": 268
+    }
+  ]
+}
