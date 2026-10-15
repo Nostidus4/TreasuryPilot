@@ -337,6 +337,19 @@ def test_terminal_refusal_and_reverted_step_open_review(database_url: str) -> No
     assert [r["type"] for r in rows] == ["INFRA"]
 
 
+def test_insufficient_gas_refusal_opens_an_infra_review(database_url: str) -> None:
+    run, signer = asyncio.run(_new_run(database_url)), FakeSigner()
+    signer.fail_with = SignerRefused("INSUFFICIENT_GAS")
+
+    result = asyncio.run(_go(database_url, signer, run, FakeGate()))
+
+    assert (result.status, result.code) == ("Blocked", "INSUFFICIENT_GAS")
+    rows = asyncio.run(
+        _sql(database_url, "SELECT type FROM review_items WHERE request_id = $1", run.request_id)
+    )
+    assert [r["type"] for r in rows] == ["INFRA"]
+
+
 def test_worker_routing_matches_api() -> None:
     for kind in ("POLICY_BLOCK", "NEEDS_AUTHORITY", "INFRA", "DISCREPANCY"):
         for code in ("BUFFER_BREACH", "AMOUNT_CHANGED"):

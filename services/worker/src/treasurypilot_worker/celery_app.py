@@ -106,6 +106,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(minutes=1),
                 "options": {"queue": "core", "expires": 55},
             },
+            "check-low-gas": {
+                "task": "treasurypilot.execution.check_low_gas",
+                "schedule": timedelta(minutes=5),
+                "options": {"queue": "core", "expires": 240},
+            },
             "expire-mandates": {
                 "task": "treasurypilot.mandates.expire",
                 "schedule": timedelta(minutes=10),
