@@ -55,6 +55,10 @@ jobs:
 
   deploy:
     if: github.event_name != 'pull_request'
+    # Serialize deploys across refs; the workflow-level group only isolates validation.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     needs: validate
     environment:
       name: github-pages

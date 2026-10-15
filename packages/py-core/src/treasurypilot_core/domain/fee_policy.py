@@ -110,18 +110,17 @@ def propose_fee_policy(
         p90_fee = percentile_nearest_rank(plan_fees_wei, 90)
         observed_plans = plans_last_7d or len(plan_fees_wei)
         plans_per_day = observed_plans / POLICY_HISTORY_DAYS
+        # Integer ceil of the 7-day average so a fractional plan/day is not rounded down.
+        daily_by_volume = (3 * observed_plans * avg_fee + POLICY_HISTORY_DAYS - 1) // (
+            POLICY_HISTORY_DAYS
+        )
     else:
         avg_fee = DEFAULT_PLAN_GAS * max_fee_per_gas
         p90_fee = avg_fee
         plans_per_day = 1.0
+        daily_by_volume = 3 * avg_fee
 
     threshold = max(3 * avg_fee, p90_fee)
-    # Use integer ceil for the 7-day average so a fractional plan/day is not rounded down.
-    daily_by_volume = (3 * plans_last_7d * avg_fee + POLICY_HISTORY_DAYS - 1) // (
-        POLICY_HISTORY_DAYS
-    )
-    if not plan_fees_wei:
-        daily_by_volume = 3 * avg_fee
     daily_budget = max(daily_by_volume, 2 * threshold)
     return FeeProposal(
         preset=preset,
@@ -146,7 +145,7 @@ def estimate_plan_fee_wei(gas_estimates: Sequence[int], max_fees_per_gas_wei: Se
     if any(value < 0 for value in (*gas_estimates, *max_fees_per_gas_wei)):
         raise ValueError("gas estimates and max fees must be nonnegative")
     return sum(
-        gas * max_fee for gas, max_fee in zip(gas_estimates, max_fees_per_gas_wei, strict=False)
+        gas * max_fee for gas, max_fee in zip(gas_estimates, max_fees_per_gas_wei, strict=True)
     )
 
 

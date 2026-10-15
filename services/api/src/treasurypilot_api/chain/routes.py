@@ -10,6 +10,9 @@ from pydantic import Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.chain.models import TokenMovement
 from treasurypilot_api.execution.models import ObservedEvent
 from treasurypilot_api.identity.api import ApiModel
@@ -136,27 +139,22 @@ class SqlAlchemyTokenMovementRepository:
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID, limit: int
     ) -> tuple[TokenMovementRecord, ...] | None:
         async with self._sessions() as session:
+            exists = await session.scalar(
+                select(Treasury.id).where(
+                    Treasury.id == treasury_id, Treasury.org_id == organization_id
+                )
+            )
+            if exists is None:
+                return None
             rows = (
                 await session.execute(
                     select(TokenMovement, ObservedEvent)
                     .join(ObservedEvent, ObservedEvent.id == TokenMovement.event_id)
-                    .join(Treasury, Treasury.id == TokenMovement.treasury_id)
-                    .where(
-                        Treasury.org_id == organization_id,
-                        TokenMovement.treasury_id == treasury_id,
-                    )
+                    .where(TokenMovement.treasury_id == treasury_id)
                     .order_by(TokenMovement.created_at.desc(), TokenMovement.id)
                     .limit(limit)
                 )
             ).all()
-        if not rows:
-            async with self._sessions() as session:
-                exists = await session.scalar(
-                    select(Treasury.id).where(
-                        Treasury.id == treasury_id, Treasury.org_id == organization_id
-                    )
-                )
-            return () if exists is not None else None
         return tuple(self._record(movement, event) for movement, event in rows)
 
     async def acknowledge(
@@ -202,12 +200,22 @@ class SqlAlchemyTokenMovementRepository:
                 )
             movement.acknowledged_by = user_id
             movement.acknowledged_at = datetime.now(UTC)
-            movement.acknowledgement_reason = reason.strip()
-            if not movement.acknowledgement_reason:
-                raise TokenMovementConflict(
-                    "ACKNOWLEDGEMENT_REASON_REQUIRED", "Provide a reason for acknowledging."
-                )
+            movement.acknowledgement_reason = reason
             await session.flush()
+            # Signals stay pending: acknowledging records an owner decision for #61/#65 to read.
+            await write_audit(
+                session,
+                org_id=organization_id,
+                actor=AuditActor(AuditActorType.USER, user_id),
+                action="token_movement.acknowledged",
+                entity=AuditEntity("token_movement", movement.id),
+                data={
+                    "treasuryId": str(treasury_id),
+                    "reason": reason,
+                    "transactionHash": "0x" + event.tx_hash.hex(),
+                    "amount": str(movement.amount),
+                },
+            )
             return self._record(movement, event)
 
 

@@ -7,9 +7,9 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
-    Numeric,
     String,
     Text,
     func,
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from treasurypilot_api.database import Base
 from treasurypilot_api.identity.models import uuid7
+from treasurypilot_api.mandate.models import Money
 
 
 class ReviewItem(Base):
@@ -36,11 +37,28 @@ class ReviewItem(Base):
             name="ck_review_items_type",
         ),
         CheckConstraint(
+            "jsonb_typeof(evidence) = 'object'", name="ck_review_items_evidence_object"
+        ),
+        CheckConstraint(
+            "(request_id IS NOT NULL AND request_version IS NOT NULL "
+            "AND mandate_version_id IS NULL) OR "
+            "(request_id IS NULL AND request_version IS NULL "
+            "AND mandate_version_id IS NOT NULL AND type = 'DISCREPANCY')",
+            name="ck_review_items_subject",
+        ),
+        ForeignKeyConstraint(
+            ["mandate_version_id", "org_id"],
+            ["mandate_versions.id", "mandate_versions.org_id"],
+            name="fk_review_items_mandate_version_org",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
             "fee_estimate_wei IS NULL OR fee_estimate_wei >= 0",
             name="ck_review_items_fee_estimate_nonnegative",
         ),
         CheckConstraint(
-            "type <> 'FEE_APPROVAL' OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
+            "type <> 'FEE_APPROVAL' OR status <> 'Open' "
+            "OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
             name="ck_review_items_fee_approval_details",
         ),
         Index(
@@ -49,6 +67,13 @@ class ReviewItem(Base):
             "type",
             unique=True,
             postgresql_where=text("status = 'Open'"),
+        ),
+        Index(
+            "uq_review_items_open_mandate_type",
+            "mandate_version_id",
+            "type",
+            unique=True,
+            postgresql_where=text("status = 'Open' AND mandate_version_id IS NOT NULL"),
         ),
         Index("ix_review_items_org_status_due", "org_id", "status", "sla_due_at"),
     )
@@ -61,11 +86,12 @@ class ReviewItem(Base):
         UUID(as_uuid=True), ForeignKey("treasuries.id"), nullable=False
     )
     request_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("payment_requests.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("payment_requests.id"), nullable=True
     )
-    request_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    fee_estimate_wei: Mapped[int | None] = mapped_column(Numeric(78, 0, asdecimal=False))
+    fee_estimate_wei: Mapped[int | None] = mapped_column(Money)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     primary_code: Mapped[str] = mapped_column(String(100), nullable=False)
     reason_codes: Mapped[list[str]] = mapped_column(ARRAY(String(100)), nullable=False)
@@ -74,6 +100,9 @@ class ReviewItem(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="Open")
     sla_due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     evidence_resolved: Mapped[bool] = mapped_column(nullable=False, default=False)
+    evidence: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     resolved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )

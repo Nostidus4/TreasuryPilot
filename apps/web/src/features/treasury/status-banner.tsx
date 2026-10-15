@@ -1,6 +1,6 @@
 import { CirclePause, CirclePlay, RotateCw } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { TxHash } from '@/components/domain/chain';
@@ -140,6 +140,24 @@ export function StatusBanners() {
 
   return (
     <div className="grid gap-px">
+      {state.mandate?.status === 'Expired' && (
+        <Alert
+          tone="danger"
+          className="rounded-none border-x-0 border-t-0 px-4 sm:px-6"
+          title={t('Mandate expired')}
+          action={
+            scope.can('OWN') && (
+              <Button asChild size="sm">
+                <Link to={`${scope.tBase}/mandate`}>{t('Review mandate')}</Link>
+              </Button>
+            )
+          }
+        >
+          {t(
+            'The agent cannot run new plans until an Owner activates a current mandate.',
+          )}
+        </Alert>
+      )}
       {status === 'PauseRequested' && (
         <Alert
           tone="warning"

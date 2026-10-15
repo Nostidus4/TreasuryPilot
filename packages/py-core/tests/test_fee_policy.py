@@ -62,6 +62,20 @@ def test_new_treasury_gets_a_nonzero_fee_baseline_from_fee_history() -> None:
 
 def test_estimates_every_plan_step_as_integer_wei() -> None:
     assert estimate_plan_fee_wei([50_000, 21_000], [20, 30]) == 1_630_000
+    with pytest.raises(ValueError):
+        estimate_plan_fee_wei([50_000, 21_000], [20])
+
+
+def test_daily_budget_and_plans_per_day_share_one_plan_count() -> None:
+    # Fee samples without a count: both figures fall back to the sample count (14 plans -> 2/day).
+    proposal = propose_fee_policy(
+        plan_fees_wei=[1_000] * 14,
+        plans_last_7d=0,
+        base_fee_per_gas_wei=1,
+        priority_fees_wei=[],
+    )
+    assert proposal.plans_per_day_7d == 2.0
+    assert proposal.daily_budget_wei == 6_000
 
 
 def test_fee_hold_auto_proceeds_only_when_both_limits_allow_it() -> None:

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     # Signs notification-email unsubscribe links; shared with the egress worker, never the session key.
     email_unsubscribe_key: SecretStr | None = None
+    # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
+    retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
@@ -80,6 +82,8 @@ class Settings(BaseSettings):
     fx_max_quote_age_seconds: int = Field(default=60, ge=0)
     fx_depeg_threshold_bps: int = Field(default=100, ge=0, le=10_000)
     fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
+    # JSON jurisdiction -> currency -> integer minor-unit threshold. No legal default is assumed.
+    travel_rule_thresholds: str = "{}"
 
     @model_validator(mode="after")
     def _validate_oidc_configuration(self) -> "Settings":
@@ -129,6 +133,49 @@ class Settings(BaseSettings):
             if item.strip():
                 ipaddress.ip_network(item.strip(), strict=False)
         return value
+
+    @field_validator("travel_rule_thresholds")
+    @classmethod
+    def _validate_travel_rule_thresholds(cls, value: str) -> str:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("TP_TRAVEL_RULE_THRESHOLDS must be a JSON object") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("TP_TRAVEL_RULE_THRESHOLDS must be a JSON object")
+        normalized: dict[str, dict[str, int]] = {}
+        for jurisdiction, currencies in parsed.items():
+            if (
+                not isinstance(jurisdiction, str)
+                or len(jurisdiction) != 2
+                or not jurisdiction.isascii()
+                or not jurisdiction.isalpha()
+            ):
+                raise ValueError("Travel Rule jurisdictions must be two-letter country codes")
+            if not isinstance(currencies, dict) or not currencies:
+                raise ValueError("Each Travel Rule jurisdiction requires currency thresholds")
+            normalized_currencies: dict[str, int] = {}
+            for currency, threshold in currencies.items():
+                if (
+                    not isinstance(currency, str)
+                    or len(currency) != 3
+                    or not currency.isascii()
+                    or not currency.isalpha()
+                    or isinstance(threshold, bool)
+                    or not isinstance(threshold, int)
+                    or threshold < 0
+                    or threshold >= 10**78
+                ):
+                    raise ValueError(
+                        "Travel Rule thresholds require ISO codes and nonnegative integer minor units"
+                    )
+                if currency.upper() in normalized_currencies:
+                    raise ValueError("Duplicate Travel Rule currency after normalization")
+                normalized_currencies[currency.upper()] = threshold
+            if jurisdiction.upper() in normalized:
+                raise ValueError("Duplicate Travel Rule jurisdiction after normalization")
+            normalized[jurisdiction.upper()] = normalized_currencies
+        return json.dumps(normalized, sort_keys=True)
 
     @property
     def admin_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:

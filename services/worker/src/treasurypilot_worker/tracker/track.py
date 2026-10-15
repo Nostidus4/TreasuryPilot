@@ -9,7 +9,6 @@ they are ``REORG_WINDOW`` blocks deep and demoted to ``Pending`` when the block 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from collections.abc import Callable, Sequence
@@ -24,6 +23,7 @@ from treasurypilot_worker.chain.rpc import (
     RpcClient,
     RpcResponseError,
     build_rpc_client,
+    decode_rpc_urls,
 )
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -64,7 +64,7 @@ async def track_transactions(
         changed = 0
         for row in rows:
             urls = row["rpc_urls"]
-            client = clients.setdefault(str(urls), client_factory(_urls(urls)))
+            client = clients.setdefault(str(urls), client_factory(decode_rpc_urls(urls)))
             try:
                 changed += await _track_one(pool, client, row, now)
             except Exception:
@@ -77,10 +77,6 @@ async def track_transactions(
 
 def track_transactions_sync(database_url: str) -> dict[str, int]:
     return asyncio.run(track_transactions(database_url))
-
-
-def _urls(value: Any) -> list[str]:
-    return list(json.loads(value) if isinstance(value, str) else value)
 
 
 async def _track_one(pool: asyncpg.Pool, rpc: RpcClient, row: asyncpg.Record, now: datetime) -> int:

@@ -447,44 +447,7 @@ export const treasuryHandlers = [
     },
   ),
 
-  // Not in API_SPEC yet (MDT-010): records the Guardian Safe and ends setup.
-  route<{ safeAddress?: string }>(
-    'post',
-    `${T}/guardian`,
-    ({ params, body }) => {
-      const state = requireTreasury(params);
-      if (!isAddress(body.safeAddress))
-        fail(422, 'NOT_A_SAFE', 'Enter the Guardian Safe address.');
-      if (
-        state.coverage.status === 'UNKNOWN' ||
-        (state.coverage.status === 'PARTIAL' && !state.coverage.acknowledged)
-      ) {
-        fail(
-          409,
-          'COVERAGE_INCOMPLETE',
-          'Check coverage before finishing setup.',
-        );
-      }
-      state.wallets = state.wallets.filter(
-        (wallet) => wallet.role !== 'GUARDIAN',
-      );
-      state.wallets.push({
-        role: 'GUARDIAN',
-        label: 'Guardian Safe',
-        safeAddress: body.safeAddress,
-        balance: '0',
-        buffer: '0',
-        target: '0',
-        threshold: 1,
-        owners: [ADDR.guardian],
-      });
-      state.treasury.status = 'Active';
-      logActivity(params.tId, 'user', 'Treasury setup completed');
-      return { treasury: state.treasury };
-    },
-  ),
-
-  route('get', `${T}/forecast`, ({ params }): Forecast => {
+  route('get', `${T}/forecast`, ({ params, query }): Forecast => {
     const state = requireTreasury(params);
     const o1 =
       state.wallets.find((wallet) => wallet.role === 'O1') ?? state.wallets[0];
@@ -492,7 +455,10 @@ export const treasuryHandlers = [
     const open = db.requests.filter(
       (item) =>
         item.treasuryId === params.tId &&
-        ['Approved', 'Scheduled', 'AwaitingApproval'].includes(item.status),
+        (['Approved', 'Scheduled', 'AwaitingApproval'].includes(
+          item.status,
+        ) ||
+          (query.get('includeDrafts') === 'true' && item.status === 'Draft')),
     );
     const days = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(Date.now() + index * 86_400_000)

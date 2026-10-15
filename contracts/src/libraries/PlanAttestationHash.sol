@@ -7,6 +7,7 @@ library PlanAttestationHash {
         bytes32 planHash;
         bytes32 requestId;
         bytes32[] stepIds;
+        uint256[] stepAmounts; // parallel to stepIds: the exact amount each step may move
         bytes32 policyVersion;
         address executor;
         uint64 validUntil;
@@ -15,7 +16,7 @@ library PlanAttestationHash {
     }
 
     bytes32 internal constant TYPEHASH = keccak256(
-        "PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,bytes32 policyVersion,address executor,uint64 validUntil,uint256 nonce,bytes32 evidenceDigest)"
+        "PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,uint256[] stepAmounts,bytes32 policyVersion,address executor,uint64 validUntil,uint256 nonce,bytes32 evidenceDigest)"
     );
     bytes32 internal constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -29,6 +30,7 @@ library PlanAttestationHash {
                 att.planHash,
                 att.requestId,
                 keccak256(abi.encodePacked(att.stepIds)),
+                keccak256(abi.encodePacked(att.stepAmounts)),
                 att.policyVersion,
                 att.executor,
                 att.validUntil,

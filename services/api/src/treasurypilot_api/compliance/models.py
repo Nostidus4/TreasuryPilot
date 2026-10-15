@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -48,13 +49,63 @@ class RetentionPolicy(Base):
     )
 
 
+class AuthRetentionPolicy(Base):
+    """Explicit deployment-wide retention for expired authentication artifacts."""
+
+    __tablename__ = "auth_retention_policies"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_auth_retention_policies_singleton"),
+        CheckConstraint(
+            "session_retention_days IS NULL OR session_retention_days BETWEEN 0 AND 36500",
+            name="ck_auth_retention_policies_session_days",
+        ),
+        CheckConstraint(
+            "magic_link_retention_days IS NULL OR magic_link_retention_days BETWEEN 0 AND 36500",
+            name="ck_auth_retention_policies_magic_link_days",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
+    session_retention_days: Mapped[int | None] = mapped_column(Integer)
+    magic_link_retention_days: Mapped[int | None] = mapped_column(Integer)
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SubjectDeletionControl(Base):
+    """One pending profile-erasure request and hold bit per account subject."""
+
+    __tablename__ = "subject_deletion_controls"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    audit_reference_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DeletionReceipt(Base):
     """An irreversible digest of a random row id, without email, token or subject id."""
 
     __tablename__ = "deletion_receipts"
     __table_args__ = (
         CheckConstraint("octet_length(record_hash) = 32", name="ck_deletion_receipts_hash_length"),
-        CheckConstraint("record_type = 'invite'", name="ck_deletion_receipts_record_type"),
+        CheckConstraint(
+            "record_type IN ('invite', 'session', 'magic_link', 'subject')",
+            name="ck_deletion_receipts_record_type",
+        ),
     )
 
     record_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)
@@ -101,3 +152,57 @@ class KybVerification(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     provider_ref: Mapped[str | None] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TravelRuleExchange(Base):
+    """Durable exchange state; party payload is AES-GCM encrypted before it reaches storage."""
+
+    __tablename__ = "travel_rule_exchanges"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'NOT_REQUIRED', 'ERROR')",
+            name="ck_travel_rule_exchanges_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_travel_rule_exchanges_amount"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_travel_rule_exchanges_currency"),
+        CheckConstraint(
+            "octet_length(beneficiary_address) = 20",
+            name="ck_travel_rule_exchanges_address",
+        ),
+        CheckConstraint("chain_id > 0", name="ck_travel_rule_exchanges_chain"),
+        CheckConstraint(
+            "origin_jurisdiction ~ '^[A-Z]{2}$'", name="ck_travel_rule_exchanges_origin"
+        ),
+        CheckConstraint(
+            "beneficiary_jurisdiction ~ '^[A-Z]{2}$'", name="ck_travel_rule_exchanges_beneficiary"
+        ),
+        CheckConstraint("length(btrim(provider)) > 0", name="ck_travel_rule_exchanges_provider"),
+        UniqueConstraint("org_id", "request_id", name="uq_travel_rule_exchanges_org_request"),
+        Index("ix_travel_rule_exchanges_status", "status", "updated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    # Effective threshold at decision time; recorded for NOT_REQUIRED cases as evidence.
+    threshold: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    origin_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
+    beneficiary_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
+    beneficiary_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

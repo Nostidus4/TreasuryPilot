@@ -63,17 +63,20 @@
 | POST | `/orgs/{o}/treasuries/{t}/mandates/{v}/activation` 🔁 | Report the submitted tx hash; the system tracks it until Active | OWN | `{txHash}` → `202 {status: PendingActivation}` | |
 | GET | `/orgs/{o}/treasuries/{t}/payees` | List payees | ANY | → `{items[{status, activeFrom, screening}]}` | |
 | POST | `/orgs/{o}/treasuries/{t}/payees` | Propose or add a payee (runs screening) | OPR, ADM, OWN | `{vendorId, label, address}` → `201 {payee: Screening}` | 409 `PAYEE_EXISTS`, 422 `SCREENING_HIT` |
-| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build the Safe tx `addPayee` (cooling starts on-chain) | OWN | → `{safeTx}` | 409 `SCREENING_NOT_CLEAR` |
-| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build the deactivation tx | OWN | → `{safeTx}` | |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build governance tx `addPayee` (cooling starts on-chain) | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build governance tx `deactivatePayee` | OWN | `{reason}` → `{governanceTx}` | 409 `PAYEE_NOT_REGISTERED` |
+| POST | `/orgs/{o}/treasuries/{t}/payees/{id}/replace-address` | Create a new screened payee for the same vendor and build deactivation tx for the old address | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT` |
 | GET | `/orgs/{o}/treasuries/{t}/fee-policy` | System proposal, accepted policy, basis, and today's executor spend | ANY | → `{active, proposal, spentTodayWei, day}` | 503 `FEE_HISTORY_UNAVAILABLE` |
 | POST | `/orgs/{o}/treasuries/{t}/fee-policy/accept` | Accept system limits or choose a preset | OWN + step-up | `{proposalId, preset?}` → `{active}` | 409 `FEE_PROPOSAL_STALE` |
 | PUT | `/orgs/{o}/treasuries/{t}/fee-policy/reference-price` | Set the labelled reference price used only for discount comparisons | OWN + step-up | `{referenceEthPrice}` (asset base units per ETH) → `{feePolicy, referenceEthPriceSource}` | 409 `FEE_PROPOSAL_REQUIRED` |
 | POST | `/orgs/{o}/treasuries/{t}/pause` 🔁 | Backend pause now + sentinel on-chain pause (or Guardian-Safe tx for a human) | OWN, GRD | `{reason}` → `{backendPaused: true, onchain, sentinelTxHash?, guardianSafeTx?}` | |
 | | Governance txs, signatures, fee policy, payee OOB verification, revoke | see docs/modules/mandate §6 | | | |
 | POST | `/orgs/{o}/treasuries/{t}/resume-tx` | Build the resume tx | OWN | → `{safeTx}` | 403 for GRD |
-| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + numbers) | OWN, OPR, FIN | → `{exception, numbers, aiDraft?}` | 404 |
-| POST | `/orgs/{o}/requests/{rId}/exception/grant-tx` | Build the `grantException` governance tx (M04-D3; signed in-app, M03-D1) | OWN | `{expiryHours?}` → `{governanceTx}` | 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP`, `PAYEE_NOT_ACTIVE` |
+| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + amount, cap and live PAY budget numbers) | OWN, OPR, FIN | → `{exception, numbers, aiDraft?}` | 404 |
+| POST | `/orgs/{o}/requests/{rId}/exception/grant-tx` | Build the exact `grantException` governance tx (M04-D3; signed in-app, M03-D1) | OWN | `{expiryHours?}` → `{governanceTx}` | 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP`, `PAYEE_NOT_ACTIVE`, `APPROVAL_EXPIRED` |
 | POST | `/orgs/{o}/requests/{rId}/exception/reject` | Reject | OWN | `{reason}` → `{exception: Rejected}` | |
+| POST | `/orgs/{o}/requests/{rId}/exception/revoke-tx` | Build the `revokeException` governance tx | OWN | → `{governanceTx}` | 409 `NOT_GRANTED` |
+| POST | `/orgs/{o}/requests/{rId}/allow-duplicate-tx` | Build a fingerprint- and request-bound `allowDuplicate` governance tx | OWN | `{reason}` → `{governanceTx}` | 409 `NOT_DUPLICATE` |
 
 **`MandateConfig` (request body)**
 ```json

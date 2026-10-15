@@ -52,7 +52,14 @@ _APPROVAL_EVENT_TYPES = frozenset(
 )
 _PAYMENT_EVENT_TYPES = frozenset({"PaymentDone"})
 _OPERATION_EVENT_TYPES = frozenset(
-    {"LowGas", "MandateExpiring", "OperationConfirmed", "PlanUpdated", "PlanCompleted"}
+    {
+        "LowGas",
+        "MandateExpiring",
+        "MandateExpired",
+        "OperationConfirmed",
+        "PlanUpdated",
+        "PlanCompleted",
+    }
 )
 
 

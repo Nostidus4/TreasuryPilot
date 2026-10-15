@@ -208,6 +208,34 @@ async def create_governance_tx(
         raise _rpc_failure() from None
 
 
+@router.post(
+    "/orgs/{organization_id}/treasuries/{treasury_id}/mandates/{mandate_id}/governance-tx",
+    status_code=201,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def create_mandate_activation_tx(
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    mandate_id: uuid.UUID,
+    request: Request,
+    member: Annotated[
+        MemberAccess,
+        Depends(require_role(OrganizationRole.OWNER, step_up=True)),
+    ],
+) -> dict[str, Any]:
+    try:
+        return await _service(request).create_mandate_activation(
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            mandate_id=mandate_id,
+            user_id=member.user_id,
+        )
+    except GovernanceFailure as exc:
+        raise _failure(exc) from None
+    except RpcUnavailable:
+        raise _rpc_failure() from None
+
+
 @router.post("/orgs/{organization_id}/treasuries/{treasury_id}/module/deploy-tx", status_code=201)
 async def create_module_setup(
     organization_id: uuid.UUID,

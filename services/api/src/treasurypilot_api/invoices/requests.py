@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
+from treasurypilot_api.events.writer import append_execution_cycle_requested
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Organization, OrganizationRole, WalletLink, uuid7
@@ -519,6 +520,7 @@ def _active_mandate_config_stmt(treasury_id: uuid.UUID) -> Select[tuple[dict[str
         .where(
             MandateVersion.treasury_id == treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -2583,6 +2585,7 @@ async def _approval_typed_data(
         .where(
             MandateVersion.treasury_id == row.treasury_id,
             MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
         )
         .order_by(MandateVersion.version.desc())
         .limit(1)
@@ -2624,6 +2627,9 @@ async def _approval_typed_data(
             "paying_wallet": "0x" + wallet.safe_address.hex(),
             "payee": "0x" + payee.address.hex(),
             "amount": int(row.amount),
+            "fiat_amount_minor_units": (
+                None if row.fiat_amount_minor_units is None else int(row.fiat_amount_minor_units)
+            ),
             "early_amount": early_amount,
             "early_pay_by": early_pay_by,
             "deadline": deadline,
@@ -2906,6 +2912,13 @@ async def approve_request(
             session.add(approval)
             previous_status = row.status
             row.status = RequestStatus.APPROVED.value
+            append_execution_cycle_requested(
+                session,
+                organization_id=organization_id,
+                treasury_id=row.treasury_id,
+                entity_type="payment_request",
+                entity_id=row.id,
+            )
             session.add(
                 RequestStatusEvent(
                     id=uuid7(),

@@ -80,6 +80,7 @@ def plan_fallback(ctx: ValidationContext, error: AiError) -> FallbackPlan | Fall
         or ctx.approval is None
         or ctx.snapshot.mandate is None
         or not ctx.screening_clear
+        or ctx.travel_rule_clear is False
     ):
         return FallbackRefused(FallbackRefusal.DATA_INCOMPLETE)
 

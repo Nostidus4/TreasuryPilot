@@ -1,7 +1,7 @@
 """store fee proposal basis and fee-review estimates
 
-Revision ID: 20261015_0050
-Revises: 20261015_0049
+Revision ID: 20261015_0052
+Revises: 20261015_0051
 """
 
 from collections.abc import Sequence
@@ -9,8 +9,14 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261015_0050"
-down_revision: str | None = "20261015_0049"
+# Historical (non-Open) rows may lack details; only live fee reviews must carry them.
+FEE_APPROVAL_DETAILS = (
+    "type <> 'FEE_APPROVAL' OR status <> 'Open' "
+    "OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)"
+)
+
+revision: str = "20261015_0052"
+down_revision: str | None = "20261015_0051"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -87,10 +93,21 @@ def upgrade() -> None:
         "review_items",
         "fee_estimate_wei IS NULL OR fee_estimate_wei >= 0",
     )
+    # Open fee reviews created before this column cannot be accepted (no estimate); close them so
+    # the check below can be added. The next fee assessment opens a fresh, complete item.
+    op.execute(
+        """
+        UPDATE review_items
+        SET status = 'Dismissed', resolved_at = now(), version = version + 1,
+            note = coalesce(note, 'Closed by fee policy migration: missing fee estimate')
+        WHERE type = 'FEE_APPROVAL' AND status = 'Open'
+          AND (plan_id IS NULL OR fee_estimate_wei IS NULL)
+        """
+    )
     op.create_check_constraint(
         "ck_review_items_fee_approval_details",
         "review_items",
-        "type <> 'FEE_APPROVAL' OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
+        FEE_APPROVAL_DETAILS,
     )
 
 

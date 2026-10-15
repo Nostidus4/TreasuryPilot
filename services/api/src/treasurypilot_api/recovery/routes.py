@@ -10,11 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
+from treasurypilot_api.identity.api import _service as _auth_service
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import OrganizationRole, uuid7
+from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import PaymentRequest
-from treasurypilot_api.mandate.models import FeeAcceptance
+from treasurypilot_api.mandate.fees import accept_held_plan_fee
+from treasurypilot_api.mandate.models import MandateVersion
 from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.recovery.review_queue import (
     ReviewAction,
@@ -53,6 +55,8 @@ def _allowed_actions(item: ReviewItem, member: MemberAccess) -> list[str]:
     if item.status != "Open" or not _visible(item, member):
         return []
     actions = list(route_for(ReviewType(item.type), item.primary_code).actions)
+    if item.mandate_version_id is not None:
+        return [ReviewAction.ACKNOWLEDGE.value] if ReviewAction.ACKNOWLEDGE in actions else []
     if item.type == ReviewType.UNCERTAIN_TX and not item.evidence_resolved:
         actions.remove(ReviewAction.ACKNOWLEDGE)
     return [action.value for action in actions]
@@ -63,8 +67,11 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
         "id": str(item.id),
         "orgId": str(item.org_id),
         "treasuryId": str(item.treasury_id),
-        "requestId": str(item.request_id),
+        "requestId": str(item.request_id) if item.request_id else None,
         "requestVersion": item.request_version,
+        "mandateVersionId": (
+            str(item.mandate_version_id) if item.mandate_version_id is not None else None
+        ),
         "planId": str(item.plan_id) if item.plan_id else None,
         "feeEstimateWei": str(item.fee_estimate_wei) if item.fee_estimate_wei is not None else None,
         "type": item.type,
@@ -123,17 +130,39 @@ async def get_review_item(
         )
         if item is None or not _visible(item, member):
             raise _failure(404, "REVIEW_ITEM_NOT_FOUND", "The review item is unavailable.")
-        payment = await session.scalar(
-            select(PaymentRequest).where(PaymentRequest.id == item.request_id)
-        )
+        payment = None
+        mandate_version = None
+        if item.request_id is not None:
+            payment = await session.scalar(
+                select(PaymentRequest).where(
+                    PaymentRequest.id == item.request_id,
+                    PaymentRequest.org_id == member.organization_id,
+                )
+            )
+        elif item.mandate_version_id is not None:
+            mandate_version = await session.scalar(
+                select(MandateVersion).where(
+                    MandateVersion.id == item.mandate_version_id,
+                    MandateVersion.org_id == member.organization_id,
+                )
+            )
         view = _view(item, member)
     return {
         "item": view,
         "request": {"id": str(payment.id), "status": payment.status} if payment else None,
+        "mandateVersion": (
+            {
+                "id": str(mandate_version.id),
+                "version": mandate_version.version,
+                "status": mandate_version.status.value,
+            }
+            if mandate_version
+            else None
+        ),
         "plan": {"id": str(item.plan_id)} if item.plan_id else None,
         "steps": item.completed_steps,
         "validations": item.reason_codes,
-        "evidence": {"resolved": item.evidence_resolved},
+        "evidence": {**item.evidence, "resolved": item.evidence_resolved},
         "allowedActions": view["allowedActions"],
     }
 
@@ -157,53 +186,43 @@ async def act_on_review_item(
             raise _failure(404, "REVIEW_ITEM_NOT_FOUND", "The review item is unavailable.")
         if item.status != "Open" or item.version != payload.version:
             raise _failure(409, "STALE_ITEM", "Reload the review item before acting.")
-        payment = await session.scalar(
-            select(PaymentRequest).where(PaymentRequest.id == item.request_id)
-        )
-        if payment is None or payment.version != item.request_version:
-            raise _failure(409, "STALE_ITEM", "The underlying request has changed.")
+        if item.request_id is not None:
+            payment = await session.scalar(
+                select(PaymentRequest).where(
+                    PaymentRequest.id == item.request_id,
+                    PaymentRequest.org_id == member.organization_id,
+                )
+            )
+            if payment is None or payment.version != item.request_version:
+                raise _failure(409, "STALE_ITEM", "The underlying request has changed.")
+        elif item.mandate_version_id is not None:
+            mandate_version = await session.scalar(
+                select(MandateVersion).where(
+                    MandateVersion.id == item.mandate_version_id,
+                    MandateVersion.org_id == member.organization_id,
+                )
+            )
+            if mandate_version is None:
+                raise _failure(409, "STALE_ITEM", "The underlying mandate version is unavailable.")
         if payload.action.value not in _allowed_actions(item, member):
             raise _failure(409, "ACTION_NOT_ALLOWED", "The action is not allowed for this item.")
         if payload.note is not None:
             item.note = payload.note
-        if payload.action == ReviewAction.ACCEPT_FEE:
-            if item.type != ReviewType.FEE_APPROVAL.value:
-                raise _failure(
-                    409, "ACTION_NOT_ALLOWED", "Fee acceptance is only valid for fee reviews."
-                )
-            if item.plan_id is None or item.fee_estimate_wei is None:
-                raise _failure(
-                    409, "FEE_REVIEW_INCOMPLETE", "The held plan is missing its fee estimate."
-                )
-            existing = await session.scalar(
-                select(FeeAcceptance).where(FeeAcceptance.plan_id == item.plan_id)
-            )
-            if existing is not None:
-                raise _failure(
-                    409, "FEE_ALREADY_ACCEPTED", "This plan already has an accepted fee cap."
-                )
-            session.add(
-                FeeAcceptance(
-                    id=uuid7(),
-                    org_id=member.organization_id,
-                    plan_id=item.plan_id,
-                    estimated_fee_wei=item.fee_estimate_wei,
-                    accepted_cap_wei=item.fee_estimate_wei,
-                    accepted_by=member.user_id,
-                    at=datetime.now(UTC),
-                    reason=payload.note.strip() or None if payload.note is not None else None,
-                )
-            )
         if payload.action in {ReviewAction.ACCEPT_FEE, ReviewAction.DEFER}:
             if item.type != ReviewType.FEE_APPROVAL.value:
                 raise _failure(
                     409, "ACTION_NOT_ALLOWED", "Fee actions are only valid for fee reviews."
                 )
         if payload.action == ReviewAction.ACCEPT_FEE:
-            item.status = "Resolved"
-            item.resolution = payload.action.value
-            item.resolved_by = member.user_id
-            item.resolved_at = datetime.now(UTC)
+            # Accepting spends beyond the Owner's policy, so it needs a fresh second factor.
+            _auth_service(request).require_step_up(member.access)
+            await accept_held_plan_fee(
+                session,
+                item=item,
+                user_id=member.user_id,
+                reason=payload.note,
+                now=datetime.now(UTC),
+            )
         elif payload.action != ReviewAction.DEFER:
             item.status = "Resolved"
             item.resolution = payload.action.value

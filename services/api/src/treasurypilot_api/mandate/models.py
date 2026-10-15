@@ -21,6 +21,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
     desc,
     func,
@@ -32,8 +33,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from treasurypilot_api.database import Base, RowVersionedMixin, VersionedMixin
 from treasurypilot_core.ids import uuid7
 
-# ADR-014: money is integer base units, read back as int.
-Money = Numeric(78, 0, asdecimal=False)
+
+class _Money(TypeDecorator[int]):
+    """ADR-014: integer base units. ``asdecimal=False`` would round-trip through float."""
+
+    impl = Numeric(78, 0)
+    cache_ok = True
+
+    def process_result_value(self, value: Any, dialect: Any) -> int | None:
+        return None if value is None else int(value)
+
+
+Money = _Money()
 
 
 class MandateVersionStatus(StrEnum):
