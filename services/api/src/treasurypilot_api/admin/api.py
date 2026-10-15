@@ -6,10 +6,10 @@ import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import AwareDatetime, Field, computed_field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,6 +27,7 @@ from treasurypilot_api.treasury.models import Treasury
 
 logger = logging.getLogger(__name__)
 
+_MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
@@ -54,8 +55,14 @@ class TenantHealth(ApiModel):
 class UsageView(ApiModel):
     org_id: uuid.UUID
     month: str
-    paid_count: int
-    paid_volume: str  # integer base units as a decimal string
+    asset_id: uuid.UUID
+    paid_count: int = Field(description="Requests whose first Paid event is in this UTC month.")
+    paid_volume: str = Field(
+        description=(
+            "Sum of the approved request amount for this asset, in integer base units as a "
+            "decimal string. Reconciliation lines are not metered yet."
+        )
+    )
 
 
 class UsageList(ApiModel):
@@ -66,16 +73,10 @@ def _usage_view(row: UsageMonthly) -> UsageView:
     return UsageView(
         org_id=row.org_id,
         month=row.month.strftime("%Y-%m"),
+        asset_id=row.asset_id,
         paid_count=row.paid_count,
         paid_volume=str(int(row.paid_volume)),
     )
-
-
-def _month_param(value: str) -> date:
-    try:
-        return parse_month(value)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class SupportGrantRequest(ApiModel):
@@ -255,29 +256,45 @@ def create_admin_router(
 
     @router.get("/usage", response_model=UsageList)
     async def usage(
-        month: str = Query(pattern=r"^\d{4}-\d{2}$"),
+        month: str = Query(pattern=_MONTH_PATTERN),
+        org_id: uuid.UUID | None = None,
         actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> UsageList:
-        first = _month_param(month)
+        query = select(UsageMonthly).where(UsageMonthly.month == parse_month(month))
+        if org_id is not None:
+            query = query.where(UsageMonthly.org_id == org_id)
         async with db_sessions() as session:
-            rows = await session.scalars(
-                select(UsageMonthly)
-                .where(UsageMonthly.month == first)
-                .order_by(UsageMonthly.org_id)
-            )
-            return UsageList(items=[_usage_view(r) for r in rows])
+            rows = await session.scalars(query.order_by(UsageMonthly.org_id, UsageMonthly.asset_id))
+            result = UsageList(items=[_usage_view(r) for r in rows])
+        logger.info("admin.usage_read", extra={"actor": actor, "month": month})
+        return result
 
     @router.post("/usage/{month}/recompute", response_model=UsageList)
     async def recompute_usage(
-        month: str,
+        request: Request,
+        month: str = Path(pattern=_MONTH_PATTERN),
         actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
     ) -> UsageList:
-        first = _month_param(month)
         async with db_sessions() as session, session.begin():
-            rows = await recompute_month(session, first)
+            rows = await recompute_month(session, parse_month(month))
             result = UsageList(items=[_usage_view(r) for r in rows])
+            orgs = sorted({str(r.org_id) for r in rows})
+            # platform_admin_events.org_id is NOT NULL: one event per affected org.
+            for org_id in sorted({r.org_id for r in rows}):
+                session.add(
+                    PlatformAdminEvent(
+                        org_id=org_id,
+                        actor_id=actor,
+                        action="usage.recomputed",
+                        data={
+                            "month": month,
+                            "source_ip": request.client.host if request.client else None,
+                            "orgs": orgs,
+                        },
+                    )
+                )
         logger.info("admin.usage_recomputed", extra={"actor": actor, "month": month})
         return result
 

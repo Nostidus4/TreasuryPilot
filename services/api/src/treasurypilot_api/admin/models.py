@@ -81,8 +81,13 @@ class UsageMonthly(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), primary_key=True
     )
     month: Mapped[date] = mapped_column(Date, primary_key=True)  # first day of the UTC month
+    # Per asset: base units of different assets (decimals) must never be summed together.
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True
+    )
     paid_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    paid_volume: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)  # base units
+    # Sum of the approved request amount in this asset's base units.
+    paid_volume: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

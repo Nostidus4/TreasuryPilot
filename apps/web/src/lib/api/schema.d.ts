@@ -4601,6 +4601,11 @@ export interface components {
     };
     /** UsageView */
     UsageView: {
+      /**
+       * Assetid
+       * Format: uuid
+       */
+      assetId: string;
       /** Month */
       month: string;
       /**
@@ -4608,9 +4613,15 @@ export interface components {
        * Format: uuid
        */
       orgId: string;
-      /** Paidcount */
+      /**
+       * Paidcount
+       * @description Requests whose first Paid event is in this UTC month.
+       */
       paidCount: number;
-      /** Paidvolume */
+      /**
+       * Paidvolume
+       * @description Sum of the approved request amount for this asset, in integer base units as a decimal string. Reconciliation lines are not metered yet.
+       */
       paidVolume: string;
     };
     /** UserView */
@@ -5012,6 +5023,7 @@ export interface operations {
     parameters: {
       query: {
         month: string;
+        org_id?: string | null;
       };
       header?: never;
       path?: never;

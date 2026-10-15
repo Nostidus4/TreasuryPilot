@@ -5554,6 +5554,11 @@
       },
       "UsageView": {
         "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
           "month": {
             "title": "Month",
             "type": "string"
@@ -5564,15 +5569,17 @@
             "type": "string"
           },
           "paidCount": {
+            "description": "Requests whose first Paid event is in this UTC month.",
             "title": "Paidcount",
             "type": "integer"
           },
           "paidVolume": {
+            "description": "Sum of the approved request amount for this asset, in integer base units as a decimal string. Reconciliation lines are not metered yet.",
             "title": "Paidvolume",
             "type": "string"
           }
         },
-        "required": ["orgId", "month", "paidCount", "paidVolume"],
+        "required": ["orgId", "month", "assetId", "paidCount", "paidVolume"],
         "title": "UsageView",
         "type": "object"
       },
@@ -6449,9 +6456,26 @@
             "name": "month",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-\\d{2}$",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "org_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Org Id"
             }
           }
         ],
@@ -6490,6 +6514,7 @@
             "name": "month",
             "required": true,
             "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
             }
