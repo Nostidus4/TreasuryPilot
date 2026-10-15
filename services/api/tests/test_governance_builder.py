@@ -15,6 +15,7 @@ from treasurypilot_api.mandate.api import CreateModuleSetupRequest
 from treasurypilot_api.mandate.governance import (
     BorrowAuthorizationProposal,
     GovernanceCall,
+    RepayAuthorizationProposal,
     build_allow_duplicate_call,
     build_borrow_authorization_call,
     build_cancel_request_call,
@@ -147,7 +148,9 @@ def test_repay_authorization_keeps_proposal_values_exact() -> None:
     amount = 2**200 + 9
     expiry = 1_823_456_789
 
-    call = build_repay_authorization_call(TARGET_B, plan_id=PLAN, amount=amount, expiry=expiry)
+    call = build_repay_authorization_call(
+        TARGET_B, proposal=RepayAuthorizationProposal(PLAN, amount, expiry)
+    )
 
     assert call.data[:4] == keccak(b"authorizeRepay(bytes32,uint256,uint64)")[:4]
     assert decode(["bytes32", "uint256", "uint64"], call.data[4:]) == (
@@ -161,10 +164,17 @@ def test_repay_authorization_keeps_proposal_values_exact() -> None:
     "kwargs, message",
     [
         ({"plan_id": b"short"}, "bytes32"),
+        ({"plan_id": bytearray(PLAN)}, "bytes32"),
+        ({"plan_id": "11" * 16}, "bytes32"),
+        ({"amount": 1.0}, "int"),
+        ({"amount": True}, "int"),
+        ({"expiry": 1.0}, "int"),
         ({"amount": 0}, "positive"),
         ({"amount": 1 << 256}, "uint256"),
         ({"expiry": 0}, "uint64"),
         ({"expiry": 1 << 64}, "uint64"),
+        ({"min_health_factor": 1.5}, "int"),
+        ({"max_rate_ray": True}, "int"),
         ({"min_health_factor": 0}, "positive"),
         ({"min_health_factor": 1 << 256}, "uint256"),
         ({"max_rate_ray": 0}, "positive"),
@@ -184,14 +194,18 @@ def test_borrow_authorization_rejects_invalid_values(
     values.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        proposal = BorrowAuthorizationProposal(**values)  # type: ignore[arg-type]
-        build_borrow_authorization_call(TARGET_A, proposal=proposal)
+        BorrowAuthorizationProposal(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
     "kwargs, message",
     [
         ({"plan_id": b"short"}, "bytes32"),
+        ({"plan_id": bytearray(PLAN)}, "bytes32"),
+        ({"plan_id": "11" * 16}, "bytes32"),
+        ({"amount": 1.0}, "int"),
+        ({"amount": True}, "int"),
+        ({"expiry": 1.0}, "int"),
         ({"amount": 0}, "positive"),
         ({"amount": 1 << 256}, "uint256"),
         ({"expiry": 0}, "uint64"),
@@ -205,7 +219,7 @@ def test_repay_authorization_rejects_invalid_values(
     values.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        build_repay_authorization_call(TARGET_B, **values)  # type: ignore[arg-type]
+        RepayAuthorizationProposal(**values)  # type: ignore[arg-type]
 
 
 def test_direct_call_keeps_safe_call_fields() -> None:

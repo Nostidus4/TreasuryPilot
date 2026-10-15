@@ -160,7 +160,10 @@ The borrow calldata builder accepts one immutable `BorrowAuthorizationProposal`
 containing the plan ID, amount, expiry, minimum health factor and maximum rate.
 It encodes those exact integer values into `authorizeBorrow`, and the governance
 record and Safe signing payload retain the same call bytes without display-unit
-conversion or rounding. The proposal read model still has no API-backed source for
+conversion or rounding. The repay builder follows the same pattern with an
+immutable `RepayAuthorizationProposal` (plan ID, amount, expiry) encoded into
+`authorizeRepay`. Both proposals accept only exact `bytes` plan IDs and `int`
+amounts (no `bool`, `float` or `bytearray`). The proposal read model still has no API-backed source for
 these authorization fields, so proposal-backed creation and the WEB-027 Owner
 action are not wired yet. Until that integration exists, an Owner can still supply
 an arbitrary call to the general governance endpoint; the immutable value object
