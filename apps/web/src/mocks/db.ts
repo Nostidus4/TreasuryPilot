@@ -29,6 +29,7 @@ import type {
   Reconciliation,
   RequestDetail,
   ReviewItem,
+  Role,
   ServerEvent,
   StepStatus,
   TreasuryState,
@@ -125,7 +126,7 @@ export interface Db {
   >;
   requests: RequestDetail[];
   plans: PlanDetail[];
-  reviewItems: ReviewItem[];
+  reviewItems: MockReviewItem[];
   exceptions: Record<string, ExceptionDetail>;
   reconciliations: Reconciliation[];
   feePolicy: FeePolicyResponse;
@@ -1269,29 +1270,21 @@ export function seed(): Db {
     requests,
     plans,
     reviewItems: [
-      {
+      newReviewItem({
         id: 'rev_outflow',
-        version: 1,
         type: 'UNEXPECTED_OUTFLOW',
-        title: 'Unexpected outflow',
-        detail: 'Funds left the Treasury Safe outside any plan.',
-        status: 'Open',
+        primaryCode: 'OUTFLOW_NOT_IN_PLAN',
+        treasuryId: 'trs_main',
         createdAt: iso(-2 * HOUR),
         slaDueAt: iso(46 * HOUR),
         reasonCodes: ['OUTFLOW_NOT_IN_PLAN'],
         completedSteps: [{ label: 'Circuit rule checked the balance change' }],
-        treasuryId: 'trs_main',
-        roles: ['OWN'],
-        actions: ['ACKNOWLEDGE'],
-      },
-      {
+      }),
+      newReviewItem({
         id: 'rev_512',
-        version: 1,
-        type: 'EXCEPTION',
-        title: 'LL-2026-512 is over the per-request limit',
-        detail:
-          'Lumen Legal · 3,200.00 USDC requested, limit 2,000.00 USDC. Paying it needs a one-time exception granted by the Safe owners.',
-        status: 'Open',
+        type: 'NEEDS_AUTHORITY',
+        primaryCode: 'OVER_PER_REQUEST_LIMIT',
+        treasuryId: 'trs_main',
         createdAt: iso(-5 * HOUR),
         slaDueAt: iso(19 * HOUR),
         reasonCodes: ['OVER_PER_REQUEST_LIMIT'],
@@ -1300,38 +1293,32 @@ export function seed(): Db {
           { label: 'Policy engine checked the request' },
         ],
         requestId: 'req_512',
-        roles: ['OWN'],
-        actions: [],
-      },
-      {
+        requestVersion: 1,
+      }),
+      newReviewItem({
         id: 'rev_unknown',
-        version: 1,
-        type: 'UNKNOWN_OPERATION',
-        title: 'Refill to Payroll Safe has no confirmed outcome',
-        detail:
-          'The transaction was sent 6 days ago but no receipt was observed. Check the explorer, then retry the lookup or mark the outcome.',
-        status: 'Open',
+        type: 'UNCERTAIN_TX',
+        primaryCode: 'TX_UNKNOWN',
+        treasuryId: 'trs_main',
         createdAt: iso(-6 * DAY),
         slaDueAt: iso(-5 * DAY),
         reasonCodes: ['NO_RECEIPT_OBSERVED'],
         completedSteps: [{ label: 'Transaction broadcast' }],
         planId: 'pln_0419',
-        roles: ['OPR', 'OWN'],
-        actions: ['RETRY', 'RESOLVE'],
-      },
-      {
+        // Acknowledging is allowed only once the chain evidence settled the outcome.
+        evidenceResolved: true,
+      }),
+      newReviewItem({
         id: 'rev_mismatch',
-        version: 1,
-        type: 'VERIFICATION_MISMATCH',
-        title: 'Paid amount differs from the invoice by 0.50 USDC',
-        detail:
-          'OT-2026-198 was paid 305.00 but the vendor statement shows 305.50. Decide whether to edit and re-approve or accept the difference.',
-        status: 'Open',
+        type: 'DISCREPANCY',
+        primaryCode: 'PAID_AMOUNT_MISMATCH',
+        treasuryId: 'trs_main',
         createdAt: iso(-7 * DAY),
+        slaDueAt: iso(-5 * DAY),
+        reasonCodes: ['PAID_AMOUNT_MISMATCH'],
         requestId: 'req_056',
-        roles: ['OPR', 'FIN'],
-        actions: ['EDIT_REAPPROVE', 'RESOLVE'],
-      },
+        requestVersion: 1,
+      }),
     ],
     exceptions: {
       req_512: {
@@ -1735,6 +1722,111 @@ export function logActivity(
     href,
   });
 }
+
+export type MockReviewItem = ReviewItem & { evidenceResolved?: boolean };
+type RoleName = ReviewItem['assignedRoles'][number];
+type ReviewAction = ReviewItem['allowedActions'][number];
+
+export const roleNames: Record<Role, RoleName> = {
+  OWN: 'Owner',
+  APR: 'Approver',
+  OPR: 'Operator',
+  FIN: 'Finance',
+  GRD: 'Guardian',
+  ADM: 'OrgAdmin',
+  AUD: 'Auditor',
+};
+
+/** The API routing table (recovery §8.3). */
+export function reviewRoute(
+  type: ReviewItem['type'],
+  primaryCode: string,
+): { roles: RoleName[]; actions: ReviewAction[] } {
+  switch (type) {
+    case 'NEEDS_AUTHORITY':
+      return { roles: ['Owner'], actions: ['GRANT_EXCEPTION', 'CANCEL'] };
+    case 'FEE_APPROVAL':
+      return {
+        roles: ['Finance', 'Operator', 'Owner'],
+        actions: ['ACCEPT_FEE', 'DEFER'],
+      };
+    case 'UNCERTAIN_TX':
+      return { roles: ['Operator'], actions: ['ACKNOWLEDGE'] };
+    case 'DISCREPANCY':
+      return {
+        roles: ['Finance', 'Owner'],
+        actions: ['ACKNOWLEDGE', 'MARK_MATCHED'],
+      };
+    case 'AI_REJECTED':
+      return { roles: ['Operator'], actions: ['REPLAN', 'CANCEL'] };
+    case 'INFRA':
+      return { roles: ['Operator'], actions: ['RETRY'] };
+    case 'UNEXPECTED_OUTFLOW':
+      return { roles: ['Owner', 'Finance'], actions: ['ACKNOWLEDGE'] };
+    case 'POLICY_BLOCK':
+      return [
+        'AMOUNT_CHANGED',
+        'PAYEE_CHANGED',
+        'APPROVAL_INVALID',
+        'APPROVAL_EXPIRED',
+      ].includes(primaryCode)
+        ? {
+            roles: ['Operator', 'Approver'],
+            actions: ['EDIT_REQUEST', 'CANCEL'],
+          }
+        : { roles: ['Owner'], actions: ['REPLAN', 'CANCEL'] };
+  }
+}
+
+/** An open review item as the API stores it; roles and SLA come from the routing table. */
+export function newReviewItem(
+  init: Pick<ReviewItem, 'id' | 'type' | 'primaryCode' | 'treasuryId'> &
+    Partial<ReviewItem> & { evidenceResolved?: boolean },
+): MockReviewItem {
+  return {
+    orgId: 'org_northwind',
+    requestId: null,
+    requestVersion: null,
+    mandateVersionId: null,
+    planId: null,
+    feeEstimateWei: null,
+    reasonCodes: [],
+    completedSteps: [],
+    assignedRoles: reviewRoute(init.type, init.primaryCode).roles,
+    status: 'Open',
+    slaDueAt: iso(24 * HOUR),
+    createdAt: iso(0),
+    resolvedBy: null,
+    resolvedAt: null,
+    resolution: null,
+    note: null,
+    version: 1,
+    allowedActions: [],
+    ...init,
+  };
+}
+
+/** What this user may do on the item now, like the API's `_allowed_actions`. */
+export function reviewView(item: MockReviewItem, roles: Role[]): ReviewItem {
+  const { evidenceResolved, ...view } = item;
+  const mine = roles.map((role) => roleNames[role]);
+  const routed = reviewRoute(item.type, item.primaryCode).actions;
+  const visible = item.assignedRoles.some((role) => mine.includes(role));
+  view.allowedActions =
+    item.status === 'Open' && visible
+      ? routed.filter(
+          (action) =>
+            item.type !== 'UNCERTAIN_TX' ||
+            action !== 'ACKNOWLEDGE' ||
+            evidenceResolved,
+        )
+      : [];
+  return view;
+}
+
+export const reviewRoles = (orgId: string): Role[] =>
+  membersOf(orgId).find((member) => member.userId === db.session?.id)?.roles ??
+  [];
 
 export function refreshQueues() {
   for (const state of Object.values(db.treasuries)) {

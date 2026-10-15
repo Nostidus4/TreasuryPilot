@@ -15,6 +15,7 @@ import {
   emit,
   h32,
   logActivity,
+  newReviewItem,
   notify,
   planApprovedRequest,
   recountFlags,
@@ -745,18 +746,17 @@ export const requestHandlers = [
           (item) => item.action === 'PAY',
         )?.perRequest ?? '0';
       if (BigInt(request.amount) > BigInt(cap)) {
-        db.reviewItems.unshift({
-          id: `rev_${request.id}`,
-          version: 1,
-          type: 'EXCEPTION',
-          title: `${request.invoiceNumber} is over the per-request limit`,
-          detail: `${request.vendorName} · the amount is above the per-request PAY limit. Paying it needs a one-time exception granted by the Safe owners.`,
-          status: 'Open',
-          createdAt: isoNow(),
-          requestId: request.id,
-          roles: ['OWN'],
-          actions: [],
-        });
+        db.reviewItems.unshift(
+          newReviewItem({
+            id: `rev_${request.id}`,
+            type: 'NEEDS_AUTHORITY',
+            primaryCode: 'OVER_PER_REQUEST_LIMIT',
+            treasuryId: request.treasuryId,
+            reasonCodes: ['OVER_PER_REQUEST_LIMIT'],
+            requestId: request.id,
+            requestVersion: 1,
+          }),
+        );
         db.exceptions[request.id] = {
           exception: { requestId: request.id, status: 'Open' },
           numbers: {

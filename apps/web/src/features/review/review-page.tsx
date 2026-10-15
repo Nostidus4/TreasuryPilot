@@ -32,9 +32,11 @@ import { errorMessage, isApiError } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
-import { roleLabels } from '@/lib/status';
 
-const typeLabel: Record<ReviewItem['type'], string> = {
+type ReviewType = ReviewItem['type'];
+type ReviewAction = ReviewItem['allowedActions'][number];
+
+const typeLabel: Record<ReviewType, string> = {
   POLICY_BLOCK: 'Policy block',
   NEEDS_AUTHORITY: 'Needs authority',
   FEE_APPROVAL: 'Fee approval',
@@ -43,15 +45,23 @@ const typeLabel: Record<ReviewItem['type'], string> = {
   AI_REJECTED: 'AI rejected',
   INFRA: 'Infrastructure issue',
   UNEXPECTED_OUTFLOW: 'Unexpected outflow',
-  EXCEPTION: 'Exception request',
-  UNKNOWN_OPERATION: 'Unknown outcome',
-  FAILED_STEP: 'Failed step',
-  VERIFICATION_MISMATCH: 'Verification mismatch',
-  FEE_ACCEPTANCE: 'Fee acceptance',
 };
 
-const actionLabel: Record<ReviewItem['actions'][number], string> = {
-  RETRY: 'Look up the transaction again',
+const typeDetail: Record<ReviewType, string> = {
+  POLICY_BLOCK: 'The policy engine blocked this request.',
+  NEEDS_AUTHORITY:
+    'Paying this needs a one-time exception granted by the Safe owners.',
+  FEE_APPROVAL: 'The network fee is above what the fee policy allows.',
+  UNCERTAIN_TX:
+    'Unknown is not failed. The transaction may still be mined. Do not pay this again by hand until its outcome is known.',
+  DISCREPANCY: 'A result does not match what was expected.',
+  AI_REJECTED: 'The deterministic checks rejected the AI proposal.',
+  INFRA: 'An infrastructure step failed and stopped the plan.',
+  UNEXPECTED_OUTFLOW: 'Funds left the Treasury Safe outside any plan.',
+};
+
+const actionLabel: Record<ReviewAction, string> = {
+  RETRY: 'Retry',
   REPLAN: 'Replan',
   CANCEL: 'Cancel the operation',
   EDIT_REQUEST: 'Edit the request',
@@ -60,9 +70,16 @@ const actionLabel: Record<ReviewItem['actions'][number], string> = {
   DEFER: 'Defer',
   ACKNOWLEDGE: 'Acknowledge',
   MARK_MATCHED: 'Mark as matched',
-  RESOLVE: 'Mark resolved',
-  EDIT_REAPPROVE: 'Edit and re-approve',
 };
+
+/** The API returns codes, not prose: "OVER_PER_REQUEST_LIMIT" reads "Over per request limit". */
+const itemTitle = (item: ReviewItem) => {
+  const text = item.primaryCode.toLowerCase().replaceAll('_', ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const stepLabel = (step: ReviewItem['completedSteps'][number]) =>
+  typeof step.label === 'string' ? step.label : JSON.stringify(step);
 
 /** Shown when the item changed under the user: acting again needs fresh data. */
 function StalePrompt({
@@ -104,7 +121,7 @@ function StalePrompt({
 function ExceptionPanel({ item }: { item: ReviewItem }) {
   const scope = useOrgScope();
   const navigate = useNavigate();
-  const query = useException(scope.orgId, item.requestId);
+  const query = useException(scope.orgId, item.requestId ?? undefined);
   const grant = useGrantExceptionTx(scope.orgId);
   const reject = useRejectException(scope.orgId);
   const [expiryHours, setExpiryHours] = useState('24');
@@ -210,8 +227,12 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                       ]}
                     />
                   </Field>
-                  {grant.isError && (
-                    <Alert tone="danger">{errorMessage(grant.error)}</Alert>
+                  {isApiError(grant.error, 'STALE_ITEM') ? (
+                    <StalePrompt orgId={scope.orgId} onRefresh={grant.reset} />
+                  ) : (
+                    grant.isError && (
+                      <Alert tone="danger">{errorMessage(grant.error)}</Alert>
+                    )
                   )}
                   <Button
                     variant="primary"
@@ -243,11 +264,19 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                         {
                           onSuccess: () =>
                             toast.success(t('Exception rejected')),
-                          onError: (error) => toast.error(errorMessage(error)),
+                          onError: (error) =>
+                            isApiError(error, 'STALE_ITEM') ||
+                            toast.error(errorMessage(error)),
                         },
                       );
                     }}
                   >
+                    {isApiError(reject.error, 'STALE_ITEM') && (
+                      <StalePrompt
+                        orgId={scope.orgId}
+                        onRefresh={reject.reset}
+                      />
+                    )}
                     <Field
                       htmlFor="exception-reject"
                       label={t('Or reject, with a reason')}
@@ -284,20 +313,16 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
 function ActionPanel({ item }: { item: ReviewItem }) {
   const scope = useOrgScope();
   const act = useReviewAction(scope.orgId);
-  const [action, setAction] = useState<string>(item.actions[0] ?? 'RESOLVE');
+  // Granting an exception is a governance transaction, handled by ExceptionPanel.
+  const actions = item.allowedActions.filter(
+    (value) => value !== 'GRANT_EXCEPTION',
+  );
+  const [action, setAction] = useState<string>(actions[0]);
   const [note, setNote] = useState('');
-  const allowed = scope.can(...item.roles);
   const stale = isApiError(act.error, 'STALE_ITEM');
 
-  if (!allowed) {
-    return (
-      <Alert tone="neutral" title={t('Another role handles this')}>
-        {t('This item is routed to: {{roles}}.', {
-          roles: item.roles.map((role) => t(roleLabels[role])).join(', '),
-        })}
-      </Alert>
-    );
-  }
+  // The API decides per user and item; no allowed action means nothing to offer.
+  if (actions.length === 0) return null;
   return (
     <Card>
       <CardHeader
@@ -312,13 +337,16 @@ function ActionPanel({ item }: { item: ReviewItem }) {
           onSubmit={(event) => {
             event.preventDefault();
             act.mutate(
-              { id: item.id, action, note, version: item.version },
+              {
+                id: item.id,
+                action,
+                note: note.trim() || undefined,
+                version: item.version,
+              },
               {
                 onSuccess: () => {
                   toast.success(
-                    action === 'RETRY'
-                      ? t('Looking up the transaction…')
-                      : t('Recorded'),
+                    action === 'RETRY' ? t('Retrying…') : t('Recorded'),
                   );
                   setNote('');
                 },
@@ -331,7 +359,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
               id="review-action"
               value={action}
               onValueChange={setAction}
-              options={item.actions.map((value) => ({
+              options={actions.map((value) => ({
                 value,
                 label: t(actionLabel[value] ?? value),
               }))}
@@ -355,7 +383,6 @@ function ActionPanel({ item }: { item: ReviewItem }) {
             variant="primary"
             className="justify-self-start"
             loading={act.isPending}
-            disabled={!note.trim()}
           >
             {t('Confirm')}
           </Button>
@@ -368,25 +395,21 @@ function ActionPanel({ item }: { item: ReviewItem }) {
 /** SLA, reason codes and the steps already done, from the queue item. */
 function ItemFacts({ item }: { item: ReviewItem }) {
   const overdue =
-    item.status === 'Open' &&
-    item.slaDueAt !== undefined &&
-    new Date(item.slaDueAt).getTime() < Date.now();
+    item.status === 'Open' && new Date(item.slaDueAt).getTime() < Date.now();
   return (
     <div className="mt-3 grid gap-2 text-sm">
       <p className="flex flex-wrap items-center gap-2 text-muted-foreground">
         <span>
           {t('Routed to: {{roles}}', {
-            roles: item.roles.map((role) => t(roleLabels[role])).join(', '),
+            roles: item.assignedRoles.join(', '),
           })}
         </span>
-        {item.slaDueAt && (
-          <span>
-            {t('Due {{when}}', { when: formatDateTime(item.slaDueAt) })}
-          </span>
-        )}
+        <span>
+          {t('Due {{when}}', { when: formatDateTime(item.slaDueAt) })}
+        </span>
         {overdue && <Badge tone="danger">{t('Overdue')}</Badge>}
       </p>
-      {item.reasonCodes && item.reasonCodes.length > 0 && (
+      {item.reasonCodes.length > 0 && (
         <p className="flex flex-wrap gap-1.5">
           {item.reasonCodes.map((code) => (
             <Badge key={code} tone="neutral" className="font-mono">
@@ -395,12 +418,12 @@ function ItemFacts({ item }: { item: ReviewItem }) {
           ))}
         </p>
       )}
-      {item.completedSteps && item.completedSteps.length > 0 && (
+      {item.completedSteps.length > 0 && (
         <div>
           <p className="font-medium">{t('Completed steps')}</p>
           <ul className="list-disc pl-5 text-muted-foreground">
-            {item.completedSteps.map((step) => (
-              <li key={step.label}>{step.label}</li>
+            {item.completedSteps.map((step, index) => (
+              <li key={index}>{stepLabel(step)}</li>
             ))}
           </ul>
         </div>
@@ -416,12 +439,22 @@ function ItemDetail({ item }: { item: ReviewItem }) {
       <Card>
         <CardContent>
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2 className="text-xl font-semibold">{item.title}</h2>
-            <Badge tone={item.status === 'Open' ? 'warning' : 'success'}>
-              {item.status === 'Open' ? t('Open') : t('Resolved')}
+            <h2 className="text-xl font-semibold">{itemTitle(item)}</h2>
+            <Badge
+              tone={
+                item.status === 'Open'
+                  ? 'warning'
+                  : item.status === 'Resolved'
+                    ? 'success'
+                    : 'neutral'
+              }
+            >
+              {t(item.status)}
             </Badge>
           </div>
-          <p className="mt-2 text-base text-muted-foreground">{item.detail}</p>
+          <p className="mt-2 text-base text-muted-foreground">
+            {t(typeDetail[item.type])}
+          </p>
           <ItemFacts item={item} />
           <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{t(typeLabel[item.type] ?? item.type)}</span>
@@ -446,28 +479,25 @@ function ItemDetail({ item }: { item: ReviewItem }) {
         </CardContent>
       </Card>
 
-      {item.type === 'UNKNOWN_OPERATION' && item.status === 'Open' && (
+      {item.status !== 'Open' && (
         <Alert
-          tone="warning"
-          title={t('Checking the chain — no new payment will be sent')}
+          tone={item.status === 'Resolved' ? 'success' : 'neutral'}
+          title={t(item.status)}
         >
-          {t(
-            'Unknown is not failed. The transaction may still be mined. Do not pay this again by hand until its outcome is known.',
-          )}
+          {[
+            item.resolution,
+            item.note,
+            item.resolvedAt && formatDateTime(item.resolvedAt),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </Alert>
       )}
 
-      {item.resolution && (
-        <Alert tone="success" title={t('Resolved')}>
-          {item.resolution.note} · {formatDateTime(item.resolution.at)}
-        </Alert>
-      )}
-
-      {item.type === 'EXCEPTION' ? (
+      {item.type === 'NEEDS_AUTHORITY' && item.requestId && (
         <ExceptionPanel item={item} />
-      ) : (
-        item.status === 'Open' && <ActionPanel key={item.id} item={item} />
       )}
+      {item.status === 'Open' && <ActionPanel key={item.id} item={item} />}
     </div>
   );
 }
@@ -508,7 +538,7 @@ export function ReviewPage() {
             (item) => typeFilter === 'ALL' || item.type === typeFilter,
           );
           const open = shown.filter((item) => item.status === 'Open');
-          const resolved = shown.filter((item) => item.status === 'Resolved');
+          const resolved = shown.filter((item) => item.status !== 'Open');
           const selected = items.find((item) => item.id === selectedId);
           const row = (item: ReviewItem) => (
             <InboxItem
@@ -516,11 +546,11 @@ export function ReviewPage() {
               to={`${listPath}?item=${item.id}`}
               selected={item.id === selectedId}
             >
-              <p className="text-base font-medium">{item.title}</p>
+              <p className="text-base font-medium">{itemTitle(item)}</p>
               <p className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{t(typeLabel[item.type] ?? item.type)}</span>
                 <span>
-                  {item.slaDueAt && item.status === 'Open'
+                  {item.status === 'Open'
                     ? t('Due {{when}}', { when: formatRelative(item.slaDueAt) })
                     : formatRelative(item.createdAt)}
                 </span>

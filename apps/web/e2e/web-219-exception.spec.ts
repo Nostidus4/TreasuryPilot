@@ -10,7 +10,8 @@ test('WEB-219 an Owner grants an over-cap exception and the review item closes',
   // A full reload would reset the in-browser mock database.
   await page.getByRole('link', { name: 'Review' }).first().click();
   await page
-    .getByRole('link', { name: /LL-2026-512 is over the per-request limit/ })
+    .getByRole('complementary', { name: 'Review items' })
+    .getByRole('link', { name: /Over per request limit/ })
     .click();
 
   await expect(page.getByText('OVER_PER_REQUEST_LIMIT')).toBeVisible();

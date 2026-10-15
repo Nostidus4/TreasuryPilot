@@ -4966,6 +4966,343 @@
         "title": "ReviewActionRequest",
         "type": "object"
       },
+      "ReviewItemDetail": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAction"
+            },
+            "title": "Allowedactions",
+            "type": "array"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReviewItemView"
+          },
+          "mandateVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewMandateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewPlanRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRequestRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "validations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Validations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item",
+          "request",
+          "mandateVersion",
+          "plan",
+          "steps",
+          "validations",
+          "evidence",
+          "allowedActions"
+        ],
+        "title": "ReviewItemDetail",
+        "type": "object"
+      },
+      "ReviewItemList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "ReviewItemList",
+        "type": "object"
+      },
+      "ReviewItemResult": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ReviewItemView"
+          }
+        },
+        "required": ["item"],
+        "title": "ReviewItemResult",
+        "type": "object"
+      },
+      "ReviewItemView": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAction"
+            },
+            "title": "Allowedactions",
+            "type": "array"
+          },
+          "assignedRoles": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationRole"
+            },
+            "title": "Assignedroles",
+            "type": "array"
+          },
+          "completedSteps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Completedsteps",
+            "type": "array"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "feeEstimateWei": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feeestimatewei"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mandateVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandateversionid"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "orgId": {
+            "title": "Orgid",
+            "type": "string"
+          },
+          "planId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planid"
+          },
+          "primaryCode": {
+            "title": "Primarycode",
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoncodes",
+            "type": "array"
+          },
+          "requestId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid"
+          },
+          "requestVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestversion"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedby"
+          },
+          "slaDueAt": {
+            "title": "Sladueat",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "treasuryId": {
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ReviewType"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "treasuryId",
+          "requestId",
+          "requestVersion",
+          "mandateVersionId",
+          "planId",
+          "feeEstimateWei",
+          "type",
+          "primaryCode",
+          "reasonCodes",
+          "completedSteps",
+          "assignedRoles",
+          "status",
+          "slaDueAt",
+          "createdAt",
+          "resolvedBy",
+          "resolvedAt",
+          "resolution",
+          "note",
+          "version",
+          "allowedActions"
+        ],
+        "title": "ReviewItemView",
+        "type": "object"
+      },
+      "ReviewMandateRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["id", "version", "status"],
+        "title": "ReviewMandateRef",
+        "type": "object"
+      },
+      "ReviewPlanRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": ["id"],
+        "title": "ReviewPlanRef",
+        "type": "object"
+      },
+      "ReviewRequestRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["id", "status"],
+        "title": "ReviewRequestRef",
+        "type": "object"
+      },
       "ReviewStatus": {
         "enum": ["Open", "Resolved", "Dismissed"],
         "title": "ReviewStatus",
@@ -12876,9 +13213,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Review Items V1 Orgs  Organization Id  Review Items Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReviewItemList"
                 }
               }
             },
@@ -12930,9 +13265,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Review Item V1 Orgs  Organization Id  Review Items  Item Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReviewItemDetail"
                 }
               }
             },
@@ -12994,9 +13327,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Act On Review Item V1 Orgs  Organization Id  Review Items  Item Id  Actions Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReviewItemResult"
                 }
               }
             },

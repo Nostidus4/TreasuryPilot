@@ -34,6 +34,65 @@ class ReviewActionRequest(ApiModel):
     version: int = Field(ge=1)
 
 
+class ReviewItemView(ApiModel):
+    id: str
+    org_id: str
+    treasury_id: str
+    request_id: str | None
+    request_version: int | None
+    mandate_version_id: str | None
+    plan_id: str | None
+    fee_estimate_wei: str | None
+    type: ReviewType
+    primary_code: str
+    reason_codes: list[str]
+    completed_steps: list[dict[str, object]]
+    assigned_roles: list[OrganizationRole]
+    status: ReviewStatus
+    sla_due_at: str
+    created_at: str
+    resolved_by: str | None
+    resolved_at: str | None
+    resolution: str | None
+    note: str | None
+    version: int
+    allowed_actions: list[ReviewAction]
+
+
+class ReviewItemList(ApiModel):
+    items: list[ReviewItemView]
+
+
+class ReviewItemResult(ApiModel):
+    item: ReviewItemView
+
+
+class ReviewRequestRef(ApiModel):
+    id: str
+    status: str
+
+
+class ReviewMandateRef(ApiModel):
+    id: str
+    version: int
+    status: str
+
+
+class ReviewPlanRef(ApiModel):
+    id: str
+
+
+class ReviewItemDetail(ApiModel):
+    item: ReviewItemView
+    request: ReviewRequestRef | None
+    mandate_version: ReviewMandateRef | None
+    plan: ReviewPlanRef | None
+    steps: list[dict[str, object]]
+    validations: list[str]
+    evidence: dict[str, object]
+    allowed_actions: list[ReviewAction]
+
+
 def _failure(status: int, code: str, detail: str) -> AuthFailure:
     return AuthFailure(
         status=status, code=code, title=code.replace("_", " ").title(), detail=detail
@@ -81,6 +140,7 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
         "assignedRoles": item.assigned_roles,
         "status": item.status,
         "slaDueAt": item.sla_due_at.isoformat(),
+        "createdAt": item.created_at.isoformat(),
         "resolvedBy": str(item.resolved_by) if item.resolved_by else None,
         "resolvedAt": item.resolved_at.isoformat() if item.resolved_at else None,
         "resolution": item.resolution,
@@ -90,7 +150,7 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
     }
 
 
-@router.get("", openapi_extra={"x-organization-scoped": True})
+@router.get("", response_model=ReviewItemList, openapi_extra={"x-organization-scoped": True})
 async def list_review_items(
     organization_id: uuid.UUID,
     request: Request,
@@ -115,7 +175,9 @@ async def list_review_items(
     return {"items": [_view(item, member) for item in items]}
 
 
-@router.get("/{item_id}", openapi_extra={"x-organization-scoped": True})
+@router.get(
+    "/{item_id}", response_model=ReviewItemDetail, openapi_extra={"x-organization-scoped": True}
+)
 async def get_review_item(
     organization_id: uuid.UUID,
     item_id: uuid.UUID,
@@ -167,7 +229,11 @@ async def get_review_item(
     }
 
 
-@router.post("/{item_id}/actions", openapi_extra={"x-organization-scoped": True})
+@router.post(
+    "/{item_id}/actions",
+    response_model=ReviewItemResult,
+    openapi_extra={"x-organization-scoped": True},
+)
 async def act_on_review_item(
     organization_id: uuid.UUID,
     item_id: uuid.UUID,
