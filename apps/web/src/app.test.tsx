@@ -165,7 +165,9 @@ test('negative savings are rendered with their negative sign', async () => {
   expect(within(row).getByText('1.10')).toBeInTheDocument();
   expect(within(row).getByText('-0.10')).toBeInTheDocument();
   expect(screen.getByText('Not compared: 3')).toBeInTheDocument();
-  expect(screen.getByText('No accepted ETH reference price')).toBeInTheDocument();
+  expect(
+    screen.getByText('No accepted ETH reference price'),
+  ).toBeInTheDocument();
 });
 
 test('the runway toggle requests the forecast with drafts enabled', async () => {
@@ -546,6 +548,105 @@ test('an expired mandate stays visible and links Owners to review it', async () 
       'The agent cannot run new plans until an Owner activates a current mandate.',
     ),
   ).toBeInTheDocument();
+});
+
+const outflow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'rev_outflow_x',
+  version: 1,
+  type: 'UNEXPECTED_OUTFLOW' as const,
+  title: '',
+  detail: '',
+  status: 'Open' as const,
+  createdAt: new Date().toISOString(),
+  treasuryId: 'trs_main',
+  roles: ['OWN' as const],
+  actions: ['ACKNOWLEDGE' as const],
+  ...overrides,
+});
+
+test('an open unexpected-outflow item for this treasury raises a banner linking to the queue', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.reviewItems = db.reviewItems.filter((i) => i.id !== 'rev_outflow');
+      db.reviewItems.push(outflow(), outflow({ id: 'rev_outflow_y' }));
+    },
+  });
+
+  expect(await screen.findByText('Unexpected outflow')).toBeInTheDocument();
+  expect(screen.getByText(/left the Treasury Safe/)).toBeInTheDocument();
+  expect(screen.getByText(/1 more in the review queue/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
+    'href',
+    `${BASE}/review`,
+  );
+});
+
+test.each([
+  ['resolved', { status: 'Resolved' }],
+  ['on another treasury', { treasuryId: 'trs_other' }],
+])('an outflow item that is %s shows no banner', async (_name, overrides) => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.reviewItems = db.reviewItems.filter((i) => i.id !== 'rev_outflow');
+      db.reviewItems.push(outflow(overrides));
+    },
+  });
+  await screen.findByText('Pending transactions');
+  expect(screen.queryByText(/left the Treasury Safe/)).not.toBeInTheDocument();
+});
+
+test('the dashboard lists sent-but-unconfirmed transactions of executing plans', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      const plan = db.plans.find((item) => item.id === 'pln_0421')!;
+      plan.status = 'Executing';
+      Object.assign(plan.steps[0], {
+        status: 'Pending',
+        txHash: `0x${'ab'.repeat(32)}`,
+      });
+    },
+  });
+
+  expect(await screen.findByText('Pending transactions')).toBeInTheDocument();
+  expect(
+    await screen.findByText('Sent — waiting for the network'),
+  ).toBeInTheDocument();
+});
+
+test('the pending transactions list is empty when nothing is executing', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.plans.forEach((plan) => {
+        if (plan.status === 'Executing') plan.status = 'Completed';
+      });
+    },
+  });
+  expect(await screen.findByText('Nothing pending')).toBeInTheDocument();
+});
+
+test('an executing plan with no submitted or pending steps shows the empty state', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      const plan = db.plans.find((item) => item.id === 'pln_0421')!;
+      plan.status = 'Executing';
+      plan.steps.forEach((step) => {
+        step.status = 'Confirmed';
+      });
+    },
+  });
+  expect(await screen.findByText('Nothing pending')).toBeInTheDocument();
+});
+
+test('the pending transactions list is capped at 10 plans with a link to plans', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      const base = db.plans.find((item) => item.id === 'pln_0421')!;
+      for (let i = 0; i < 12; i++)
+        db.plans.push({ ...base, id: `pln_x${i}`, status: 'Executing' });
+    },
+  });
+  const link = await screen.findByRole('link', { name: /2 more executing/ });
+  expect(link).toHaveAttribute('href', `${T}/plans`);
 });
 
 test('a manual request validates the amount before it reaches the API', async () => {

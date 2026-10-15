@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Field, Textarea } from '@/components/ui/input';
 import { Alert } from '@/components/ui/misc';
+import { useReviewItems } from '@/features/operations/api';
 import { useOrgScope } from '@/features/orgs/org-scope';
 import {
   usePauseTreasury,
@@ -126,10 +127,17 @@ export function StatusBanners() {
   const scope = useOrgScope();
   const navigate = useNavigate();
   const treasury = useTreasury(scope.orgId, scope.treasuryId);
+  const review = useReviewItems(scope.orgId);
   const resume = useResumeTx(scope.orgId, scope.treasuryId ?? '');
   const state = treasury.data;
   if (!state) return null;
   const { status, pauseReason } = state.treasury;
+  const outflows = (review.data?.items ?? []).filter(
+    (item) =>
+      item.type === 'UNEXPECTED_OUTFLOW' &&
+      item.status === 'Open' &&
+      item.treasuryId === scope.treasuryId,
+  );
 
   const startResume = () =>
     resume.mutate(undefined, {
@@ -200,6 +208,22 @@ export function StatusBanners() {
           title={t('Protected mode off — another module can move funds')}
         >
           {state.coverage.details[0]}
+        </Alert>
+      )}
+      {outflows.length > 0 && (
+        <Alert
+          tone="danger"
+          className="rounded-none border-x-0 border-t-0 px-4 sm:px-6"
+          title={t('Unexpected outflow')}
+          action={
+            <Button asChild size="sm">
+              <Link to={`${scope.base}/review`}>{t('Review')}</Link>
+            </Button>
+          }
+        >
+          {t('Funds left the Treasury Safe outside any plan.')}
+          {outflows.length > 1 &&
+            ` ${t('{{count}} more in the review queue.', { count: outflows.length - 1 })}`}
         </Alert>
       )}
       {state.staleness.stale && (

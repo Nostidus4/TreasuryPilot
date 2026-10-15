@@ -587,6 +587,7 @@ export interface ReviewItem {
   detail: string;
   status: 'Open' | 'Resolved';
   createdAt: string;
+  treasuryId?: string;
   requestId?: string;
   planId?: string;
   roles: Role[];

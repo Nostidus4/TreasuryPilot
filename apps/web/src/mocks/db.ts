@@ -1270,6 +1270,18 @@ export function seed(): Db {
     plans,
     reviewItems: [
       {
+        id: 'rev_outflow',
+        version: 1,
+        type: 'UNEXPECTED_OUTFLOW',
+        title: 'Unexpected outflow',
+        detail: 'Funds left the Treasury Safe outside any plan.',
+        status: 'Open',
+        createdAt: iso(-2 * HOUR),
+        treasuryId: 'trs_main',
+        roles: ['OWN'],
+        actions: ['ACKNOWLEDGE'],
+      },
+      {
         id: 'rev_512',
         version: 1,
         type: 'EXCEPTION',
