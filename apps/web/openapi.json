@@ -1375,6 +1375,24 @@
         "title": "FeePreset",
         "type": "string"
       },
+      "Fees": {
+        "properties": {
+          "byStepType": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Bysteptype",
+            "type": "object"
+          },
+          "totalWei": {
+            "title": "Totalwei",
+            "type": "string"
+          }
+        },
+        "required": ["totalWei", "byStepType"],
+        "title": "Fees",
+        "type": "object"
+      },
       "FlagAcknowledgment": {
         "properties": {
           "note": {
@@ -1723,6 +1741,25 @@
           }
         },
         "title": "LabelRequest",
+        "type": "object"
+      },
+      "Latency": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "medianSeconds": {
+            "title": "Medianseconds",
+            "type": "number"
+          },
+          "p90Seconds": {
+            "title": "P90Seconds",
+            "type": "number"
+          }
+        },
+        "required": ["medianSeconds", "p90Seconds", "count"],
+        "title": "Latency",
         "type": "object"
       },
       "LinkCodeIssued": {
@@ -2586,6 +2623,112 @@
         },
         "required": ["method", "note"],
         "title": "OobVerification",
+        "type": "object"
+      },
+      "OperationsMetrics": {
+        "properties": {
+          "aiPlanRate": {
+            "title": "Aiplanrate",
+            "type": "number"
+          },
+          "completionRate": {
+            "title": "Completionrate",
+            "type": "number"
+          },
+          "exceptions": {
+            "title": "Exceptions",
+            "type": "integer"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/Fees"
+          },
+          "interventionsPerRequest": {
+            "title": "Interventionsperrequest",
+            "type": "number"
+          },
+          "latencyByPhase": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Latency"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Latencybyphase",
+            "type": "object"
+          },
+          "medianApprovalMinutes": {
+            "title": "Medianapprovalminutes",
+            "type": "number"
+          },
+          "onTimeRate": {
+            "title": "Ontimerate",
+            "type": "number"
+          },
+          "paymentsCount": {
+            "title": "Paymentscount",
+            "type": "integer"
+          },
+          "rejectionsByReason": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Rejectionsbyreason",
+            "type": "object"
+          },
+          "revertsBySelector": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Revertsbyselector",
+            "type": "object"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "txCount": {
+            "title": "Txcount",
+            "type": "integer"
+          },
+          "unknownOperations": {
+            "title": "Unknownoperations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "paymentsCount",
+          "onTimeRate",
+          "medianApprovalMinutes",
+          "aiPlanRate",
+          "exceptions",
+          "unknownOperations",
+          "series",
+          "completionRate",
+          "interventionsPerRequest",
+          "txCount",
+          "fees",
+          "latencyByPhase",
+          "rejectionsByReason",
+          "revertsBySelector"
+        ],
+        "title": "OperationsMetrics",
+        "type": "object"
+      },
+      "OperationsMetricsResponse": {
+        "properties": {
+          "metrics": {
+            "$ref": "#/components/schemas/OperationsMetrics"
+          }
+        },
+        "required": ["metrics"],
+        "title": "OperationsMetricsResponse",
         "type": "object"
       },
       "OrganizationChecklist": {
@@ -4194,6 +4337,25 @@
           "ttlUntil"
         ],
         "title": "ScreeningView",
+        "type": "object"
+      },
+      "SeriesPoint": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "paid": {
+            "title": "Paid",
+            "type": "integer"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "string"
+          }
+        },
+        "required": ["date", "paid", "volume"],
+        "title": "SeriesPoint",
         "type": "object"
       },
       "SignatureRequest": {
@@ -8421,6 +8583,99 @@
         },
         "summary": "Update Member",
         "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/metrics/operations": {
+      "get": {
+        "operationId": "get_operations_metrics_v1_orgs__organization_id__metrics_operations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "treasuryId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Treasuryid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationsMetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Metrics",
+        "tags": ["metrics"],
         "x-organization-scoped": true
       }
     },

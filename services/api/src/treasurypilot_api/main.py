@@ -116,6 +116,7 @@ from treasurypilot_api.notifications.telegram import (
 )
 from treasurypilot_api.notifications.telegram import router as telegram_router
 from treasurypilot_api.notifications.webhook_api import router as webhook_router
+from treasurypilot_api.observability.metrics import router as metrics_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -533,6 +534,7 @@ def create_app(
     app.include_router(treasury_router)
     app.include_router(chain_router)
     app.include_router(execution_router)
+    app.include_router(metrics_router)
     app.include_router(governance_router)
     app.include_router(mandate_exceptions_router)
     app.include_router(fee_router)
