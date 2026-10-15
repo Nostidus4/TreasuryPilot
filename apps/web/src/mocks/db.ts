@@ -345,6 +345,33 @@ function baseMandate(): MandateConfig {
   };
 }
 
+export const oobPending = {
+  oobMethod: null,
+  oobNote: null,
+  oobVerifiedBy: null,
+  oobVerifiedAt: null,
+};
+
+const oobDone = (at: string) => ({
+  oobMethod: 'PHONE',
+  oobNote: 'Called the contact on file',
+  oobVerifiedBy: 'usr_linh',
+  oobVerifiedAt: at,
+});
+
+export const clearScreening = (
+  checkedAt: string,
+): NonNullable<Payee['screening']> => ({
+  result: 'CLEAR',
+  provider: 'mock',
+  sourceRef: null,
+  checkedAt,
+  ttlUntil: new Date(Date.parse(checkedAt) + 7 * DAY).toISOString(),
+});
+
+export const vendorName = (vendorId: string) =>
+  db.vendors.find((item) => item.id === vendorId)?.name ?? 'Vendor';
+
 export function seed(): Db {
   const vendors: Vendor[] = [
     ['vnd_acurast', 'Acurast Cloud'],
@@ -372,26 +399,27 @@ export function seed(): Db {
     .map((vendor, index) => ({
       id: `pay_${vendor.id.slice(4)}`,
       vendorId: vendor.id,
-      vendorName: vendor.name,
       treasuryId: 'trs_main',
       label: 'Main receiving wallet',
       address: vendor.payeeAddress!,
       status: 'Active',
-      screening: { result: 'CLEAR', checkedAt: iso(-(30 - index) * DAY) },
-      oobVerified: true,
+      screening: clearScreening(iso(-(30 - index) * DAY)),
+      ...oobDone(iso(-(30 - index) * DAY)),
+      registrationTxId: null,
       activeFrom: iso(-(29 - index) * DAY),
       createdAt: iso(-(30 - index) * DAY),
     }));
   payees.push({
     id: 'pay_northstar_new',
     vendorId: 'vnd_northstar',
-    vendorName: 'Northstar Analytics',
     treasuryId: 'trs_main',
     label: 'New wallet from invoice NSA-2026-288',
     address: addr('payee-northstar-new'),
-    status: 'AwaitingVerification',
-    screening: { result: 'CLEAR', checkedAt: iso(-3 * HOUR) },
-    oobVerified: false,
+    status: 'AwaitingOwner',
+    screening: clearScreening(iso(-3 * HOUR)),
+    ...oobPending,
+    registrationTxId: null,
+    activeFrom: null,
     createdAt: iso(-3 * HOUR),
   });
 
@@ -2081,13 +2109,13 @@ export function startCooling(payeeId: string) {
     payee.status = 'Active';
     const vendor = db.vendors.find((item) => item.id === payee.vendorId);
     if (vendor) {
-      vendor.payeeAddress = payee.address;
+      vendor.payeeAddress = payee.address as Hex;
       vendor.payeeStatus = 'Active';
     }
     notify({
       kind: 'system',
       title: 'Payee is now active',
-      body: `${payee.vendorName}: cooling period ended.`,
+      body: `${vendorName(payee.vendorId)}: cooling period ended.`,
       href: 'payees',
     });
   });

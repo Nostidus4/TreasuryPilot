@@ -117,10 +117,10 @@ export const planStatuses: Record<PlanStatus, StatusMeta> = {
 };
 
 export const payeeStatuses: Record<PayeeStatus, StatusMeta> = {
+  Proposed: { label: 'Proposed', tone: 'neutral' },
   Screening: { label: 'Screening', tone: 'info', live: true },
-  ScreeningHit: { label: 'Screening hit', tone: 'danger' },
-  AwaitingVerification: { label: 'Needs out-of-band check', tone: 'warning' },
-  AwaitingRegistration: { label: 'Ready to register', tone: 'info' },
+  ScreeningFailed: { label: 'Screening failed', tone: 'danger' },
+  AwaitingOwner: { label: 'Needs out-of-band check', tone: 'warning' },
   Cooling: { label: 'Cooling period', tone: 'warning', live: true },
   Active: { label: 'Active', tone: 'success' },
   Deactivated: { label: 'Deactivated', tone: 'neutral' },
@@ -154,8 +154,13 @@ export const governanceStatus = (status: GovernanceStatus) =>
   translate(governanceStatuses[status]);
 export const planStatus = (status: PlanStatus) =>
   translate(planStatuses[status]);
-export const payeeStatus = (status: PayeeStatus) =>
-  translate(payeeStatuses[status]);
+/** AwaitingOwner covers two steps; the check being recorded tells them apart. */
+export const payeeStatus = (status: PayeeStatus, oobVerified = false) =>
+  translate(
+    status === 'AwaitingOwner' && oobVerified
+      ? { label: 'Ready to register', tone: 'info' }
+      : payeeStatuses[status],
+  );
 export const mandateStatus = (status: MandateStatus) =>
   translate(mandateStatuses[status]);
 export const treasuryStatus = (status: TreasuryStatus) =>
