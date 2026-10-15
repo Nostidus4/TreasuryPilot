@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel, _authenticated, _require_unscoped
 from treasurypilot_api.identity.auth import AuthFailure, normalize_email
+from treasurypilot_api.identity.db_errors import violated_constraint
 from treasurypilot_api.identity.models import (
     Invite,
     Membership,
@@ -198,7 +199,7 @@ class SqlAlchemyMembershipRepository:
                 await session.flush()
                 return _invite_record(invite)
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+            constraint = violated_constraint(exc)
             if constraint == "uq_invites_pending_org_id_email":
                 raise InviteAlreadyPending from None
             raise
@@ -519,7 +520,7 @@ class MemberView(ApiModel):
 
 
 class MembersResponse(ApiModel):
-    members: list[MemberView]
+    items: list[MemberView]
 
 
 class InvitesResponse(ApiModel):
@@ -565,7 +566,7 @@ async def list_members(
         raise _api_failure(
             404, "ORG_NOT_FOUND", "Organization not found", "The organization is unavailable."
         )
-    return MembersResponse(members=[MemberView.from_record(record) for record in records])
+    return MembersResponse(items=[MemberView.from_record(record) for record in records])
 
 
 @router.get(

@@ -25,6 +25,7 @@ from web3 import HTTPProvider, Web3
 
 from treasurypilot_api.audit import AuditActor, AuditActorType, AuditEntity, write
 from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.db_errors import violated_constraint
 from treasurypilot_api.identity.models import (
     Membership,
     MembershipStatus,
@@ -311,7 +312,7 @@ class WalletRepository:
                 await session.flush()
                 return WalletLinkRecord(wallet.address, wallet.is_contract, wallet.linked_at)
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+            constraint = violated_constraint(exc)
             if constraint == "uq_wallet_links_active_address":
                 # A concurrent link won; report it from the winning row's point of view.
                 async with self._sessions() as session:
