@@ -134,6 +134,147 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
         _comparePay("mandate_paused_and_expired", _approval(119, 1e6));
     }
 
+    // --- AT-05 variants ---
+
+    function test_differential_approvalPayeeChanged() external {
+        I.PaymentApproval memory signed = _approval(120, 1e6);
+        I.PaymentApproval memory ap = _approval(120, 1e6);
+        ap.payee = address(0x99);
+        _compareCall(
+            "approval_payee_changed",
+            abi.encodeCall(module.pay, (ap, _sign(signed), keccak256("approval_payee_changed"), ap.amount)),
+            executor
+        );
+    }
+
+    function test_differential_approvalMissing() external {
+        I.PaymentApproval memory ap = _approval(121, 1e6);
+        _compareCall(
+            "approval_missing",
+            abi.encodeCall(module.pay, (ap, bytes(""), keccak256("approval_missing"), ap.amount)),
+            executor
+        );
+    }
+
+    function test_differential_approvalBadSignature() external {
+        I.PaymentApproval memory ap = _approval(122, 1e6);
+        _compareCall(
+            "approval_bad_signature",
+            abi.encodeCall(
+                module.pay, (ap, _sign(_approval(123, 1e6 + 1)), keccak256("approval_bad_signature"), ap.amount)
+            ),
+            executor
+        );
+    }
+
+    function test_differential_approvalSignerNotApprover() external {
+        I.PaymentApproval memory ap = _approval(124, 1e6);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(8, module.hashApproval(ap));
+        bytes memory sig = abi.encode(vm.addr(8), abi.encodePacked(r, s, v));
+        _compareCall(
+            "approval_signer_not_approver",
+            abi.encodeCall(module.pay, (ap, sig, keccak256("approval_signer_not_approver"), ap.amount)),
+            executor
+        );
+    }
+
+    // --- buffers ---
+
+    function test_differential_bufferBreach() external {
+        _setBalance(address(op1), 1505e6);
+        _comparePay("buffer_breach", _approval(125, 1500e6));
+    }
+
+    function test_differential_sourceBufferBreach() external {
+        _setBalance(address(op1), 50e6);
+        _setBalance(address(treasury), 1000e6 + 500_000);
+        _compareRefill("source_buffer_breach", _approval(126, 100e6), 1e6);
+    }
+
+    // --- boundaries ---
+
+    function test_differential_dailyCapExact() external {
+        token.mint(address(op1), 10000e6);
+        for (uint256 i; i < 5; ++i) {
+            _pay(_approval(210 + i, 1800e6), bytes32(210 + i));
+        }
+        _comparePay("daily_exact", _approval(216, 1000e6));
+    }
+
+    function test_differential_refillBoundExact() external {
+        _setBalance(address(op1), 200e6);
+        _compareRefill("refill_bound_exact", _approval(127, 100e6), 50e6);
+    }
+
+    function test_differential_overRefillPerRequest() external {
+        _setBalance(address(op1), 0);
+        _compareRefill("refill_per_request", _approval(128, 3000e6), 2500e6 + 1);
+    }
+
+    function test_differential_overRefillDaily() external {
+        for (uint256 i; i < 5; ++i) {
+            _setBalance(address(op1), 0);
+            _refill(_approval(300 + i, 3000e6), bytes32(300 + i), 2400e6);
+        }
+        _setBalance(address(op1), 50e6);
+        _compareRefill("refill_daily", _approval(306, 100e6), 1e6);
+    }
+
+    // --- replay, option and caller ---
+
+    function test_differential_wrongPaymentOption() external {
+        I.PaymentApproval memory ap = _approval(129, 1500e6);
+        _compareCall(
+            "wrong_payment_option",
+            abi.encodeCall(module.pay, (ap, _sign(ap), keccak256("wrong_payment_option"), ap.amount - 1)),
+            executor
+        );
+    }
+
+    function test_differential_requestAlreadyPaid() external {
+        I.PaymentApproval memory ap = _approval(130, 1e6);
+        _pay(ap, bytes32(uint256(130)));
+        _comparePay("request_already_paid", ap);
+    }
+
+    function test_differential_requestCancelled() external {
+        I.PaymentApproval memory ap = _approval(131, 1e6);
+        _owner(abi.encodeCall(module.cancelRequest, (ap.requestId)));
+        _comparePay("request_cancelled", ap);
+    }
+
+    function test_differential_stepAlreadyExecuted() external {
+        _pay(_approval(132, 1e6), keccak256("step_already_executed"));
+        _comparePay("step_already_executed", _approval(133, 1e6));
+    }
+
+    function test_differential_alreadyRefilledForRequest() external {
+        _setBalance(address(op1), 50e6);
+        I.PaymentApproval memory ap = _approval(134, 100e6);
+        _refill(ap, bytes32(uint256(134)), 1e6);
+        _compareRefill("refill_already_done", ap, 1e6);
+    }
+
+    function test_differential_notExecutor() external {
+        I.PaymentApproval memory ap = _approval(135, 1e6);
+        _compareCall(
+            "not_executor",
+            abi.encodeCall(module.pay, (ap, _sign(ap), keccak256("not_executor"), ap.amount)),
+            address(0xBAD)
+        );
+    }
+
+    /// @dev Moves the surplus out of a wallet with a pranked token transfer.
+    function _setBalance(address wallet, uint256 target) internal {
+        uint256 surplus = token.balanceOf(wallet) - target;
+        vm.prank(wallet);
+        token.transfer(address(0xDEAD), surplus);
+    }
+
+    function _compareCall(string memory caseId, bytes memory callData, address caller) internal {
+        _compare(caseId, callData, caller);
+    }
+
     function _comparePay(string memory caseId, I.PaymentApproval memory ap) internal {
         _compare(caseId, abi.encodeCall(module.pay, (ap, _sign(ap), keccak256(bytes(caseId)), ap.amount)));
     }
@@ -145,10 +286,14 @@ contract PolicyContractDifferentialTest is TreasuryFixture {
     }
 
     function _compare(string memory caseId, bytes memory callData) internal {
+        _compare(caseId, callData, executor);
+    }
+
+    function _compare(string memory caseId, bytes memory callData, address caller) internal {
         string memory json = vm.readFile(CASES);
         string memory root = string.concat(".", caseId);
         bool expectedSuccess = vm.parseJsonBool(json, string.concat(root, ".contract_success"));
-        vm.prank(executor);
+        vm.prank(caller);
         (bool success, bytes memory result) = address(module).call(callData);
         require(success == expectedSuccess, string.concat(caseId, ": success mismatch"));
         if (!expectedSuccess) {

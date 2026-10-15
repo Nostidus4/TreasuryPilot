@@ -3,14 +3,20 @@
 Never guesses: an operation is moved only by a chain fact. Callers (the startup scan, RCV-001)
 invoke ``resolve_operation`` once per in-flight operation.
 
-* A receipt for any of its transactions belongs to the tracker (primary + secondary cross-check),
-  so it is reported as ``Receipt`` and left alone.
-* ``stepUsed[stepId]`` on the module, read 3 blocks deep, means the step executed: ``Confirmed``
-  without resubmission (e.g. a replacement transaction we never recorded).
+* A receipt for any of its transactions, on the primary or the secondary provider, belongs to the
+  tracker (which confirms or reverts it once both providers agree, also for Unknown rows), so it is
+  reported as ``Receipt`` and left alone. A provider that cannot answer is "unclear", never "none".
+* ``stepUsed[stepId]``, or ``requestPaid[requestId]`` for a PAY step, on the module, read 3 blocks
+  deep, means the step executed: ``Confirmed`` without resubmission (e.g. a replacement
+  transaction we never recorded).
 * A transaction nobody has seen and whose nonce is still unused was never broadcast: the operation
   returns to ``NotSubmitted`` so the executor replays the same step id. The signer replays the
   stored signed transaction (same hash, same nonce), so this cannot pay twice even if another node
   still holds it in its mempool.
+* A consumed nonce is traced to the block that used it (bounded, ``TRACE_WINDOW`` blocks). If that
+  transaction reverted the operation is ``Reverted``; if it succeeded without using the step, our
+  signed transaction can never be mined and the operation is ``Abandoned`` (the executor also
+  abandons a replay the signer refuses, e.g. ATTESTATION_EXPIRED: ``executor.outbox``).
 * Anything else stays unresolved; after 30 minutes of silence an UNCERTAIN_TX review item is
   opened and the operation stays Unknown, which keeps the treasury's execution cycles blocked.
 """
@@ -33,11 +39,24 @@ from treasurypilot_worker.tracker.track import CONFIRMATIONS, TRACKED, UNKNOWN_A
 
 ESCALATE_AFTER: Final = timedelta(minutes=30)
 UNCERTAIN_SLA: Final = timedelta(hours=1)
+# shortcut: the nonce trace binary-searches eth_getTransactionCount over the last TRACE_WINDOW
+# blocks (~15 calls, needs historical state); older or unreadable history stays Unclear and
+# escalates to a human. Raise it only for chains whose providers keep that much state.
+TRACE_WINDOW: Final = 7200
 _IN_FLIGHT: Final = frozenset(TRACKED)
 _STEP_USED: Final = Web3.keccak(text="stepUsed(bytes32)")[:4]
+_REQUEST_PAID: Final = Web3.keccak(text="requestPaid(bytes32)")[:4]
 
 Resolution = Literal[
-    "NotInFlight", "Receipt", "Confirmed", "Pending", "NeverBroadcast", "Unclear", "Escalated"
+    "NotInFlight",
+    "Receipt",
+    "Confirmed",
+    "Reverted",
+    "Abandoned",
+    "Pending",
+    "NeverBroadcast",
+    "Unclear",
+    "Escalated",
 ]
 
 logger = logging.getLogger(__name__)
@@ -48,8 +67,9 @@ async def resolve_operation(
 ) -> Resolution:
     now = now or datetime.now(UTC)
     op = await pool.fetchrow(
-        "SELECT o.id, o.step_id, o.status, o.request_id, t.module_address FROM operations o "
-        "JOIN treasuries t ON t.id = o.treasury_id WHERE o.id = $1",
+        "SELECT o.id, o.step_id, o.kind, o.status, o.request_id, t.module_address, "
+        "r.onchain_request_id FROM operations o JOIN treasuries t ON t.id = o.treasury_id "
+        "JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
         operation_id,
     )
     if op is None or op["status"] not in _IN_FLIGHT:
@@ -64,12 +84,14 @@ async def resolve_operation(
 
     # Silence is not evidence: any failed or undecodable read leaves the operation untouched.
     try:
-        verdict = await _observe(rpc, op, txs, now)
+        verdict, detail = await _observe(rpc, op, txs, now)
     except (RpcError, ValueError, TypeError, KeyError, DecodingError):
         logger.warning("operation %s: chain evidence unavailable", operation_id, exc_info=True)
         return "Unclear"
     if verdict == "Confirmed":
         return await _close(pool, op, "Confirmed", None, txs) or "Confirmed"
+    if verdict in ("Reverted", "Abandoned"):
+        return await _close(pool, op, verdict, detail, txs) or verdict
     if verdict == "NeverBroadcast":
         return (
             await _close(pool, op, "NotSubmitted", "NEVER_BROADCAST", txs, restart=now)
@@ -82,50 +104,95 @@ async def resolve_operation(
 
 async def _observe(
     rpc: RpcClient, op: asyncpg.Record, txs: Sequence[asyncpg.Record], now: datetime
-) -> Resolution:
-    hashes = ["0x" + bytes(tx["tx_hash"]).hex() for tx in txs]
-    for tx_hash in hashes:
-        if await rpc.call("eth_getTransactionReceipt", [tx_hash]):
-            return "Receipt"
+) -> tuple[Resolution, str | None]:
+    """The verdict and, for Reverted/Abandoned, the evidence recorded as ``last_error``."""
 
-    # shortcut: stepUsed at head-2 is treated as final and, unlike the tracker's receipts, is not
-    # re-watched for reorgs; upgrade to re-checking it for REORG_WINDOW blocks if a reorg deeper
-    # than CONFIRMATIONS is ever seen on a supported chain.
-    if await _step_used(rpc, op):
-        return "Confirmed"
+    for tx in txs:
+        if await rpc.receipt_anywhere("0x" + bytes(tx["tx_hash"]).hex()):
+            return "Receipt", None
 
-    for tx_hash in hashes:
-        if await rpc.call("eth_getTransactionByHash", [tx_hash]):
-            return "Pending"
+    # shortcut: the module flags at head-2 are treated as final and, unlike the tracker's receipts,
+    # are not re-watched for reorgs; upgrade to re-checking them for REORG_WINDOW blocks if a reorg
+    # deeper than CONFIRMATIONS is ever seen on a supported chain.
+    if await _executed(rpc, op):
+        return "Confirmed", None
+
+    for tx in txs:
+        if await rpc.call("eth_getTransactionByHash", ["0x" + bytes(tx["tx_hash"]).hex()]):
+            return "Pending", None
 
     # Same silence the tracker needs to call a transaction Unknown; before that it may be in transit.
     silent_since = max(tx["last_seen_pending_at"] or tx["submitted_at"] for tx in txs)
     if now - silent_since < UNKNOWN_AFTER:
-        return "Unclear"
-    consumed = False
+        return "Unclear", None
+    consumed: list[tuple[str, int]] = []
     for tx in txs:
         sender = "0x" + bytes(tx["from_address"]).hex()
         used = int(await rpc.call("eth_getTransactionCount", [sender, "latest"]), 16)
-        consumed = consumed or int(tx["nonce"]) < used
+        if int(tx["nonce"]) < used:
+            consumed.append((sender, int(tx["nonce"])))
     if not consumed:
-        return "NeverBroadcast"
+        return "NeverBroadcast", None
 
-    # shortcut: a consumed nonce with no receipt is not traced to its block (nonce scan of recent
-    # blocks, M12 §8.1 step 2); it waits for the tracker or a human, upgrade if that is common.
-    return "Unclear" if now - silent_since < ESCALATE_AFTER else "Escalated"
+    # Our nonce was used by a transaction that is not ours and the step is not used: classify it.
+    for sender, nonce in dict.fromkeys(consumed):
+        other = await _consuming_tx(rpc, sender, nonce)
+        receipt = await rpc.receipt_anywhere(other) if other else None
+        if receipt:
+            detail = f"NONCE_CONSUMED_BY {other}"
+            return ("Reverted" if receipt["status"] == "0x0" else "Abandoned"), detail
+    return ("Unclear" if now - silent_since < ESCALATE_AFTER else "Escalated"), None
 
 
-async def _step_used(rpc: RpcClient, op: asyncpg.Record) -> bool:
+async def _consuming_tx(rpc: RpcClient, sender: str, nonce: int) -> str | None:
+    """Hash of the transaction from ``sender`` with ``nonce``, once it is CONFIRMATIONS deep.
+
+    Binary search over the sender's historical transaction count finds the one block that raised
+    it past ``nonce``; None when that is too recent, older than TRACE_WINDOW, or not in the block.
+    """
+
+    head = int(await rpc.call("eth_blockNumber", []), 16)
+    high = max(head - CONFIRMATIONS + 1, 0)
+    low = max(high - TRACE_WINDOW, 0)
+
+    async def count(block: int) -> int:
+        return int(await rpc.call("eth_getTransactionCount", [sender, hex(block)]), 16)
+
+    if await count(high) <= nonce or (low > 0 and await count(low) > nonce):
+        return None
+    while high - low > 1:
+        mid = (low + high) // 2
+        if await count(mid) > nonce:
+            high = mid
+        else:
+            low = mid
+    block = await rpc.call("eth_getBlockByNumber", [hex(high), True])
+    for tx in block["transactions"]:
+        if tx["from"].lower() == sender.lower() and int(tx["nonce"], 16) == nonce:
+            return str(tx["hash"])
+    return None
+
+
+async def _executed(rpc: RpcClient, op: asyncpg.Record) -> bool:
+    """stepUsed[stepId], or requestPaid[requestId] for a PAY step, CONFIRMATIONS blocks deep."""
+
     if op["module_address"] is None:
         return False
     head = int(await rpc.call("eth_blockNumber", []), 16)
-    call = {
-        "to": "0x" + bytes(op["module_address"]).hex(),
-        "data": "0x" + (_STEP_USED + encode(["bytes32"], [bytes(op["step_id"])])).hex(),
-    }
-    raw = await rpc.call("eth_call", [call, hex(max(head - CONFIRMATIONS + 1, 0))])
-    # An empty "0x" (no code at the module) raises a decode error instead of reading as false.
-    return bool(decode(["bool"], bytes.fromhex(str(raw).removeprefix("0x")))[0])
+    block = hex(max(head - CONFIRMATIONS + 1, 0))
+    flags = [(_STEP_USED, bytes(op["step_id"]))]
+    if op["kind"] == "PAY" and op["onchain_request_id"] is not None:
+        flags.append((_REQUEST_PAID, bytes(op["onchain_request_id"])))
+    for selector, key in flags:
+        call = {
+            "to": "0x" + bytes(op["module_address"]).hex(),
+            "data": "0x" + (selector + encode(["bytes32"], [key])).hex(),
+        }
+        raw = await rpc.call("eth_call", [call, block])
+        # An empty "0x" (no code at the module) raises a decode error instead of reading as false.
+        if decode(["bool"], bytes.fromhex(str(raw).removeprefix("0x")))[0]:
+            return True
+    return False
 
 
 async def _close(
