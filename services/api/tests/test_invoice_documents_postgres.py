@@ -18,6 +18,7 @@ from pypdf import PdfWriter
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from treasurypilot_api.agent.models import AiCall, AiPurpose, AiValidationResult, Extraction
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
@@ -239,24 +240,94 @@ async def _scenario(database_url: str) -> None:
                 requests._hashes(expected, "acme", bytes.fromhex("11" * 20), DOC_SHA)
                 assert row.invoice_hash == expected.invoice_hash
 
-            # Multi-invoice flag: refused on non-upload requests, idempotent on upload drafts.
+            # A manual client report is refused on non-upload requests.
             multi = {**confirm, "invoiceCountInDocument": 2}
             manual = await _draft(sessions, RequestSource.MANUAL.value)
             response = await client.post(f"{base}/{manual}/extraction/confirm", json=multi)
             assert response.status_code == 409, response.text
+
+            async def store(request_id: uuid.UUID, count: object) -> None:
+                async with sessions() as session, session.begin():
+                    document = await session.scalar(
+                        select(RequestDocument).where(RequestDocument.request_id == request_id)
+                    )
+                    assert document is not None
+                    ai_call = AiCall(
+                        org_id=ORG_ID,
+                        purpose=AiPurpose.EXTRACT,
+                        model="fixture",
+                        prompt_version="test",
+                        input_refs=[f"document:{document.id}"],
+                        tool_calls=[],
+                        validation_result=AiValidationResult.OK,
+                        latency_ms=0,
+                        input_tokens=0,
+                        output_tokens=0,
+                        cost_usd_micros=0,
+                    )
+                    session.add(ai_call)
+                    await session.flush()
+                    session.add(
+                        Extraction(
+                            document_id=document.id,
+                            ai_call_id=ai_call.id,
+                            fields={"invoice_count_in_document": count},
+                        )
+                    )
+
+            async def flag_counts(request_id: uuid.UUID) -> list[object]:
+                async with sessions() as session:
+                    return [
+                        flag.evidence["invoiceCountInDocument"]
+                        for flag in await session.scalars(
+                            select(RequestFlag).where(
+                                RequestFlag.request_id == request_id,
+                                RequestFlag.code == "MULTI_INVOICE_DOCUMENT",
+                            )
+                        )
+                    ]
+
+            # A client-reported count is refused and flagged once, however often it is retried.
             upload = await _draft(sessions, RequestSource.UPLOAD.value)
             for _ in range(2):
                 response = await client.post(f"{base}/{upload}/extraction/confirm", json=multi)
                 assert response.status_code == 422, response.text
-            async with sessions() as session:
-                flags = (
-                    await session.scalars(
-                        select(RequestFlag.request_id).where(
-                            RequestFlag.code == "MULTI_INVOICE_DOCUMENT"
-                        )
-                    )
-                ).all()
-            assert list(flags) == [upload]
+            assert await flag_counts(upload) == [2]
+
+            # M09's persisted count is authoritative even if a client omits the count.
+            stored = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(stored, 2)
+            for _ in range(2):
+                response = await client.post(f"{base}/{stored}/extraction/confirm", json=confirm)
+                assert response.status_code == 422, response.text
+            assert await flag_counts(stored) == [2]
+
+            # The larger of the stored and reported counts is the evidence.
+            larger = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(larger, 1)
+            response = await client.post(
+                f"{base}/{larger}/extraction/confirm", json={**confirm, "invoiceCountInDocument": 3}
+            )
+            assert response.status_code == 422, response.text
+            assert await flag_counts(larger) == [3]
+
+            # A malformed stored count falls back to the reported one instead of blocking confirm.
+            malformed = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(malformed, "many")
+            response = await client.post(f"{base}/{malformed}/extraction/confirm", json=multi)
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == "MULTI_INVOICE_DOCUMENT"
+            assert await flag_counts(malformed) == [2]
+
+            # While the worker is still extracting, confirm is refused so its count cannot be missed.
+            pending = await _draft(sessions, RequestSource.UPLOAD.value)
+            async with sessions() as session, session.begin():
+                row = await session.get(PaymentRequest, pending)
+                assert row is not None
+                row.extraction_status = "Extracting"
+            response = await client.post(f"{base}/{pending}/extraction/confirm", json=confirm)
+            assert response.status_code == 409, response.text
+            assert response.json()["code"] == "EXTRACTION_PENDING"
 
             # The worker's HIGH INSTRUCTION_TEXT flag (revision 1) survives confirm and edit.
             injected = await _draft(sessions, RequestSource.UPLOAD.value)
