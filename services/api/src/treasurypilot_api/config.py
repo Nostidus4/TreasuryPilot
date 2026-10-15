@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
     retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
+    # Signer service for the pause-only sentinel; pause falls back to a Guardian Safe tx without it.
+    signer_url: str | None = None
+    signer_shared_secret: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),

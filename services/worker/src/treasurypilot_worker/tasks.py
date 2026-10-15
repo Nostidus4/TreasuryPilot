@@ -34,6 +34,7 @@ from treasurypilot_worker.executor.outbox import (
     SignerRefused,
     SignerUnavailable,
     StepExecution,
+    TreasuryPaused,
     execute_step,
 )
 from treasurypilot_worker.executor.plan_loader import load_plan, plan_run, simulation_context
@@ -654,6 +655,9 @@ def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
 
     try:
         return asyncio.run(run())
+    except TreasuryPaused:
+        # Not retried: the Resumed event re-plans the queued requests.
+        return {"status": "Paused"}
     except SignerRefused as error:
         # Definitive answer: retrying the same request cannot succeed (see TERMINAL_REFUSALS).
         return {"status": "Refused", "code": error.code, "terminal": error.terminal}
