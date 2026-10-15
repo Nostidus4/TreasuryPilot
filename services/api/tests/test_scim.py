@@ -19,6 +19,8 @@ from treasurypilot_api.identity.scim import (
     ScimGroupInvalidMember,
     ScimGroupNotAllowed,
     ScimGroupRecord,
+    ScimUserConflict,
+    ScimUserNotProvisionable,
     ScimUserRecord,
     _group_patch_members,
     _GroupPatch,
@@ -37,6 +39,7 @@ class MemoryScimRepository:
             id=USER_ID,
             user_name="person@example.com",
             display_name="Person",
+            external_id=None,
             active=True,
             created_at=NOW,
             last_modified=NOW,
@@ -49,6 +52,30 @@ class MemoryScimRepository:
 
     async def organization_exists(self, organization_id: uuid.UUID) -> bool:
         return self.organization_present
+
+    async def create_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_name: str,
+        display_name: str | None,
+        external_id: str | None,
+        active: bool,
+        now: datetime,
+    ) -> ScimUserRecord:
+        if user_name != "verified@example.com":
+            raise ScimUserNotProvisionable
+        if external_id is not None and external_id == self.user.external_id:
+            raise ScimUserConflict
+        return ScimUserRecord(
+            id=uuid.uuid4(),
+            user_name=user_name,
+            display_name=display_name,
+            external_id=external_id,
+            active=active,
+            created_at=now,
+            last_modified=now,
+        )
 
     async def list_users(
         self,
@@ -74,19 +101,35 @@ class MemoryScimRepository:
     ) -> ScimUserRecord | None:
         return self.user if user_id == self.user.id else None
 
-    async def deactivate_user(
-        self, *, organization_id: uuid.UUID, user_id: uuid.UUID, now: datetime
+    async def patch_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        active: bool | None,
+        display_name: str | None,
+        display_name_set: bool,
+        external_id: str | None,
+        external_id_set: bool,
+        now: datetime,
     ) -> ScimUserRecord | None:
         self.deactivation_arguments = {
             "organization_id": organization_id,
             "user_id": user_id,
+            "active": active,
             "now": now,
         }
-        if self.deactivation_error is not None:
+        if active is False and self.deactivation_error is not None:
             raise self.deactivation_error
         if user_id != self.user.id:
             return None
-        self.user = replace(self.user, active=False, last_modified=now)
+        self.user = replace(
+            self.user,
+            active=self.user.active if active is None else active,
+            display_name=display_name if display_name_set else self.user.display_name,
+            external_id=external_id if external_id_set else self.user.external_id,
+            last_modified=now,
+        )
         return self.user
 
     async def list_groups(
@@ -209,6 +252,20 @@ def _patch(active: object) -> dict[str, object]:
     }
 
 
+def test_scim_patch_stores_stripped_display_name() -> None:
+    with _client(MemoryScimRepository()) as client:
+        response = client.patch(
+            f"/scim/v2/Users/{USER_ID}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "replace", "path": "displayName", "value": "  Padded  "}],
+            },
+            headers=_auth(),
+        )
+        assert response.status_code == 200
+        assert response.json()["displayName"] == "Padded"
+
+
 def test_scim_configuration_requires_a_long_paired_token_and_organization() -> None:
     with pytest.raises(ValidationError):
         Settings(environment="local", scim_bearer_token=SecretStr(TOKEN))
@@ -297,18 +354,73 @@ def test_scim_reads_resources_only_in_configured_tenant() -> None:
         assert client.get(f"/scim/v2/Users/{uuid.uuid4()}", headers=_auth()).status_code == 404
 
 
-def test_scim_patch_only_allows_deactivation_and_is_idempotent() -> None:
+def test_scim_user_create_requires_verified_existing_identity() -> None:
     repository = MemoryScimRepository()
     with _client(repository) as client:
-        rejected = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(True), headers=_auth())
-        assert rejected.status_code == 400
-        assert repository.deactivation_arguments is None
+        invalid = client.post(
+            "/scim/v2/Users",
+            json={
+                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                "userName": "new@example.com",
+            },
+            headers=_auth(),
+        )
+        assert invalid.status_code == 400
+
+        created = client.post(
+            "/scim/v2/Users",
+            json={
+                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                "userName": "Verified@Example.com",
+                "displayName": "Verified Person",
+                "externalId": "idp-123",
+                "active": True,
+            },
+            headers=_auth(),
+        )
+        assert created.status_code == 201
+        assert created.headers["location"].endswith(f"/scim/v2/Users/{created.json()['id']}")
+        assert created.json()["userName"] == "verified@example.com"
+        assert created.json()["displayName"] == "Verified Person"
+        assert created.json()["externalId"] == "idp-123"
+
+
+def test_scim_patch_updates_profile_and_supports_deactivation_and_reactivation() -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        unsupported = client.patch(
+            f"/scim/v2/Users/{USER_ID}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "replace", "path": "userName", "value": "other@example.com"}],
+            },
+            headers=_auth(),
+        )
+        assert unsupported.status_code == 400
 
         response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(False), headers=_auth())
         assert response.status_code == 200
         assert response.json()["active"] is False
         assert repository.deactivation_arguments is not None
         assert repository.deactivation_arguments["organization_id"] == ORG_ID
+
+        reactivated = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(True), headers=_auth())
+        assert reactivated.status_code == 200
+        assert reactivated.json()["active"] is True
+
+        updated = client.patch(
+            f"/scim/v2/Users/{USER_ID}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [
+                    {"op": "replace", "path": "displayName", "value": "New Person"},
+                    {"op": "replace", "path": "externalId", "value": "idp-456"},
+                ],
+            },
+            headers=_auth(),
+        )
+        assert updated.json()["displayName"] == "New Person"
+        assert updated.json()["externalId"] == "idp-456"
 
         repeated = client.patch(
             f"/scim/v2/Users/{USER_ID}",

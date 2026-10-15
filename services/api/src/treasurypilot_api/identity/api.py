@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import logging
 import re
+import secrets
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT  # type: ignore[import-untyped]
+from saml2.metadata import create_metadata_string  # type: ignore[import-untyped]
+from saml2.saml import NAMEID_FORMAT_PERSISTENT  # type: ignore[import-untyped]
 
 from treasurypilot_api.identity.auth import (
     AuthFailure,
@@ -28,6 +35,19 @@ from treasurypilot_api.identity.oidc import (
     new_state,
 )
 from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
+from treasurypilot_api.identity.saml import (
+    SAML_FORM_MAX_BYTES,
+    SAML_REQUEST_LIFETIME,
+    SAML_RESPONSE_MAX_BYTES,
+    SAMLFailure,
+    build_saml_client,
+    parse_login_response,
+)
+from treasurypilot_api.identity.saml_repository import (
+    SAMLIdentityConflict,
+    SAMLIdentityError,
+    SAMLIdentityRepository,
+)
 from treasurypilot_api.identity.wallets import SIWE_CHAIN_ID, WalletLinkService, WalletRepository
 
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -225,6 +245,8 @@ def _require_unscoped(access: SessionAccess) -> None:
         )
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/v1", tags=["identity"])
 
 
@@ -281,6 +303,258 @@ def _oidc_client(settings: Any) -> OIDCClient:
         redirect_uri=settings.oidc_redirect_uri or "",
         allow_local_http=settings.environment.casefold() == "local",
     )
+
+
+def _saml_repository(request: Request) -> SAMLIdentityRepository:
+    repository = getattr(request.app.state, "saml_repository", None)
+    if not isinstance(repository, SAMLIdentityRepository):
+        raise auth_unavailable("SAML authentication storage is not configured.")
+    return repository
+
+
+def _saml_not_configured() -> AuthFailure:
+    return AuthFailure(
+        status=404,
+        code="SAML_NOT_CONFIGURED",
+        title="SSO unavailable",
+        detail="SAML sign-in is not configured.",
+    )
+
+
+def _saml_failure(request: Request) -> Response:
+    return problem_response(
+        request,
+        AuthFailure(
+            status=401,
+            code="SAML_AUTHENTICATION_FAILED",
+            title="Sign-in failed",
+            detail="The identity provider could not authenticate this account.",
+        ),
+    )
+
+
+def _safe_saml_idp_location(location: str, settings: Any) -> bool:
+    try:
+        parsed = urlparse(location)
+        hostname = parsed.hostname
+    except ValueError:
+        return False
+    is_loopback = hostname in {"localhost", "127.0.0.1", "::1"}
+    return bool(
+        hostname
+        and parsed.username is None
+        and parsed.password is None
+        and (
+            parsed.scheme == "https"
+            or (
+                parsed.scheme == "http"
+                and settings.environment.casefold() == "local"
+                and is_loopback
+            )
+        )
+    )
+
+
+@router.get("/auth/saml/metadata")
+async def saml_metadata(request: Request) -> Response:
+    settings = request.app.state.settings
+    if not settings.saml_configured:
+        raise _saml_not_configured()
+    assert settings.saml_idp_metadata_path is not None
+    try:
+        client = build_saml_client(settings)
+        xml = create_metadata_string("", config=client.config, valid=24 * 365, sign=False)
+    except Exception:
+        raise auth_unavailable("SAML metadata is temporarily unavailable.") from None
+    return Response(content=xml, media_type="application/samlmetadata+xml")
+
+
+@router.get("/auth/saml/start", response_class=RedirectResponse)
+async def saml_start(request: Request) -> Response:
+    settings = request.app.state.settings
+    if not settings.saml_configured:
+        raise _saml_not_configured()
+    assert settings.saml_idp_entity_id is not None
+    assert settings.saml_organization_id is not None
+    repository = _saml_repository(request)
+    # Unauthenticated and writes a row per call: cap it per IP like the other auth entry points.
+    await _service(request).enforce_saml_start_limit(_client_ip(request))
+    now = datetime.now(UTC)
+    browser_nonce = request.cookies.get("__Host-tp_saml_browser")
+    if browser_nonce is None or re.fullmatch(r"[A-Za-z0-9_-]{43}", browser_nonce) is None:
+        browser_nonce = secrets.token_urlsafe(32)
+    relay_state = secrets.token_urlsafe(32)
+    try:
+        client = build_saml_client(settings)
+        request_id, info = client.prepare_for_authenticate(
+            entityid=settings.saml_idp_entity_id,
+            relay_state=relay_state,
+            binding=BINDING_HTTP_REDIRECT,
+            response_binding=BINDING_HTTP_POST,
+            nameid_format=NAMEID_FORMAT_PERSISTENT,
+        )
+        location = next(
+            value for name, value in info.get("headers", ()) if name.casefold() == "location"
+        )
+        if not _safe_saml_idp_location(location, settings):
+            raise SAMLFailure("SAML IdP location is not secure")
+        await repository.create_request(
+            request_id=request_id,
+            relay_state=relay_state,
+            browser_nonce=browser_nonce,
+            organization_id=settings.saml_organization_id,
+            now=now,
+            expires_at=now + SAML_REQUEST_LIFETIME,
+        )
+    except SAMLIdentityError:
+        raise auth_unavailable("SAML authentication storage is unavailable.") from None
+    except Exception:
+        raise auth_unavailable("SAML sign-in is temporarily unavailable.") from None
+    response = RedirectResponse(location, status_code=302)
+    response.set_cookie(
+        "__Host-tp_saml_browser",
+        browser_nonce,
+        max_age=int(SAML_REQUEST_LIFETIME.total_seconds()),
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="none",
+    )
+    return response
+
+
+@router.post("/auth/saml/acs", response_class=RedirectResponse)
+async def saml_acs(request: Request) -> Response:
+    settings = request.app.state.settings
+    if not settings.saml_configured:
+        raise _saml_not_configured()
+    assert settings.saml_sp_entity_id is not None
+    assert settings.saml_acs_url is not None
+    assert settings.saml_idp_entity_id is not None
+    assert settings.saml_organization_id is not None
+    browser_nonce = request.cookies.get("__Host-tp_saml_browser")
+    if browser_nonce is None or re.fullmatch(r"[A-Za-z0-9_-]{43}", browser_nonce) is None:
+        return _saml_failure(request)
+    now = datetime.now(UTC)
+    try:
+        saml_response, relay_state = await _read_saml_post(request)
+        repository = _saml_repository(request)
+        pending = await repository.find_pending_request(
+            relay_state=relay_state,
+            browser_nonce=browser_nonce,
+            now=now,
+        )
+        if pending is None or pending[1] != settings.saml_organization_id:
+            raise SAMLFailure("SAML login state is invalid or expired")
+        request_id = pending[0]
+        client = build_saml_client(settings)
+        claims = parse_login_response(
+            client,
+            response_xml=saml_response,
+            request_id=request_id,
+            sp_entity_id=settings.saml_sp_entity_id,
+            acs_url=settings.saml_acs_url,
+            idp_entity_id=settings.saml_idp_entity_id,
+            email_attribute=settings.saml_email_attribute,
+            now=now,
+        )
+        user = await repository.complete_login(
+            request_id=claims.request_id,
+            relay_state=relay_state,
+            browser_nonce=browser_nonce,
+            organization_id=settings.saml_organization_id,
+            issuer=claims.issuer,
+            subject=claims.subject,
+            email=claims.email,
+            response_id=claims.response_id,
+            assertion_id=claims.assertion_id,
+            assertion_expires_at=claims.assertion_expires_at,
+            now=now,
+        )
+        verified = await _service(request).create_saml_session(
+            user=user,
+            organization_id=settings.saml_organization_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", "unknown"),
+        )
+    except SAMLIdentityConflict:
+        logger.warning("SAML login rejected: account is already linked to another NameID")
+        return _saml_failure(request)
+    except (SAMLFailure, SAMLIdentityError, ValueError):
+        return _saml_failure(request)
+    destination = settings.web_app_url or (
+        settings.cors_origin_list[0] if settings.cors_origin_list else "/"
+    )
+    response = RedirectResponse(destination, status_code=303)
+    response.set_cookie(
+        settings.session_cookie_name,
+        verified.session_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    response.set_cookie(
+        settings.csrf_cookie_name,
+        verified.csrf_token,
+        max_age=300,
+        path="/",
+        secure=True,
+        httponly=False,
+        samesite="lax",
+    )
+    return response
+
+
+async def _read_saml_post(request: Request) -> tuple[bytes, str]:
+    content_type = (
+        request.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().casefold()
+    )
+    if content_type != "application/x-www-form-urlencoded":
+        raise SAMLFailure("SAML ACS expects an HTTP-POST binding")
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > SAML_FORM_MAX_BYTES:
+                raise SAMLFailure("SAML form is too large")
+        except ValueError:
+            raise SAMLFailure("SAML form has an invalid content length") from None
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > SAML_FORM_MAX_BYTES:
+            raise SAMLFailure("SAML form is too large")
+    try:
+        fields = parse_qs(
+            body.decode("ascii"),
+            keep_blank_values=True,
+            strict_parsing=True,
+            max_num_fields=4,
+        )
+    except (UnicodeDecodeError, ValueError):
+        raise SAMLFailure("SAML form is invalid") from None
+    response_values = fields.get("SAMLResponse", [])
+    relay_values = fields.get("RelayState", [])
+    if len(response_values) != 1 or len(relay_values) != 1:
+        raise SAMLFailure("SAML form is incomplete")
+    # IdPs and proxies commonly line-wrap base64 (RFC 2045); strict decoding rejects whitespace.
+    encoded_response, relay_state = "".join(response_values[0].split()), relay_values[0]
+    if (
+        not encoded_response
+        or len(encoded_response) > (SAML_RESPONSE_MAX_BYTES * 4 // 3 + 8)
+        or not relay_state
+        or len(relay_state.encode("ascii", errors="ignore")) > 80
+    ):
+        raise SAMLFailure("SAML form fields are invalid")
+    try:
+        decoded_response = base64.b64decode(encoded_response, validate=True)
+        relay_state.encode("ascii")
+    except (ValueError, UnicodeEncodeError):
+        raise SAMLFailure("SAML form encoding is invalid") from None
+    if not decoded_response or len(decoded_response) > SAML_RESPONSE_MAX_BYTES:
+        raise SAMLFailure("SAML response is too large")
+    return decoded_response, relay_state
 
 
 @router.get("/auth/oidc/start", response_class=RedirectResponse)

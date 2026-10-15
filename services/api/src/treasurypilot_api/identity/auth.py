@@ -29,6 +29,7 @@ AUTH_UNAVAILABLE_RETRY_AFTER_S = 30
 MAGIC_LINK_EMAIL_LIMIT = 5
 MAGIC_LINK_IP_LIMIT = 20
 VERIFY_IP_LIMIT = 20
+SAML_START_IP_LIMIT = 20
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +332,9 @@ class AuthService:
                 retry_after=max(waits),
             )
 
+    async def enforce_saml_start_limit(self, client_ip: str) -> None:
+        await self._enforce_limit("saml-start:ip", client_ip, SAML_START_IP_LIMIT)
+
     async def request_magic_link(self, email: str, *, client_ip: str) -> MagicLinkDelivery | None:
         """Apply limits and issue a link for direct service callers."""
 
@@ -438,7 +442,29 @@ class AuthService:
     async def create_oidc_session(
         self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
     ) -> VerifiedSession:
-        """Issue a short session so provider group changes take effect within five minutes."""
+        """Issue a short organization-scoped session for an OIDC identity."""
+        return await self.create_scoped_sso_session(
+            user=user,
+            organization_id=organization_id,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+
+    async def create_saml_session(
+        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
+    ) -> VerifiedSession:
+        """Issue a short organization-scoped session for a SAML identity."""
+        return await self.create_scoped_sso_session(
+            user=user,
+            organization_id=organization_id,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+
+    async def create_scoped_sso_session(
+        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
+    ) -> VerifiedSession:
+        """Issue a short session so federated membership changes take effect quickly."""
         now = self._now()
         session_id = uuid.uuid4()
         session_token = self._token_codec.session_token(session_id)

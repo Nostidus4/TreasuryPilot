@@ -6096,6 +6096,172 @@
         },
         "summary": "List Users",
         "tags": ["scim"]
+      },
+      "post": {
+        "operationId": "create_user_scim_v2_Users_post",
+        "requestBody": {
+          "content": {
+            "application/scim+json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "active": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "displayName": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": ["string", "null"]
+                  },
+                  "externalId": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": ["string", "null"]
+                  },
+                  "schemas": {
+                    "items": {
+                      "enum": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                      "type": "string"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "userName": {
+                    "description": "Email of an existing active user with a verified identity.",
+                    "format": "email",
+                    "maxLength": 320,
+                    "type": "string"
+                  }
+                },
+                "required": ["schemas", "userName"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/scim+json": {
+                "schema": {
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "displayName": {
+                      "type": ["string", "null"]
+                    },
+                    "emails": {
+                      "items": {
+                        "properties": {
+                          "primary": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "enum": ["work"],
+                            "type": "string"
+                          },
+                          "value": {
+                            "format": "email",
+                            "type": "string"
+                          }
+                        },
+                        "required": ["value", "type", "primary"],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "externalId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "meta": {
+                      "properties": {
+                        "created": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "lastModified": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "location": {
+                          "format": "uri",
+                          "type": "string"
+                        },
+                        "resourceType": {
+                          "enum": ["User"],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "resourceType",
+                        "created",
+                        "lastModified",
+                        "location"
+                      ],
+                      "type": "object"
+                    },
+                    "name": {
+                      "properties": {
+                        "formatted": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["formatted"],
+                      "type": "object"
+                    },
+                    "schemas": {
+                      "items": {
+                        "enum": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                        "type": "string"
+                      },
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "userName": {
+                      "format": "email",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schemas",
+                    "id",
+                    "userName",
+                    "displayName",
+                    "emails",
+                    "active",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "SCIM User resource created.",
+            "headers": {
+              "Location": {
+                "description": "URI of the created SCIM User resource.",
+                "schema": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create User",
+        "tags": ["scim"]
       }
     },
     "/scim/v2/Users/{user_id}": {
@@ -6336,6 +6502,47 @@
           }
         },
         "summary": "Oidc Start",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/acs": {
+      "post": {
+        "operationId": "saml_acs_v1_auth_saml_acs_post",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Acs",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/metadata": {
+      "get": {
+        "operationId": "saml_metadata_v1_auth_saml_metadata_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Metadata",
+        "tags": ["identity"]
+      }
+    },
+    "/v1/auth/saml/start": {
+      "get": {
+        "operationId": "saml_start_v1_auth_saml_start_get",
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saml Start",
         "tags": ["identity"]
       }
     },

@@ -9,11 +9,11 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, cast
+from typing import NoReturn, Protocol, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +21,7 @@ from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.auth import normalize_email
+from treasurypilot_api.identity.db_errors import violated_constraint
 from treasurypilot_api.identity.memberships import (
     LastAdministrator,
     LastOwner,
@@ -31,8 +32,10 @@ from treasurypilot_api.identity.models import (
     MembershipStatus,
     OIDCIdentity,
     Organization,
+    SAMLIdentity,
     ScimGroup,
     ScimGroupMember,
+    ScimUser,
     Session,
     User,
     UserStatus,
@@ -50,6 +53,79 @@ SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group"
 SCIM_LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 SCIM_PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
+SCIM_USER_CREATE_BODY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schemas", "userName"],
+    "properties": {
+        "schemas": {
+            "type": "array",
+            "items": {"type": "string", "enum": [SCIM_USER_SCHEMA]},
+            "minItems": 1,
+            "maxItems": 1,
+        },
+        "userName": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "description": "Email of an existing active user with a verified identity.",
+        },
+        "displayName": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": r"\S",
+        },
+        "externalId": {"type": ["string", "null"], "minLength": 1, "maxLength": 100},
+        "active": {"type": "boolean", "default": True},
+    },
+}
+SCIM_USER_RESOURCE_SCHEMA = {
+    "type": "object",
+    "required": ["schemas", "id", "userName", "displayName", "emails", "active", "meta"],
+    "properties": {
+        "schemas": {
+            "type": "array",
+            "items": {"type": "string", "enum": [SCIM_USER_SCHEMA]},
+            "minItems": 1,
+            "maxItems": 1,
+        },
+        "id": {"type": "string", "format": "uuid"},
+        "userName": {"type": "string", "format": "email"},
+        "displayName": {"type": ["string", "null"]},
+        "emails": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+                "type": "object",
+                "required": ["value", "type", "primary"],
+                "properties": {
+                    "value": {"type": "string", "format": "email"},
+                    "type": {"type": "string", "enum": ["work"]},
+                    "primary": {"type": "boolean", "const": True},
+                },
+            },
+        },
+        "active": {"type": "boolean"},
+        "meta": {
+            "type": "object",
+            "required": ["resourceType", "created", "lastModified", "location"],
+            "properties": {
+                "resourceType": {"type": "string", "enum": ["User"]},
+                "created": {"type": "string", "format": "date-time"},
+                "lastModified": {"type": "string", "format": "date-time"},
+                "location": {"type": "string", "format": "uri"},
+            },
+        },
+        "name": {
+            "type": "object",
+            "required": ["formatted"],
+            "properties": {"formatted": {"type": "string"}},
+        },
+        "externalId": {"type": "string"},
+    },
+}
 _USER_NAME_FILTER = re.compile(r'^\s*userName\s+eq\s+"([^"\\]{1,320})"\s*$', re.IGNORECASE)
 _INTEGER = re.compile(r"[0-9]{1,10}")  # ASCII digits only: no signs, spaces or underscores
 _MAX_INDEX = 2**31 - 1
@@ -66,6 +142,7 @@ class ScimUserRecord:
     id: uuid.UUID
     user_name: str
     display_name: str | None
+    external_id: str | None
     active: bool
     created_at: datetime
     last_modified: datetime
@@ -92,8 +169,36 @@ class ScimGroupNotAllowed(Exception):
     """The group name is not in the configured SCIM allowlist."""
 
 
+class ScimUserConflict(Exception):
+    """A SCIM user or externalId already exists in the organization."""
+
+
+class ScimUserNotProvisionable(Exception):
+    """The email does not identify an existing active, verified user."""
+
+
+@dataclass(frozen=True, slots=True)
+class ScimUserPatch:
+    active: bool | None = None
+    display_name: str | None = None
+    display_name_set: bool = False
+    external_id: str | None = None
+    external_id_set: bool = False
+
+
 class ScimIdentityRepository(Protocol):
     async def organization_exists(self, organization_id: uuid.UUID) -> bool: ...
+
+    async def create_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_name: str,
+        display_name: str | None,
+        external_id: str | None,
+        active: bool,
+        now: datetime,
+    ) -> ScimUserRecord: ...
 
     async def list_users(
         self,
@@ -108,8 +213,17 @@ class ScimIdentityRepository(Protocol):
         self, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> ScimUserRecord | None: ...
 
-    async def deactivate_user(
-        self, *, organization_id: uuid.UUID, user_id: uuid.UUID, now: datetime
+    async def patch_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        active: bool | None,
+        display_name: str | None,
+        display_name_set: bool,
+        external_id: str | None,
+        external_id_set: bool,
+        now: datetime,
     ) -> ScimUserRecord | None: ...
 
     async def list_groups(
@@ -164,8 +278,14 @@ class ScimIdentityRepository(Protocol):
     ) -> None: ...
 
 
+def _raise_scim_conflict(exc: IntegrityError) -> NoReturn:
+    if violated_constraint(exc) in {"uq_scim_users_org_external_id", "uq_memberships_org_user"}:
+        raise ScimUserConflict from None
+    raise exc
+
+
 class SqlAlchemyScimIdentityRepository:
-    """Tenant-scoped SCIM reads and membership deprovisioning."""
+    """Tenant-scoped SCIM provisioning, reads, and membership deprovisioning."""
 
     def __init__(
         self,
@@ -181,6 +301,125 @@ class SqlAlchemyScimIdentityRepository:
             return bool(
                 await session.scalar(select(exists().where(Organization.id == organization_id)))
             )
+
+    async def create_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_name: str,
+        display_name: str | None,
+        external_id: str | None,
+        active: bool,
+        now: datetime,
+    ) -> ScimUserRecord:
+        try:
+            async with self._sessions() as session, session.begin():
+                user = await session.scalar(
+                    select(User).where(User.email == user_name).with_for_update()
+                )
+                if (
+                    user is None
+                    or user.status != UserStatus.ACTIVE
+                    or not await session.scalar(
+                        select(
+                            or_(
+                                exists().where(OIDCIdentity.user_id == user.id),
+                                exists().where(
+                                    SAMLIdentity.org_id == organization_id,
+                                    SAMLIdentity.user_id == user.id,
+                                ),
+                            )
+                        )
+                    )
+                ):
+                    raise ScimUserNotProvisionable
+                existing_membership = await session.scalar(
+                    select(Membership)
+                    .where(
+                        Membership.org_id == organization_id,
+                        Membership.user_id == user.id,
+                    )
+                    .with_for_update()
+                )
+                existing_scim_user = await session.scalar(
+                    select(ScimUser)
+                    .where(ScimUser.org_id == organization_id, ScimUser.user_id == user.id)
+                    .with_for_update()
+                )
+                if existing_scim_user is not None:
+                    raise ScimUserConflict
+
+                created_membership = existing_membership is None
+                membership = existing_membership
+                if membership is None:
+                    membership = Membership(
+                        id=uuid7(),
+                        org_id=organization_id,
+                        user_id=user.id,
+                        roles=[],
+                        manual_roles=[],
+                        role_sources_initialized=True,
+                        status=MembershipStatus.SUSPENDED,
+                    )
+                    session.add(membership)
+                was_active = membership.status == MembershipStatus.ACTIVE
+                if not active and was_active:
+                    memberships = list(
+                        (
+                            await session.scalars(
+                                select(Membership)
+                                .where(Membership.org_id == organization_id)
+                                .order_by(Membership.user_id)
+                                .with_for_update()
+                            )
+                        ).all()
+                    )
+                    _guard_last_roles(memberships, membership, set())
+                    membership.status = MembershipStatus.SUSPENDED
+                    await session.execute(
+                        update(Session)
+                        .where(
+                            Session.user_id == user.id,
+                            Session.organization_scope_id == organization_id,
+                            Session.revoked_at.is_(None),
+                        )
+                        .values(revoked_at=now)
+                    )
+                scim_user = ScimUser(
+                    org_id=organization_id,
+                    user_id=user.id,
+                    external_id=external_id,
+                    display_name=display_name,
+                    active=active,
+                    created_membership=created_membership,
+                    initial_activation_pending=created_membership,
+                    deactivated_membership=not active and was_active,
+                )
+                session.add(scim_user)
+                await session.flush()
+                await write_audit(
+                    session,
+                    org_id=organization_id,
+                    actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                    action="identity.scim.provisioned"
+                    if created_membership
+                    else "identity.scim.linked",
+                    entity=AuditEntity("membership", membership.id),
+                    data={"userId": str(user.id), "active": active},
+                )
+                if was_active and not active:
+                    await write_audit(
+                        session,
+                        org_id=organization_id,
+                        actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                        action="identity.scim.deprovisioned",
+                        entity=AuditEntity("membership", membership.id),
+                        data={"status": MembershipStatus.SUSPENDED},
+                    )
+                await session.flush()
+                return _record(membership, user, scim_user)
+        except IntegrityError as exc:
+            _raise_scim_conflict(exc)
 
     async def list_users(
         self,
@@ -205,79 +444,158 @@ class SqlAlchemyScimIdentityRepository:
             )
             rows = (
                 await session.execute(
-                    select(Membership, User)
+                    select(Membership, User, ScimUser)
                     .join(User, User.id == Membership.user_id)
+                    .outerjoin(
+                        ScimUser,
+                        (ScimUser.org_id == Membership.org_id)
+                        & (ScimUser.user_id == Membership.user_id),
+                    )
                     .where(*filters)
                     .order_by(User.email, User.id)
                     .offset(start_index - 1)
                     .limit(count)
                 )
             ).all()
-            return total, tuple(_record(membership, user) for membership, user in rows)
+            return total, tuple(
+                _record(membership, user, scim_user) for membership, user, scim_user in rows
+            )
 
     async def get_user(
         self, *, organization_id: uuid.UUID, user_id: uuid.UUID
     ) -> ScimUserRecord | None:
         async with self._sessions() as session:
             row = await session.execute(
-                select(Membership, User)
+                select(Membership, User, ScimUser)
                 .join(User, User.id == Membership.user_id)
+                .outerjoin(
+                    ScimUser,
+                    (ScimUser.org_id == Membership.org_id)
+                    & (ScimUser.user_id == Membership.user_id),
+                )
                 .where(Membership.org_id == organization_id, User.id == user_id)
             )
             found = row.one_or_none()
             return _record(*found) if found is not None else None
 
-    async def deactivate_user(
-        self, *, organization_id: uuid.UUID, user_id: uuid.UUID, now: datetime
+    async def patch_user(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        active: bool | None,
+        display_name: str | None,
+        display_name_set: bool,
+        external_id: str | None,
+        external_id_set: bool,
+        now: datetime,
     ) -> ScimUserRecord | None:
-        async with self._sessions() as session, session.begin():
-            memberships = list(
-                (
-                    await session.scalars(
-                        select(Membership)
-                        .where(Membership.org_id == organization_id)
-                        .order_by(Membership.user_id)
-                        .with_for_update()
+        try:
+            async with self._sessions() as session, session.begin():
+                memberships = list(
+                    (
+                        await session.scalars(
+                            select(Membership)
+                            .where(Membership.org_id == organization_id)
+                            .order_by(Membership.user_id)
+                            .with_for_update()
+                        )
+                    ).all()
+                )
+                membership = next((item for item in memberships if item.user_id == user_id), None)
+                if membership is None:
+                    return None
+
+                user = await session.scalar(
+                    select(User).where(User.id == user_id).with_for_update()
+                )
+                if user is None:  # The membership foreign key makes this unreachable.
+                    raise RuntimeError("SCIM membership user is missing")
+                scim_user = await session.scalar(
+                    select(ScimUser)
+                    .where(ScimUser.org_id == organization_id, ScimUser.user_id == user_id)
+                    .with_for_update()
+                )
+                if scim_user is None:
+                    scim_user = ScimUser(
+                        org_id=organization_id,
+                        user_id=user_id,
+                        active=(
+                            membership.status == MembershipStatus.ACTIVE
+                            and user.status == UserStatus.ACTIVE
+                        ),
                     )
-                ).all()
-            )
-            membership = next((item for item in memberships if item.user_id == user_id), None)
-            if membership is None:
-                return None
+                    session.add(scim_user)
+                    await session.flush()
 
-            was_active = membership.status == MembershipStatus.ACTIVE
-            if was_active:
-                _guard_last_roles(memberships, membership, set())
-                membership.status = MembershipStatus.SUSPENDED
-                await session.flush()
+                if display_name_set:
+                    scim_user.display_name = display_name
+                if external_id_set:
+                    scim_user.external_id = external_id
 
-            # Scoped OIDC sessions must stop working immediately. Unscoped sessions may
-            # still serve other organizations; RBAC checks the suspended membership on
-            # every request to this organization.
-            await session.execute(
-                update(Session)
-                .where(
-                    Session.user_id == user_id,
-                    Session.organization_scope_id == organization_id,
-                    Session.revoked_at.is_(None),
-                )
-                .values(revoked_at=now)
-            )
+                was_active = membership.status == MembershipStatus.ACTIVE
+                if active is False:
+                    if was_active:
+                        memberships = list(
+                            (
+                                await session.scalars(
+                                    select(Membership)
+                                    .where(Membership.org_id == organization_id)
+                                    .order_by(Membership.user_id)
+                                    .with_for_update()
+                                )
+                            ).all()
+                        )
+                        _guard_last_roles(memberships, membership, set())
+                        membership.status = MembershipStatus.SUSPENDED
+                        scim_user.deactivated_membership = True
+                        await session.flush()
 
-            user = await session.scalar(select(User).where(User.id == user_id))
-            if user is None:  # The membership foreign key makes this unreachable.
-                raise RuntimeError("SCIM membership user is missing")
-            if was_active:
-                await write_audit(
-                    session,
-                    org_id=organization_id,
-                    actor=AuditActor(AuditActorType.SYSTEM, "scim"),
-                    action="identity.scim.deprovisioned",
-                    entity=AuditEntity("membership", membership.id),
-                    data={"status": MembershipStatus.SUSPENDED},
-                )
-            await session.refresh(membership)
-            return _record(membership, user)
+                    scim_user.active = False
+                    # Scoped sessions stop working immediately. Other organization scopes remain
+                    # available, and every request still checks the suspended tenant membership.
+                    await session.execute(
+                        update(Session)
+                        .where(
+                            Session.user_id == user_id,
+                            Session.organization_scope_id == organization_id,
+                            Session.revoked_at.is_(None),
+                        )
+                        .values(revoked_at=now)
+                    )
+                    if was_active:
+                        await write_audit(
+                            session,
+                            org_id=organization_id,
+                            actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                            action="identity.scim.deprovisioned",
+                            entity=AuditEntity("membership", membership.id),
+                            data={"status": MembershipStatus.SUSPENDED},
+                        )
+                elif active is True:
+                    scim_user.active = True
+                    if (
+                        scim_user.deactivated_membership
+                        and membership.status == MembershipStatus.SUSPENDED
+                        and membership.roles
+                        and user.status == UserStatus.ACTIVE
+                    ):
+                        membership.status = MembershipStatus.ACTIVE
+                        scim_user.deactivated_membership = False
+                        await write_audit(
+                            session,
+                            org_id=organization_id,
+                            actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                            action="identity.scim.reactivated",
+                            entity=AuditEntity("membership", membership.id),
+                            data={"status": MembershipStatus.ACTIVE},
+                        )
+
+                await session.refresh(membership)
+                await session.refresh(scim_user)
+                return _record(membership, user, scim_user)
+        except IntegrityError as exc:
+            _raise_scim_conflict(exc)
 
     async def list_groups(
         self,
@@ -364,8 +682,7 @@ class SqlAlchemyScimIdentityRepository:
                 await session.flush()
                 return await self._load_group_record(session, group)
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
-            if constraint == "uq_scim_groups_org_display_name":
+            if violated_constraint(exc) == "uq_scim_groups_org_display_name":
                 raise ScimGroupConflict from None
             raise
 
@@ -600,8 +917,16 @@ class SqlAlchemyScimIdentityRepository:
                 .where(
                     Membership.org_id == organization_id,
                     Membership.user_id.in_(requested),
-                    Membership.status == MembershipStatus.ACTIVE,
                     User.status == UserStatus.ACTIVE,
+                    or_(
+                        Membership.status == MembershipStatus.ACTIVE,
+                        exists().where(
+                            ScimUser.org_id == Membership.org_id,
+                            ScimUser.user_id == Membership.user_id,
+                            ScimUser.active.is_(True),
+                            ScimUser.created_membership.is_(True),
+                        ),
+                    ),
                 )
                 .order_by(Membership.user_id)
                 .with_for_update(of=Membership)
@@ -683,6 +1008,29 @@ class SqlAlchemyScimIdentityRepository:
             )
             membership.scim_roles = sorted(roles_by_user.get(membership.user_id, set()))
             new_roles = set(recompute_membership_roles(membership))
+            if membership.status == MembershipStatus.SUSPENDED and not old_roles and new_roles:
+                scim_user = await session.scalar(
+                    select(ScimUser).where(
+                        ScimUser.org_id == organization_id,
+                        ScimUser.user_id == membership.user_id,
+                        ScimUser.active.is_(True),
+                        or_(
+                            ScimUser.initial_activation_pending.is_(True),
+                            ScimUser.deactivated_membership.is_(True),
+                        ),
+                    )
+                )
+                user_is_active = await session.scalar(
+                    select(
+                        exists().where(
+                            User.id == membership.user_id, User.status == UserStatus.ACTIVE
+                        )
+                    )
+                )
+                if scim_user is not None and user_is_active:
+                    membership.status = MembershipStatus.ACTIVE
+                    scim_user.initial_activation_pending = False
+                    scim_user.deactivated_membership = False
             if new_roles != old_roles or membership.status != old_status:
                 removed_roles = old_roles - new_roles
                 if removed_roles or membership.status != old_status:
@@ -719,18 +1067,41 @@ def _group_record(group: ScimGroup, member_ids: Sequence[uuid.UUID]) -> ScimGrou
     )
 
 
-def _record(membership: Membership, user: User) -> ScimUserRecord:
+def _record(
+    membership: Membership, user: User, scim_user: ScimUser | None = None
+) -> ScimUserRecord:
+    timestamps = [user.updated_at, membership.updated_at]
+    if scim_user is not None:
+        timestamps.append(scim_user.updated_at)
     return ScimUserRecord(
         id=user.id,
         user_name=str(user.email),
-        display_name=user.display_name,
-        active=(membership.status == MembershipStatus.ACTIVE and user.status == UserStatus.ACTIVE),
+        display_name=(
+            scim_user.display_name
+            if scim_user is not None and scim_user.display_name
+            else user.display_name
+        ),
+        external_id=scim_user.external_id if scim_user is not None else None,
+        active=(
+            (
+                scim_user.active
+                if scim_user is not None and scim_user.created_membership and not membership.roles
+                else scim_user.active and membership.status == MembershipStatus.ACTIVE
+            )
+            if scim_user is not None
+            else membership.status == MembershipStatus.ACTIVE
+        )
+        and user.status == UserStatus.ACTIVE,
         created_at=user.created_at,
-        last_modified=max(user.updated_at, membership.updated_at),
+        last_modified=max(timestamps),
     )
 
 
 router = APIRouter(prefix="/scim/v2", tags=["scim"])
+
+
+class SCIMJSONResponse(JSONResponse):
+    media_type = "application/scim+json"
 
 
 def _response(
@@ -834,11 +1205,73 @@ def _resource(record: ScimUserRecord, request: Request) -> dict[str, object]:
     }
     if record.display_name:
         resource["name"] = {"formatted": record.display_name}
+    if record.external_id is not None:
+        resource["externalId"] = record.external_id
     return resource
 
 
 def _repo(request: Request) -> ScimIdentityRepository:
     return cast(ScimIdentityRepository, request.app.state.scim_repository)
+
+
+def _parse_user_patch(body: object) -> ScimUserPatch | None:
+    if not isinstance(body, dict) or body.get("schemas") != [SCIM_PATCH_SCHEMA]:
+        return None
+    operations = body.get("Operations")
+    if not isinstance(operations, list) or not operations or len(operations) > 10:
+        return None
+    allowed = {"active", "displayname", "externalid"}
+    values: dict[str, object] = {}
+    for operation in operations:
+        if not isinstance(operation, dict) or set(operation) - {"op", "path", "value"}:
+            return None
+        action = operation.get("op")
+        if not isinstance(action, str) or action.casefold() != "replace":
+            return None
+        path = operation.get("path")
+        raw_value = operation.get("value")
+        if path is None:
+            if not isinstance(raw_value, dict) or not raw_value:
+                return None
+            attributes = raw_value
+        elif isinstance(path, str):
+            attribute = path.rsplit(":", 1)[-1].casefold()
+            if attribute not in allowed:
+                return None
+            attributes = {attribute: raw_value}
+        else:
+            return None
+        for name, value in attributes.items():
+            if not isinstance(name, str):
+                return None
+            normalized_name = name.rsplit(":", 1)[-1].casefold()
+            if normalized_name not in allowed or normalized_name in values:
+                return None
+            if normalized_name == "active":
+                # Entra ID sends booleans as strings ("False").
+                if isinstance(value, str) and value.strip().casefold() == "false":
+                    value = False
+                if not isinstance(value, bool):
+                    return None
+            elif normalized_name == "displayname":
+                if value is not None:
+                    if not isinstance(value, str) or not value.strip() or len(value) > 200:
+                        return None
+                    value = value.strip()
+            elif value is not None and (
+                not isinstance(value, str) or not value or len(value) > 100
+            ):
+                return None
+            values[normalized_name] = value
+    if not values:
+        return None
+    return ScimUserPatch(
+        active=cast(bool | None, values.get("active")),
+        display_name=cast(str | None, values.get("displayname")),
+        display_name_set="displayname" in values,
+        external_id=cast(str | None, values.get("externalid")),
+        external_id_set="externalid" in values,
+    )
 
 
 async def _group_role_map(request: Request) -> Mapping[str, list[str]] | JSONResponse:
@@ -962,6 +1395,103 @@ async def list_users(
             "Resources": [_resource(record, request) for record in records],
         }
     )
+
+
+@router.post(
+    "/Users",
+    status_code=201,
+    response_class=SCIMJSONResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/scim+json": {"schema": SCIM_USER_CREATE_BODY_SCHEMA},
+            },
+        },
+        "responses": {
+            "201": {
+                "description": "SCIM User resource created.",
+                "headers": {
+                    "Location": {
+                        "description": "URI of the created SCIM User resource.",
+                        "schema": {"type": "string", "format": "uri"},
+                    },
+                },
+                "content": {
+                    "application/scim+json": {"schema": SCIM_USER_RESOURCE_SCHEMA},
+                },
+            },
+        },
+    },
+)
+async def create_user(request: Request) -> JSONResponse:
+    organization_id = await _authorized(request)
+    if isinstance(organization_id, JSONResponse):
+        return organization_id
+    try:
+        body = await request.json()
+    except ValueError:
+        return _error(400, "Request body must be valid JSON.", scim_type="invalidSyntax")
+    if (
+        not isinstance(body, dict)
+        or set(body) - {"schemas", "userName", "displayName", "externalId", "active"}
+        or body.get("schemas") != [SCIM_USER_SCHEMA]
+        or not isinstance(body.get("userName"), str)
+    ):
+        return _error(
+            400, "A SCIM User requires a verified email userName.", scim_type="invalidValue"
+        )
+    user_name_input = body["userName"]
+    user_name = normalize_email(user_name_input)
+    local_part, at, domain = user_name.partition("@")
+    if (
+        len(user_name_input) > 320
+        or not at
+        or not local_part
+        or not domain
+        or any(character.isspace() for character in user_name)
+    ):
+        return _error(400, "userName must be an email address.", scim_type="invalidValue")
+    display_name = body.get("displayName")
+    if display_name is not None and (
+        not isinstance(display_name, str) or not display_name.strip() or len(display_name) > 200
+    ):
+        return _error(400, "displayName must be a non-empty string of at most 200 characters.")
+    external_id = body.get("externalId")
+    if external_id is not None and (
+        not isinstance(external_id, str) or not external_id or len(external_id) > 100
+    ):
+        return _error(400, "externalId must be a non-empty string of at most 100 characters.")
+    active = body.get("active", True)
+    if not isinstance(active, bool):
+        return _error(400, "active must be a boolean.", scim_type="invalidValue")
+    try:
+        record = await _repo(request).create_user(
+            organization_id=organization_id,
+            user_name=user_name,
+            display_name=display_name.strip() if display_name is not None else None,
+            external_id=external_id,
+            active=active,
+            now=datetime.now(UTC),
+        )
+    except ScimUserConflict:
+        return _error(409, "SCIM user or externalId already exists.", scim_type="uniqueness")
+    except ScimUserNotProvisionable:
+        return _error(
+            400,
+            "userName must match an active user with an existing verified identity.",
+            scim_type="invalidValue",
+        )
+    except LastAdministrator:
+        return _error(
+            409, "The organization's last OrgAdmin cannot be deprovisioned.", scim_type="mutability"
+        )
+    except LastOwner:
+        return _error(
+            409, "The organization's last Owner cannot be deprovisioned.", scim_type="mutability"
+        )
+    location = f"{str(request.base_url).rstrip('/')}/scim/v2/Users/{record.id}"
+    return _response(_resource(record, request), status=201, headers={"Location": location})
 
 
 @router.get("/Users/{user_id}")
@@ -1247,41 +1777,6 @@ async def delete_group(group_id: str, request: Request) -> Response:
     return Response(status_code=204) if deleted else _error(404, "SCIM group not found.")
 
 
-def _is_deactivation_patch(body: object) -> bool:
-    if not isinstance(body, dict) or body.get("schemas") != [SCIM_PATCH_SCHEMA]:
-        return False
-    operations = body.get("Operations")
-    if not isinstance(operations, list) or not operations or len(operations) > 10:
-        return False
-    for operation in operations:
-        if not isinstance(operation, dict) or set(operation) - {"op", "path", "value"}:
-            return False
-        if not isinstance(operation.get("op"), str) or operation["op"].casefold() != "replace":
-            return False
-        path = operation.get("path")
-        value = operation.get("value")
-        if path is None:
-            if not isinstance(value, dict) or len(value) != 1:
-                return False
-            attribute, active_value = next(iter(value.items()))
-            if not isinstance(attribute, str) or attribute.casefold() != "active":
-                return False
-        else:
-            if not isinstance(path, str) or path.casefold() not in {
-                "active",
-                f"{SCIM_USER_SCHEMA}:active".casefold(),
-            }:
-                return False
-            active_value = value
-        # Entra ID sends booleans as strings ("False").
-        if not (
-            active_value is False
-            or (isinstance(active_value, str) and active_value.strip().casefold() == "false")
-        ):
-            return False
-    return True
-
-
 @router.patch("/Users/{user_id}")
 async def patch_user(user_id: str, request: Request) -> JSONResponse:
     organization_id = await _authorized(request)
@@ -1295,16 +1790,22 @@ async def patch_user(user_id: str, request: Request) -> JSONResponse:
         body = await request.json()
     except ValueError:
         return _error(400, "Request body must be valid JSON.", scim_type="invalidSyntax")
-    if not _is_deactivation_patch(body):
+    patch = _parse_user_patch(body)
+    if patch is None:
         return _error(
             400,
-            "Only SCIM PatchOp replace active=false is supported.",
+            "Only SCIM PatchOp replace for active, displayName, and externalId is supported.",
             scim_type="invalidSyntax",
         )
     try:
-        record = await _repo(request).deactivate_user(
+        record = await _repo(request).patch_user(
             organization_id=organization_id,
             user_id=parsed_user_id,
+            active=patch.active,
+            display_name=patch.display_name,
+            display_name_set=patch.display_name_set,
+            external_id=patch.external_id,
+            external_id_set=patch.external_id_set,
             now=datetime.now(UTC),
         )
     except LastAdministrator:
@@ -1315,6 +1816,8 @@ async def patch_user(user_id: str, request: Request) -> JSONResponse:
         return _error(
             409, "The organization's last Owner cannot be deprovisioned.", scim_type="mutability"
         )
+    except ScimUserConflict:
+        return _error(409, "externalId already exists.", scim_type="uniqueness")
     if record is None:
         return _error(404, "SCIM user not found.")
     return _response(_resource(record, request))
