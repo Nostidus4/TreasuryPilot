@@ -286,6 +286,7 @@ test('signing is blocked until high-risk flags are acknowledged, then the reques
   );
   await user.click(screen.getByRole('button', { name: /sign approval/i }));
 
+  expect((await screen.findAllByText('Scheduled')).length).toBeGreaterThan(0);
   await waitFor(() =>
     expect(db.requests.find((item) => item.id === 'req_288')?.status).toBe(
       'Scheduled',

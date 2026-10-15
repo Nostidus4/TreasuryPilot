@@ -767,8 +767,7 @@ export const requestHandlers = [
           },
         };
       } else {
-        // Model the automatic planning cycle on the next mock API read.
-        schedule(0, () => planApprovedRequest(request));
+        planApprovedRequest(request);
       }
       logActivity(
         request.treasuryId,
