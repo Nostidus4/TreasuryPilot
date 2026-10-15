@@ -2700,15 +2700,15 @@
       },
       "MembersResponse": {
         "properties": {
-          "members": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/MemberView"
             },
-            "title": "Members",
+            "title": "Items",
             "type": "array"
           }
         },
-        "required": ["members"],
+        "required": ["items"],
         "title": "MembersResponse",
         "type": "object"
       },
@@ -2722,6 +2722,10 @@
           "orgId": {
             "format": "uuid",
             "title": "Orgid",
+            "type": "string"
+          },
+          "orgName": {
+            "title": "Orgname",
             "type": "string"
           },
           "ownerCheckedAt": {
@@ -2759,6 +2763,7 @@
         "required": [
           "id",
           "orgId",
+          "orgName",
           "roles",
           "status",
           "ownerIsOnchain",

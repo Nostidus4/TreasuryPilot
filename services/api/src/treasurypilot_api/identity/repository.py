@@ -21,6 +21,7 @@ from treasurypilot_api.identity.models import (
     MagicLink,
     Membership,
     MembershipStatus,
+    Organization,
     Session,
     User,
     UserStatus,
@@ -185,13 +186,17 @@ class SqlAlchemyAuthRepository:
             )
             if user is None:
                 return None
-            memberships_query = select(Membership).where(Membership.user_id == user_id)
+            memberships_query = (
+                select(Membership, Organization.name)
+                .join(Organization, Organization.id == Membership.org_id)
+                .where(Membership.user_id == user_id)
+            )
             if organization_scope_id is not None:
                 memberships_query = memberships_query.where(
                     Membership.org_id == organization_scope_id
                 )
             memberships = (
-                await session.scalars(memberships_query.order_by(Membership.org_id, Membership.id))
+                await session.execute(memberships_query.order_by(Membership.org_id, Membership.id))
             ).all()
             if organization_scope_id is None:
                 wallets = (
@@ -221,8 +226,9 @@ class SqlAlchemyAuthRepository:
                         signer_roles_active=bool(wallets)
                         and item.status == MembershipStatus.ACTIVE
                         and not SIGNER_ROLES.isdisjoint(item.roles),
+                        org_name=org_name,
                     )
-                    for item in memberships
+                    for item, org_name in memberships
                 ),
                 wallets=tuple(
                     WalletRecord(

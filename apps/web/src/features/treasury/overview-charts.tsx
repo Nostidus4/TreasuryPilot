@@ -19,7 +19,7 @@ import type {
   Forecast,
   PaymentRequest,
   Position,
-  TreasuryWallet,
+  WalletWithBalances,
 } from '@/lib/api/types';
 
 /*
@@ -236,7 +236,7 @@ const pos = (value: bigint) => (value > 0n ? value : 0n);
 // eslint-disable-next-line react-refresh/only-export-components
 export function buildBranches(
   position: Position,
-  wallets: TreasuryWallet[],
+  wallets: WalletWithBalances[],
 ): Branch[] {
   const big = (value: string) => BigInt(value);
   const treasury = big(position.safeUsdc);
@@ -668,11 +668,11 @@ export function SafeBullets({
   wallets,
 }: {
   units: Units;
-  wallets: TreasuryWallet[];
+  wallets: WalletWithBalances[];
 }) {
   const { focus, place, setFocus, selected, setSelected } = useFocus();
   const rows = wallets.filter(
-    (wallet): wallet is TreasuryWallet & { role: 'T' | 'O1' | 'O2' } =>
+    (wallet): wallet is WalletWithBalances & { role: 'T' | 'O1' | 'O2' } =>
       wallet.role !== 'GUARDIAN',
   );
   return (

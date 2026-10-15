@@ -1,18 +1,41 @@
 import { recoverMessageAddress } from 'viem';
 
-import type {
-  ChecklistItem,
-  Hex,
-  Me,
-  Member,
-  Org,
-  OrgDetail,
-  Role,
-} from '@/lib/api/types';
+import { fromApiRoles, toApiRole } from '@/lib/api/roles';
+import type { components } from '@/lib/api/schema';
+import type { Hex, Member, Org, Role } from '@/lib/api/types';
 import { ADDR, CHAINS, db, demoUser, membersOf, setSession } from '@/mocks/db';
 
 import { APPROVER } from '../seeded';
 import { fail, find, isLinked, isoNow, route, sameAddress } from './core';
+
+type Schemas = components['schemas'];
+
+// Responses below follow the real API (OpenAPI schemas), not the web view models.
+const orgView = ({
+  treasuries: _treasuries,
+  ...org
+}: Org): Schemas['OrganizationView'] => ({
+  ...org,
+  legalName: org.legalName ?? null,
+  createdAt: isoNow(),
+});
+
+const memberView = (member: Member): Schemas['MemberView'] => ({
+  userId: member.userId,
+  email: member.email,
+  roles: member.roles.map(toApiRole),
+  status: 'active',
+  signerRolesActive: Boolean(member.wallet),
+});
+
+const inviteView = (orgId: string, member: Member): Schemas['InviteView'] => ({
+  id: member.userId,
+  orgId,
+  email: member.email,
+  roles: member.roles.map(toApiRole),
+  createdAt: isoNow(),
+  expiresAt: isoNow(),
+});
 
 const SIGNER_ROLES: Role[] = ['OWN', 'APR', 'GRD'];
 
@@ -31,61 +54,15 @@ export function requireOrg(orgId: string): Org {
   return org;
 }
 
-function checklist(org: Org): ChecklistItem[] {
-  const treasuryId = org.treasuries[0]?.id;
-  const state = treasuryId ? db.treasuries[treasuryId] : undefined;
-  const base = `/o/${org.id}`;
-  return [
-    {
-      key: 'wallet',
-      title: 'Link your wallet',
-      description:
-        'Approvals and governance transactions are signed with your own wallet.',
-      done: db.linkedWallets.length > 0,
-      href: '/me/wallets',
-    },
-    {
-      key: 'treasury',
-      title: 'Set up a treasury',
-      description:
-        'Connect your Safes, enable the TreasuryPilot module and check coverage.',
-      done: Boolean(state && state.treasury.status !== 'Setup'),
-      href: `${base}/treasuries/new`,
-    },
-    {
-      key: 'mandate',
-      title: 'Activate a mandate',
-      description:
-        'Limits, buffers and approvers the agent can never exceed, enforced on-chain.',
-      done: state?.mandate?.status === 'Active',
-      href: treasuryId
-        ? `${base}/t/${treasuryId}/mandate`
-        : `${base}/treasuries/new`,
-    },
-    {
-      key: 'payee',
-      title: 'Register your first payee',
-      description:
-        'Only registered payees past their cooling period can be paid.',
-      done: db.payees.some(
-        (payee) => payee.treasuryId === treasuryId && payee.status === 'Active',
-      ),
-      href: treasuryId
-        ? `${base}/t/${treasuryId}/payees`
-        : `${base}/treasuries/new`,
-    },
-    {
-      key: 'approver',
-      title: 'Invite a second approver',
-      description:
-        'The person who creates a request cannot approve it (maker-checker).',
-      done:
-        org.soloMode ||
-        membersOf(org.id).filter((member) => member.roles.includes('APR'))
-          .length > 1,
-      href: `${base}/members`,
-    },
-  ];
+function checklist(org: Org): Schemas['OrganizationChecklist'] {
+  const state = db.treasuries[org.treasuries[0]?.id ?? ''];
+  return {
+    memberCount: membersOf(org.id).filter((item) => item.status === 'Active')
+      .length,
+    walletLinked: db.linkedWallets.length > 0,
+    treasuryCreated: Boolean(state),
+    moduleEnabled: Boolean(state && state.treasury.status !== 'Setup'),
+  };
 }
 
 export const identityHandlers = [
@@ -150,17 +127,37 @@ export const identityHandlers = [
 
   route('post', '/auth/logout', () => setSession(null)),
 
-  route('get', '/me', (): Me => {
+  route('get', '/me', (): Schemas['MeResponse'] => {
     const user = db.session!;
     return {
-      user,
-      memberships: orgsOf(user.id).map((org) => ({
-        orgId: org.id,
-        orgName: org.name,
-        roles: membersOf(org.id).find((member) => member.userId === user.id)!
-          .roles,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.name,
+        status: 'active',
+      },
+      memberships: orgsOf(user.id).map((org) => {
+        const roles = membersOf(org.id).find(
+          (member) => member.userId === user.id,
+        )!.roles;
+        return {
+          id: `mbr_${org.id}_${user.id}`,
+          orgId: org.id,
+          orgName: org.name,
+          roles: roles.map(toApiRole),
+          status: 'active',
+          ownerIsOnchain: false,
+          ownerCheckedAt: null,
+          signerRolesActive:
+            db.linkedWallets.length > 0 &&
+            roles.some((role) => SIGNER_ROLES.includes(role)),
+        };
+      }),
+      wallets: db.linkedWallets.map((wallet) => ({
+        ...wallet,
+        chainFamily: 'evm',
+        isContract: false,
       })),
-      wallets: db.linkedWallets,
     };
   }),
 
@@ -263,18 +260,21 @@ export const identityHandlers = [
           roles: ['ADM', 'OWN', 'OPR', 'APR', 'FIN'],
           wallet: db.linkedWallets[0]?.address,
           status: 'Active',
-          joinedAt: isoNow(),
         },
       ];
-      return { org };
+      return { org: orgView(org) };
     },
     { status: 201 },
   ),
 
-  route('get', '/orgs/:orgId', ({ params }): OrgDetail => {
-    const org = requireOrg(params.orgId);
-    return { org, checklist: checklist(org) };
-  }),
+  route(
+    'get',
+    '/orgs/:orgId',
+    ({ params }): Schemas['OrganizationDetailsResponse'] => {
+      const org = requireOrg(params.orgId);
+      return { org: orgView(org), checklist: checklist(org) };
+    },
+  ),
 
   route<{ soloMode?: boolean; autoMatch?: boolean }>(
     'patch',
@@ -283,16 +283,40 @@ export const identityHandlers = [
       const org = requireOrg(params.orgId);
       if (body.soloMode !== undefined) org.soloMode = body.soloMode;
       if (body.autoMatch !== undefined) org.autoMatch = body.autoMatch;
-      return { org };
+      return { org: orgView(org) };
     },
   ),
 
   route('get', '/orgs/:orgId/members', ({ params }) => {
     requireOrg(params.orgId);
-    return { items: membersOf(params.orgId) };
+    return {
+      items: membersOf(params.orgId)
+        .filter((member) => member.status === 'Active')
+        .map(memberView),
+    };
   }),
 
-  route<{ email?: string; roles?: Role[] }>(
+  route('get', '/orgs/:orgId/invites', ({ params }) => {
+    requireOrg(params.orgId);
+    return {
+      invites: membersOf(params.orgId)
+        .filter((member) => member.status === 'Invited')
+        .map((member) => inviteView(params.orgId, member)),
+    };
+  }),
+
+  route('delete', '/orgs/:orgId/invites/:inviteId', ({ params }) => {
+    requireOrg(params.orgId);
+    const members = membersOf(params.orgId);
+    const invite = find(
+      members,
+      (item) => item.userId === params.inviteId && item.status === 'Invited',
+      'Invite',
+    );
+    members.splice(members.indexOf(invite), 1);
+  }),
+
+  route<{ email?: string; roles?: string[] }>(
     'post',
     '/orgs/:orgId/invites',
     ({ params, body }) => {
@@ -316,20 +340,20 @@ export const identityHandlers = [
         userId: `usr_inv_${members.length}`,
         name: email.split('@')[0],
         email,
-        roles: body.roles,
+        roles: fromApiRoles(body.roles),
         status: 'Invited',
-        joinedAt: isoNow(),
       };
       members.push(member);
-      return { invite: member };
+      return { invite: inviteView(params.orgId, member) };
     },
     { status: 201 },
   ),
 
-  route<{ roles: Role[] }>(
+  route<{ roles: string[] }>(
     'patch',
     '/orgs/:orgId/members/:userId',
-    ({ params, body }) => {
+    ({ params, body: { roles: names } }) => {
+      const body = { roles: fromApiRoles(names) };
       requireOrg(params.orgId);
       const members = membersOf(params.orgId);
       const member = find(
@@ -357,7 +381,7 @@ export const identityHandlers = [
         }
       }
       member.roles = body.roles;
-      return { membership: member };
+      return { member: memberView(member) };
     },
   ),
 

@@ -35,12 +35,36 @@ import { PendingTransactions } from '@/features/treasury/pending-transactions';
 import { PauseDialog } from '@/features/treasury/status-banner';
 import { WalletRunways } from '@/features/treasury/wallet-runways';
 import { useAssetInfo } from '@/lib/api/chains';
-import type { TreasuryState } from '@/lib/api/types';
+import type {
+  Position,
+  TreasuryState,
+  TreasuryWallet,
+  WalletWithBalances,
+} from '@/lib/api/types';
 import { formatDate, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { formatBps, sum } from '@/lib/money';
 import { mandateStatus, treasuryStatus } from '@/lib/status';
 import { cn } from '@/lib/utils';
+
+/** A dashboard part the API does not serve yet (TRS-009): say so instead of showing zeros. */
+function Unavailable() {
+  return (
+    <p className="px-4 pb-4 text-sm text-muted-foreground">
+      {t('Not available from the API yet.')}
+    </p>
+  );
+}
+
+const withBalances = (wallets: TreasuryWallet[]) =>
+  wallets.every(
+    (wallet) =>
+      wallet.balance !== undefined &&
+      wallet.buffer !== undefined &&
+      wallet.target !== undefined,
+  )
+    ? (wallets as WalletWithBalances[])
+    : undefined;
 
 function DashboardSkeleton() {
   return (
@@ -52,27 +76,31 @@ function DashboardSkeleton() {
   );
 }
 
-function QueueTiles({ state }: { state: TreasuryState }) {
+function QueueTiles({
+  queues,
+}: {
+  queues: NonNullable<TreasuryState['queues']>;
+}) {
   const scope = useTreasuryScope();
   const rows = [
     {
       label: t('To approve'),
-      count: state.queues.approvals,
+      count: queues.approvals,
       to: `${scope.base}/approvals`,
     },
     {
       label: t('To sign on-chain'),
-      count: state.queues.governance,
+      count: queues.governance,
       to: `${scope.base}/governance`,
     },
     {
       label: t('To review'),
-      count: state.queues.review,
+      count: queues.review,
       to: `${scope.base}/review`,
     },
     {
       label: t('To reconcile'),
-      count: state.queues.reconciliation,
+      count: queues.reconciliation,
       to: `${scope.base}/reconciliation`,
     },
   ];
@@ -152,12 +180,19 @@ function Controls({ state }: { state: TreasuryState }) {
                   <span className="num">v{state.mandate.version}</span>
                   <StatusBadge meta={mandateStatus(state.mandate.status)} />
                 </Link>
-              ) : (
+              ) : state.mandate === null ? (
                 <Link
                   to={`${scope.tBase}/mandate`}
                   className="text-primary underline"
                 >
                   {t('Not set — create one')}
+                </Link>
+              ) : (
+                <Link
+                  to={`${scope.tBase}/mandate`}
+                  className="text-primary underline"
+                >
+                  {t('View mandate')}
                 </Link>
               ),
             },
@@ -193,7 +228,9 @@ function Activity({ state }: { state: TreasuryState }) {
   return (
     <Card>
       <CardHeader title={t('Recent activity')} />
-      {state.activity.length === 0 ? (
+      {!state.activity ? (
+        <Unavailable />
+      ) : state.activity.length === 0 ? (
         <EmptyState
           title={t('No activity yet')}
           description={t(
@@ -239,9 +276,14 @@ function Activity({ state }: { state: TreasuryState }) {
   );
 }
 
-function LiquidityHeader({ state }: { state: TreasuryState }) {
+function LiquidityHeader({
+  state,
+  position,
+}: {
+  state: TreasuryState;
+  position: Position;
+}) {
   const scope = useTreasuryScope();
-  const { position } = state;
   const accessible = sum([position.safeUsdc, position.aUsdc]);
   const last = position.lastAction;
   return (
@@ -297,11 +339,7 @@ function LiquidityHeader({ state }: { state: TreasuryState }) {
 }
 
 /** The engine's numbers as-is: reserve parts add up to the total, and the API supplies AvailableForSupply. */
-function PositionBreakdown({
-  position,
-}: {
-  position: TreasuryState['position'];
-}) {
+function PositionBreakdown({ position }: { position: Position }) {
   const { requiredReserve: reserve } = position;
   const row = (label: string, value: string, strong?: boolean) => (
     <div className="flex items-baseline justify-between gap-4 py-1.5">
@@ -344,24 +382,36 @@ function Overview({ state }: { state: TreasuryState }) {
   if (!info) return <DashboardSkeleton />;
   const units = { decimals: info.asset.decimals, symbol: info.asset.symbol };
   const o1 = state.wallets.find((wallet) => wallet.role === 'O1');
-  const branches = buildBranches(state.position, state.wallets);
+  const { position } = state;
+  const wallets = withBalances(state.wallets);
 
   return (
     <div className="grid gap-4">
-      <QueueTiles state={state} />
+      {state.queues && <QueueTiles queues={state.queues} />}
 
       <Card>
         <CardHeader title={t('Liquidity')} />
         <CardContent className="grid gap-5">
-          <LiquidityHeader state={state} />
-          <PositionBreakdown position={state.position} />
-          {state.position.lastAction.kind !== 'NONE' && (
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{t('Why')}:</span>{' '}
-              {state.position.lastAction.explanation}
-            </p>
+          {position && wallets ? (
+            <>
+              <LiquidityHeader state={state} position={position} />
+              <PositionBreakdown position={position} />
+              {position.lastAction.kind !== 'NONE' && (
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {t('Why')}:
+                  </span>{' '}
+                  {position.lastAction.explanation}
+                </p>
+              )}
+              <LiquidityIcicle
+                branches={buildBranches(position, wallets)}
+                units={units}
+              />
+            </>
+          ) : (
+            <Unavailable />
           )}
-          <LiquidityIcicle branches={branches} units={units} />
         </CardContent>
       </Card>
 
@@ -423,7 +473,11 @@ function Overview({ state }: { state: TreasuryState }) {
           <Card>
             <CardHeader title={t('Safes')} />
             <CardContent>
-              <SafeBullets wallets={state.wallets} units={units} />
+              {wallets ? (
+                <SafeBullets wallets={wallets} units={units} />
+              ) : (
+                <Unavailable />
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -432,7 +486,9 @@ function Overview({ state }: { state: TreasuryState }) {
               description={t('Resets 00:00 UTC')}
             />
             <CardContent>
-              {state.budgets.length === 0 ? (
+              {!state.budgets ? (
+                <Unavailable />
+              ) : state.budgets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {t('Limits appear once a mandate is active.')}
                 </p>
@@ -474,11 +530,13 @@ export function DashboardPage() {
       }
       description={
         state &&
-        t('{{chain}} · block {{block}} · {{when}}', {
-          chain: state.treasury.chainName,
-          block: state.staleness.blockNumber,
-          when: formatRelative(state.staleness.observedAt),
-        })
+        (state.staleness
+          ? t('{{chain}} · block {{block}} · {{when}}', {
+              chain: state.treasury.chainName,
+              block: state.staleness.blockNumber,
+              when: formatRelative(state.staleness.observedAt),
+            })
+          : state.treasury.chainName)
       }
       actions={
         state && (

@@ -57,6 +57,33 @@ export function apiUrl(path: string, query?: RequestOptions['query']): string {
   return url.toString();
 }
 
+const csrfKey = 'treasurypilot.csrf';
+
+/**
+ * Double-submit CSRF token: the tp_csrf cookie when the API shares our origin, else the
+ * copy the magic-link verify response returned (the cookie is unreadable cross-origin).
+ */
+function csrfToken(): string | undefined {
+  const cookie = document.cookie
+    .split('; ')
+    .find((item) => item.startsWith('tp_csrf='));
+  if (cookie) return decodeURIComponent(cookie.slice('tp_csrf='.length));
+  try {
+    return window.sessionStorage.getItem(csrfKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function rememberCsrfToken(token: string | null) {
+  try {
+    if (token) window.sessionStorage.setItem(csrfKey, token);
+    else window.sessionStorage.removeItem(csrfKey);
+  } catch {
+    /* the cookie still works on the same origin */
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -65,7 +92,8 @@ async function request<T>(
   const headers = new Headers({ Accept: 'application/json' });
   if (options.body !== undefined)
     headers.set('Content-Type', 'application/json');
-  if (method !== 'GET') headers.set('X-CSRF-Token', 'web');
+  const csrf = method !== 'GET' ? csrfToken() : undefined;
+  if (csrf) headers.set('X-CSRF-Token', csrf);
   if (options.idempotent) headers.set('Idempotency-Key', crypto.randomUUID());
   if (options.ifMatch) headers.set('If-Match', options.ifMatch);
 

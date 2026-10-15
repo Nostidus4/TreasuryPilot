@@ -13,6 +13,7 @@ from sqlalchemy import select
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity.memberships import (
     AlreadyMember,
+    InviteAlreadyPending,
     InviteAlreadyUsed,
     InviteEmailMismatch,
     LastAdministrator,
@@ -95,6 +96,16 @@ async def _exercise_membership_flow(database_url: str) -> None:
             now=now,
         )
         assert invitation.expires_at == now + timedelta(days=7)
+
+        with pytest.raises(InviteAlreadyPending):
+            await repository.create_invite(
+                org_id=org_id,
+                email="SIGNER@example.test",
+                roles=("Operator",),
+                created_by=owner_id,
+                token_hash=b"d" * 32,
+                now=now,
+            )
 
         with pytest.raises(AlreadyMember):
             await repository.create_invite(

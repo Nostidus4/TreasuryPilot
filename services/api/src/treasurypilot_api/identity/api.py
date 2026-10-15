@@ -100,6 +100,7 @@ class UserView(ApiModel):
 class MembershipView(ApiModel):
     id: uuid.UUID
     org_id: uuid.UUID
+    org_name: str
     roles: list[str]
     status: str
     owner_is_onchain: bool
@@ -147,6 +148,7 @@ class MeResponse(ApiModel):
                 MembershipView(
                     id=item.id,
                     org_id=item.org_id,
+                    org_name=item.org_name,
                     roles=list(item.roles),
                     status=item.status,
                     owner_is_onchain=item.owner_is_onchain,

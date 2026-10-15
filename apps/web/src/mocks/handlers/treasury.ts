@@ -9,7 +9,6 @@ import type {
   MandateDraft,
   MandateVersion,
   Payee,
-  TreasuryState,
   TreasuryStatus,
   TreasurySummary,
 } from '@/lib/api/types';
@@ -34,6 +33,7 @@ import {
   usdc,
   vendorName,
 } from '@/mocks/db';
+import type { MockTreasuryState } from '@/mocks/db';
 
 import {
   fail,
@@ -48,7 +48,47 @@ import { requireOrg } from './identity';
 
 const T = '/orgs/:orgId/treasuries/:tId';
 
-function requireTreasury(params: Record<string, string>): TreasuryState {
+const apiTreasuryStatus: Record<TreasuryStatus, TreasurySummary['status']> = {
+  Setup: 'Draft',
+  Active: 'Ready',
+  PauseRequested: 'Paused',
+  Paused: 'Paused',
+  Revoked: 'Revoked',
+};
+
+/** GET treasury in the real API's shape, plus the dashboard extras TRS-009 adds. */
+function treasuryView(state: MockTreasuryState) {
+  const { treasury, wallets, coverage, ...extras } = state;
+  return {
+    ...extras,
+    treasury: {
+      id: treasury.id,
+      chainId: treasury.chainId,
+      assetId: treasury.asset.id,
+      status: apiTreasuryStatus[treasury.status],
+      coverage: {
+        ...coverage,
+        executionAllowed: coverage.executionAllowed ?? true,
+      },
+      moduleAddress: treasury.moduleAddress,
+      createdAt: iso(-30 * DAY),
+    },
+    wallets: wallets.map((wallet) => ({
+      id: `${treasury.id}_${wallet.role}`,
+      role: wallet.role === 'T' ? 'SOURCE' : 'OPERATIONAL',
+      label: wallet.label,
+      safeAddress: wallet.safeAddress,
+      owners: wallet.owners,
+      threshold: wallet.threshold,
+      balance: wallet.balance,
+      buffer: wallet.buffer,
+      target: wallet.target,
+    })),
+    warnings: [],
+  };
+}
+
+function requireTreasury(params: Record<string, string>): MockTreasuryState {
   const org = requireOrg(params.orgId);
   if (!org.treasuries.some((item) => item.id === params.tId)) {
     fail(404, 'NOT_FOUND', 'Treasury was not found.');
@@ -166,13 +206,7 @@ export const treasuryHandlers = [
       items: org.treasuries.flatMap(({ id }) => {
         const state = db.treasuries[id];
         if (!state) return [];
-        const statuses: Record<TreasuryStatus, TreasurySummary['status']> = {
-          Setup: 'Draft',
-          Active: 'Ready',
-          PauseRequested: 'Paused',
-          Paused: 'Paused',
-        };
-        const status = statuses[state.treasury.status];
+        const status = apiTreasuryStatus[state.treasury.status];
         return [
           {
             id,
@@ -334,7 +368,7 @@ export const treasuryHandlers = [
   route('get', T, ({ params }) => {
     const state = requireTreasury(params);
     refreshQueues();
-    return state;
+    return treasuryView(state);
   }),
 
   route('post', `${T}/module/deploy-tx`, ({ params }) => {

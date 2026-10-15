@@ -258,7 +258,7 @@ export function OnboardingPage() {
       width="narrow"
       title={t('Set up {{name}}', { name: scope.org.name })}
       description={t(
-        'Five steps before the agent can pay an invoice. Each one is a control you own.',
+        'A few steps before the agent can pay an invoice. Each one is a control you own.',
       )}
     >
       <QueryBoundary query={query}>

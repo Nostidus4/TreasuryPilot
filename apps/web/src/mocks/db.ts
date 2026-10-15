@@ -33,10 +33,19 @@ import type {
   ServerEvent,
   StepStatus,
   TreasuryState,
+  TreasuryWallet,
   TypedData,
   User,
   Vendor,
 } from '@/lib/api/types';
+
+/** The mock always knows everything the dashboard wants, including what the API lacks (TRS-009). */
+export type MockTreasuryState = Required<
+  Omit<TreasuryState, 'borrowProposalId' | 'mandate' | 'wallets'>
+> &
+  Pick<TreasuryState, 'borrowProposalId' | 'mandate'> & {
+    wallets: Array<Required<TreasuryWallet>>;
+  };
 
 import { APPROVER, SEEDED_PAYMENT_INVOICE, SEEDED_PLAN_ID } from './seeded';
 
@@ -117,7 +126,7 @@ export interface Db {
   /** Members and creator of orgs created during the session. */
   orgMembers: Record<string, Member[]>;
   moduleEnabled: Record<string, string[]>;
-  treasuries: Record<string, TreasuryState>;
+  treasuries: Record<string, MockTreasuryState>;
   mandates: Record<string, MandateVersion[]>;
   payees: Payee[];
   vendors: Vendor[];
@@ -1132,7 +1141,6 @@ export function seed(): Db {
         roles: ['OWN', 'ADM', 'APR', 'OPR', 'FIN'],
         wallet: ADDR.me,
         status: 'Active',
-        joinedAt: iso(-40 * DAY),
       },
       {
         userId: APPROVER.id,
@@ -1141,7 +1149,6 @@ export function seed(): Db {
         roles: ['OWN', 'APR'],
         wallet: ADDR.an,
         status: 'Active',
-        joinedAt: iso(-40 * DAY),
       },
       {
         userId: MINH.id,
@@ -1149,7 +1156,6 @@ export function seed(): Db {
         email: 'minh@northwind.test',
         roles: ['OPR'],
         status: 'Active',
-        joinedAt: iso(-33 * DAY),
       },
       {
         userId: 'usr_quynh',
@@ -1158,7 +1164,6 @@ export function seed(): Db {
         roles: ['OWN', 'FIN'],
         wallet: ADDR.quynh,
         status: 'Active',
-        joinedAt: iso(-33 * DAY),
       },
       {
         userId: 'usr_bao',
@@ -1166,7 +1171,6 @@ export function seed(): Db {
         email: 'bao@northwind.test',
         roles: ['AUD'],
         status: 'Invited',
-        joinedAt: iso(-1 * DAY),
       },
     ],
     treasuries: {
@@ -2182,7 +2186,7 @@ export function startExecution(plan: PlanDetail) {
 function settleStep(
   plan: PlanDetail,
   planStep: PlanStep,
-  state: TreasuryState,
+  state: MockTreasuryState,
 ) {
   if (planStep.amount === null) return;
   const amount = BigInt(planStep.amount);
