@@ -1,8 +1,15 @@
 # Submission documents
 
-Implementation baseline for the reports below: main
-`0c79d0731ad730e7c2f9f6644e90c36453b02d7e` (reviewed for these drafts on
-2026-10-15). Both reports require developer review and an update at feature freeze.
+## Baseline and evidence revisions
+
+- Implementation baseline for the reports below: main
+  `0c79d0731ad730e7c2f9f6644e90c36453b02d7e` (reviewed for these drafts on
+  2026-10-15).
+- CI revision for contract/security evidence:
+  `02e4d674d1a76aa60cf2ac1c242f2aed20a6fb5c` (runs dated 2026-10-14).
+
+Both reports require developer review and an update at feature freeze; the two
+revisions are stated only here, and the reports refer to this section.
 
 | Document | Tracking | Contents |
 | --- | --- | --- |

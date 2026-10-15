@@ -1,8 +1,7 @@
 # TreasuryPilot technical documentation
 
-DOM-012 / #236. Implementation baseline: main
-`0c79d0731ad730e7c2f9f6644e90c36453b02d7e`, reviewed for this draft on
-2026-10-15. Status: **submission draft; feature-freeze and developer review pending**.
+DOM-012 / #236. Implementation baseline and CI revision: see the
+[submission README](README.md#baseline-and-evidence-revisions). Status: **submission draft; feature-freeze and developer review pending**.
 Scope: synthetic testnet treasury evaluation. Target workflows still under
 implementation are marked below. The committed Sepolia manifest
 (`deployments/11155111.json`) remains `configured_only`, with no deployed module
@@ -111,7 +110,7 @@ count to the approved request and checks exact source/destination balance deltas
 ### 4.2 Scheduler, payment value and forecast
 
 The implemented `schedule_edf` sorts by due UTC day, approval sequence and request
-ID. It iterates 30 days, resets simulated counters at UTC day boundaries, carries
+ID. It iterates [`HORIZON_DAYS`](../../packages/py-core/src/treasurypilot_core/engine/scheduler.py) (30) days, resets simulated counters at UTC day boundaries, carries
 wallet/source cash forward, rechecks cooling and caps, and applies request-bound
 refill decisions. A request blocked today can remain eligible on later days.
 It returns scheduled items, remaining blockers and an objective tuple:
@@ -121,15 +120,17 @@ EDF returns a feasible heuristic result, not a global optimum certificate.
 The older source calls it B1; ADR-019 benchmark naming is B0 manual/EDF with idle
 cash, B1 deterministic optimizer, B2 AI plus optimizer. Reports must use the
 ADR-019 labels with explicit algorithm identities and must not relabel EDF as
-the CP-SAT scheduler. `schedule_cpsat` (ADR-015) is on main with a 5 s limit and EDF
-fallback; state the actual algorithm, solver status and fallback mode explicitly. No measured B0/B1/B2 comparison is reported here.
+the CP-SAT scheduler. As of the baseline SHA, `schedule_cpsat` (ADR-015) exists with a 5 s limit
+([`DEFAULT_TIME_LIMIT_SECONDS`](../../packages/py-core/src/treasurypilot_core/engine/cpsat.py))
+and EDF fallback; state the actual algorithm, solver status and fallback mode explicitly. No measured B0/B1/B2 comparison is reported here.
 
 For a confirmed early option, value is exact standard-minus-early saving less
 estimated execution fee and simple supply interest forgone until due date;
 accrued late fees reduce value. Percentage fees use integer basis points and
 ceiling period count, then floor monetary division and apply any configured cap.
 Late-fee valuation does not authorize a PAY larger than the signed options.
-EDF currently supplies rate to valuation but no per-request fee parameter;
+As of the baseline SHA, EDF supplies rate to valuation but no per-request fee
+parameter (see [`scheduler.py`](../../packages/py-core/src/treasurypilot_core/engine/scheduler.py));
 benchmark inputs must disclose the resulting zero-fee assumption.
 
 Forecast replays EDF payment/refill order with conserved balances. It reports
@@ -188,10 +189,12 @@ steps in a non-atomic sequence must be recorded and not repeated.
 ## 6. Security and evidence
 
 The [self-assessment](security-self-assessment.md) gives all five permission tiers
-and [known risks](../security/known-risks.md) records 25 architectural residuals.
+and [known risks](../security/known-risks.md) records the architectural residuals.
 The register retains its stated historical baseline. Independent audit, full backend integration and public execution evidence remain open.
 
-Contract files at this baseline match revision `02e4d674d1a76aa60cf2ac1c242f2aed20a6fb5c`:
+Contract files at this baseline match the CI revision in the
+[README](README.md#baseline-and-evidence-revisions) (reproduction commands in the
+[self-assessment](security-self-assessment.md#4-evidence-and-its-limits)):
 [Contracts CI](https://github.com/Nostidus4/TreasuryPilot/actions/runs/38583286706)
 records 110 tests passing, zero failures, across 16 suites including aggregate
 invariant execution. [Security CI](https://github.com/Nostidus4/TreasuryPilot/actions/runs/38583286728)
