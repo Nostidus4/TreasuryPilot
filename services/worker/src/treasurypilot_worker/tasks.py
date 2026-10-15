@@ -19,7 +19,7 @@ from treasurypilot_worker.agent.factory import get_ai_adapter
 from treasurypilot_worker.agent.tools.backend import PostgresToolBackend
 from treasurypilot_worker.agent.tools.read_only import build_tools
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
-from treasurypilot_worker.celery_app import app
+from treasurypilot_worker.celery_app import SCAN_TASK, app
 from treasurypilot_worker.chain.event_handlers import (
     activate_due_payees as activate_due_payees_in_pool,
 )
@@ -47,6 +47,7 @@ from treasurypilot_worker.locks import (
     create_worker_pool,
     treasury_advisory_xact_lock,
 )
+from treasurypilot_worker.low_gas import check_low_gas
 from treasurypilot_worker.mandate_expiry import expire_mandates
 from treasurypilot_worker.notify.chat_adapters import ChatPlatform, HttpChatWebhookClient
 from treasurypilot_worker.notify.chat_sender import deliver_chat_pending
@@ -65,6 +66,7 @@ from treasurypilot_worker.reconcile.auto_match import auto_match_reconciliations
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
+from treasurypilot_worker.recovery.scan import scan_in_flight_sync
 from treasurypilot_worker.routing import treasury_queue
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
@@ -144,6 +146,37 @@ def expire_mandate_versions() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for mandate expiry")
     return asyncio.run(_expire_mandates(database_url))
+
+
+async def _check_low_gas(
+    database_url: str, threshold_wei: int, configured: list[tuple[str, str | None]]
+) -> dict[str, int]:
+    connection = await asyncpg.connect(_asyncpg_database_url(database_url))
+    try:
+        return await check_low_gas(
+            connection,
+            lambda urls: build_rpc_client(decode_rpc_urls(urls)),
+            threshold_wei,
+            configured,
+        )
+    finally:
+        await connection.close()
+
+
+@app.task(name="treasurypilot.execution.check_low_gas", queue="core")
+def check_low_gas_task() -> dict[str, int]:
+    """Alert operators when an executor's native balance falls below the threshold."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for the low-gas check")
+    configured = [
+        ("executor", settings.executor_address),
+        ("sentinel", settings.sentinel_address),
+        ("receipt", settings.eas_receipt_address),
+    ]
+    return asyncio.run(
+        _check_low_gas(settings.database_url, settings.low_gas_threshold_wei, configured)
+    )
 
 
 async def _auto_match(database_url: str) -> dict[str, int]:
@@ -485,6 +518,16 @@ def safety_cycle_task() -> dict[str, int]:
         database_url, lambda pool: _run_all_treasury_cycles(pool, scheduling=False)
     )
     return {"cycles_started": started}
+
+
+@app.task(name=SCAN_TASK, queue="core")
+def scan_in_flight_task() -> dict[str, int]:
+    """Resolve Submitted/Pending/Unknown operations from chain evidence (RCV-001)."""
+
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for the in-flight scan")
+    return scan_in_flight_sync(database_url)
 
 
 @app.task(name="treasurypilot.recovery.circuit_breaker", queue="core")
