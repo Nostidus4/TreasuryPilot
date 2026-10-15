@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-007",
+  "prompt_version": "copilot.v1",
+  "model": "scripted-reference",
+  "case_sha256": "3bf1d74edcd72a21e1ca6df5232fa073457ea911a33a687edc5147d12c603774",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "t1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 10,
+      "output_tokens": 10
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\": \"From the cited figures (base units): remaining_daily_pay_after_r1 is 100000000; early_amount is 270000000; forgone_discount is 30000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "tool_calls": [],
+      "input_tokens": 10,
+      "output_tokens": 10
+    }
+  ]
+}

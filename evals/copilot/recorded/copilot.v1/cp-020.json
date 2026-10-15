@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-020",
+  "prompt_version": "copilot.v1",
+  "model": "scripted-reference",
+  "case_sha256": "7175e0cd9dc81aceef8d20506c1b800e8344d39919d519e4498ac63e85bae65f",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "t1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 10,
+      "output_tokens": 10
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\": \"From the cited figures (base units): standard_amount is 2100000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "tool_calls": [],
+      "input_tokens": 10,
+      "output_tokens": 10
+    }
+  ]
+}
