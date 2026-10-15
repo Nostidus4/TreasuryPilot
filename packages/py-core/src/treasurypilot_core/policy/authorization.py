@@ -205,6 +205,9 @@ _PAY_RULES: list[_Rule] = [
         C.PAYEE_COOLING,
         lambda i: (p := _payee(i)) is None or not p.active or i.ctx.now >= p.active_from,
     ),
+    # An explicit not-clear Travel Rule result (held exchange, provider down) is a hard block.
+    # None means preflight is not wired for this caller and is intentionally a no-op.
+    ("travel_rule_clear", C.DATA_MISSING, lambda i: i.ctx.travel_rule_clear is not False),
 ]
 
 

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import pytest
@@ -156,6 +156,7 @@ def _ctx(request: RequestView | None = None, **update: Any) -> ValidationContext
         "circuit_open": False,
         "screening_hit": False,
         "screening_clear": True,
+        "travel_rule_clear": True,
         "policy_state": _state(),
     }
     return ValidationContext.model_validate(fields | update)
@@ -254,15 +255,17 @@ def test_unknown_operation_blocks_every_fallback() -> None:
 
 
 @pytest.mark.parametrize("alert", ["pause_requested", "circuit_open", "screening_hit"])
-def test_safety_alerts_block_the_fallback(alert: str) -> None:
-    assert _refusal(_ctx(**{alert: True})) == FallbackRefusal.SAFETY_ALERT
+def test_safety_alerts_block_the_fallback(
+    alert: Literal["pause_requested", "circuit_open", "screening_hit"],
+) -> None:
+    assert _refusal(_ctx().model_copy(update={alert: True})) == FallbackRefusal.SAFETY_ALERT
 
 
 def test_a_high_flag_blocks_the_fallback_but_a_low_one_does_not() -> None:
-    def flag(severity: str) -> FlagView:
+    def flag(severity: Literal["LOW", "HIGH"]) -> FlagView:
         return FlagView(
             id=UUID(int=9), code="X", severity=severity, raised_at=datetime.fromtimestamp(NOW, UTC)
-        )  # type: ignore[arg-type]
+        )
 
     assert _refusal(_ctx(flags=[flag("HIGH")])) == FallbackRefusal.SAFETY_ALERT
     _fallback(_ctx(flags=[flag("LOW")]))
@@ -277,6 +280,7 @@ def test_a_high_flag_blocks_the_fallback_but_a_low_one_does_not() -> None:
         {"approval": None},
         {"request": None, "approval": None},
         {"screening_clear": False},
+        {"travel_rule_clear": False},
     ],
 )
 def test_incomplete_data_blocks_the_fallback(update: dict[str, Any]) -> None:

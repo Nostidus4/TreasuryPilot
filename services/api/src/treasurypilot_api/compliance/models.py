@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -151,3 +152,57 @@ class KybVerification(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     provider_ref: Mapped[str | None] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TravelRuleExchange(Base):
+    """Durable exchange state; party payload is AES-GCM encrypted before it reaches storage."""
+
+    __tablename__ = "travel_rule_exchanges"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'NOT_REQUIRED', 'ERROR')",
+            name="ck_travel_rule_exchanges_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_travel_rule_exchanges_amount"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_travel_rule_exchanges_currency"),
+        CheckConstraint(
+            "octet_length(beneficiary_address) = 20",
+            name="ck_travel_rule_exchanges_address",
+        ),
+        CheckConstraint("chain_id > 0", name="ck_travel_rule_exchanges_chain"),
+        CheckConstraint(
+            "origin_jurisdiction ~ '^[A-Z]{2}$'", name="ck_travel_rule_exchanges_origin"
+        ),
+        CheckConstraint(
+            "beneficiary_jurisdiction ~ '^[A-Z]{2}$'", name="ck_travel_rule_exchanges_beneficiary"
+        ),
+        CheckConstraint("length(btrim(provider)) > 0", name="ck_travel_rule_exchanges_provider"),
+        UniqueConstraint("org_id", "request_id", name="uq_travel_rule_exchanges_org_request"),
+        Index("ix_travel_rule_exchanges_status", "status", "updated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    # Effective threshold at decision time; recorded for NOT_REQUIRED cases as evidence.
+    threshold: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    origin_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
+    beneficiary_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
+    beneficiary_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
