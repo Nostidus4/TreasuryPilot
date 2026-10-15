@@ -176,16 +176,27 @@ function Tip({ tip }: { tip: TipState | null }) {
   );
 }
 
-function Swatch({ color, hatched }: { color: string; hatched?: boolean }) {
+function Swatch({
+  color,
+  hatched,
+  dashed,
+}: {
+  color: string;
+  hatched?: boolean;
+  dashed?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
       className="inline-block size-2.5 shrink-0 rounded-sm"
       style={{
-        background: hatched
-          ? `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 4px)`
-          : color,
+        background: dashed
+          ? 'transparent'
+          : hatched
+            ? `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 4px)`
+            : color,
         boxShadow: hatched ? `inset 0 0 0 1px ${color}` : undefined,
+        border: dashed ? `1px dashed ${color}` : undefined,
       }}
     />
   );
@@ -963,6 +974,7 @@ export function RunwayChart({
                 const h = Math.max(2, yBar(n(request.amount)) - 2);
                 y -= h + 2;
                 const covered = coveredByReserve.has(request.status);
+                const draft = request.status === 'Draft';
                 const dim =
                   (reserveFocus && !covered) ||
                   (active !== undefined && active !== index);
@@ -974,7 +986,16 @@ export function RunwayChart({
                     width={w}
                     height={h}
                     rx={3}
-                    fill={covered ? 'var(--chart-3)' : 'url(#hatch-runway)'}
+                    fill={
+                      draft
+                        ? 'none'
+                        : covered
+                          ? 'var(--chart-3)'
+                          : 'url(#hatch-runway)'
+                    }
+                    stroke={draft ? 'var(--chart-3)' : undefined}
+                    strokeDasharray={draft ? '3 2' : undefined}
+                    pointerEvents="all"
                     opacity={dim ? 0.3 : 1}
                     className="cursor-pointer"
                     onClick={() => navigate(requestHref(request.id))}
@@ -1046,7 +1067,11 @@ export function RunwayChart({
                   <li key={request.id} className="flex items-center gap-1.5">
                     <Swatch
                       color="var(--chart-3)"
-                      hatched={!coveredByReserve.has(request.status)}
+                      hatched={
+                        !coveredByReserve.has(request.status) &&
+                        request.status !== 'Draft'
+                      }
+                      dashed={request.status === 'Draft'}
                     />
                     <span>{request.vendorName}</span>
                     {request.status === 'Draft' && (
@@ -1082,7 +1107,7 @@ export function RunwayChart({
             </span>
             {includeDrafts && (
               <span className="inline-flex items-center gap-1.5 text-xs">
-                <Swatch color="var(--chart-3)" hatched /> {t('Drafts included')}
+                <Swatch color="var(--chart-3)" dashed /> {t('Drafts included')}
               </span>
             )}
           </div>

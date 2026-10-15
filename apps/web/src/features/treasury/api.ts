@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
@@ -61,12 +61,8 @@ function normalizeTreasurySetup(
   chains: Chain[],
 ): TreasuryState {
   if ('wallets' in data && 'activity' in data) return data;
-  const chain = chains.find(
-    (item) => item.chainId === data.treasury.chainId,
-  );
-  const asset = chain?.assets.find(
-    (item) => item.id === data.treasury.assetId,
-  );
+  const chain = chains.find((item) => item.chainId === data.treasury.chainId);
+  const asset = chain?.assets.find((item) => item.id === data.treasury.assetId);
   if (!chain || !asset) {
     throw new Error(
       `Could not resolve asset ${data.treasury.assetId} on chain ${data.treasury.chainId}. Treasury setup cannot continue safely.`,
@@ -84,7 +80,12 @@ function normalizeTreasurySetup(
             : 'O2';
     return {
       role,
-      label: role === 'T' ? 'Treasury Safe' : role === 'O1' ? 'Payments Safe' : 'Second operational Safe',
+      label:
+        role === 'T'
+          ? 'Treasury Safe'
+          : role === 'O1'
+            ? 'Payments Safe'
+            : 'Second operational Safe',
       safeAddress: item.safeAddress,
       balance: '0',
       buffer: '0',
@@ -107,12 +108,29 @@ function normalizeTreasurySetup(
     coverage: data.treasury.coverage,
     mandate: null,
     budgets: [],
-    staleness: { blockNumber: 0, observedAt: data.treasury.createdAt, stale: true },
+    staleness: {
+      blockNumber: 0,
+      observedAt: data.treasury.createdAt,
+      stale: true,
+    },
     position: {
-      safeUsdc: '0', aUsdc: '0', poolLiquidity: '0',
-      requiredReserve: { paymentReserve: '0', floor: '0', holds: '0', total: '0' },
-      availableForSupply: '0', supplyApyBps: 0,
-      lastAction: { kind: 'NONE', amount: '0', at: data.treasury.createdAt, explanation: 'No activity yet.' },
+      safeUsdc: '0',
+      aUsdc: '0',
+      poolLiquidity: '0',
+      requiredReserve: {
+        paymentReserve: '0',
+        floor: '0',
+        holds: '0',
+        total: '0',
+      },
+      availableForSupply: '0',
+      supplyApyBps: 0,
+      lastAction: {
+        kind: 'NONE',
+        amount: '0',
+        at: data.treasury.createdAt,
+        explanation: 'No activity yet.',
+      },
     },
     queues: { approvals: 0, governance: 0, review: 0, reconciliation: 0 },
     activity: [],
@@ -120,7 +138,10 @@ function normalizeTreasurySetup(
 }
 
 /** Verified Safes and coverage only: balances, module and staleness are placeholders, so keep this key apart from useTreasury. */
-export const useTreasurySetup = (orgId: string, treasuryId: string | undefined) => {
+export const useTreasurySetup = (
+  orgId: string,
+  treasuryId: string | undefined,
+) => {
   return useQuery<TreasuryState>({
     queryKey: ['org', orgId, 'treasury', treasuryId, 'setup'],
     enabled: Boolean(treasuryId),
@@ -148,6 +169,8 @@ export const useForecast = (
     `/treasuries/${treasuryId}/forecast${
       includeDrafts ? '?includeDrafts=true' : ''
     }`,
+    // Keep the chart mounted while the other variant loads.
+    { placeholderData: keepPreviousData },
   );
 
 export const useBorrowProposal = (
