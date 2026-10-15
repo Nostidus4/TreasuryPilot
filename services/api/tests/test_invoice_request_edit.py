@@ -15,6 +15,7 @@ from alembic.config import Config
 from fastapi import Response
 from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from treasurypilot_api.identity.auth import AuthFailure
@@ -31,6 +32,7 @@ API_ROOT = Path(__file__).parents[1]
 _USER = uuid.UUID("00000000-0000-7000-8000-000000000001")
 _ORG = uuid.UUID("00000000-0000-7000-8000-000000000010")
 _ASSET = uuid.UUID("00000000-0000-7000-8000-000000000030")
+_ASSET_DECIMALS = 6
 _OTHER_ASSET = uuid.UUID("00000000-0000-7000-8000-000000000031")
 _TREASURY = uuid.UUID("00000000-0000-7000-8000-000000000040")
 _VENDOR = uuid.UUID("00000000-0000-7000-8000-000000000050")
@@ -60,7 +62,8 @@ async def _seed(database_url: str) -> None:
         "INSERT INTO chains (chain_id, name, is_testnet, confirmations, explorer_url, rpc_urls) "
         "VALUES (11155111, 'Sepolia', true, 3, 'https://sepolia.etherscan.io', '[\"https://rpc\"]')",
         "INSERT INTO assets (id, chain_id, address, symbol, decimals, issuer_label) "
-        f"VALUES ('{_ASSET}', 11155111, decode(repeat('11', 20), 'hex'), 'USDC', 6, 'Circle')",
+        f"VALUES ('{_ASSET}', 11155111, decode(repeat('11', 20), 'hex'), 'USDC', "
+        f"{_ASSET_DECIMALS}, 'Circle')",
         "INSERT INTO assets (id, chain_id, address, symbol, decimals, issuer_label) "
         f"VALUES ('{_OTHER_ASSET}', 11155111, decode(repeat('44', 20), 'hex'), 'DAI', 18, 'Test')",
         "INSERT INTO treasuries (id, org_id, chain_id, asset_id) "
@@ -90,6 +93,9 @@ def database_url() -> Iterator[str]:
     if "TP_TEST_DATABASE_URL" not in os.environ:
         pytest.skip("TP_TEST_DATABASE_URL is required for the PostgreSQL request edit tests")
     url = os.environ["TP_TEST_DATABASE_URL"]
+    # The fixture downgrades to base on teardown, so refuse anything not clearly disposable.
+    if "test" not in (make_url(url).database or "").lower():
+        pytest.skip("TP_TEST_DATABASE_URL must point at a database whose name contains 'test'")
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
@@ -219,7 +225,7 @@ def test_amount_patch_on_approved_invalidates_the_approval(database_url: str) ->
         assert result["approvalInvalidated"] is True
         assert (state.status, state.amount, state.current_revision, state.approval) == (
             "Draft",
-            250_000_000,
+            250 * 10**_ASSET_DECIMALS,
             2,
             "Invalidated",
         )
@@ -271,7 +277,8 @@ def test_note_patch_does_not_invalidate_an_approved_request(database_url: str) -
 def test_stale_if_match_on_patch_returns_412(database_url: str) -> None:
     async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
         request = await _create(sessions, "STALE-ETAG")
-        request["version"] = int(request["version"]) + 1
+        # A competing edit commits (own session) after this client read the version.
+        await _patch(sessions, request, note="competing edit")
         with pytest.raises(AuthFailure) as error:
             await _patch(sessions, request, amount="125")
         assert (error.value.status, error.value.code) == (412, "PRECONDITION_FAILED")
