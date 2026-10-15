@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Signer service for the pause-only sentinel; pause falls back to a Guardian Safe tx without it.
     signer_url: str | None = None
     signer_shared_secret: SecretStr | None = None
+    # Below this ETH balance (wei) the sentinel cannot be relied on to pause; the guardian health
+    # check warns (MDT-010).
+    sentinel_min_gas_wei: int = Field(default=5 * 10**15, ge=0)
     s3_endpoint_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),
