@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -30,6 +31,73 @@ WHERE pr.treasury_id = $1 AND pr.status IN ('Approved', 'Scheduled')
 ORDER BY pr.due_at, pr.created_at, pr.id
 LIMIT 100
 """
+
+
+SCHEDULE_RETENTION = timedelta(days=30)
+
+
+def _pay_by(due_at: date, terms: PaymentTerms) -> datetime:
+    day = datetime.combine(due_at, datetime.min.time(), UTC)
+    if terms.discount_deadline_day is not None:
+        day = min(day, datetime.fromtimestamp(terms.discount_deadline_day * 86_400, UTC))
+    return day
+
+
+class DbScheduleWriter:
+    """Append the advisory `schedules` row: requests in deadline order with window start.
+
+    shortcut: solver "DUE_DATE" is the order the provider uses, not the M07 EDF/CP-SAT run
+    (those labels stay M07's); items are {requestId, order, scheduledFor, deadline}, not the
+    spec's {requestId, day, value, refill}. Swap in the engine schedule when the provider reads it.
+    Empty schedules are not stored while the latest row is also empty (nothing to record).
+    """
+
+    def __init__(self, lead_time: timedelta = timedelta(hours=24)) -> None:
+        self.lead_time = lead_time
+
+    async def refresh_treasury(
+        self, connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
+    ) -> bool:
+        org_id = await connection.fetchval(
+            "SELECT org_id FROM treasuries WHERE id = $1 AND status IN ('Ready', 'Paused')",
+            treasury_id,
+        )
+        if org_id is None:
+            return False
+        items = []
+        for order, row in enumerate(await connection.fetch(_CANDIDATES, treasury_id, now)):
+            deadline = _pay_by(row["due_at"], PaymentTerms.model_validate(as_json(row["terms"])))
+            items.append(
+                {
+                    "requestId": str(row["id"]),
+                    "order": order,
+                    "scheduledFor": (deadline - self.lead_time).isoformat(),
+                    "deadline": deadline.isoformat(),
+                }
+            )
+        latest = await connection.fetchval(
+            "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at DESC LIMIT 1",
+            treasury_id,
+        )
+        # Append-only, but an unchanged schedule is not a new row (96 identical rows a day).
+        if (as_json(latest) if latest is not None else []) == items:
+            return True
+        await connection.execute(
+            "INSERT INTO schedules (id, org_id, treasury_id, computed_at, solver, items) "
+            "VALUES ($1, $2, $3, $4, 'DUE_DATE', $5::jsonb)",
+            uuid7(),
+            org_id,
+            treasury_id,
+            now,
+            json.dumps(items),
+        )
+        # Retention: same transaction as the writer; keep 30 days of history per treasury.
+        await connection.execute(
+            "DELETE FROM schedules WHERE treasury_id = $1 AND computed_at < $2",
+            treasury_id,
+            now - SCHEDULE_RETENTION,
+        )
+        return True
 
 
 class DbScheduleProvider:
@@ -58,9 +126,7 @@ class DbScheduleProvider:
         rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
         for order, row in enumerate(rows):
             terms = PaymentTerms.model_validate(as_json(row["terms"]))
-            day = datetime.combine(row["due_at"], datetime.min.time(), UTC)
-            if terms.discount_deadline_day is not None:
-                day = min(day, datetime.fromtimestamp(terms.discount_deadline_day * 86_400, UTC))
+            day = _pay_by(row["due_at"], terms)
             if now >= day - self.lead_time:
                 return RequestSelection(ScheduledRequest(row["id"], day, order))
         return RequestSelection(None)

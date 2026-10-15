@@ -59,7 +59,7 @@ from treasurypilot_worker.planner.ai import PROPOSE_TASK, run_proposal
 from treasurypilot_worker.planner.context import load_inputs
 from treasurypilot_worker.planner.pipeline import plan_request
 from treasurypilot_worker.planner.reattest import reattest_fn
-from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
+from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
 from treasurypilot_worker.reconcile.auto_match import auto_match_reconciliations
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
@@ -337,6 +337,9 @@ def publish_domain_events() -> dict[str, int]:
     return {"published": _publisher.run(database_url, publish)}
 
 
+PLAN_ENQUEUE_COUNTDOWN_SECONDS = 1
+
+
 def _enqueue_plan(plan_id: uuid.UUID) -> None:
     # The claim commits when the cycle's lock transaction ends; the countdown outlasts it and
     # the task retries if it still cannot see the row.
@@ -345,7 +348,7 @@ def _enqueue_plan(plan_id: uuid.UUID) -> None:
         kwargs={"plan_id": str(plan_id)},
         task_id=f"plan:{plan_id}",
         queue="core",
-        countdown=1,
+        countdown=PLAN_ENQUEUE_COUNTDOWN_SECONDS,
     )
 
 
@@ -376,7 +379,9 @@ async def _run_all_treasury_cycles(pool: asyncpg.Pool, *, scheduling: bool) -> i
                 result = await run_scheduling_cycle(
                     treasury_id,
                     lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
-                    schedule_writer=None,
+                    schedule_writer=DbScheduleWriter(
+                        timedelta(seconds=get_settings().execution_lead_time_seconds)
+                    ),
                 )
             else:
                 result = await _execute_treasury_cycle(pool, treasury_id)
@@ -459,7 +464,7 @@ def run_treasury_cycle_task(treasury_id: str, event_id: str | None = None) -> di
 
 @app.task(name="treasurypilot.execution.scheduling_cycle", queue="core")
 def scheduling_cycle_task() -> dict[str, int]:
-    """Refresh deadline schedules every 15 minutes when the EXE-004 provider is installed."""
+    """Refresh deadline schedules every 15 minutes (advisory `schedules` row)."""
     database_url = get_settings().database_url
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for execution scheduling")

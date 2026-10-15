@@ -419,6 +419,14 @@ async def _exercise_review_queue(database_url: str) -> None:
             assert fee_acceptance is not None
             assert fee_acceptance.estimated_fee_wei == 150_000_000_000_000
             assert fee_acceptance.accepted_cap_wei == 150_000_000_000_000
+            held_events = await session.scalar(
+                text(
+                    "SELECT count(*) FROM domain_events WHERE type = 'ExecutionCycleRequested' "
+                    "AND entity_type = 'plan' AND entity_id = :p"
+                ),
+                {"p": fee_plan_id},
+            )
+            assert held_events == 1
 
         # An accepted plan proceeds under its cap without a new review item (and fails over it).
         async with sessions() as session, session.begin():
@@ -519,6 +527,22 @@ async def _exercise_review_queue(database_url: str) -> None:
         assert accepted_policy["referenceEthPrice"] == "5000000000"
         # No plan history: the baseline is 21,000 gas at the FAST max fee (100 * 3 + p75 tip 3).
         assert accepted_policy["perPlanThresholdWei"] == str(3 * 21_000 * 303)
+
+        async def cycle_events(entity_type: str) -> int:
+            async with sessions() as session:
+                return int(
+                    await session.scalar(
+                        text(
+                            "SELECT count(*) FROM domain_events WHERE "
+                            "type = 'ExecutionCycleRequested' AND entity_type = :t"
+                        ),
+                        {"t": entity_type},
+                    )
+                    or 0
+                )
+
+        # Fee acceptance enqueues an execution cycle (EXE-003 hook).
+        assert await cycle_events("fee_policy") == 1
 
         # Held-plan actions share one implementation with the review queue.
         async with sessions() as session, session.begin():

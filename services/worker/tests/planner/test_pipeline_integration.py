@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -28,8 +29,11 @@ from treasurypilot_core.engine import GasQuote
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.agent.plan_proposer import PlanProposalRejected
 from treasurypilot_worker.attestation import attest
+from treasurypilot_worker.celery_app import app as celery_app
+from treasurypilot_worker.chain.event_handlers import activate_due_payees
 from treasurypilot_worker.chain.snapshot import Snapshot, SnapshotPurpose, SnapshotScope
 from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xact_lock
+from treasurypilot_worker.notify.publisher import publish_pending_events
 from treasurypilot_worker.planner.ai import CeleryAiProposer
 from treasurypilot_worker.planner.gas import GasSwapDeps
 from treasurypilot_worker.planner.pipeline import (
@@ -38,9 +42,15 @@ from treasurypilot_worker.planner.pipeline import (
     _fee_assessment,
     plan_request,
 )
-from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
-from treasurypilot_worker.trigger.cycles import CycleSkipReason, run_execution_cycle
+from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
+from treasurypilot_worker.tasks import PLAN_ENQUEUE_COUNTDOWN_SECONDS
+from treasurypilot_worker.trigger.cycles import (
+    CycleSkipReason,
+    run_execution_cycle,
+    run_scheduling_cycle,
+)
 
+PICKUP_BUDGET_SECONDS = 1.0  # assumed idle-worker pickup per hop; not measured
 API_ROOT = Path(__file__).parents[3] / "api"
 CHAIN_ID = 31337
 ASSET = uuid.UUID("00000000-0000-7000-8000-000000000030")
@@ -790,3 +800,171 @@ async def test_a_gas_shortage_without_a_quote_source_is_not_attested(
     assert outcome is not None and outcome.status == "Blocked"
     assert await _reviews(pool, world) == [("INFRA", "GAS_SHORTAGE_UNCOVERED")]
     assert await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", plan_id) == 0
+
+
+@pooled
+async def test_unknown_operation_skips_the_cycle_with_a_reason(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    await pool.execute(
+        "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
+        "payload, idempotency_key, status) VALUES ($1, $2, gen_random_uuid(), $3, $4, 'PAY', "
+        "'{}'::jsonb, $5, 'Unknown')",
+        uuid.uuid4(),
+        world.treasury,
+        world.request,
+        uuid.uuid4().bytes * 2,
+        uuid.uuid4().hex,
+    )
+
+    result, claimed = await _cycle(pool, world)
+
+    assert not result.started and result.reason is CycleSkipReason.UNKNOWN_OPERATION_PENDING
+    assert claimed == []
+
+
+@pooled
+async def test_approval_event_chain_and_latency_budget_stay_under_five_seconds(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    # The API appends this row in the approval transaction (invoices/requests.py).
+    approved_at = time.monotonic()
+    event_id = uuid.uuid4()
+    await pool.execute(
+        "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, "
+        "payload) VALUES ($1, $2, $3, 'ExecutionCycleRequested', 'payment_request', $4, "
+        "'{}'::jsonb)",
+        event_id,
+        world.org,
+        world.treasury,
+        world.request,
+    )
+    dispatched: list[uuid.UUID] = []
+
+    def dispatch(event: uuid.UUID, treasury: uuid.UUID) -> None:
+        if treasury == world.treasury:
+            dispatched.append(event)
+
+    async with pool.acquire() as connection:
+        await publish_pending_events(connection, dispatch_execution_cycle=dispatch)
+    assert dispatched == [event_id]
+    result, claimed = await _cycle(pool, world)  # what run_treasury_cycle_task does
+
+    publisher = celery_app.conf.beat_schedule["publish-domain-events"]
+    # Budgeted estimate (no live broker): next publisher tick + measured cycle + the plan
+    # enqueue countdown + an assumed worker pickup allowance.
+    worst_case = (
+        publisher["schedule"].total_seconds()
+        + (time.monotonic() - approved_at)
+        + PLAN_ENQUEUE_COUNTDOWN_SECONDS
+        + PICKUP_BUDGET_SECONDS
+    )
+    assert result.started and result.request_id == world.request and len(claimed) == 1
+    assert worst_case < 5
+
+
+@pooled
+async def test_payee_activation_enqueues_an_execution_cycle(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    address = bytes.fromhex(world.payee.removeprefix("0x"))
+    await pool.execute(
+        "UPDATE payees SET status = 'Cooling', active_from = now() - interval '1 second' "
+        "WHERE treasury_id = $1",
+        world.treasury,
+    )
+    await pool.execute(
+        "INSERT INTO observed_events (id, treasury_id, chain_id, stream, block_number, "
+        "block_hash, tx_hash, log_index, address, event_name, payload) VALUES ($1, $2, $3, "
+        "'MODULE', 1, decode(repeat('01', 32), 'hex'), $4, 0, $5, 'PayeeAdded', $6::jsonb)",
+        uuid.uuid4(),
+        world.treasury,
+        CHAIN_ID,
+        uuid.uuid4().bytes * 2,
+        address,
+        json.dumps({"payee": world.payee}),
+    )
+
+    await activate_due_payees(pool)
+
+    assert (
+        await pool.fetchval(
+            "SELECT count(*) FROM domain_events WHERE treasury_id = $1 "
+            "AND type = 'ExecutionCycleRequested' AND entity_type = 'payee'",
+            world.treasury,
+        )
+        == 1
+    )
+
+
+@pooled
+async def test_scheduling_cycle_writes_the_advisory_schedule(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    lead = timedelta(hours=24)
+
+    async def run() -> Any:
+        return await run_scheduling_cycle(
+            world.treasury,
+            lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+            schedule_writer=DbScheduleWriter(lead),
+        )
+
+    assert (await run()).started
+    assert (await run()).started  # unchanged schedule: no duplicate row
+    rows = await pool.fetch(
+        "SELECT solver, items FROM schedules WHERE treasury_id = $1", world.treasury
+    )
+    assert len(rows) == 1 and rows[0]["solver"] == "DUE_DATE"
+    (item,) = json.loads(rows[0]["items"])
+    deadline = datetime.fromisoformat(item["deadline"])
+    assert item["requestId"] == str(world.request) and item["order"] == 0
+    assert datetime.fromisoformat(item["scheduledFor"]) == deadline - lead
+    assert deadline.date() == datetime.now(UTC).date() + timedelta(days=1)
+
+
+@pooled
+async def test_changed_schedule_appends_and_empty_is_not_stored(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    writer = DbScheduleWriter(timedelta(hours=24))
+    now = datetime.now(UTC)
+    count = "SELECT count(*) FROM schedules WHERE treasury_id = $1"
+    async with pool.acquire() as connection:
+        await writer.refresh_treasury(connection, world.treasury, now=now)
+        await pool.execute(
+            "UPDATE payment_requests SET status = 'Cancelled' WHERE id = $1", world.request
+        )
+        await writer.refresh_treasury(connection, world.treasury, now=now + timedelta(minutes=15))
+        await writer.refresh_treasury(connection, world.treasury, now=now + timedelta(minutes=30))
+    rows = await pool.fetch(
+        "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at", world.treasury
+    )
+    assert [len(json.loads(r["items"])) for r in rows] == [1, 0]  # change appended, repeat not
+    assert await pool.fetchval(count, world.treasury) == 2
+
+
+@pooled
+async def test_untracked_treasury_status_is_skipped_and_old_rows_pruned(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    writer = DbScheduleWriter(timedelta(hours=24))
+    now = datetime.now(UTC)
+    count = "SELECT count(*) FROM schedules WHERE treasury_id = $1"
+    await pool.execute(
+        "INSERT INTO schedules (id, org_id, treasury_id, computed_at, solver, items) "
+        "VALUES ($1, $2, $3, $4, 'DUE_DATE', '[]'::jsonb)",
+        uuid.uuid4(),
+        world.org,
+        world.treasury,
+        now - timedelta(days=31),
+    )
+    async with pool.acquire() as connection:
+        await pool.execute("UPDATE treasuries SET status = 'Revoked' WHERE id = $1", world.treasury)
+        assert not await writer.refresh_treasury(connection, world.treasury, now=now)
+        assert await pool.fetchval(count, world.treasury) == 1
+        await pool.execute("UPDATE treasuries SET status = 'Ready' WHERE id = $1", world.treasury)
+        assert await writer.refresh_treasury(connection, world.treasury, now=now)
+    assert await pool.fetchval(count, world.treasury) == 1  # old pruned, new added
