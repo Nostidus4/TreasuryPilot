@@ -98,6 +98,22 @@ jobs:
           forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8546 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
           python tools/compare_deploy_runs.py /tmp/treasurypilot-deploy-first.json ../deployments/predictions/31337.json
           kill "$(cat /tmp/treasurypilot-anvil-repeat.pid)"
+      - name: Exercise make deploy-local and validate its manifest
+        run: |
+          make deploy-local
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("deployments/31337.json").read_text(encoding="utf-8"))
+          assert manifest["chainId"] == 31337
+          assert manifest["deploymentStatus"] == "deployed"
+          assert manifest["localEasMock"] is True
+          assert manifest["operationalWalletCount"] == 2
+          for field in ("implementation", "factory", "testToken", "module", "safeT", "safeO1", "safeO2"):
+              assert manifest[field] and manifest[field + "CodeHash"]
+          print("make deploy-local produced a verified 31337 manifest")
+          PY
   sepolia-fork:
     runs-on: ubuntu-latest
     steps:
