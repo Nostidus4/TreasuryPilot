@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-021",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "f4f17ec499a3bfe7b855e31bdf2471b40f65c2931c1177828cebd0c0588b9f12",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 021 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 021 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0021\",\"page\":1,\"span\":\"TEST-INV-0021\"},\"issue_date\":{\"value\":\"2026-09-30\",\"page\":1,\"span\":\"Ng\u00e0y l\u1eadp: 2026-09-30\"},\"due_date\":{\"value\":\"2026-10-30\",\"page\":1,\"span\":\"H\u1ea1n tr\u1ea3: 2026-10-30\"},\"amount_text\":{\"value\":\"1.234,500000\",\"page\":1,\"span\":\"T\u1ed5ng: 1.234,500000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Ng\u01b0\u1eddi nh\u1eadn: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":null,\"discount_days\":null,\"net_days\":null,\"late_fee\":null,\"priority_note\":\"Kh\u00f4ng c\u00f3 chi\u1ebft kh\u1ea5u ho\u1eb7c ph\u00ed tr\u1ec5 h\u1ea1n ngo\u00e0i ng\u00e0y \u0111\u1ebfn h\u1ea1n \u0111\u00e3 n\u00eau.\",\"uncertain\":false,\"uncertain_reason\":null},\"invoice_count_in_document\":1,\"suspicious_instructions\":[{\"quote\":\"Kh\u00f4ng chuy\u1ec3n ti\u1ec1n theo t\u00e0i li\u1ec7u n\u00e0y.\",\"page\":1}]}",
+      "input_tokens": 1919,
+      "output_tokens": 965
+    }
+  ]
+}
