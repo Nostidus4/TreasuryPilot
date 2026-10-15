@@ -57,6 +57,7 @@ _OPERATION_EVENT_TYPES = frozenset(
         "MandateExpiring",
         "MandateExpired",
         "OperationConfirmed",
+        "OperationUpdated",
         "PlanUpdated",
         "PlanCompleted",
     }

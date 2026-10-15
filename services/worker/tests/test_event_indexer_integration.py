@@ -28,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from web3 import AsyncHTTPProvider
 
+from treasurypilot_core.ids import uuid7
 from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent
 from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_EXEC
 from treasurypilot_worker.chain.indexer import index_events
@@ -271,6 +272,33 @@ async def _one(database_url: str, query: str, *args: Any) -> Any:
     pool = await create_worker_pool(database_url, min_size=1, max_size=1)
     try:
         return await pool.fetchrow(query, *args)
+    finally:
+        await pool.close()
+
+
+async def _seed_operation_transaction(database_url: str, tx_hash: bytes) -> None:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        operation_id = uuid.UUID(_ID.format(75))
+        await pool.execute(
+            "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
+            "payload, idempotency_key, status) VALUES ($1, $2, $3, $4, $5, 'PAY', '{}'::jsonb, "
+            "'indexer-timeline-test', 'Pending')",
+            operation_id,
+            uuid.UUID(TREASURY),
+            uuid.UUID(_ID.format(76)),
+            uuid.UUID(REQUEST),
+            b"\x31" * 32,
+        )
+        await pool.execute(
+            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address) "
+            "VALUES ($1, $2, $3, $4, 1, $5)",
+            uuid.UUID(_ID.format(77)),
+            operation_id,
+            CHAIN_ID,
+            tx_hash,
+            _addr(SENDER),
+        )
     finally:
         await pool.close()
 
@@ -749,6 +777,85 @@ def test_unplanned_atoken_transfer_from_source_is_an_unexpected_outflow(
     assert movement["direction"] == "OUT"
     assert signals == 2
     assert alerts == 1
+
+
+def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _mine(anvil_url)
+    snapshot = _rpc(anvil_url, "evm_snapshot")
+    tx_hash = _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "PaymentExecuted",
+        REQUEST_ID,
+        b"\x31" * 32,
+        b"\x32" * 32,
+        data=encode(
+            ["address", "address", "uint256", "uint256", "bool", "bool"],
+            [SENDER, PAYEE_ADDR, 975, 20_000, False, False],
+        ),
+    )
+    asyncio.run(_seed_operation_transaction(database_url, _addr(tx_hash)))
+    cursor = uuid7()
+    asyncio.run(
+        _one(
+            database_url,
+            "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, "
+            "payload) SELECT $1, org_id, id, 'Cursor', 'treasury', id, '{}'::jsonb "
+            "FROM treasuries WHERE id = $2 RETURNING id",
+            cursor,
+            uuid.UUID(TREASURY),
+        )
+    )
+    time.sleep(0.01)
+
+    first, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert first["changed"] == 1
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events WHERE type = 'OperationUpdated'",
+            )
+        )["n"]
+        == 1
+    )
+
+    assert _rpc(anvil_url, "evm_revert", [snapshot])
+    _mine(anvil_url, 3)
+    second, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert second["changed"] == 1
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events WHERE type = 'OperationUpdated'",
+            )
+        )["n"]
+        == 2
+    )
+    # The SSE stream resumes with `id > cursor`, so indexer events must be time-ordered ids.
+    assert asyncio.run(
+        _one(
+            database_url,
+            "SELECT bool_and(id > $1 AND substr(id::text, 15, 1) = '7') AS ok FROM domain_events "
+            "WHERE type = 'OperationUpdated'",
+            cursor,
+        )
+    )["ok"]
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT removed FROM observed_events WHERE event_name = 'PaymentExecuted'",
+            )
+        )["removed"]
+        is True
+    )
 
 
 def test_event_signatures_match_the_published_topics() -> None:

@@ -5,6 +5,7 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -230,6 +231,71 @@ class GasLedger(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     day: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class Attestation(Base):
+    """Append-only signed plan reference used to find the persisted execution steps."""
+
+    __tablename__ = "attestations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    request_id: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    plan_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    step_ids: Mapped[list[bytes]] = mapped_column(ARRAY(LargeBinary), nullable=False)
+    policy_version: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    executor: Mapped[str] = mapped_column(String(42), nullable=False)
+    nonce: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    evidence_digest: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    typed_data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    signature: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    policy_signer: Mapped[str] = mapped_column(String(42), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ExecutionPlanStep(Base):
+    """Immutable copy of the exact plan fields covered by an attestation hash."""
+
+    __tablename__ = "plan_steps"
+    __table_args__ = (
+        CheckConstraint("seq >= 0", name="ck_plan_steps_seq_nonnegative"),
+        CheckConstraint("action BETWEEN 1 AND 5", name="ck_plan_steps_action"),
+        CheckConstraint("octet_length(step_id) = 32", name="ck_plan_steps_step_id_length"),
+        CheckConstraint("octet_length(request_id) = 32", name="ck_plan_steps_request_id_length"),
+        CheckConstraint(
+            "octet_length(treasury_address) = 20", name="ck_plan_steps_treasury_length"
+        ),
+        CheckConstraint("octet_length(from_address) = 20", name="ck_plan_steps_from_length"),
+        CheckConstraint("octet_length(to_address) = 20", name="ck_plan_steps_to_length"),
+        CheckConstraint("octet_length(asset_address) = 20", name="ck_plan_steps_asset_length"),
+        CheckConstraint("amount >= 0", name="ck_plan_steps_amount_nonnegative"),
+        UniqueConstraint("attestation_id", "seq", name="uq_plan_steps_attestation_seq"),
+        UniqueConstraint("attestation_id", "step_id", name="uq_plan_steps_attestation_step"),
+        Index("ix_plan_steps_plan", "plan_id", "seq"),
+        Index("ix_plan_steps_treasury", "chain_id", "treasury_address"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    attestation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("attestations.id", ondelete="RESTRICT"), nullable=False
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_id: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    action: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_id: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    treasury_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    to_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    asset_address: Mapped[bytes] = mapped_column(LargeBinary(20), nullable=False)
+    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class IndexStream(StrEnum):

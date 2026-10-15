@@ -144,6 +144,21 @@ async def _verify_row(database_url: str, typed: dict[str, Any], signature: bytes
         assert row["signature"] == signature
         assert row["policy_signer"] == POLICY_KEY.address
         assert json.loads(row["typed_data"]) == typed
+        steps = await connection.fetch("SELECT * FROM plan_steps ORDER BY seq")
+        assert len(steps) == len(PLAN["steps"])
+        for saved, expected in zip(steps, PLAN["steps"], strict=True):
+            assert saved["attestation_id"] == row["id"]
+            assert saved["plan_id"] == PLAN_ID
+            assert saved["seq"] == expected["seq"]
+            assert "0x" + saved["step_id"].hex() == expected["stepId"]
+            assert saved["action"] == expected["action"]
+            assert "0x" + saved["request_id"].hex() == PLAN["requestId"]
+            assert "0x" + saved["treasury_address"].hex() == PLAN["treasury"].lower()
+            assert saved["chain_id"] == PLAN["chainId"]
+            assert "0x" + saved["from_address"].hex() == expected["from"].lower()
+            assert "0x" + saved["to_address"].hex() == expected["to"].lower()
+            assert "0x" + saved["asset_address"].hex() == expected["asset"].lower()
+            assert int(saved["amount"]) == int(expected["amount"])
         # Same nonce again: replay is refused by unique(nonce).
         with pytest.raises(asyncpg.UniqueViolationError):
             await connection.execute(
@@ -156,6 +171,8 @@ async def _verify_row(database_url: str, typed: dict[str, Any], signature: bytes
         for statement in (
             "UPDATE attestations SET signature = '\\x00'",
             "DELETE FROM attestations",
+            "UPDATE plan_steps SET amount = amount + 1",
+            "DELETE FROM plan_steps",
         ):
             with pytest.raises(asyncpg.RaiseError, match="append-only"):
                 await connection.execute(statement)
