@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,3 +67,27 @@ class SupportGrant(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UsageMonthly(Base):
+    """Billable usage per org per UTC month, derived from request_status_events (ADM-L02)."""
+
+    __tablename__ = "usage_monthly"
+    __table_args__ = (
+        CheckConstraint("paid_count >= 0 AND paid_volume >= 0", name="ck_usage_monthly_nonneg"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)  # first day of the UTC month
+    # Per asset: base units of different assets (decimals) must never be summed together.
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True
+    )
+    paid_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Sum of the approved request amount in this asset's base units.
+    paid_volume: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

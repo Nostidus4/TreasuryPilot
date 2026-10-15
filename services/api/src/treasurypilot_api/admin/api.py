@@ -9,12 +9,13 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import AwareDatetime, Field, computed_field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant
+from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant, UsageMonthly
+from treasurypilot_api.admin.usage import parse_month, recompute_month
 from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
@@ -26,6 +27,7 @@ from treasurypilot_api.treasury.models import Treasury
 
 logger = logging.getLogger(__name__)
 
+_MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
@@ -48,6 +50,33 @@ class TenantHealth(ApiModel):
     status: str
     active_members: int
     treasuries: int
+
+
+class UsageView(ApiModel):
+    org_id: uuid.UUID
+    month: str
+    asset_id: uuid.UUID
+    paid_count: int = Field(description="Requests whose first Paid event is in this UTC month.")
+    paid_volume: str = Field(
+        description=(
+            "Sum of the approved request amount for this asset, in integer base units as a "
+            "decimal string. Reconciliation lines are not metered yet."
+        )
+    )
+
+
+class UsageList(ApiModel):
+    items: list[UsageView]
+
+
+def _usage_view(row: UsageMonthly) -> UsageView:
+    return UsageView(
+        org_id=row.org_id,
+        month=row.month.strftime("%Y-%m"),
+        asset_id=row.asset_id,
+        paid_count=row.paid_count,
+        paid_volume=str(int(row.paid_volume)),
+    )
 
 
 class SupportGrantRequest(ApiModel):
@@ -224,6 +253,50 @@ def create_admin_router(
                 )
             response = _view(org, *await _counts(session, tenant_id))
         return response
+
+    @router.get("/usage", response_model=UsageList)
+    async def usage(
+        month: str = Query(pattern=_MONTH_PATTERN),
+        org_id: uuid.UUID | None = None,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> UsageList:
+        query = select(UsageMonthly).where(UsageMonthly.month == parse_month(month))
+        if org_id is not None:
+            query = query.where(UsageMonthly.org_id == org_id)
+        async with db_sessions() as session:
+            rows = await session.scalars(query.order_by(UsageMonthly.org_id, UsageMonthly.asset_id))
+            result = UsageList(items=[_usage_view(r) for r in rows])
+        logger.info("admin.usage_read", extra={"actor": actor, "month": month})
+        return result
+
+    @router.post("/usage/{month}/recompute", response_model=UsageList)
+    async def recompute_usage(
+        request: Request,
+        month: str = Path(pattern=_MONTH_PATTERN),
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> UsageList:
+        async with db_sessions() as session, session.begin():
+            rows = await recompute_month(session, parse_month(month))
+            result = UsageList(items=[_usage_view(r) for r in rows])
+            orgs = sorted({str(r.org_id) for r in rows})
+            # platform_admin_events.org_id is NOT NULL: one event per affected org.
+            for org_id in sorted({r.org_id for r in rows}):
+                session.add(
+                    PlatformAdminEvent(
+                        org_id=org_id,
+                        actor_id=actor,
+                        action="usage.recomputed",
+                        data={
+                            "month": month,
+                            "source_ip": request.client.host if request.client else None,
+                            "orgs": orgs,
+                        },
+                    )
+                )
+        logger.info("admin.usage_recomputed", extra={"actor": actor, "month": month})
+        return result
 
     @router.get("/tenants/{tenant_id}/support", response_model=SupportSummary)
     async def support_summary(

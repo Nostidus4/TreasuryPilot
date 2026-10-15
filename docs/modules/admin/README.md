@@ -29,7 +29,7 @@ F-150 (FR-924), F-151 (FR-925, M1 via TRS-002), F-152 (FR-926).
 
 ## 4. Data model (Later)
 
-`organizations.platform_status` (active/suspended), `platform_admin_events` (staff tenant operations), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
+`organizations.platform_status` (active/suspended), `platform_admin_events` (staff tenant operations), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, asset_id, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
 
 ## 5. State
 
@@ -41,7 +41,7 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 ## 7–8. Flows and algorithms
 
-Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: monthly job over `request_status_events` (Paid) and `reconciliation_lines` (EXTERNAL_EXPENSE).
+Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: `POST /admin/usage/{YYYY-MM}/recompute` rebuilds `usage_monthly` from `request_status_events` (each request counts once, in the UTC month of its first Paid event, at its approved amount in integer base units), one row per (org, asset) because base units of different assets are never summed; each recompute is serialized per month and writes a `usage.recomputed` platform admin event per affected org; `GET /admin/usage?month=[&org_id=]` reads it. Recompute is idempotent. `reconciliation_lines` (EXTERNAL_EXPENSE) is not metered yet (follow-up).
 
 ## 9. Configuration
 

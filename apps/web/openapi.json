@@ -5538,6 +5538,51 @@
         "title": "UploadResponse",
         "type": "object"
       },
+      "UsageList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UsageView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "UsageList",
+        "type": "object"
+      },
+      "UsageView": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "title": "Assetid",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "paidCount": {
+            "description": "Requests whose first Paid event is in this UTC month.",
+            "title": "Paidcount",
+            "type": "integer"
+          },
+          "paidVolume": {
+            "description": "Sum of the approved request amount for this asset, in integer base units as a decimal string. Reconciliation lines are not metered yet.",
+            "title": "Paidvolume",
+            "type": "string"
+          }
+        },
+        "required": ["orgId", "month", "assetId", "paidCount", "paidVolume"],
+        "title": "UsageView",
+        "type": "object"
+      },
       "UserView": {
         "properties": {
           "displayName": {
@@ -6399,6 +6444,105 @@
           }
         },
         "summary": "Suspend Tenant",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/usage": {
+      "get": {
+        "operationId": "usage_admin_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "org_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Usage",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/usage/{month}/recompute": {
+      "post": {
+        "operationId": "recompute_usage_admin_usage__month__recompute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recompute Usage",
         "tags": ["platform-admin"]
       }
     },
