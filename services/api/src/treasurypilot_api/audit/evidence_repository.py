@@ -1,8 +1,8 @@
 """Read-only SQL adapter for request evidence bundles.
 
-Only records with an explicit request or append-only attestation link are exported.
-Plan rows, reconciliation rows, and EAS receipt UIDs are not persisted by this API
-revision; the bundle reports that coverage gap instead of manufacturing evidence.
+Only records with an explicit request link (plans.request_id, operations.request_id,
+reconciliations.request_id) or an append-only attestation link are exported; sections
+without rows are omitted and labelled in ``coverage`` rather than manufactured.
 """
 
 from __future__ import annotations
@@ -20,10 +20,14 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from sqlalchemy import (
+    BigInteger,
     Column,
+    Date,
     DateTime,
+    Integer,
     LargeBinary,
     MetaData,
+    Numeric,
     String,
     Table,
     select,
@@ -79,6 +83,63 @@ _validations = Table(
     Column("reason_codes", ARRAY(String)),
     Column("checks", JSONB),
     Column("created_at", DateTime(timezone=True)),
+)
+_plans = Table(
+    "plans",
+    _worker_metadata,
+    Column("id", PGUUID(as_uuid=True)),
+    Column("org_id", PGUUID(as_uuid=True)),
+    Column("request_id", PGUUID(as_uuid=True)),
+    Column("planner_source", String(16)),
+    Column("plan_hash", LargeBinary),
+    Column("status", String(24)),
+    Column("created_at", DateTime(timezone=True)),
+)
+_plan_steps = Table(
+    "plan_steps",
+    _worker_metadata,
+    Column("plan_id", PGUUID(as_uuid=True)),
+    Column("seq", Integer),
+    Column("step_id", LargeBinary(32)),
+    Column("action", Integer),
+    Column("chain_id", Integer),
+    Column("from_address", LargeBinary(20)),
+    Column("to_address", LargeBinary(20)),
+    Column("asset_address", LargeBinary(20)),
+    Column("amount", Numeric(78, 0)),
+)
+_verifications = Table(
+    "verifications",
+    _worker_metadata,
+    Column("id", PGUUID(as_uuid=True)),
+    Column("operation_id", PGUUID(as_uuid=True)),
+    Column("block_number", BigInteger),
+    Column("result", String(16)),
+    Column("at", DateTime(timezone=True)),
+)
+_reconciliations = Table(
+    "reconciliations",
+    _worker_metadata,
+    Column("id", PGUUID(as_uuid=True)),
+    Column("org_id", PGUUID(as_uuid=True)),
+    Column("request_id", PGUUID(as_uuid=True)),
+    Column("status", String(16)),
+    Column("version", Integer),
+    Column("matched_by", String(8)),
+    Column("matched_at", DateTime(timezone=True)),
+    Column("finalized_at", DateTime(timezone=True)),
+    Column("eas_uid", String(66)),
+)
+_reconciliation_lines = Table(
+    "reconciliation_lines",
+    _worker_metadata,
+    Column("reconciliation_id", PGUUID(as_uuid=True)),
+    Column("classification", String(24)),
+    Column("tx_hash", LargeBinary),
+    Column("asset_address", LargeBinary),
+    Column("amount", Numeric(78, 0)),
+    Column("block_number", BigInteger),
+    Column("day", Date),
 )
 
 
@@ -398,7 +459,6 @@ class SqlAlchemyEvidenceRepository:
             unique_ai_calls = list({row.id: row for row in ai_call_rows}.values())
 
             attestation_row = None
-            validation_rows = []
             if payment.onchain_request_id is not None:
                 # Approvals sign request fields, not a plan, so the exported operations'
                 # step ids are the link: take the newest attestation covering all of them.
@@ -417,16 +477,99 @@ class SqlAlchemyEvidenceRepository:
                 )
                 if candidates and attestation_row is None:
                     raise EvidenceBundleInvalid("no stored attestation covers the executed steps")
-                if attestation_row is not None:
-                    validation_rows = list(
-                        (
-                            await session.execute(
-                                select(_validations)
-                                .where(_validations.c.plan_id == attestation_row["plan_id"])
-                                .order_by(_validations.c.created_at, _validations.c.id)
-                            )
-                        ).mappings()
+
+            # plans.request_id is the request-to-plan link; every plan (blocked, superseded,
+            # executed) contributes its validator logs, the attested one (else newest) is the plan.
+            plan_rows = list(
+                (
+                    await session.execute(
+                        select(_plans)
+                        .where(
+                            _plans.c.request_id == request_id, _plans.c.org_id == organization_id
+                        )
+                        .order_by(_plans.c.created_at, _plans.c.id)
                     )
+                ).mappings()
+            )
+            attested_plan_id = attestation_row["plan_id"] if attestation_row is not None else None
+            plan_row = next(
+                (row for row in plan_rows if row["id"] == attested_plan_id),
+                plan_rows[-1] if plan_rows else None,
+            )
+            plan_ids = {row["id"] for row in plan_rows}
+            if attested_plan_id is not None:
+                plan_ids.add(attested_plan_id)
+            validation_rows = (
+                list(
+                    (
+                        await session.execute(
+                            select(_validations)
+                            .where(_validations.c.plan_id.in_(plan_ids))
+                            .order_by(_validations.c.created_at, _validations.c.id)
+                        )
+                    ).mappings()
+                )
+                if plan_ids
+                else []
+            )
+            step_rows = (
+                list(
+                    (
+                        await session.execute(
+                            select(_plan_steps)
+                            .where(_plan_steps.c.plan_id == plan_row["id"])
+                            .order_by(_plan_steps.c.seq)
+                        )
+                    ).mappings()
+                )
+                if plan_row is not None
+                else []
+            )
+            verification_by_operation = {
+                row["operation_id"]: row
+                for row in (
+                    (
+                        await session.execute(
+                            select(_verifications)
+                            .where(_verifications.c.operation_id.in_(operation_ids))
+                            .order_by(_verifications.c.at, _verifications.c.id)
+                        )
+                    ).mappings()
+                    if operation_ids
+                    else []
+                )
+            }
+            reconciliation_row = (
+                (
+                    await session.execute(
+                        select(_reconciliations).where(
+                            _reconciliations.c.request_id == request_id,
+                            _reconciliations.c.org_id == organization_id,
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            reconciliation_lines = (
+                list(
+                    (
+                        await session.execute(
+                            select(_reconciliation_lines)
+                            .where(
+                                _reconciliation_lines.c.reconciliation_id
+                                == reconciliation_row["id"]
+                            )
+                            .order_by(
+                                _reconciliation_lines.c.block_number,
+                                _reconciliation_lines.c.tx_hash,
+                            )
+                        )
+                    ).mappings()
+                )
+                if reconciliation_row is not None
+                else []
+            )
 
             source: dict[str, Any] = {
                 "request": {
@@ -497,14 +640,20 @@ class SqlAlchemyEvidenceRepository:
                 "verifications": [],
                 "coverage": {
                     "requestStatus": _enum_value(payment.status),
-                    "plan": "unavailable_until_issue_65_persists_plans_and_plan_steps",
-                    "validations": "linked_by_attested_plan_id"
-                    if attestation_row is not None
-                    else "unavailable_without_request_to_plan_link_from_issue_65",
+                    "plan": "linked_by_plans_request_id"
+                    if plan_row is not None
+                    else "no_plan_persisted_for_request",
+                    "validations": "linked_by_plans_request_id_and_attested_plan_id"
+                    if validation_rows
+                    else "no_validation_rows_for_request_plans",
                     "transactionEvidence": "persisted_outbox_rows_checked_against_configured_chain_rpc",
-                    "independentVerifier": "no_separate_verifier_table_is_persisted",
-                    "reconciliation": "not_persisted",
-                    "easUid": "not_persisted",
+                    "independentVerifier": "verifications_table_latest_result_per_operation",
+                    "reconciliation": "persisted_reconciliation_and_lines"
+                    if reconciliation_row is not None
+                    else "no_reconciliation_persisted_for_request",
+                    "easUid": "reconciliations_eas_uid"
+                    if reconciliation_row is not None and reconciliation_row["eas_uid"]
+                    else "no_eas_uid_persisted",
                     "approval": "latest_valid_approval_for_current_revision_only_signature_hash_only",
                 },
                 "fixture_labels": [
@@ -517,6 +666,45 @@ class SqlAlchemyEvidenceRepository:
                 ],
                 "app_version": self._app_version,
             }
+
+            if plan_row is not None:
+                source["plan"] = {
+                    "planner_source": plan_row["planner_source"] or "UNKNOWN",
+                    "plan_hash": _hex(plan_row["plan_hash"]),
+                    "steps": [
+                        {
+                            "seq": row["seq"],
+                            "step_id": _hex(row["step_id"]),
+                            "action": row["action"],
+                            "chain_id": row["chain_id"],
+                            "from_address": _hex(row["from_address"]),
+                            "to_address": _hex(row["to_address"]),
+                            "asset_address": _hex(row["asset_address"]),
+                            "amount": str(int(row["amount"])),
+                        }
+                        for row in step_rows
+                    ],
+                }
+            if reconciliation_row is not None:
+                source["eas_uid"] = reconciliation_row["eas_uid"]
+                source["reconciliation"] = {
+                    "status": reconciliation_row["status"],
+                    "version": reconciliation_row["version"],
+                    "matched_by": reconciliation_row["matched_by"],
+                    "matched_at": reconciliation_row["matched_at"],
+                    "finalized_at": reconciliation_row["finalized_at"],
+                    "lines": [
+                        {
+                            "classification": row["classification"],
+                            "tx_hash": _hex(row["tx_hash"]),
+                            "asset_address": _hex(row["asset_address"]),
+                            "amount": str(int(row["amount"])),
+                            "block_number": row["block_number"],
+                            "day": row["day"],
+                        }
+                        for row in reconciliation_lines
+                    ],
+                }
 
             if approval is not None:
                 source["approval"] = {
@@ -588,6 +776,7 @@ class SqlAlchemyEvidenceRepository:
             operation = operation_by_id[row.operation_id]
             checked_at = row.confirmed_at or row.last_seen_pending_at or row.submitted_at
             receipt = receipt_results.get(tx_hash, ReceiptResult(resolved=False))
+            verdict = verification_by_operation.get(row.operation_id)
             source["verifications"].append(
                 {
                     "tx_hash": tx_hash,
@@ -601,6 +790,7 @@ class SqlAlchemyEvidenceRepository:
                         "receiptResolved": receipt.resolved,
                         "receiptStatus": receipt.status,
                         "receiptBlockNumber": receipt.block_number,
+                        "independentVerifier": verdict["result"] if verdict else None,
                     },
                 }
             )

@@ -87,6 +87,14 @@ class _FakeSession:
                 return _Result(values=[attestation] if attestation else [])
             if table_name == "validations":
                 return _Result(values=self.data.get("validations", []))
+            if table_name in {
+                "plans",
+                "plan_steps",
+                "verifications",
+                "reconciliations",
+                "reconciliation_lines",
+            }:
+                return _Result(values=self.data.get(table_name, []))
             raise AssertionError(f"unexpected Core table: {table_name}")
         if entity is PaymentRequest:
             statement_text = str(statement)
@@ -253,6 +261,13 @@ def _fixture(*, status: str, with_transaction: bool) -> tuple[dict[str, Any], uu
                     "policy_signer": "0x" + "ef" * 20,
                     "created_at": now,
                 },
+                "plans": [
+                    {
+                        "id": plan_id,
+                        "planner_source": "DETERMINISTIC",
+                        "plan_hash": plan_hash,
+                    }
+                ],
                 "validations": [
                     {
                         "id": uuid.uuid4(),
@@ -310,7 +325,10 @@ def test_paid_request_exports_only_persisted_rows_and_hashes_signatures() -> Non
     serialized = json.dumps(result)
     assert "test-only-approval-signature" not in serialized
     assert "test-only-policy-signature" not in serialized
-    assert result["coverage"]["plan"].startswith("unavailable_until_issue_65")
+    assert result["plan"]["plannerSource"] == "DETERMINISTIC"
+    assert result["coverage"]["plan"] == "linked_by_plans_request_id"
+    assert "reconciliation" not in result
+    assert result["coverage"]["reconciliation"] == "no_reconciliation_persisted_for_request"
 
 
 def test_blocked_request_has_no_fabricated_transaction_or_unlinked_validation() -> None:
@@ -326,9 +344,7 @@ def test_blocked_request_has_no_fabricated_transaction_or_unlinked_validation() 
 
     assert "transactions" not in result
     assert result["validations"] == []
-    assert result["coverage"]["validations"].startswith(
-        "unavailable_without_request_to_plan_link_from_issue_65"
-    )
+    assert result["coverage"]["validations"] == "no_validation_rows_for_request_plans"
     assert result["flags"][0]["code"] == "POLICY_BLOCK"
     assert "ackNote" not in result["flags"][0]
     assert "private@example.invalid" not in json.dumps(result)

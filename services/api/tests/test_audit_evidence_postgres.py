@@ -67,6 +67,8 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         vendor_id, payee_id = uuid.uuid4(), uuid.uuid4()
         paid_request_id, blocked_request_id = uuid.uuid4(), uuid.uuid4()
         operation_id, plan_id = uuid.uuid4(), uuid.uuid4()
+        blocked_plan_id, attestation_id = uuid.uuid4(), uuid.uuid4()
+        plan_step_id, reconciliation_id = uuid.uuid4(), uuid.uuid4()
         now = datetime.now(UTC)
         issue_date = date.today()
         tx_hash = bytes.fromhex("a1" * 32)  # Test database fixture only; never production evidence.
@@ -210,7 +212,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                 {
                     "id": operation_id,
                     "treasury": treasury_id,
-                    "plan_step": uuid.uuid4(),
+                    "plan_step": plan_step_id,
                     "request_id": paid_request_id,
                     "step_id": step_id,
                     "key": f"test-{uuid.uuid4()}",
@@ -242,7 +244,7 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                     "CAST(:typed_data AS jsonb), decode('cafe', 'hex'), :signer)"
                 ),
                 {
-                    "id": uuid.uuid4(),
+                    "id": attestation_id,
                     "plan_id": plan_id,
                     "request_id": onchain_request_id,
                     "plan_hash": plan_hash,
@@ -268,6 +270,87 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                     "version": bytes.fromhex("01" * 32),
                 },
             )
+            for pid, req, source, plan_status, att in (
+                (plan_id, paid_request_id, "DETERMINISTIC", "Completed", attestation_id),
+                (blocked_plan_id, blocked_request_id, None, "Blocked", None),
+            ):
+                await connection.execute(
+                    text(
+                        "INSERT INTO plans (id, org_id, treasury_id, request_id, planner_source, "
+                        "plan_hash, status, attestation_id) VALUES (:id, :org, :treasury, :req, "
+                        ":source, :hash, :status, :att)"
+                    ),
+                    {
+                        "id": pid,
+                        "org": organization_id,
+                        "treasury": treasury_id,
+                        "req": req,
+                        "source": source,
+                        "hash": plan_hash if att else None,
+                        "status": plan_status,
+                        "att": att,
+                    },
+                )
+            await connection.execute(
+                text(
+                    "INSERT INTO validations (id, plan_id, stage, decision, reason_codes, "
+                    "warnings, checks, policy_version, snapshot_block) VALUES (:id, :plan_id, "
+                    "'PLAN', 'BLOCK', ARRAY['POLICY_BLOCK']::text[], ARRAY[]::text[], "
+                    '\'[ {"name": "vendor_allowed", "passed": false} ]\'::jsonb, :version, 122)'
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "plan_id": blocked_plan_id,
+                    "version": bytes.fromhex("01" * 32),
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plan_steps (id, attestation_id, plan_id, seq, step_id, action, "
+                    "request_id, treasury_address, chain_id, from_address, to_address, "
+                    "asset_address, amount) VALUES (:id, :att, :plan, 0, :step_id, 1, :req, "
+                    "decode(repeat('66', 20), 'hex'), :chain, decode(repeat('66', 20), 'hex'), "
+                    "decode(repeat('22', 20), 'hex'), decode(repeat('11', 20), 'hex'), 250000)"
+                ),
+                {
+                    "id": plan_step_id,
+                    "att": attestation_id,
+                    "plan": plan_id,
+                    "step_id": step_id,
+                    "req": onchain_request_id,
+                    "chain": CHAIN_ID,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO verifications (id, operation_id, block_number, expected, "
+                    "observed, diffs, result) VALUES (:id, :op, 123, '{}'::jsonb, '{}'::jsonb, "
+                    "'[]'::jsonb, 'PASSED')"
+                ),
+                {"id": uuid.uuid4(), "op": operation_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO reconciliations (id, org_id, treasury_id, request_id, status) "
+                    "VALUES (:id, :org, :treasury, :req, 'Matched')"
+                ),
+                {
+                    "id": reconciliation_id,
+                    "org": organization_id,
+                    "treasury": treasury_id,
+                    "req": paid_request_id,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO reconciliation_lines (id, reconciliation_id, classification, "
+                    "operation_id, transaction_id, tx_hash, from_address, to_address, "
+                    "asset_address, amount, block_number) SELECT :id, :rec, 'EXTERNAL_EXPENSE', "
+                    "operation_id, id, tx_hash, from_address, decode(repeat('22', 20), 'hex'), "
+                    "decode(repeat('11', 20), 'hex'), 250000, block_number FROM transactions"
+                ),
+                {"id": uuid.uuid4(), "rec": reconciliation_id},
+            )
 
         repository = SqlAlchemyEvidenceRepository(
             sessions, receipt_verifier=_FixtureReceiptVerifier(), app_version="integration-test"
@@ -288,11 +371,36 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
         assert paid.attestation.signature_hash == hashlib.sha256(bytes.fromhex("cafe")).hexdigest()
         assert "TESTNET" in paid.fixture_labels
         assert "TEST_ASSET" in paid.fixture_labels
+        assert paid.plan is not None
+        assert paid.plan.planner_source == "DETERMINISTIC"
+        assert [step["seq"] for step in paid.plan.steps] == [0]
+        assert paid.reconciliation is not None
+        assert paid.reconciliation["status"] == "Matched"
+        assert paid.verifications[0].details["independentVerifier"] == "PASSED"
         assert blocked.transactions is None
-        assert blocked.validations == []
-        assert blocked.coverage["validations"].startswith(
-            "unavailable_without_request_to_plan_link_from_issue_65"
-        )
+        assert blocked.plan is not None and blocked.plan.steps == []
+        assert [v.decision for v in blocked.validations] == ["BLOCK"]
+        assert blocked.validations[0].checks == [{"name": "vendor_allowed", "passed": False}]
+        assert blocked.coverage["validations"] == "linked_by_plans_request_id_and_attested_plan_id"
+        # Acceptance: every tx hash in the bundle (and in reconciliation) is a real
+        # confirmed `transactions` row with a block.
+        bundle_hashes = {tx.tx_hash for tx in paid.transactions}
+        bundle_hashes |= {line["tx_hash"] for line in paid.reconciliation["lines"]}
+        async with engine.connect() as connection:
+            rows = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT '0x' || encode(tx_hash, 'hex') FROM transactions "
+                            "WHERE status = 'Confirmed' AND block_number IS NOT NULL "
+                            "AND block_hash IS NOT NULL AND confirmed_at IS NOT NULL"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert bundle_hashes == set(rows)
         assert "private@example.test" not in json.dumps(
             blocked.model_dump(mode="json", by_alias=True)
         )
