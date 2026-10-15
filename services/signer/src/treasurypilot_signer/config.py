@@ -57,12 +57,18 @@ class Settings(BaseSettings):
         for target in value.values():
             if not isinstance(target, dict) or set(target) != {"guardianSafe", "module"}:
                 raise ValueError("each sentinel target needs exactly guardianSafe and module")
-        return {
+        targets: dict[str, dict[str, str]] = {
             str(key).lower(): {
                 name: to_checksum_address(address) for name, address in target.items()
             }
             for key, target in value.items()
         }
+        for target in targets.values():
+            if int(target["guardianSafe"], 16) == 0 or int(target["module"], 16) == 0:
+                raise ValueError("sentinel target addresses must not be the zero address")
+            if target["guardianSafe"] == target["module"]:
+                raise ValueError("sentinel guardianSafe and module must differ")
+        return targets
 
     @property
     def effective_database_url(self) -> str | None:

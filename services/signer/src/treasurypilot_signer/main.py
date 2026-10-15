@@ -97,11 +97,13 @@ def create_app(
         if settings.chain_rpc_url:
             rpc = JsonRpc(settings.chain_rpc_url)
             application.state.rpc = rpc
-        if settings.sentinel_targets and rpc is not None:
-            # Like the executor map: optional, but once targets are set the key must decrypt.
-            sentinel_key = SentinelKey(settings)
-            application.state.sentinel_address = sentinel_key.load().address
-            application.state.sentinel = SentinelService(settings, rpc, sentinel_key)
+        if settings.sentinel_targets:
+            # Like the executor map: optional, but once targets are set the RPC and key are required.
+            if rpc is None:
+                raise RuntimeError("TP_SENTINEL_TARGETS requires CHAIN_RPC_URL")
+            sentinel_account = SentinelKey(settings).load()
+            application.state.sentinel_address = sentinel_account.address
+            application.state.sentinel = SentinelService(settings, rpc, sentinel_account)
         if signer_override is None and database_url and rpc is not None:
 
             async def use_signer_role(connection: asyncpg.Connection) -> None:

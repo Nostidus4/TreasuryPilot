@@ -9,7 +9,6 @@ from eth_account.signers.local import LocalAccount
 from eth_hash.auto import keccak
 
 from treasurypilot_signer.config import Settings
-from treasurypilot_signer.keys import ExecutorKeyNotConfigured, SentinelKey
 from treasurypilot_signer.rpc import RpcFailure
 from treasurypilot_signer.service import SignerFault, _rpc_hex, _rpc_quantity
 
@@ -51,34 +50,24 @@ def build_pause_transaction(sentinel: str, module: str) -> bytes:
 
 
 class SentinelService:
-    def __init__(self, settings: Settings, rpc: Rpc, key: SentinelKey) -> None:
+    def __init__(self, settings: Settings, rpc: Rpc, account: LocalAccount) -> None:
         self._settings = settings
         self._rpc = rpc
-        self._key = key
+        self._account = account  # decrypted once at startup, never per request
         self._lock = asyncio.Lock()  # one pending nonce at a time
-
-    def _account(self) -> LocalAccount:
-        try:
-            return self._key.load()
-        except ExecutorKeyNotConfigured as error:
-            raise SignerFault("NOT_CONFIGURED", 503) from error
-        except Exception as error:
-            raise SignerFault("SIGNER_KEY_UNAVAILABLE", 503) from error
-
-    def address(self) -> str:
-        return self._account().address
 
     async def pause(self, treasury_id: str) -> dict[str, Any]:
         target = self._settings.sentinel_targets.get(treasury_id.lower())
         if target is None:
             raise SignerFault("NOT_CONFIGURED", 503)
-        account = self._account()
+        account = self._account
         safe, module = target["guardianSafe"], target["module"]
         data = build_pause_transaction(account.address, module)
         call = {"from": account.address, "to": safe, "value": "0x0", "data": "0x" + data.hex()}
         async with self._lock:
             try:
                 status = _rpc_quantity(
+                    # shortcut: "pending" is unsupported by some hosted RPCs, use "latest" there.
                     await self._rpc.call("eth_call", [{"to": module, "data": _STATUS}, "pending"])
                 )
                 if status == _PAUSED:
@@ -88,6 +77,8 @@ class SentinelService:
                     raise SignerFault("CHAIN_NOT_ALLOWED")
                 await self._rpc.call("eth_call", [call, "latest"])
                 gas = _rpc_quantity(await self._rpc.call("eth_estimateGas", [call]))
+                # shortcut: maxFeePerGas = 2x eth_gasPrice with no ceiling, add a cap if fee spikes
+                # become a cost risk.
                 max_fee = 2 * _rpc_quantity(await self._rpc.call("eth_gasPrice", []))
                 tip = min(
                     max_fee, _rpc_quantity(await self._rpc.call("eth_maxPriorityFeePerGas", []))

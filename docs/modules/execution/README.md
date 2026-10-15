@@ -190,11 +190,14 @@ to an encrypted keystore path in `TP_EXECUTOR_KEYSTORE_MAP` (JSON object). The s
 password from `TP_EXECUTOR_KEYSTORE_PASSWORD_FILE`. M1 may map multiple treasury IDs to one
 keystore. Missing signer configuration fails closed.
 
-The sentinel uses a separate keystore (`TP_SENTINEL_KEYSTORE_PATH`, `TP_SENTINEL_KEYSTORE_PASSWORD_FILE`) and
-`TP_SENTINEL_TARGETS`, a JSON object mapping each treasury UUID to its `guardianSafe` and `module`.
-It can only send `GuardianSafe.execTransaction(module, 0, pause(), CALL, ...)` signed as a Safe owner
-(approved-by-sender signature); the request carries no target or calldata. Setting targets makes the
-keystore mandatory at startup; with none set the endpoint answers `NOT_CONFIGURED`. The database migration creates the `signer`
+The sentinel uses a separate keystore (`TP_SENTINEL_KEYSTORE_PATH`,
+`TP_SENTINEL_KEYSTORE_PASSWORD_FILE`) and `TP_SENTINEL_TARGETS`, a JSON object mapping each
+treasury UUID to its `guardianSafe` and `module` (neither may be the zero address, and they must
+differ). It can only send `GuardianSafe.execTransaction(module, 0, pause(), CALL, ...)` signed as
+a Safe owner (approved-by-sender signature); the request carries no target or calldata. Setting
+targets makes both the keystore and `CHAIN_RPC_URL` mandatory at startup; with none set the
+endpoint answers `NOT_CONFIGURED`. `/health` reports the sentinel's gas balance, but the
+low-gas threshold alert is not implemented yet. The database migration creates the `signer`
 schema and `treasurypilot_signer` role; signer connections execute as that role, which has write
 access only to the signer nonce and attestation-use tables. The migration grants role membership
 to the migration login; if the signer uses a different login, the database administrator must

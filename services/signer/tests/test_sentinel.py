@@ -4,6 +4,9 @@ import asyncio
 import importlib.util
 import json
 import logging
+import os
+import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,15 +37,20 @@ SENTINEL = Account.from_key(bytes(31) + b"\x0a")
 PASSWORD = "sentinel-password"
 TREASURY = "6f0f6a2e-3b8f-4f6e-9a55-3c1d4d6a0001"
 SECRET = "shared-secret"
-SAFE = "0x" + "a1" * 20
+SAFE = "0x" + "a1" * 20  # placeholder targets for tests that never reach a chain
 MODULE = "0x" + "b2" * 20
-# Runtime code of tiny mocks (solc 0.8.28 --via-ir): MockModule has status()/pause() (pause only
-# from `safe`); MockSafe.execTransaction requires its owner, a 65-byte v=1 signature and value 0.
-MODULE_CODE = "0x6080806040526004361015610012575f80fd5b5f3560e01c908163186f03541461011057508063200d2ed2146100f15780635db0cb94146100a757638456cb5914610048575f80fd5b346100a3575f3660031901126100a3575f54600881901c6001600160a01b031633036100795760ff19166001175f55005b60405162461bcd60e51b81526020600482015260026024820152616e6f60f01b6044820152606490fd5b5f80fd5b346100a35760203660031901126100a3576004356001600160a01b03811681036100a3575f8054610100600160a81b03191660089290921b610100600160a81b0316919091179055005b346100a3575f3660031901126100a357602060ff5f5416604051908152f35b346100a3575f3660031901126100a3575f5460081c6001600160a01b03168152602090f3fea264697066735822122050fc6065006967cf924647dbdbb2785e93172358cf83a91148e0ed337d320ae264736f6c634300081c0033"
-SAFE_CODE = "0x6080806040526004361015610012575f80fd5b5f3560e01c90816313af40351461022f5781636a761202146100685750638da5cb5b1461003d575f80fd5b34610064575f366003190112610064575f546040516001600160a01b039091168152602090f35b5f80fd5b34610064576101403660031901126100645761008261026b565b60443567ffffffffffffffff8111610064576100a29036906004016102ae565b9260643560ff811603610064576100b7610281565b506100c0610297565b506101243567ffffffffffffffff8111610064576100e29036906004016102ae565b5f546001600160a01b03163314919082610224575b826101f4575b5050806101ea575b156101c2575f8084868286826040519384928337810182815203925af13d156101bd573d67ffffffffffffffff81116101a95760405190601f8101601f19908116603f0116820167ffffffffffffffff8111838210176101a95760405281525f60203d92013e5b1561017c57602060405160018152f35b60405162461bcd60e51b815260206004820152600560248201526434b73732b960d91b6044820152606490fd5b634e487b7160e01b5f52604160045260245ffd5b61016c565b62461bcd60e51b815260206004820152600360248201526273696760e81b6044820152606490fd5b5060243515610105565b90915060401015610210576040013560f81c60011485806100fd565b634e487b7160e01b5f52603260045260245ffd5b6041811492506100f7565b34610064576020366003190112610064576001600160a01b0361025061026b565b166bffffffffffffffffffffffff60a01b5f5416175f555f80f35b600435906001600160a01b038216820361006457565b60e435906001600160a01b038216820361006457565b61010435906001600160a01b038216820361006457565b9181601f840112156100645782359167ffffffffffffffff831161006457602083818601950101116100645756fea26469706673582212203fab6f2f24606b12e82dc2709bc9d5c14d907cec040cbc73b22fb2c4073b46aa64736f6c634300081c0033"
+_OUT = Path(__file__).resolve().parents[3] / "contracts" / "out"
+_ZERO = "0x" + "00" * 20
 
 
-def _settings(tmp_path: Path, url: str = "", *, with_targets: bool = True) -> Settings:
+def _settings(
+    tmp_path: Path,
+    url: str = "",
+    *,
+    with_targets: bool = True,
+    safe: str = SAFE,
+    module: str = MODULE,
+) -> Settings:
     keystore = tmp_path / "sentinel.json"
     keystore.write_text(json.dumps(Account.encrypt(SENTINEL.key, PASSWORD, iterations=2)))
     password = tmp_path / "sentinel-password"
@@ -53,33 +61,163 @@ def _settings(tmp_path: Path, url: str = "", *, with_targets: bool = True) -> Se
         chain_rpc_url=url,
         sentinel_keystore_path=keystore,
         sentinel_keystore_password_file=password,
-        sentinel_targets={TREASURY: {"guardianSafe": SAFE, "module": MODULE}}
+        sentinel_targets={TREASURY: {"guardianSafe": safe, "module": module}}
         if with_targets
         else {},
     )
 
 
 def _selector(signature: str, *args: Any) -> str:
-    types = signature[signature.index("(") + 1 : -1]
-    encoded = encode(types.split(",") if types else [], list(args))
-    return "0x" + (keccak(signature.encode())[:4] + encoded).hex()
+    inner, depth, types, start = signature[signature.index("(") + 1 : -1], 0, [], 0
+    for index, char in enumerate(inner):  # split on top-level commas only (tuples nest)
+        depth += (char == "(") - (char == ")")
+        if char == "," and depth == 0:
+            types.append(inner[start:index])
+            start = index + 1
+    types += [inner[start:]] if inner else []
+    return "0x" + (keccak(signature.encode())[:4] + encode(types, list(args))).hex()
 
 
-def _deploy_mocks(url: str) -> None:
-    owner = _rpc(url, "eth_accounts", [])[0]
-    for address, code in ((MODULE, MODULE_CODE), (SAFE, SAFE_CODE)):
-        _rpc(url, "anvil_setCode", [address, code])
+@pytest.fixture(autouse=True)
+def _require_anvil() -> None:
+    if os.environ.get("TP_REQUIRE_SENTINEL_ANVIL") == "1" and shutil.which("anvil") is None:
+        pytest.fail("anvil is required for the sentinel integration test")
+
+
+def _artifacts() -> dict[str, str]:
+    required = os.environ.get("TP_REQUIRE_SENTINEL_ANVIL") == "1"
+    try:
+        names = (
+            "Safe",
+            "SafeProxyFactory",
+            "TestUSDC",
+            "TreasuryPilotModule",
+            "TreasuryPilotModuleFactory",
+        )
+        return {
+            name: json.loads((_OUT / f"{name}.sol" / f"{name}.json").read_text())["bytecode"][
+                "object"
+            ]
+            for name in names
+        }
+    except (OSError, KeyError) as error:
+        reason = f"run `forge build` in contracts/ for the sentinel integration test: {error}"
+        if required:
+            pytest.fail(reason)
+        pytest.skip(reason)
+
+
+def _send(url: str, sender: str, to: str | None, data: bytes) -> dict[str, Any]:
+    tx = {"from": sender, "data": "0x" + data.hex(), "gas": hex(25_000_000)}
+    if to:
+        tx["to"] = to
+    receipt = _wait_for_receipt(url, _rpc(url, "eth_sendTransaction", [tx]))
+    assert receipt["status"] == "0x1", receipt
+    return receipt
+
+
+def _data(signature: str, *args: Any) -> bytes:
+    return bytes.fromhex(_selector(signature, *args)[2:])
+
+
+def _safe_proxy(url: str, deployer: str, singleton: str, factory: str, owner: str) -> str:
+    setup = _data(
+        "setup(address[],uint256,address,bytes,address,address,uint256,address)",
+        [owner],
+        1,
+        _ZERO,
+        b"",
+        _ZERO,
+        _ZERO,
+        0,
+        _ZERO,
+    )
+    salt = time.time_ns()
+    create = _data("createProxyWithNonce(address,bytes,uint256)", singleton, setup, salt)
+    proxy = _rpc(
+        url, "eth_call", [{"from": deployer, "to": factory, "data": "0x" + create.hex()}, "latest"]
+    )
+    _send(url, deployer, factory, create)
+    return "0x" + proxy[-40:]
+
+
+def _deploy_treasury(url: str) -> tuple[str, str]:
+    """A real Safe 1.4.1 guardian owned by the sentinel and a real module that names it guardian."""
+    code = _artifacts()
+    owner = _rpc(url, "eth_accounts", [])[0]  # anvil's unlocked account owns the treasury Safes
+    deployed = {
+        name: _send(url, owner, None, bytes.fromhex(code[name].removeprefix("0x")))[
+            "contractAddress"
+        ]
+        for name in ("Safe", "SafeProxyFactory", "TestUSDC", "TreasuryPilotModule")
+    }
+    proxy_factory = deployed["SafeProxyFactory"]
+    safe_t, operational = (
+        _safe_proxy(url, owner, deployed["Safe"], proxy_factory, owner) for _ in range(2)
+    )
+    guardian = _safe_proxy(url, owner, deployed["Safe"], proxy_factory, SENTINEL.address)
+    module_factory = _send(
+        url,
+        owner,
+        None,
+        bytes.fromhex(code["TreasuryPilotModuleFactory"].removeprefix("0x"))
+        + encode(["address"], [deployed["TreasuryPilotModule"]]),
+    )["contractAddress"]
+    limits = (10**6, 10**7)
+    mandate = (1, 2**40, 300, owner, guardian, limits, limits, 3600, (0, 0))
+    salt = time.time_ns().to_bytes(32, "big")
+    create = _data(
+        "createDeterministic(address,address[],"
+        "(uint64,uint64,uint32,address,address,(uint128,uint128),(uint128,uint128),uint32,"
+        "(uint128,uint128)),address[],(address,uint256,uint256)[],address,bytes32)",
+        deployed["TestUSDC"],
+        [operational],
+        mandate,
+        [owner],
+        [(safe_t, 0, 0), (operational, 0, 0)],
+        _ZERO,
+        salt,
+    )
+    # safeT.execTransaction(...) approved by msg.sender (v=1), as the owner
+    approval = bytes(12) + bytes.fromhex(owner[2:]) + bytes(32) + b"\x01"
+    _send(
+        url,
+        owner,
+        safe_t,
+        _data(
+            "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,"
+            "address,bytes)",
+            module_factory,
+            0,
+            create,
+            0,
+            0,
+            0,
+            0,
+            _ZERO,
+            _ZERO,
+            approval,
+        ),
+    )
+    module = _rpc(
+        url,
+        "eth_call",
+        [
+            {
+                "to": module_factory,
+                "data": _selector("predictDeterministicAddress(address,bytes32)", safe_t, salt),
+            },
+            "latest",
+        ],
+    )
+    module = "0x" + module[-40:]
+    assert _rpc(url, "eth_getCode", [module, "latest"]) != "0x"
     _rpc(url, "anvil_setBalance", [SENTINEL.address, hex(10**18)])
-    for to, data in (
-        (MODULE, _selector("setSafe(address)", SAFE)),
-        (SAFE, _selector("setOwner(address)", SENTINEL.address)),
-    ):
-        tx = _rpc(url, "eth_sendTransaction", [{"from": owner, "to": to, "data": data}])
-        assert _wait_for_receipt(url, tx)["status"] == "0x1"
+    return guardian, module
 
 
-def _status(url: str) -> int:
-    return int(_rpc(url, "eth_call", [{"to": MODULE, "data": _selector("status()")}, "latest"]), 16)
+def _status(url: str, module: str) -> int:
+    return int(_rpc(url, "eth_call", [{"to": module, "data": _selector("status()")}, "latest"]), 16)
 
 
 def test_pause_calldata_is_exactly_execute_pause_on_the_module() -> None:
@@ -97,10 +235,11 @@ def test_pause_calldata_is_exactly_execute_pause_on_the_module() -> None:
 def test_pause_lands_within_two_blocks_and_is_idempotent_on_anvil(
     anvil_url: str, tmp_path: Path
 ) -> None:
-    _deploy_mocks(anvil_url)
-    settings = _settings(tmp_path, anvil_url)
+    guardian, module = _deploy_treasury(anvil_url)
+    assert _status(anvil_url, module) == 0
+    settings = _settings(tmp_path, anvil_url, safe=guardian, module=module)
     rpc = JsonRpc(anvil_url)
-    service = SentinelService(settings, rpc, SentinelKey(settings))
+    service = SentinelService(settings, rpc, SentinelKey(settings).load())
 
     async def run() -> tuple[dict[str, Any], dict[str, Any]]:
         try:
@@ -114,24 +253,39 @@ def test_pause_lands_within_two_blocks_and_is_idempotent_on_anvil(
     receipt = _wait_for_receipt(anvil_url, first["txHash"])
     assert receipt["status"] == "0x1"
     assert int(receipt["blockNumber"], 16) - start <= 2
-    assert _status(anvil_url) == 1
-    assert receipt["to"].lower() == SAFE.lower()
+    assert _status(anvil_url, module) == 1  # Status.Paused
+    assert receipt["to"].lower() == guardian.lower()
     assert second == {"txHash": None, "alreadyPaused": True}
     assert int(_rpc(anvil_url, "eth_blockNumber", []), 16) == int(receipt["blockNumber"], 16)
 
 
-def test_unknown_treasury_and_missing_key_are_not_configured(tmp_path: Path) -> None:
+def test_unknown_treasury_is_not_configured(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    service = SentinelService(settings, JsonRpc("http://127.0.0.1:1"), SentinelKey(settings))
+    service = SentinelService(settings, JsonRpc("http://127.0.0.1:1"), SENTINEL)
     with pytest.raises(SignerFault) as unknown:
         asyncio.run(service.pause("6f0f6a2e-3b8f-4f6e-9a55-3c1d4d6a0002"))
     assert unknown.value.code == "NOT_CONFIGURED"
-    bare = Settings(sentinel_targets=settings.sentinel_targets)
-    with pytest.raises(SignerFault) as missing:
-        asyncio.run(
-            SentinelService(bare, JsonRpc("http://127.0.0.1:1"), SentinelKey(bare)).pause(TREASURY)
-        )
-    assert missing.value.code == "NOT_CONFIGURED"
+
+
+def test_targets_without_rpc_url_refuse_to_start(tmp_path: Path) -> None:
+    with (
+        pytest.raises(RuntimeError, match="CHAIN_RPC_URL"),
+        TestClient(create_app(settings_override=_settings(tmp_path))),
+    ):
+        pass
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"guardianSafe": _ZERO, "module": MODULE},
+        {"guardianSafe": SAFE, "module": _ZERO},
+        {"guardianSafe": SAFE, "module": SAFE},
+    ],
+)
+def test_bad_sentinel_targets_are_rejected(target: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="sentinel"):
+        Settings(sentinel_targets={TREASURY: target})
 
 
 def test_endpoint_refuses_extra_fields_and_requires_the_secret(tmp_path: Path) -> None:
