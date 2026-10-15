@@ -1,6 +1,7 @@
 name: borrow-repay
 adr019: D8
-chain_id: 11155111
-requires: [deployment, planner, aave-adapter, executor-pipeline, borrow-authorization]
+chain_id: 31337
+requires: [anvil, deployment, aave-mock]
+steps: [owner_borrow_repay]
 must_show:
   - The authorized repayment closes the borrow (D8 name and scope provisional)

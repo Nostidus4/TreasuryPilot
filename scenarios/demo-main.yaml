@@ -1,7 +1,8 @@
 name: demo-main
 adr019: D1
 chain_id: 31337
-requires: [anvil, deployment, planner, sequencer, executor-pipeline]
+requires: [anvil, deployment]
+steps: [refill_then_pay]
 must_show:
-  - Refill then pay: the invoice is paid once from Safe O1
+  - "Refill then pay: the invoice is paid once from Safe O1"
   - Evidence bundle lists both transactions and resolves them on chain

@@ -1,8 +1,9 @@
 """Scenario runner (DEV-007): `scenario list` and `scenario run <name>`.
 
-Scenarios are YAML files in `scenarios/`. A run refuses chains outside the allowlist (BR-095),
-reports scenarios whose required capabilities are not wired yet as NOT_RUNNABLE instead of faking
-them, and writes `run.json` plus an evidence-bundle.v1 file per run.
+Scenarios are YAML files in `scenarios/`; their steps live in `scenario_steps.py`. A run refuses
+chains outside the allowlist (BR-095), snapshots Anvil first and reverts to it afterwards (unless
+`--keep-state`) so every scenario can be replayed, and writes `run.json` plus an evidence-bundle.v1
+file per run.
 shortcut: the bundle is built locally from the scenario subject (a seeded TEST request) and the
 chain transactions it produced, not read from the database; upgrade when the execution pipeline
 persists scenario requests.
@@ -14,14 +15,13 @@ import argparse
 import asyncio
 import json
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
-from eth_utils import keccak
-from seed_local import ANVIL, rpc, sid
+from scenario_steps import STEPS, ScenarioError
+from seed_local import rpc, sid
 
 from treasurypilot_api import __version__
 from treasurypilot_api.audit.evidence import (
@@ -32,19 +32,8 @@ from treasurypilot_api.audit.evidence import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ALLOWED_CHAIN_IDS = frozenset({31337, 11155111})
-# Capabilities wired in the platform but not yet driven by any step here; a scenario needing one is
-# NOT_RUNNABLE. Unknown names (typos) are rejected at load time.
-PENDING = frozenset(
-    {
-        "planner", "sequencer", "executor-pipeline", "ai-extraction", "outbox-recovery",
-        "chain-reader-alerts", "fee-policy-runtime", "aave-adapter", "borrow-authorization",
-    }
-)  # fmt: skip
-EXIT_FAILED, EXIT_NOT_RUNNABLE = 1, 2
-
-
-class ScenarioError(Exception):
-    """Bad scenario file, refused chain, or failed precondition."""
+EXIT_FAILED = 1
+AVAILABLE = frozenset().union(*(caps for _, caps in STEPS.values()))
 
 
 def load_scenarios(directory: Path) -> dict[str, dict[str, Any]]:
@@ -59,24 +48,19 @@ def load_scenarios(directory: Path) -> dict[str, dict[str, Any]]:
             if not isinstance(data.get(key), list) or not data[key]:
                 raise ScenarioError(f"{path.name}: `{key}` must be a non-empty list")
         check_declared_chain(data)  # before capabilities, so a NOT_RUNNABLE file cannot hide it
-        if not set(data["requires"]) <= AVAILABLE | PENDING:
-            unknown = sorted(set(data["requires"]) - AVAILABLE - PENDING)
+        if not set(data["requires"]) <= AVAILABLE:
+            unknown = sorted(set(data["requires"]) - AVAILABLE)
             raise ScenarioError(f"{path.name}: unknown capability {unknown}")
-        steps = data.get("steps", [])
-        if not isinstance(steps, list) or not set(steps) <= set(STEPS):
+        steps = data.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ScenarioError(f"{path.name}: a scenario needs non-empty `steps`")
+        if not set(steps) <= set(STEPS):
             raise ScenarioError(f"{path.name}: unknown step in {steps}")
-        if not missing_capabilities(data):
-            if not steps:
-                raise ScenarioError(f"{path.name}: a runnable scenario needs non-empty `steps`")
-            provided = set().union(*(STEPS[step][1] for step in steps))
-            if not set(data["requires"]) <= provided:
-                raise ScenarioError(f"{path.name}: steps do not provide {data['requires']}")
+        provided = set().union(*(STEPS[step][1] for step in steps))
+        if not set(data["requires"]) <= provided:
+            raise ScenarioError(f"{path.name}: steps do not provide {data['requires']}")
         scenarios[data["name"]] = data
     return scenarios
-
-
-def missing_capabilities(scenario: dict[str, Any]) -> list[str]:
-    return [c for c in scenario["requires"] if c not in AVAILABLE]
 
 
 def check_declared_chain(scenario: dict[str, Any]) -> None:
@@ -102,45 +86,6 @@ def check_chain(scenario: dict[str, Any], rpc_url: str) -> int:
     if live != declared:
         raise ScenarioError(f"scenario targets chain {declared} but the RPC serves chain {live}")
     return live
-
-
-def _module_status(rpc_url: str, module: str) -> int:
-    data = "0x" + keccak(text="status()")[:4].hex()
-    return int(rpc(rpc_url, "eth_call", [{"to": module, "data": data}, "latest"]), 16)
-
-
-def step_guardian_pause(ctx: dict[str, Any]) -> dict[str, Any]:
-    rpc_url, module = ctx["rpc_url"], ctx["manifest"]["module"]
-    if ctx["chain_id"] != 31337:  # the guardian sender is an unlocked Anvil account
-        raise ScenarioError(
-            "guardian_pause needs a local Anvil (chain 31337) with unlocked accounts"
-        )
-    if rpc(rpc_url, "eth_getCode", [module, "latest"]) in ("0x", ""):
-        raise ScenarioError(f"module {module} has no code; run `make deploy-local`")
-    if _module_status(rpc_url, module) != 0:
-        raise ScenarioError("module is not Active (already paused?); run `make deploy-local`")
-    tx = rpc(
-        rpc_url,
-        "eth_sendTransaction",
-        [{"from": ANVIL[3], "to": module, "data": "0x" + keccak(text="pause()")[:4].hex()}],
-    )
-    receipt = None
-    for _ in range(50):  # Anvil may mine a moment after the send returns
-        if (receipt := rpc(rpc_url, "eth_getTransactionReceipt", [tx])) is not None:
-            break
-        time.sleep(0.2)
-    if receipt is None or receipt["status"] != "0x1":
-        raise ScenarioError(f"pause transaction {tx} failed")
-    ctx["transactions"].append(receipt)
-    status = _module_status(rpc_url, module)
-    if status != 1:
-        raise ScenarioError(f"module status is {status} after pause, expected 1 (Paused)")
-    return {"step": "guardian_pause", "txHash": tx, "moduleStatus": "Paused"}
-
-
-# step name -> (function, capabilities it provides); AVAILABLE is derived from this.
-STEPS = {"guardian_pause": (step_guardian_pause, frozenset({"anvil", "deployment"}))}
-AVAILABLE = frozenset().union(*(caps for _, caps in STEPS.values()))
 
 
 async def _bundle(
@@ -188,7 +133,12 @@ async def _bundle(
 
 
 def run_scenario(
-    scenario: dict[str, Any], *, rpc_url: str, manifest_path: Path, out_dir: Path
+    scenario: dict[str, Any],
+    *,
+    rpc_url: str,
+    manifest_path: Path,
+    out_dir: Path,
+    reset: bool = True,
 ) -> dict[str, Any]:
     name = scenario["name"]
     started = datetime.now(UTC)
@@ -198,22 +148,30 @@ def run_scenario(
         "mustShow": scenario["must_show"],
     }
     check_declared_chain(scenario)
-    if missing := missing_capabilities(scenario):
-        return {**result, "status": "NOT_RUNNABLE", "missing": missing}
-    ctx: dict[str, Any] = {"rpc_url": rpc_url, "transactions": []}
+    ctx: dict[str, Any] = {"rpc_url": rpc_url, "transactions": [], "run_id": started.isoformat()}
     ctx["chain_id"] = check_chain(scenario, rpc_url)
     try:
         ctx["manifest"] = json.loads(manifest_path.read_text())
     except (OSError, ValueError):
         raise ScenarioError(f"cannot read {manifest_path}; run `make deploy-local`") from None
-    operations = [STEPS[step][0](ctx) for step in scenario.get("steps", [])]
-    bundle = asyncio.run(_bundle(ctx, name, operations))
-    run_dir = out_dir / f"{name}-{started:%Y%m%dT%H%M%SZ}"
+    snapshot = rpc(rpc_url, "evm_snapshot", []) if reset and ctx["chain_id"] == 31337 else None
+    try:
+        operations = [STEPS[step][0](ctx) for step in scenario["steps"]]
+        bundle = asyncio.run(_bundle(ctx, name, operations))
+    finally:  # the bundle resolved its transactions above, so rewinding cannot invalidate it
+        if snapshot is not None:
+            rpc(rpc_url, "evm_revert", [snapshot])
+    run_dir = out_dir / f"{name}-{started:%Y%m%dT%H%M%S%fZ}"
     run_dir.mkdir(parents=True)
     text = bundle.model_dump_json(by_alias=True, exclude_none=True, indent=2)
     EvidenceBundle.model_validate_json(text)  # round-trip check before it is written
     (run_dir / "evidence-bundle.json").write_text(text + "\n")
-    result |= {"status": "PASSED", "operations": operations, "bundleSha256": bundle.sha256}
+    result |= {
+        "status": "PASSED",
+        "stateReset": snapshot is not None,
+        "operations": operations,
+        "bundleSha256": bundle.sha256,
+    }
     (run_dir / "run.json").write_text(json.dumps(result, indent=2) + "\n")
     return {**result, "runDir": str(run_dir)}
 
@@ -227,14 +185,16 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("name")
     run.add_argument("--rpc-url", default="http://127.0.0.1:8545")
     run.add_argument("--manifest", type=Path, default=REPO_ROOT / "deployments" / "31337.json")
+    run.add_argument(
+        "--keep-state", action="store_true", help="leave the chain state in place (no revert)"
+    )
     run.add_argument("--out", type=Path, default=REPO_ROOT / "docs" / "evidence" / "scenarios")
     args = parser.parse_args(argv)
     try:
         scenarios = load_scenarios(args.scenarios_dir)
         if args.command == "list":
             for s in scenarios.values():
-                state = "runnable" if not missing_capabilities(s) else "not runnable yet"
-                print(f"{s['name']:20} {s['adr019']:6} chain {s['chain_id']}  {state}")
+                print(f"{s['name']:20} {s['adr019']:6} chain {s['chain_id']}  runnable")
             return 0
         if args.name not in scenarios:
             raise ScenarioError(f"unknown scenario {args.name!r}; known: {', '.join(scenarios)}")
@@ -243,12 +203,13 @@ def main(argv: list[str] | None = None) -> int:
             rpc_url=args.rpc_url,
             manifest_path=args.manifest,
             out_dir=args.out,
+            reset=not args.keep_state,
         )
     except (ScenarioError, OSError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_FAILED
     print(json.dumps(result, indent=2))
-    return EXIT_NOT_RUNNABLE if result["status"] == "NOT_RUNNABLE" else 0
+    return 0
 
 
 if __name__ == "__main__":

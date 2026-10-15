@@ -321,14 +321,33 @@ jobs:
           exit 1
       - name: Deploy contracts to Anvil
         run: infra/scripts/deploy-local.sh
-      - name: Run pause scenario on Anvil
+      - name: Run every scenario on Anvil
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545
         run: |
+          # Each run reverts to an Anvil snapshot, so one deployment serves every scenario twice.
           uv run pytest -q infra/scripts/tests/test_scenario.py
-          # pytest's real-Anvil test consumed the fresh module; redeploy for the CLI run
-          infra/scripts/deploy-local.sh
-          uv run python infra/scripts/scenario.py run pause
+          for name in $(uv run python infra/scripts/scenario.py list | awk '{print $1}'); do
+            uv run python infra/scripts/scenario.py run "$name" --out /tmp/scenario-evidence
+          done
+      - name: Refuse a non-allowlisted chain
+        run: |
+          anvil --silent --chain-id 1 --port 8546 > /tmp/treasurypilot-anvil-mainnet.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            cast chain-id --rpc-url http://127.0.0.1:8546 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          if uv run python infra/scripts/scenario.py run demo-main --rpc-url http://127.0.0.1:8546 2> /tmp/refused.txt; then
+            echo 'a mainnet chain id was not refused' >&2
+            exit 1
+          fi
+          grep -q 'refusing to run: RPC serves chain id 1' /tmp/refused.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-evidence
+          path: /tmp/scenario-evidence
+          if-no-files-found: ignore
 
   # Live-RPC check kept out of `quality` so a public RPC outage cannot block unit tests.
   config-check:
