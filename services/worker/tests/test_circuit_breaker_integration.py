@@ -7,12 +7,15 @@ import json
 import os
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import asyncpg  # type: ignore[import-untyped]
 import pytest
 from alembic import command
 from alembic.config import Config
 
+from treasurypilot_worker.chain import event_handlers
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers
 
 API_ROOT = Path(__file__).parents[2] / "api"
@@ -20,12 +23,13 @@ WALLET = bytes.fromhex("aa" * 20)
 
 
 class _Sentinel:
-    def __init__(self) -> None:
+    def __init__(self, *results: str) -> None:
         self.calls: list[uuid.UUID] = []
+        self.results = list(results)
 
     async def __call__(self, treasury_id: uuid.UUID) -> str:
         self.calls.append(treasury_id)
-        return "SENTINEL_SUBMITTED"
+        return self.results.pop(0) if self.results else "SENTINEL_SUBMITTED"
 
 
 class _World:
@@ -92,17 +96,12 @@ class _World:
         )
         return oid
 
-    async def outflow(self, tid: uuid.UUID, amount: int, balance: int) -> None:
+    async def outflow(
+        self, tid: uuid.UUID, amount: int, balance: int, snapshot: bool = True
+    ) -> None:
         event, movement = uuid.uuid4(), uuid.uuid4()
-        await self.pool.execute(
-            "INSERT INTO snapshots (id, org_id, treasury_id, purpose, block_number, block_hash, "
-            "block_timestamp, provider, data, coverage, missing) VALUES ($1, $2, $3, 'DASHBOARD', 1, "
-            "decode(repeat('01', 32), 'hex'), now() - interval '1 hour', 'p', $4::jsonb, 'COMPLETE', '[]')",
-            uuid.uuid4(),
-            self.org,
-            tid,
-            json.dumps({"balances": {"0x" + WALLET.hex(): str(balance)}}),
-        )
+        if snapshot:
+            await self._snapshot(tid, balance)
         await self.pool.execute(
             "INSERT INTO observed_events (id, treasury_id, chain_id, stream, block_number, block_hash, "
             "tx_hash, log_index, address, event_name, payload) VALUES ($1, $2, $3, 'TOKEN', 1, "
@@ -131,9 +130,40 @@ class _World:
             movement,
         )
 
+    async def _snapshot(self, tid: uuid.UUID, balance: int) -> None:
+        await self.pool.execute(
+            "INSERT INTO snapshots (id, org_id, treasury_id, purpose, block_number, block_hash, "
+            "block_timestamp, provider, data, coverage, missing) VALUES ($1, $2, $3, 'DASHBOARD', 1, "
+            "decode(repeat('01', 32), 'hex'), now() - interval '1 hour', 'p', $4::jsonb, 'COMPLETE', '[]')",
+            uuid.uuid4(),
+            self.org,
+            tid,
+            json.dumps({"balances": {"0x" + WALLET.hex(): str(balance)}}),
+        )
+
     async def paused(self, tid: uuid.UUID) -> bool:
         return bool(
             await self.pool.fetchval("SELECT paused FROM backend_pause WHERE treasury_id = $1", tid)
+        )
+
+    async def onchain(self, tid: uuid.UUID) -> str | None:
+        return cast(
+            "str | None",
+            await self.pool.fetchval(
+                "SELECT details ->> 'onchain' FROM circuit_events WHERE treasury_id = $1 "
+                "AND action = 'PAUSE' ORDER BY created_at DESC LIMIT 1",
+                tid,
+            ),
+        )
+
+    async def tripped_notifications(self, tid: uuid.UUID) -> int:
+        return cast(
+            int,
+            await self.pool.fetchval(
+                "SELECT count(*) FROM domain_events WHERE treasury_id = $1 "
+                "AND type = 'CircuitBreakerTripped'",
+                tid,
+            ),
         )
 
     async def events(self, tid: uuid.UUID) -> list[tuple[str, str]]:
@@ -252,6 +282,82 @@ async def _scenarios(database_url: str) -> None:
         before = len(sentinel.calls)
         await evaluate_circuit_breakers(pool, sentinel)  # the same signal is not handled twice
         assert len(sentinel.calls) == before
+
+        # A resume (the indexer's Resumed handler) consumes the signals already turned into events.
+        await event_handlers._resumed(pool, SimpleNamespace(treasury_id=f))  # type: ignore[arg-type]
+        assert (
+            await pool.fetchval(
+                "SELECT bool_and(consumed_at IS NOT NULL) FROM chain_safety_signals "
+                "WHERE treasury_id = $1",
+                f,
+            )
+            is True
+        )
+
+        # Signal rules record every signal but notify once per cool-down, also within one cycle.
+        h = await world.treasury()
+        await world.outflow(h, 300, 1000)
+        await world.outflow(h, 300, 1000, snapshot=False)
+        await evaluate_circuit_breakers(pool, sentinel)
+        assert len(await world.events(h)) == 2
+        assert await world.tripped_notifications(h) == 1
+        await world.outflow(h, 300, 1000, snapshot=False)
+        await evaluate_circuit_breakers(pool, sentinel)
+        assert len(await world.events(h)) == 3 and await world.tripped_notifications(h) == 1
+
+        # No re-trip on spent rejections after the cool-down; new ones trip again.
+        i = await world.treasury()
+        await pool.execute(
+            "INSERT INTO circuit_rules (id, org_id, treasury_id, rule, threshold, window_seconds) "
+            "VALUES ($1, $2, $3, 'REJECTIONS', 3, 86400)",
+            uuid.uuid4(),
+            org,
+            i,
+        )
+        for _ in range(3):
+            await world.operation(i)
+        await evaluate_circuit_breakers(pool, sentinel)
+        assert len(await world.events(i)) == 1
+        await pool.execute(
+            "UPDATE circuit_events SET created_at = now() - interval '1 hour' WHERE treasury_id = $1",
+            i,
+        )
+        await pool.execute(
+            "UPDATE operations SET created_at = now() - interval '2 hours' WHERE treasury_id = $1",
+            i,
+        )
+        await evaluate_circuit_breakers(pool, sentinel)  # cool-down over, window still covers them
+        assert len(await world.events(i)) == 1
+        for _ in range(3):
+            await world.operation(i)
+        await evaluate_circuit_breakers(pool, sentinel)
+        assert len(await world.events(i)) == 2
+
+        # A failed on-chain pause is retried each cycle until the sentinel accepts it.
+        j = await world.treasury()
+        flaky = _Sentinel("SENTINEL_FAILED", "SENTINEL_SUBMITTED")
+        for _ in range(3):
+            await world.operation(j)
+        await evaluate_circuit_breakers(pool, flaky)
+        assert await world.onchain(j) == "SENTINEL_FAILED"
+        await evaluate_circuit_breakers(pool, flaky)
+        assert await world.onchain(j) == "SENTINEL_SUBMITTED" and len(flaky.calls) == 2
+        await evaluate_circuit_breakers(pool, flaky)
+        assert len(flaky.calls) == 2
+
+        # Non-tunable rules are held to their defaults by the database.
+        for rule, threshold, window in (("DISCREPANCY", 2, 0), ("AI_PLAN_REJECTED", 1, 60)):
+            with pytest.raises(asyncpg.CheckViolationError):
+                await pool.execute(
+                    "INSERT INTO circuit_rules (id, org_id, treasury_id, rule, threshold, "
+                    "window_seconds) VALUES ($1, $2, $3, $4, $5, $6)",
+                    uuid.uuid4(),
+                    org,
+                    j,
+                    rule,
+                    threshold,
+                    window,
+                )
     finally:
         await pool.close()
 

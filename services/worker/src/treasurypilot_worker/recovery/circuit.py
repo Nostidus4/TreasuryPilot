@@ -66,7 +66,7 @@ async def _windowed(
     limits: tuple[int, int],
 ) -> Trip | None:
     threshold, window = limits
-    count = await conn.fetchval(count_sql, treasury_id, window)
+    count = await conn.fetchval(count_sql, treasury_id, window, rule.value)
     if count < threshold or await _in_cooldown(conn, treasury_id, rule):
         return None
     key = f"{rule.value}:{uuid.uuid4()}"
@@ -187,14 +187,29 @@ async def _signals(conn: asyncpg.Connection, treasury_id: uuid.UUID, pct: int) -
     return trips
 
 
+# Only rows newer than the rule's last trip count, so a spent rejection cannot re-trip the rule
+# once the cool-down ends. Distinct steps/requests: a retried step is one rejection.
+_AFTER_LAST_TRIP = (
+    "COALESCE((SELECT max(created_at) FROM circuit_events "
+    "WHERE treasury_id = $1 AND rule = $3), '-infinity')"
+)
+# Timing is the revert's confirmation time when a transaction carries one; simulation reverts have
+# no transaction, so they use the operation's created_at (shortcut: the attempt time, not the
+# revert time; fine while operations are rejected within seconds of creation).
+_REJECTED_AT = (
+    "COALESCE((SELECT max(t.confirmed_at) FROM transactions t "
+    "WHERE t.operation_id = o.id AND t.status = 'Reverted'), o.created_at)"
+)
 _REJECTIONS_SQL = (
-    "SELECT count(*) FROM operations WHERE treasury_id = $1 "
-    "AND created_at > now() - make_interval(secs => $2) "
-    "AND (status = 'Reverted' OR last_error LIKE 'SIMULATION_REVERTED%')"
+    "SELECT count(DISTINCT o.plan_step_id) FROM operations o WHERE o.treasury_id = $1 "
+    f"AND {_REJECTED_AT} > now() - make_interval(secs => $2) "
+    f"AND {_REJECTED_AT} > {_AFTER_LAST_TRIP} "
+    "AND (o.status = 'Reverted' OR o.last_error LIKE 'SIMULATION_REVERTED%')"
 )
 _AI_REJECTED_SQL = (
-    "SELECT count(*) FROM review_items WHERE treasury_id = $1 AND type = 'AI_REJECTED' "
-    "AND created_at > now() - make_interval(secs => $2)"
+    "SELECT count(DISTINCT request_id) FROM review_items WHERE treasury_id = $1 "
+    "AND type = 'AI_REJECTED' AND created_at > now() - make_interval(secs => $2) "
+    f"AND created_at > {_AFTER_LAST_TRIP}"
 )
 
 
@@ -224,6 +239,8 @@ async def _find_trips(
     )
 
 
+# Keep in sync with mandate/pause.py _upsert_pause (the API's SQLAlchemy twin of this upsert).
+# The system acts here, so created_by/updated_by stay NULL (nullable, ON DELETE SET NULL).
 _PAUSE = """
 INSERT INTO backend_pause (treasury_id, org_id, paused, reason, onchain_status)
 VALUES ($1, $2, true, $3, 'Requested')
@@ -232,7 +249,7 @@ ON CONFLICT (treasury_id) DO UPDATE SET
     paused = true,
     onchain_status = CASE WHEN backend_pause.onchain_status = 'NotRequested'
                           THEN 'Requested' ELSE backend_pause.onchain_status END,
-    updated_at = now(), version = backend_pause.version + 1
+    updated_by = NULL, updated_at = now(), version = backend_pause.version + 1
 """
 
 
@@ -256,15 +273,19 @@ async def _record(
         return None
     if trip.action == "PAUSE":
         await conn.execute(_PAUSE, treasury_id, org_id, f"Circuit breaker: {trip.rule.value}")
-        # An ALERT outflow is already notified by the indexer (UnexpectedOutflow).
-        await conn.execute(
-            "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, payload) "
-            "VALUES ($1, $2, $3, 'CircuitBreakerTripped', 'treasury', $3, $4::jsonb)",
-            uuid.uuid4(),
-            org_id,
+        # Signal rules record every signal, but notify once per cool-down (also within one cycle:
+        # now() is the transaction start, so same-cycle events count as recent).
+        notify = not await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM circuit_events WHERE treasury_id = $1 AND rule = $2 "
+            "AND action = 'PAUSE' AND id <> $4 AND created_at > now() - make_interval(secs => $3))",
             treasury_id,
-            json.dumps({"rule": trip.rule.value, "circuitEventId": str(event_id)}),
+            trip.rule.value,
+            COOLDOWN_SECONDS,
+            event_id,
         )
+        # An ALERT outflow is already notified by the indexer (UnexpectedOutflow).
+        if notify:
+            await _notify(conn, treasury_id, org_id, trip, event_id)
     await append_audit(
         conn,
         org_id,
@@ -274,6 +295,23 @@ async def _record(
         data={"rule": trip.rule.value, "action": trip.action, **trip.details},
     )
     return event_id
+
+
+async def _notify(
+    conn: asyncpg.Connection,
+    treasury_id: uuid.UUID,
+    org_id: uuid.UUID,
+    trip: Trip,
+    event_id: uuid.UUID,
+) -> None:
+    await conn.execute(
+        "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, payload) "
+        "VALUES ($1, $2, $3, 'CircuitBreakerTripped', 'treasury', $3, $4::jsonb)",
+        uuid.uuid4(),
+        org_id,
+        treasury_id,
+        json.dumps({"rule": trip.rule.value, "circuitEventId": str(event_id)}),
+    )
 
 
 async def evaluate_circuit_breakers(pool: asyncpg.Pool, sentinel: Sentinel) -> int:
@@ -290,8 +328,22 @@ async def evaluate_circuit_breakers(pool: asyncpg.Pool, sentinel: Sentinel) -> i
                 event_id = await _record(conn, t["id"], t["org_id"], trip)
                 if event_id is not None and trip.action == "PAUSE":
                     pending.append(event_id)
+        paused += len(pending)
+        # Retry an on-chain pause that never landed (sentinel down or unconfigured): the signer is
+        # idempotent (alreadyPaused). Only the latest PAUSE event of a still-Requested pause.
+        retry = await pool.fetchval(
+            "SELECT e.id FROM circuit_events e JOIN backend_pause b ON b.treasury_id = e.treasury_id "
+            "WHERE e.treasury_id = $1 AND e.action = 'PAUSE' AND b.paused "
+            "AND b.onchain_status = 'Requested' "
+            "AND COALESCE(e.details ->> 'onchain', 'NOT_CONFIGURED') "
+            "IN ('NOT_CONFIGURED', 'SENTINEL_FAILED') "
+            "AND e.created_at = (SELECT max(created_at) FROM circuit_events "
+            "WHERE treasury_id = $1 AND action = 'PAUSE') LIMIT 1",
+            t["id"],
+        )
+        if retry is not None and retry not in pending:
+            pending.append(retry)
         if pending:
-            paused += len(pending)
             # Outside the transaction: the backend pause is committed and holds regardless.
             onchain = await sentinel(t["id"])
             await pool.execute(

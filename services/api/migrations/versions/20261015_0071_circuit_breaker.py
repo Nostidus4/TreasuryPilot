@@ -48,6 +48,15 @@ def upgrade() -> None:
             "rule <> 'REJECTIONS' OR window_seconds BETWEEN 600 AND 86400",
             name="ck_circuit_rules_window",
         ),
+        # Non-tunable rules keep their defaults (keep in sync with py-core circuit.SPECS).
+        sa.CheckConstraint(
+            "rule IN ('REJECTIONS', 'UNEXPECTED_OUTFLOW') OR (threshold = 1 AND window_seconds = "
+            "CASE rule WHEN 'AI_PLAN_REJECTED' THEN 600 ELSE 0 END)",
+            name="ck_circuit_rules_fixed",
+        ),
+        sa.CheckConstraint(
+            "rule <> 'UNEXPECTED_OUTFLOW' OR window_seconds = 0", name="ck_circuit_rules_outflow"
+        ),
         sa.CheckConstraint("jsonb_typeof(state) = 'object'", name="ck_circuit_rules_state"),
         sa.ForeignKeyConstraint(
             ["treasury_id", "org_id"],
