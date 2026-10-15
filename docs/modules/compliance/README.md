@@ -167,13 +167,49 @@ with database access. Each deleted invitation leaves a `deletion_receipts` row w
 only a SHA-256 digest of its random UUID, a record type and deletion timestamp.
 The digest is never computed from email, a name, or a token. The worker skips an
 invitation referenced by the immutable audit log, because deleting the source
-cannot remove personal data from that hash chain; email matches ignore case. Those records require a separate
-legal review before a broader erasure workflow is enabled. Session and magic-link
-retention are separate follow-up scopes because they are user-wide rather than
-organization-scoped; no policy here silently deletes them.
+cannot remove personal data from that hash chain; email matches ignore case. Those
+records require a separate legal review before a broader erasure workflow is enabled.
+
+Session and magic-link retention is configured separately because those records are
+user-wide rather than organization-scoped. `configure_auth_policy()` requires explicit
+session and magic-link periods; `None` disables deletion for that record type, and
+there is no default period. Its deployment-wide legal hold freezes both auth artifact
+sweeps. Sessions become eligible after their revoke or expiry time plus the configured
+period; magic links become eligible after use or expiry plus their configured period.
+Each deleted session or magic link leaves a receipt containing only the SHA-256 digest
+of its random row UUID, type and deletion time; it never hashes or stores the email,
+token, user id, IP or user agent. The global hold is intentionally conservative;
+it also freezes subject erasure while authentication artifacts are part of the request.
+
+`request_subject_deletion()` disables the account immediately and queues its
+profile-erasure request; `set_subject_legal_hold()` records a subject-level hold on the
+same row (it raises `ValueError` for an unknown user). The worker locks
+that row before changing identity data, so a concurrent hold cannot pass a deletion that
+already owns the lock. A held request stays pending until the hold is released. If the
+user's email appears as a whole address in immutable audit evidence (case-insensitive;
+`bob@x.com` does not match `bobob@x.com`), the request is marked for review and
+the account is left intact; the audit chain is never rewritten. The audit scan runs in its
+own transaction before any lock is taken, and a dry run applies the same scan, so its
+`examined` count only includes requests a real run would erase. Blocked requests are not
+retried automatically (the evidence is immutable); every run logs how many await review, and a
+new `request_subject_deletion()` clears the block after the review. Otherwise the worker
+disables the account, replaces its email with a generated `.invalid` address, clears the
+display name, bumps the user version, and removes current sessions, magic links, pending
+invitations addressed to the email, organization memberships, wallet/SSO/MFA credentials
+and user notification targets/preferences. Rows are deleted first and receipts are built
+from the deleted ids, so no row is removed without one. It writes a `subject` receipt and
+separate hash-only receipts for deleted sessions, magic links and invitations, then removes
+the request/hold row. Receipt inserts are chunked (5000 rows). The `subject` receipt is
+an HMAC-SHA256 of the user UUID keyed by `TP_RETENTION_RECEIPT_KEY` (at least 32 bytes,
+never rotated or reused), so the receipt cannot be matched by enumerating UUIDs without
+the key; the CLI refuses to erase a subject without it. Memberships are deleted without the
+last-owner guard that member removal applies, because erasure cannot be refused; an
+organization may be left without an owner and needs an administrator. No original email,
+display name or token is kept in a receipt. The UUID remains on financial and immutable
+audit rows where it is needed for historical attribution; those records are not erased by
+this workflow.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
-a day). Follow-up work is estimated at another 2–3 days: user-wide session and
-magic-link retention, subject-level deletion requests and holds, and a policy for
-financial records and immutable audit evidence after their storage models land.
-Until those slices are designed and implemented, CMP-L03 remains open.
+a day). This follow-up adds user-wide authentication retention and a bounded profile
+erasure request/hold path. A policy for financial records and immutable audit evidence
+remains out of scope, so CMP-L03 stays open for that design and its acceptance tests.
