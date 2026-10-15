@@ -85,7 +85,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 
 | Method | Endpoint | Request → Response | Errors |
 |---|---|---|---|
-| POST | `/sign-and-send` | `{treasuryId, plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `SIGNER_KEY_UNAVAILABLE` |
+| POST | `/sign-and-send` | `{treasuryId, plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `SIGNER_KEY_UNAVAILABLE`, `NOT_CONFIGURED` (no keystore mapped for the treasury) |
 | POST | `/replace` | `{txHash, fees}` → `{txHash, nonce}` (same nonce, same payload, higher fees) | `NOT_PENDING`, `FEE_CAP_EXCEEDED` |
 | POST | `/sentinel/pause` | `{treasuryId}` → `{txHash}` | `NOT_CONFIGURED` |
 | GET | `/sentinel/address`, `/health` | → addresses and gas balances only | |

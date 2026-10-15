@@ -68,6 +68,8 @@ def create_app(
             async def use_signer_role(connection: asyncpg.Connection) -> None:
                 await connection.execute("SET ROLE treasurypilot_signer")
 
+            key_store = ExecutorKeys(settings)
+            key_store.validate()  # refuse to start on a missing keystore or wrong password
             pool = await asyncpg.create_pool(
                 _database_dsn(database_url),
                 min_size=1,
@@ -76,7 +78,6 @@ def create_app(
                 command_timeout=5,
                 init=use_signer_role,
             )
-            key_store = ExecutorKeys(settings)
             rpc = JsonRpc(settings.chain_rpc_url)
             application.state.signing_service = SigningService(
                 settings,
