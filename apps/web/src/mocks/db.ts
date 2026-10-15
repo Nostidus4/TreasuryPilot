@@ -1513,6 +1513,111 @@ export function resetDb(
   refreshQueues();
 }
 
+/** Mock the planning worker's automatic plan creation after an eligible approval. */
+export function planApprovedRequest(
+  request: RequestDetail,
+): PlanDetail | undefined {
+  if (request.status !== 'Approved') return undefined;
+
+  const existing = db.plans.find((plan) =>
+    plan.steps.some((planStep) => planStep.requestId === request.id),
+  );
+  if (existing) return existing;
+
+  const state = db.treasuries[request.treasuryId];
+  const payLimit = state?.budgets.find((budget) => budget.action === 'PAY');
+  if (
+    !state ||
+    !payLimit ||
+    BigInt(request.amount) > BigInt(payLimit.perRequest)
+  ) {
+    return undefined;
+  }
+  if (
+    BigInt(payLimit.usedToday) + BigInt(request.amount) >
+    BigInt(payLimit.dailyLimit)
+  ) {
+    request.timeline.push({
+      at: iso(),
+      label: 'Approved but not planned: would exceed the daily PAY limit',
+    });
+    return undefined;
+  }
+
+  const optionKind = request.approvals.at(-1)?.option ?? 'STANDARD';
+  const option = request.options.find(
+    (candidate) => candidate.kind === optionKind,
+  );
+  if (!option) {
+    request.timeline.push({
+      at: iso(),
+      label: 'Planning skipped: no matching option',
+    });
+    return undefined;
+  }
+
+  const id = `pln_${request.id.replace(/^req_/, '')}`;
+  const plan: PlanDetail = {
+    id,
+    treasuryId: request.treasuryId,
+    createdAt: iso(),
+    status: 'Validated',
+    plannerSource: 'RULE_BASED',
+    expectedSaving: option.saving,
+    totalAmount: option.amount,
+    stepCount: 1,
+    steps: [
+      step(
+        1,
+        {
+          kind: 'PAY',
+          title: `Pay ${request.vendorName}`,
+          from: 'Payments Safe (O1)',
+          to: request.vendorName,
+          amount: option.amount,
+          requestId: request.id,
+          option: optionKind,
+          reason: 'The approved request is within the active PAY limit.',
+        },
+        id,
+      ),
+    ],
+    validations: [
+      {
+        code: 'APPROVAL_VALID',
+        decision: 'ALLOW',
+        message: 'The request has a valid approver signature.',
+      },
+      {
+        code: 'WITHIN_PER_REQUEST_LIMIT',
+        decision: 'ALLOW',
+        message: 'The request is within the active per-request PAY limit.',
+      },
+    ],
+    bindingConstraints: [],
+    attestation: {
+      planHash: h32(id),
+      signer: addr('policy-key'),
+      signedAt: iso(),
+    },
+  };
+
+  db.plans.unshift(plan);
+  request.planId = id;
+  request.status = 'Scheduled';
+  request.timeline.push({ at: iso(), label: `Plan ${id} created` });
+  logActivity(
+    request.treasuryId,
+    'agent',
+    `Plan ${id} created for ${request.invoiceNumber}`,
+    `plans/${id}`,
+  );
+  refreshQueues();
+  emit('request', request.id);
+  emit('plan', id);
+  return plan;
+}
+
 export function setSession(user: User | null) {
   db.session = user;
   try {
