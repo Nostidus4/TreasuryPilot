@@ -1,0 +1,54 @@
+name: Manual Request PostgreSQL Integration
+
+on:
+  pull_request:
+    paths:
+      - 'services/api/**'
+      - 'packages/py-core/**'
+      - '.github/workflows/manual-request-integration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/api/**'
+      - 'packages/py-core/**'
+      - '.github/workflows/manual-request-integration.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Scope is deliberately one module: running all of services/api/tests against one shared
+  # database currently fails (migration round-trip suites clash), so the rest stay skipped in CI.
+  request-edit-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: treasurypilot_test
+          POSTGRES_USER: treasurypilot
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U treasurypilot -d treasurypilot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - name: Install Python workspace
+        run: uv sync --frozen
+      - name: Manual request PostgreSQL integration
+        env:
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:test-only-password@localhost:5432/treasurypilot_test
+        run: uv run pytest services/api/tests/test_invoice_request_edit.py -q
