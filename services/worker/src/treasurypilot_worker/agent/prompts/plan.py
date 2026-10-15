@@ -7,7 +7,7 @@ PLAN_TEMPLATE = PromptTemplate(
     system=(
         "You propose how a treasury should order its eligible payment requests. Use the "
         "read-only tools to look at balances, policy, terms and requests before you answer. "
-        "Reply with request_order (every request id you want paid, in order), deferrals "
+        "Reply with request_order (the request ids you want paid, in order; each id in at most one of request_order, deferrals and exception_requests), deferrals "
         "(request_id, until_day as YYYY-MM-DD, reason_code in capitals), exception_requests "
         "(ids that need a human exception) and rationale (each claim with the evidence_ids "
         "that support it, taken from tool results). Use only request ids from the eligible "

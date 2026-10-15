@@ -1,7 +1,8 @@
 """AI plan proposal (AGT-008): strict schema, trigger rule, reference check, EXPLAIN."""
 
+import json
 import re
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Collection, Sequence
 from datetime import date
 from typing import Any
 
@@ -11,7 +12,7 @@ from treasurypilot_worker.agent.adapter import AiAdapter
 from treasurypilot_worker.agent.config import AiTask
 from treasurypilot_worker.agent.errors import AiError
 from treasurypilot_worker.agent.prompts.plan import EXPLAIN_TEMPLATE, PLAN_TEMPLATE
-from treasurypilot_worker.agent.types import AiResult, Tool
+from treasurypilot_worker.agent.types import AiResult, Tool, ToolCallRecord
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
@@ -47,7 +48,7 @@ class PlanContext(_Strict):
 class PlanFact(_Strict):
     request_id: str
     pay_day: date
-    amount: str  # base units, from the engine
+    amount: str  # display amount as the reviewer sees it (e.g. "3,000"), from the engine
 
 
 class PlanFacts(_Strict):
@@ -68,31 +69,51 @@ def needs_full_proposal(*, eligible_requests: int, terms_or_deferrals_matter: bo
     return eligible_requests >= 2 or terms_or_deferrals_matter
 
 
+def evidence_from_tool_calls(tool_calls: Sequence[ToolCallRecord]) -> set[str]:
+    """Evidence ids this run actually read: org-bound tools succeeded on them, nothing else counts."""
+
+    seen: set[str] = set()
+    for call in tool_calls:
+        if call.is_error:
+            continue
+        if call.name == "get_evidence" and "evidence_id" in call.input:
+            seen.add(str(call.input["evidence_id"]))
+        elif call.name == "get_snapshot":
+            try:
+                seen.add(str(json.loads(call.result)["snapshot_id"]))
+            except (ValueError, KeyError, TypeError):
+                pass  # truncated or odd output: its id is simply not citable
+    return seen
+
+
 def check_references(
     proposal: PlanProposal,
     *,
     eligible_request_ids: Collection[str],
-    evidence_exists: Callable[[str], bool],
+    known_evidence_ids: Collection[str],
 ) -> None:
     """Raise `PlanProposalRejected` unless every id resolves inside the organisation.
 
-    `eligible_request_ids` must come from the org-scoped request list; `evidence_exists`
-    from the org-scoped evidence lookup.
+    `eligible_request_ids` must come from the org-scoped request list; `known_evidence_ids`
+    from `evidence_from_tool_calls` (org-bound tools). Whether every eligible request is
+    covered is AGT-009's call, not checked here.
     """
 
     eligible = set(eligible_request_ids)
-    named = [
-        *proposal.request_order,
-        *(d.request_id for d in proposal.deferrals),
-        *proposal.exception_requests,
-    ]
+    deferred = [d.request_id for d in proposal.deferrals]
+    groups = (list(proposal.request_order), deferred, list(proposal.exception_requests))
+    for group in groups:
+        if len(set(group)) != len(group):
+            raise PlanProposalRejected("a request id is repeated within one list")
+    named = [i for g in groups for i in g]
     unknown = sorted(set(named) - eligible)
     if unknown:
         raise PlanProposalRejected(f"unknown request ids: {unknown}")
-    if len(set(proposal.request_order)) != len(proposal.request_order):
-        raise PlanProposalRejected("request_order repeats a request id")
+    if len(set(named)) != len(named):
+        raise PlanProposalRejected("a request id appears in more than one list")
+    known = set(known_evidence_ids)
     for item in proposal.rationale:
-        missing = [e for e in item.evidence_ids if not evidence_exists(e)]
+        missing = [e for e in item.evidence_ids if e not in known]
         if missing:
             raise PlanProposalRejected(f"evidence ids do not resolve: {missing}")
 
@@ -103,7 +124,6 @@ def propose_plan(
     org_id: str,
     treasury_id: str,
     eligible_request_ids: Sequence[str],
-    evidence_exists: Callable[[str], bool],
     tools: Sequence[Tool[Any]],
 ) -> AiResult[PlanProposal]:
     """Run the PLAN task and check its references. Any `AiError` means: use the deterministic plan."""
@@ -117,7 +137,9 @@ def propose_plan(
         tools=tools,
     )
     check_references(
-        result.output, eligible_request_ids=eligible_request_ids, evidence_exists=evidence_exists
+        result.output,
+        eligible_request_ids=eligible_request_ids,
+        known_evidence_ids=evidence_from_tool_calls(result.tool_calls),
     )
     return result
 
@@ -132,7 +154,8 @@ def explain_plan(adapter: AiAdapter, *, org_id: str, facts: PlanFacts) -> str | 
         output=Explanation,
     )
     text = result.output.text
-    if _numbers(text) <= _numbers(facts.model_dump_json()):
+    allowed = {n for f in facts.items for n in _numbers(f.amount) | _numbers(f.pay_day.isoformat())}
+    if _numbers(text) <= allowed:
         return text
     return None
 

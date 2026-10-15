@@ -42,6 +42,7 @@ from treasurypilot_worker.agent import (
     ProviderResponse,
     plan_fallback,
 )
+from treasurypilot_worker.agent.plan_proposer import PlanProposalRejected
 
 NOW = 1_800_000_000
 CHAIN = 11155111
@@ -298,6 +299,8 @@ def test_only_an_ai_outage_triggers_the_fallback() -> None:
         _refusal(_ctx(), AiInputRejected(pattern="p", source="s")) == FallbackRefusal.NOT_AN_OUTAGE
     )
     _fallback(_ctx(), AiUnavailable("down", retryable=False))
+    # a rejected proposal goes to review (M09-D12), not to the template
+    assert _refusal(_ctx(), PlanProposalRejected("bad id")) == FallbackRefusal.NOT_AN_OUTAGE
 
 
 @pytest.mark.parametrize(
