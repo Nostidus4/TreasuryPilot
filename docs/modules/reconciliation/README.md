@@ -167,6 +167,8 @@ SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ len
 - Each verifier call makes one read attempt. The sequencer opens the INFRA review on the 3rd UNKNOWN newer than the operation's last PASSED/DISCREPANCY and the request's last resolved `VERIFICATION_UNKNOWN` review.
 - One PASSED/DISCREPANCY per operation (partial unique index), so concurrent verifiers raise one breaker signal.
 - `chain_safety_signals.observed_event_id` and `token_movement_id` are nullable now; a check constraint requires either both or a `verification_id`.
+- **Traceability (all scope items):** expected effects per step type `verify.py::expected_effects`; observed = Multicall3 state at header(B).hash minus header(B).parentHash with other txs' transfers netted `compute`/`_state`/`_concurrent_net`; PASSED/DISCREPANCY/UNKNOWN and the 3-read rule `PostConditionVerifier.verify` + `executor/sequencer.py::_post_condition`; review item and breaker signal `sequencer.py::_post_condition` and `PostConditionVerifier._store`; EXE-008 gating is the sequencer calling the verifier before it sends the next step (`tasks.py`). Tests: unit `tests/reconcile/test_verify.py`; Postgres `tests/executor/test_sequencer_integration.py`; **Anvil end to end** `tests/reconcile/test_verify_anvil.py` (real Multicall3 code, hand-assembled token and module contracts, same-block concurrent transfer, normal PAY = PASSED, wrong amount = DISCREPANCY with review item and breaker signal), run in the `execution-integration` CI job.
+- Anvil gap: SUPPLY/WITHDRAW post-conditions are covered by unit tests only (no Aave pool on Anvil).
 
 ## Match, discrepancy and auto-match implementation notes (REC-003, #157)
 
