@@ -195,6 +195,17 @@ SELECT $1, id, current_revision, '{INSTRUCTION_REASON_CODE}', '{INSTRUCTION_SEVE
   $3::jsonb, $4
 FROM payment_requests WHERE id = $2
 """
+_INSERT_MULTI_INVOICE_FLAG = """
+INSERT INTO flags (id, request_id, revision, code, severity, evidence, source)
+SELECT $1, r.id, r.current_revision, 'MULTI_INVOICE_DOCUMENT', 'HIGH',
+  jsonb_build_object('invoiceCountInDocument', $2::integer), 'AI'
+FROM payment_requests r
+WHERE r.id = $3
+  AND NOT EXISTS (
+    SELECT 1 FROM flags f
+    WHERE f.request_id = r.id AND f.code = 'MULTI_INVOICE_DOCUMENT' AND f.status = 'Open'
+  )
+"""
 _PAYEE_ADDRESSES = "SELECT '0x' || encode(address, 'hex') FROM payees WHERE treasury_id = $1"
 _EXTRACTED = """
 UPDATE payment_requests SET extraction_status = 'Extracted',
@@ -298,6 +309,13 @@ def extract_invoice_document(
                 uuid.UUID(result.ai_call_id),
                 json.dumps(result.output.model_dump(mode="json")),
             )
+            if result.output.invoice_count_in_document > 1:
+                await connection.execute(
+                    _INSERT_MULTI_INVOICE_FLAG,
+                    uuid7(),
+                    result.output.invoice_count_in_document,
+                    request_id,
+                )
             if (evidence := llm_flag_evidence(result.output)) is not None:
                 await _add_flag(connection, request_id, evidence, "AI")
         return "Extracted"

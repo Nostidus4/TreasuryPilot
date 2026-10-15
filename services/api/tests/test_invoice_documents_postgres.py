@@ -18,6 +18,7 @@ from pypdf import PdfWriter
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from treasurypilot_api.agent.models import AiCall, AiPurpose, AiValidationResult, Extraction
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
@@ -239,14 +240,43 @@ async def _scenario(database_url: str) -> None:
                 requests._hashes(expected, "acme", bytes.fromhex("11" * 20), DOC_SHA)
                 assert row.invoice_hash == expected.invoice_hash
 
-            # Multi-invoice flag: refused on non-upload requests, idempotent on upload drafts.
+            # A manual client report is refused on non-upload requests.
             multi = {**confirm, "invoiceCountInDocument": 2}
             manual = await _draft(sessions, RequestSource.MANUAL.value)
             response = await client.post(f"{base}/{manual}/extraction/confirm", json=multi)
             assert response.status_code == 409, response.text
+
+            # M09's persisted count is authoritative even if a client omits the count.
             upload = await _draft(sessions, RequestSource.UPLOAD.value)
+            async with sessions() as session, session.begin():
+                document = await session.scalar(
+                    select(RequestDocument).where(RequestDocument.request_id == upload)
+                )
+                assert document is not None
+                ai_call = AiCall(
+                    org_id=ORG_ID,
+                    purpose=AiPurpose.EXTRACT,
+                    model="fixture",
+                    prompt_version="test",
+                    input_refs=[f"document:{document.id}"],
+                    tool_calls=[],
+                    validation_result=AiValidationResult.OK,
+                    latency_ms=0,
+                    input_tokens=0,
+                    output_tokens=0,
+                    cost_usd_micros=0,
+                )
+                session.add(ai_call)
+                await session.flush()
+                session.add(
+                    Extraction(
+                        document_id=document.id,
+                        ai_call_id=ai_call.id,
+                        fields={"invoice_count_in_document": 2},
+                    )
+                )
             for _ in range(2):
-                response = await client.post(f"{base}/{upload}/extraction/confirm", json=multi)
+                response = await client.post(f"{base}/{upload}/extraction/confirm", json=confirm)
                 assert response.status_code == 422, response.text
             async with sessions() as session:
                 flags = (

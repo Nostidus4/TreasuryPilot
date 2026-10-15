@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from treasurypilot_api.agent.models import Extraction
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
@@ -485,6 +486,30 @@ async def confirm_extraction(
                     "Request not editable",
                     "Only upload drafts can be confirmed.",
                 )
+            extraction = await session.scalar(
+                select(Extraction)
+                .join(RequestDocument, RequestDocument.id == Extraction.document_id)
+                .where(RequestDocument.request_id == row.id)
+            )
+            reported_count = (
+                extraction.fields.get("invoice_count_in_document")
+                if extraction is not None
+                else None
+            )
+            if reported_count is not None and (
+                isinstance(reported_count, bool)
+                or not isinstance(reported_count, int)
+                or reported_count < 1
+            ):
+                raise _fail(
+                    422,
+                    "EXTRACTION_FIELDS_INVALID",
+                    "Extracted fields invalid",
+                    "The uploaded document's extraction result is invalid.",
+                )
+            multi_invoice = multi_invoice or (
+                isinstance(reported_count, int) and reported_count > 1
+            )
             if multi_invoice:
                 open_flag = await session.scalar(
                     select(RequestFlag.id)
@@ -503,7 +528,11 @@ async def confirm_extraction(
                             revision=row.current_revision,
                             code="MULTI_INVOICE_DOCUMENT",
                             severity=RequestFlagSeverity.HIGH.value,
-                            evidence={"invoiceCountInDocument": payload.invoice_count_in_document},
+                            evidence={
+                                "invoiceCountInDocument": reported_count
+                                if isinstance(reported_count, int)
+                                else payload.invoice_count_in_document
+                            },
                             source=RequestFlagSource.AI.value,
                             status=RequestFlagStatus.OPEN.value,
                         )
