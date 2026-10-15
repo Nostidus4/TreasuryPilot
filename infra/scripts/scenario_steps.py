@@ -84,6 +84,7 @@ class Chain:
     def send(
         self, sender: str, to: str, signature: str, types: list[str], args: list[Any]
     ) -> dict[str, Any]:
+        started = time.perf_counter()
         tx = rpc(self.url, "eth_sendTransaction", [self._tx(sender, to, signature, types, args)])
         for _ in range(50):  # Anvil may mine a moment after the send returns
             if (receipt := rpc(self.url, "eth_getTransactionReceipt", [tx])) is not None:
@@ -93,6 +94,10 @@ class Chain:
             receipt is not None and receipt["status"] == "0x1", f"{signature} transaction failed"
         )
         self.ctx["transactions"].append(receipt)
+        # a method sent twice keeps its last timing
+        self.ctx.setdefault("tx_ms", {})[f"tx:{signature.split('(')[0]}"] = (
+            time.perf_counter() - started
+        ) * 1000
         return receipt  # type: ignore[no-any-return]
 
     def reverts_with(

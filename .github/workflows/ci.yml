@@ -330,6 +330,10 @@ jobs:
           for name in $(uv run python infra/scripts/scenario.py list | awk '{print $1}'); do
             uv run python infra/scripts/scenario.py run "$name" --out /tmp/scenario-evidence
           done
+      - name: Reliability harness smoke (3 runs)
+        run: |
+          uv run python infra/scripts/reliability.py --local-runs 3 --out-dir /tmp/reliability
+          grep -q 'completion: 100.0%' /tmp/reliability/reliability-*.md
       - name: Refuse a non-allowlisted chain
         run: |
           anvil --silent --chain-id 1 --port 8546 > /tmp/treasurypilot-anvil-mainnet.log 2>&1 &
