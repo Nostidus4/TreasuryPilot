@@ -15,6 +15,7 @@ import {
   CardFooter,
   CardHeader,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/controls';
 import { Field, Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/misc';
 import {
@@ -244,6 +245,7 @@ function Editor({
   const [expiresAt, setExpiresAt] = useState(base.expiresAt.slice(0, 10));
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<MandateDraft>();
+  const [confirmLooser, setConfirmLooser] = useState(false);
 
   const serverErrors = isApiError(saveDraft.error)
     ? Object.fromEntries(
@@ -254,7 +256,12 @@ function Editor({
       )
     : {};
   const errorFor = (key: string) => localErrors[key] ?? serverErrors[key];
-  const touch = () => setPreview(undefined);
+  const touch = () => {
+    setPreview(undefined);
+    setConfirmLooser(false);
+  };
+  // Mixed diffs (some looser, some stricter) are gated on purpose: any looser entry needs confirmation.
+  const looser = preview?.diff.some((entry) => entry.direction === 'LOOSER');
 
   const build = (): MandateConfig | null => {
     const errors: Record<string, string> = {};
@@ -429,7 +436,13 @@ function Editor({
         onSubmit={(event) => {
           event.preventDefault();
           const config = build();
-          if (config) saveDraft.mutate(config, { onSuccess: setPreview });
+          if (config)
+            saveDraft.mutate(config, {
+              onSuccess: (draft) => {
+                setConfirmLooser(false);
+                setPreview(draft);
+              },
+            });
         }}
       >
         <Card>
@@ -753,11 +766,24 @@ function Editor({
                     }
                   />
                 </div>
-                {preview.diff.some((entry) => entry.direction === 'LOOSER') && (
+                {looser && (
                   <Alert tone="warning">
                     {t(
                       'This draft loosens at least one control. Owners will see the same comparison before they sign.',
                     )}
+                    <label
+                      htmlFor="confirm-looser"
+                      className="mt-2 flex items-center gap-2 font-medium"
+                    >
+                      <Checkbox
+                        id="confirm-looser"
+                        checked={confirmLooser}
+                        onCheckedChange={(checked) =>
+                          setConfirmLooser(checked === true)
+                        }
+                      />
+                      {t('I understand this loosens the mandate')}
+                    </label>
                   </Alert>
                 )}
                 {activation.isError && (
@@ -768,6 +794,7 @@ function Editor({
                 <Button
                   variant="primary"
                   loading={activation.isPending}
+                  disabled={looser && !confirmLooser}
                   onClick={() =>
                     activation.mutate(preview.draft.version, {
                       onSuccess: ({ governanceTx }) =>
@@ -777,6 +804,11 @@ function Editor({
                 >
                   {t('Create governance transaction')}
                 </Button>
+                {looser && !confirmLooser && (
+                  <p className="text-sm text-muted-foreground">
+                    {t('Confirm the looser change above to continue.')}
+                  </p>
+                )}
               </CardFooter>
             </>
           )}
