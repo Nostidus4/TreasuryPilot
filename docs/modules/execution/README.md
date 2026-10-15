@@ -139,6 +139,8 @@ For each step in order:
 5. M11 post-condition check (REC-001) must be **PASSED** before the next step (M10-D6). DISCREPANCY → stop, review item, circuit-breaker signal.
 6. After PAY Verified → request `Paid`, plan `Completed`; EAS receipt and reconciliation follow (M11).
 
+**EXE-008 implementation** (`executor/sequencer.py`): `sequence_plan` is resumable and sends at most one step per call, returning `Waiting` while the previous operation is Submitted/Pending/Unknown. Before each step it calls `Gate.pre_step` (fresh snapshot, PRE_STEP, SIMULATION) and, if the attestation expired, `Gate.reattest`; a non-ALLOW or a terminal signer refusal opens one review item (primary code) and moves the request to `NeedsReview`. PAY submitted → `Paying`, PAY Confirmed → `Paid`. Not yet wired: the REC-001 post-condition gate and the concrete `Gate` (snapshot to validation context), owned by the planner (EXE-004).
+
 Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, completed steps stay (BR-054).
 
 ### 7.4 Gas replacement
