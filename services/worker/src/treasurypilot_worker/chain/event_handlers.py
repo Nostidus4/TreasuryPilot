@@ -370,6 +370,24 @@ async def _resumed(connection: asyncpg.Connection, event: IndexedEvent) -> None:
         await _enqueue_execution_cycle(connection, event.treasury_id)
 
 
+async def _revoked(connection: asyncpg.Connection, event: IndexedEvent) -> None:
+    # Terminal: the module never acts again; every worker gate requires a Ready treasury.
+    await connection.execute(
+        "UPDATE treasuries SET status = 'Revoked', version = version + 1, updated_at = now() "
+        "WHERE id = $1 AND status <> 'Revoked'",
+        event.treasury_id,
+    )
+    await connection.execute(
+        "WITH revoked AS (UPDATE mandate_versions SET status = 'Revoked' "
+        "WHERE treasury_id = $1 AND status = 'Active' RETURNING id, org_id) "
+        "INSERT INTO mandate_status_events (id, org_id, mandate_version_id, from_status, "
+        "to_status, tx_hash, by_user_id) SELECT gen_random_uuid(), org_id, id, 'Active', "
+        "'Revoked', $2, NULL FROM revoked",
+        event.treasury_id,
+        event.tx_hash,
+    )
+
+
 async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent) -> None:
     # Amount and payee must equal the proposal: a different grant is not the one owners reviewed.
     row = await connection.fetchrow(
@@ -517,6 +535,7 @@ registry.on_event(MODULE, "PayeeAdded", _payee_added)
 registry.on_event(MODULE, "PayeeDeactivated", _payee_deactivated)
 registry.on_event(MODULE, "Paused", _paused)
 registry.on_event(MODULE, "Resumed", _resumed)
+registry.on_event(MODULE, "Revoked", _revoked)
 registry.on_event(MODULE, "ExceptionGranted", _exception_granted)
 registry.on_event(MODULE, "ExceptionRevoked", _exception_revoked)
 registry.on_event(MODULE, "PaymentExecuted", _exception_consumed)

@@ -51,6 +51,10 @@ class SignerRefused(Exception):
         return self.code in TERMINAL_REFUSALS
 
 
+class TreasuryPaused(Exception):
+    """The treasury is paused or revoked; no operation is created or signed."""
+
+
 class SignerMisconfigured(Exception):
     """HTTP 401 from the signer: our shared secret is wrong. A deploy error, not a refusal."""
 
@@ -137,6 +141,17 @@ def _parse_reply(signed: dict[str, Any]) -> tuple[bytes, int, bytes]:
     return tx_hash, nonce, sender
 
 
+PAUSED_SQL = (
+    "SELECT (t.status IN ('Paused', 'Revoked') OR COALESCE(bp.paused, false)) AS paused "
+    "FROM treasuries t LEFT JOIN backend_pause bp ON bp.treasury_id = t.id WHERE t.id = $1"
+)
+
+
+async def _require_not_paused(connection: asyncpg.Connection, treasury_id: UUID) -> None:
+    if await connection.fetchval(PAUSED_SQL, treasury_id):
+        raise TreasuryPaused(str(treasury_id))
+
+
 async def execute_step(
     pool: asyncpg.Pool, signer: SignerClient, step: StepExecution
 ) -> StepOutcome:
@@ -151,6 +166,7 @@ async def execute_step(
     async with pool.acquire() as connection:
         # Transaction 1: the outbox row exists (and the attempt is counted) before any signing.
         async with connection.transaction():
+            await _require_not_paused(connection, step.treasury_id)
             await connection.execute(
                 "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
                 "kind, payload, idempotency_key) VALUES (gen_random_uuid(), $1, $2, $3, $4, "
@@ -176,6 +192,8 @@ async def execute_step(
             )
         operation_id: UUID = operation["id"]
 
+        # A pause can land between transaction 1 and here; the operation stays NotSubmitted.
+        await _require_not_paused(connection, step.treasury_id)
         try:
             tx_hash, nonce, sender = _parse_reply(await signer.sign_and_send(step.sign_request))
         except SignerRefused as error:

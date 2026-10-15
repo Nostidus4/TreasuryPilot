@@ -1986,6 +1986,44 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/pause': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pause Status */
+    get: operations['pause_status_v1_orgs__organization_id__treasuries__treasury_id__pause_get'];
+    put?: never;
+    /** Pause Treasury */
+    post: operations['pause_treasury_v1_orgs__organization_id__treasuries__treasury_id__pause_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/pause/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cancel Pause
+     * @description Lift a backend-only pause that never became effective on-chain (resume-tx needs Effective).
+     */
+    post: operations['cancel_pause_v1_orgs__organization_id__treasuries__treasury_id__pause_cancel_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees': {
     parameters: {
       query?: never;
@@ -2100,6 +2138,40 @@ export interface paths {
     get: operations['list_execution_plans_v1_orgs__organization_id__treasuries__treasury_id__plans_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/resume-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Resume Tx */
+    post: operations['resume_tx_v1_orgs__organization_id__treasuries__treasury_id__resume_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/revoke-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Tx */
+    post: operations['revoke_tx_v1_orgs__organization_id__treasuries__treasury_id__revoke_tx_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2868,6 +2940,13 @@ export interface components {
       | 'RESUME'
       | 'REVOKE'
       | 'GUARDIAN_SETUP';
+    /** GovernanceTxResponse */
+    GovernanceTxResponse: {
+      /** Governancetx */
+      governanceTx: {
+        [key: string]: unknown;
+      };
+    };
     /** GrantExceptionRequest */
     GrantExceptionRequest: {
       /**
@@ -2875,6 +2954,12 @@ export interface components {
        * @default 72
        */
       expiryHours: number;
+    };
+    /** GuardianTx */
+    GuardianTx: {
+      call: components['schemas']['SafeCall'];
+      /** Safeaddress */
+      safeAddress: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -3357,6 +3442,11 @@ export interface components {
       type: string;
     };
     /**
+     * OnchainPauseStatus
+     * @enum {string}
+     */
+    OnchainPauseStatus: 'NotRequested' | 'Requested' | 'Effective';
+    /**
      * OobMethod
      * @enum {string}
      */
@@ -3472,6 +3562,51 @@ export interface components {
       /** Solomode */
       soloMode: boolean;
     };
+    /** PauseCancelResponse */
+    PauseCancelResponse: {
+      /** Backendpaused */
+      backendPaused: boolean;
+      onchainStatus: components['schemas']['OnchainPauseStatus'];
+    };
+    /** PauseRequest */
+    PauseRequest: {
+      /** Reason */
+      reason: string;
+    };
+    /** PauseResponse */
+    PauseResponse: {
+      /** Backendpaused */
+      backendPaused: boolean;
+      guardianTx?: components['schemas']['GuardianTx'] | null;
+      /**
+       * Onchain
+       * @enum {string}
+       */
+      onchain:
+        | 'SENTINEL_SUBMITTED'
+        | 'ALREADY_PAUSED'
+        | 'SENTINEL_FAILED'
+        | 'GUARDIAN_SAFE_TX_REQUIRED';
+      onchainStatus: components['schemas']['OnchainPauseStatus'];
+      /** Pendingtransactions */
+      pendingTransactions: components['schemas']['PendingTransaction'][];
+      /** Sentineltxhash */
+      sentinelTxHash?: string | null;
+    };
+    /** PauseStatusResponse */
+    PauseStatusResponse: {
+      /** Backendpaused */
+      backendPaused: boolean;
+      /** Effective */
+      effective: boolean;
+      guardianTx?: components['schemas']['GuardianTx'] | null;
+      onchainStatus: components['schemas']['OnchainPauseStatus'];
+      /** Pendingtransactions */
+      pendingTransactions: components['schemas']['PendingTransaction'][];
+      /** Reason */
+      reason: string | null;
+      treasuryStatus: components['schemas']['TreasuryStatus'];
+    };
     /** PayeeCreate */
     PayeeCreate: {
       /** Address */
@@ -3534,6 +3669,17 @@ export interface components {
        * Format: uuid
        */
       vendorId: string;
+    };
+    /** PendingTransaction */
+    PendingTransaction: {
+      /** Kind */
+      kind: string;
+      /** Operationid */
+      operationId: string;
+      /** Requestid */
+      requestId: string;
+      /** Status */
+      status: string;
     };
     /** PlanDetailView */
     PlanDetailView: {
@@ -3957,10 +4103,26 @@ export interface components {
       | 'AI_REJECTED'
       | 'INFRA'
       | 'UNEXPECTED_OUTFLOW';
+    /** RevokeRequest */
+    RevokeRequest: {
+      /** Confirmname */
+      confirmName: string;
+    };
     /** RoleUpdateRequest */
     RoleUpdateRequest: {
       /** Roles */
       roles: components['schemas']['OrganizationRole'][];
+    };
+    /** SafeCall */
+    SafeCall: {
+      /** Data */
+      data: string;
+      /** Operation */
+      operation: number;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
     };
     /** SafeDeploymentRequest */
     SafeDeploymentRequest: {
@@ -8920,6 +9082,106 @@ export interface operations {
       };
     };
   };
+  pause_status_v1_orgs__organization_id__treasuries__treasury_id__pause_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PauseStatusResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pause_treasury_v1_orgs__organization_id__treasuries__treasury_id__pause_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PauseRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PauseResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cancel_pause_v1_orgs__organization_id__treasuries__treasury_id__pause_cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PauseCancelResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get: {
     parameters: {
       query?: never;
@@ -9190,6 +9452,74 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PlanList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  resume_tx_v1_orgs__organization_id__treasuries__treasury_id__resume_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GovernanceTxResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  revoke_tx_v1_orgs__organization_id__treasuries__treasury_id__revoke_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RevokeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GovernanceTxResponse'];
         };
       };
       /** @description Validation Error */

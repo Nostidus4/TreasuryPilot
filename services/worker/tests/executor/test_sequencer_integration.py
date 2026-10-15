@@ -375,3 +375,24 @@ def test_paid_goes_through_paying_with_both_events(database_url: str) -> None:
         ("Preparing", "Paying"),
         ("Paying", "Paid"),
     ]
+
+
+def test_paused_treasury_is_a_no_op_and_the_request_stays_queued(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    flag = (
+        "INSERT INTO backend_pause (treasury_id, org_id, paused, reason) VALUES ($1, $2, $3, 'x') "
+    )
+    flag += "ON CONFLICT (treasury_id) DO UPDATE SET paused = EXCLUDED.paused"
+    asyncio.run(_sql(database_url, flag, _TREASURY, uuid.UUID(_ORG), True))
+    try:
+        result = asyncio.run(_go(database_url, signer, run, gate))
+        assert result.status == "Paused"
+        assert signer.calls == 0 and gate.checked == []
+        assert _request_status(database_url, run) == "Preparing"  # not NeedsReview
+        items = asyncio.run(
+            _sql(database_url, "SELECT 1 FROM review_items WHERE request_id = $1", run.request_id)
+        )
+        assert items == []
+    finally:
+        asyncio.run(_sql(database_url, flag, _TREASURY, uuid.UUID(_ORG), False))
+    assert asyncio.run(_go(database_url, signer, run, gate)).status == "Waiting"

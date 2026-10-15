@@ -77,7 +77,10 @@ export function PauseDialog({
             onSubmit={(event) => {
               event.preventDefault();
               pause.mutate(reason, {
-                onSuccess: (result) => setSentinelTx(result.sentinelTxHash),
+                onSuccess: (result) =>
+                  setSentinelTx(
+                    (result.sentinelTxHash ?? undefined) as Hex | undefined,
+                  ),
               });
             }}
           >

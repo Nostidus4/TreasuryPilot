@@ -499,6 +499,7 @@ export const treasuryHandlers = [
     );
   }),
 
+  // Reasons containing "sentinel-failed" or "no-sentinel" exercise the Guardian Safe fallbacks.
   route<{ reason?: string }>('post', `${T}/pause`, ({ params, body }) => {
     const state = requireTreasury(params);
     if (!body.reason?.trim())
@@ -507,24 +508,82 @@ export const treasuryHandlers = [
         'VALIDATION',
         'Give a reason for the pause. It is recorded in the audit log.',
       );
-    state.treasury.status = 'PauseRequested';
-    state.treasury.pauseReason = body.reason;
-    const sentinelTxHash = h32(`pause-${Date.now()}`);
+    const already = ['PauseRequested', 'Paused'].includes(
+      state.treasury.status,
+    );
+    const sentinelFailed = body.reason.includes('sentinel-failed');
+    const noSentinel = body.reason.includes('no-sentinel');
+    const result = {
+      backendPaused: true as const,
+      onchainStatus:
+        state.treasury.status === 'Paused' ? 'Effective' : 'Requested',
+      onchain: already
+        ? 'ALREADY_PAUSED'
+        : sentinelFailed
+          ? 'SENTINEL_FAILED'
+          : noSentinel
+            ? 'GUARDIAN_SAFE_TX_REQUIRED'
+            : 'SENTINEL_SUBMITTED',
+      sentinelTxHash: null as string | null,
+      guardianTx: null as unknown,
+      pendingTransactions: [] as unknown[],
+    };
+    state.treasury.status =
+      state.treasury.status === 'Paused' ? 'Paused' : 'PauseRequested';
+    state.treasury.pauseReason ??= body.reason;
     logActivity(params.tId, 'user', `Pause requested: ${body.reason}`);
-    schedule(2500, () => {
-      state.treasury.status = 'Paused';
-      logActivity(params.tId, 'chain', 'Paused on-chain by the sentinel');
-      emit('notification', 'pause');
-    });
+    if (sentinelFailed || noSentinel) {
+      result.guardianTx = {
+        safeAddress: state.treasury.moduleAddress,
+        call: {
+          to: state.treasury.moduleAddress,
+          value: '0',
+          data: '0x8456cb59',
+          operation: 0,
+        },
+      };
+      return result;
+    }
+    if (!already) {
+      result.sentinelTxHash = h32(`pause-${Date.now()}`);
+      schedule(2500, () => {
+        state.treasury.status = 'Paused';
+        logActivity(params.tId, 'chain', 'Paused on-chain by the sentinel');
+        emit('notification', 'pause');
+      });
+    }
+    return result;
+  }),
+
+  route('get', `${T}/pause`, ({ params }) => {
+    const state = requireTreasury(params);
+    const status = state.treasury.status;
     return {
-      backendPaused: true,
-      onchain: 'SENTINEL_SUBMITTED',
-      sentinelTxHash,
+      backendPaused: status === 'PauseRequested' || status === 'Paused',
+      onchainStatus:
+        status === 'Paused'
+          ? 'Effective'
+          : status === 'PauseRequested'
+            ? 'Requested'
+            : 'NotRequested',
+      effective: status === 'Paused',
+      reason: state.treasury.pauseReason ?? null,
+      treasuryStatus: status === 'Active' ? 'Ready' : status,
+      pendingTransactions: [],
+      guardianTx: null,
     };
   }),
 
   route('post', `${T}/resume-tx`, ({ params }) => {
     const state = requireTreasury(params);
+    if (state.treasury.status === 'Active')
+      fail(409, 'NOT_PAUSED', 'The treasury is not paused.');
+    if (state.treasury.status !== 'Paused')
+      fail(
+        409,
+        'PAUSE_NOT_EFFECTIVE',
+        'The pause is not yet effective on-chain.',
+      );
     const existing = db.governance.find(
       (tx) =>
         tx.treasuryId === params.tId &&
@@ -558,6 +617,41 @@ export const treasuryHandlers = [
     });
     return { governanceTx: governanceView(tx) };
   }),
+
+  route<{ confirmName?: string }>(
+    'post',
+    `${T}/revoke-tx`,
+    ({ params, body }) => {
+      const state = requireTreasury(params);
+      const org = requireOrg(params.orgId);
+      if (body.confirmName !== org.name)
+        fail(
+          422,
+          'CONFIRMATION_MISMATCH',
+          'Type the exact organization name to confirm.',
+        );
+      const tx = createGovernanceTx({
+        kind: 'REVOKE',
+        title: 'Revoke the treasury module',
+        summary:
+          'Permanently disables the module. This cannot be undone; the treasury must be redeployed.',
+        treasuryId: params.tId,
+        calls: [
+          {
+            to: state.treasury.moduleAddress,
+            toLabel: 'TreasuryPilot module',
+            value: '0',
+            operation: 0,
+            method: 'revoke',
+            params: [],
+            data: '0xb6549f75',
+          },
+        ],
+        effect: () => {},
+      });
+      return { governanceTx: governanceView(tx) };
+    },
+  ),
 
   /* ───────────── Mandates ───────────── */
 

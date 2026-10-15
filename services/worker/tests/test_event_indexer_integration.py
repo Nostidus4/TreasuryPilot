@@ -959,3 +959,13 @@ def test_unreadable_lending_getters_mean_lending_is_not_configured() -> None:
 
     assert asyncio.run(_lending_addresses(Reverts(), bytes(20))) == (None, None)  # type: ignore[arg-type]
     assert asyncio.run(_lending_addresses(Empty(), bytes(20))) == (None, None)  # type: ignore[arg-type]
+
+
+def test_revoked_event_marks_the_treasury_revoked(anvil_url: str, database_url: str) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Revoked")
+    _mine(anvil_url)
+
+    asyncio.run(_index(anvil_url, database_url))
+
+    row = asyncio.run(_one(database_url, "SELECT status::text AS s FROM treasuries"))
+    assert row["s"] == "Revoked"

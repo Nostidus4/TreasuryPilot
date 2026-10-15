@@ -34,6 +34,7 @@ from treasurypilot_worker.executor.outbox import (
     SignerRefused,
     SignerUnavailable,
     StepExecution,
+    TreasuryPaused,
     execute_step,
 )
 from treasurypilot_worker.executor.plan_loader import load_plan, plan_run, simulation_context
@@ -654,6 +655,9 @@ def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
 
     try:
         return asyncio.run(run())
+    except TreasuryPaused:
+        # Not retried: the Resumed event re-plans the queued requests.
+        return {"status": "Paused"}
     except SignerRefused as error:
         # Definitive answer: retrying the same request cannot succeed (see TERMINAL_REFUSALS).
         return {"status": "Refused", "code": error.code, "terminal": error.terminal}
@@ -755,7 +759,11 @@ _SWEEP_SQL = (
     "JOIN payment_requests r ON r.onchain_request_id = a.request_id "
     "WHERE r.status IN ('Preparing', 'Paying') AND COALESCE((SELECT o.status::text "
     "FROM operations o WHERE o.request_id = r.id ORDER BY o.created_at DESC, o.id DESC LIMIT 1), "
-    "'Confirmed') IN ('Confirmed', 'NotSubmitted') ORDER BY a.plan_id, a.created_at DESC"
+    "'Confirmed') IN ('Confirmed', 'NotSubmitted') "
+    # Paused or revoked treasuries are skipped; the Resumed event re-enqueues the cycle.
+    "AND NOT EXISTS (SELECT 1 FROM backend_pause b WHERE b.treasury_id = r.treasury_id "
+    "AND b.paused) AND NOT EXISTS (SELECT 1 FROM treasuries t WHERE t.id = r.treasury_id "
+    "AND t.status IN ('Paused', 'Revoked')) ORDER BY a.plan_id, a.created_at DESC"
 )
 
 

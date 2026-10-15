@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
     retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
+    # Signer service for the pause-only sentinel; pause falls back to a Guardian Safe tx without it.
+    signer_url: str | None = None
+    signer_shared_secret: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),
@@ -155,6 +158,19 @@ class Settings(BaseSettings):
             ):
                 raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
         return self
+
+    @field_validator("signer_url", "signer_shared_secret", mode="before")
+    @classmethod
+    def _blank_signer_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("signer_url")
+    @classmethod
+    def _signer_url_is_http(cls, value: str | None) -> str | None:
+        # The shared secret is sent here: refuse file:, ftp: and the like.
+        if value is not None and urlparse(value).scheme not in ("http", "https"):
+            raise ValueError("signer URL must be http(s)")
+        return value
 
     @field_validator("travel_rule_provider_url", "travel_rule_provider_api_key", mode="before")
     @classmethod

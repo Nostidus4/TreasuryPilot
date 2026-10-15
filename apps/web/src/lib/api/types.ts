@@ -334,7 +334,8 @@ export interface GovernanceTx {
     | 'ADD_PAYEE'
     | 'DEACTIVATE_PAYEE'
     | 'GRANT_EXCEPTION'
-    | 'RESUME';
+    | 'RESUME'
+    | 'REVOKE';
   title: string;
   summary: string;
   status: GovernanceStatus;

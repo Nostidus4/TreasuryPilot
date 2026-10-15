@@ -46,6 +46,9 @@ _ADD_PAYEE_SELECTOR = keccak(b"addPayee(address)")[:4]
 _DEACTIVATE_PAYEE_SELECTOR = keccak(b"deactivatePayee(address)")[:4]
 _GRANT_EXCEPTION_SELECTOR = keccak(b"grantException(bytes32,uint128,address,uint64)")[:4]
 _REVOKE_EXCEPTION_SELECTOR = keccak(b"revokeException(bytes32)")[:4]
+_PAUSE_SELECTOR = keccak(b"pause()")[:4]
+_RESUME_SELECTOR = keccak(b"resume()")[:4]
+_REVOKE_SELECTOR = keccak(b"revoke()")[:4]
 _ALLOW_DUPLICATE_SELECTOR = keccak(b"allowDuplicate(bytes32,bytes32)")[:4]
 
 
@@ -137,6 +140,27 @@ def build_cancel_request_call(module_address: bytes, *, request_id: bytes) -> Go
     return GovernanceCall(
         module_address, 0, _CANCEL_REQUEST_SELECTOR + encode(["bytes32"], [request_id])
     )
+
+
+def _no_arg_call(module_address: bytes, selector: bytes) -> GovernanceCall:
+    if len(module_address) != 20 or module_address == bytes(20):
+        raise ValueError("module must be a nonzero EVM address")
+    return GovernanceCall(module_address, 0, selector)
+
+
+def build_pause_call(module_address: bytes) -> GovernanceCall:
+    """`module.pause()`: callable by Safe T or the guardian Safe."""
+    return _no_arg_call(module_address, _PAUSE_SELECTOR)
+
+
+def build_resume_call(module_address: bytes) -> GovernanceCall:
+    """`module.resume()`: Safe T only, so a guardian can never lift a pause."""
+    return _no_arg_call(module_address, _RESUME_SELECTOR)
+
+
+def build_revoke_call(module_address: bytes) -> GovernanceCall:
+    """`module.revoke()`: Safe T only and irreversible."""
+    return _no_arg_call(module_address, _REVOKE_SELECTOR)
 
 
 def build_add_payee_call(module_address: bytes, *, payee: bytes) -> GovernanceCall:
