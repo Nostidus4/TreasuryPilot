@@ -28,6 +28,8 @@ def upgrade() -> None:
         sa.Column("schema_uid", postgresql.BYTEA(), nullable=False),
         sa.Column("attestation_uid", postgresql.BYTEA(), nullable=True),
         sa.Column("tx_hash", postgresql.BYTEA(), nullable=True),
+        # A resend reuses this nonce so at most one attest transaction can ever be mined.
+        sa.Column("nonce", sa.BigInteger(), nullable=True),
         sa.Column("status", sa.String(length=16), nullable=False, server_default="Queued"),
         sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(

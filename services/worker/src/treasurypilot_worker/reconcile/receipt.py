@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Protocol
 
@@ -87,9 +88,25 @@ class PaymentFinality(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class SignedReceipt:
+    tx_hash: bytes  # known before broadcast, so it can be stored first
+    raw_tx: bytes
+    nonce: int
+
+
 class ReceiptPublisher(Protocol):
-    def send(self, receipt: PaymentReceipt) -> bytes:
-        """Sign with the receipt key and broadcast; returns the transaction hash."""
+    def sign(self, receipt: PaymentReceipt, nonce: int | None) -> SignedReceipt:
+        """Sign with the receipt key. ``nonce`` None takes the next one; a resend passes the
+        previous nonce so at most one of the two transactions can ever be mined."""
+        ...
+
+    def broadcast(self, raw_tx: bytes) -> None:
+        """Hand the signed transaction to the node."""
+        ...
+
+    def pending(self, tx_hash: bytes) -> bool:
+        """True while the node still knows the transaction (mempool or mined)."""
         ...
 
     def result(self, tx_hash: bytes) -> bytes | None:
@@ -144,7 +161,7 @@ class Web3ReceiptPublisher:
         self.schema_uid = schema_uid.lower()
         self.contract = self.web3.eth.contract(address=self.eas, abi=EAS_ABI)
 
-    def send(self, receipt: PaymentReceipt) -> bytes:
+    def sign(self, receipt: PaymentReceipt, nonce: int | None) -> SignedReceipt:
         # No expiry, non-revocable, no reference, no ETH: the exact tuple of PaymentReceipt.
         request = (
             bytes.fromhex(self.schema_uid[2:]),
@@ -161,14 +178,28 @@ class Web3ReceiptPublisher:
         transaction = function.build_transaction(
             {
                 "from": self.account.address,
-                "nonce": self.web3.eth.get_transaction_count(self.account.address, "pending"),
+                "nonce": nonce
+                if nonce is not None
+                else self.web3.eth.get_transaction_count(self.account.address, "pending"),
                 "chainId": self.web3.eth.chain_id,
                 "gas": function.estimate_gas({"from": self.account.address}),
                 "gasPrice": self.web3.eth.gas_price,
             }
         )
         signed = self.account.sign_transaction(transaction)
-        return bytes(self.web3.eth.send_raw_transaction(signed.raw_transaction))
+        return SignedReceipt(
+            bytes(signed.hash), bytes(signed.raw_transaction), transaction["nonce"]
+        )
+
+    def broadcast(self, raw_tx: bytes) -> None:
+        self.web3.eth.send_raw_transaction(raw_tx)
+
+    def pending(self, tx_hash: bytes) -> bool:
+        try:
+            self.web3.eth.get_transaction(HexBytes(tx_hash))
+        except TransactionNotFound:
+            return False
+        return True
 
     def result(self, tx_hash: bytes) -> bytes | None:
         try:
@@ -234,7 +265,7 @@ VALUES (gen_random_uuid(), $1, $2, $3) ON CONFLICT (request_id) DO NOTHING
 _CLAIM = """
 UPDATE chain_attestations SET next_attempt_at = now() + $2::interval
 WHERE request_id = $1 AND status <> 'Confirmed' AND next_attempt_at <= now()
-RETURNING id, status, attempts, tx_hash, updated_at < now() - $3::interval AS stale
+RETURNING id, status, attempts, tx_hash, nonce, updated_at < now() - $3::interval AS stale
 """
 
 _DEFER = """
@@ -243,14 +274,15 @@ WHERE id = $1
 """
 
 _SENT = """
-UPDATE chain_attestations SET status = 'Sent', tx_hash = $2, attempts = attempts + 1,
+UPDATE chain_attestations SET status = 'Sent', tx_hash = $2, nonce = $4, attempts = attempts + 1,
     last_error = NULL, next_attempt_at = now() + $3::interval, updated_at = now()
 WHERE id = $1
 """
 
 _FAILED = """
 UPDATE chain_attestations SET status = 'Failed', attempts = attempts + $2, last_error = $3,
-    next_attempt_at = now() + $4::interval, updated_at = now()
+    next_attempt_at = now() + $4::interval, updated_at = now(),
+    nonce = CASE WHEN $5 THEN NULL ELSE nonce END
 WHERE id = $1
 """
 
@@ -290,8 +322,15 @@ def build_receipt(facts: Any) -> PaymentReceipt:
 async def _fail(
     pool: asyncpg.Pool, row_id: Any, error: BaseException, attempts: int, count: int = 1
 ) -> None:
-    # Type only: RPC errors can echo credentialed URLs.
-    await pool.execute(_FAILED, row_id, count, type(error).__name__, backoff(attempts + count - 1))
+    # Type only: RPC errors can echo credentialed URLs. A reverted attest consumed its nonce.
+    await pool.execute(
+        _FAILED,
+        row_id,
+        count,
+        type(error).__name__,
+        backoff(attempts + count - 1),
+        isinstance(error, ReceiptReverted),
+    )
 
 
 async def _confirm(
@@ -336,6 +375,7 @@ async def publish_receipts(
         if claim is None:
             continue  # confirmed, leased by another sweep, or not yet due
         row_id, attempts = claim["id"], claim["attempts"]
+        persisted = False
         try:
             if claim["status"] == "Sent" and claim["tx_hash"] is not None:
                 uid = await asyncio.to_thread(publisher.result, bytes(claim["tx_hash"]))
@@ -343,11 +383,23 @@ async def publish_receipts(
                     await _confirm(pool, due["org_id"], request_id, row_id, uid)
                     counts["confirmed"] += 1
                 elif claim["stale"]:
-                    raise TimeoutError("attest transaction was not mined in time")
+                    if await asyncio.to_thread(publisher.pending, bytes(claim["tx_hash"])):
+                        # Still known to the node: resending could give two receipts.
+                        logger.warning("EAS receipt still pending request_id=%s", request_id)
+                        await pool.execute(_DEFER, row_id, SENT_RECHECK)
+                        counts["waiting"] += 1
+                    else:  # dropped; the resend reuses the nonce, so only one can ever mine
+                        raise TimeoutError("attest transaction was not mined in time")
                 else:
                     await pool.execute(_DEFER, row_id, SENT_RECHECK)
                     counts["waiting"] += 1
                 continue
+            if claim["tx_hash"] is not None:  # an earlier attempt may have mined after all
+                uid = await asyncio.to_thread(publisher.result, bytes(claim["tx_hash"]))
+                if uid is not None:
+                    await _confirm(pool, due["org_id"], request_id, row_id, uid)
+                    counts["confirmed"] += 1
+                    continue
             receipt = build_receipt(facts)
             if not await asyncio.wait_for(
                 finality.is_final(facts["chain_id"], bytes(facts["tx_hash"])), _RPC_TIMEOUT
@@ -355,8 +407,13 @@ async def publish_receipts(
                 await pool.execute(_DEFER, row_id, NOT_FINAL_RECHECK)
                 counts["waiting"] += 1
                 continue
-            tx_hash = await asyncio.to_thread(publisher.send, receipt)
-            await pool.execute(_SENT, row_id, tx_hash, SENT_RECHECK)
+            signed = await asyncio.to_thread(publisher.sign, receipt, claim["nonce"])
+            tx_hash = signed.tx_hash
+            # Persist the hash before broadcasting: a crash in between leaves a Sent row whose
+            # transaction the node never saw, which the stale path resends safely.
+            await pool.execute(_SENT, row_id, tx_hash, SENT_RECHECK, signed.nonce)
+            persisted = True
+            await asyncio.to_thread(publisher.broadcast, signed.raw_tx)
             counts["sent"] += 1
             try:  # instant on fast chains; otherwise the next sweep confirms the stored hash
                 uid = await asyncio.to_thread(publisher.result, tx_hash)
@@ -371,6 +428,6 @@ async def publish_receipts(
                 "EAS receipt failed request_id=%s error=%s", request_id, type(error).__name__
             )
             # A reverted or lost Sent attempt already counted; a failed send did not.
-            sent = claim["status"] == "Sent"
-            await _fail(pool, row_id, error, attempts, 0 if sent else 1)
+            sent = claim["status"] == "Sent" or persisted
+            await _fail(pool, row_id, error, attempts + (1 if persisted else 0), 0 if sent else 1)
     return counts

@@ -10,11 +10,18 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from treasurypilot_core.attestations import PaymentReceipt
 from treasurypilot_core.eip712 import digest
 from treasurypilot_worker.locks import create_worker_pool
 from treasurypilot_worker.reconcile.build import build_reconciliation
-from treasurypilot_worker.reconcile.receipt import ReceiptReverted, backoff, publish_receipts
+from treasurypilot_worker.reconcile.receipt import (
+    ReceiptReverted,
+    SignedReceipt,
+    backoff,
+    publish_receipts,
+)
 
 _spec = importlib.util.spec_from_file_location(
     "build_fixtures", Path(__file__).with_name("test_build_integration.py")
@@ -47,25 +54,41 @@ class FakeFinality:
 
 
 class FakePublisher:
-    """EAS stand-in: ``fail`` raises on send; ``mined`` controls when ``result`` yields a UID."""
+    """EAS stand-in. ``fail`` raises on broadcast; ``mined`` controls when ``result`` yields a UID;
+    ``known`` is whether the node still knows the transaction (mempool)."""
 
     def __init__(self) -> None:
-        self.sent: list[PaymentReceipt] = []
+        self.signed: list[tuple[PaymentReceipt, int | None]] = []
+        self.broadcasts = 0
         self.fail: Exception | None = None
+        self.crash_before_broadcast = False
         self.mined = True
         self.reverted = False
+        self.known = True
 
-    def send(self, receipt: PaymentReceipt) -> bytes:
+    @property
+    def sent(self) -> list[PaymentReceipt]:
+        return [receipt for receipt, _ in self.signed]
+
+    def sign(self, receipt: PaymentReceipt, nonce: int | None) -> SignedReceipt:
+        self.signed.append((receipt, nonce))
+        return SignedReceipt(_SENT_TX, b"raw", 7 if nonce is None else nonce)
+
+    def broadcast(self, raw_tx: bytes) -> None:
+        if self.crash_before_broadcast:
+            raise SystemExit("crash")  # BaseException: skips the sweep's failure handling
         if self.fail is not None:
             raise self.fail
-        self.sent.append(receipt)
-        return _SENT_TX
+        self.broadcasts += 1
+
+    def pending(self, tx_hash: bytes) -> bool:
+        return self.known
 
     def result(self, tx_hash: bytes) -> bytes | None:
         assert tx_hash == _SENT_TX
         if self.reverted:
             raise ReceiptReverted("reverted")
-        return _UID if self.mined else None
+        return _UID if self.mined and self.broadcasts else None
 
 
 async def _paid_request(pool: Any) -> Any:
@@ -231,6 +254,51 @@ def test_a_reverted_attest_is_failed_and_resent(database_url: str) -> None:
         await _make_due(pool, request)
         await _sweep(pool, finality, publisher)
         assert (await _row(pool, request))["status"] == "Confirmed"
+
+    _run(database_url, scenario)
+
+
+def test_crash_after_persist_before_broadcast_broadcasts_exactly_once(database_url: str) -> None:
+    async def scenario(pool: Any) -> None:
+        request, finality, publisher = await _paid_request(pool), FakeFinality(), FakePublisher()
+        publisher.crash_before_broadcast = True
+        with pytest.raises(SystemExit):
+            await _sweep(pool, finality, publisher)
+        row = await _row(pool, request)
+        assert (row["status"], bytes(row["tx_hash"])) == ("Sent", _SENT_TX)
+        assert publisher.broadcasts == 0
+        publisher.crash_before_broadcast, publisher.known = False, False  # node never saw it
+        await pool.execute(  # lease expired and the Sent row went stale
+            "UPDATE chain_attestations SET next_attempt_at = now(), "
+            "updated_at = now() - interval '1 hour' WHERE request_id = $1",
+            request,
+        )
+        await _sweep(pool, finality, publisher)  # dropped: Failed, backoff
+        assert (await _row(pool, request))["status"] == "Failed"
+        await _make_due(pool, request)
+        await _sweep(pool, finality, publisher)
+        assert (await _row(pool, request))["status"] == "Confirmed"
+        assert publisher.broadcasts == 1  # exactly one broadcast in total
+        assert [nonce for _, nonce in publisher.signed if nonce is not None] == [7]  # same nonce
+
+    _run(database_url, scenario)
+
+
+def test_a_stale_but_still_pending_transaction_is_deferred_not_resent(database_url: str) -> None:
+    async def scenario(pool: Any) -> None:
+        request, finality, publisher = await _paid_request(pool), FakeFinality(), FakePublisher()
+        publisher.mined = False
+        await _sweep(pool, finality, publisher)
+        assert publisher.broadcasts == 1
+        await pool.execute(
+            "UPDATE chain_attestations SET next_attempt_at = now(), "
+            "updated_at = now() - interval '1 hour' WHERE request_id = $1",
+            request,
+        )
+        await _sweep(pool, finality, publisher)  # node still knows the tx
+        row = await _row(pool, request)
+        assert row["status"] == "Sent" and row["deferred"]
+        assert publisher.broadcasts == 1 and len(publisher.signed) == 1
 
     _run(database_url, scenario)
 
