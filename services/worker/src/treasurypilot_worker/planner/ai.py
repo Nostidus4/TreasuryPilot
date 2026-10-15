@@ -37,8 +37,6 @@ _ERRORS: dict[str, Callable[[], AiError]] = {
 
 
 def _failed(code: str, error: AiError, **extra: Any) -> dict[str, Any]:
-    # shortcut: only a failed post-check carries its logged call id; other failures are logged
-    # by the adapter without handing the id back, so those plans record no ai_call_ids.
     call_id = getattr(error, "ai_call_id", None)
     return {"error": code, **extra, **({"ai_call_id": call_id} if call_id else {})}
 

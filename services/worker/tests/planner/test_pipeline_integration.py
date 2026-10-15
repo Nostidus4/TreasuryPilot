@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.request
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery import Celery
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
@@ -45,6 +47,7 @@ from treasurypilot_worker.planner.pipeline import (
     plan_request,
 )
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
+from treasurypilot_worker.planner.wiring import make_ask
 from treasurypilot_worker.tasks import PLAN_ENQUEUE_COUNTDOWN_SECONDS
 from treasurypilot_worker.trigger.cycles import (
     CycleSkipReason,
@@ -502,6 +505,118 @@ async def test_needs_approval_creates_exactly_one_review_item(pool: Any, databas
 
     assert outcome.status == "AwaitingAuthority" and outcome.planner_source is None
     assert [kind for kind, _ in await _reviews(pool, world)] == ["NEEDS_AUTHORITY"]
+
+
+@pooled
+async def test_needs_approval_rerun_keeps_one_review_item(pool: Any, database_url: str) -> None:
+    world = await _seed(pool, amount=9_000)
+    first = await _plan(pool, database_url, world)
+    assert first.status == "AwaitingAuthority"
+
+    await plan_request(pool, first.plan_id, _deps(pool, database_url, world))
+    again, claimed = await _cycle(pool, world)
+
+    assert not claimed and not again.started
+    assert [kind for kind, _ in await _reviews(pool, world)] == ["NEEDS_AUTHORITY"]
+
+
+@pooled
+async def test_a_real_ai_queue_timeout_falls_back_to_rule_based(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, terms={"net_due_day": 30_000, "priority_note": "critical vendor"})
+    # A broker with no worker on the `ai` queue: the result never arrives, so `get` times out
+    # exactly as wiring.ask does when the AI worker is down.
+    quiet = Celery("quiet", broker="memory://", backend="cache+memory://")
+    # 0.3 s keeps the test fast; production uses settings.planning_ai_timeout_seconds.
+    ask = make_ask(quiet, 0.3)
+
+    outcome = await _plan(pool, database_url, world, ai=CeleryAiProposer(ask))
+
+    assert (outcome.status, outcome.planner_source) == ("Attested", "RULE_BASED")
+    reason = await pool.fetchval("SELECT chosen_reason FROM plans WHERE id = $1", outcome.plan_id)
+    assert "AiTimeout" in reason
+
+
+def _anvil_rpc(url: str, method: str, params: list[Any] | None = None) -> Any:
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}
+    ).encode()
+    request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.load(response)
+    assert "error" not in payload, payload
+    return payload["result"]
+
+
+@pytest.mark.parametrize(
+    ("balance", "steps"), [(500, 3), (10**18, 2)], ids=["gas-shortage-swaps", "funded-no-swap"]
+)
+def test_executor_balance_read_from_anvil_drives_the_gas_swap_decision(
+    anvil_url: str, database_url: str, balance: int, steps: int
+) -> None:
+    """Chain-dependent: the executor balance and the snapshot block come from a live Anvil.
+
+    anvil_setBalance sets the executor balance and the pipeline's GasSwapDeps.native_balance
+    reads it back over eth_getBalance, so the same request plans SWAP+REFILL+PAY at 500 wei and
+    REFILL+PAY at 1e18 wei. Still fixture-fed, because the Safe/module stack is only deployed
+    by the scenario-anvil job: the treasury/wallet balances in the snapshot data and the swap
+    quote (_QUOTE). Upgrade when a deployed-module fixture is shared with the worker tests.
+    """
+
+    async def scenario(pool: Any, database_url: str) -> None:
+        _anvil_rpc(anvil_url, "anvil_setBalance", [EXECUTOR, hex(balance)])
+        _anvil_rpc(anvil_url, "evm_mine")
+        head = _anvil_rpc(anvil_url, "eth_getBlockByNumber", ["latest", False])
+        world = await _seed(pool)
+        snapshot = Snapshot(
+            purpose=SnapshotPurpose.PLAN,
+            block_number=int(head["number"], 16),
+            block_hash=head["hash"],
+            block_timestamp=datetime.fromtimestamp(int(head["timestamp"], 16), UTC)
+            - timedelta(seconds=5),
+            provider="anvil",
+            data=_chain(world).data,
+            coverage="COMPLETE",
+            missing=(),
+        )
+
+        async def executor_balance(_treasury: uuid.UUID) -> int:
+            return int(
+                await asyncio.to_thread(
+                    _anvil_rpc, anvil_url, "eth_getBalance", [EXECUTOR, "latest"]
+                ),
+                16,
+            )
+
+        async def quote(_treasury: uuid.UUID, _module: str) -> GasQuote | None:
+            return _QUOTE
+
+        _, claimed = await _cycle(pool, world)
+        (plan_id,) = claimed
+        deps = _deps(
+            pool,
+            database_url,
+            world,
+            snapshot=snapshot,
+            gas_swap=GasSwapDeps(executor_balance, quote, slippage_bps=100, max_amount_in=10**9),
+        )
+        outcome = await plan_request(pool, plan_id, deps)
+
+        assert outcome is not None and outcome.status == "Attested"
+        assert (
+            await pool.fetchval("SELECT count(*) FROM plan_steps WHERE plan_id = $1", plan_id)
+            == steps
+        )
+        stored = await pool.fetchrow(
+            "SELECT s.block_number, s.block_hash FROM plans p JOIN snapshots s "
+            "ON s.id = p.snapshot_id WHERE p.id = $1",
+            plan_id,
+        )
+        assert stored["block_number"] == snapshot.block_number
+        assert "0x" + bytes(stored["block_hash"]).hex() == head["hash"]
+
+    pooled(scenario)(database_url)
 
 
 @pooled
