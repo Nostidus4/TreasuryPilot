@@ -51,7 +51,7 @@ def _walk_plan(
     """
 
     by_id = {request.id: request for request in ordered}
-    state = _SimulationState(dict(snapshot.operational), snapshot.source)
+    state = _SimulationState.start(snapshot, ordered)
     items = sorted(enumerate(_plan_items(plan)), key=lambda indexed: (indexed[1].day, indexed[0]))
     current_day: int | None = None
     seen: set[str] = set()

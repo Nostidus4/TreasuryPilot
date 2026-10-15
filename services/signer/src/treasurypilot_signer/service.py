@@ -337,8 +337,9 @@ class SigningService:
             if request.payload.to.lower() != expected_target:
                 raise SignerFault("PAYLOAD_MISMATCH")
             if action == REFILL:
-                # Operational-source refills (contract-allowed via a refill path) need ENG-L01/#101
-                # to plan them; until then only Safe T sources are signed.
+                # Operational-source refills (contract-allowed via a refill path) are planned by the
+                # engine (ENG-L01) but the worker validator and RefillPathSet indexing are not wired,
+                # so only Safe T sources are signed.
                 safe_t_selector = "0x" + keccak(b"safeT()")[:4].hex()
                 safe_t_data = await self._rpc.call(
                     "eth_call", [{"to": treasury, "data": safe_t_selector}, "latest"]
