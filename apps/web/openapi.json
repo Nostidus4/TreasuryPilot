@@ -201,6 +201,24 @@
         "title": "ApproveRequest",
         "type": "object"
       },
+      "AskRequest": {
+        "properties": {
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          }
+        },
+        "required": ["text", "treasuryId"],
+        "title": "AskRequest",
+        "type": "object"
+      },
       "AssetView": {
         "properties": {
           "address": {
@@ -666,6 +684,21 @@
         },
         "required": ["id", "kind", "active", "showAmounts", "verifiedAt"],
         "title": "ChannelView",
+        "type": "object"
+      },
+      "CitationView": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "toolCallId": {
+            "title": "Toolcallid",
+            "type": "string"
+          }
+        },
+        "required": ["toolCallId", "path"],
+        "title": "CitationView",
         "type": "object"
       },
       "ConfirmTermsRequest": {
@@ -2276,6 +2309,38 @@
           "signerRolesActive"
         ],
         "title": "MembershipView",
+        "type": "object"
+      },
+      "MessageView": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationView"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": ["id", "role", "content", "citations", "createdAt"],
+        "title": "MessageView",
         "type": "object"
       },
       "MfaStatus": {
@@ -4480,6 +4545,32 @@
           "treasuries"
         ],
         "title": "TenantView",
+        "type": "object"
+      },
+      "ThreadHistory": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageView"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": ["messages"],
+        "title": "ThreadHistory",
+        "type": "object"
+      },
+      "ThreadResponse": {
+        "properties": {
+          "threadId": {
+            "format": "uuid",
+            "title": "Threadid",
+            "type": "string"
+          }
+        },
+        "required": ["threadId"],
+        "title": "ThreadResponse",
         "type": "object"
       },
       "TokenMovementListResponse": {
@@ -7800,6 +7891,155 @@
         },
         "summary": "Verify Audit Log",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/copilot/threads": {
+      "post": {
+        "operationId": "create_thread_v1_orgs__organization_id__copilot_threads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Thread",
+        "tags": ["copilot"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/copilot/threads/{thread_id}": {
+      "get": {
+        "operationId": "get_thread_v1_orgs__organization_id__copilot_threads__thread_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Thread",
+        "tags": ["copilot"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/copilot/threads/{thread_id}/messages": {
+      "post": {
+        "operationId": "ask_v1_orgs__organization_id__copilot_threads__thread_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask",
+        "tags": ["copilot"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/events": {

@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from treasurypilot_worker.agent.adapter import AiAdapter
 from treasurypilot_worker.agent.config import AiTask
-from treasurypilot_worker.agent.errors import AiError
+from treasurypilot_worker.agent.errors import PostCheckFailed
 from treasurypilot_worker.agent.prompts.copilot import COPILOT_TEMPLATE
 from treasurypilot_worker.agent.types import Tool, ToolCallRecord
 
@@ -24,17 +24,15 @@ REFUSAL = (
 )
 # An imperative verb at the start of a sentence or after "and/also/please/...".
 _EXECUTION = re.compile(
-    r"(?:^|[.!?;]\s+|\b(?:please|and|also|then|now|just)\s+)"
-    r"(?:go ahead and\s+|can you\s+|could you\s+)?"
-    r"(?:pay|send|transfer|wire|execute|approve|release|disburse)\b",
+    r"(?:^|[.!?;:]\s+|\b(?:please|and|also|then|now|just)\s+)"
+    r"(?:(?:go ahead(?: and|:)?|(?:can|could|would|will) you|i want you to"
+    r"|i(?:'d| would) like you to)\s+)?"
+    r"(?:pay|send|transfer|wire|execute|approve|release|disburse|settle|withdraw|top up"
+    r"|make (?:a|the) payments?|schedule (?:the|a|this) (?:transfer|payment))\b",
     re.IGNORECASE,
 )
 _GROUP_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
-_NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?!\w)")
-
-
-class PostCheckFailed(AiError):
-    """The answer carries a number that no cited tool result contains."""
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?!\w)")
 
 
 class _Strict(BaseModel):
@@ -53,6 +51,7 @@ class CopilotAnswer(_Strict):
 
 class CopilotQuestion(_Strict):
     question: str = Field(min_length=1, max_length=2_000)
+    treasury_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,15 +84,31 @@ def post_check(output: CopilotAnswer, tool_calls: Sequence[ToolCallRecord]) -> N
 
 
 def ask_copilot(
-    adapter: AiAdapter, *, org_id: str, question: str, tools: Sequence[Tool[Any]]
+    adapter: AiAdapter,
+    *,
+    org_id: str,
+    question: str,
+    tools: Sequence[Tool[Any]],
+    treasury_id: str | None = None,
 ) -> CopilotReply:
-    """One Copilot turn. Raises an `AiError` (incl. `PostCheckFailed`) when it cannot answer."""
+    """One Copilot turn. Raises an `AiError` (incl. `PostCheckFailed`, already logged as such) when it cannot answer."""
 
-    prompt = COPILOT_TEMPLATE.render(question=CopilotQuestion(question=question))
-    result = adapter.run(
-        AiTask.COPILOT, org_id=org_id, prompt=prompt, output=CopilotAnswer, tools=tools
+    prompt = COPILOT_TEMPLATE.render(
+        question=CopilotQuestion(question=question, treasury_id=treasury_id)
     )
-    post_check(result.output, result.tool_calls)
     refused = is_execution_request(question)
+    try:
+        result = adapter.run(
+            AiTask.COPILOT,
+            org_id=org_id,
+            prompt=prompt,
+            output=CopilotAnswer,
+            tools=tools,
+            post_check=post_check,
+        )
+    except PostCheckFailed as error:
+        if refused:  # the fixed refusal needs no model text, so no unchecked number reaches it
+            return CopilotReply(REFUSAL, (), True, error.ai_call_id or "")
+        raise
     answer = f"{REFUSAL} {result.output.answer}" if refused else result.output.answer
     return CopilotReply(answer, tuple(result.output.citations), refused, result.ai_call_id)

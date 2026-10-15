@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from treasurypilot_api.config import Settings
 from treasurypilot_api.copilot import api
+from treasurypilot_api.copilot.bridge import CeleryCopilotAnswerer, build_copilot_answerer
 from treasurypilot_api.identity.auth import AuthFailure
 
 ORG = uuid.uuid4()
@@ -43,6 +47,15 @@ class _Repo:
         )
         self.rows.append(row)
         return row.id
+
+    async def add_exchange(self, *, thread_id: uuid.UUID, question: str, reply: Any) -> uuid.UUID:
+        await self.add_message(thread_id=thread_id, role="user", content=question)
+        return await self.add_message(
+            thread_id=thread_id, role="assistant", content=reply.answer, citations=reply.citations
+        )
+
+    async def treasury_in_org(self, *, org_id: uuid.UUID, treasury_id: uuid.UUID) -> bool:
+        return treasury_id == TREASURY
 
     async def messages(self, *, thread_id: uuid.UUID) -> list[SimpleNamespace]:
         return [r for r in self.rows if r.thread_id == thread_id]
@@ -106,3 +119,86 @@ def test_without_answerer_ask_is_503_ai_unavailable() -> None:
     thread_id = client.post(base).json()["threadId"]
     r = client.post(f"{base}/{thread_id}/messages", json={"text": "q", "treasuryId": str(TREASURY)})
     assert (r.status_code, r.json()["code"]) == (503, "AI_UNAVAILABLE")
+
+
+def test_unknown_treasury_is_404() -> None:
+    client, _ = _client(answerer=_Answerer())
+    base = f"/v1/orgs/{ORG}/copilot/threads"
+    thread_id = client.post(base).json()["threadId"]
+    r = client.post(
+        f"{base}/{thread_id}/messages", json={"text": "q", "treasuryId": str(uuid.uuid4())}
+    )
+    assert (r.status_code, r.json()["code"]) == (404, "TREASURY_NOT_FOUND")
+
+
+def test_failed_answer_stores_no_orphan_user_message() -> None:
+    class Budget:
+        async def answer(self, **kw: Any) -> Any:
+            raise api.budget_exceeded()
+
+    client, repo = _client(answerer=Budget())
+    base = f"/v1/orgs/{ORG}/copilot/threads"
+    thread_id = client.post(base).json()["threadId"]
+    r = client.post(f"{base}/{thread_id}/messages", json={"text": "q", "treasuryId": str(TREASURY)})
+    assert (r.status_code, r.json()["code"]) == (429, "AI_BUDGET_EXCEEDED")
+    assert repo.rows == []
+
+
+class _FakeResult:
+    def __init__(self, payload: Any) -> None:
+        self.payload = payload
+
+    def get(self, timeout: float) -> Any:
+        if isinstance(self.payload, BaseException):
+            raise self.payload
+        return self.payload
+
+
+class _FakeCelery:
+    def __init__(self, payload: Any) -> None:
+        self.payload = payload
+        self.sent: list[tuple[str, list[str], str]] = []
+
+    def send_task(self, name: str, args: list[str], queue: str) -> _FakeResult:
+        self.sent.append((name, args, queue))
+        return _FakeResult(self.payload)
+
+
+async def _ask(payload: Any) -> tuple[Any, _FakeCelery]:
+    celery = _FakeCelery(payload)
+    answerer = CeleryCopilotAnswerer("redis://x", client=celery)
+    reply = await answerer.answer(organization_id=ORG, treasury_id=TREASURY, text="q")
+    return reply, celery
+
+
+def test_celery_answerer_returns_worker_answer() -> None:
+    call_id = uuid.uuid4()
+    reply, celery = asyncio.run(
+        _ask(
+            {
+                "answer": "A",
+                "citations": [{"tool_call_id": "t", "path": "$"}],
+                "ai_call_id": str(call_id),
+            }
+        )
+    )
+    assert (reply.answer, reply.ai_call_id) == ("A", call_id)
+    assert celery.sent == [("treasurypilot.copilot.ask", [str(ORG), str(TREASURY), "q"], "ai")]
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "code"),
+    [
+        ({"error": "AI_BUDGET_EXCEEDED"}, 429, "AI_BUDGET_EXCEEDED"),
+        ({"error": "AI_UNAVAILABLE"}, 503, "AI_UNAVAILABLE"),
+        (TimeoutError("slow"), 503, "AI_UNAVAILABLE"),
+    ],
+)
+def test_celery_answerer_maps_failures(payload: Any, status: int, code: str) -> None:
+    with pytest.raises(AuthFailure) as caught:
+        asyncio.run(_ask(payload))
+    assert (caught.value.status, caught.value.code) == (status, code)
+
+
+def test_no_redis_means_no_answerer() -> None:
+    assert build_copilot_answerer(Settings(redis_url=None)) is None

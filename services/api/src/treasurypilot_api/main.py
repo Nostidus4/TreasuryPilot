@@ -32,6 +32,7 @@ from treasurypilot_api.copilot.api import (
     SqlAlchemyCopilotRepository,
 )
 from treasurypilot_api.copilot.api import router as copilot_router
+from treasurypilot_api.copilot.bridge import build_copilot_answerer
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.execution.routes import router as execution_router
 from treasurypilot_api.identity.api import problem_response
@@ -491,8 +492,8 @@ def create_app(
     app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.copilot_repository = copilot_repository
-    # No default answerer: it needs the worker's tool loop, so the API answers 503 until wired.
-    app.state.copilot_answerer = copilot_answerer
+    # Default: the worker's tool loop over Celery; no Redis means 503 AI_UNAVAILABLE.
+    app.state.copilot_answerer = copilot_answerer or build_copilot_answerer(settings)
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     # Fiat requests need a provider plus an owner-configured policy and tolerance; without all

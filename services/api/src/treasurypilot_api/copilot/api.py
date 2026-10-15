@@ -21,6 +21,7 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.treasury.models import Treasury
 
 _ROLES = (
     OrganizationRole.OWNER,
@@ -61,6 +62,14 @@ class CopilotRepository(Protocol):
         citations: list[dict[str, Any]] | None = None,
         ai_call_id: uuid.UUID | None = None,
     ) -> uuid.UUID: ...
+
+    async def add_exchange(
+        self, *, thread_id: uuid.UUID, question: str, reply: CopilotReply
+    ) -> uuid.UUID:
+        """Stores the user and assistant messages in one transaction; returns the answer id."""
+        ...
+
+    async def treasury_in_org(self, *, org_id: uuid.UUID, treasury_id: uuid.UUID) -> bool: ...
 
     async def messages(self, *, thread_id: uuid.UUID) -> list[CopilotMessage]: ...
 
@@ -110,6 +119,30 @@ class SqlAlchemyCopilotRepository:
             await session.flush()
             return message.id
 
+    async def add_exchange(
+        self, *, thread_id: uuid.UUID, question: str, reply: CopilotReply
+    ) -> uuid.UUID:
+        async with self._sessions() as session, session.begin():
+            session.add(CopilotMessage(thread_id=thread_id, role="user", content=question))
+            await session.flush()  # the user row sorts first
+            answer = CopilotMessage(
+                thread_id=thread_id,
+                role="assistant",
+                content=reply.answer,
+                citations=reply.citations,
+                ai_call_id=reply.ai_call_id,
+            )
+            session.add(answer)
+            await session.flush()
+            return answer.id
+
+    async def treasury_in_org(self, *, org_id: uuid.UUID, treasury_id: uuid.UUID) -> bool:
+        async with self._sessions() as session:
+            found = await session.scalar(
+                select(Treasury.id).where(Treasury.id == treasury_id, Treasury.org_id == org_id)
+            )
+            return found is not None
+
     async def messages(self, *, thread_id: uuid.UUID) -> list[CopilotMessage]:
         async with self._sessions() as session:
             rows = await session.scalars(
@@ -146,7 +179,7 @@ class ThreadHistory(ApiModel):
     messages: list[MessageView]
 
 
-def _unavailable() -> AuthFailure:
+def unavailable() -> AuthFailure:
     return AuthFailure(
         status=503,
         code="AI_UNAVAILABLE",
@@ -155,10 +188,19 @@ def _unavailable() -> AuthFailure:
     )
 
 
+def budget_exceeded() -> AuthFailure:
+    return AuthFailure(
+        status=429,
+        code="AI_BUDGET_EXCEEDED",
+        title="AI budget exceeded",
+        detail="The monthly AI budget is spent. The deterministic dashboard is still current.",
+    )
+
+
 def _repository(request: Request) -> CopilotRepository:
     repository = getattr(request.app.state, "copilot_repository", None)
     if repository is None:
-        raise _unavailable()
+        raise unavailable()
     return cast(CopilotRepository, repository)
 
 
@@ -245,19 +287,22 @@ async def ask(
     repository = await _owned_thread(request, member, thread_id)
     answerer = cast(CopilotAnswerer | None, getattr(request.app.state, "copilot_answerer", None))
     if answerer is None:
-        raise _unavailable()
-    await repository.add_message(thread_id=thread_id, role="user", content=body.text)
-    # Errors (503/429) surface before the stream starts, as plain problem responses.
+        raise unavailable()
+    if not await repository.treasury_in_org(
+        org_id=member.organization_id, treasury_id=body.treasury_id
+    ):
+        raise AuthFailure(
+            status=404,
+            code="TREASURY_NOT_FOUND",
+            title="Treasury not found",
+            detail="Treasury not found.",
+        )
+    # Errors (503/429) surface before the stream starts, as plain problem responses; nothing
+    # is stored for a failed turn, so a thread never holds an unanswered question.
     reply = await answerer.answer(
         organization_id=member.organization_id, treasury_id=body.treasury_id, text=body.text
     )
-    message_id = await repository.add_message(
-        thread_id=thread_id,
-        role="assistant",
-        content=reply.answer,
-        citations=reply.citations,
-        ai_call_id=reply.ai_call_id,
-    )
+    message_id = await repository.add_exchange(thread_id=thread_id, question=body.text, reply=reply)
 
     async def events() -> AsyncIterator[str]:
         yield _sse("message", {"messageId": str(message_id)})

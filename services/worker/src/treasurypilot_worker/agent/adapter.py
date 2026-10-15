@@ -22,6 +22,7 @@ from treasurypilot_worker.agent.errors import (
     AiTimeout,
     AiToolLimitExceeded,
     AiUnavailable,
+    PostCheckFailed,
     ToolError,
 )
 from treasurypilot_worker.agent.prompts import RenderedPrompt
@@ -83,6 +84,7 @@ class AiAdapter:
         prompt: RenderedPrompt,
         output: type[T],
         tools: Sequence[Tool[Any]] = (),
+        post_check: Callable[[T, Sequence[ToolCallRecord]], None] | None = None,
     ) -> AiResult[T]:
         """Run `task` to a validated `output`, or raise a subclass of `AiError`.
 
@@ -90,7 +92,9 @@ class AiAdapter:
         turns, provider retries and the schema retry. The system prompt and every message,
         tool call and tool result are secret-scanned before they are sent; a match raises
         `AiInputRejected` (FR-804). Tool descriptions and the output schema are code, not
-        scanned. Messages may carry `0x` bytes32 ids and hashes; untrusted blocks inside
+        scanned. `post_check(output, tool_calls)` runs before the call is logged and raises
+        `PostCheckFailed` to reject the output; the row then reads `POSTCHECK_FAILED`
+        (rows are append-only) and the error carries its id. Messages may carry `0x` bytes32 ids and hashes; untrusted blocks inside
         them were already scanned strictly by `wrap_untrusted`.
         """
 
@@ -101,9 +105,13 @@ class AiAdapter:
         run = _Run(task_config, started=started, deadline=started + task_config.timeout_s)
         try:
             parsed = self._run(task, org_id, prompt, output, tools, run)
+            if post_check is not None:
+                post_check(parsed, tuple(run.tool_calls))
         except Exception as error:
             # Any failure is logged before re-raising; a failed write raises AiCallLogError.
-            self._log(task, org_id, prompt, run, None, error)
+            call_id = self._log(task, org_id, prompt, run, None, error)
+            if isinstance(error, PostCheckFailed):
+                error.ai_call_id = call_id
             raise
         ai_call_id = self._log(task, org_id, prompt, run, parsed, None)
         return AiResult(
@@ -201,6 +209,8 @@ class AiAdapter:
             validation: ValidationResult | None = ValidationResult.OK
         elif isinstance(error, AiSchemaError):
             validation = ValidationResult.SCHEMA_ERROR
+        elif isinstance(error, PostCheckFailed):
+            validation = ValidationResult.POSTCHECK_FAILED
         else:
             validation = None
         return self._call_log.record(

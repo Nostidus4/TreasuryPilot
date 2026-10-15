@@ -798,6 +798,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/copilot/threads': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Thread */
+    post: operations['create_thread_v1_orgs__organization_id__copilot_threads_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/copilot/threads/{thread_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Thread */
+    get: operations['get_thread_v1_orgs__organization_id__copilot_threads__thread_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/copilot/threads/{thread_id}/messages': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ask */
+    post: operations['ask_v1_orgs__organization_id__copilot_threads__thread_id__messages_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/events': {
     parameters: {
       query?: never;
@@ -2232,6 +2283,16 @@ export interface components {
       /** Signature */
       signature: string;
     };
+    /** AskRequest */
+    AskRequest: {
+      /** Text */
+      text: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+    };
     /** AssetView */
     AssetView: {
       /** Address */
@@ -2438,6 +2499,13 @@ export interface components {
        * Format: date-time
        */
       verifiedAt: string;
+    };
+    /** CitationView */
+    CitationView: {
+      /** Path */
+      path: string;
+      /** Toolcallid */
+      toolCallId: string;
     };
     /** ConfirmTermsRequest */
     ConfirmTermsRequest: {
@@ -3097,6 +3165,25 @@ export interface components {
       signerRolesActive: boolean;
       /** Status */
       status: string;
+    };
+    /** MessageView */
+    MessageView: {
+      /** Citations */
+      citations: components['schemas']['CitationView'][];
+      /** Content */
+      content: string;
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Role */
+      role: string;
     };
     /** MfaStatus */
     MfaStatus: {
@@ -3959,6 +4046,19 @@ export interface components {
       status: string;
       /** Treasuries */
       treasuries: number;
+    };
+    /** ThreadHistory */
+    ThreadHistory: {
+      /** Messages */
+      messages: components['schemas']['MessageView'][];
+    };
+    /** ThreadResponse */
+    ThreadResponse: {
+      /**
+       * Threadid
+       * Format: uuid
+       */
+      threadId: string;
     };
     /** TokenMovementListResponse */
     TokenMovementListResponse: {
@@ -6010,6 +6110,103 @@ export interface operations {
         content: {
           'application/json': components['schemas']['AuditVerifyResponse'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_thread_v1_orgs__organization_id__copilot_threads_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ThreadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_thread_v1_orgs__organization_id__copilot_threads__thread_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ThreadHistory'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  ask_v1_orgs__organization_id__copilot_threads__thread_id__messages_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AskRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {
