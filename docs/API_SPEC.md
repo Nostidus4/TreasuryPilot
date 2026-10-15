@@ -152,12 +152,21 @@
 | GET | `/orgs/{o}/plans/{pId}` | Plan, steps, validations, AI explanation, attestation | ANY | → `PlanDetail` | |
 | POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | Operator trigger (same checks as the scheduler) | OPR, OWN | → `202 {jobId}` | 400 `IDEMPOTENCY_KEY_REQUIRED`; 404 `TREASURY_NOT_FOUND`; 409 `TREASURY_PAUSED`, `TREASURY_NOT_READY`, `MANDATE_NOT_ACTIVE`, `COVERAGE_INCOMPLETE`, `UNKNOWN_OPERATION_PENDING`, `EXECUTING_PLAN_EXISTS` |
 | GET | `/orgs/{o}/operations/{opId}` | Operation, transactions, verification | ANY | → `OperationDetail` | |
-| GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], alerts[]}` | |
+| GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], wallets[], suggestedRefills[], alerts[]}` (see below) | |
 | GET | `/orgs/{o}/review-items` | Review queue | ANY (role-filtered) | `?status=Open&type=` → `{items}` | |
 | POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | Retry, cancel, mark resolved, or edit and re-approve | role per type | `{action, note}` → `{item}` | 409 `STALE_ITEM`, 403 |
 | POST | `/orgs/{o}/plans/{pId}/fee/accept` | Accept a held plan at its system estimate; stores that estimate as the cap | OWN, FIN, OPR | `{reason?}` → `{planId, acceptedCapWei}` | 404 `FEE_REVIEW_NOT_FOUND`, 409 `FEE_REVIEW_STALE` |
 | POST | `/orgs/{o}/plans/{pId}/fee/defer` | Leave a held plan waiting for a cheaper window | OWN, FIN, OPR | `{reason?}` → `{planId, status: Deferred}` | 404 `FEE_REVIEW_NOT_FOUND`, 409 `FEE_REVIEW_STALE` |
 | GET | `/orgs/{o}/events` | SSE stream: plan, operation, notification and request events | ANY | `text/event-stream` | |
+
+**Forecast response.** Display-oriented; all amounts are base-unit strings, dates are ISO `YYYY-MM-DD`.
+
+- `days[]`: the payments wallet (O1) series, `{date, balance, outflow, buffer}`.
+- `wallets[]`: one series per operational wallet, `{role, label, safeAddress, buffer, days[{date, balance}]}`.
+- `suggestedRefills[]`: `{date, sourceAddress, targetAddress, amount, requestId}`. `requestId` is required, as in the engine's `ForecastRefill`.
+- `alerts[]`: `{date, message}`.
+
+The API serializer maps the engine's `ForecastDay.day` index to an ISO date and wallet ids to Safe addresses. `buffer` comes from the mandate.
 
 ## 6. Reconciliation, evidence, analytics (M11, M15, M17)
 
