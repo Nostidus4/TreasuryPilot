@@ -170,16 +170,22 @@ invitation referenced by the immutable audit log, because deleting the source
 cannot remove personal data from that hash chain; email matches ignore case. Those
 records require a separate legal review before a broader erasure workflow is enabled.
 
-Session and magic-link retention is configured separately because those records are
-user-wide rather than organization-scoped. `configure_auth_policy()` requires explicit
-session and magic-link periods; `None` disables deletion for that record type, and
-there is no default period. Its deployment-wide legal hold freezes both auth artifact
-sweeps. Sessions become eligible after their revoke or expiry time plus the configured
-period; magic links become eligible after use or expiry plus their configured period.
-Each deleted session or magic link leaves a receipt containing only the SHA-256 digest
-of its random row UUID, type and deletion time; it never hashes or stores the email,
-token, user id, IP or user agent. The global hold is intentionally conservative;
-it also freezes subject erasure while authentication artifacts are part of the request.
+Session, magic-link and SIWE nonce retention is configured separately because these
+records are user-wide rather than organization-scoped. `configure_auth_policy()` requires
+explicit periods for all three record types; `None` disables deletion for that record
+type. Only SIWE nonces have a default: migration 20261015_0060 seeds the singleton policy
+with 30 days so the nonce table stays bounded (issuing a nonce no longer prunes it); sessions
+and magic links have no default period. Its deployment-wide legal hold freezes all auth
+artifact sweeps. Sessions become eligible after their revoke or expiry time plus the configured
+period; magic links after use or expiry plus that period; SIWE nonces after use or expiry plus
+that period, with the verifier's two-minute clock-skew grace applied before deletion of an
+unused nonce. Nonce issuance counts only still-open challenges; the policy-aware worker
+performs the cleanup. Each deleted session or magic link leaves a receipt containing only the
+SHA-256 digest of its random row UUID, type and deletion time; a SIWE receipt contains only a
+domain-separated SHA-256 digest of the generated high-entropy nonce, never the user id or the
+nonce itself. No receipt hashes or stores the email, token, IP or user agent. The global hold is
+intentionally conservative; it also freezes subject erasure while authentication artifacts are
+part of the request.
 
 `request_subject_deletion()` disables the account immediately and queues its
 profile-erasure request; `set_subject_legal_hold()` records a subject-level hold on the
@@ -194,11 +200,11 @@ own transaction before any lock is taken, and a dry run applies the same scan, s
 retried automatically (the evidence is immutable); every run logs how many await review, and a
 new `request_subject_deletion()` clears the block after the review. Otherwise the worker
 disables the account, replaces its email with a generated `.invalid` address, clears the
-display name, bumps the user version, and removes current sessions, magic links, pending
+display name, bumps the user version, and removes current sessions, magic links, SIWE nonces, pending
 invitations addressed to the email, organization memberships, wallet/SSO/MFA credentials
 and user notification targets/preferences. Rows are deleted first and receipts are built
 from the deleted ids, so no row is removed without one. It writes a `subject` receipt and
-separate hash-only receipts for deleted sessions, magic links and invitations, then removes
+separate hash-only receipts for deleted sessions, magic links, SIWE nonces and invitations, then removes
 the request/hold row. Receipt inserts are chunked (5000 rows). The `subject` receipt is
 an HMAC-SHA256 of the user UUID keyed by `TP_RETENTION_RECEIPT_KEY` (at least 32 bytes,
 never rotated or reused), so the receipt cannot be matched by enumerating UUIDs without

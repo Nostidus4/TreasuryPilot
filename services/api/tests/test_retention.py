@@ -26,6 +26,7 @@ from treasurypilot_api.compliance.retention import (
     request_subject_deletion,
     run_retention,
     set_subject_legal_hold,
+    siwe_nonce_receipt_hash,
     subject_receipt_hash,
 )
 from treasurypilot_api.database import create_session_factory
@@ -73,10 +74,12 @@ def test_retention_migration_offline_and_hash_has_no_email() -> None:
     assert "CREATE TABLE auth_retention_policies" in sql
     assert "CREATE TABLE subject_deletion_controls" in sql
     assert "CREATE TABLE deletion_receipts" in sql
-    assert "record_type IN ('invite', 'session', 'magic_link', 'subject')" in sql
+    assert "record_type IN ('invite', 'session', 'magic_link', 'subject', 'siwe_nonce')" in sql
     assert "DROP TABLE auth_retention_policies" in sql
     assert "DROP TABLE deletion_receipts" in sql
     assert "DROP TABLE retention_policies" in sql
+    assert "DROP COLUMN siwe_nonce_retention_days" in sql
+    assert "VALUES (1, 30)" in sql  # bounded SIWE nonce table by default
     record_id = uuid.uuid4()
     assert invite_receipt_hash(record_id) == invite_receipt_hash(record_id)
     assert len(invite_receipt_hash(record_id)) == 32
@@ -85,6 +88,15 @@ def test_retention_migration_offline_and_hash_has_no_email() -> None:
     assert len(auth_receipt_hash("magic_link", record_id)) == 32
     assert auth_receipt_hash("session", record_id) != auth_receipt_hash("magic_link", record_id)
     assert auth_receipt_hash("session", record_id) != invite_receipt_hash(record_id)
+    assert siwe_nonce_receipt_hash("generated-challenge") == siwe_nonce_receipt_hash(
+        "generated-challenge"
+    )
+    assert len(siwe_nonce_receipt_hash("generated-challenge")) == 32
+    assert siwe_nonce_receipt_hash("generated-challenge") != siwe_nonce_receipt_hash(
+        "different-challenge"
+    )
+    with pytest.raises(ValueError, match="nonce"):
+        siwe_nonce_receipt_hash("")
     key = b"k" * 32
     assert len(subject_receipt_hash(record_id, key)) == 32
     assert subject_receipt_hash(record_id, key) == subject_receipt_hash(record_id, key)
@@ -112,11 +124,16 @@ def test_configure_policy_rejects_out_of_range_days(days: int) -> None:
 
 
 @pytest.mark.parametrize(
-    ("session_days", "magic_link_days"),
-    [(-1, 10), (10, MAX_AUTH_RETENTION_DAYS + 1), (1_000_000, None)],
+    ("session_days", "magic_link_days", "siwe_days"),
+    [
+        (-1, 10, None),
+        (10, MAX_AUTH_RETENTION_DAYS + 1, None),
+        (1_000_000, None, None),
+        (None, None, MAX_AUTH_RETENTION_DAYS + 1),
+    ],
 )
 def test_configure_auth_policy_rejects_out_of_range_days(
-    session_days: int | None, magic_link_days: int | None
+    session_days: int | None, magic_link_days: int | None, siwe_days: int | None
 ) -> None:
     with pytest.raises(ValueError, match="retention_days"):
         asyncio.run(
@@ -124,6 +141,7 @@ def test_configure_auth_policy_rejects_out_of_range_days(
                 None,  # type: ignore[arg-type]
                 session_retention_days=session_days,
                 magic_link_retention_days=magic_link_days,
+                siwe_nonce_retention_days=siwe_days,
                 legal_hold=False,
             )
         )
@@ -201,6 +219,10 @@ async def _integration_case(database_url: str) -> None:
     user_id, old_session_id, young_session_id, old_link_id, young_link_id = (
         uuid.uuid4() for _ in range(5)
     )
+    used_nonce = "old-used-generated-siwe-challenge"
+    expired_nonce = "old-expired-generated-siwe-challenge"
+    boundary_nonce = "boundary-generated-siwe-challenge"
+    young_nonce = "young-generated-siwe-challenge"
     old_email = "expired-person@example.test"
     try:
         async with sessions() as session, session.begin():
@@ -297,6 +319,31 @@ async def _integration_case(database_url: str) -> None:
                         created_at=now - timedelta(days=2),
                         expires_at=now + timedelta(days=4),
                     ),
+                    SiweNonce(
+                        nonce=used_nonce,
+                        user_id=user_id,
+                        created_at=now - timedelta(days=60),
+                        expires_at=now - timedelta(days=20),
+                        used_at=now - timedelta(days=30),
+                    ),
+                    SiweNonce(
+                        nonce=expired_nonce,
+                        user_id=user_id,
+                        created_at=now - timedelta(days=60),
+                        expires_at=now - timedelta(days=30),
+                    ),
+                    SiweNonce(
+                        nonce=boundary_nonce,
+                        user_id=user_id,
+                        created_at=now - timedelta(days=60),
+                        expires_at=now - timedelta(days=7, minutes=2),
+                    ),
+                    SiweNonce(
+                        nonce=young_nonce,
+                        user_id=user_id,
+                        created_at=now - timedelta(days=1),
+                        expires_at=now + timedelta(minutes=9),
+                    ),
                 ]
             )
             await configure_policy(session, org_id=org_id, invite_retention_days=7, legal_hold=True)
@@ -304,6 +351,7 @@ async def _integration_case(database_url: str) -> None:
                 session,
                 session_retention_days=7,
                 magic_link_retention_days=7,
+                siwe_nonce_retention_days=7,
                 legal_hold=True,
             )
             await session.flush()
@@ -346,6 +394,8 @@ async def _integration_case(database_url: str) -> None:
         async with sessions() as session:
             assert await session.get(Session, old_session_id) is not None
             assert await session.get(MagicLink, old_link_id) is not None
+            assert await session.get(SiweNonce, used_nonce) is not None
+            assert await session.get(SiweNonce, expired_nonce) is not None
         async with sessions() as session, session.begin():
             await configure_policy(
                 session, org_id=org_id, invite_retention_days=7, legal_hold=False
@@ -354,13 +404,14 @@ async def _integration_case(database_url: str) -> None:
                 session,
                 session_retention_days=7,
                 magic_link_retention_days=7,
+                siwe_nonce_retention_days=7,
                 legal_hold=False,
             )
 
         preview = await run_retention(sessions, now=now)
-        assert preview.examined == 3 and preview.failed == 0 and preview.deleted == 0
+        assert preview.examined == 5 and preview.failed == 0 and preview.deleted == 0
         result = await run_retention(sessions, now=now, dry_run=False)
-        assert result.examined == 3 and result.deleted == 3
+        assert result.examined == 5 and result.deleted == 5
         assert (await run_retention(sessions, now=now, dry_run=False)).deleted == 0
         async with sessions() as session:
             assert await session.get(Invite, old_id) is None
@@ -373,8 +424,12 @@ async def _integration_case(database_url: str) -> None:
             assert await session.get(Session, young_session_id) is not None
             assert await session.get(MagicLink, old_link_id) is None
             assert await session.get(MagicLink, young_link_id) is not None
+            assert await session.get(SiweNonce, used_nonce) is None
+            assert await session.get(SiweNonce, expired_nonce) is None
+            assert await session.get(SiweNonce, boundary_nonce) is not None
+            assert await session.get(SiweNonce, young_nonce) is not None
             receipts = list(await session.scalars(select(DeletionReceipt)))
-            assert len(receipts) == 3
+            assert len(receipts) == 5
             receipt_by_type = {receipt.record_type: receipt for receipt in receipts}
             assert receipt_by_type["invite"].record_hash == invite_receipt_hash(old_id)
             assert receipt_by_type["session"].record_hash == auth_receipt_hash(
@@ -383,10 +438,19 @@ async def _integration_case(database_url: str) -> None:
             assert receipt_by_type["magic_link"].record_hash == auth_receipt_hash(
                 "magic_link", old_link_id
             )
+            siwe_receipt_hashes = {
+                receipt.record_hash for receipt in receipts if receipt.record_type == "siwe_nonce"
+            }
+            assert siwe_receipt_hashes == {
+                siwe_nonce_receipt_hash(used_nonce),
+                siwe_nonce_receipt_hash(expired_nonce),
+            }
             receipt_data = str([receipt.__dict__ for receipt in receipts])
             assert old_email not in receipt_data
             assert "old-link-person@example.test" not in receipt_data
             assert "auth-user@example.test" not in receipt_data
+            assert used_nonce not in receipt_data
+            assert expired_nonce not in receipt_data
     finally:
         await engine.dispose()
 
@@ -532,6 +596,7 @@ async def _subject_deletion_case(database_url: str) -> None:
                 session,
                 session_retention_days=None,
                 magic_link_retention_days=None,
+                siwe_nonce_retention_days=None,
                 legal_hold=True,
             )
             await set_subject_legal_hold(session, user_id=held_id, legal_hold=True, updated_at=now)
@@ -555,6 +620,7 @@ async def _subject_deletion_case(database_url: str) -> None:
                 session,
                 session_retention_days=None,
                 magic_link_retention_days=None,
+                siwe_nonce_retention_days=None,
                 legal_hold=False,
             )
         # The dry run applies the audit filter and writes nothing.
@@ -586,6 +652,7 @@ async def _subject_deletion_case(database_url: str) -> None:
             )
             assert await session.get(Session, subject_session_id) is None
             assert await session.get(MagicLink, subject_magic_id) is None
+            assert await session.get(SiweNonce, "subject-erasure-nonce") is None
             assert await session.get(Session, held_session_id) is not None
             assert await session.get(MagicLink, held_magic_id) is not None
             assert await session.get(SubjectDeletionControl, subject_id) is None
@@ -626,6 +693,7 @@ async def _subject_deletion_case(database_url: str) -> None:
                 "session",
                 "magic_link",
                 "invite",
+                "siwe_nonce",
             }
             receipt_by_type = {receipt.record_type: receipt for receipt in receipts}
             assert receipt_by_type["subject"].record_hash == subject_receipt_hash(
@@ -638,10 +706,14 @@ async def _subject_deletion_case(database_url: str) -> None:
             assert receipt_by_type["magic_link"].record_hash == auth_receipt_hash(
                 "magic_link", subject_magic_id
             )
+            assert receipt_by_type["siwe_nonce"].record_hash == siwe_nonce_receipt_hash(
+                "subject-erasure-nonce"
+            )
             receipt_data = str([receipt.__dict__ for receipt in receipts])
             assert subject_email not in receipt_data
             assert held_email not in receipt_data
             assert "Delete me" not in receipt_data
+            assert "subject-erasure-nonce" not in receipt_data
 
         async with sessions() as session, session.begin():
             await set_subject_legal_hold(session, user_id=held_id, legal_hold=False, updated_at=now)
