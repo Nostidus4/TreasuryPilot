@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from types import SimpleNamespace
 
 import pytest
 from eth_abi import decode
@@ -399,6 +400,47 @@ def test_receipt_status_distinguishes_outer_revert_from_safe_outcome() -> None:
     assert _receipt_status(ok) == GovernanceTxStatus.EXECUTED
     failed = {"status": "0x1", "logs": [_execution_log("ExecutionFailure(bytes32,uint256)")]}
     assert _receipt_status(failed) == GovernanceTxStatus.FAILED
+
+
+def test_refresh_marks_open_transaction_superseded_after_external_nonce_use(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _SessionContext:
+        async def __aenter__(self) -> _SessionContext:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def begin(self) -> _SessionContext:
+            return self
+
+    row = SimpleNamespace(
+        chain_id=31337,
+        safe_address=SAFE,
+        safe_nonce=4,
+        status=GovernanceTxStatus.COLLECTING,
+        purpose=GovernanceTxPurpose.PAUSE,
+        exec_tx_hash=None,
+        safe_tx_hash=b"\x11" * 32,
+    )
+    service = GovernanceService(None, None, PlatformConfiguration(chains=(), manifests=()))
+
+    async def fake_row(
+        _session: object, _organization_id: object, _tx_id: object
+    ) -> SimpleNamespace:
+        return row
+
+    async def consumed_nonce(_chain_id: int, _safe: bytes) -> int:
+        return 5
+
+    monkeypatch.setattr(service, "_sessions", lambda: _SessionContext())
+    monkeypatch.setattr(service, "_row", fake_row)
+    monkeypatch.setattr(service, "_nonce", consumed_nonce)
+
+    asyncio.run(service.refresh(organization_id=object(), governance_tx_id=object()))
+
+    assert row.status == GovernanceTxStatus.SUPERSEDED
 
 
 def test_summary_flags_delegatecall() -> None:
