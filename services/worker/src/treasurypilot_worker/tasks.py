@@ -12,7 +12,11 @@ from celery import Task
 from minio.error import S3Error
 
 from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher, FieldEncryptionKey
+from treasurypilot_worker.agent.copilot import ask_copilot
+from treasurypilot_worker.agent.errors import AiBudgetExceeded, AiError
 from treasurypilot_worker.agent.factory import get_ai_adapter
+from treasurypilot_worker.agent.tools.backend import PostgresToolBackend
+from treasurypilot_worker.agent.tools.read_only import build_tools
 from treasurypilot_worker.audit_anchor import Web3AuditRootChain, publish_daily_audit_roots
 from treasurypilot_worker.celery_app import app
 from treasurypilot_worker.chain.event_handlers import (
@@ -421,6 +425,33 @@ def extract_document_task(request_id: str, document_id: str) -> dict[str, str]:
     except (OSError, S3Error) as error:  # storage or database unreachable: safe to redeliver
         raise RetryableTaskError(f"invoice extraction infrastructure failure: {error}") from error
     return {"outcome": outcome}
+
+
+@app.task(name="treasurypilot.copilot.ask", queue="ai")
+def copilot_ask_task(org_id: str, treasury_id: str, question: str) -> dict[str, Any]:
+    """One read-only Copilot turn (F-090). Failures return a code: no exception crosses Celery."""
+
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for the Copilot")
+    # The tools take the treasury id as a model input and refuse any outside the organisation.
+    try:
+        reply = ask_copilot(
+            get_ai_adapter(),
+            org_id=org_id,
+            question=question,
+            treasury_id=treasury_id,
+            tools=build_tools(PostgresToolBackend(settings.database_url), org_id),
+        )
+    except AiBudgetExceeded:
+        return {"error": "AI_BUDGET_EXCEEDED"}
+    except AiError:
+        return {"error": "AI_UNAVAILABLE"}
+    return {
+        "answer": reply.answer,
+        "citations": [c.model_dump() for c in reply.citations],
+        "ai_call_id": reply.ai_call_id or None,
+    }
 
 
 # Outbound-egress tasks run on the "webhooks" queue: its worker is the only one with public

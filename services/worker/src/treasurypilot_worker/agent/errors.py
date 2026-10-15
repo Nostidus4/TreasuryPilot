@@ -65,3 +65,9 @@ class ToolError(Exception):
     It must never carry data the caller may not see (a refusal reads the same for a missing
     row and for another organisation's row).
     """
+
+
+class PostCheckFailed(AiError):
+    """The answer carries a number that no cited tool result contains."""
+
+    ai_call_id: str | None = None  # the POSTCHECK_FAILED row, set by the adapter
