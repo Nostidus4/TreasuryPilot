@@ -76,7 +76,8 @@ contract TreasuryHandler {
             uint64(block.timestamp),
             uint64(block.timestamp + 1 days),
             keccak256("terms"),
-            uint64(block.timestamp + 14 days)
+            uint64(block.timestamp + 14 days),
+            false
         );
     }
 

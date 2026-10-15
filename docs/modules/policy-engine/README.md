@@ -171,7 +171,7 @@ A re-plan after partial completion (RCV-003) produces a **new** plan containing 
 ```
 domain: { name: "TreasuryPilot Policy", version: "1", chainId, verifyingContract: <module clone> }
 Step(uint32 seq,bytes32 stepId,uint8 action,address from,address to,address asset,uint256 amount)
-PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,bytes32 policyVersion,
+PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,uint256[] stepAmounts,bytes32 policyVersion,
                 address executor,uint64 validUntil,uint256 nonce,bytes32 evidenceDigest)
 ```
 
@@ -207,7 +207,7 @@ The table is generated from `treasurypilot_core.policy.REASON_CODES` (POL-001); 
 | 3 | Approval | `APPROVAL_INVALID` | B | `ApprovalInvalid()` | BR-004 |  |
 | 3 | Approval | `APPROVAL_EXPIRED` | B | `ApprovalExpired()` | BR-003 |  |
 | 3 | Approval | `NOT_IN_APPROVER_SET` | B | `NotApprover()` | BR-001, OQ-08 |  |
-| 3 | Approval | `APPROVAL_STALE` | B | — | BR-002 | invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/payee differ from the current request |
+| 3 | Approval | `APPROVAL_STALE` | B | — | BR-002 | invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/isFiat/payee differ from the current request |
 | 3 | Approval | `MAKER_CHECKER` | B | — | BR-005 |  |
 | 3 | Approval | `FLAG_UNACKNOWLEDGED` | B | — | BR-066, FR-313 |  |
 | 3 | Approval | `SCREENING_HIT` | B | — | BR-085 |  |

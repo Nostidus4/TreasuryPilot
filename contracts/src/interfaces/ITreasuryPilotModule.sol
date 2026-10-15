@@ -59,6 +59,8 @@ interface ITreasuryPilotModule {
         uint64 deadline;
         bytes32 termsHash;
         uint64 expiry;
+        // Owner-signed: the payment is quoted in fiat, so pay() may transfer less than the cap.
+        bool isFiat;
     }
 
     struct Payee {
@@ -129,10 +131,10 @@ interface ITreasuryPilotModule {
         bytes32 indexed fingerprint,
         address payingWallet,
         address payee,
-        uint256 amount,
+        uint256 amount, // actually transferred; below the early/normal cap for a fiat approval
         uint256 day,
         bool usedException,
-        bool early
+        bool early // the early option was open; says nothing about `amount`
     );
     event Supplied(bytes32 indexed stepId, uint256 amount, uint256 day);
     event Withdrawn(bytes32 indexed stepId, uint256 amount, uint256 day);
@@ -183,7 +185,7 @@ interface ITreasuryPilotModule {
     function revoke() external;
     /// @notice Safe T or a current approver may permanently cancel an unpaid request.
     function cancelRequest(bytes32 requestId) external;
-    /// @notice Pay the proposed amount, bounded by the signed amount or active early-payment amount.
+    /// @notice Pay the signed amount (the early one while open). A signed `isFiat` approval may pay 1..that cap.
     function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 paymentAmount)
         external;
     /// @notice Executor refills only the approved operational wallet, once per request.

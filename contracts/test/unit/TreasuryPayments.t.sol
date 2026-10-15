@@ -21,6 +21,7 @@ contract ContractApprover is IERC1271 {
 contract TreasuryPaymentsTest is TreasuryFixture {
     function testFreshQuotePaymentCannotExceedSignedStablecoinMaximum() external {
         I.PaymentApproval memory ap = _approval(500, 120e6);
+        ap.isFiat = true;
         bytes memory signature = _sign(ap);
 
         vm.prank(executor);
@@ -41,8 +42,52 @@ contract TreasuryPaymentsTest is TreasuryFixture {
         require(token.balanceOf(vendor) == 0, "over-cap transfer occurred");
     }
 
+    function testNonFiatApprovalMustPayItsSignedAmountExactly() external {
+        I.PaymentApproval memory ap = _approval(503, 100e6);
+        bytes memory signature = _sign(ap);
+
+        vm.expectRevert(E.WrongPaymentOption.selector);
+        vm.prank(executor);
+        module.pay(ap, signature, bytes32(uint256(503)), 99e6);
+
+        require(token.balanceOf(vendor) == 0, "underpayment was transferred");
+        require(!module.requestPaid(ap.requestId), "underpaid request marked paid");
+    }
+
+    function testNonFiatApprovalCannotPayTheEarlyAmountAfterTheWindow() external {
+        I.PaymentApproval memory ap = _approval(504, 100e6);
+        ap.earlyAmount = 90e6;
+        ap.earlyPayBy = uint64(block.timestamp);
+        vm.warp(block.timestamp + 1);
+        bytes memory signature = _sign(ap);
+
+        vm.expectRevert(E.WrongPaymentOption.selector);
+        vm.prank(executor);
+        module.pay(ap, signature, bytes32(uint256(504)), 90e6);
+    }
+
+    function testFiatExceptionMatchesTheSignedAmountNotThePaidAmount() external {
+        // Per-request limit is 2000e6; the owner excepts the signed 2500e6 cap; the fresh quote pays 2100e6.
+        I.PaymentApproval memory ap = _approval(505, 2500e6);
+        ap.isFiat = true;
+        bytes memory signature = _sign(ap);
+        _owner(
+            abi.encodeCall(
+                module.grantException, (ap.requestId, uint128(2500e6), vendor, uint64(block.timestamp + 1 days))
+            )
+        );
+
+        vm.prank(executor);
+        module.pay(ap, signature, bytes32(uint256(505)), 2100e6);
+
+        require(token.balanceOf(vendor) == 2100e6, "exception did not cover the quoted amount");
+        (,,,, bool used) = module.exceptions(ap.requestId);
+        require(used, "exception not consumed");
+    }
+
     function testFreshQuotePaymentCannotBeZero() external {
         I.PaymentApproval memory ap = _approval(502, 100e6);
+        ap.isFiat = true;
         bytes memory signature = _sign(ap);
 
         vm.expectRevert(E.InvalidAmount.selector);

@@ -93,11 +93,13 @@ def test_fresh_quote_to_pre_signing_calldata_preserves_the_approved_cap() -> Non
         "deadline": 2_000_000_000,
         "termsHash": "0x" + "04" * 32,
         "expiry": 2_000_000_000,
+        "isFiat": True,
     }
     attestation = {
         "planHash": "0x" + "05" * 32,
         "requestId": approval["requestId"],
         "stepIds": ["0x" + STEP_ID.hex()],
+        "stepAmounts": [int(proposed)],
         "policyVersion": "0x" + "06" * 32,
         "executor": EXECUTOR,
         "validUntil": 2_000_000_000,
@@ -128,4 +130,6 @@ def test_fresh_quote_to_pre_signing_calldata_preserves_the_approved_cap() -> Non
     assert decision.decision == "ALLOW"
     assert proposed == BaseUnits(101)
     assert decoded[0][7] == request.amount == 120
+    assert decoded[0][13] is True  # signed isFiat
+    assert decoded[4][3] == (101,)  # the attestation binds the quoted amount
     assert decoded[3] == proposed == 101

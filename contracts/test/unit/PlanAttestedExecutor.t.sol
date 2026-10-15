@@ -25,10 +25,14 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         bytes32[] memory steps = new bytes32[](2);
         steps[0] = REFILL_STEP;
         steps[1] = PAY_STEP;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = ap.amount;
+        amounts[1] = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
         att = H.PlanAttestation(
             keccak256(abi.encode("plan", ap.requestId)),
             ap.requestId,
             steps,
+            amounts,
             keccak256("policy v1"),
             executor,
             uint64(block.timestamp + 15 minutes),
@@ -73,7 +77,9 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
 
     function testAttestedExecutorPaysFreshQuoteAmountWithinSignedMaximum() external {
         I.PaymentApproval memory ap = _approval(914, 100e6);
+        ap.isFiat = true;
         H.PlanAttestation memory att = _att(ap, 15);
+        att.stepAmounts[1] = 75e6;
         bytes memory attSig = _sign(att);
         bytes memory approverSig = _sign(ap);
 
@@ -86,7 +92,9 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
 
     function testAttestedExecutorRejectsFreshQuoteAboveSignedMaximum() external {
         I.PaymentApproval memory ap = _approval(915, 100e6);
+        ap.isFiat = true;
         H.PlanAttestation memory att = _att(ap, 16);
+        att.stepAmounts[1] = 101e6;
         bytes memory attSig = _sign(att);
         bytes memory approverSig = _sign(ap);
 
@@ -95,6 +103,27 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         gate.pay(ap, approverSig, PAY_STEP, 101e6, att, attSig);
 
         require(token.balanceOf(vendor) == 0, "over-cap payment was transferred");
+    }
+
+    function testAttestedAmountMustMatchTheSubmittedAmount() external {
+        I.PaymentApproval memory ap = _approval(916, 100e6);
+        ap.isFiat = true;
+        H.PlanAttestation memory att = _att(ap, 17);
+        att.stepAmounts[1] = 75e6;
+        bytes memory attSig = _sign(att);
+        bytes memory approverSig = _sign(ap);
+
+        vm.expectRevert(E.AttestationInvalid.selector);
+        vm.prank(executor);
+        gate.pay(ap, approverSig, PAY_STEP, 76e6, att, attSig);
+        require(token.balanceOf(vendor) == 0, "unattested amount was transferred");
+    }
+
+    function testAttestationNeedsOneAmountPerStep() external {
+        I.PaymentApproval memory ap = _approval(917, 100e6);
+        H.PlanAttestation memory att = _att(ap, 18);
+        att.stepAmounts = new uint256[](1);
+        _gatePay(ap, att, _sign(att), E.AttestationInvalid.selector);
     }
 
     function testDirectExecutorCallsNoLongerBypassTheGate() external {
@@ -187,6 +216,8 @@ contract PlanAttestedExecutorTest is TreasuryFixture {
         H.PlanAttestation memory att = _att(ap, 11);
         att.stepIds = new bytes32[](1);
         att.stepIds[0] = stepId;
+        att.stepAmounts = new uint256[](1);
+        att.stepAmounts[0] = 100e6;
         bytes memory sig = _sign(att);
         vm.prank(executor);
         gate.supply(bytes32(0), stepId, 100e6, att, sig);

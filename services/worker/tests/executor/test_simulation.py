@@ -61,11 +61,13 @@ APPROVAL = {
     "deadline": 2_000_000_000,
     "termsHash": "0x" + "04" * 32,
     "expiry": 2_000_000_000,
+    "isFiat": False,
 }
 ATTESTATION = {
     "planHash": "0x" + "05" * 32,
     "requestId": "0x" + "01" * 32,
     "stepIds": ["0x" + STEP_ID.hex()],
+    "stepAmounts": [90],
     "policyVersion": "0x" + "06" * 32,
     "executor": EXECUTOR,
     "validUntil": 2_000_000_000,
@@ -129,10 +131,10 @@ def no_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("action", "selector"),
     [
-        (Action.PAY, "c52dea67"),
-        (Action.REFILL, "a374bbfd"),
-        (Action.WITHDRAW, "869d5613"),
-        (Action.SUPPLY, "add183e5"),
+        (Action.PAY, "88e7aeaf"),
+        (Action.REFILL, "c6ad3596"),
+        (Action.WITHDRAW, "eb371d41"),
+        (Action.SUPPLY, "6453ca48"),
     ],
 )
 def test_calldata_targets_the_executor_function_for_the_action(

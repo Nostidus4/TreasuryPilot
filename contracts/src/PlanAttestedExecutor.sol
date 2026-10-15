@@ -34,7 +34,7 @@ contract PlanAttestedExecutor {
         H.PlanAttestation calldata att,
         bytes calldata attSig
     ) external {
-        _consume(ap.requestId, stepId, att, attSig);
+        _consume(ap.requestId, stepId, paymentAmount, att, attSig);
         module.pay(ap, approverSig, stepId, paymentAmount);
     }
 
@@ -47,7 +47,7 @@ contract PlanAttestedExecutor {
         H.PlanAttestation calldata att,
         bytes calldata attSig
     ) external {
-        _consume(ap.requestId, stepId, att, attSig);
+        _consume(ap.requestId, stepId, amount, att, attSig);
         module.refill(ap, approverSig, stepId, toWallet, amount);
     }
 
@@ -59,7 +59,7 @@ contract PlanAttestedExecutor {
         H.PlanAttestation calldata att,
         bytes calldata attSig
     ) external {
-        _consume(requestId, stepId, att, attSig);
+        _consume(requestId, stepId, amount, att, attSig);
         module.supply(stepId, amount);
     }
 
@@ -70,7 +70,7 @@ contract PlanAttestedExecutor {
         H.PlanAttestation calldata att,
         bytes calldata attSig
     ) external {
-        _consume(requestId, stepId, att, attSig);
+        _consume(requestId, stepId, amount, att, attSig);
         module.withdraw(stepId, amount);
     }
 
@@ -92,18 +92,24 @@ contract PlanAttestedExecutor {
         _;
     }
 
-    function _consume(bytes32 requestId, bytes32 stepId, H.PlanAttestation calldata att, bytes calldata sig)
-        internal
-        onlyOperator
-    {
+    function _consume(
+        bytes32 requestId,
+        bytes32 stepId,
+        uint256 amount,
+        H.PlanAttestation calldata att,
+        bytes calldata sig
+    ) internal onlyOperator {
         if (
-            att.planHash == bytes32(0) || att.executor != msg.sender || att.requestId != requestId
+            att.planHash == bytes32(0) || att.stepAmounts.length != att.stepIds.length || att.executor != msg.sender
+                || att.requestId != requestId
                 || !SignatureChecker.isValidSignatureNow(policySigner, H.digest(att, address(module)), sig)
         ) revert E.AttestationInvalid();
         if (block.timestamp > att.validUntil) revert E.AttestationExpired();
         bool found;
         for (uint256 i; i < att.stepIds.length; ++i) {
             if (att.stepIds[i] == stepId) {
+                // The signer attests each step's exact amount, so the operator cannot choose another.
+                if (att.stepAmounts[i] != amount) revert E.AttestationInvalid();
                 found = true;
                 break;
             }

@@ -190,6 +190,7 @@ struct PaymentApproval {
     uint64  deadline;        // invoice due date — informational on-chain (M04-D11)
     bytes32 termsHash;
     uint64  expiry;          // approval usable until (default deadline + 14 days, ≤ signedAt + approvalMaxAge)
+    bool    isFiat;          // owner-signed: pay() may transfer 1..option instead of exactly the option
 }
 
 function refill(PaymentApproval calldata ap, bytes calldata approverSig,
@@ -225,13 +226,13 @@ function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 st
 | 4 | payee: `payees[p].active && now ≥ activeFrom` | `PayeeUnknown` / `PayeeCooling` | BR-013/017 |
 | 5 | `!requestPaid`, `!requestCancelled`, `!stepUsed` | `RequestAlreadyPaid` / `RequestCancelled` / `StepAlreadyExecuted` | BR-061, BR-077 |
 | 6 | fingerprint: `!fingerprintPaid[fp]` **or** `duplicateAllowedFor[fp] == requestId` (then consume it) | `DuplicateFingerprint` | BR-071 |
-| 7 | per-request: `amount ≤ pay.perRequest`, **or** a valid exception: `ex.amount == amount && ex.payee == payee && !ex.used && now ≤ ex.expiry && ex.mandateVersion == mandate.version` (then mark used) | `OverPerRequestLimit` / `ExceptionInvalid` | BR-040/041/042 |
+| 7 | per-request: `paymentAmount ≤ pay.perRequest`, **or** a valid exception: `ex.amount == approvedAmount && ex.payee == payee && !ex.used && now ≤ ex.expiry && ex.mandateVersion == mandate.version` (then mark used) | `OverPerRequestLimit` / `ExceptionInvalid` | BR-040/041/042 |
 | 8 | daily: `usedOn[PAY,day] + amount ≤ pay.daily` (exceptions included) | `OverDailyLimit` | BR-022/042 |
 | 9 | buffer: `balanceOf(payingWallet) − amount ≥ bufferOf[payingWallet]` | `BufferBreach` | BR-030 |
 | 10 | effects: `requestPaid`, `stepUsed`, `fingerprintPaid`, `usedOn[PAY,day] += amount` | | |
 | 11 | interaction: payingWallet `execTransactionFromModuleReturnData(asset, 0, transfer(payee, amount))` | `TransferFailed` | |
 | 12 | post-check payee balance delta == amount | `BalanceDeltaMismatch` | M04-D8 |
-| 13 | emit `PaymentExecuted(requestId, stepId, fingerprint, payingWallet, payee, amount, day, usedException)` | | |
+| 13 | emit `PaymentExecuted(requestId, stepId, fingerprint, payingWallet, payee, amount, day, usedException, early)` (`amount` is what was transferred) | | |
 
 All state-changing functions use a reentrancy guard and checks-effects-interactions.
 
@@ -249,7 +250,7 @@ All state-changing functions use a reentrancy guard and checks-effects-interacti
 domain: { name: "TreasuryPilot", version: "1", chainId, verifyingContract: module }
 PaymentApproval(bytes32 requestId,bytes32 invoiceHash,bytes32 fingerprint,address treasury,
                 address payingWallet,address asset,address payee,uint256 amount,uint256 earlyAmount,
-                uint64 earlyPayBy,uint64 deadline,bytes32 termsHash,uint64 expiry)
+                uint64 earlyPayBy,uint64 deadline,bytes32 termsHash,uint64 expiry,bool isFiat)
 ```
 Only **one** typed struct remains on-chain in M1 (exceptions and duplicate overrides moved to governance transactions, M04-D3). Golden vectors: `contracts/test/vectors/payment-approval.json` (SC-017), consumed by Python (ENG-010) and TypeScript (WEB-009).
 
@@ -428,7 +429,7 @@ Using `TestUSDC` (6 decimals). Amounts below are in whole units for readability;
 
 ## 15. v0.3 changes (ADR-019) — these supersede earlier sections where they differ
 
-**Payment options.** `PaymentApproval` has 13 fields (struct above). In `pay`, the amount transferred is `payAmount = (ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy) ? ap.earlyAmount : ap.amount`; checks 7–9 and the counters use `payAmount`; the call reverts `WrongPaymentOption` if `earlyAmount > amount`. The refill bound keeps using `ap.amount` (≥ payAmount). `PaymentExecuted` gains `bool early`.
+**Payment options.** `PaymentApproval` has 14 fields (struct above). `pay(ap, sig, stepId, paymentAmount)` takes `approvedAmount = (ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy) ? ap.earlyAmount : ap.amount`. A non-fiat approval must pay `paymentAmount == approvedAmount`; only an approval whose owner-signed `isFiat` is true may pay `0 < paymentAmount ≤ approvedAmount` (a fresh fiat quote), otherwise the call reverts `WrongPaymentOption`. Checks 7–9 and the counters use `paymentAmount`, but an exception is granted for, and matched against, `approvedAmount`. The refill bound keeps using `ap.amount` (≥ approvedAmount). `PaymentExecuted` gains `bool early`, which only says the early option was open; read `amount` for what moved.
 
 **Aave V3 storage (set once in `initialize`, verified against `pool.getReserveData(asset).aTokenAddress`):** `address public aavePool; address public aToken;`. Mandate gains `Limits supply` (perRequest = per tx, daily). The **Safe floor is `bufferOf[safeT]`** (already in storage).
 
@@ -466,6 +467,6 @@ maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-
 | `supply`, `withdraw` | Same check with an explicit `requestId` (`0x0` for a liquidity plan), then forward. |
 | `borrow`, `repay`, `swapForGas` | Plain pass-through; they are not plan steps and keep their owner authorizations and limits. |
 
-Verification matches `PlanAttestation` of M08 section 6.3 and the golden vectors: domain `TreasuryPilot Policy` v1 with `chainId` and the module clone as `verifyingContract`; a signature from `policySigner` (raw ECDSA or ERC-1271); `executor == msg.sender`; `requestId` matches; `stepId` is in `stepIds`; `block.timestamp <= validUntil`. The nonce binds to its `planHash` on first use and every step of that plan shares it. A different plan with a used nonce reverts. Errors: `AttestationInvalid`, `AttestationExpired`, `NonceReused`, `NotExecutor`.
+Verification matches `PlanAttestation` of M08 section 6.3 and the golden vectors: domain `TreasuryPilot Policy` v1 with `chainId` and the module clone as `verifyingContract`; a signature from `policySigner` (raw ECDSA or ERC-1271); `executor == msg.sender`; `requestId` matches; `stepId` is in `stepIds` and the amount the call moves equals the parallel `stepAmounts[i]` (`stepAmounts.length == stepIds.length`), so the operator cannot choose another amount; `block.timestamp <= validUntil`. The nonce binds to its `planHash` on first use and every step of that plan shares it. A different plan with a used nonce reverts. Errors: `AttestationInvalid`, `AttestationExpired`, `NonceReused`, `NotExecutor`.
 
 Limits: the contract trusts the signed `planHash` (one step cannot recompute it), and the policy key and operator are immutable, so rotating either means deploying a new executor and calling `configureMandate`. Deployment scripts are not changed by this ticket.

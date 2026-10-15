@@ -81,6 +81,7 @@ def test_an_allowed_plan_is_attested_for_fifteen_minutes_and_verifies() -> None:
 
     assert message["planHash"] == _REQUEST_PLAN["planHash"]
     assert message["stepIds"] == [s["stepId"] for s in _REQUEST_PLAN["steps"]]
+    assert message["stepAmounts"] == [int(s["amount"]) for s in _REQUEST_PLAN["steps"]]
     assert message["validUntil"] == int((NOW + timedelta(minutes=15)).timestamp())
     assert typed["domain"]["verifyingContract"] == PLAN["treasury"]  # the module clone
     assert 0 <= message["nonce"] < 2**128
@@ -97,6 +98,18 @@ def test_an_attestation_over_a_modified_plan_fails() -> None:
 
     assert _verify(typed, signature, plan=modified_plan) is PolicyReasonCode.ATTESTATION_INVALID
     assert _verify(forged, signature) is PolicyReasonCode.ATTESTATION_INVALID
+
+
+def test_an_attestation_whose_step_amounts_differ_from_the_plan_fails() -> None:
+    typed = _attest()
+    amounts = list(typed["message"]["stepAmounts"])
+    amounts[-1] += 1
+    resigned = {**typed, "message": {**typed["message"], "stepAmounts": amounts}}
+
+    assert (
+        _verify(resigned, sign_attestation(resigned, POLICY_KEY))
+        is PolicyReasonCode.ATTESTATION_INVALID
+    )
 
 
 def test_an_expired_attestation_fails() -> None:

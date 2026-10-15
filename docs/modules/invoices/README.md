@@ -43,12 +43,15 @@ original encoding; the four fiat fields are appended only when `fiatCurrency` is
 
 The returned base-unit amount is the fiat request's PAY step amount; it must stay
 separate from the signed maximum in the approval. Worker pre-sign simulation encodes
-that amount in the PAY call, and the module rejects zero or any amount above the
-selected signed limit (the early-payment amount while its option is open, otherwise
-the normal maximum). The module's daily counters and emitted payment amount record
-the amount actually transferred. Plan policy keeps non-fiat PAY steps equal to their
-approved amount and accepts fiat PAY steps only when they are positive and at or below
-the signed maximum.
+that amount in the PAY call. The approval carries an owner-signed `isFiat` flag: only
+when it is set may the module pay a positive amount at or below the selected signed
+limit (the early-payment amount while its option is open, otherwise the normal
+maximum); every other approval must pay that limit exactly. The policy attestation
+binds each step's exact amount (`stepAmounts`) and the executor contract checks it. The
+module's daily counters and emitted payment amount record the amount actually
+transferred, and an owner exception is granted for and matched against the signed
+amount. Plan policy and the validator apply the same rule: non-fiat PAY steps equal the
+approved amount, fiat PAY steps are positive and at or below it.
 
 Configuration: fiat requests are enabled only when `TP_FX_SOURCE_ID` and
 `TP_FX_TOLERANCE_BPS` (0..10000) are set (optional `TP_FX_MAX_QUOTE_AGE_SECONDS`,
@@ -320,7 +323,7 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
 
-`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 13-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
+`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 14-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

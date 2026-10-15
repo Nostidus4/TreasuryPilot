@@ -135,7 +135,8 @@ abstract contract TreasuryFixture is SafeTestHelper {
             0,
             uint64(block.timestamp + 1 days),
             keccak256("synthetic terms"),
-            uint64(block.timestamp + 14 days)
+            uint64(block.timestamp + 14 days),
+            false
         );
     }
 

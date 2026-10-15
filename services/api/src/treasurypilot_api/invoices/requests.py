@@ -2624,7 +2624,9 @@ async def _approval_typed_data(
             "paying_wallet": "0x" + wallet.safe_address.hex(),
             "payee": "0x" + payee.address.hex(),
             "amount": int(row.amount),
-            "fiat_amount_minor_units": row.fiat_amount_minor_units,
+            "fiat_amount_minor_units": (
+                None if row.fiat_amount_minor_units is None else int(row.fiat_amount_minor_units)
+            ),
             "early_amount": early_amount,
             "early_pay_by": early_pay_by,
             "deadline": deadline,

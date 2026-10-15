@@ -1,0 +1,94 @@
+{
+  "formatVersion": 1,
+  "generator": "ethers@5.4.0",
+  "fixtureIdentity": 7,
+  "domain": {
+    "name": "TreasuryPilot",
+    "version": "1",
+    "chainId": 11155111,
+    "verifyingContract": "0x111122223333444455556666777788889999aaaa"
+  },
+  "types": {
+    "PaymentApproval": [
+      {
+        "name": "requestId",
+        "type": "bytes32"
+      },
+      {
+        "name": "invoiceHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "fingerprint",
+        "type": "bytes32"
+      },
+      {
+        "name": "treasury",
+        "type": "address"
+      },
+      {
+        "name": "payingWallet",
+        "type": "address"
+      },
+      {
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "name": "payee",
+        "type": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "name": "earlyAmount",
+        "type": "uint256"
+      },
+      {
+        "name": "earlyPayBy",
+        "type": "uint64"
+      },
+      {
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "name": "termsHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "expiry",
+        "type": "uint64"
+      },
+      {
+        "name": "isFiat",
+        "type": "bool"
+      }
+    ]
+  },
+  "message": {
+    "requestId": "0x345f4fef72b9a20341f6ab37c6b7e8df037e9d6816c6fad2815b2b530b821bc1",
+    "invoiceHash": "0x17397a4be7796dc25e7a58519de491259ecd7e496d7a34fad8338963921bb32c",
+    "fingerprint": "0xf37e7b89dfdfab6af61e41eb2916bc7578c5a2ee6ef6dc0d5f1b159dd87cf0f1",
+    "treasury": "0x111122223333444455556666777788889999aaaa",
+    "payingWallet": "0x22223333444455556666777788889999aaaabbbb",
+    "asset": "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
+    "payee": "0x3333444455556666777788889999aaaabbbbcccc",
+    "amount": "100000000",
+    "earlyAmount": "0",
+    "earlyPayBy": 0,
+    "deadline": 1800000000,
+    "termsHash": "0xfbaa1608e78a736fe06f43b257ee291ee948889e91a4a06b4001c9979d978f68",
+    "expiry": 1801209600,
+    "isFiat": true
+  },
+  "typeHash": "0x6cd66cf2d3ec3cdfde36ef7a0aa9efd451ecb29a89ee3888bb3a329ad4c04541",
+  "structHash": "0x9add3eae40f080854d0942930360fdc37e16f806f8b84837cd59572600db9f72",
+  "domainSeparator": "0xa8d81e2f5a0c1710a87660cfb5e0df502e202d2c8a711b7efa102c43a4bcb6da",
+  "digest": "0x744a7fbbded7c58bd0baaaf3132d25d034f21db709d3b8b1421bb5f828ba88f1",
+  "signer": "0xd41c057fd1c78805AAC12B0A94a405c0461A6FBb",
+  "signature": "0xb92a1ced736dd31c49ebac1c2fe1b058c95312e407216cff063108955821dc4719f8df921a7efaf3104022420b309b23e1380b339fb385ccd57a1e33b9d852231b",
+  "approverSig": "0x000000000000000000000000d41c057fd1c78805aac12b0a94a405c0461a6fbb00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000041b92a1ced736dd31c49ebac1c2fe1b058c95312e407216cff063108955821dc4719f8df921a7efaf3104022420b309b23e1380b339fb385ccd57a1e33b9d852231b00000000000000000000000000000000000000000000000000000000000000"
+}
