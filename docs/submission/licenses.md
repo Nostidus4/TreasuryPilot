@@ -30,8 +30,8 @@ No `LICENSE` file exists yet. The license of this repository's own code is
 | fastapi | 0.143.0 | MIT |
 | httpx2 | 2.13.1 | BSD-3-Clause |
 | hypothesis | 6.169.0 | MPL-2.0 |
-| import-linter | 2.3 | BSD (classifier) |
-| minio | 7.2.18 | Apache (classifier) |
+| import-linter | 2.3 | BSD-2-Clause |
+| minio | 7.2.18 | Apache-2.0 |
 | mypy | 1.20.2 | MIT |
 | opentelemetry-api | 1.45.1 | Apache-2.0 |
 | opentelemetry-exporter-otlp-proto-http | 1.45.1 | Apache-2.0 |
@@ -40,7 +40,7 @@ No `LICENSE` file exists yet. The license of this repository's own code is
 | opentelemetry-instrumentation-httpx | 0.66b1 | Apache-2.0 |
 | opentelemetry-instrumentation-sqlalchemy | 0.66b1 | Apache-2.0 |
 | opentelemetry-sdk | 1.45.1 | Apache-2.0 |
-| ortools | 9.14.6206 | Apache (classifier) |
+| ortools | 9.14.6206 | Apache-2.0 |
 | pillow | 11.3.0 | MIT-CMU |
 | pre-commit | 4.2.0 | MIT |
 | prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause |
@@ -62,10 +62,7 @@ No `LICENSE` file exists yet. The license of this repository's own code is
 | uvicorn | 0.54.0 | BSD-3-Clause |
 | web3 | 7.16.0 | MIT |
 
-Notes: `siwe` declares `MIT OR Apache-2.0` in its License field but a generic
-"Other/Proprietary" classifier; confirm against its repository. `ortools`, `minio`
-and `import-linter` report a classifier only (Apache / Apache / BSD).
-`hypothesis` and `axe-core` are MPL-2.0 (file-level copyleft; used unmodified).
+Notes: `hypothesis` is MPL-2.0 (file-level copyleft; used unmodified).
 Dev-only packages: httpx2, hypothesis, import-linter, mypy, pre-commit, pytest,
 pytest-cov, ruff, types-pyyaml.
 
@@ -102,7 +99,7 @@ pytest-cov, ruff, types-pyyaml.
 | wagmi | 2.19.5 | MIT |
 | zod | 3.25.76 | MIT |
 | @playwright/test (dev) | 1.64.0 | Apache-2.0 |
-| axe-core (dev) | 4.10.2 | MPL-2.0 |
+| axe-core (dev) | 4.10.2 | MPL-2.0 (file-level copyleft; used unmodified) |
 | typescript (dev) | 5.9.3 | Apache-2.0 |
 | tailwindcss, tailwindcss-animate, postcss, autoprefixer (dev) | 3.4.17 / 1.0.7 / 8.5.29 / 10.6.1 | MIT |
 | eslint, @eslint/js, eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, typescript-eslint (dev) | 9.39.5 / 9.39.5 / 5.2.0 / 0.4.26 / 15.15.0 / 8.71.1 | MIT |
@@ -132,7 +129,7 @@ bytecode.
 | Image | Use | License (upstream) |
 | --- | --- | --- |
 | postgres:16-alpine | database | PostgreSQL License |
-| redis:7-alpine | broker/cache | Depends on the 7.x patch: BSD-3-Clause up to 7.2, RSALv2/SSPLv1 from 7.4. Pin and check. |
+| redis:7-alpine | broker/cache | Floating tag. BSD-3-Clause up to 7.2.x; the current 7.x tag resolves to the 7.4+ range (RSALv2/SSPLv1); Redis 8+ adds AGPL-3.0 as an option. Recommend pinning to 7.2.x or switching to valkey. Based on upstream knowledge, not a pulled image. |
 | ghcr.io/foundry-rs/foundry:v1.8.5 | Anvil, forge | MIT OR Apache-2.0 |
 | jaegertracing/jaeger:2.22.0 | tracing | Apache-2.0 |
 | MinIO `RELEASE.2025-04-22T22-12-26Z`, built from source (`infra/minio/Dockerfile`) | object storage | AGPL-3.0 |
@@ -191,7 +188,7 @@ Web and contracts:
 
 ```sh
 corepack pnpm@9.15.9 install --frozen-lockfile
-node -e 'for (const d of ["apps/web", "contracts"]) {
+node -e 'for (const d of [".", "apps/web", "contracts"]) {
   const p = require("./" + d + "/package.json");
   for (const n of Object.keys({...p.dependencies, ...p.devDependencies}))
     console.log(d, n, require("./" + d + "/node_modules/" + n + "/package.json").license);

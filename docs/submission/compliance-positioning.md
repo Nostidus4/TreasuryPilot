@@ -15,9 +15,9 @@ lawyer must review it before it is relied on.
   ADR-019). Local and CI runs use Anvil (31337). No real funds move.
 - The signer's chain allowlist defaults to `[31337, 11155111]`
   (`services/signer/src/treasurypilot_signer/config.py`, `allowed_chain_ids`).
-  A chain that is not in the configuration fails with `WRONG_CHAIN`.
+  A chain that is not in the configuration fails with `CHAIN_NOT_ALLOWED`.
 - Evidence bundles carry a `TESTNET` flag from the `chains.is_testnet` column
-  (`services/api/.../audit/evidence_repository.py`).
+  (`services/api/src/treasurypilot_api/audit/evidence_repository.py`).
 - **Mainnet activation is gated by KYB** (#193, `docs/modules/compliance/README.md`,
   "KYB (CMP-L01)"). `GovernanceService._require_kyb()` rejects a mainnet
   `MODULE_SETUP` with `409 KYB_REQUIRED` unless the organization's latest KYB
@@ -33,13 +33,13 @@ lawyer must review it before it is relied on.
 
 - The primary users are finance and treasury operators at stablecoin-native SMEs
   and Web3 businesses ([PROJECT_OVERVIEW](../PROJECT_OVERVIEW.md)).
-- **NFR-CMP-02:** market positioning excludes mainland China retail or business
+- **NFR-CMP-02:** the product is not marketed to mainland China retail or business
   use of stablecoins; this note is the required statement
   ([NON_FUNCTIONAL_REQUIREMENTS](../NON_FUNCTIONAL_REQUIREMENTS.md)).
 - The product is non-custodial: the Safe stays under the customer's owners, and
   custody of customer funds is a stated non-goal
   ([FEATURES](../FEATURES.md) non-goals, PROJECT_OVERVIEW).
-- The repository has no jurisdiction-specific eligibility check. The exclusion is
+- The repository has no jurisdiction-specific eligibility check. This is
   a positioning and go-to-market statement, not a technical control. Do not claim
   geo-blocking.
 
@@ -47,14 +47,14 @@ lawyer must review it before it is relied on.
 
 - Money handling is asset-agnostic by design: integer base units
   ([ADR-014](../adr/ADR-014-money-representation.md)), one payment asset per
-  treasury, and per-asset limits and allowlists planned for multiple assets
-  (F-015, planning issues L05 and L07, phase Later).
+  treasury, and per-asset limits exist in the mandate model (treasury README §16,
+  TRS-L02); multiple stablecoins per treasury is tagged Later (F-015, decisions-log Q2).
 - The enforcement layer (Safe module mandate, EIP-712 approvals, policy
   validation, screening before PAY, audit log, evidence bundle) does not depend on
   who issues the token. A token that behaves as ERC-20 could be added through the
   asset allowlist.
 - What would still be needed, and is **not built**: a real KYB/KYT/Travel Rule
-  provider behind the existing adapters (NFR-CMP-04, F-111 and later items), a
+  provider behind the existing adapters (NFR-CMP-04, F-111 (Later)), a
   per-asset review of transfer restrictions, and legal review for each issuer and
   jurisdiction. Depeg checks and fiat-denominated invoices are also phase Later
   (decisions-log Q20).
