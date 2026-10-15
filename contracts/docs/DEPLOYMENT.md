@@ -48,6 +48,15 @@ write the published manifest. After a successful Sepolia deployment, run the
 publisher with prediction `deployments/predictions/11155111.json` and manifest
 `deployments/11155111.json`, using the same RPC.
 
+After publication, verify the project-owned Sepolia implementation, factory and
+tUSDC source on Etherscan with `make verify-sepolia`. Set `SEPOLIA_RPC_URL` (or
+`ETH_RPC_URL`) and `ETHERSCAN_API_KEY` first. The command requires a `deployed`
+manifest, confirms the RPC chain and all three runtime code hashes, and verifies
+the factory with its mined implementation constructor argument. Canonical Safe
+contracts are already published separately; the module address is an EIP-1167
+clone and is validated against the implementation by the publisher rather than
+submitted as standalone Solidity source.
+
 Sepolia uses these canonical Safe 1.4.1 deployments, pinned in
 [safe-deployments](https://github.com/safe-global/safe-deployments/tree/7b1fb6d615ab2d2999550ec9166554b180e813e5/src/assets/v1.4.1):
 

@@ -18,7 +18,7 @@ from siwe import (  # type: ignore[import-untyped]
     VerificationError,
     generate_nonce,
 )
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from web3 import HTTPProvider, Web3
@@ -105,19 +105,17 @@ class WalletRepository:
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"siwe-nonce:{user_id}"},
             )
-            # Keep the table bounded: drop this user's spent or expired challenges, and
-            # refuse a new one while too many are still open.
-            await session.execute(
-                delete(SiweNonce).where(
-                    SiweNonce.user_id == user_id,
-                    or_(
-                        SiweNonce.used_at.is_not(None),
-                        SiweNonce.expires_at < created_at - SIWE_CLOCK_SKEW,
-                    ),
-                )
-            )
+            # Retention cleanup is centralized in the policy-aware compliance worker,
+            # which honors the global legal hold and writes a hash-only receipt. Count
+            # only open challenges here so historical rows do not block new requests.
             open_nonces = await session.scalar(
-                select(func.count()).select_from(SiweNonce).where(SiweNonce.user_id == user_id)
+                select(func.count())
+                .select_from(SiweNonce)
+                .where(
+                    SiweNonce.user_id == user_id,
+                    SiweNonce.used_at.is_(None),
+                    SiweNonce.expires_at >= created_at - SIWE_CLOCK_SKEW,
+                )
             )
             if int(open_nonces or 0) >= MAX_OPEN_SIWE_NONCES:
                 raise AuthFailure(

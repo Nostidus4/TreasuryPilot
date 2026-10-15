@@ -12,7 +12,11 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from treasurypilot_api.identity.saml_repository import SAMLIdentityError, SAMLIdentityRepository
+from treasurypilot_api.identity.saml_repository import (
+    SAMLIdentityConflict,
+    SAMLIdentityError,
+    SAMLIdentityRepository,
+)
 
 pytestmark = pytest.mark.skipif(
     "TP_TEST_DATABASE_URL" not in os.environ,
@@ -218,6 +222,30 @@ async def _saml_login_scenario(database_url: str) -> None:
         assert await repository.find_pending_request(
             relay_state="relay-one-time-3", browser_nonce="browser-nonce-3", now=now
         ) == ("_saml-request-3", organization_id)
+
+        # A different NameID for an already-linked user is a link conflict, not a replay.
+        await repository.create_request(
+            request_id="_saml-request-4",
+            relay_state="relay-one-time-4",
+            browser_nonce="browser-nonce-4",
+            organization_id=organization_id,
+            now=now,
+            expires_at=request_expiry,
+        )
+        with pytest.raises(SAMLIdentityConflict, match="different NameID"):
+            await repository.complete_login(
+                request_id="_saml-request-4",
+                relay_state="relay-one-time-4",
+                browser_nonce="browser-nonce-4",
+                organization_id=organization_id,
+                issuer="https://id.example/saml",
+                subject="persistent-subject-2",
+                email="saml-user@example.com",
+                response_id="_response-4",
+                assertion_id="_assertion-4",
+                assertion_expires_at=now + timedelta(minutes=5),
+                now=now,
+            )
 
         async with sessions() as session:
             counts = (

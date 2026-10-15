@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import cast
 
 from eth_abi import encode
 from eth_hash.auto import keccak
@@ -27,15 +26,16 @@ def _optional_address(value: object) -> bytes:
     return bytes(20) if value is None else _address(value)
 
 
-def _integer(value: object, name: str) -> int:
-    if isinstance(value, bool):
+def _integer(value: object, name: str, bits: int = 256) -> int:
+    if isinstance(value, bool) or not isinstance(value, int | str):
         raise ValueError(f"{name} must be an integer")
-    try:
-        number = int(cast(str | int, value))
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be an integer") from None
+    if isinstance(value, str) and not (value.isascii() and value.isdecimal()):
+        raise ValueError(f"{name} must be an integer")
+    number = int(value)
     if number < 0:
         raise ValueError(f"{name} must not be negative")
+    if number >= 1 << bits:
+        raise ValueError(f"{name} must fit uint{bits}")
     return number
 
 
@@ -60,8 +60,8 @@ def _limits(value: object, name: str) -> tuple[int, int]:
     if not isinstance(value, dict):
         raise ValueError(f"{name} limits are missing")
     return (
-        _integer(value.get("perRequest"), f"{name}.perRequest"),
-        _integer(value.get("daily"), f"{name}.daily"),
+        _integer(value.get("perRequest"), f"{name}.perRequest", 128),
+        _integer(value.get("daily"), f"{name}.daily", 128),
     )
 
 
@@ -82,8 +82,11 @@ def build_mandate_calls(
         if not isinstance(method, str) or not isinstance(args, dict):
             raise ValueError("mandate call preview is malformed")
         if method == "configureMandate":
-            pay = _limits(args.get("limits", {}).get("PAY"), "PAY")
-            refill = _limits(args.get("limits", {}).get("REFILL"), "REFILL")
+            mandate_limits = args.get("limits") or {}
+            if not isinstance(mandate_limits, dict):
+                raise ValueError("mandate limits are malformed")
+            pay = _limits(mandate_limits.get("PAY"), "PAY")
+            refill = _limits(mandate_limits.get("REFILL"), "REFILL")
             supply = (
                 _limits(args.get("supplyLimits"), "SUPPLY")
                 if args.get("supplyLimits") is not None
@@ -92,12 +95,12 @@ def build_mandate_calls(
             values = (
                 _timestamp(args.get("validFrom"), "validFrom"),
                 _timestamp(args.get("expiresAt"), "expiresAt"),
-                _integer(args.get("payeeCoolingSeconds"), "payeeCoolingSeconds"),
+                _integer(args.get("payeeCoolingSeconds"), "payeeCoolingSeconds", 32),
                 "0x" + _address(args.get("executor")).hex(),
                 "0x" + _optional_address(args.get("guardian")).hex(),
                 pay,
                 refill,
-                _integer(args.get("approvalMaxAge"), "approvalMaxAge"),
+                _integer(args.get("approvalMaxAge"), "approvalMaxAge", 32),
                 supply,
             )
             signature = (

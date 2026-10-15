@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import re
 import secrets
 import uuid
@@ -43,6 +44,7 @@ from treasurypilot_api.identity.saml import (
     parse_login_response,
 )
 from treasurypilot_api.identity.saml_repository import (
+    SAMLIdentityConflict,
     SAMLIdentityError,
     SAMLIdentityRepository,
 )
@@ -243,6 +245,8 @@ def _require_unscoped(access: SessionAccess) -> None:
         )
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/v1", tags=["identity"])
 
 
@@ -373,6 +377,8 @@ async def saml_start(request: Request) -> Response:
     assert settings.saml_idp_entity_id is not None
     assert settings.saml_organization_id is not None
     repository = _saml_repository(request)
+    # Unauthenticated and writes a row per call: cap it per IP like the other auth entry points.
+    await _service(request).enforce_saml_start_limit(_client_ip(request))
     now = datetime.now(UTC)
     browser_nonce = request.cookies.get("__Host-tp_saml_browser")
     if browser_nonce is None or re.fullmatch(r"[A-Za-z0-9_-]{43}", browser_nonce) is None:
@@ -471,6 +477,9 @@ async def saml_acs(request: Request) -> Response:
             client_ip=_client_ip(request),
             user_agent=request.headers.get("user-agent", "unknown"),
         )
+    except SAMLIdentityConflict:
+        logger.warning("SAML login rejected: account is already linked to another NameID")
+        return _saml_failure(request)
     except (SAMLFailure, SAMLIdentityError, ValueError):
         return _saml_failure(request)
     destination = settings.web_app_url or (
@@ -529,7 +538,8 @@ async def _read_saml_post(request: Request) -> tuple[bytes, str]:
     relay_values = fields.get("RelayState", [])
     if len(response_values) != 1 or len(relay_values) != 1:
         raise SAMLFailure("SAML form is incomplete")
-    encoded_response, relay_state = response_values[0], relay_values[0]
+    # IdPs and proxies commonly line-wrap base64 (RFC 2045); strict decoding rejects whitespace.
+    encoded_response, relay_state = "".join(response_values[0].split()), relay_values[0]
     if (
         not encoded_response
         or len(encoded_response) > (SAML_RESPONSE_MAX_BYTES * 4 // 3 + 8)

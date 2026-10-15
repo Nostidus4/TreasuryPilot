@@ -73,7 +73,7 @@ PlanAttestation(bytes32 planHash,bytes32 requestId,bytes32[] stepIds,bytes32 pol
 | Nhóm | Mã | QĐ | Lỗi contract | Luật |
 |---|---|---|---|---|
 | 1 Cổng an toàn | `PAUSE_REQUESTED`, `CIRCUIT_OPEN`, `UNKNOWN_OPERATION_PENDING`, `COVERAGE_INCOMPLETE`, `SNAPSHOT_STALE`, `DATA_MISSING`, `CHAIN_MISMATCH`, `ASSET_MISMATCH` | B | — | BR-063, 065, 060, 018, 051, FR-411, BR-014 |
-| 2 Vòng đời | `MANDATE_NOT_ACTIVE`, `MANDATE_PAUSED`, `MANDATE_REVOKED` / `MANDATE_EXPIRED` / `EXECUTOR_MISMATCH` | B | `NotActive` / `MandateExpired` / `NotExecutor` | BR-015, 062, 092 |
+| 2 Vòng đời | `MANDATE_NOT_ACTIVE`, `MANDATE_PAUSED`, `MANDATE_REVOKED` / `MANDATE_EXPIRED` / `EXECUTOR_MISMATCH` | B | `NotActive` / `MandatePaused` / `MandateRevoked` / `MandateExpired` / `NotExecutor` | BR-015, 062, 092 |
 | 3 Bản duyệt | `NOT_APPROVED`, `APPROVAL_INVALID`, `APPROVAL_EXPIRED`, `NOT_IN_APPROVER_SET`, `APPROVAL_STALE`, `MAKER_CHECKER`, `FLAG_UNACKNOWLEDGED`, `SCREENING_HIT` | B | `ApprovalInvalid`, `ApprovalExpired`, `NotApprover` | BR-001–005, BR-066, BR-085 |
 | 4 Ví/đường đi | `NOT_OPERATIONAL_WALLET`, `WRONG_REFILL_TARGET` | B | cùng tên | BR-019, BR-012 |
 | 5 Chống lặp | `REQUEST_ALREADY_PAID`, `STEP_ALREADY_EXECUTED`, `REQUEST_CANCELLED`, `ALREADY_REFILLED_FOR_REQUEST`, `DUPLICATE_FINGERPRINT` | B | cùng tên | BR-061, 077, 036, 071 |

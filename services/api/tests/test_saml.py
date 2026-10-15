@@ -455,6 +455,25 @@ def test_saml_routes_bind_acs_to_browser_cookie_relay_state_and_one_time_use(
         )
         assert missing_cookie.status_code == 401
 
+    # IdPs and proxies may line-wrap the base64 SAMLResponse.
+    with TestClient(app, base_url="https://app.example.test") as wrapped_client:
+        wrapped_relay_state, _ = start_login(wrapped_client)
+        wrapped = acs_body(wrapped_relay_state)
+        wrapped["SAMLResponse"] = "\r\n".join(
+            wrapped["SAMLResponse"][i : i + 4] for i in range(0, len(wrapped["SAMLResponse"]), 4)
+        )
+        wrapped_response = wrapped_client.post(
+            "/v1/auth/saml/acs", data=wrapped, follow_redirects=False
+        )
+        assert wrapped_response.status_code == 303
+
+    with TestClient(app, base_url="https://app.example.test") as limited_client:
+        statuses = {
+            limited_client.get("/v1/auth/saml/start", follow_redirects=False).status_code
+            for _ in range(25)
+        }
+        assert statuses == {302, 429}
+
 
 @pytest.mark.parametrize(
     "overrides",

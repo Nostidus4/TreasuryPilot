@@ -4,6 +4,7 @@ import base64
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 
 from saml2 import BINDING_HTTP_POST  # type: ignore[import-untyped]
@@ -38,26 +39,23 @@ class SAMLLoginClaims:
     assertion_expires_at: datetime
 
 
-def build_saml_client(settings: Settings) -> Saml2Client:
-    if not settings.saml_configured:
-        raise SAMLFailure("SAML is not configured")
-    metadata_path = settings.saml_idp_metadata_path
-    if metadata_path is None or not metadata_path.is_file():
-        raise SAMLFailure("SAML IdP metadata is unavailable")
-    if metadata_path.stat().st_size > 1_000_000:
-        raise SAMLFailure("SAML IdP metadata is too large")
-
+@lru_cache(maxsize=4)
+def _load_config(
+    sp_entity_id: str | None,
+    acs_url: str | None,
+    metadata_path: str,
+    metadata_mtime_ns: int,  # cache key only: a changed file reloads
+    metadata_size: int,  # cache key only
+) -> SAMLConfig:
     configuration = SAMLConfig().load(
         {
-            "entityid": settings.saml_sp_entity_id,
-            "metadata": {"local": [str(metadata_path)]},
+            "entityid": sp_entity_id,
+            "metadata": {"local": [metadata_path]},
             "only_use_keys_in_metadata": True,
             "accepted_time_diff": 0,
             "service": {
                 "sp": {
-                    "endpoints": {
-                        "assertion_consumer_service": [(settings.saml_acs_url, BINDING_HTTP_POST)]
-                    },
+                    "endpoints": {"assertion_consumer_service": [(acs_url, BINDING_HTTP_POST)]},
                     "allow_unsolicited": False,
                     "authn_requests_signed": False,
                     "want_response_signed": True,
@@ -68,6 +66,27 @@ def build_saml_client(settings: Settings) -> Saml2Client:
                 }
             },
         }
+    )
+    return configuration
+
+
+def build_saml_client(settings: Settings) -> Saml2Client:
+    if not settings.saml_configured:
+        raise SAMLFailure("SAML is not configured")
+    metadata_path = settings.saml_idp_metadata_path
+    if metadata_path is None or not metadata_path.is_file():
+        raise SAMLFailure("SAML IdP metadata is unavailable")
+    metadata_stat = metadata_path.stat()
+    if metadata_stat.st_size > 1_000_000:
+        raise SAMLFailure("SAML IdP metadata is too large")
+    # Parsing IdP metadata is costly and /auth/saml/start is unauthenticated: reuse the parsed
+    # configuration until the metadata file changes.
+    configuration = _load_config(
+        settings.saml_sp_entity_id,
+        settings.saml_acs_url,
+        str(metadata_path),
+        metadata_stat.st_mtime_ns,
+        metadata_stat.st_size,
     )
     return Saml2Client(config=configuration)
 

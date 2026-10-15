@@ -19,6 +19,9 @@ from treasurypilot_api.admin.api import create_admin_router, create_support_gran
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
+from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceRepository
+from treasurypilot_api.chain.routes import TokenMovementRepository
+from treasurypilot_api.chain.routes import router as chain_router
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
@@ -78,6 +81,9 @@ from treasurypilot_api.invoices.inbound_email import router as invoice_inbound_e
 from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.exceptions import router as mandate_exceptions_router
+from treasurypilot_api.mandate.fees import FeeHistoryProvider
+from treasurypilot_api.mandate.fees import router as fee_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -256,8 +262,10 @@ def create_app(
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
     fx_quote_provider: FxQuoteProvider | None = None,
+    fee_history_provider: FeeHistoryProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
     mfa_service: MfaService | None = None,
+    token_movement_repository: TokenMovementRepository | None = None,
     scim_repository: ScimIdentityRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -292,6 +300,8 @@ def create_app(
             wallet_repository = default_wallets
         if audit_repository is None:
             audit_repository = default_audit
+    if evidence_repository is None and sessions is not None:
+        evidence_repository = SqlAlchemyEvidenceRepository(sessions)
     if rate_limiter is None:
         raise ValueError("rate_limiter is required when auth_service is injected")
     if screening_service is None and engine is not None:
@@ -302,19 +312,19 @@ def create_app(
         kyb_service = build_kyb_service(
             settings.environment, async_sessionmaker(engine, expire_on_commit=False)
         )
-    if travel_rule_service is None and engine is not None:
+    # One field cipher shared by every service; a missing key makes each of them fail closed.
+    core_cipher: CoreFieldCipher | None = None
+    if engine is not None or sessions is not None:
         try:
-            travel_rule_cipher: CoreFieldCipher | None = CoreFieldCipher(
-                FieldEncryptionKey.from_environment()
-            )
+            core_cipher = CoreFieldCipher(FieldEncryptionKey.from_environment())
         except EncryptionConfigurationError:
-            # Qualifying transfers fail closed if encrypted party data cannot be persisted.
-            travel_rule_cipher = None
+            core_cipher = None
+    if travel_rule_service is None and engine is not None:
         travel_rule_service = build_travel_rule_service(
             settings.environment,
             async_sessionmaker(engine, expire_on_commit=False),
             thresholds_json=settings.travel_rule_thresholds,
-            cipher=travel_rule_cipher,
+            cipher=core_cipher,
             provider_url=settings.travel_rule_provider_url,
             provider_api_key=(
                 settings.travel_rule_provider_api_key.get_secret_value()
@@ -330,22 +340,21 @@ def create_app(
 
     if membership_repository is None and engine is not None:
         membership_repository = SqlAlchemyMembershipRepository(
-            async_sessionmaker(engine, expire_on_commit=False)
+            async_sessionmaker(engine, expire_on_commit=False),
+            oidc_organization_id=(
+                UUID(settings.oidc_organization_id) if settings.oidc_organization_id else None
+            ),
         )
     if notification_repository is None and engine is not None:
         notification_repository = SqlAlchemyNotificationRepository(
             async_sessionmaker(engine, expire_on_commit=False)
         )
     if telegram_repository is None and engine is not None:
-        try:
-            cipher: CoreFieldCipher | None = CoreFieldCipher(FieldEncryptionKey.from_environment())
-        except EncryptionConfigurationError:
-            # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
-            cipher = None
+        # Without a field key, linking reports TELEGRAM_UNAVAILABLE; nothing else is affected.
         chat_hash_key = settings.telegram_chat_hash_key
         telegram_repository = SqlAlchemyTelegramRepository(
             async_sessionmaker(engine, expire_on_commit=False),
-            cipher=cipher,
+            cipher=core_cipher,
             # A dedicated, rotation-independent key: changing it would let one chat
             # link to a second account (see the uniqueness hash in telegram.py).
             hash_key=chat_hash_key.get_secret_value().encode() if chat_hash_key else None,
@@ -358,16 +367,10 @@ def create_app(
         notification_preferences_repository = SqlAlchemyNotificationPreferencesRepository(sessions)
 
     if mfa_service is None and sessions is not None:
-        try:
-            mfa_cipher: CoreFieldCipher | None = CoreFieldCipher(
-                FieldEncryptionKey.from_environment()
-            )
-        except EncryptionConfigurationError:
-            # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
-            mfa_cipher = None
+        # Without a field key TOTP enrolment reports MFA_UNAVAILABLE; WebAuthn still works.
         mfa_service = MfaService(
             repository=SqlAlchemyMfaRepository(sessions),
-            cipher=mfa_cipher,
+            cipher=core_cipher,
             secret=settings.session_secret.get_secret_value().encode()
             if settings.session_secret
             else LOCAL_SESSION_SECRET,
@@ -389,6 +392,8 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if application.state.fee_history_provider is None:
+            application.state.fee_history_provider = RpcSafeVerifier(configuration)
         if application.state.treasury_service is None and sessions is not None:
             application.state.treasury_service = TreasuryService(
                 sessions, RpcSafeVerifier(configuration), configuration
@@ -425,7 +430,6 @@ def create_app(
                     settings.scim_organization_id if settings.scim_configured else None
                 ),
                 role_map=group_role_map,
-                allow_empty=settings.scim_clear_groups_with_empty_allowlist,
                 now=datetime.now(UTC),
             )
         yield
@@ -466,11 +470,13 @@ def create_app(
         async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
     )
     app.state.treasury_service = treasury_service
+    app.state.fee_history_provider = fee_history_provider
     app.state.governance_service = governance_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
@@ -524,7 +530,10 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(chain_router)
     app.include_router(governance_router)
+    app.include_router(mandate_exceptions_router)
+    app.include_router(fee_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)

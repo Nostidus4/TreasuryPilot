@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
+import logging
 import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Protocol, cast
+from datetime import UTC, datetime, timedelta
+from typing import NoReturn, Protocol, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -19,6 +21,7 @@ from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.auth import normalize_email
+from treasurypilot_api.identity.db_errors import violated_constraint
 from treasurypilot_api.identity.memberships import (
     LastAdministrator,
     LastOwner,
@@ -28,6 +31,8 @@ from treasurypilot_api.identity.models import (
     Membership,
     MembershipStatus,
     OIDCIdentity,
+    Organization,
+    SAMLIdentity,
     ScimGroup,
     ScimGroupMember,
     ScimUser,
@@ -40,6 +45,8 @@ from treasurypilot_api.identity.role_grants import (
     recompute_membership_roles,
 )
 from treasurypilot_core.ids import uuid7
+
+logger = logging.getLogger(__name__)
 
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
 SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group"
@@ -120,6 +127,10 @@ SCIM_USER_RESOURCE_SCHEMA = {
     },
 }
 _USER_NAME_FILTER = re.compile(r'^\s*userName\s+eq\s+"([^"\\]{1,320})"\s*$', re.IGNORECASE)
+_INTEGER = re.compile(r"[0-9]{1,10}")  # ASCII digits only: no signs, spaces or underscores
+_MAX_INDEX = 2**31 - 1
+_AUTH_FAILURE_LIMIT = 10
+_AUTH_FAILURE_WINDOW = timedelta(minutes=1)
 _GROUP_NAME_FILTER = re.compile(r'^\s*displayName\s+eq\s+"([^"\\]{1,100})"\s*$', re.IGNORECASE)
 _GROUP_MEMBER_FILTER = re.compile(
     r'^members\s*\[\s*value\s+eq\s+"([0-9a-fA-F-]{36})"\s*\]$', re.IGNORECASE
@@ -176,6 +187,8 @@ class ScimUserPatch:
 
 
 class ScimIdentityRepository(Protocol):
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool: ...
+
     async def create_user(
         self,
         *,
@@ -261,9 +274,14 @@ class ScimIdentityRepository(Protocol):
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, Sequence[str]],
-        allow_empty: bool = False,
         now: datetime,
     ) -> None: ...
+
+
+def _raise_scim_conflict(exc: IntegrityError) -> NoReturn:
+    if violated_constraint(exc) in {"uq_scim_users_org_external_id", "uq_memberships_org_user"}:
+        raise ScimUserConflict from None
+    raise exc
 
 
 class SqlAlchemyScimIdentityRepository:
@@ -277,6 +295,12 @@ class SqlAlchemyScimIdentityRepository:
     ) -> None:
         self._sessions = sessions
         self._oidc_organization_id = oidc_organization_id
+
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool:
+        async with self._sessions() as session:
+            return bool(
+                await session.scalar(select(exists().where(Organization.id == organization_id)))
+            )
 
     async def create_user(
         self,
@@ -297,7 +321,15 @@ class SqlAlchemyScimIdentityRepository:
                     user is None
                     or user.status != UserStatus.ACTIVE
                     or not await session.scalar(
-                        select(exists().where(OIDCIdentity.user_id == user.id))
+                        select(
+                            or_(
+                                exists().where(OIDCIdentity.user_id == user.id),
+                                exists().where(
+                                    SAMLIdentity.org_id == organization_id,
+                                    SAMLIdentity.user_id == user.id,
+                                ),
+                            )
+                        )
                     )
                 ):
                     raise ScimUserNotProvisionable
@@ -387,13 +419,7 @@ class SqlAlchemyScimIdentityRepository:
                 await session.flush()
                 return _record(membership, user, scim_user)
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
-            if constraint in {
-                "uq_scim_users_org_external_id",
-                "uq_memberships_org_user",
-            }:
-                raise ScimUserConflict from None
-            raise
+            _raise_scim_conflict(exc)
 
     async def list_users(
         self,
@@ -464,107 +490,112 @@ class SqlAlchemyScimIdentityRepository:
         external_id_set: bool,
         now: datetime,
     ) -> ScimUserRecord | None:
-        async with self._sessions() as session, session.begin():
-            memberships = list(
-                (
-                    await session.scalars(
-                        select(Membership)
-                        .where(Membership.org_id == organization_id)
-                        .order_by(Membership.user_id)
-                        .with_for_update()
-                    )
-                ).all()
-            )
-            membership = next((item for item in memberships if item.user_id == user_id), None)
-            if membership is None:
-                return None
-
-            user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
-            if user is None:  # The membership foreign key makes this unreachable.
-                raise RuntimeError("SCIM membership user is missing")
-            scim_user = await session.scalar(
-                select(ScimUser)
-                .where(ScimUser.org_id == organization_id, ScimUser.user_id == user_id)
-                .with_for_update()
-            )
-            if scim_user is None:
-                scim_user = ScimUser(
-                    org_id=organization_id,
-                    user_id=user_id,
-                    active=(
-                        membership.status == MembershipStatus.ACTIVE
-                        and user.status == UserStatus.ACTIVE
-                    ),
+        try:
+            async with self._sessions() as session, session.begin():
+                memberships = list(
+                    (
+                        await session.scalars(
+                            select(Membership)
+                            .where(Membership.org_id == organization_id)
+                            .order_by(Membership.user_id)
+                            .with_for_update()
+                        )
+                    ).all()
                 )
-                session.add(scim_user)
-                await session.flush()
+                membership = next((item for item in memberships if item.user_id == user_id), None)
+                if membership is None:
+                    return None
 
-            if display_name_set:
-                scim_user.display_name = display_name
-            if external_id_set:
-                scim_user.external_id = external_id
-
-            was_active = membership.status == MembershipStatus.ACTIVE
-            if active is False:
-                if was_active:
-                    memberships = list(
-                        (
-                            await session.scalars(
-                                select(Membership)
-                                .where(Membership.org_id == organization_id)
-                                .order_by(Membership.user_id)
-                                .with_for_update()
-                            )
-                        ).all()
+                user = await session.scalar(
+                    select(User).where(User.id == user_id).with_for_update()
+                )
+                if user is None:  # The membership foreign key makes this unreachable.
+                    raise RuntimeError("SCIM membership user is missing")
+                scim_user = await session.scalar(
+                    select(ScimUser)
+                    .where(ScimUser.org_id == organization_id, ScimUser.user_id == user_id)
+                    .with_for_update()
+                )
+                if scim_user is None:
+                    scim_user = ScimUser(
+                        org_id=organization_id,
+                        user_id=user_id,
+                        active=(
+                            membership.status == MembershipStatus.ACTIVE
+                            and user.status == UserStatus.ACTIVE
+                        ),
                     )
-                    _guard_last_roles(memberships, membership, set())
-                    membership.status = MembershipStatus.SUSPENDED
-                    scim_user.deactivated_membership = True
+                    session.add(scim_user)
                     await session.flush()
 
-                scim_user.active = False
-                # Scoped sessions stop working immediately. Other organization scopes remain
-                # available, and every request still checks the suspended tenant membership.
-                await session.execute(
-                    update(Session)
-                    .where(
-                        Session.user_id == user_id,
-                        Session.organization_scope_id == organization_id,
-                        Session.revoked_at.is_(None),
-                    )
-                    .values(revoked_at=now)
-                )
-                if was_active:
-                    await write_audit(
-                        session,
-                        org_id=organization_id,
-                        actor=AuditActor(AuditActorType.SYSTEM, "scim"),
-                        action="identity.scim.deprovisioned",
-                        entity=AuditEntity("membership", membership.id),
-                        data={"status": MembershipStatus.SUSPENDED},
-                    )
-            elif active is True:
-                scim_user.active = True
-                if (
-                    scim_user.deactivated_membership
-                    and membership.status == MembershipStatus.SUSPENDED
-                    and membership.roles
-                    and user.status == UserStatus.ACTIVE
-                ):
-                    membership.status = MembershipStatus.ACTIVE
-                    scim_user.deactivated_membership = False
-                    await write_audit(
-                        session,
-                        org_id=organization_id,
-                        actor=AuditActor(AuditActorType.SYSTEM, "scim"),
-                        action="identity.scim.reactivated",
-                        entity=AuditEntity("membership", membership.id),
-                        data={"status": MembershipStatus.ACTIVE},
-                    )
+                if display_name_set:
+                    scim_user.display_name = display_name
+                if external_id_set:
+                    scim_user.external_id = external_id
 
-            await session.refresh(membership)
-            await session.refresh(scim_user)
-            return _record(membership, user, scim_user)
+                was_active = membership.status == MembershipStatus.ACTIVE
+                if active is False:
+                    if was_active:
+                        memberships = list(
+                            (
+                                await session.scalars(
+                                    select(Membership)
+                                    .where(Membership.org_id == organization_id)
+                                    .order_by(Membership.user_id)
+                                    .with_for_update()
+                                )
+                            ).all()
+                        )
+                        _guard_last_roles(memberships, membership, set())
+                        membership.status = MembershipStatus.SUSPENDED
+                        scim_user.deactivated_membership = True
+                        await session.flush()
+
+                    scim_user.active = False
+                    # Scoped sessions stop working immediately. Other organization scopes remain
+                    # available, and every request still checks the suspended tenant membership.
+                    await session.execute(
+                        update(Session)
+                        .where(
+                            Session.user_id == user_id,
+                            Session.organization_scope_id == organization_id,
+                            Session.revoked_at.is_(None),
+                        )
+                        .values(revoked_at=now)
+                    )
+                    if was_active:
+                        await write_audit(
+                            session,
+                            org_id=organization_id,
+                            actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                            action="identity.scim.deprovisioned",
+                            entity=AuditEntity("membership", membership.id),
+                            data={"status": MembershipStatus.SUSPENDED},
+                        )
+                elif active is True:
+                    scim_user.active = True
+                    if (
+                        scim_user.deactivated_membership
+                        and membership.status == MembershipStatus.SUSPENDED
+                        and membership.roles
+                        and user.status == UserStatus.ACTIVE
+                    ):
+                        membership.status = MembershipStatus.ACTIVE
+                        scim_user.deactivated_membership = False
+                        await write_audit(
+                            session,
+                            org_id=organization_id,
+                            actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                            action="identity.scim.reactivated",
+                            entity=AuditEntity("membership", membership.id),
+                            data={"status": MembershipStatus.ACTIVE},
+                        )
+
+                await session.refresh(membership)
+                await session.refresh(scim_user)
+                return _record(membership, user, scim_user)
+        except IntegrityError as exc:
+            _raise_scim_conflict(exc)
 
     async def list_groups(
         self,
@@ -591,8 +622,17 @@ class SqlAlchemyScimIdentityRepository:
                     .limit(count)
                 )
             ).all()
-            records = tuple([await self._group_record(session, group) for group in groups])
-            return total, records
+            members: dict[uuid.UUID, list[uuid.UUID]] = {}
+            if groups:
+                rows = await session.execute(
+                    select(ScimGroupMember.group_id, ScimGroupMember.user_id).where(
+                        ScimGroupMember.org_id == organization_id,
+                        ScimGroupMember.group_id.in_([group.id for group in groups]),
+                    )
+                )
+                for group_id, user_id in rows:
+                    members.setdefault(group_id, []).append(user_id)
+            return total, tuple(_group_record(group, members.get(group.id, ())) for group in groups)
 
     async def get_group(
         self, *, organization_id: uuid.UUID, group_id: uuid.UUID
@@ -603,7 +643,7 @@ class SqlAlchemyScimIdentityRepository:
                     ScimGroup.org_id == organization_id, ScimGroup.id == group_id
                 )
             )
-            return None if group is None else await self._group_record(session, group)
+            return None if group is None else await self._load_group_record(session, group)
 
     async def create_group(
         self,
@@ -640,10 +680,9 @@ class SqlAlchemyScimIdentityRepository:
                     data={"displayName": display_name, "memberCount": len(added)},
                 )
                 await session.flush()
-                return await self._group_record(session, group)
+                return await self._load_group_record(session, group)
         except IntegrityError as exc:
-            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
-            if constraint == "uq_scim_groups_org_display_name":
+            if violated_constraint(exc) == "uq_scim_groups_org_display_name":
                 raise ScimGroupConflict from None
             raise
 
@@ -678,7 +717,10 @@ class SqlAlchemyScimIdentityRepository:
                     )
                 ).all()
             )
-            remove_ids = before if remove_member_ids is None else before & set(remove_member_ids)
+            # Net result is (before - remove) | add, so a user both removed and added stays.
+            remove_ids = (
+                before if remove_member_ids is None else before & set(remove_member_ids)
+            ) - set(add_member_ids)
             if remove_ids:
                 await session.execute(
                     delete(ScimGroupMember).where(
@@ -690,7 +732,7 @@ class SqlAlchemyScimIdentityRepository:
             added = await self._add_group_members(
                 session, group, organization_id, add_member_ids, now
             )
-            removed = before.intersection(remove_ids)
+            removed = remove_ids
             changed = added | removed
             group.updated_at = now
             if changed:
@@ -710,7 +752,7 @@ class SqlAlchemyScimIdentityRepository:
                         data={"userId": str(user_id)},
                     )
             await session.flush()
-            return await self._group_record(session, group)
+            return await self._load_group_record(session, group)
 
     async def delete_group(
         self,
@@ -728,6 +770,8 @@ class SqlAlchemyScimIdentityRepository:
             )
             if group is None:
                 return False
+            if group.display_name not in role_map:
+                raise ScimGroupNotAllowed
             member_ids = set(
                 (
                     await session.scalars(
@@ -758,90 +802,102 @@ class SqlAlchemyScimIdentityRepository:
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, Sequence[str]],
-        allow_empty: bool = False,
         now: datetime,
     ) -> None:
-        """Reconcile groups with an allowlist, unless empty-map cleanup is explicitly enabled."""
-        if organization_id is None or (not role_map and not allow_empty):
-            return
+        """Apply the current SCIM allowlist at startup and discard stale assignments.
+
+        With SCIM disabled (no organization), every organization that still holds SCIM
+        groups or roles is reconciled against an empty allowlist, clearing them.
+        """
         async with self._sessions() as session, session.begin():
-            groups = list(
-                (
-                    await session.scalars(
-                        select(ScimGroup)
-                        .where(ScimGroup.org_id == organization_id)
-                        .order_by(ScimGroup.id)
-                        .with_for_update()
-                    )
-                ).all()
-            )
-            affected: set[uuid.UUID] = set()
-            for group in groups:
-                if group.display_name in role_map:
-                    continue
-                member_ids = set(
+            if organization_id is not None:
+                organization_ids = {organization_id}
+            else:
+                organization_ids = set(
                     (
                         await session.scalars(
-                            select(ScimGroupMember.user_id).where(
-                                ScimGroupMember.org_id == organization_id,
-                                ScimGroupMember.group_id == group.id,
+                            select(ScimGroup.org_id).union(
+                                select(Membership.org_id).where(
+                                    func.cardinality(Membership.scim_roles) > 0
+                                )
                             )
                         )
                     ).all()
                 )
-                affected.update(member_ids)
-                await write_audit(
+            for scoped_organization_id in sorted(organization_ids, key=str):
+                await self._reconcile_organization(
                     session,
-                    org_id=organization_id,
-                    actor=AuditActor(AuditActorType.SYSTEM, "scim"),
-                    action="identity.scim.group.configuration_removed",
-                    entity=AuditEntity("scim_group", group.id),
-                    data={"displayName": group.display_name, "memberCount": len(member_ids)},
+                    scoped_organization_id,
+                    role_map,
+                    now,
                 )
-                await session.delete(group)
-            stale_memberships = (
+
+    async def _reconcile_organization(
+        self,
+        session: AsyncSession,
+        organization_id: uuid.UUID,
+        role_map: Mapping[str, Sequence[str]],
+        now: datetime,
+    ) -> None:
+        groups = list(
+            (
                 await session.scalars(
-                    select(Membership).where(
+                    select(ScimGroup)
+                    .where(ScimGroup.org_id == organization_id)
+                    .order_by(ScimGroup.id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        member_rows = (
+            await session.execute(
+                select(ScimGroupMember.group_id, ScimGroupMember.user_id).where(
+                    ScimGroupMember.org_id == organization_id
+                )
+            )
+        ).all()
+        members: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for group_id, user_id in member_rows:
+            members.setdefault(group_id, set()).add(user_id)
+        # A widened or narrowed mapping changes roles for members of every remaining group too.
+        affected: set[uuid.UUID] = set()
+        for group in groups:
+            member_ids = members.get(group.id, set())
+            affected.update(member_ids)
+            if group.display_name in role_map:
+                continue
+            await write_audit(
+                session,
+                org_id=organization_id,
+                actor=AuditActor(AuditActorType.SYSTEM, "scim"),
+                action="identity.scim.group.configuration_removed",
+                entity=AuditEntity("scim_group", group.id),
+                data={"displayName": group.display_name, "memberCount": len(member_ids)},
+            )
+            await session.delete(group)
+        affected.update(
+            (
+                await session.scalars(
+                    select(Membership.user_id).where(
                         Membership.org_id == organization_id,
                         func.cardinality(Membership.scim_roles) > 0,
                     )
                 )
             ).all()
-            for membership in stale_memberships:
-                affected.add(membership.user_id)
-            if affected:
-                await self._recompute_group_roles(
-                    session,
-                    organization_id,
-                    affected,
-                    role_map,
-                    now,
-                )
+        )
+        await self._recompute_group_roles(session, organization_id, affected, role_map, now)
 
     @staticmethod
-    async def _group_record(session: AsyncSession, group: ScimGroup) -> ScimGroupRecord:
-        member_ids = tuple(
-            sorted(
-                (
-                    await session.scalars(
-                        select(ScimGroupMember.user_id)
-                        .where(
-                            ScimGroupMember.org_id == group.org_id,
-                            ScimGroupMember.group_id == group.id,
-                        )
-                        .order_by(ScimGroupMember.user_id)
-                    )
-                ).all(),
-                key=str,
+    async def _load_group_record(session: AsyncSession, group: ScimGroup) -> ScimGroupRecord:
+        member_ids = (
+            await session.scalars(
+                select(ScimGroupMember.user_id).where(
+                    ScimGroupMember.org_id == group.org_id,
+                    ScimGroupMember.group_id == group.id,
+                )
             )
-        )
-        return ScimGroupRecord(
-            id=group.id,
-            display_name=group.display_name,
-            member_ids=member_ids,
-            created_at=group.created_at,
-            last_modified=group.updated_at,
-        )
+        ).all()
+        return _group_record(group, member_ids)
 
     @staticmethod
     async def _add_group_members(
@@ -1001,6 +1057,16 @@ class SqlAlchemyScimIdentityRepository:
                 )
 
 
+def _group_record(group: ScimGroup, member_ids: Sequence[uuid.UUID]) -> ScimGroupRecord:
+    return ScimGroupRecord(
+        id=group.id,
+        display_name=group.display_name,
+        member_ids=tuple(sorted(member_ids, key=str)),
+        created_at=group.created_at,
+        last_modified=group.updated_at,
+    )
+
+
 def _record(
     membership: Membership, user: User, scim_user: ScimUser | None = None
 ) -> ScimUserRecord:
@@ -1066,7 +1132,7 @@ def _error(
     return _response(body, status=status, headers=headers)
 
 
-def _authorized(request: Request) -> uuid.UUID | JSONResponse:
+async def _authorized(request: Request) -> uuid.UUID | JSONResponse:
     settings = request.app.state.settings
     if not settings.scim_configured:
         return _error(404, "SCIM is not configured.")
@@ -1083,14 +1149,43 @@ def _authorized(request: Request) -> uuid.UUID | JSONResponse:
         or not token
         or not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))
     ):
-        return _error(
-            401,
-            "A valid SCIM bearer token is required.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    if getattr(request.app.state, "scim_repository", None) is None:
+        return await _authentication_failed(request)
+    repository = getattr(request.app.state, "scim_repository", None)
+    if repository is None:
         return _error(503, "SCIM storage is not configured.")
+    if not await repository.organization_exists(organization_id):
+        logger.warning("TP_SCIM_ORGANIZATION_ID %s matches no organization", organization_id)
+        return _error(503, "The configured SCIM organization does not exist.")
     return cast(uuid.UUID, organization_id)
+
+
+async def _authentication_failed(request: Request) -> JSONResponse:
+    host = request.client.host if request.client is not None else "unknown"
+    # The token is never logged; the limiter key hashes the IP so the store holds none.
+    logger.warning("Rejected SCIM request with an invalid bearer token from %s", host)
+    limiter = getattr(request.app.state, "api_key_rate_limiter", None)
+    if limiter is not None:
+        digest = hashlib.sha256(host.encode()).hexdigest()
+        try:
+            result = await limiter.hit(
+                f"scim-auth-failure:{digest}",
+                limit=_AUTH_FAILURE_LIMIT,
+                window=_AUTH_FAILURE_WINDOW,
+            )
+        except Exception:  # Already rejected; a limiter outage must not turn 401 into 500.
+            logger.exception("SCIM authentication-failure rate limiter is unavailable")
+        else:
+            if not result.allowed:
+                return _error(
+                    429,
+                    "Too many failed SCIM authentication attempts.",
+                    headers={"Retry-After": str(result.retry_after)},
+                )
+    return _error(
+        401,
+        "A valid SCIM bearer token is required.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def _resource(record: ScimUserRecord, request: Request) -> dict[str, object]:
@@ -1153,13 +1248,16 @@ def _parse_user_patch(body: object) -> ScimUserPatch | None:
             if normalized_name not in allowed or normalized_name in values:
                 return None
             if normalized_name == "active":
+                # Entra ID sends booleans as strings ("False").
+                if isinstance(value, str) and value.strip().casefold() == "false":
+                    value = False
                 if not isinstance(value, bool):
                     return None
             elif normalized_name == "displayname":
-                if value is not None and (
-                    not isinstance(value, str) or not value.strip() or len(value) > 200
-                ):
-                    return None
+                if value is not None:
+                    if not isinstance(value, str) or not value.strip() or len(value) > 200:
+                        return None
+                    value = value.strip()
             elif value is not None and (
                 not isinstance(value, str) or not value or len(value) > 100
             ):
@@ -1176,8 +1274,8 @@ def _parse_user_patch(body: object) -> ScimUserPatch | None:
     )
 
 
-def _group_role_map(request: Request) -> Mapping[str, list[str]] | JSONResponse:
-    organization_id = _authorized(request)
+async def _group_role_map(request: Request) -> Mapping[str, list[str]] | JSONResponse:
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:
@@ -1262,7 +1360,7 @@ async def list_users(
     start_index_value: str = Query(default="1", alias="startIndex"),
     count_value: str = Query(default="100", alias="count"),
 ) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     user_name: str | None = None
@@ -1273,15 +1371,13 @@ async def list_users(
                 400, 'Only userName eq "email" filters are supported.', scim_type="invalidFilter"
             )
         user_name = normalize_email(match.group(1))
-    try:
-        start_index = int(start_index_value)
-        count = int(count_value)
-    except ValueError:
+    if not (_INTEGER.fullmatch(start_index_value) and _INTEGER.fullmatch(count_value)):
         return _error(400, "startIndex and count must be integers.", scim_type="invalidValue")
-    if start_index < 1 or not 0 <= count <= 100:
+    start_index, count = int(start_index_value), int(count_value)
+    if not 1 <= start_index <= _MAX_INDEX or count > 100:
         return _error(
             400,
-            "startIndex must be positive and count must be between 0 and 100.",
+            "startIndex must be between 1 and 2147483647 and count between 0 and 100.",
             scim_type="invalidValue",
         )
     total, records = await _repo(request).list_users(
@@ -1329,7 +1425,7 @@ async def list_users(
     },
 )
 async def create_user(request: Request) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:
@@ -1400,7 +1496,7 @@ async def create_user(request: Request) -> JSONResponse:
 
 @router.get("/Users/{user_id}")
 async def get_user(user_id: str, request: Request) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:
@@ -1420,7 +1516,7 @@ async def list_groups(
     start_index_value: str = Query(default="1", alias="startIndex"),
     count_value: str = Query(default="100", alias="count"),
 ) -> JSONResponse:
-    role_map = _group_role_map(request)
+    role_map = await _group_role_map(request)
     if isinstance(role_map, JSONResponse):
         return role_map
     organization_id = cast(uuid.UUID, request.app.state.settings.scim_organization_id)
@@ -1434,15 +1530,13 @@ async def list_groups(
         display_name = match.group(1)
         if display_name not in role_map:
             return _list_response((), request, total=0, start_index=1)
-    try:
-        start_index = int(start_index_value)
-        count = int(count_value)
-    except ValueError:
+    if not (_INTEGER.fullmatch(start_index_value) and _INTEGER.fullmatch(count_value)):
         return _error(400, "startIndex and count must be integers.", scim_type="invalidValue")
-    if start_index < 1 or not 0 <= count <= 100:
+    start_index, count = int(start_index_value), int(count_value)
+    if not 1 <= start_index <= _MAX_INDEX or count > 100:
         return _error(
             400,
-            "startIndex must be positive and count must be between 0 and 100.",
+            "startIndex must be between 1 and 2147483647 and count between 0 and 100.",
             scim_type="invalidValue",
         )
     total, records = await _repo(request).list_groups(
@@ -1456,7 +1550,7 @@ async def list_groups(
 
 @router.get("/Groups/{group_id}")
 async def get_group(group_id: str, request: Request) -> JSONResponse:
-    role_map = _group_role_map(request)
+    role_map = await _group_role_map(request)
     if isinstance(role_map, JSONResponse):
         return role_map
     try:
@@ -1474,7 +1568,7 @@ async def get_group(group_id: str, request: Request) -> JSONResponse:
 
 @router.post("/Groups")
 async def create_group(request: Request) -> JSONResponse:
-    role_map = _group_role_map(request)
+    role_map = await _group_role_map(request)
     if isinstance(role_map, JSONResponse):
         return role_map
     try:
@@ -1529,9 +1623,14 @@ async def create_group(request: Request) -> JSONResponse:
     )
 
 
-def _group_patch_members(
-    body: object,
-) -> tuple[tuple[uuid.UUID, ...], tuple[uuid.UUID, ...] | None] | None:
+@dataclass(frozen=True, slots=True)
+class _GroupPatch:
+    add_ids: tuple[uuid.UUID, ...]
+    remove_ids: tuple[uuid.UUID, ...] | None  # None removes every current member
+    display_name: str | None
+
+
+def _group_patch_members(body: object) -> _GroupPatch | None:
     if not isinstance(body, dict) or body.get("schemas") != [SCIM_PATCH_SCHEMA]:
         return None
     operations = body.get("Operations")
@@ -1540,49 +1639,54 @@ def _group_patch_members(
     add_ids: set[uuid.UUID] = set()
     remove_ids: set[uuid.UUID] = set()
     remove_all = False
-    group_members_path = "members"
-    schema_members_path = f"{SCIM_GROUP_SCHEMA}:members".casefold()
+    display_name: str | None = None
+    members_paths = {"members", f"{SCIM_GROUP_SCHEMA}:members".casefold()}
+    name_paths = {"displayname", f"{SCIM_GROUP_SCHEMA}:displayname".casefold()}
     for operation in operations:
         if not isinstance(operation, dict) or set(operation) - {"op", "path", "value"}:
             return None
         action = operation.get("op")
         path = operation.get("path")
-        if not isinstance(action, str) or action.casefold() not in {"add", "remove"}:
+        if not isinstance(action, str) or not isinstance(path, str):
             return None
-        if not isinstance(path, str):
+        action = action.casefold()
+        if action not in {"add", "remove", "replace"}:
             return None
         member_filter = _GROUP_MEMBER_FILTER.fullmatch(path)
         normalized_path = path.casefold()
         member_ids: tuple[uuid.UUID, ...] | None
         if member_filter is not None:
-            if action.casefold() != "remove" or "value" in operation:
+            if action != "remove" or "value" in operation:
                 return None
             try:
                 member_ids = (uuid.UUID(member_filter.group(1)),)
             except ValueError:
                 return None
-        elif normalized_path in {group_members_path, schema_members_path}:
-            if action.casefold() == "add":
-                member_ids = _parse_group_members(
-                    operation.get("value")
-                    if isinstance(operation.get("value"), list)
-                    else [operation.get("value")]
-                )
-                if member_ids is None or not member_ids:
-                    return None
-            elif "value" not in operation:
+        elif normalized_path in name_paths:
+            value = operation.get("value")
+            if action != "replace" or not isinstance(value, str) or not value.strip():
+                return None
+            display_name = value
+            continue
+        elif normalized_path in members_paths:
+            if action == "remove" and "value" not in operation:
                 remove_all = True
                 add_ids.clear()
                 remove_ids.clear()
                 continue
-            else:
-                raw = operation["value"]
-                member_ids = _parse_group_members(raw if isinstance(raw, list) else [raw])
-                if member_ids is None:
-                    return None
+            raw = operation.get("value")
+            member_ids = _parse_group_members(raw if isinstance(raw, list) else [raw])
+            if member_ids is None or (action == "add" and not member_ids):
+                return None
+            if action == "replace":
+                # Entra and Okta replace the full member list: drop everyone, then add these.
+                remove_all = True
+                remove_ids.clear()
+                add_ids = set(member_ids)
+                continue
         else:
             return None
-        if action.casefold() == "add":
+        if action == "add":
             add_ids.update(member_ids)
             remove_ids.difference_update(member_ids)
         elif remove_all:
@@ -1590,14 +1694,16 @@ def _group_patch_members(
         else:
             remove_ids.update(member_ids)
             add_ids.difference_update(member_ids)
-    return tuple(sorted(add_ids, key=str)), None if remove_all else tuple(
-        sorted(remove_ids, key=str)
+    return _GroupPatch(
+        tuple(sorted(add_ids, key=str)),
+        None if remove_all else tuple(sorted(remove_ids, key=str)),
+        display_name,
     )
 
 
 @router.patch("/Groups/{group_id}")
 async def patch_group(group_id: str, request: Request) -> JSONResponse:
-    role_map = _group_role_map(request)
+    role_map = await _group_role_map(request)
     if isinstance(role_map, JSONResponse):
         return role_map
     try:
@@ -1612,16 +1718,28 @@ async def patch_group(group_id: str, request: Request) -> JSONResponse:
     if patch_members is None:
         return _error(
             400,
-            "Only SCIM PatchOp add/remove operations on members are supported.",
+            "Only SCIM PatchOp add/remove/replace operations on members are supported.",
             scim_type="invalidSyntax",
         )
-    add_member_ids, remove_member_ids = patch_members
+    if patch_members.display_name is not None:
+        if patch_members.display_name not in role_map:
+            return _error(
+                400, "Only configured SCIM group names are accepted.", scim_type="invalidValue"
+            )
+        current = await _repo(request).get_group(
+            organization_id=cast(uuid.UUID, request.app.state.settings.scim_organization_id),
+            group_id=parsed_group_id,
+        )
+        if current is None or current.display_name not in role_map:
+            return _error(404, "SCIM group not found.")
+        if current.display_name != patch_members.display_name:
+            return _error(409, "SCIM groups cannot be renamed.", scim_type="mutability")
     try:
         record = await _repo(request).patch_group_members(
             organization_id=cast(uuid.UUID, request.app.state.settings.scim_organization_id),
             group_id=parsed_group_id,
-            add_member_ids=add_member_ids,
-            remove_member_ids=remove_member_ids,
+            add_member_ids=patch_members.add_ids,
+            remove_member_ids=patch_members.remove_ids,
             role_map=role_map,
             now=datetime.now(UTC),
         )
@@ -1640,31 +1758,28 @@ async def patch_group(group_id: str, request: Request) -> JSONResponse:
 
 @router.delete("/Groups/{group_id}")
 async def delete_group(group_id: str, request: Request) -> Response:
-    role_map = _group_role_map(request)
+    role_map = await _group_role_map(request)
     if isinstance(role_map, JSONResponse):
         return role_map
     try:
         parsed_group_id = uuid.UUID(group_id)
     except ValueError:
         return _error(404, "SCIM group not found.")
-    record = await _repo(request).get_group(
-        organization_id=cast(uuid.UUID, request.app.state.settings.scim_organization_id),
-        group_id=parsed_group_id,
-    )
-    if record is None or record.display_name not in role_map:
+    try:
+        deleted = await _repo(request).delete_group(
+            organization_id=cast(uuid.UUID, request.app.state.settings.scim_organization_id),
+            group_id=parsed_group_id,
+            role_map=role_map,
+            now=datetime.now(UTC),
+        )
+    except ScimGroupNotAllowed:
         return _error(404, "SCIM group not found.")
-    deleted = await _repo(request).delete_group(
-        organization_id=cast(uuid.UUID, request.app.state.settings.scim_organization_id),
-        group_id=parsed_group_id,
-        role_map=role_map,
-        now=datetime.now(UTC),
-    )
     return Response(status_code=204) if deleted else _error(404, "SCIM group not found.")
 
 
 @router.patch("/Users/{user_id}")
 async def patch_user(user_id: str, request: Request) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:

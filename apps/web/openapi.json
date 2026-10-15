@@ -51,6 +51,29 @@
         "title": "AICallEvidence",
         "type": "object"
       },
+      "AcknowledgeTokenMovementRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "AcknowledgeTokenMovementRequest",
+        "type": "object"
+      },
+      "AcknowledgeTokenMovementResponse": {
+        "properties": {
+          "movement": {
+            "$ref": "#/components/schemas/TokenMovementView"
+          }
+        },
+        "required": ["movement"],
+        "title": "AcknowledgeTokenMovementResponse",
+        "type": "object"
+      },
       "ActionLimits": {
         "additionalProperties": false,
         "properties": {
@@ -65,6 +88,19 @@
         },
         "required": ["perRequest", "daily"],
         "title": "ActionLimits",
+        "type": "object"
+      },
+      "AllowDuplicateRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "AllowDuplicateRequest",
         "type": "object"
       },
       "ApiKeyCreate": {
@@ -1292,6 +1328,33 @@
         "title": "FactorView",
         "type": "object"
       },
+      "FeePolicyAcceptRequest": {
+        "properties": {
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeePreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposalId": {
+            "format": "uuid",
+            "title": "Proposalid",
+            "type": "string"
+          }
+        },
+        "required": ["proposalId"],
+        "title": "FeePolicyAcceptRequest",
+        "type": "object"
+      },
+      "FeePreset": {
+        "enum": ["ECONOMY", "NORMAL", "FAST"],
+        "title": "FeePreset",
+        "type": "string"
+      },
       "FlagAcknowledgment": {
         "properties": {
           "note": {
@@ -1381,6 +1444,19 @@
         ],
         "title": "GovernanceTxPurpose",
         "type": "string"
+      },
+      "GrantExceptionRequest": {
+        "properties": {
+          "expiryHours": {
+            "default": 72,
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Expiryhours",
+            "type": "integer"
+          }
+        },
+        "title": "GrantExceptionRequest",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2861,6 +2937,24 @@
         "title": "PlanEvidence",
         "type": "object"
       },
+      "PlanFeeActionRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PlanFeeActionRequest",
+        "type": "object"
+      },
       "RecurrenceCadence": {
         "enum": ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
         "title": "RecurrenceCadence",
@@ -3133,6 +3227,19 @@
         "title": "RecurringSchedulePatch",
         "type": "object"
       },
+      "ReferencePriceRequest": {
+        "properties": {
+          "referenceEthPrice": {
+            "maxLength": 78,
+            "pattern": "^[1-9][0-9]*$",
+            "title": "Referenceethprice",
+            "type": "string"
+          }
+        },
+        "required": ["referenceEthPrice"],
+        "title": "ReferencePriceRequest",
+        "type": "object"
+      },
       "RefillPath": {
         "additionalProperties": false,
         "properties": {
@@ -3147,6 +3254,19 @@
         },
         "required": ["from", "to"],
         "title": "RefillPath",
+        "type": "object"
+      },
+      "RejectExceptionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "RejectExceptionRequest",
         "type": "object"
       },
       "RenewRequest": {
@@ -4014,6 +4134,150 @@
           "treasuries"
         ],
         "title": "TenantView",
+        "type": "object"
+      },
+      "TokenMovementListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TokenMovementView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "TokenMovementListResponse",
+        "type": "object"
+      },
+      "TokenMovementView": {
+        "properties": {
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedat"
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedby"
+          },
+          "acknowledgementReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgementreason"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "blockHash": {
+            "title": "Blockhash",
+            "type": "string"
+          },
+          "blockNumber": {
+            "title": "Blocknumber",
+            "type": "integer"
+          },
+          "classification": {
+            "enum": [
+              "AGENT",
+              "INTERNAL_REFILL",
+              "INFLOW",
+              "UNEXPECTED_OUTFLOW",
+              "LENDING"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "counterparty": {
+            "title": "Counterparty",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "direction": {
+            "enum": ["IN", "OUT"],
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "operationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operationid"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          },
+          "transactionHash": {
+            "title": "Transactionhash",
+            "type": "string"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "wallet": {
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "wallet",
+          "direction",
+          "counterparty",
+          "amount",
+          "classification",
+          "operationId",
+          "removed",
+          "createdAt",
+          "acknowledgedBy",
+          "acknowledgedAt",
+          "acknowledgementReason"
+        ],
+        "title": "TokenMovementView",
         "type": "object"
       },
       "TotpConfirm": {
@@ -7983,6 +8247,134 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/plans/{plan_id}/fee/accept": {
+      "post": {
+        "operationId": "accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanFeeActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Plan Fee V1 Orgs  Organization Id  Plans  Plan Id  Fee Accept Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Plan Fee",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/plans/{plan_id}/fee/defer": {
+      "post": {
+        "operationId": "defer_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_defer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanFeeActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Defer Plan Fee V1 Orgs  Organization Id  Plans  Plan Id  Fee Defer Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Defer Plan Fee",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/recurring-payment-schedules": {
       "get": {
         "operationId": "list_schedules_v1_orgs__organization_id__recurring_payment_schedules_get",
@@ -8678,6 +9070,69 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/requests/{request_id}/allow-duplicate-tx": {
+      "post": {
+        "operationId": "allow_duplicate_v1_orgs__organization_id__requests__request_id__allow_duplicate_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowDuplicateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Allow Duplicate V1 Orgs  Organization Id  Requests  Request Id  Allow Duplicate Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Allow Duplicate",
+        "tags": ["mandate exceptions"]
+      }
+    },
     "/v1/orgs/{organization_id}/requests/{request_id}/approval-typed-data": {
       "get": {
         "operationId": "get_approval_typed_data_v1_orgs__organization_id__requests__request_id__approval_typed_data_get",
@@ -9059,6 +9514,238 @@
         },
         "summary": "Get Request Evidence",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception": {
+      "get": {
+        "operationId": "get_exception_v1_orgs__organization_id__requests__request_id__exception_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/grant-tx": {
+      "post": {
+        "operationId": "grant_exception_v1_orgs__organization_id__requests__request_id__exception_grant_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantExceptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Grant Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Grant Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/reject": {
+      "post": {
+        "operationId": "reject_exception_v1_orgs__organization_id__requests__request_id__exception_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectExceptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reject Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Reject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Exception",
+        "tags": ["mandate exceptions"]
+      }
+    },
+    "/v1/orgs/{organization_id}/requests/{request_id}/exception/revoke-tx": {
+      "post": {
+        "operationId": "revoke_exception_v1_orgs__organization_id__requests__request_id__exception_revoke_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Exception V1 Orgs  Organization Id  Requests  Request Id  Exception Revoke Tx Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Exception",
+        "tags": ["mandate exceptions"]
       }
     },
     "/v1/orgs/{organization_id}/requests/{request_id}/extraction/confirm": {
@@ -10375,6 +11062,188 @@
         "tags": ["treasury"]
       }
     },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy": {
+      "get": {
+        "operationId": "get_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Fee Policy V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fee Policy",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/accept": {
+      "post": {
+        "operationId": "accept_fee_policy_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeePolicyAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Fee Policy V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Accept Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Fee Policy",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/fee-policy/reference-price": {
+      "put": {
+        "operationId": "set_fee_reference_price_v1_orgs__organization_id__treasuries__treasury_id__fee_policy_reference_price_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferencePriceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Fee Reference Price V1 Orgs  Organization Id  Treasuries  Treasury Id  Fee Policy Reference Price Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Fee Reference Price",
+        "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs": {
       "post": {
         "operationId": "create_governance_tx_v1_orgs__organization_id__treasuries__treasury_id__governance_txs_post",
@@ -11249,6 +12118,142 @@
         },
         "summary": "Verify Oob",
         "tags": ["payees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements": {
+      "get": {
+        "operationId": "list_token_movements_v1_orgs__organization_id__treasuries__treasury_id__token_movements_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenMovementListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Token Movements",
+        "tags": ["chain"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements/{movement_id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledge_token_movement_v1_orgs__organization_id__treasuries__treasury_id__token_movements__movement_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "movement_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Movement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeTokenMovementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcknowledgeTokenMovementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Token Movement",
+        "tags": ["chain"],
         "x-organization-scoped": true
       }
     },

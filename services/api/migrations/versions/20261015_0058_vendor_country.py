@@ -1,7 +1,7 @@
 """Add destination jurisdiction to vendors for Travel Rule transfers.
 
-Revision ID: 20261015_0054
-Revises: 20261015_0053
+Revision ID: 20261015_0058
+Revises: 20261015_0057
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261015_0054"
-down_revision: str | None = "20261015_0053"
+revision: str = "20261015_0058"
+down_revision: str | None = "20261015_0057"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

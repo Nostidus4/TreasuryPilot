@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.auth import UserRecord, normalize_email
+from treasurypilot_api.identity.db_errors import violated_constraint
 from treasurypilot_api.identity.models import (
     Membership,
     Organization,
@@ -22,6 +23,10 @@ from treasurypilot_api.identity.models import (
 
 class SAMLIdentityError(ValueError):
     """A SAML assertion is valid but cannot be mapped to an active tenant member."""
+
+
+class SAMLIdentityConflict(SAMLIdentityError):
+    """The user is already linked to a different NameID from this issuer (not a replay)."""
 
 
 def hash_relay_state(relay_state: str) -> bytes:
@@ -225,6 +230,10 @@ class SAMLIdentityRepository:
             )
             try:
                 await session.flush()
-            except IntegrityError:
+            except IntegrityError as exc:
+                if violated_constraint(exc) == "uq_saml_identities_org_issuer_user":
+                    raise SAMLIdentityConflict(
+                        "SAML account is already linked to a different NameID"
+                    ) from None
                 raise SAMLIdentityError("SAML identity or response was already used") from None
             return UserRecord(user.id, str(user.email), user.display_name, user.status)

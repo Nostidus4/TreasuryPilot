@@ -1,5 +1,18 @@
 """TreasuryPilot's immutable, I/O-free financial domain models."""
 
+from .fee_policy import (
+    FeeAssessment,
+    FeeDecision,
+    FeePreset,
+    FeePresetConfig,
+    FeeProposal,
+    assess_fee,
+    discount_justifies_early_payment,
+    enforce_fee_cap,
+    estimate_plan_fee_wei,
+    fee_in_asset_base_units,
+    propose_fee_policy,
+)
 from .fiat_fx import FiatApproval, FxPolicy, FxQuote, FxRate
 from .models import (
     ApprovedRequest,
@@ -43,6 +56,11 @@ __all__ = [
     "FxRate",
     "ForecastDay",
     "ForecastRefill",
+    "FeeAssessment",
+    "FeeDecision",
+    "FeePreset",
+    "FeePresetConfig",
+    "FeeProposal",
     "Infeasible",
     "LiquidityDecision",
     "LiquidityPolicy",
@@ -59,4 +77,10 @@ __all__ = [
     "WalletState",
     "planning_day",
     "utc_day_number",
+    "assess_fee",
+    "discount_justifies_early_payment",
+    "enforce_fee_cap",
+    "estimate_plan_fee_wei",
+    "fee_in_asset_base_units",
+    "propose_fee_policy",
 ]

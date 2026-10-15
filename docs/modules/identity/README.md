@@ -71,7 +71,7 @@ Invite: `Pending → Accepted | Expired | Revoked`. Session: `Active → Expired
 
 SIWE message: domain = configured app origin, `chainId` = treasury chain (11155111), statement "Link this wallet to TreasuryPilot", nonce single use, expiry 10 min, clock skew ± 2 min. `/me` includes each membership's `ownerIsOnchain` and `ownerCheckedAt` values; `signerRolesActive` is true only when the membership holds Owner, Approver or Guardian and a wallet is linked.
 
-The opt-in SCIM slice exposes tenant-scoped user reads, provisioning links, and active/profile updates at `/scim/v2/Users`. `POST` matches an exact normalized email only to an existing active user with an OIDC identity link, which is created only after OIDC verifies the email. SCIM never creates an application user from an unverified address. A linked account already in the organization keeps its status and role sources; a new tenant membership starts suspended with no roles until an allowlisted group grants a work role. `PATCH active=false` suspends the user's membership in the configured organization, revokes that organization's scoped sessions, and records a system audit event in the same transaction. `PATCH active=true` only restores a membership this SCIM client itself deactivated, with existing roles and an active user account; an existing manual suspension stays suspended. Optional `/Groups` resources are restricted to names in `TP_SCIM_GROUP_ROLE_MAP`; their assignments grant only configured `Operator`, `Finance`, or `Auditor` roles to active members or to new SCIM-linked memberships awaiting their first role. An empty group map disables the `/Groups` API and leaves persisted groups and assignments untouched; a non-empty replacement map removes omitted group names and recomputes affected role grants at startup. Manual, OIDC, and SCIM role grants are stored separately and the effective membership roles are their union, so removing one source preserves the others. Existing grants remain manual during schema upgrade; an OIDC sync can attribute legacy work roles only in the configured OIDC organization. Identity links never reclassify grants in another organization. Losing the final effective role suspends the membership and revokes scoped sessions. SCIM cannot create an application account from an unverified email, set role names directly, assign privileged roles, or nest groups. SAML uses operator-managed local IdP metadata, signed responses, persistent NameID links, and the existing organization-scoped session path. An organization's last active OrgAdmin or Owner cannot be deprovisioned.
+The opt-in SCIM slice exposes tenant-scoped user reads, provisioning links, and active/profile updates at `/scim/v2/Users`. `POST` matches an exact normalized email only to an existing active user with an OIDC identity link, which is created only after OIDC verifies the email. SCIM never creates an application user from an unverified address. A linked account already in the organization keeps its status and role sources; a new tenant membership starts suspended with no roles until an allowlisted group grants a work role. `PATCH active=false` suspends the user's membership in the configured organization, revokes that organization's scoped sessions, and records a system audit event in the same transaction. `PATCH active=true` only restores a membership this SCIM client itself deactivated, with existing roles and an active user account; an existing manual suspension stays suspended. Optional `/Groups` resources are restricted to names in `TP_SCIM_GROUP_ROLE_MAP`; their assignments grant only configured `Operator`, `Finance`, or `Auditor` roles to active members or to new SCIM-linked memberships awaiting their first role. An empty group map disables the `/Groups` API; startup removes persisted groups whose names are no longer in the map (all of them when it is empty) and recomputes affected role grants. Manual, OIDC, and SCIM role grants are stored separately and the effective membership roles are their union, so removing one source preserves the others. Existing grants remain manual during schema upgrade; an OIDC sync can attribute legacy work roles only in the configured OIDC organization. Identity links never reclassify grants in another organization. Losing the final effective role suspends the membership and revokes scoped sessions. SCIM cannot create an application account from an unverified email, set role names directly, assign privileged roles, or nest groups. SAML uses operator-managed local IdP metadata, signed responses, persistent NameID links, and the existing organization-scoped session path. An organization's last active OrgAdmin or Owner cannot be deprovisioned.
 
 ## 7. Flows
 
@@ -102,17 +102,14 @@ SCIM is disabled unless both `TP_SCIM_BEARER_TOKEN` (at least 32 bytes) and
 in constant time and is never logged or returned. Optional
 `TP_SCIM_GROUP_ROLE_MAP` is a JSON object from exact SCIM group display names to
 non-empty arrays containing only `Operator`, `Finance`, and `Auditor`; names are
-unique ignoring case. Groups are disabled when this map is empty, and startup
-does not delete persisted groups or revoke roles in that state. To remove old
-groups, deploy a non-empty replacement map that omits them; startup then deletes
-omitted group records and assignments and recomputes affected role grants. To
-remove every group, set `TP_SCIM_CLEAR_GROUPS_WITH_EMPTY_ALLOWLIST=true`; this
-explicitly permits startup to delete persisted groups and revoke their grants.
-SCIM links only existing active OIDC users whose email was verified by the
+unique ignoring case. Groups are disabled when this map is empty. Removing a
+configured group name, including emptying the map, deletes its persisted SCIM
+group and assignment records at API startup and recomputes affected role grants,
+which revokes SCIM-granted roles. SCIM links only existing active OIDC users whose email was verified by the
 identity provider; it does not create application users from SCIM email or
 reactivate manually suspended memberships.
-When no SCIM organization is configured, startup reconciliation is a no-op, so
-persisted group grants and scoped sessions remain untouched.
+When no SCIM organization is configured, startup reconciliation clears persisted
+group records and SCIM-granted roles in every organization that still holds them.
 
 ## 10. Security
 

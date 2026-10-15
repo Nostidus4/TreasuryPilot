@@ -1,4 +1,4 @@
-"""Run bounded retention batches against invitations and authentication artifacts.
+"""Run bounded retention batches for invitations, authentication artifacts and subjects.
 
 The policy row is locked before checking a hold or deleting records. Writers use an
 upsert on the same row, so placing a hold and a deletion cannot pass each other.
@@ -10,13 +10,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import logging
+import re
 import sys
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, cast, delete, exists, func, or_, select
+from sqlalchemy import String, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,16 +27,41 @@ from treasurypilot_api.compliance.models import (
     AuthRetentionPolicy,
     DeletionReceipt,
     RetentionPolicy,
+    SubjectDeletionControl,
 )
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.identity.models import Invite, MagicLink
-from treasurypilot_api.identity.models import Session as AuthSession
+from treasurypilot_api.identity.models import (
+    Invite,
+    MagicLink,
+    Membership,
+    MfaFactor,
+    MfaRecoveryCode,
+    OIDCIdentity,
+    SiweNonce,
+    User,
+    UserStatus,
+    WalletLink,
+)
+from treasurypilot_api.identity.models import (
+    Session as AuthSession,
+)
+from treasurypilot_api.notifications.models import (
+    Notification,
+    NotificationChannel,
+    NotificationEmailPreference,
+    NotificationPreference,
+    TelegramLinkCode,
+)
 
 logger = logging.getLogger(__name__)
 
 # 100 years. Also enforced by a database check so ``now - timedelta`` cannot overflow.
 MAX_INVITE_RETENTION_DAYS = 36500
 MAX_AUTH_RETENTION_DAYS = 36500
+MIN_RECEIPT_KEY_BYTES = 32
+# Stays far below asyncpg's 32767 bind-parameter limit (3 columns per receipt row).
+RECEIPT_INSERT_CHUNK = 5000
+SIWE_NONCE_EXPIRY_GRACE = timedelta(minutes=2)
 
 
 def invite_receipt_hash(record_id: uuid.UUID) -> bytes:
@@ -49,6 +76,31 @@ def auth_receipt_hash(record_type: str, record_id: uuid.UUID) -> bytes:
     if record_type not in {"session", "magic_link"}:
         raise ValueError("record_type must be 'session' or 'magic_link'")
     return hashlib.sha256(f"treasurypilot:{record_type}:v1:".encode() + record_id.bytes).digest()
+
+
+def siwe_nonce_receipt_hash(nonce: str) -> bytes:
+    """Hash a generated SIWE challenge, never its associated user id."""
+
+    if not nonce:
+        raise ValueError("nonce must not be empty")
+    return hashlib.sha256(b"treasurypilot:siwe_nonce:v1:" + nonce.encode("utf-8")).digest()
+
+
+def subject_receipt_hash(user_id: uuid.UUID, key: bytes) -> bytes:
+    """Key the account UUID with a server secret so a receipt cannot be matched by guessing UUIDs."""
+
+    if len(key) < MIN_RECEIPT_KEY_BYTES:
+        raise ValueError(f"receipt key must contain at least {MIN_RECEIPT_KEY_BYTES} bytes")
+    return hmac.new(key, b"treasurypilot:subject:v1:" + user_id.bytes, hashlib.sha256).digest()
+
+
+async def _insert_receipts(session: AsyncSession, rows: list[dict[str, object]]) -> None:
+    for start in range(0, len(rows), RECEIPT_INSERT_CHUNK):
+        await session.execute(
+            pg_insert(DeletionReceipt)
+            .values(rows[start : start + RECEIPT_INSERT_CHUNK])
+            .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+        )
 
 
 async def configure_policy(
@@ -86,6 +138,7 @@ async def configure_auth_policy(
     *,
     session_retention_days: int | None,
     magic_link_retention_days: int | None,
+    siwe_nonce_retention_days: int | None,
     legal_hold: bool,
 ) -> None:
     """Set explicit deployment-wide auth retention; ``None`` disables a record type."""
@@ -93,6 +146,7 @@ async def configure_auth_policy(
     for name, days in (
         ("session_retention_days", session_retention_days),
         ("magic_link_retention_days", magic_link_retention_days),
+        ("siwe_nonce_retention_days", siwe_nonce_retention_days),
     ):
         if days is not None and not 0 <= days <= MAX_AUTH_RETENTION_DAYS:
             raise ValueError(f"{name} must be between 0 and {MAX_AUTH_RETENTION_DAYS}")
@@ -100,6 +154,7 @@ async def configure_auth_policy(
         id=1,
         session_retention_days=session_retention_days,
         magic_link_retention_days=magic_link_retention_days,
+        siwe_nonce_retention_days=siwe_nonce_retention_days,
         legal_hold=legal_hold,
     )
     await session.execute(
@@ -108,9 +163,94 @@ async def configure_auth_policy(
             set_={
                 "session_retention_days": statement.excluded.session_retention_days,
                 "magic_link_retention_days": statement.excluded.magic_link_retention_days,
+                "siwe_nonce_retention_days": statement.excluded.siwe_nonce_retention_days,
                 "legal_hold": statement.excluded.legal_hold,
                 "updated_at": datetime.now(UTC),
             },
+        )
+    )
+
+
+async def request_subject_deletion(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    requested_at: datetime | None = None,
+) -> None:
+    """Queue a profile-erasure request without replacing an active legal hold."""
+
+    timestamp = requested_at or datetime.now(UTC)
+    if timestamp.utcoffset() is None:
+        raise ValueError("requested_at must be timezone-aware")
+    user_exists = await session.scalar(select(User.id).where(User.id == user_id))
+    if user_exists is None:
+        raise ValueError("user does not exist")
+    statement = pg_insert(SubjectDeletionControl).values(
+        user_id=user_id,
+        deletion_requested_at=timestamp,
+        legal_hold=False,
+        audit_reference_blocked=False,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[SubjectDeletionControl.user_id],
+            set_={
+                "deletion_requested_at": func.coalesce(
+                    SubjectDeletionControl.deletion_requested_at,
+                    statement.excluded.deletion_requested_at,
+                ),
+                "audit_reference_blocked": False,
+                "updated_at": timestamp,
+            },
+        )
+    )
+    # Lock the user after the control row, matching the worker's lock order. This
+    # prevents new authenticated sessions while avoiding a user/control deadlock.
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(status=UserStatus.DISABLED.value, version=User.version + 1)
+    )
+
+
+async def set_subject_legal_hold(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    legal_hold: bool,
+    updated_at: datetime | None = None,
+) -> None:
+    """Set a subject-level hold, serialized with deletion on the same control row."""
+
+    timestamp = updated_at or datetime.now(UTC)
+    if timestamp.utcoffset() is None:
+        raise ValueError("updated_at must be timezone-aware")
+    if legal_hold and await session.scalar(select(User.id).where(User.id == user_id)) is None:
+        raise ValueError("user does not exist")
+    if not legal_hold:
+        await session.execute(
+            update(SubjectDeletionControl)
+            .where(SubjectDeletionControl.user_id == user_id)
+            .values(legal_hold=False, updated_at=timestamp)
+        )
+        await session.execute(
+            delete(SubjectDeletionControl).where(
+                SubjectDeletionControl.user_id == user_id,
+                SubjectDeletionControl.deletion_requested_at.is_(None),
+            )
+        )
+        return
+    statement = pg_insert(SubjectDeletionControl).values(
+        user_id=user_id,
+        deletion_requested_at=None,
+        legal_hold=True,
+        audit_reference_blocked=False,
+        updated_at=timestamp,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[SubjectDeletionControl.user_id],
+            set_={"legal_hold": True, "updated_at": timestamp},
         )
     )
 
@@ -128,6 +268,7 @@ async def run_retention(
     now: datetime,
     batch_size: int = 100,
     dry_run: bool = True,
+    receipt_key: bytes | None = None,
 ) -> RetentionResult:
     """Process at most one bounded batch per organization, oldest first.
 
@@ -138,6 +279,8 @@ async def run_retention(
     Before deleting, the organization's audit head is locked. Every audit writer holds
     that lock until it commits, so no audit entry naming a candidate invite can commit
     between the reference check and the deletion.
+
+    ``receipt_key`` keys the subject-erasure receipts; erasing a profile without it fails.
     """
 
     if now.utcoffset() is None:
@@ -180,6 +323,18 @@ async def run_retention(
     else:
         examined += auth_examined
         deleted += auth_deleted
+
+    try:
+        subject_examined, subject_deleted, subject_failed = await _run_subject_requests(
+            sessions, now=now, batch_size=batch_size, dry_run=dry_run, receipt_key=receipt_key
+        )
+    except Exception:
+        logger.exception("subject deletion failed")
+        failed += 1
+    else:
+        examined += subject_examined
+        deleted += subject_deleted
+        failed += subject_failed
 
     return RetentionResult(examined=examined, deleted=deleted, failed=failed)
 
@@ -231,19 +386,16 @@ async def _run_org(
         record_ids = list(await session.scalars(query))
         if dry_run or not record_ids:
             return len(record_ids), 0
-        await session.execute(
-            pg_insert(DeletionReceipt)
-            .values(
-                [
-                    {
-                        "record_hash": invite_receipt_hash(record_id),
-                        "record_type": "invite",
-                        "deleted_at": now,
-                    }
-                    for record_id in record_ids
-                ]
-            )
-            .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+        await _insert_receipts(
+            session,
+            [
+                {
+                    "record_hash": invite_receipt_hash(record_id),
+                    "record_type": "invite",
+                    "deleted_at": now,
+                }
+                for record_id in record_ids
+            ],
         )
         await session.execute(delete(Invite).where(Invite.id.in_(record_ids)))
         return len(record_ids), len(record_ids)
@@ -293,23 +445,269 @@ async def _run_auth(
             examined += len(record_ids)
             if dry_run or not record_ids:
                 continue
-            await session.execute(
-                pg_insert(DeletionReceipt)
-                .values(
-                    [
-                        {
-                            "record_hash": auth_receipt_hash(record_type, record_id),
-                            "record_type": record_type,
-                            "deleted_at": now,
-                        }
-                        for record_id in record_ids
-                    ]
-                )
-                .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+            await _insert_receipts(
+                session,
+                [
+                    {
+                        "record_hash": auth_receipt_hash(record_type, record_id),
+                        "record_type": record_type,
+                        "deleted_at": now,
+                    }
+                    for record_id in record_ids
+                ],
             )
             await session.execute(delete(model).where(model.id.in_(record_ids)))
             deleted += len(record_ids)
+
+        if policy.siwe_nonce_retention_days is not None:
+            # An unused SIWE nonce remains valid through the verifier's two-minute
+            # clock-skew window. Count that grace before applying the operator period.
+            cutoff = now - timedelta(days=policy.siwe_nonce_retention_days)
+            eligible_before = cutoff - SIWE_NONCE_EXPIRY_GRACE
+            terminal_at = func.coalesce(SiweNonce.used_at, SiweNonce.expires_at)
+            nonce_query = (
+                select(SiweNonce.nonce)
+                # The verifier still accepts a nonce at exactly the expiry plus
+                # clock-skew boundary, so retain it until that instant has passed.
+                .where(terminal_at < eligible_before)
+                .order_by(terminal_at, SiweNonce.nonce)
+                .limit(batch_size)
+            )
+            if not dry_run:
+                nonce_query = nonce_query.with_for_update(skip_locked=True)
+            nonces = list(await session.scalars(nonce_query))
+            examined += len(nonces)
+            if not dry_run and nonces:
+                await session.execute(
+                    pg_insert(DeletionReceipt)
+                    .values(
+                        [
+                            {
+                                "record_hash": siwe_nonce_receipt_hash(nonce),
+                                "record_type": "siwe_nonce",
+                                "deleted_at": now,
+                            }
+                            for nonce in nonces
+                        ]
+                    )
+                    .on_conflict_do_nothing(index_elements=[DeletionReceipt.record_hash])
+                )
+                await session.execute(delete(SiweNonce).where(SiweNonce.nonce.in_(nonces)))
+                deleted += len(nonces)
     return examined, deleted
+
+
+async def _run_subject_requests(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    now: datetime,
+    batch_size: int,
+    dry_run: bool,
+    receipt_key: bytes | None = None,
+) -> tuple[int, int, int]:
+    """Process bounded profile-erasure requests, respecting each subject's hold.
+
+    A dry run applies the same eligibility checks without writing, so it counts only
+    requests that a real run would erase.
+    """
+
+    async with sessions() as session:
+        auth_policy = await session.get(AuthRetentionPolicy, 1)
+        if auth_policy is not None and auth_policy.legal_hold:
+            return 0, 0, 0
+        user_ids = list(
+            await session.scalars(
+                select(SubjectDeletionControl.user_id)
+                .where(
+                    SubjectDeletionControl.deletion_requested_at.is_not(None),
+                    SubjectDeletionControl.legal_hold.is_(False),
+                    SubjectDeletionControl.audit_reference_blocked.is_(False),
+                )
+                .order_by(
+                    SubjectDeletionControl.deletion_requested_at, SubjectDeletionControl.user_id
+                )
+                .limit(batch_size)
+            )
+        )
+        # Blocked requests wait for review; re-requesting erasure clears the flag.
+        awaiting_review = await session.scalar(
+            select(func.count()).where(
+                SubjectDeletionControl.deletion_requested_at.is_not(None),
+                SubjectDeletionControl.audit_reference_blocked.is_(True),
+            )
+        )
+    if awaiting_review:
+        logger.warning("%s subject deletion requests await audit-evidence review", awaiting_review)
+    if not dry_run and user_ids and receipt_key is None:
+        raise ValueError("TP_RETENTION_RECEIPT_KEY is required to erase subjects")
+
+    examined = deleted = failed = 0
+    for user_id in user_ids:
+        try:
+            email, audit_blocked = await _audit_check(sessions, user_id)
+            if dry_run:
+                examined += not audit_blocked
+                continue
+            assert receipt_key is not None
+            subject_examined, subject_deleted = await _run_subject_request(
+                sessions,
+                user_id=user_id,
+                now=now,
+                receipt_key=receipt_key,
+                checked_email=email,
+                audit_blocked=audit_blocked,
+            )
+        except Exception:
+            logger.exception("subject deletion failed for request %s", user_id)
+            failed += 1
+            continue
+        examined += subject_examined
+        deleted += subject_deleted
+    return examined, deleted, failed
+
+
+async def _audit_check(
+    sessions: async_sessionmaker[AsyncSession], user_id: uuid.UUID
+) -> tuple[str | None, bool]:
+    """Scan the audit log in its own transaction so no hold or policy lock waits on it."""
+
+    async with sessions() as session:
+        email = await session.scalar(select(User.email).where(User.id == user_id))
+        if email is None:
+            return None, False
+        return str(email), await _audit_references_email(session, str(email))
+
+
+async def _run_subject_request(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    user_id: uuid.UUID,
+    now: datetime,
+    receipt_key: bytes,
+    checked_email: str | None,
+    audit_blocked: bool,
+) -> tuple[int, int]:
+    """Anonymize one profile and purge identity artifacts in the hold-row transaction."""
+
+    async with sessions() as session, session.begin():
+        # FOR SHARE still serializes against a hold change but not against other subjects.
+        auth_policy = await session.get(AuthRetentionPolicy, 1, with_for_update={"read": True})
+        if auth_policy is not None and auth_policy.legal_hold:
+            return 0, 0
+        control = await session.scalar(
+            select(SubjectDeletionControl)
+            .where(
+                SubjectDeletionControl.user_id == user_id,
+                SubjectDeletionControl.deletion_requested_at.is_not(None),
+                SubjectDeletionControl.legal_hold.is_(False),
+                SubjectDeletionControl.audit_reference_blocked.is_(False),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if control is None:
+            return 0, 0
+        user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
+        if user is None:
+            await session.execute(
+                delete(SubjectDeletionControl).where(SubjectDeletionControl.user_id == user_id)
+            )
+            return 1, 0
+
+        email = str(user.email)
+        if email != checked_email:
+            return 0, 0  # The email changed after the audit scan; the next run re-checks it.
+        if audit_blocked:
+            control.audit_reference_blocked = True
+            logger.warning("subject deletion %s blocked by audit evidence", user_id)
+            return 1, 0
+
+        # Delete first and build receipts from the returned ids, so a row created
+        # concurrently is never deleted without a receipt.
+        receipts: list[dict[str, object]] = [
+            {
+                "record_hash": subject_receipt_hash(user_id, receipt_key),
+                "record_type": "subject",
+                "deleted_at": now,
+            }
+        ]
+        for delete_stmt, record_type, receipt_hash in (
+            (
+                delete(AuthSession).where(AuthSession.user_id == user_id).returning(AuthSession.id),
+                "session",
+                lambda record_id: auth_receipt_hash("session", record_id),
+            ),
+            (
+                delete(MagicLink).where(MagicLink.email == email).returning(MagicLink.id),
+                "magic_link",
+                lambda record_id: auth_receipt_hash("magic_link", record_id),
+            ),
+            (
+                delete(Invite).where(Invite.email == email).returning(Invite.id),
+                "invite",
+                invite_receipt_hash,
+            ),
+            (
+                delete(SiweNonce).where(SiweNonce.user_id == user_id).returning(SiweNonce.nonce),
+                "siwe_nonce",
+                siwe_nonce_receipt_hash,
+            ),
+        ):
+            for record_id in await session.scalars(delete_stmt):
+                receipts.append(
+                    {
+                        "record_hash": receipt_hash(record_id),
+                        "record_type": record_type,
+                        "deleted_at": now,
+                    }
+                )
+        await _insert_receipts(session, receipts)
+
+        for table, purge_criterion in (
+            (Membership, Membership.user_id == user_id),
+            (WalletLink, WalletLink.user_id == user_id),
+            (OIDCIdentity, OIDCIdentity.user_id == user_id),
+            (MfaFactor, MfaFactor.user_id == user_id),
+            (MfaRecoveryCode, MfaRecoveryCode.user_id == user_id),
+            (Notification, Notification.user_id == user_id),
+            (NotificationChannel, NotificationChannel.user_id == user_id),
+            (NotificationEmailPreference, NotificationEmailPreference.user_id == user_id),
+            (NotificationPreference, NotificationPreference.user_id == user_id),
+            (TelegramLinkCode, TelegramLinkCode.user_id == user_id),
+        ):
+            await session.execute(delete(table).where(purge_criterion))
+
+        # Financial and immutable audit rows retain the stable subject UUID, but the
+        # account itself no longer contains an identifying email or display name.
+        user.email = f"deleted-{user_id.hex}@privacy.invalid"
+        user.display_name = None
+        user.status = UserStatus.DISABLED.value
+        user.version += 1
+        await session.execute(
+            delete(SubjectDeletionControl).where(SubjectDeletionControl.user_id == user_id)
+        )
+        return 1, 1
+
+
+async def _audit_references_email(session: AsyncSession, email: str) -> bool:
+    normalized = email.lower()
+    # Whole-address match: bob@x.com must not match bobob@x.com. Over-matching
+    # (bob@x.com.au) only keeps the account, which is the safe direction.
+    pattern = rf"(^|[^a-z0-9._%+-]){re.escape(normalized)}($|[^a-z0-9_%+-])"
+    return bool(
+        await session.scalar(
+            select(
+                exists(
+                    select(AuditLog.seq).where(
+                        or_(
+                            func.lower(AuditLog.entity_id) == normalized,
+                            func.lower(AuditLog.actor_id) == normalized,
+                            func.lower(cast(AuditLog.data, String)).op("~")(pattern),
+                        )
+                    )
+                )
+            )
+        )
+    )
 
 
 async def _run_cli(*, batch_size: int, execute: bool) -> None:
@@ -320,8 +718,13 @@ async def _run_cli(*, batch_size: int, execute: bool) -> None:
         raise RuntimeError("TP_DATABASE_URL or DATABASE_URL is required")
     engine, sessions = create_session_factory(settings.database_url.get_secret_value())
     try:
+        receipt_key = settings.retention_receipt_key
         result = await run_retention(
-            sessions, now=datetime.now(UTC), batch_size=batch_size, dry_run=not execute
+            sessions,
+            now=datetime.now(UTC),
+            batch_size=batch_size,
+            dry_run=not execute,
+            receipt_key=receipt_key.get_secret_value().encode() if receipt_key else None,
         )
         print(f"examined={result.examined} deleted={result.deleted} failed={result.failed}")
     finally:
