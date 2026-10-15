@@ -62,6 +62,7 @@ from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
+from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
@@ -452,6 +453,21 @@ def safety_cycle_task() -> dict[str, int]:
         database_url, lambda pool: _run_all_treasury_cycles(pool, scheduling=False)
     )
     return {"cycles_started": started}
+
+
+@app.task(name="treasurypilot.recovery.circuit_breaker", queue="core")
+def circuit_breaker_task() -> dict[str, int]:
+    """Evaluate the BR-065 circuit rules every 60 s and auto-pause on a trip."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for circuit-breaker evaluation")
+    secret = settings.signer_shared_secret
+    sentinel = http_sentinel(settings.signer_url, secret.get_secret_value() if secret else None)
+    return {
+        "paused": _execution_cycles.run(
+            settings.database_url, lambda pool: evaluate_circuit_breakers(pool, sentinel)
+        )
+    }
 
 
 @app.task(name="treasurypilot.invoices.generate-recurring-drafts", queue="core")

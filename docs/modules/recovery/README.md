@@ -142,6 +142,10 @@ decision and does not execute a chain transaction itself.
 
 PAUSE = backend pause + sentinel on-chain pause (ADR-017) + notify Owner. Cool-down 30 min before the same rule alerts again. Only the Owner resumes.
 
+Implementation (RCV-006): worker task `treasurypilot.recovery.circuit_breaker` runs every 60 s (`recovery/circuit.py`). Rejections are `operations` that are `Reverted` or carry `SIMULATION_REVERTED` in the window (by `created_at`); AI_PLAN_REJECTED counts `AI_REJECTED` review items; DISCREPANCY and UNEXPECTED_OUTFLOW consume the pending `CIRCUIT_BREAKER` signals the verifier and indexer raise; COVERAGE_DROP compares `treasuries.coverage` with the last value stored in `circuit_rules.state`. Each trip writes a `circuit_events` row (signal rules are deduplicated per signal, windowed rules by the 30-min cool-down); PAUSE upserts `backend_pause`, emits `CircuitBreakerTripped` (Owner, Guardian) and calls the signer sentinel. Outflow percentage uses the latest stored snapshot balance of the moved wallet; with no snapshot it fails closed (PAUSE). Owners tighten via `PUT /v1/orgs/{org}/treasuries/{t}/circuit/rules/{rule}` (Owner + step-up; only REJECTIONS count/window and the outflow percent, tighten-only; there is no disable flag); history at `GET .../circuit/events`.
+
+Known gap: the on-chain pause only happens when the signer has a sentinel target for the treasury (`/sentinel/pause`). Without one, or if it fails, the backend pause still blocks the worker, `circuit_events.details.onchain` records `NOT_CONFIGURED` or `SENTINEL_FAILED`, and a Guardian must submit the Guardian Safe pause from the notification. Resume stays Owner-only (`POST .../resume-tx`).
+
 ## 9. Configuration and defaults
 
 Scan interval 60 s; escalation after 30 min; retry max 6; SLAs per §8.3; circuit rules per §8.4 (Owner can tighten, not disable PAUSE rules in M1).

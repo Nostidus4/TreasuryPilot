@@ -76,6 +76,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(seconds=60),
                 "options": {"queue": "core", "expires": 55},
             },
+            "circuit-breaker": {
+                "task": "treasurypilot.recovery.circuit_breaker",
+                "schedule": timedelta(seconds=60),
+                "options": {"queue": "core", "expires": 55},
+            },
             "activate-due-payees": {
                 "task": "treasurypilot.execution.activate_due_payees",
                 "schedule": timedelta(seconds=1),
