@@ -83,8 +83,9 @@ _SAFE_EXEC = [
     "ExecutionFailure(bytes32 indexed txHash, uint256 payment)",
 ]
 
-# ERC-20 Transfer events from the treasury's configured asset contract.
-_TOKEN = ["Transfer(address indexed from, address indexed to, uint256 value)"]
+# ERC-20 Transfer(from indexed, to indexed, value). Kept in the same event table as the
+# other streams so reorg handling and uniqueness are shared.
+_TOKEN = [_parse("Transfer(address indexed from, address indexed to, uint256 value)")]
 
 EVENTS: Final[Mapping[str, Mapping[str, EventAbi]]] = {
     stream: {abi.topic0: abi for abi in abis}
@@ -92,7 +93,7 @@ EVENTS: Final[Mapping[str, Mapping[str, EventAbi]]] = {
         MODULE: [_parse(item) for item in _MODULE],
         SAFE_CONFIG: _SAFE_CONFIG,
         SAFE_EXEC: [_parse(item) for item in _SAFE_EXEC],
-        TOKEN: [_parse(item) for item in _TOKEN],
+        TOKEN: _TOKEN,
     }.items()
 }
 

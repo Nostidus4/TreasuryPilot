@@ -17,6 +17,8 @@ from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditReposito
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
 from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceRepository
+from treasurypilot_api.chain.routes import TokenMovementRepository
+from treasurypilot_api.chain.routes import router as chain_router
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
@@ -253,6 +255,7 @@ def create_app(
     fee_history_provider: FeeHistoryProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
     mfa_service: MfaService | None = None,
+    token_movement_repository: TokenMovementRepository | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -434,6 +437,7 @@ def create_app(
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
@@ -480,6 +484,7 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(chain_router)
     app.include_router(governance_router)
     app.include_router(mandate_exceptions_router)
     app.include_router(fee_router)
