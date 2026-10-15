@@ -400,6 +400,21 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
                         "amount": amount,
                     },
                 )
+            await connection.execute(
+                text(
+                    "UPDATE reconciliations SET eas_uid = '0x' || repeat('ab', 32) WHERE id = :id"
+                ),
+                {"id": reconciliation_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO chain_attestations (id, request_id, chain_id, schema_uid, "
+                    "attestation_uid, status) VALUES (:id, :req, 11155111, "
+                    "decode(repeat('51', 32), 'hex'), decode(repeat('ab', 32), 'hex'), "
+                    "'Confirmed')"
+                ),
+                {"id": uuid.uuid4(), "req": paid_request_id},
+            )
             # Zero-line reconciliation whose free-text note carries PII.
             await connection.execute(
                 text(
@@ -444,6 +459,8 @@ async def _seed_and_export(database_url: str) -> dict[str, object]:
             "FEE",
         ]
         assert paid.plan.status == "Completed" and paid.plan.plan_id == plan_id
+        assert paid.eas_uid == "0x" + "ab" * 32
+        assert paid.eas_url == "https://sepolia.easscan.org/attestation/view/0x" + "ab" * 32
         assert paid.verifications[0].details["independentVerifier"] == "PASSED"
         again = await repository.export_request(
             organization_id=organization_id, request_id=paid_request_id

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -126,3 +127,55 @@ class AccountMapping(Base):
     side: Mapped[str] = mapped_column(String(6), nullable=False)
     account_code: Mapped[str] = mapped_column(String(32), nullable=False)
     account_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class ChainAttestation(Base):
+    """EAS payment receipt state, one per request (REC-005, ADR-018); written by the worker."""
+
+    __tablename__ = "chain_attestations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('Queued', 'Sent', 'Confirmed', 'Failed')",
+            name="ck_chain_attestations_status",
+        ),
+        CheckConstraint("attempts >= 0", name="ck_chain_attestations_attempts"),
+        CheckConstraint("octet_length(schema_uid) = 32", name="ck_chain_attestations_schema_uid"),
+        CheckConstraint(
+            "attestation_uid IS NULL OR octet_length(attestation_uid) = 32",
+            name="ck_chain_attestations_uid",
+        ),
+        CheckConstraint(
+            "tx_hash IS NULL OR octet_length(tx_hash) = 32", name="ck_chain_attestations_tx_hash"
+        ),
+        CheckConstraint(
+            "(status = 'Confirmed') = (attestation_uid IS NOT NULL)",
+            name="ck_chain_attestations_confirmed_uid",
+        ),
+        UniqueConstraint("request_id", name="uq_chain_attestations_request"),
+        Index(
+            "ix_chain_attestations_due",
+            "next_attempt_at",
+            postgresql_where=text("status <> 'Confirmed'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False
+    )
+    chain_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    schema_uid: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    attestation_uid: Mapped[bytes | None] = mapped_column(LargeBinary)
+    tx_hash: Mapped[bytes | None] = mapped_column(LargeBinary)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="Queued")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -86,3 +86,10 @@ def test_low_gas_check_runs_every_five_minutes() -> None:
     entry = app.conf.beat_schedule["check-low-gas"]
     assert entry["task"] == "treasurypilot.execution.check_low_gas"
     assert entry["schedule"].total_seconds() == 300
+
+
+def test_receipts_are_published_every_thirty_seconds_on_the_core_queue() -> None:
+    entry = app.conf.beat_schedule["publish-eas-receipts"]
+    assert entry["task"] == "treasurypilot.reconciliation.publish_receipts"
+    assert entry["schedule"].total_seconds() == 30
+    assert entry["options"]["queue"] == "core"

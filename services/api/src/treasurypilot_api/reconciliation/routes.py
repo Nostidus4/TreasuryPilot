@@ -16,7 +16,12 @@ from treasurypilot_api.identity.api import ApiModel, _wallet_service
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Organization, OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
-from treasurypilot_api.reconciliation.models import Reconciliation, ReconciliationLine
+from treasurypilot_api.reconciliation.models import (
+    ChainAttestation,
+    Reconciliation,
+    ReconciliationLine,
+)
+from treasurypilot_core.attestations import easscan_url
 from treasurypilot_core.reconciliation_evidence import (
     FACTS_SQL,
     ReconciliationFacts,
@@ -207,6 +212,9 @@ async def get_reconciliation(
             )
         ).all()
         facts = await _facts(session, row.id)
+        receipt = await session.scalar(
+            select(ChainAttestation).where(ChainAttestation.request_id == row.request_id)
+        )
         params = {"req": row.request_id}
         approvals = await session.execute(
             text("SELECT id, revision, status, expires_at FROM approvals WHERE request_id = :req"),
@@ -275,6 +283,17 @@ async def get_reconciliation(
                 {"id": str(d.id), "sha256": _hex(d.sha256), "mime": d.mime} for d in documents
             ],
             "easUid": row.eas_uid,
+            "easUrl": easscan_url(receipt.chain_id, receipt.attestation_uid) if receipt else None,
+            "receipt": (
+                {
+                    "status": receipt.status,
+                    "attempts": receipt.attempts,
+                    "txHash": _hex(receipt.tx_hash),
+                    "nextAttemptAt": receipt.next_attempt_at.isoformat(),
+                }
+                if receipt
+                else None
+            ),
             "missing": missing_evidence(facts, strict=False),
         },
     }

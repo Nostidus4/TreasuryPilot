@@ -3104,6 +3104,8 @@ export interface components {
       };
       /** Easuid */
       easUid?: string | null;
+      /** Easurl */
+      easUrl?: string | null;
       /** Fixturelabels */
       fixtureLabels?: string[];
       /** Flags */

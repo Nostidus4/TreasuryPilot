@@ -21,6 +21,7 @@
     "verifications": {"type": "array", "items": {"$ref": "#/$defs/verification"}},
     "reconciliation": {"$ref": "#/$defs/reconciliation"},
     "easUid": {"type": "string"},
+    "easUrl": {"type": "string", "format": "uri"},
     "coverage": {"type": "object"},
     "fixtureLabels": {"type": "array", "items": {"type": "string"}},
     "generatedAt": {"type": "string", "format": "date-time"},

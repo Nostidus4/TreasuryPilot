@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     # Optional extra addresses swept for low gas (role "sentinel" / "receipt"), on every treasury's chain.
     sentinel_address: str | None = None
     eas_receipt_address: str | None = None
+    # EAS payment receipts (REC-005, ADR-018): the dedicated receipt key lives only in the core
+    # worker, never in the executor, policy or sentinel key. ``eas_receipt_address`` above must be
+    # its address so the low-gas sweep watches the same account. Unset means receipts are off.
+    eas_rpc_url: str | None = None
+    eas_chain_id: int = 11_155_111
+    eas_contract_address: str | None = None
+    eas_schema_uid: str | None = None
+    eas_receipt_private_key: SecretStr | None = Field(
+        default=None, validation_alias="TP_EAS_RECEIPT_PRIVATE_KEY"
+    )
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.

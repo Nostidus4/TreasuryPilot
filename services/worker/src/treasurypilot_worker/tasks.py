@@ -12,6 +12,7 @@ import asyncpg  # type: ignore[import-untyped]
 from celery import Task
 from minio.error import S3Error
 
+from treasurypilot_core.attestations import PAYMENT_RECEIPT_SCHEMA_UID
 from treasurypilot_core.privacy import EncryptionConfigurationError, FieldCipher, FieldEncryptionKey
 from treasurypilot_worker.agent.copilot import ask_copilot
 from treasurypilot_worker.agent.errors import AiBudgetExceeded, AiError
@@ -69,6 +70,11 @@ from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
 from treasurypilot_worker.reconcile.auto_match import auto_match_reconciliations
+from treasurypilot_worker.reconcile.receipt import (
+    RpcPaymentFinality,
+    Web3ReceiptPublisher,
+    publish_receipts,
+)
 from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.recovery.circuit import evaluate_circuit_breakers, http_sentinel
 from treasurypilot_worker.recovery.partial import cancel_partial, resume_partial
@@ -208,6 +214,54 @@ def auto_match_task() -> dict[str, int]:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for reconciliation auto-match")
     return asyncio.run(_auto_match(database_url))
+
+
+async def _publish_receipts(database_url: str, publisher: Web3ReceiptPublisher) -> dict[str, int]:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=2)
+
+    async def rpc_for_chain(chain_id: int) -> Any:
+        urls = await pool.fetchval("SELECT rpc_urls FROM chains WHERE chain_id = $1", chain_id)
+        return build_rpc_client(decode_rpc_urls(urls))
+
+    try:
+        return await publish_receipts(
+            pool,
+            RpcPaymentFinality(rpc_for_chain),
+            publisher,
+            eas_chain_id=get_settings().eas_chain_id,
+            schema_uid=get_settings().eas_schema_uid or PAYMENT_RECEIPT_SCHEMA_UID,
+        )
+    finally:
+        await pool.close()
+
+
+@app.task(name="treasurypilot.reconciliation.publish_receipts", queue="core")
+def publish_receipts_task() -> dict[str, int]:
+    """Attest Paid, finalized payments on EAS with the dedicated receipt key (REC-005).
+
+    Failures are recorded per request and retried with backoff by the next sweeps; they never
+    change the payment status. Unconfigured (no receipt key / EAS address) the sweep is off.
+    """
+    settings = get_settings()
+    key = settings.eas_receipt_private_key
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for EAS receipts")
+    if not settings.eas_rpc_url or not settings.eas_contract_address or key is None:
+        return {"disabled": 1}
+    publisher = Web3ReceiptPublisher(
+        rpc_url=settings.eas_rpc_url,
+        expected_chain_id=settings.eas_chain_id,
+        eas_address=settings.eas_contract_address,
+        schema_uid=settings.eas_schema_uid or PAYMENT_RECEIPT_SCHEMA_UID,
+        private_key=key.get_secret_value(),
+    )
+    if (
+        settings.eas_receipt_address
+        and settings.eas_receipt_address.lower() != publisher.account.address.lower()
+    ):
+        # The low-gas alert would watch another account than the one spending gas.
+        raise RuntimeError("TP_EAS_RECEIPT_ADDRESS does not match the receipt key")
+    return asyncio.run(_publish_receipts(settings.database_url, publisher))
 
 
 @app.task(name="treasurypilot.system.ai_probe", queue="ai")

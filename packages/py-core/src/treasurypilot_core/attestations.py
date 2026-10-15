@@ -11,6 +11,9 @@ PAYMENT_RECEIPT_SCHEMA = (
     "bytes32 payTxHash,address payee,uint256 amount,bytes32 policyVersion"
 )
 PAYMENT_RECEIPT_SCHEMA_UID = "0x51ff02da8a076efd7ed8d58548219fba0f0a06fd5f313309c856339772ae1011"
+# Explorer base per EAS chain (ADR-018: the receipt lives on Ethereum Sepolia).
+EASSCAN_BASE_URLS = {1: "https://easscan.org", 11155111: "https://sepolia.easscan.org"}
+ATTESTED_EVENT = "Attested(address,address,bytes32,bytes32)"
 RECEIPT_FIELDS = (
     "requestId",
     "invoiceHash",
@@ -172,3 +175,11 @@ def verify_payment_receipt(
     if observed_payee.lower() != payee.lower() or observed_amount != amount:
         raise ValueError("Payment event payee or amount does not match the attestation payload")
     return _quantity(transaction.get("blockNumber"), "block number")
+
+
+def easscan_url(chain_id: int, attestation_uid: str | bytes | None) -> str | None:
+    """Public easscan link for a published receipt, or None when the chain has no explorer."""
+    if attestation_uid is None or chain_id not in EASSCAN_BASE_URLS:
+        return None
+    uid = attestation_uid if isinstance(attestation_uid, str) else "0x" + attestation_uid.hex()
+    return f"{EASSCAN_BASE_URLS[chain_id]}/attestation/view/{_hex_field(uid, 32, 'attestationUid')}"
