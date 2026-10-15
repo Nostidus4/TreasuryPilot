@@ -25,8 +25,10 @@ from treasurypilot_worker.planner.gas import GasSwapDeps
 from treasurypilot_worker.planner.pipeline import PlannerDeps
 from treasurypilot_worker.planner.reattest import AttestFn
 
-# shortcut: a fixed per-step gas budget for the module's ERC-20 calls; swap in eth_estimateGas
-# once the executor exposes its calldata builder.
+# shortcut: a fixed per-step gas budget instead of eth_estimateGas (the planner has no calldata or
+# simulation context yet); the signer re-estimates with a 20 % margin and refuses any step whose
+# gas_limit * maxFeePerGas exceeds the cap, so an under-estimate fails closed (FEE_CAP_EXCEEDED).
+# Upgrade when the executor's calldata builder is usable at plan time.
 STEP_GAS = 150_000
 
 

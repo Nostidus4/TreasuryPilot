@@ -32,9 +32,11 @@ from treasurypilot_worker.attestation import attest
 from treasurypilot_worker.celery_app import app as celery_app
 from treasurypilot_worker.chain.event_handlers import activate_due_payees
 from treasurypilot_worker.chain.snapshot import Snapshot, SnapshotPurpose, SnapshotScope
+from treasurypilot_worker.executor.plan_loader import load_plan, plan_fees, plan_run
 from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xact_lock
 from treasurypilot_worker.notify.publisher import publish_pending_events
 from treasurypilot_worker.planner.ai import CeleryAiProposer
+from treasurypilot_worker.planner.context import load_inputs
 from treasurypilot_worker.planner.gas import GasSwapDeps
 from treasurypilot_worker.planner.pipeline import (
     AiOutcome,
@@ -617,7 +619,12 @@ async def test_attested_fees_stop_counting_the_next_day(pool: Any, database_url:
     async def assess() -> FeeDecision:
         async with pool.acquire() as connection:
             decision, _ = await _fee_assessment(
-                connection, world.treasury, 9_000, int((now + timedelta(days=2)).timestamp()), now
+                connection,
+                world.treasury,
+                outcome.plan_id,
+                9_000,
+                int((now + timedelta(days=2)).timestamp()),
+                now,
             )
         return decision
 
@@ -653,6 +660,53 @@ async def test_a_plan_waiting_on_a_fee_policy_is_reclaimed_after_acceptance(
     assert (
         await pool.fetchval("SELECT status FROM plans WHERE id = $1", waiting.plan_id) == "Expired"
     )
+
+
+class _FeeRpc:
+    async def call(self, method: str, _params: list[Any]) -> str:
+        return {"eth_gasPrice": hex(1_000), "eth_maxPriorityFeePerGas": hex(50)}[method]
+
+
+@pooled
+async def test_a_fee_spike_hold_then_accept_replans_and_signs_under_the_accepted_cap(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, fee_threshold=1, due_offset=-1)  # estimate 2_000 > threshold 1
+    held = await _plan(pool, database_url, world)
+    assert held.status == "AwaitingFeeAcceptance"
+    assert await _reviews(pool, world) == [("FEE_APPROVAL", "FEE_ABOVE_THRESHOLD")]
+
+    # What accept_held_plan_fee writes: the cap equals the held estimate, the item resolves.
+    org = await pool.fetchval("SELECT org_id FROM treasuries WHERE id = $1", world.treasury)
+    user = await pool.fetchval(
+        "SELECT created_by FROM payment_requests WHERE id = $1", world.request
+    )
+    await pool.execute(
+        "INSERT INTO fee_acceptances (id, org_id, plan_id, estimated_fee_wei, accepted_cap_wei, "
+        "accepted_by, at) VALUES (gen_random_uuid(), $1, $2, 2000, 2000, $3, now())",
+        org,
+        held.plan_id,
+        user,
+    )
+    await pool.execute(
+        "UPDATE review_items SET status = 'Resolved' WHERE request_id = $1", world.request
+    )
+
+    result, claimed = await _cycle(pool, world)  # ExecutionCycleRequested after ACCEPT_FEE
+    assert result.started and len(claimed) == 1 and claimed[0] != held.plan_id
+    replan = await plan_request(pool, claimed[0], _deps(pool, database_url, world))
+
+    assert replan is not None and replan.status == "Attested"  # same spike, no second hold
+    assert await _reviews(pool, world) == [("FEE_APPROVAL", "FEE_ABOVE_THRESHOLD")]
+    loaded = await load_plan(pool, claimed[0])
+    assert loaded is not None
+    inputs = await load_inputs(pool, loaded.plan, loaded.treasury_id, executor=loaded.executor)
+    fees = await plan_fees(pool, _FeeRpc(), loaded.treasury_id, claimed[0])  # type: ignore[arg-type]
+    # The signer client receives each step's sign_request verbatim.
+    sent = [step.sign_request["fees"] for step in plan_run(loaded, inputs, fees).steps]
+    assert sent and all(
+        f == {"maxFeePerGas": 2_000, "maxPriorityFeePerGas": 50, "feeCapWei": 2_000} for f in sent
+    )  # multiplier 20000 bps on gas price 1_000
 
 
 @pooled
