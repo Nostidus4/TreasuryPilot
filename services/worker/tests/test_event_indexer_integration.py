@@ -813,7 +813,7 @@ def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
 
     first, _ = asyncio.run(_index(anvil_url, database_url))
 
-    assert first["changed"] == 1
+    assert first["changed"] == 2  # Resumed + PaymentExecuted
     assert (
         asyncio.run(
             _one(
@@ -969,3 +969,33 @@ def test_revoked_event_marks_the_treasury_revoked(anvil_url: str, database_url: 
 
     row = asyncio.run(_one(database_url, "SELECT status::text AS s FROM treasuries"))
     assert row["s"] == "Revoked"
+
+
+def test_unexpected_outflow_signal_exists_after_the_first_of_two_indexer_cycles(
+    anvil_url: str, database_url: str
+) -> None:
+    # chain-reader §8.4 timing: the outflow is observed within two indexer cycles of its block.
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    _mine(anvil_url)
+    count = "SELECT count(*) AS n FROM chain_safety_signals WHERE signal_type = 'PRE_STEP_REVALIDATION' AND consumed_at IS NULL"
+
+    asyncio.run(_index(anvil_url, database_url))
+    assert asyncio.run(_one(database_url, count))["n"] == 1  # cycle 1
+    first = asyncio.run(
+        _one(
+            database_url,
+            "SELECT id FROM chain_safety_signals WHERE signal_type = 'PRE_STEP_REVALIDATION'",
+        )
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert asyncio.run(_one(database_url, count))["n"] == 1  # cycle 2: still one, no duplicate
+    again = asyncio.run(
+        _one(
+            database_url,
+            "SELECT id FROM chain_safety_signals WHERE signal_type = 'PRE_STEP_REVALIDATION'",
+        )
+    )
+    assert again["id"] == first["id"]
