@@ -24,7 +24,9 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  # Keep pull request validation independent so one PR cannot cancel another.
+  # Pushes and manual runs still share a group per ref to avoid stale deploys.
+  group: pages-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
