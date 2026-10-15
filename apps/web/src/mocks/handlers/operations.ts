@@ -136,7 +136,7 @@ export const operationHandlers: RequestHandler[] = [
           'There is no validated plan waiting to run.',
         );
       startExecution(plan);
-      return { jobId: `job_${plan.id}`, planId: plan.id };
+      return { jobId: `job_${plan.id}` };
     },
     { status: 202 },
   ),
