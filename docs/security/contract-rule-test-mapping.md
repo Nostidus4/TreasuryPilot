@@ -8,7 +8,7 @@ features are listed separately; a passing contract test does not prove them.
 | C-rule or contract portion | Test / property | Expected boundary |
 | --- | --- | --- |
 | BR-001/003/004 | `testDirectUnsignedApprovalCannotMoveTreasuryFunds`, `testDirectAlteredPayeeAmountAssetAndRequestFailCryptographicProof`, 13-field fuzz; domain/current-approver tests | ApprovalInvalid, NotApprover, ApprovalExpired |
-| BR-010 | direct paused/cooling/cancelled suite; mandate window test | NotActive, MandateExpired, RequestCancelled |
+| BR-010 | direct paused/cooling/cancelled suite; mandate window test | MandatePaused, MandateRevoked, NotActive, MandateExpired, RequestCancelled |
 | BR-011 | `testDirectArbitrarySelectorsAndNativeValueCannotExecute`, fixed pool/pair unit tests, I13 | no generic selector, native value or arbitrary target |
 | BR-012/019 | direct refill destination test, `testPayOnlyOperationalWalletAndExecutor` | WrongRefillTarget, NotOperationalWallet, NotExecutor |
 | BR-013/017 | cooling/reactivation tests; `testDirectExceptionCannotLiftPayeeRules` | PayeeUnknown, PayeeCooling even with an exception |
@@ -25,7 +25,7 @@ features are listed separately; a passing contract test does not prove them.
 | BR-040/041/042/043 | exception wrong-payee/expiry/request/revoke matrix, amount/version/daily tests, AT11, I6 | ExceptionInvalid, OverPerRequestLimit, OverDailyLimit, BufferBreach, NotOwner |
 | BR-044 (P2) | unauthorized/expired/reused grant and pre/post HF/rate tests; I15, isolated used-guard mutation | BorrowNotAuthorized, AuthorizationExpired, HealthFactorTooLow, BorrowRateTooHigh; opaque owner-reviewed plan hash |
 | BR-060/061 | request/step replay units; replay handler + isolated step-guard mutation, I5 | RequestAlreadyPaid, StepAlreadyExecuted; no second execution |
-| BR-062/064 | permanent revoke and guardian role tests, I7 | NotActive, NotOwner; configure cannot revive revoked module |
+| BR-062/064 | permanent revoke and guardian role tests, I7 | MandatePaused, MandateRevoked, NotOwner; configure cannot revive revoked module |
 | BR-068 | `testGuardianSafeOneOfTwoCanPauseButCannotResume` | real Guardian Safe pause path; resume only Safe T |
 | BR-071 | exact-request duplicate override unit and direct duplicate case, I5 | DuplicateFingerprint; one matching override |
 | BR-072 (registry portion) | deactivate/reactivate/cooling tests | old/deactivated payee cannot PAY; new entry cools |

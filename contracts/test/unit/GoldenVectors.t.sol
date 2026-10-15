@@ -15,6 +15,10 @@ contract GoldenVectorsTest is TreasuryFixture {
         _verify("test/vectors/payment-approval-early.json");
     }
 
+    function testFiatApprovalVector() external {
+        _verify("test/vectors/payment-approval-fiat.json");
+    }
+
     function testLargeIntegerApprovalVector() external {
         _verify("test/vectors/payment-approval-large.json");
     }
@@ -35,6 +39,7 @@ contract GoldenVectorsTest is TreasuryFixture {
         ap.deadline = uint64(vm.parseJsonUint(json, ".message.deadline"));
         ap.termsHash = vm.parseJsonBytes32(json, ".message.termsHash");
         ap.expiry = uint64(vm.parseJsonUint(json, ".message.expiry"));
+        ap.isFiat = vm.parseJsonBool(json, ".message.isFiat");
         vm.chainId(vm.parseJsonUint(json, ".domain.chainId"));
         // Place the real clone runtime at the vector's fixed verifying address; no initialized state is needed to hash.
         vm.etch(ap.treasury, address(module).code);

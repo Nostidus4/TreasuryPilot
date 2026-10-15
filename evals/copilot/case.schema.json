@@ -1,0 +1,76 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "pattern": "^cp-[0-9]{3}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "scenario": {
+      "pattern": "^sc-[0-9]{3}$",
+      "title": "Scenario",
+      "type": "string"
+    },
+    "question": {
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "expected_numbers": {
+      "additionalProperties": {
+        "pattern": "^(0|[1-9][0-9]*)$",
+        "type": "string"
+      },
+      "minProperties": 1,
+      "title": "Expected Numbers",
+      "type": "object"
+    },
+    "tolerance": {
+      "const": "exact",
+      "title": "Tolerance",
+      "type": "string"
+    },
+    "must_refuse": {
+      "title": "Must Refuse",
+      "type": "boolean"
+    },
+    "units": {
+      "additionalProperties": {
+        "const": "base_units",
+        "type": "string"
+      },
+      "title": "Units",
+      "type": "object"
+    },
+    "evidence_sources": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Evidence Sources",
+      "type": "object"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "safe_response": {
+      "title": "Safe Response",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "scenario",
+    "question",
+    "expected_numbers",
+    "tolerance",
+    "must_refuse",
+    "units",
+    "evidence_sources",
+    "context",
+    "safe_response"
+  ],
+  "title": "CopilotCase",
+  "type": "object"
+}

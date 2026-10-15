@@ -57,15 +57,10 @@ def _project(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
             if ctx.request is None:
                 checks.append(_check(f"request_present_{step.seq}", False, C.DATA_MISSING))
             else:
-                expected = (
-                    ctx.request.early_amount
-                    if ctx.request.early_amount > 0 and ctx.now <= ctx.request.early_pay_by
-                    else ctx.request.amount
-                )
                 checks.append(
                     _check(
                         f"payment_option_{step.seq}",
-                        step.amount == expected,
+                        ctx.request.allows_pay_amount(amount, ctx.now),
                         C.WRONG_PAYMENT_OPTION,
                     )
                 )
@@ -85,7 +80,9 @@ def _project(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
                 and exception.expiry >= ctx.now
                 and ctx.snapshot.mandate is not None
                 and exception.mandate_version == ctx.snapshot.mandate.version
-                and exception.amount == step.amount
+                # Owners except the signed amount; a fiat payment may be below it (pay() matches the same).
+                and ctx.request is not None
+                and exception.amount == ctx.request.approved_amount(ctx.now)
                 and exception.payee.lower() == target
             )
             if exception is not None and amount > limit.per_request:

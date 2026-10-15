@@ -174,6 +174,16 @@ def test_threshold_configuration_requires_country_currency_and_integer_amounts()
     assert settings.travel_rule_thresholds == '{"GB": {"USD": 30000}, "US": {"USD": 30000}}'
     with pytest.raises(ValidationError):
         Settings(travel_rule_thresholds='{"US":{"USD":30000.5}}')
+    with pytest.raises(ValidationError, match="Duplicate Travel Rule jurisdiction"):
+        Settings(travel_rule_thresholds='{"us":{"USD":1},"US":{"USD":2}}')
+    with pytest.raises(ValidationError, match="Duplicate Travel Rule currency"):
+        Settings(travel_rule_thresholds='{"US":{"usd":1,"USD":2}}')
+
+
+def test_transfer_rejects_non_string_codes_with_value_error() -> None:
+    for field in ("origin_jurisdiction", "beneficiary_jurisdiction", "currency"):
+        with pytest.raises(ValueError):
+            replace(transfer(), **{field: None})
 
 
 def test_travel_rule_http_provider_configuration_requires_paired_https_credentials() -> None:
@@ -191,6 +201,45 @@ def test_travel_rule_http_provider_configuration_requires_paired_https_credentia
         travel_rule_provider_api_key=SecretStr("provider-secret"),
     )
     assert configured.travel_rule_provider_url == "https://gateway.example/api/"
+
+
+def test_blank_travel_rule_provider_env_means_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TP_TRAVEL_RULE_PROVIDER_URL", "")
+    monkeypatch.setenv("TP_TRAVEL_RULE_PROVIDER_API_KEY", "  ")
+    settings = Settings()
+    assert settings.travel_rule_provider_url is None
+    assert settings.travel_rule_provider_api_key is None
+
+
+def test_http_provider_status_accepts_pending_reply_without_provider_ref() -> None:
+    def send(request: HttpRequest, timeout: float) -> bytes:
+        return json.dumps({"status": "PENDING"}).encode()
+
+    gateway = HttpTravelRuleProvider(
+        base_url="https://gateway.example", api_key="k", request_sender=send
+    )
+    outcome = asyncio.run(gateway.status(provider_ref="case-1"))
+    assert outcome == TravelRuleOutcome(TravelRuleStatus.PENDING, "case-1")
+    with pytest.raises(TravelRuleProviderError):  # exchange() has no known ref to fall back on
+        asyncio.run(gateway.exchange(idempotency_key="k", transfer=transfer()))
+
+
+def test_http_provider_failure_logs_status_code_but_not_secrets(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def send(request: HttpRequest, timeout: float) -> bytes:
+        raise TravelRuleProviderError("Travel Rule gateway returned an error")
+
+    gateway = HttpTravelRuleProvider(
+        base_url="https://gateway.example", api_key="super-secret", request_sender=send
+    )
+    with caplog.at_level("WARNING"), pytest.raises(TravelRuleProviderError):
+        asyncio.run(gateway.status(provider_ref="case-1"))
+    record = caplog.records[-1]
+    assert record.detail == "Travel Rule gateway returned an error"  # type: ignore[attr-defined]
+    assert "super-secret" not in str(record.__dict__)
 
 
 def test_pending_exchange_holds_until_provider_confirms_completion() -> None:
@@ -215,7 +264,7 @@ def test_pending_exchange_holds_until_provider_confirms_completion() -> None:
     completed = asyncio.run(
         travel_service.require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
     )
-    assert completed is not None and completed.status == TravelRuleStatus.COMPLETED
+    assert completed.status == TravelRuleStatus.COMPLETED
     assert provider.exchanges == 1
     assert provider.status_checks == 1
 
@@ -300,7 +349,17 @@ def test_below_threshold_does_not_require_party_data_but_qualifying_transfer_doe
             organization_id=ORG_ID, transfer=below_threshold
         )
     )
-    assert result is None and repository.rows == {}
+    assert result.status == TravelRuleStatus.NOT_REQUIRED and result.threshold_minor_units == 100
+    assert len(repository.rows) == 1
+
+    # The recorded decision is honored on retry even if threshold policy no longer covers it.
+    retry = asyncio.run(
+        TravelRuleService(
+            repository, FakeProvider(), TravelRulePolicy(()), CIPHER
+        ).require_exchange_complete(organization_id=ORG_ID, transfer=below_threshold)
+    )
+    assert retry.status == TravelRuleStatus.NOT_REQUIRED
+    repository.rows.clear()
 
     missing_party = replace(transfer(), originator=None)
     with pytest.raises(TravelRuleBlocked):
@@ -331,7 +390,41 @@ def test_self_hosted_wallet_requires_verified_attestation(attested: bool, blocke
         record = asyncio.run(
             service(provider).require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
         )
-        assert record is not None and record.status == TravelRuleStatus.SELF_HOSTED
+        assert record.status == TravelRuleStatus.SELF_HOSTED
+
+
+def test_self_hosted_is_terminal_and_status_reply_needs_attestation() -> None:
+    repository = MemoryRepository()
+    provider = FakeProvider(assessment=CounterpartyAssessment(CounterpartyKind.SELF_HOSTED, True))
+    travel_service = service(provider, repository)
+    for _ in range(2):
+        asyncio.run(
+            travel_service.require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
+        )
+    assert provider.classifications == 1
+
+    # An unattested SELF_HOSTED status() reply must not clear a pending exchange.
+    pending_repository = MemoryRepository()
+    status_provider = FakeProvider(
+        outcomes=[
+            TravelRuleOutcome(TravelRuleStatus.PENDING, "exchange-1"),
+            TravelRuleOutcome(TravelRuleStatus.SELF_HOSTED, "exchange-1"),
+            TravelRuleOutcome(TravelRuleStatus.SELF_HOSTED, "exchange-1", True),
+        ]
+    )
+    pending_service = service(status_provider, pending_repository)
+    for _ in range(2):
+        with pytest.raises(TravelRuleBlocked):
+            asyncio.run(
+                pending_service.require_exchange_complete(
+                    organization_id=ORG_ID, transfer=transfer()
+                )
+            )
+    assert next(iter(pending_repository.rows.values())).status == TravelRuleStatus.PENDING
+    record = asyncio.run(
+        pending_service.require_exchange_complete(organization_id=ORG_ID, transfer=transfer())
+    )
+    assert record.status == TravelRuleStatus.SELF_HOSTED
 
 
 def test_pre_pay_context_stays_blocked_while_exchange_is_pending() -> None:

@@ -11,6 +11,7 @@ import re
 import secrets
 import time
 import uuid
+from datetime import timedelta
 from email.utils import parseaddr
 from io import BytesIO
 from typing import cast
@@ -18,6 +19,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
@@ -43,6 +45,40 @@ MAX_EMAIL_ATTACHMENTS = 5
 
 def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
     return AuthFailure(status=status, code=code, title=title, detail=detail)
+
+
+def _invalid_signature() -> AuthFailure:
+    return _fail(
+        401,
+        "INBOUND_EMAIL_SIGNATURE_INVALID",
+        "Email webhook authentication failed",
+        "The email event signature is missing, invalid or expired.",
+    )
+
+
+async def _rate_limit(request: Request, local_part: str) -> None:
+    limiter = getattr(request.app.state, "api_key_rate_limiter", None)
+    try:
+        if limiter is None:
+            raise RuntimeError("rate limiter not configured")
+        result = await limiter.hit(
+            f"invoice-inbound-email:{local_part}", limit=60, window=timedelta(minutes=1)
+        )
+    except Exception:
+        raise _fail(
+            503,
+            "RATE_LIMITER_UNAVAILABLE",
+            "Service unavailable",
+            "Request rate limiting is unavailable.",
+        ) from None
+    if not result.allowed:
+        raise AuthFailure(
+            status=429,
+            code="RATE_LIMITED",
+            title="Too many requests",
+            detail="This inbound invoice address exceeded its rate limit.",
+            retry_after=result.retry_after,
+        )
 
 
 def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
@@ -89,11 +125,12 @@ def verify_webhook_signature(
     fields: dict[str, str] = {}
     for item in signature.split(","):
         key, separator, value = item.partition("=")
+        key = key.strip()
         if not separator or key in fields:
             return False
-        fields[key.strip()] = value.strip()
+        fields[key] = value
     timestamp, supplied = fields.get("t"), fields.get("v1")
-    if timestamp is None or supplied is None:
+    if timestamp is None or supplied is None or not (timestamp.isascii() and timestamp.isdigit()):
         return False
     try:
         parsed_timestamp = int(timestamp)
@@ -196,13 +233,22 @@ def _sender_domain(sender: str) -> str | None:
     return _canonical_domain(domain)
 
 
+def _aligned(authenticated: str | None, sender_domain: str) -> bool:
+    # Relaxed alignment (DMARC style). _canonical_domain already rejects bare TLDs.
+    # shortcut: no public-suffix list, so a result for "co.uk" would align with "x.co.uk"; the
+    # mail provider only reports domains it actually authenticated.
+    return authenticated is not None and (
+        authenticated == sender_domain or sender_domain.endswith("." + authenticated)
+    )
+
+
 def _sender_is_authenticated(message: InboundEmailMessage) -> bool:
     results = message.authentication_results
     sender_domain = _sender_domain(message.sender)
     if sender_domain is None:
         return False
-    return (results.spf == "pass" and results.spf_domain == sender_domain) or (
-        results.dkim == "pass" and results.dkim_domain == sender_domain
+    return (results.spf == "pass" and _aligned(results.spf_domain, sender_domain)) or (
+        results.dkim == "pass" and _aligned(results.dkim_domain, sender_domain)
     )
 
 
@@ -258,18 +304,28 @@ async def configure_inbound_email(
                     "Email intake not configured",
                     "Configure an inbound address before disabling it.",
                 )
-            row = InvoiceInboundEmail(
-                org_id=organization_id,
-                treasury_id=cast(uuid.UUID, treasury_id),
-                local_part=secrets.token_hex(24),
-                enabled=True,
-                created_by=member.user_id,
+            # A concurrent first-time PUT may win the insert; keep its address and update it.
+            await session.execute(
+                pg_insert(InvoiceInboundEmail)
+                .values(
+                    org_id=organization_id,
+                    treasury_id=cast(uuid.UUID, treasury_id),
+                    local_part=secrets.token_hex(24),
+                    enabled=True,
+                    created_by=member.user_id,
+                )
+                .on_conflict_do_nothing(index_elements=[InvoiceInboundEmail.org_id])
             )
-            session.add(row)
-        else:
-            if treasury_id is not None:
-                row.treasury_id = treasury_id
-            row.enabled = payload.enabled
+            row = await session.scalar(
+                select(InvoiceInboundEmail)
+                .where(InvoiceInboundEmail.org_id == organization_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            assert row is not None
+        if treasury_id is not None:
+            row.treasury_id = treasury_id
+        row.enabled = payload.enabled
 
         await session.flush()
         local_part = row.local_part
@@ -291,6 +347,8 @@ async def configure_inbound_email(
 async def receive_inbound_email(local_part: str, request: Request) -> InboundEmailReceipt:
     domain, secret = _email_settings(request)
     signature = request.headers.get(SIGNATURE_HEADER)
+    if signature is None:  # cheap reject before buffering up to MAX_WEBHOOK_BODY_BYTES
+        raise _invalid_signature()
     content_length = request.headers.get("content-length")
     if content_length is not None:
         try:
@@ -318,12 +376,9 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
             )
     body = bytes(raw_body)
     if not verify_webhook_signature(secret, body, signature):
-        raise _fail(
-            401,
-            "INBOUND_EMAIL_SIGNATURE_INVALID",
-            "Email webhook authentication failed",
-            "The email event signature is missing, invalid or expired.",
-        )
+        raise _invalid_signature()
+    # After the signature check so only the mail provider can create limiter keys.
+    await _rate_limit(request, local_part)
     message = _read_json(body)
 
     factory = _sessions(request)
@@ -364,8 +419,15 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
                 "Invalid email attachment",
                 "An attachment is not valid base64 data.",
             ) from error
+        if not content:
+            raise _fail(
+                422,
+                "INBOUND_EMAIL_ATTACHMENT_INVALID",
+                "Invalid email attachment",
+                "An attachment is empty.",
+            )
         total_bytes += len(content)
-        if not content or total_bytes > MAX_EMAIL_ATTACHMENT_BYTES:
+        if total_bytes > MAX_EMAIL_ATTACHMENT_BYTES:
             raise _fail(
                 413,
                 "INBOUND_EMAIL_ATTACHMENT_TOO_LARGE",
@@ -377,16 +439,20 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
     sender_verified = _sender_is_authenticated(message)
     sender_domain = _sender_domain(message.sender)
     message_digest = hashlib.sha256(message.message_id.encode()).hexdigest()
+    # Inspect every attachment before persisting any, so a bad one cannot leave partial drafts.
+    inspected_documents = [
+        await documents.read_document(UploadFile(file=BytesIO(content), filename=filename))
+        for filename, content in decoded
+    ]
     receipts: list[InboundEmailAttachmentReceipt] = []
-    for index, (filename, content) in enumerate(decoded):
-        upload = UploadFile(file=BytesIO(content), filename=filename)
-        inspected = await documents._read_document(upload)
+    for index, inspected in enumerate(inspected_documents):
         result = await documents.create_invoice_document_draft(
             request=request,
             organization_id=inbound.org_id,
             treasury_id=inbound.treasury_id,
             document=inspected,
-            idempotency_key=f"email-{message_digest}-{index}",
+            idempotency_key=f"email:{inbound.org_id}:{message_digest}:{index}",
+            bind_treasury=False,
             uploaded_by=None,
             initial_flags=(
                 documents.InitialRequestFlag(

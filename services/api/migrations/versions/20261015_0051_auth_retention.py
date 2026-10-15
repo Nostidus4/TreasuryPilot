@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "20261015_0051"
 down_revision: str | None = "20261015_0050"
@@ -39,15 +40,38 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_table(
+        "subject_deletion_controls",
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("deletion_requested_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("legal_hold", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "audit_reference_blocked",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"], name="fk_subject_deletion_controls_user", ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("user_id"),
+    )
     op.drop_constraint("ck_deletion_receipts_record_type", "deletion_receipts", type_="check")
     op.create_check_constraint(
         "ck_deletion_receipts_record_type",
         "deletion_receipts",
-        "record_type IN ('invite', 'session', 'magic_link')",
+        "record_type IN ('invite', 'session', 'magic_link', 'subject')",
     )
 
 
 def downgrade() -> None:
     # Keep the expanded receipt check so prior code can coexist with already-created
-    # session and magic-link receipts after a code rollback.
+    # auth-artifact and subject receipts after a code rollback.
+    op.drop_table("subject_deletion_controls")
     op.drop_table("auth_retention_policies")

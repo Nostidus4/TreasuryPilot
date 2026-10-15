@@ -7,6 +7,7 @@ const fields = [
   ['treasury', 'address'], ['payingWallet', 'address'], ['asset', 'address'], ['payee', 'address'],
   ['amount', 'uint256'], ['earlyAmount', 'uint256'], ['earlyPayBy', 'uint64'],
   ['deadline', 'uint64'], ['termsHash', 'bytes32'], ['expiry', 'uint64'],
+  ['isFiat', 'bool'],
 ].map(([name, type]) => ({ name, type }));
 const types = { PaymentApproval: fields };
 const domain = {
@@ -21,6 +22,7 @@ const base = {
   payee: '0x3333444455556666777788889999aaaabbbbcccc',
   amount: '100000000', earlyAmount: '0', earlyPayBy: 0,
   deadline: 1800000000, termsHash: utils.id('synthetic-terms-1'), expiry: 1801209600,
+  isFiat: false,
 };
 const typeText = `PaymentApproval(${fields.map(f => `${f.type} ${f.name}`).join(',')})`;
 async function generate() {
@@ -29,6 +31,7 @@ async function generate() {
     ['payment-approval.json', {}],
     ['payment-approval-early.json', { earlyAmount: '90000000', earlyPayBy: 1799990000 }],
     ['payment-approval-large.json', { amount: '9007199254740993000000' }],
+    ['payment-approval-fiat.json', { isFiat: true }],
   ]) {
     const message = { ...base, ...changes };
     const signature = await wallet._signTypedData(domain, types, message);
@@ -46,18 +49,18 @@ async function generate() {
   const policyDomain = { ...domain, name: 'TreasuryPilot Policy' };
   const policyFields = [
     ['planHash', 'bytes32'], ['requestId', 'bytes32'], ['stepIds', 'bytes32[]'],
-    ['policyVersion', 'bytes32'], ['executor', 'address'], ['validUntil', 'uint64'],
+    ['stepAmounts', 'uint256[]'], ['policyVersion', 'bytes32'], ['executor', 'address'], ['validUntil', 'uint64'],
     ['nonce', 'uint256'], ['evidenceDigest', 'bytes32'],
   ].map(([name, type]) => ({ name, type }));
   const policyTypes = { PlanAttestation: policyFields };
   const policyTypeText = `PlanAttestation(${policyFields.map(f => `${f.type} ${f.name}`).join(',')})`;
   const policyWallet = new Wallet(utils.hexZeroPad(utils.hexlify(8), 32)); // public fixture
-  for (const [file, stepIds] of [
-    ['plan-attestation.json', [utils.id('synthetic-refill-step'), utils.id('synthetic-pay-step')]],
-    ['plan-attestation-empty.json', []],
+  for (const [file, stepIds, stepAmounts] of [
+    ['plan-attestation.json', [utils.id('synthetic-refill-step'), utils.id('synthetic-pay-step')], ['90000000', '75000000']],
+    ['plan-attestation-empty.json', [], []],
   ]) {
     const message = {
-      planHash: utils.id('synthetic-canonical-plan'), requestId: base.requestId, stepIds,
+      planHash: utils.id('synthetic-canonical-plan'), requestId: base.requestId, stepIds, stepAmounts,
       policyVersion: utils.id('synthetic-policy-v1'), executor: base.payingWallet,
       validUntil: 1800000900, nonce: '340282366920938463463374607431768211455',
       evidenceDigest: utils.id('synthetic-evidence'),

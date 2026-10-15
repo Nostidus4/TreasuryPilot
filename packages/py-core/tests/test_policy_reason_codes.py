@@ -24,6 +24,8 @@ DOCS = Path(__file__).resolve().parents[3] / "docs"
 MODULE_ERRORS = {
     "NotExecutor()",
     "NotActive()",
+    "MandatePaused()",
+    "MandateRevoked()",
     "MandateExpired()",
     "ApprovalInvalid()",
     "ApprovalExpired()",
@@ -101,6 +103,8 @@ def test_decode_revert_maps_every_module_error(error: str) -> None:
     ("error", "code"),
     [
         ("NotActive()", PolicyReasonCode.MANDATE_NOT_ACTIVE),
+        ("MandatePaused()", PolicyReasonCode.MANDATE_PAUSED),
+        ("MandateRevoked()", PolicyReasonCode.MANDATE_REVOKED),
         ("ApprovalInvalid()", PolicyReasonCode.APPROVAL_INVALID),
         ("RefillExceedsNeed()", PolicyReasonCode.REFILL_EXCEEDS_NEED),
         ("AuthorizationExpired()", PolicyReasonCode.BORROW_NOT_AUTHORIZED),

@@ -134,8 +134,8 @@ function Gallery({ id }: { id: string }) {
             value={asset}
             onValueChange={setAsset}
             options={[
-              { value: 'usdc', label: 'USDC (test asset)' },
-              { value: 'eurc', label: 'EURC (test asset)' },
+              { value: 'usdc', label: 'USDC · TEST' },
+              { value: 'eurc', label: 'EURC · TEST' },
             ]}
           />
         </Field>

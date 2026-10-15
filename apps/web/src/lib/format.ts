@@ -80,3 +80,8 @@ export function countdown(until: string, now = Date.now()): string | null {
   if (minutes > 0) return `${minutes}m`;
   return `${Math.ceil(ms / 1000)}s`;
 }
+
+/** "USDC · TEST": the one label for an asset that has no real value. */
+export function assetLabel(asset: { symbol: string; isTest: boolean }): string {
+  return asset.isTest ? `${asset.symbol} · TEST` : asset.symbol;
+}

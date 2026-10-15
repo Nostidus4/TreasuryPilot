@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, cast
@@ -128,14 +129,24 @@ class PayeeRepository(Protocol):
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID, payee_id: uuid.UUID
     ) -> PayeeRecord | None: ...
 
-    async def attach_registration_tx(
+    async def register_with_tx(
         self,
         *,
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         payee_id: uuid.UUID,
-        governance_tx_id: uuid.UUID,
-    ) -> bool: ...
+        create_tx: Callable[[], Awaitable[tuple[uuid.UUID, dict[str, object]]]],
+    ) -> dict[str, object] | None: ...
+
+    async def record_deactivation_requested(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        user_id: uuid.UUID,
+        reason: str,
+        governance_tx_id: object,
+    ) -> None: ...
 
     async def verify_oob(
         self,
@@ -370,14 +381,15 @@ class SqlAlchemyPayeeRepository:
                 return None
             return _payee_record(row, await _latest_screening(session, row.id))
 
-    async def attach_registration_tx(
+    async def register_with_tx(
         self,
         *,
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         payee_id: uuid.UUID,
-        governance_tx_id: uuid.UUID,
-    ) -> bool:
+        create_tx: Callable[[], Awaitable[tuple[uuid.UUID, dict[str, object]]]],
+    ) -> dict[str, object] | None:
+        """Create the registration tx and link it while holding the payee row lock."""
         async with self._sessions() as session, session.begin():
             row = await session.scalar(
                 select(Payee)
@@ -388,13 +400,38 @@ class SqlAlchemyPayeeRepository:
                 )
                 .with_for_update()
             )
-            if row is None or row.status != PayeeStatus.AWAITING_OWNER:
-                return False
-            if row.registration_tx_id not in (None, governance_tx_id):
-                return False
-            row.registration_tx_id = governance_tx_id
+            if (
+                row is None
+                or row.status != PayeeStatus.AWAITING_OWNER
+                or row.registration_tx_id is not None
+            ):
+                return None
+            tx_id, governance_tx = await create_tx()
+            row.registration_tx_id = tx_id
             await session.flush()
-            return True
+            return governance_tx
+
+    async def record_deactivation_requested(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        user_id: uuid.UUID,
+        reason: str,
+        governance_tx_id: object,
+    ) -> None:
+        async with self._sessions() as session, session.begin():
+            await self._audit(
+                session,
+                AuditEvent(
+                    org_id=organization_id,
+                    actor_id=user_id,
+                    action="payee.deactivation_requested",
+                    entity_type="payee",
+                    entity_id=payee_id,
+                    data={"reason": reason, "governanceTxId": str(governance_tx_id)},
+                ),
+            )
 
     async def verify_oob(
         self,
@@ -900,33 +937,34 @@ async def build_registration_tx(
             title="Treasury module unavailable",
             detail="The treasury module address is invalid.",
         ) from None
-    governance_tx = await _build_payee_governance_tx(
-        request,
-        organization_id=member.organization_id,
-        treasury_id=treasury_id,
-        user_id=member.user_id,
-        purpose=GovernanceTxPurpose.PAYEE_ADD,
-        call=call,
-        payee_id=payee_id,
-    )
-    tx_id = governance_tx.get("id")
-    if not isinstance(tx_id, uuid.UUID):
+
+    async def create_tx() -> tuple[uuid.UUID, dict[str, object]]:
+        created = await _build_payee_governance_tx(
+            request,
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            user_id=member.user_id,
+            purpose=GovernanceTxPurpose.PAYEE_ADD,
+            call=call,
+            payee_id=payee_id,
+        )
         try:
-            tx_id = uuid.UUID(str(tx_id))
-        except (ValueError, TypeError, AttributeError):
+            return uuid.UUID(str(created.get("id"))), created
+        except ValueError:
             raise AuthFailure(
                 status=503,
                 code="GOVERNANCE_UNAVAILABLE",
                 title="Governance unavailable",
                 detail="The governance service returned an invalid transaction identifier.",
             ) from None
-    linked = await _repository(request).attach_registration_tx(
+
+    governance_tx = await _repository(request).register_with_tx(
         organization_id=member.organization_id,
         treasury_id=treasury_id,
         payee_id=payee_id,
-        governance_tx_id=tx_id,
+        create_tx=create_tx,
     )
-    if not linked:
+    if governance_tx is None:
         raise AuthFailure(
             status=409,
             code="PAYEE_CHANGED",
@@ -991,6 +1029,13 @@ async def build_deactivation_tx(
         call=call,
         payee_id=payee_id,
     )
+    await _repository(request).record_deactivation_requested(
+        organization_id=member.organization_id,
+        payee_id=payee_id,
+        user_id=member.user_id,
+        reason=payload.reason,
+        governance_tx_id=governance_tx.get("id"),
+    )
     return {"governanceTx": governance_tx}
 
 
@@ -1048,6 +1093,23 @@ async def replace_payee_address(
             title="Address invalid",
             detail="A treasury wallet cannot be registered as a payee.",
         )
+    # Fail before proposing so a rejected replacement leaves no stray payee row.
+    if context.module_address is None:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="Deploy and activate the treasury module before replacing payees.",
+        )
+    try:
+        call = build_deactivate_payee_call(context.module_address, payee=old.address)
+    except ValueError:
+        raise AuthFailure(
+            status=409,
+            code="MODULE_NOT_READY",
+            title="Treasury module unavailable",
+            detail="The treasury module address is invalid.",
+        ) from None
     try:
         new_payee = await repository.propose(
             organization_id=member.organization_id,
@@ -1097,14 +1159,6 @@ async def replace_payee_address(
             detail="The replacement address is blocked until screening succeeds.",
             extensions={"payeeId": str(new_payee.id), "status": screened.status},
         )
-    if context.module_address is None:
-        raise AuthFailure(
-            status=409,
-            code="MODULE_NOT_READY",
-            title="Treasury module unavailable",
-            detail="Deploy and activate the treasury module before replacing payees.",
-        )
-    call = build_deactivate_payee_call(context.module_address, payee=old.address)
     deactivation_tx = await _build_payee_governance_tx(
         request,
         organization_id=member.organization_id,
@@ -1113,6 +1167,13 @@ async def replace_payee_address(
         purpose=GovernanceTxPurpose.PAYEE_DEACTIVATE,
         call=call,
         payee_id=payee_id,
+    )
+    await repository.record_deactivation_requested(
+        organization_id=member.organization_id,
+        payee_id=payee_id,
+        user_id=member.user_id,
+        reason=payload.reason,
+        governance_tx_id=deactivation_tx.get("id"),
     )
     return {
         "payee": PayeeView.from_record(screened),

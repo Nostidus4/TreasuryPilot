@@ -35,7 +35,7 @@ import type {
   MandateVersion,
   TreasuryState,
 } from '@/lib/api/types';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { assetLabel, formatDate, formatDateTime } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { formatUnits, parseUnits } from '@/lib/money';
 import { mandateStatus } from '@/lib/status';
@@ -413,7 +413,7 @@ function Editor({
                       checked={enabled}
                       onChange={(event) => toggleAssetPolicy(asset.id, event.target.checked)}
                     />
-                    {asset.isTest ? `${asset.symbol} (${t('test asset')})` : asset.symbol}
+                    {assetLabel(asset)}
                   </label>
                   {enabled && (
                     <div className="grid gap-4">
