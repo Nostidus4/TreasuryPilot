@@ -1332,6 +1332,17 @@
             ],
             "title": "Easuid"
           },
+          "easUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Easurl"
+          },
           "fixtureLabels": {
             "items": {
               "type": "string"
