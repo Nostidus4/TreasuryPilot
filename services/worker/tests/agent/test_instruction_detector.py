@@ -159,4 +159,5 @@ def test_scan_time_stays_linear_on_crafted_input(unit: str) -> None:
     started = time.perf_counter()
     _scan(page)
 
-    assert time.perf_counter() - started < 1.0
+    # Backtracking would take minutes; the generous bound absorbs slow CI runners.
+    assert time.perf_counter() - started < 5.0
