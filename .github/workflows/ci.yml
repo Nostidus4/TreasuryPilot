@@ -193,6 +193,7 @@ jobs:
           services/worker/tests/test_exception_draft_integration.py
           services/api/tests/test_usage_metering.py
           services/api/tests/test_reconciliation_export_integration.py
+          services/api/tests/test_exception_grant_review_close.py
           -q
 
   quality:
