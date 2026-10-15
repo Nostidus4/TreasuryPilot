@@ -51,7 +51,6 @@ _TESTS = Path(__file__).parent
 _seq = _load("crash_seq_fixtures", _TESTS / "executor" / "test_sequencer_integration.py")
 _trk = _load("crash_trk_fixtures", _TESTS / "test_tracker_integration.py")
 _sup = _load("crash_support", _TESTS / "crash_support.py")
-anvil_url = _trk.anvil_url  # fixture: TP_TEST_ANVIL_URL or a local anvil
 
 SEED = int(os.environ.get("TP_CRASH_SEED", "169"))
 POINTS = (
