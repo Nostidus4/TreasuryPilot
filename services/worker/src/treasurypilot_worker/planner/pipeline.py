@@ -210,6 +210,7 @@ async def _move_request(
 async def _fee_assessment(
     connection: asyncpg.Connection,
     treasury_id: uuid.UUID,
+    plan_id: uuid.UUID,
     estimate: int,
     deadline: int,
     now: datetime,
@@ -221,6 +222,17 @@ async def _fee_assessment(
     )
     if policy is None:
         return FeeDecision.AWAITING_FEE_ACCEPTANCE, "FEE_POLICY_MISSING"
+    # "Pay now" (M03 8.7): an Owner-accepted cap for an earlier plan of this request is keyed by
+    # that plan, but the replan has a new id, so it is found through the request. Within the cap
+    # the plan proceeds past the threshold and the budget; above it the hold repeats.
+    cap = await connection.fetchval(
+        "SELECT f.accepted_cap_wei FROM fee_acceptances f JOIN plans p ON p.id = f.plan_id "
+        "WHERE p.request_id = (SELECT request_id FROM plans WHERE id = $1) "
+        "ORDER BY f.at DESC LIMIT 1",
+        plan_id,
+    )
+    if cap is not None and estimate <= int(cap):
+        return FeeDecision.PROCEED, "FEE_ACCEPTED"
     spent = await connection.fetchval(
         "SELECT coalesce(sum(fee_wei), 0) FROM gas_ledger "
         "WHERE treasury_id = $1 AND day = $2 AND payer = 'EXECUTOR'",
@@ -456,7 +468,7 @@ async def _finish(
             estimate = await deps.estimate_fee(treasury_id, plan)
             async with pool.acquire() as connection:
                 fee, fee_code = await _fee_assessment(
-                    connection, treasury_id, estimate, request.deadline, now
+                    connection, treasury_id, plan_id, estimate, request.deadline, now
                 )
             if fee is FeeDecision.AWAITING_FEE_ACCEPTANCE:
                 status = "AwaitingFeeAcceptance"

@@ -37,7 +37,12 @@ from treasurypilot_worker.executor.outbox import (
     TreasuryPaused,
     execute_step,
 )
-from treasurypilot_worker.executor.plan_loader import load_plan, plan_run, simulation_context
+from treasurypilot_worker.executor.plan_loader import (
+    load_plan,
+    plan_fees,
+    plan_run,
+    simulation_context,
+)
 from treasurypilot_worker.executor.sequencer import PlanRun, sequence_plan
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
 from treasurypilot_worker.invoices.extraction import extract_invoice_document
@@ -769,20 +774,6 @@ def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
         raise RetryableTaskError(f"signer unavailable: {error}") from error
 
 
-class PlanNotExecutable(Exception):
-    """The plan cannot be turned into signer requests yet; nothing was validated or sent."""
-
-
-def plan_fees() -> dict[str, int]:
-    """The signer's ``fees`` body (maxFeePerGas, maxPriorityFeePerGas, feeCapWei).
-
-    shortcut: no fee estimation exists in the worker yet (the accepted cap lives in the API's
-    fee_acceptances); until EXE-005 supplies it the driver refuses to run rather than guess.
-    """
-
-    raise PlanNotExecutable("fee estimation is not wired")
-
-
 _PLAN_STATUS = {
     "Waiting": "Executing",
     "Completed": "Completed",
@@ -806,12 +797,12 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
             inputs = await load_inputs(
                 pool, loaded.plan, loaded.treasury_id, executor=loaded.executor
             )
-            fees = plan_fees()
-            run: PlanRun = plan_run(loaded, inputs, fees)
             urls = await pool.fetchval(
                 "SELECT rpc_urls FROM chains WHERE chain_id = $1", loaded.plan.chain_id
             )
             rpc = build_rpc_client(decode_rpc_urls(urls))
+            fees = await plan_fees(pool, rpc, loaded.treasury_id, plan_id)
+            run: PlanRun = plan_run(loaded, inputs, fees)
             gate = PlanGate.for_treasury(
                 pool,
                 loaded.treasury_id,
@@ -854,9 +845,6 @@ def sequence_plan_task(plan_id: str) -> dict[str, Any]:
         raise RuntimeError("DATABASE_URL, TP_SIGNER_URL and TP_SIGNER_SHARED_SECRET are required")
     try:
         return asyncio.run(_sequence_plan(uuid.UUID(plan_id)))
-    except PlanNotExecutable as error:
-        logger.warning("plan %s not executable: %s", plan_id, error)
-        return {"status": "NotExecutable"}
     except SignerUnavailable as error:
         # The same step_id is replayed on retry, so a second attempt cannot double-pay.
         raise RetryableTaskError(f"signer unavailable: {error}") from error

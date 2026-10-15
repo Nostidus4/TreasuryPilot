@@ -10,9 +10,11 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
 from treasurypilot_core.eip712 import PAY, REFILL, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
+from treasurypilot_worker.chain.rpc import RpcClient
 from treasurypilot_worker.executor.outbox import StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.executor.simulation import SimulationContext, build_calldata
@@ -118,8 +120,40 @@ def simulation_context(loaded: LoadedPlan, inputs: ContextInputs) -> SimulationC
     )
 
 
+async def plan_fees(
+    pool: asyncpg.Pool, rpc: RpcClient, treasury_id: UUID, plan_id: UUID
+) -> dict[str, int]:
+    """The signer's ``fees`` body: the fee policy's multiplier on ``eth_gasPrice`` plus the cap.
+
+    The cap is the Owner-accepted cap (M03 8.7) of the plan's request, which a replan after
+    ACCEPT_FEE inherits, else the plan's own estimate. The signer refuses any step that exceeds it.
+    """
+
+    row = await pool.fetchrow(
+        "SELECT p.fee_estimate_wei, (SELECT f.accepted_cap_wei FROM fee_acceptances f "
+        " JOIN plans q ON q.id = f.plan_id WHERE q.request_id = p.request_id "
+        " ORDER BY f.at DESC LIMIT 1) AS accepted_cap, "
+        "(SELECT max_fee_multiplier_bps FROM treasury_fee_policies WHERE treasury_id = $2 "
+        " AND accepted_at IS NOT NULL AND superseded_at IS NULL) AS multiplier "
+        "FROM plans p WHERE p.id = $1",
+        plan_id,
+        treasury_id,
+    )
+    cap = row["accepted_cap"] if row["accepted_cap"] is not None else row["fee_estimate_wei"]
+    if cap is None:
+        raise ValueError("plan has no fee estimate")
+    multiplier = row["multiplier"] or PRESETS[FeePreset.NORMAL].max_fee_multiplier_bps
+    max_fee = int(await rpc.call("eth_gasPrice", []), 16) * multiplier // 10_000
+    tip = int(await rpc.call("eth_maxPriorityFeePerGas", []), 16)
+    return {
+        "maxFeePerGas": max_fee,
+        "maxPriorityFeePerGas": min(tip, max_fee),
+        "feeCapWei": int(cap),
+    }
+
+
 def plan_run(loaded: LoadedPlan, inputs: ContextInputs, fees: dict[str, int]) -> PlanRun:
-    """Signer requests for every step; ``fees`` is the signer's Fees body (EXE-005 policy)."""
+    """Signer requests for every step; ``fees`` comes from `plan_fees`."""
 
     sim = simulation_context(loaded, inputs)
     body = loaded.plan.message()

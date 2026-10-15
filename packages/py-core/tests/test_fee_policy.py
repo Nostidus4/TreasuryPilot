@@ -169,8 +169,8 @@ def test_spec_8_7_example_end_to_end() -> None:
     """Mandate §8.7 (NORMAL): avg 0.0004 ETH, 10 plans/day, spike to 0.002 ETH."""
     eth = 10**18
     proposal = propose_fee_policy(
-        plan_fees_wei=[4 * eth // 10_000] * 70,
-        plans_last_7d=70,
+        plan_fees_wei=[4 * eth // 10_000] * (7 * 10),
+        plans_last_7d=7 * 10,  # 10 plans/day over 7 days
         base_fee_per_gas_wei=30_000_000_000,
         priority_fees_wei=[1],
     )

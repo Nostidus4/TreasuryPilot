@@ -27,7 +27,8 @@ WHERE pr.treasury_id = $1 AND pr.status IN ('Approved', 'Scheduled')
   AND EXISTS (SELECT 1 FROM approvals a WHERE a.request_id = pr.id
               AND a.revision = pr.current_revision AND a.status = 'Valid')
   AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.request_id = pr.id
-                  AND (p.status IN ({_OPEN}) OR p.created_at > $2))
+                  AND (p.status IN ({_OPEN}) OR (p.created_at > $2 AND NOT EXISTS (
+                       SELECT 1 FROM fee_acceptances f WHERE f.plan_id = p.id))))
 ORDER BY pr.due_at, pr.created_at, pr.id
 LIMIT 100
 """
@@ -114,13 +115,15 @@ class DbScheduleProvider:
         self, connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
     ) -> RequestSelection:
         # A plan waiting for a fee decision is stale once the policy was accepted after it was
-        # made: free its request (it would otherwise stay open and block planning forever).
+        # made, or once its fee was accepted (ACCEPT_FEE): free its request (it would otherwise
+        # stay open and block planning forever). The replan inherits the cap via its request.
         await connection.execute(
             "UPDATE plans SET status = 'Expired', updated_at = now() "
-            "WHERE treasury_id = $1 AND status = 'AwaitingFeeAcceptance' AND EXISTS ("
+            "WHERE treasury_id = $1 AND status = 'AwaitingFeeAcceptance' AND ("
+            "EXISTS (SELECT 1 FROM fee_acceptances a WHERE a.plan_id = plans.id) OR EXISTS ("
             "SELECT 1 FROM treasury_fee_policies f WHERE f.treasury_id = plans.treasury_id "
             "AND f.accepted_at IS NOT NULL AND f.superseded_at IS NULL "
-            "AND f.accepted_at > plans.created_at)",
+            "AND f.accepted_at > plans.created_at))",
             treasury_id,
         )
         rows = await connection.fetch(_CANDIDATES, treasury_id, now - REPLAN_COOLDOWN)
