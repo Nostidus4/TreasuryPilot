@@ -105,3 +105,20 @@ def test_journal_cells_are_neutralized() -> None:
     line = ExportLine(**{**_line().__dict__, "asset": "=SUM(A1)"})
     rows = _rows(_render([line], "journal"))
     assert all(r[7] == "'=SUM(A1)" for r in rows[1:])
+
+
+def test_mapping_override_and_interest_lines_skip_totals_check() -> None:
+    line = _line()
+    interest = ExportLine(
+        day=date(2026, 10, 31), request_id=None, vendor="", invoice_no="", classification="SUPPLY_INTEREST",
+        amount=5, decimals=6, asset="USDC", tx_hash=b"", fee_wei=None, status="Computed", matched_by="",
+    )  # fmt: skip
+    mapping = {("EXTERNAL_EXPENSE", "CREDIT"): ("2000", "Bank")}
+    rows = _rows(render([line], "journal", _exp(line), mapping, [interest]))[1:]
+    assert [(r[2], r[3], r[5], r[6]) for r in rows] == [
+        ("EXTERNAL_EXPENSE", "6000", "1.234500", "0"),
+        ("EXTERNAL_EXPENSE", "2000", "0", "1.234500"),
+        ("SUPPLY_INTEREST", "1300", "0.000005", "0"),
+        ("SUPPLY_INTEREST", "4100", "0", "0.000005"),
+    ]
+    assert rows[2][8] == ""

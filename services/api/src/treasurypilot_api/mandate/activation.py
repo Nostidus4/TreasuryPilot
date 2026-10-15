@@ -114,6 +114,25 @@ def build_mandate_calls(
                 ],
                 [values],
             )
+        elif method == "setBands":
+            raw_bands = args.get("bands")
+            if not isinstance(raw_bands, list) or not raw_bands:
+                raise ValueError("approval bands are malformed")
+            bands = [
+                (
+                    _integer(band.get("upTo"), "band upTo", 128),
+                    _integer(band.get("k"), "band k", 32),
+                )
+                for band in raw_bands
+                if isinstance(band, dict)
+            ]
+            if len(bands) != len(raw_bands):
+                raise ValueError("approval bands are malformed")
+            data = _selector("setBands((uint128,uint32)[])") + encode(
+                ["(uint128,uint32)[]"], [bands]
+            )
+            encoded.append(GovernanceCall(_address(args.get("executor")), 0, data))
+            continue
         elif method == "setApprovers":
             added, removed = args.get("add"), args.get("remove")
             if not isinstance(added, list) or not isinstance(removed, list):
