@@ -39,3 +39,23 @@ def append_domain_event(
     )
     session.add(event)
     return event
+
+
+def append_execution_cycle_requested(
+    session: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    treasury_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+) -> DomainEvent:
+    """Add a durable execution trigger to the same transaction as its source change."""
+
+    return append_domain_event(
+        session,
+        organization_id=organization_id,
+        event_type="ExecutionCycleRequested",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        treasury_id=treasury_id,
+    )

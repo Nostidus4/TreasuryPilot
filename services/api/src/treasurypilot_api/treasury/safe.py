@@ -6,9 +6,9 @@ so an address is accepted only if it is a Safe v1.4.1 proxy: non-empty code, a
 ``VERSION() == "1.4.1"``. EOAs and arbitrary contracts are ``NOT_A_SAFE``.
 
 shortcut: detection uses the Safe ABI through plain JSON-RPC instead of safe-eth-py. The
-library pins web3 8 and eth-account 0.13, which cannot resolve in this workspace (the API
-and worker share web3 7). The checks here are the same ones the library performs and need no
-extra dependency.
+library pins web3 8 and eth-account 0.13, which cannot resolve in this workspace (siwe needs
+eth-account <0.14, treasurypilot-core needs >=0.14, the worker needs web3 7). The checks
+here are the same ones the library performs and need no extra dependency.
 """
 
 from __future__ import annotations

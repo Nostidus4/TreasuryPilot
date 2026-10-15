@@ -4,10 +4,6 @@ FROM python:3.12.13-slim-bookworm
 COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y xmlsec1 \
-    && rm -rf /var/lib/apt/lists/*
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"

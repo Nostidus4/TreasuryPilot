@@ -19,9 +19,9 @@ from treasurypilot_api.identity.scim import (
     ScimGroupInvalidMember,
     ScimGroupNotAllowed,
     ScimGroupRecord,
-    ScimUserConflict,
-    ScimUserNotProvisionable,
     ScimUserRecord,
+    _group_patch_members,
+    _GroupPatch,
 )
 from treasurypilot_api.main import create_app
 
@@ -37,7 +37,6 @@ class MemoryScimRepository:
             id=USER_ID,
             user_name="person@example.com",
             display_name="Person",
-            external_id=None,
             active=True,
             created_at=NOW,
             last_modified=NOW,
@@ -45,31 +44,11 @@ class MemoryScimRepository:
         self.list_arguments: dict[str, object] | None = None
         self.deactivation_arguments: dict[str, object] | None = None
         self.deactivation_error: Exception | None = None
+        self.organization_present = True
         self.groups: dict[uuid.UUID, ScimGroupRecord] = {}
 
-    async def create_user(
-        self,
-        *,
-        organization_id: uuid.UUID,
-        user_name: str,
-        display_name: str | None,
-        external_id: str | None,
-        active: bool,
-        now: datetime,
-    ) -> ScimUserRecord:
-        if user_name != "verified@example.com":
-            raise ScimUserNotProvisionable
-        if external_id is not None and external_id == self.user.external_id:
-            raise ScimUserConflict
-        return ScimUserRecord(
-            id=uuid.uuid4(),
-            user_name=user_name,
-            display_name=display_name,
-            external_id=external_id,
-            active=active,
-            created_at=now,
-            last_modified=now,
-        )
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool:
+        return self.organization_present
 
     async def list_users(
         self,
@@ -95,35 +74,19 @@ class MemoryScimRepository:
     ) -> ScimUserRecord | None:
         return self.user if user_id == self.user.id else None
 
-    async def patch_user(
-        self,
-        *,
-        organization_id: uuid.UUID,
-        user_id: uuid.UUID,
-        active: bool | None,
-        display_name: str | None,
-        display_name_set: bool,
-        external_id: str | None,
-        external_id_set: bool,
-        now: datetime,
+    async def deactivate_user(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID, now: datetime
     ) -> ScimUserRecord | None:
         self.deactivation_arguments = {
             "organization_id": organization_id,
             "user_id": user_id,
-            "active": active,
             "now": now,
         }
-        if active is False and self.deactivation_error is not None:
+        if self.deactivation_error is not None:
             raise self.deactivation_error
         if user_id != self.user.id:
             return None
-        self.user = replace(
-            self.user,
-            active=self.user.active if active is None else active,
-            display_name=display_name if display_name_set else self.user.display_name,
-            external_id=external_id if external_id_set else self.user.external_id,
-            last_modified=now,
-        )
+        self.user = replace(self.user, active=False, last_modified=now)
         return self.user
 
     async def list_groups(
@@ -214,7 +177,6 @@ class MemoryScimRepository:
         *,
         organization_id: uuid.UUID | None,
         role_map: Mapping[str, list[str]],
-        allow_empty: bool = False,
         now: datetime,
     ) -> None:
         return None
@@ -274,11 +236,6 @@ def test_scim_configuration_requires_a_long_paired_token_and_organization() -> N
         Settings(
             environment="local",
             scim_group_role_map='{"Ops": ["Operator"]}',
-        )
-    with pytest.raises(ValidationError):
-        Settings(
-            environment="local",
-            scim_clear_groups_with_empty_allowlist=True,
         )
 
 
@@ -340,73 +297,18 @@ def test_scim_reads_resources_only_in_configured_tenant() -> None:
         assert client.get(f"/scim/v2/Users/{uuid.uuid4()}", headers=_auth()).status_code == 404
 
 
-def test_scim_user_create_requires_verified_existing_identity() -> None:
+def test_scim_patch_only_allows_deactivation_and_is_idempotent() -> None:
     repository = MemoryScimRepository()
     with _client(repository) as client:
-        invalid = client.post(
-            "/scim/v2/Users",
-            json={
-                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-                "userName": "new@example.com",
-            },
-            headers=_auth(),
-        )
-        assert invalid.status_code == 400
-
-        created = client.post(
-            "/scim/v2/Users",
-            json={
-                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-                "userName": "Verified@Example.com",
-                "displayName": "Verified Person",
-                "externalId": "idp-123",
-                "active": True,
-            },
-            headers=_auth(),
-        )
-        assert created.status_code == 201
-        assert created.headers["location"].endswith(f"/scim/v2/Users/{created.json()['id']}")
-        assert created.json()["userName"] == "verified@example.com"
-        assert created.json()["displayName"] == "Verified Person"
-        assert created.json()["externalId"] == "idp-123"
-
-
-def test_scim_patch_updates_profile_and_supports_deactivation_and_reactivation() -> None:
-    repository = MemoryScimRepository()
-    with _client(repository) as client:
-        unsupported = client.patch(
-            f"/scim/v2/Users/{USER_ID}",
-            json={
-                "schemas": [SCIM_PATCH_SCHEMA],
-                "Operations": [{"op": "replace", "path": "userName", "value": "other@example.com"}],
-            },
-            headers=_auth(),
-        )
-        assert unsupported.status_code == 400
+        rejected = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(True), headers=_auth())
+        assert rejected.status_code == 400
+        assert repository.deactivation_arguments is None
 
         response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(False), headers=_auth())
         assert response.status_code == 200
         assert response.json()["active"] is False
         assert repository.deactivation_arguments is not None
         assert repository.deactivation_arguments["organization_id"] == ORG_ID
-
-        reactivated = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(True), headers=_auth())
-        assert reactivated.status_code == 200
-        assert reactivated.json()["active"] is True
-
-        updated = client.patch(
-            f"/scim/v2/Users/{USER_ID}",
-            json={
-                "schemas": [SCIM_PATCH_SCHEMA],
-                "Operations": [
-                    {"op": "replace", "path": "displayName", "value": "New Person"},
-                    {"op": "replace", "path": "externalId", "value": "idp-456"},
-                ],
-            },
-            headers=_auth(),
-        )
-        assert updated.json()["displayName"] == "New Person"
-        assert updated.json()["externalId"] == "idp-456"
 
         repeated = client.patch(
             f"/scim/v2/Users/{USER_ID}",
@@ -437,6 +339,89 @@ def test_scim_cannot_deprovision_the_last_privileged_member(
     assert response.status_code == 409
     assert response.json()["scimType"] == "mutability"
     assert detail in response.json()["detail"]
+
+
+@pytest.mark.parametrize("value", ["False", "false", " FALSE "])
+def test_scim_patch_accepts_entra_string_false(value: str) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(value), headers=_auth())
+        assert response.status_code == 200
+        assert response.json()["active"] is False
+        pathless = client.patch(
+            f"/scim/v2/Users/{USER_ID}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "Replace", "value": {"active": value}}],
+            },
+            headers=_auth(),
+        )
+        assert pathless.status_code == 200
+
+
+@pytest.mark.parametrize("value", ["True", "true", "", "no", 0, None])
+def test_scim_patch_still_rejects_other_active_values(value: object) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(value), headers=_auth())
+    assert response.status_code == 400
+    assert repository.deactivation_arguments is None
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"startIndex": "1_0"},
+        {"startIndex": " 1"},
+        {"startIndex": "-1"},
+        {"startIndex": "99999999999999999999"},
+        {"startIndex": str(2**31)},
+        {"startIndex": "0"},
+        {"count": "1_0"},
+        {"count": "101"},
+        {"count": "99999999999999999999"},
+        {"count": "\u0661"},
+    ],
+)
+def test_scim_rejects_malformed_or_oversized_pagination(params: dict[str, str]) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.get("/scim/v2/Users", params=params, headers=_auth())
+    assert response.status_code == 400
+    assert response.json()["scimType"] == "invalidValue"
+    assert repository.list_arguments is None
+
+
+def test_scim_accepts_maximum_start_index() -> None:
+    with _client(MemoryScimRepository()) as client:
+        response = client.get(
+            "/scim/v2/Users", params={"startIndex": str(2**31 - 1)}, headers=_auth()
+        )
+    assert response.status_code == 200
+
+
+def test_scim_rate_limits_repeated_bad_tokens(caplog: pytest.LogCaptureFixture) -> None:
+    bad = {"Authorization": "Bearer wrong-token-wrong-token-wrong-token"}
+    with _client(MemoryScimRepository()) as client:
+        statuses = [client.get("/scim/v2/Users", headers=bad).status_code for _ in range(11)]
+        assert statuses == [401] * 10 + [429]
+        limited = client.get("/scim/v2/Users", headers=bad)
+        assert int(limited.headers["retry-after"]) >= 1
+        assert limited.json()["status"] == "429"
+    assert "wrong-token" not in caplog.text
+    assert "invalid bearer token" in caplog.text
+
+
+def test_scim_reports_a_missing_configured_organization(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repository = MemoryScimRepository()
+    repository.organization_present = False
+    with _client(repository) as client:
+        response = client.get("/scim/v2/Users", headers=_auth())
+    assert response.status_code == 503
+    assert "organization does not exist" in response.json()["detail"]
+    assert str(ORG_ID) in caplog.text
 
 
 def test_scim_groups_are_allowlisted_tenant_scoped_and_members_can_be_updated() -> None:
@@ -542,3 +527,23 @@ def test_scim_group_patch_rejects_nested_and_role_changes() -> None:
 def test_scim_groups_are_disabled_without_an_allowlist() -> None:
     with _client(MemoryScimRepository()) as client:
         assert client.get("/scim/v2/Groups", headers=_auth()).status_code == 404
+
+
+def test_group_patch_replace_swaps_members_and_checks_display_name() -> None:
+    first, second = sorted((uuid.uuid4(), uuid.uuid4()), key=str)
+
+    def patch(*operations: dict[str, object]) -> object:
+        return _group_patch_members(
+            {"schemas": [SCIM_PATCH_SCHEMA], "Operations": list(operations)}
+        )
+
+    members = patch(
+        {"op": "Replace", "path": "members", "value": [{"value": str(first)}]},
+        {"op": "Add", "path": "members", "value": [{"value": str(second)}]},
+    )
+    assert members == _GroupPatch((first, second), None, None)
+    assert patch({"op": "replace", "path": "displayName", "value": "Ops"}) == _GroupPatch(
+        (), (), "Ops"
+    )
+    assert patch({"op": "replace", "path": "displayName", "value": " "}) is None
+    assert patch({"op": "add", "path": "displayName", "value": "Ops"}) is None

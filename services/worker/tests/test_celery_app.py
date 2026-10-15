@@ -69,6 +69,19 @@ def test_domain_event_publisher_is_scheduled_every_second_on_core_queue() -> Non
     assert entry["options"] == {"queue": "core", "expires": 2}
 
 
+def test_execution_cycles_use_fifteen_minute_and_sixty_second_cadences() -> None:
+    schedule = app.conf.beat_schedule["execution-scheduling-cycle"]
+    safety = app.conf.beat_schedule["execution-safety-cycle"]
+    activation = app.conf.beat_schedule["activate-due-payees"]
+
+    assert schedule["task"] == "treasurypilot.execution.scheduling_cycle"
+    assert schedule["schedule"] == timedelta(minutes=15)
+    assert safety["task"] == "treasurypilot.execution.safety_cycle"
+    assert safety["schedule"] == timedelta(seconds=60)
+    assert activation["task"] == "treasurypilot.execution.activate_due_payees"
+    assert activation["schedule"] == timedelta(seconds=1)
+
+
 def test_recurring_draft_generation_is_scheduled_shortly_after_midnight_utc() -> None:
     entry = app.conf.beat_schedule["generate-recurring-payment-drafts"]
 

@@ -165,7 +165,7 @@ class TravelRuleExchange(Base):
     __tablename__ = "travel_rule_exchanges"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'ERROR')",
+            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'NOT_REQUIRED', 'ERROR')",
             name="ck_travel_rule_exchanges_status",
         ),
         CheckConstraint("amount > 0", name="ck_travel_rule_exchanges_amount"),
@@ -196,6 +196,8 @@ class TravelRuleExchange(Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    # Effective threshold at decision time; recorded for NOT_REQUIRED cases as evidence.
+    threshold: Mapped[int | None] = mapped_column(Numeric(78, 0))
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     origin_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
     beneficiary_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)

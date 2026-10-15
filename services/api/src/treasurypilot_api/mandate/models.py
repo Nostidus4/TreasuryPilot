@@ -21,6 +21,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
     desc,
     func,
@@ -32,8 +33,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from treasurypilot_api.database import Base, RowVersionedMixin, VersionedMixin
 from treasurypilot_core.ids import uuid7
 
-# ADR-014: money is integer base units, read back as int.
-Money = Numeric(78, 0, asdecimal=False)
+
+class _Money(TypeDecorator[int]):
+    """ADR-014: integer base units. ``asdecimal=False`` would round-trip through float."""
+
+    impl = Numeric(78, 0)
+    cache_ok = True
+
+    def process_result_value(self, value: Any, dialect: Any) -> int | None:
+        return None if value is None else int(value)
+
+
+Money = _Money()
 
 
 class MandateVersionStatus(StrEnum):
@@ -610,7 +621,8 @@ class TreasuryFeePolicy(RowVersionedMixin, Base):
         ),
         CheckConstraint("daily_budget_wei >= 0", name="ck_treasury_fee_policies_daily_budget"),
         CheckConstraint(
-            "reference_eth_price > 0", name="ck_treasury_fee_policies_reference_eth_price"
+            "reference_eth_price IS NULL OR reference_eth_price > 0",
+            name="ck_treasury_fee_policies_reference_eth_price",
         ),
         CheckConstraint(
             "(accepted_by IS NULL) = (accepted_at IS NULL)",
@@ -629,6 +641,15 @@ class TreasuryFeePolicy(RowVersionedMixin, Base):
             unique=True,
             postgresql_where=text("accepted_at IS NOT NULL AND superseded_at IS NULL"),
         ),
+        Index(
+            "uq_treasury_fee_policies_pending",
+            "treasury_id",
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND superseded_at IS NULL"),
+        ),
+        CheckConstraint("avg_plan_fee_7d_wei >= 0", name="ck_treasury_fee_policies_avg_plan_fee"),
+        CheckConstraint("p90_plan_fee_7d_wei >= 0", name="ck_treasury_fee_policies_p90_plan_fee"),
+        CheckConstraint("plans_per_day_7d >= 0", name="ck_treasury_fee_policies_plans_per_day"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -642,7 +663,10 @@ class TreasuryFeePolicy(RowVersionedMixin, Base):
     per_plan_threshold_wei: Mapped[int] = mapped_column(Money, nullable=False)
     daily_budget_wei: Mapped[int] = mapped_column(Money, nullable=False)
     # Asset base units per 1 ETH; only for comparing fees with payment values.
-    reference_eth_price: Mapped[int] = mapped_column(Money, nullable=False)
+    reference_eth_price: Mapped[int | None] = mapped_column(Money)
+    avg_plan_fee_7d_wei: Mapped[int] = mapped_column(Money, nullable=False, default=0)
+    p90_plan_fee_7d_wei: Mapped[int] = mapped_column(Money, nullable=False, default=0)
+    plans_per_day_7d: Mapped[float] = mapped_column(Numeric(12, 3), nullable=False, default=0)
     proposed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -661,6 +685,7 @@ class FeeAcceptance(Base):
         CheckConstraint(
             "accepted_cap_wei >= estimated_fee_wei", name="ck_fee_acceptances_accepted_cap"
         ),
+        UniqueConstraint("plan_id", name="uq_fee_acceptances_plan"),
         Index("ix_fee_acceptances_org_plan", "org_id", "plan_id"),
     )
 

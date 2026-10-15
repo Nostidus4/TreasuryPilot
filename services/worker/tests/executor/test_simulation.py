@@ -12,14 +12,17 @@ import time
 import urllib.request
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from eth_abi import decode
 
 from treasurypilot_core.domain.models import BaseUnits
+from treasurypilot_core.eip712 import PAYMENT_APPROVAL_TYPE, PLAN_ATTESTATION_TYPE
 from treasurypilot_core.policy import (
     REASON_CODES,
     Action,
@@ -59,11 +62,13 @@ APPROVAL = {
     "deadline": 2_000_000_000,
     "termsHash": "0x" + "04" * 32,
     "expiry": 2_000_000_000,
+    "isFiat": False,
 }
 ATTESTATION = {
     "planHash": "0x" + "05" * 32,
     "requestId": "0x" + "01" * 32,
     "stepIds": ["0x" + STEP_ID.hex()],
+    "stepAmounts": [90],
     "policyVersion": "0x" + "06" * 32,
     "executor": EXECUTOR,
     "validUntil": 2_000_000_000,
@@ -79,6 +84,7 @@ CTX = SimulationContext(
     snapshot_block=42,
     approval=APPROVAL,
     approver_signature=b"\x22" * 64,
+    travel_rule_clear=True,
 )
 
 
@@ -127,10 +133,10 @@ def no_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("action", "selector"),
     [
-        (Action.PAY, "b36c8c58"),
-        (Action.REFILL, "a374bbfd"),
-        (Action.WITHDRAW, "869d5613"),
-        (Action.SUPPLY, "add183e5"),
+        (Action.PAY, "88e7aeaf"),
+        (Action.REFILL, "c6ad3596"),
+        (Action.WITHDRAW, "eb371d41"),
+        (Action.SUPPLY, "6453ca48"),
     ],
 )
 def test_calldata_targets_the_executor_function_for_the_action(
@@ -143,6 +149,33 @@ def test_pay_and_refill_need_their_approval() -> None:
     bare = SimulationContext(**{**CTX.__dict__, "approval": None})
     with pytest.raises(ValueError, match="approval"):
         build_calldata(_step(Action.PAY), bare)
+
+
+def test_pay_calldata_carries_the_fresh_plan_amount_separately_from_the_approval_cap() -> None:
+    calldata = build_calldata(_step(Action.PAY), CTX)
+    approval = "(" + ",".join(field["type"] for field in PAYMENT_APPROVAL_TYPE) + ")"
+    attestation = "(" + ",".join(field["type"] for field in PLAN_ATTESTATION_TYPE) + ")"
+    decoded = decode([approval, "bytes", "bytes32", "uint256", attestation, "bytes"], calldata[4:])
+
+    assert decoded[0][7] == 100  # signed approver maximum
+    assert decoded[3] == 90  # amount proposed by the fresh quote
+
+
+def test_an_already_approved_pay_is_blocked_until_travel_rule_preflight_clears() -> None:
+    node = FakeNode()
+    # The approval payload and signature are present, but do not substitute for Travel Rule clearance.
+    context = replace(CTX, travel_rule_clear=False)
+
+    decision = asyncio.run(simulate(_client(node), _step(Action.PAY), context))
+
+    assert (decision.decision, decision.codes, decision.primary, decision.stage) == (
+        "BLOCK",
+        [C.DATA_MISSING],
+        C.DATA_MISSING,
+        "SIMULATION",
+    )
+    assert decision.checks[0].name == "travel_rule_clear"
+    assert node.requests == []
 
 
 def test_a_clean_call_is_allowed_and_runs_from_the_executor_at_latest() -> None:

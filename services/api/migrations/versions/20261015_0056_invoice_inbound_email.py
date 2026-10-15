@@ -1,7 +1,7 @@
 """organization-scoped invoice email intake configuration
 
-Revision ID: 20261015_0053
-Revises: 20261015_0052
+Revision ID: 20261015_0056
+Revises: 20261015_0055
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0053"
-down_revision: str | None = "20261015_0052"
+revision: str = "20261015_0056"
+down_revision: str | None = "20261015_0055"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

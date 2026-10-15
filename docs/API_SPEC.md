@@ -66,12 +66,17 @@
 | POST | `/orgs/{o}/treasuries/{t}/payees/{id}/registration-tx` | Build governance tx `addPayee` (cooling starts on-chain) | OWN | → `{governanceTx}` | 409 `SCREENING_NOT_CLEAR`, `OOB_NOT_VERIFIED`, `SCREENING_EXPIRED` |
 | POST | `/orgs/{o}/treasuries/{t}/payees/{id}/deactivation-tx` | Build governance tx `deactivatePayee` | OWN | `{reason}` → `{governanceTx}` | 409 `PAYEE_NOT_REGISTERED` |
 | POST | `/orgs/{o}/treasuries/{t}/payees/{id}/replace-address` | Create a new screened payee for the same vendor and build deactivation tx for the old address | OWN | `{address, reason}` → `{payee, deactivationGovernanceTx}` | 409 `ADDRESS_UNCHANGED`, `PAYEE_EXISTS`; 422 `ADDRESS_INVALID`, `SCREENING_HIT` |
+| GET | `/orgs/{o}/treasuries/{t}/fee-policy` | System proposal, accepted policy, basis, and today's executor spend | ANY | → `{active, proposal, spentTodayWei, day}` | 503 `FEE_HISTORY_UNAVAILABLE` |
+| POST | `/orgs/{o}/treasuries/{t}/fee-policy/accept` | Accept system limits or choose a preset | OWN + step-up | `{proposalId, preset?}` → `{active}` | 409 `FEE_PROPOSAL_STALE` |
+| PUT | `/orgs/{o}/treasuries/{t}/fee-policy/reference-price` | Set the labelled reference price used only for discount comparisons | OWN + step-up | `{referenceEthPrice}` (asset base units per ETH) → `{feePolicy, referenceEthPriceSource}` | 409 `FEE_PROPOSAL_REQUIRED` |
 | POST | `/orgs/{o}/treasuries/{t}/pause` 🔁 | Backend pause now + sentinel on-chain pause (or Guardian-Safe tx for a human) | OWN, GRD | `{reason}` → `{backendPaused: true, onchain, sentinelTxHash?, guardianSafeTx?}` | |
 | | Governance txs, signatures, fee policy, payee OOB verification, revoke | see docs/modules/mandate §6 | | | |
 | POST | `/orgs/{o}/treasuries/{t}/resume-tx` | Build the resume tx | OWN | → `{safeTx}` | 403 for GRD |
-| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + numbers) | OWN, OPR, FIN | → `{exception, numbers, aiDraft?}` | 404 |
-| POST | `/orgs/{o}/requests/{rId}/exception/grant-tx` | Build the `grantException` governance tx (M04-D3; signed in-app, M03-D1) | OWN | `{expiryHours?}` → `{governanceTx}` | 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP`, `PAYEE_NOT_ACTIVE` |
+| GET | `/orgs/{o}/requests/{rId}/exception` | Exception request (AI draft + amount, cap and live PAY budget numbers) | OWN, OPR, FIN | → `{exception, numbers, aiDraft?}` | 404 |
+| POST | `/orgs/{o}/requests/{rId}/exception/grant-tx` | Build the exact `grantException` governance tx (M04-D3; signed in-app, M03-D1) | OWN | `{expiryHours?}` → `{governanceTx}` | 409 `DAILY_LIMIT_WOULD_EXCEED`, `NOT_OVER_CAP`, `PAYEE_NOT_ACTIVE`, `APPROVAL_EXPIRED` |
 | POST | `/orgs/{o}/requests/{rId}/exception/reject` | Reject | OWN | `{reason}` → `{exception: Rejected}` | |
+| POST | `/orgs/{o}/requests/{rId}/exception/revoke-tx` | Build the `revokeException` governance tx | OWN | → `{governanceTx}` | 409 `NOT_GRANTED` |
+| POST | `/orgs/{o}/requests/{rId}/allow-duplicate-tx` | Build a fingerprint- and request-bound `allowDuplicate` governance tx | OWN | `{reason}` → `{governanceTx}` | 409 `NOT_DUPLICATE` |
 
 **`MandateConfig` (request body)**
 ```json
@@ -110,7 +115,7 @@
 | POST | `/orgs/{o}/recurring-payment-schedules/{sId}/periods/{date}/skip` | Skip exactly the next active period | OPR, ADM | → `{period: Skipped, schedule}` | 404, 409 `PERIOD_NOT_CURRENT` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | Upload PDF/image → extraction job | OPR | multipart `file` → `202 {requestId, extractionJobId}` | 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_TYPE` |
 | PUT | `/orgs/{o}/invoice-inbound-email` | OrgAdmin configures one forwarded-invoice address and its treasury | ADM | `{treasuryId, enabled}` → `{address, treasuryId, enabled}` | 503 `INBOUND_EMAIL_UNAVAILABLE` |
-| POST | `/inbound/invoices/{localPart}` | Signed provider webhook; each PDF/image attachment becomes a private upload draft | provider HMAC | signed JSON → `202 {drafts[]}` | 401 `INBOUND_EMAIL_SIGNATURE_INVALID`, 422 invalid message/attachment |
+| POST | `/inbound/invoices/{localPart}` | Signed provider webhook; each PDF/image attachment becomes a private upload draft | provider HMAC | signed JSON → `202 {drafts[]}` | 401 `INBOUND_EMAIL_SIGNATURE_INVALID`, 422 invalid message/attachment, 429 `RATE_LIMITED` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | CSV import | OPR | multipart → `{created[], errors[]}` | 422 `CSV_HEADER_INVALID` |
 | GET | `/orgs/{o}/requests` | List or filter | ANY | `?status=&dueBefore=&treasuryId=` → `{items}` | |
 | GET | `/orgs/{o}/requests/{rId}` | Detail with revisions, flags, extraction provenance, approvals, timeline | ANY | → `RequestDetail` | |
@@ -150,6 +155,8 @@
 | GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], alerts[]}` | |
 | GET | `/orgs/{o}/review-items` | Review queue | ANY (role-filtered) | `?status=Open&type=` → `{items}` | |
 | POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | Retry, cancel, mark resolved, or edit and re-approve | role per type | `{action, note}` → `{item}` | 409 `STALE_ITEM`, 403 |
+| POST | `/orgs/{o}/plans/{pId}/fee/accept` | Accept a held plan at its system estimate; stores that estimate as the cap | OWN, FIN, OPR | `{reason?}` → `{planId, acceptedCapWei}` | 404 `FEE_REVIEW_NOT_FOUND`, 409 `FEE_REVIEW_STALE` |
+| POST | `/orgs/{o}/plans/{pId}/fee/defer` | Leave a held plan waiting for a cheaper window | OWN, FIN, OPR | `{reason?}` → `{planId, status: Deferred}` | 404 `FEE_REVIEW_NOT_FOUND`, 409 `FEE_REVIEW_STALE` |
 | GET | `/orgs/{o}/events` | SSE stream: plan, operation, notification and request events | ANY | `text/event-stream` | |
 
 ## 6. Reconciliation, evidence, analytics (M11, M15, M17)

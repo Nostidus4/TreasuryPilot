@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from treasurypilot_api.identity.models import Membership, MembershipStatus
 
+# SSO/SCIM group claims may grant work roles, never organization ownership, approval,
+# guardian, or platform administration privileges.
 OIDC_ASSIGNABLE_ROLES = frozenset({"Operator", "Finance", "Auditor"})
 
 

@@ -4,10 +4,10 @@ import {PaymentApprovalHash} from "../../src/libraries/PaymentApprovalHash.sol";
 import {ITreasuryPilotModule} from "../../src/interfaces/ITreasuryPilotModule.sol";
 
 contract PaymentApprovalTypeHashTest {
-    function test13FieldTypeHashMatchesIndependentKeccakVector() external pure {
+    function test14FieldTypeHashMatchesIndependentKeccakVector() external pure {
         // Independently computed with Node keccak, not with the Solidity helper.
         require(
-            PaymentApprovalHash.TYPEHASH == 0x87265570230a24bd6f95ca8117865af42d4e1c7820635d83c7abba2b80e20975,
+            PaymentApprovalHash.TYPEHASH == 0x6cd66cf2d3ec3cdfde36ef7a0aa9efd451ecb29a89ee3888bb3a329ad4c04541,
             "type hash drift"
         );
     }
@@ -20,5 +20,8 @@ contract PaymentApprovalTypeHashTest {
         bytes32 amountChanged = PaymentApprovalHash.structHash(ap);
         ap.earlyPayBy = 1;
         require(amountChanged != PaymentApprovalHash.structHash(ap), "early date omitted");
+        bytes32 dateChanged = PaymentApprovalHash.structHash(ap);
+        ap.isFiat = true;
+        require(dateChanged != PaymentApprovalHash.structHash(ap), "fiat flag omitted");
     }
 }

@@ -66,6 +66,7 @@ def _request(**update: Any) -> RequestView:
         "paying_wallet": O1,
         "payee": PAYEE,
         "amount": BaseUnits(1_500),
+        "fiat_amount_minor_units": None,
         "early_amount": BaseUnits(0),
         "early_pay_by": 0,
         "deadline": NOW + 86_400,
@@ -88,6 +89,7 @@ def _approval(request: RequestView) -> ApprovalView:
         "deadline": request.deadline,
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": NOW + 14 * 86_400,
+        "isFiat": request.fiat_amount_minor_units is not None,
     }
     full = payment_approval_typed_data(typed, chain_id=CHAIN, verifying_contract=TREASURY)
     return ApprovalView.model_validate(

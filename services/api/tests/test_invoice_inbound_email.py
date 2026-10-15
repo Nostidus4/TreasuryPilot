@@ -44,6 +44,17 @@ def test_email_sender_requires_a_passing_aligned_spf_or_dkim_result() -> None:
     assert not _sender_is_authenticated(_message(None, None))
 
 
+def test_email_sender_allows_relaxed_subdomain_alignment_only() -> None:
+    def subdomain(auth_domain: str, sender: str) -> InboundEmailMessage:
+        message = _message("pass", "none", auth_domain, None)
+        return message.model_copy(update={"sender": f"billing@{sender}"})
+
+    assert _sender_is_authenticated(subdomain("example.test", "billing.example.test"))
+    assert not _sender_is_authenticated(subdomain("billing.example.test", "example.test"))
+    assert not _sender_is_authenticated(subdomain("ample.test", "example.test"))
+    assert not _sender_is_authenticated(subdomain("test", "example.test"))
+
+
 def test_email_webhook_signature_binds_body_and_fresh_timestamp() -> None:
     secret = b"a-provider-webhook-secret-with-more-than-32-bytes"
     body = b'{"messageId":"id"}'
@@ -54,6 +65,11 @@ def test_email_webhook_signature_binds_body_and_fresh_timestamp() -> None:
     assert not verify_webhook_signature(secret, body + b"!", signature, now=now)
     assert not verify_webhook_signature(secret, body, signature, now=now + 301)
     assert not verify_webhook_signature(secret, body, "t=broken,v1=00", now=now)
+    digest = signature.split("v1=")[1]
+    for stamp in (f" {now}", f"+{now}", f"{now} ", "\u0661\u0662"):
+        assert not verify_webhook_signature(secret, body, f"t={stamp},v1={digest}", now=now)
+    assert not verify_webhook_signature(secret, body, f"t={now}, t ={now},v1={digest}", now=now)
+    assert not verify_webhook_signature(secret, body, f"t={now},v1={digest}, v1={digest}", now=now)
 
 
 def test_inbound_email_configuration_requires_valid_domain_and_long_secret() -> None:

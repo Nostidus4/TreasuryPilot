@@ -1,7 +1,7 @@
 """Add explicit SIWE nonce retention and hash-only deletion receipts.
 
-Revision ID: 20261015_0057
-Revises: 20261015_0056
+Revision ID: 20261015_0060
+Revises: 20261015_0059
 """
 
 from collections.abc import Sequence
@@ -9,8 +9,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261015_0057"
-down_revision: str | None = "20261015_0056"
+revision: str = "20261015_0060"
+down_revision: str | None = "20261015_0059"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | None = None
 
@@ -24,6 +24,12 @@ def upgrade() -> None:
         "ck_auth_retention_policies_siwe_nonce_days",
         "auth_retention_policies",
         "siwe_nonce_retention_days IS NULL OR siwe_nonce_retention_days BETWEEN 0 AND 36500",
+    )
+    # Bound the nonce table by default: closed challenges are swept 30 days after use or
+    # expiry unless an operator reconfigures the policy.
+    op.execute(
+        "INSERT INTO auth_retention_policies (id, siwe_nonce_retention_days) VALUES (1, 30) "
+        "ON CONFLICT (id) DO UPDATE SET siwe_nonce_retention_days = 30"
     )
     op.drop_constraint("ck_deletion_receipts_record_type", "deletion_receipts", type_="check")
     op.create_check_constraint(

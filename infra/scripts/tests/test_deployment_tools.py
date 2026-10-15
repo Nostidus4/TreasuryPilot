@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -604,3 +605,138 @@ def test_receipt_uid_rejects_failed_or_invalid_status(status: object) -> None:
     helper = load_script("attest_receipt")
     with pytest.raises(ValueError, match="did not succeed"):
         helper.receipt_uid({"status": status}, "", "", "", "")
+
+
+def test_publisher_rejects_wrong_reviewed_chain_without_changing_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = load_script("publish_manifest")
+    values = {"chainId": 11155111, "deploymentStatus": "predicted"}
+    prediction = tmp_path / "prediction.json"
+    prediction.write_text(json.dumps(values))
+    manifest = tmp_path / "manifest.json"
+    original = '{"chainId":31337,"deploymentStatus":"configured_only","metadata":"keep"}'
+    manifest.write_text(original)
+    monkeypatch.setattr(publisher, "run_cast", lambda args: "11155111")
+
+    with pytest.raises(ValueError, match="another chain"):
+        publisher.publish(prediction, manifest, "http://mock.invalid")
+
+    assert manifest.read_text() == original
+
+
+def test_sepolia_verifier_checks_manifest_and_mined_code_before_forge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    verifier = load_script("verify_sepolia_contracts")
+    manifest = {
+        "chainId": 11155111,
+        "deploymentStatus": "deployed",
+        "implementation": "0x" + "11" * 20,
+        "implementationCodeHash": "0x" + "ab" * 32,
+        "factory": "0x" + "22" * 20,
+        "factoryCodeHash": "0x" + "ab" * 32,
+        "testToken": "0x" + "33" * 20,
+        "testTokenCodeHash": "0x" + "ab" * 32,
+    }
+    path = tmp_path / "11155111.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setenv("SEPOLIA_RPC_URL", "https://rpc.example")
+    monkeypatch.setenv("ETHERSCAN_API_KEY", "test-key")
+    cast_calls: list[list[str]] = []
+
+    def run_cast(arguments: list[str]) -> str:
+        cast_calls.append(arguments)
+        if arguments[0] == "chain-id":
+            return "11155111"
+        if arguments[0] == "code":
+            return "0x6000"
+        if arguments[0] == "keccak":
+            return "0x" + "ab" * 32
+        if arguments[0] == "abi-encode":
+            return "0x1234"
+        raise AssertionError(f"Unexpected cast command: {arguments[0]}")
+
+    forge_calls: list[dict[str, object]] = []
+
+    def run_forge(command: list[str], **kwargs: object) -> SimpleNamespace:
+        forge_calls.append({"command": command, **kwargs})
+        return SimpleNamespace(returncode=0, stdout="verified", stderr="")
+
+    monkeypatch.setattr(verifier, "run_cast", run_cast)
+    monkeypatch.setattr(verifier.subprocess, "run", run_forge)
+    verifier.verify(path)
+
+    assert len(forge_calls) == 3
+    commands = [cast(list[str], call["command"]) for call in forge_calls]
+    assert not any("test-key" in str(command) for command in commands)
+    assert commands[0][2:4] == [
+        manifest["implementation"],
+        "src/TreasuryPilotModule.sol:TreasuryPilotModule",
+    ]
+    assert commands[1][-2:] == ["--constructor-args", "0x1234"]
+    assert commands[2][2:4] == [
+        manifest["testToken"],
+        "src/test-assets/TestUSDC.sol:TestUSDC",
+    ]
+    assert cast_calls[0][0] == "chain-id"
+
+
+def test_sepolia_verifier_rejects_runtime_drift_before_etherscan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    verifier = load_script("verify_sepolia_contracts")
+    manifest = {
+        "chainId": 11155111,
+        "deploymentStatus": "deployed",
+        "implementation": "0x" + "11" * 20,
+        "implementationCodeHash": "0x" + "cd" * 32,
+        "factory": "0x" + "22" * 20,
+        "factoryCodeHash": "0x" + "ab" * 32,
+        "testToken": "0x" + "33" * 20,
+        "testTokenCodeHash": "0x" + "ab" * 32,
+    }
+    path = tmp_path / "11155111.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setenv("SEPOLIA_RPC_URL", "https://rpc.example")
+    monkeypatch.setenv("ETHERSCAN_API_KEY", "test-key")
+    monkeypatch.setattr(
+        verifier,
+        "run_cast",
+        lambda arguments: {
+            "chain-id": "11155111",
+            "code": "0x6000",
+            "keccak": "0x" + "ab" * 32,
+        }[arguments[0]],
+    )
+    forge_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        verifier.subprocess,
+        "run",
+        lambda command, **kwargs: forge_calls.append(command),
+    )
+
+    with pytest.raises(ValueError, match="runtime hash differs for implementation"):
+        verifier.verify(path)
+
+    assert forge_calls == []
+
+
+def test_sepolia_forge_verify_surfaces_scrubbed_errors_and_tolerates_reruns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = load_script("verify_sepolia_contracts")
+    monkeypatch.setenv("ETHERSCAN_API_KEY", "test-key")
+    stderr = "boom key=test-key"
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=1, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(verifier.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError) as error:
+        verifier._forge_verify("0x" + "11" * 20, "src/X.sol:X", "https://rpc.example")
+    assert "boom" in str(error.value)
+    assert "test-key" not in str(error.value)
+
+    stderr = "Error: Contract is Already Verified"
+    verifier._forge_verify("0x" + "11" * 20, "src/X.sol:X", "https://rpc.example")

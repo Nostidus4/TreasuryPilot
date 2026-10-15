@@ -18,12 +18,14 @@ from alembic.config import Config
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pypdf import PdfWriter
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from treasurypilot_api.agent.models import AiCall, AiPurpose, AiValidationResult, Extraction
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import problem_response
-from treasurypilot_api.identity.auth import AuthFailure
+from treasurypilot_api.identity.auth import AuthFailure, utc_now
+from treasurypilot_api.identity.rate_limit import MemoryRateLimiter
 from treasurypilot_api.identity.rbac import MemberAccess
 from treasurypilot_api.invoices import documents, inbound_email, requests
 from treasurypilot_api.invoices.models import (
@@ -169,6 +171,7 @@ async def _scenario(database_url: str) -> None:
             enqueued.append(request_id)
             return job_id
 
+    app.state.api_key_rate_limiter = MemoryRateLimiter(utc_now)
     app.state.document_storage = Storage()
     app.state.extraction_queue = Queue()
     member = MemberAccess(
@@ -300,6 +303,75 @@ async def _scenario(database_url: str) -> None:
             assert email_document.storage_key in stored_keys
             assert email_request_id in enqueued
 
+            # Re-delivery of the same message replays the existing draft.
+            replayed = await client.post(
+                f"/v1/inbound/invoices/{local_part}",
+                content=email_body,
+                headers={
+                    "Content-Type": "application/json",
+                    inbound_email.SIGNATURE_HEADER: inbound_email.sign_webhook_body(
+                        webhook_secret.encode(), int(time.time()), email_body
+                    ),
+                },
+            )
+            assert replayed.status_code == 202, replayed.text
+            assert replayed.json()["drafts"][0]["requestId"] == str(email_request_id)
+
+            # A bad later attachment rejects the whole message before any draft is stored.
+            good = base64.b64encode(email_pdf.getvalue()).decode()
+            drafts_before = list(enqueued)
+            for attachments, expected in (
+                (
+                    [
+                        {"filename": "a.pdf", "contentBase64": good},
+                        {"filename": "b.pdf", "contentBase64": "YWJj"},
+                    ],
+                    415,
+                ),
+                ([{"filename": "a.pdf", "contentBase64": "===="}], 422),
+            ):
+                bad_body = json.dumps(
+                    {
+                        "messageId": f"<bad-{expected}@example.test>",
+                        "sender": "billing@example.test",
+                        "recipient": address,
+                        "attachments": attachments,
+                    }
+                ).encode()
+                bad = await client.post(
+                    f"/v1/inbound/invoices/{local_part}",
+                    content=bad_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        inbound_email.SIGNATURE_HEADER: inbound_email.sign_webhook_body(
+                            webhook_secret.encode(), int(time.time()), bad_body
+                        ),
+                    },
+                )
+                assert bad.status_code == expected, bad.text
+            assert enqueued == drafts_before
+            async with sessions() as session:
+                assert (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(PaymentRequest)
+                        .where(PaymentRequest.idempotency_key.like("email:%"))
+                    )
+                    == 1
+                )
+
+            # Re-configuring keeps the same private address.
+            again = await client.put(
+                f"/v1/orgs/{ORG_ID}/invoice-inbound-email", json={"enabled": True}
+            )
+            assert again.json()["address"] == address
+
+            # Simulate the worker settling extraction (AGT-004) so the operator can confirm.
+            async with sessions() as session, session.begin():
+                settled = await session.get(PaymentRequest, email_request_id)
+                assert settled is not None
+                settled.extraction_status = "ManualEntry"
+
             # Sender-authentication risk stays on the active revision after an operator confirms.
             response = await client.post(
                 f"{base}/{email_request_id}/extraction/confirm",
@@ -344,7 +416,8 @@ async def _scenario(database_url: str) -> None:
                     PaymentRequest, uuid.UUID(response.json()["requestId"])
                 )
             assert uploaded is not None and uploaded.extraction_status == "Extracting"
-            assert enqueued == [email_request_id, uploaded.id]
+            # The email replay re-enqueues under the same deterministic job id.
+            assert enqueued == [email_request_id, email_request_id, uploaded.id]
 
             # Deactivated payee is rejected by the shared _bound_fields guard.
             first = await _draft(sessions, RequestSource.UPLOAD.value)
@@ -386,24 +459,94 @@ async def _scenario(database_url: str) -> None:
                 requests._hashes(expected, "acme", bytes.fromhex("11" * 20), DOC_SHA)
                 assert row.invoice_hash == expected.invoice_hash
 
-            # Multi-invoice flag: refused on non-upload requests, idempotent on upload drafts.
+            # A manual client report is refused on non-upload requests.
             multi = {**confirm, "invoiceCountInDocument": 2}
             manual = await _draft(sessions, RequestSource.MANUAL.value)
             response = await client.post(f"{base}/{manual}/extraction/confirm", json=multi)
             assert response.status_code == 409, response.text
+
+            async def store(request_id: uuid.UUID, count: object) -> None:
+                async with sessions() as session, session.begin():
+                    document = await session.scalar(
+                        select(RequestDocument).where(RequestDocument.request_id == request_id)
+                    )
+                    assert document is not None
+                    ai_call = AiCall(
+                        org_id=ORG_ID,
+                        purpose=AiPurpose.EXTRACT,
+                        model="fixture",
+                        prompt_version="test",
+                        input_refs=[f"document:{document.id}"],
+                        tool_calls=[],
+                        validation_result=AiValidationResult.OK,
+                        latency_ms=0,
+                        input_tokens=0,
+                        output_tokens=0,
+                        cost_usd_micros=0,
+                    )
+                    session.add(ai_call)
+                    await session.flush()
+                    session.add(
+                        Extraction(
+                            document_id=document.id,
+                            ai_call_id=ai_call.id,
+                            fields={"invoice_count_in_document": count},
+                        )
+                    )
+
+            async def flag_counts(request_id: uuid.UUID) -> list[object]:
+                async with sessions() as session:
+                    return [
+                        flag.evidence["invoiceCountInDocument"]
+                        for flag in await session.scalars(
+                            select(RequestFlag).where(
+                                RequestFlag.request_id == request_id,
+                                RequestFlag.code == "MULTI_INVOICE_DOCUMENT",
+                            )
+                        )
+                    ]
+
+            # A client-reported count is refused and flagged once, however often it is retried.
             upload = await _draft(sessions, RequestSource.UPLOAD.value)
             for _ in range(2):
                 response = await client.post(f"{base}/{upload}/extraction/confirm", json=multi)
                 assert response.status_code == 422, response.text
-            async with sessions() as session:
-                flags = (
-                    await session.scalars(
-                        select(RequestFlag.request_id).where(
-                            RequestFlag.code == "MULTI_INVOICE_DOCUMENT"
-                        )
-                    )
-                ).all()
-            assert list(flags) == [upload]
+            assert await flag_counts(upload) == [2]
+
+            # M09's persisted count is authoritative even if a client omits the count.
+            stored = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(stored, 2)
+            for _ in range(2):
+                response = await client.post(f"{base}/{stored}/extraction/confirm", json=confirm)
+                assert response.status_code == 422, response.text
+            assert await flag_counts(stored) == [2]
+
+            # The larger of the stored and reported counts is the evidence.
+            larger = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(larger, 1)
+            response = await client.post(
+                f"{base}/{larger}/extraction/confirm", json={**confirm, "invoiceCountInDocument": 3}
+            )
+            assert response.status_code == 422, response.text
+            assert await flag_counts(larger) == [3]
+
+            # A malformed stored count falls back to the reported one instead of blocking confirm.
+            malformed = await _draft(sessions, RequestSource.UPLOAD.value)
+            await store(malformed, "many")
+            response = await client.post(f"{base}/{malformed}/extraction/confirm", json=multi)
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == "MULTI_INVOICE_DOCUMENT"
+            assert await flag_counts(malformed) == [2]
+
+            # While the worker is still extracting, confirm is refused so its count cannot be missed.
+            pending = await _draft(sessions, RequestSource.UPLOAD.value)
+            async with sessions() as session, session.begin():
+                row = await session.get(PaymentRequest, pending)
+                assert row is not None
+                row.extraction_status = "Extracting"
+            response = await client.post(f"{base}/{pending}/extraction/confirm", json=confirm)
+            assert response.status_code == 409, response.text
+            assert response.json()["code"] == "EXTRACTION_PENDING"
 
             # The worker's HIGH INSTRUCTION_TEXT flag (revision 1) survives confirm and edit.
             injected = await _draft(sessions, RequestSource.UPLOAD.value)

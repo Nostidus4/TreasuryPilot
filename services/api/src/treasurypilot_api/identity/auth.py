@@ -438,29 +438,7 @@ class AuthService:
     async def create_oidc_session(
         self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
     ) -> VerifiedSession:
-        """Issue a short organization-scoped session for an OIDC identity."""
-        return await self.create_scoped_sso_session(
-            user=user,
-            organization_id=organization_id,
-            client_ip=client_ip,
-            user_agent=user_agent,
-        )
-
-    async def create_saml_session(
-        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
-    ) -> VerifiedSession:
-        """Issue a short organization-scoped session for a SAML identity."""
-        return await self.create_scoped_sso_session(
-            user=user,
-            organization_id=organization_id,
-            client_ip=client_ip,
-            user_agent=user_agent,
-        )
-
-    async def create_scoped_sso_session(
-        self, *, user: UserRecord, organization_id: uuid.UUID, client_ip: str, user_agent: str
-    ) -> VerifiedSession:
-        """Issue a short session so federated membership changes take effect quickly."""
+        """Issue a short session so provider group changes take effect within five minutes."""
         now = self._now()
         session_id = uuid.uuid4()
         session_token = self._token_codec.session_token(session_id)
