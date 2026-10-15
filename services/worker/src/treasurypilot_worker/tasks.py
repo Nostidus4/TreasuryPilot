@@ -898,14 +898,16 @@ async def _partial_action(
 
 @app.task(name="treasurypilot.recovery.resume_partial", queue="core")
 def resume_partial_task(request_id: str, actor_id: str | None = None) -> dict[str, str | None]:
-    """INTERNAL: resume a PartiallyCompleted plan, then enqueue its next step (RCV-003).
+    """Resume a PartiallyCompleted plan, then enqueue its next step (RCV-003).
 
-    Not user-facing; the review-item RETRY action endpoint is RCV-004 follow-up work.
+    Enqueued by the API when a user takes RETRY on a review item; the item is resolved here.
     """
 
     result = asyncio.run(_partial_action(resume_partial, request_id, actor_id))
     plan_id = str(result.plan_id) if result.plan_id else None
-    if result.status == "Resumed":
+    if result.status != "Resumed":
+        logger.warning("resume_partial refused: %s (request %s)", result.status, request_id)
+    else:
         sequence_plan_task.apply_async(
             (str(result.plan_id),),
             queue=treasury_queue(result.treasury_id, get_settings().treasury_queue_shards),
@@ -915,9 +917,11 @@ def resume_partial_task(request_id: str, actor_id: str | None = None) -> dict[st
 
 @app.task(name="treasurypilot.recovery.cancel_partial", queue="core")
 def cancel_partial_task(request_id: str, actor_id: str | None = None) -> dict[str, Any]:
-    """INTERNAL: cancel a PartiallyCompleted plan; funds of confirmed steps stay (RCV-003)."""
+    """Cancel a PartiallyCompleted plan (review-item CANCEL); confirmed steps' funds stay."""
 
     report = asyncio.run(_partial_action(cancel_partial, request_id, actor_id))
+    if not report.cancelled:
+        logger.warning("cancel_partial refused: %s (request %s)", report.summary, request_id)
     return {
         "cancelled": report.cancelled,
         "plan_id": str(report.plan_id) if report.plan_id else None,

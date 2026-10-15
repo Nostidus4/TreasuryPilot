@@ -6,9 +6,10 @@ from typing import cast
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.audit.events import AuditEvent, log_audit_event
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.api import _service as _auth_service
 from treasurypilot_api.identity.auth import AuthFailure
@@ -118,6 +119,9 @@ def _allowed_actions(item: ReviewItem, member: MemberAccess) -> list[str]:
         return [ReviewAction.ACKNOWLEDGE.value] if ReviewAction.ACKNOWLEDGE in actions else []
     if item.type == ReviewType.UNCERTAIN_TX and not item.evidence_resolved:
         actions.remove(ReviewAction.ACKNOWLEDGE)
+    if item.type == ReviewType.POLICY_BLOCK and item.completed_steps:
+        # A partial plan can resume (README 7.2); the route's own roles already see the item.
+        actions.append(ReviewAction.RETRY)
     return [action.value for action in actions]
 
 
@@ -148,6 +152,24 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
         "version": item.version,
         "allowedActions": _allowed_actions(item, member),
     }
+
+
+async def _is_partial_recovery(
+    session: AsyncSession, item: ReviewItem, action: ReviewAction
+) -> bool:
+    """RETRY/CANCEL on a stop of a PartiallyCompleted plan runs in the worker (RCV-003)."""
+
+    if action not in {ReviewAction.RETRY, ReviewAction.CANCEL} or item.request_id is None:
+        return False
+    if item.type not in {ReviewType.POLICY_BLOCK.value, ReviewType.INFRA.value}:
+        return False
+    return (
+        await session.scalar(
+            text("SELECT 1 FROM plans WHERE request_id = :r AND status = 'PartiallyCompleted'"),
+            {"r": item.request_id},
+        )
+        is not None
+    )
 
 
 @router.get("", response_model=ReviewItemList, openapi_extra={"x-organization-scoped": True})
@@ -232,6 +254,7 @@ async def get_review_item(
 @router.post(
     "/{item_id}/actions",
     response_model=ReviewItemResult,
+    responses={503: {"description": "RECOVERY_UNAVAILABLE: the resume/cancel task was not queued"}},
     openapi_extra={"x-organization-scoped": True},
 )
 async def act_on_review_item(
@@ -272,6 +295,12 @@ async def act_on_review_item(
                 raise _failure(409, "STALE_ITEM", "The underlying mandate version is unavailable.")
         if payload.action.value not in _allowed_actions(item, member):
             raise _failure(409, "ACTION_NOT_ALLOWED", "The action is not allowed for this item.")
+        if (
+            payload.action == ReviewAction.RETRY
+            and item.type == ReviewType.POLICY_BLOCK.value
+            and not await _is_partial_recovery(session, item, payload.action)
+        ):
+            raise _failure(409, "ACTION_NOT_ALLOWED", "The plan is not partially completed.")
         if payload.note is not None:
             item.note = payload.note
         if payload.action in {ReviewAction.ACCEPT_FEE, ReviewAction.DEFER}:
@@ -288,6 +317,30 @@ async def act_on_review_item(
                 user_id=member.user_id,
                 reason=payload.note,
                 now=datetime.now(UTC),
+            )
+        elif await _is_partial_recovery(session, item, payload.action):
+            # The worker task resolves the item once it has reopened (or cancelled) the plan, so a
+            # failed hand-off leaves the item Open and retryable.
+            queue = getattr(request.app.state, "partial_recovery_queue", None)
+            if queue is None:
+                raise _failure(503, "RECOVERY_UNAVAILABLE", "Recovery queue is not configured.")
+            assert item.request_id is not None
+            try:
+                queue.enqueue(payload.action.value, item.request_id, member.user_id)
+            except Exception as error:
+                raise _failure(
+                    503, "RECOVERY_UNAVAILABLE", "The recovery task could not be queued."
+                ) from error
+            await log_audit_event(
+                session,
+                AuditEvent(
+                    org_id=member.organization_id,
+                    actor_id=member.user_id,
+                    action=f"recovery.{payload.action.value.lower()}_enqueued",
+                    entity_type="review_item",
+                    entity_id=item.id,
+                    data={"requestId": str(item.request_id)},
+                ),
             )
         elif payload.action != ReviewAction.DEFER:
             item.status = "Resolved"

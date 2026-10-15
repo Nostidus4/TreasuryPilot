@@ -75,8 +75,8 @@ Các id (request, step, operation, idempotency key) giữ nguyên qua mọi lầ
 | Loại | Vai trò | Hành động được phép |
 |---|---|---|
 | NEEDS_AUTHORITY (vượt trần) | Owner | GRANT_EXCEPTION (→ M03), CANCEL |
-| POLICY_BLOCK do payee/hạn mức/ngân sách | Owner | REPLAN (sau khi sửa policy), CANCEL |
-| POLICY_BLOCK do số tiền/payee/bản duyệt | Operator → Approver | EDIT_REQUEST (duyệt lại), CANCEL |
+| POLICY_BLOCK do payee/hạn mức/ngân sách | Owner | REPLAN (sau khi sửa policy), CANCEL; RETRY nếu plan dở dang (có bước đã xong) |
+| POLICY_BLOCK do số tiền/payee/bản duyệt | Operator → Approver | EDIT_REQUEST (duyệt lại), CANCEL; RETRY nếu plan dở dang |
 | FEE_APPROVAL | Finance, Operator, Owner | ACCEPT_FEE, hoãn |
 | UNCERTAIN_TX | Operator (báo Owner) | ACKNOWLEDGE chỉ sau khi đã xử lý |
 | DISCREPANCY | Finance + Owner | ACKNOWLEDGE, MARK_MATCHED |

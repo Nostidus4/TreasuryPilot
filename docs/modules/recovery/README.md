@@ -59,7 +59,7 @@ Operation recovery: `Unknown → (Confirmed | Reverted | Abandoned (never broadc
 |---|---|---|---|---|
 | GET | `/orgs/{o}/review-items?status=&type=&role=` | ANY (filtered by role) | → `{items}` | |
 | GET | `/orgs/{o}/review-items/{id}` | ANY | → `{item, request, plan, steps, validations, evidence, allowedActions[]}` | |
-| POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | routed role | `{action, note?, version}` → `{item}` | 403 `NOT_ROUTED_ROLE`, 409 `STALE_ITEM`, `ACTION_NOT_ALLOWED` |
+| POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | routed role | `{action, note?, version}` → `{item}` | 403 `NOT_ROUTED_ROLE`, 409 `STALE_ITEM`, `ACTION_NOT_ALLOWED`, 503 `RECOVERY_UNAVAILABLE` |
 | GET/PUT | `/orgs/{o}/treasuries/{t}/circuit-rules` | OWN | rules | |
 | GET | `/orgs/{o}/treasuries/{t}/circuit-events` | ANY | → `{items}` | |
 
@@ -71,7 +71,9 @@ Load operations in Submitted, Pending or Unknown that have a transaction (`recov
 
 ### 7.2 Partial completion (AT-07)
 
-Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK or DISCREPANCY) with completed steps → action **RETRY** (types POLICY_BLOCK and INFRA only): the same plan resumes, `RESUME_PARTIAL` NeedsReview → Preparing, Confirmed steps are skipped and the first unfinished step is re-validated (`recovery/partial.py`; refused while an operation is in flight, or if any is Reverted/Abandoned or another review type is open). Action **REPLAN** (plan-shape changes): M10 creates a new plan for the remaining steps (same step ids) → validated/attested → executes only those. Action **CANCEL** (refused while an operation is in flight): request Cancelled, plan Superseded, open items resolved CANCEL; funds stay where the refill put them; the report says so (no automatic reverse refill).
+Plan stopped at seq k>0 → `PartiallyCompleted` → review item (POLICY_BLOCK or DISCREPANCY) with completed steps → action **RETRY** (types POLICY_BLOCK with completed steps, and INFRA; offered to the roles routed for that item per §8.3): the same plan resumes, `RESUME_PARTIAL` NeedsReview → Preparing, Confirmed steps are skipped and the first unfinished step is re-validated (`recovery/partial.py`; refused while an operation is in flight, or if any is Reverted/Abandoned or another review type is open). Action **REPLAN** (plan-shape changes): M10 creates a new plan for the remaining steps (same step ids) → validated/attested → executes only those. Action **CANCEL** (refused while an operation is in flight): request Cancelled, plan Superseded, open items resolved CANCEL; funds stay where the refill put them; the report says so (no automatic reverse refill).
+
+RETRY and CANCEL on a partial plan are asynchronous: the API enqueues the worker task, records an audit event (`recovery.retry_enqueued` / `recovery.cancel_enqueued`) and answers `200` with the item still `Open`, which means "accepted, worker pending". The worker resolves the item when it reopens or cancels the plan, and refuses (logged at warning) when an operation is in flight, the plan is not partial or a step is not retryable. If the queue is missing or the send fails the API answers `503 RECOVERY_UNAVAILABLE` and the item stays Open.
 
 ## 8. Algorithms
 
