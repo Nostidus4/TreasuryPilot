@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from treasurypilot_core.domain import (
@@ -283,6 +283,38 @@ def schedule_edf(
         solver="EDF",
         status="FEASIBLE",
     )
+
+
+def schedule_in_order(
+    priority: Sequence[str],
+    not_before: Mapping[str, int],
+    requests: Sequence[ApprovedRequest],
+    snapshot: Snapshot,
+    policy: PolicyView,
+) -> tuple[ScheduledItem, ...]:
+    """Greedy schedule that tries requests in ``priority`` order each day (AGT-009).
+
+    Amounts, refills and values come from the engine; ``priority`` and ``not_before`` (request
+    id to earliest day) only steer order. Requests not named in ``priority`` are never paid.
+    """
+
+    by_id = {request.id: request for request in _ordered_requests(requests, snapshot)}
+    remaining = [by_id[i] for i in priority if i in by_id]
+    state = _SimulationState(dict(snapshot.operational), snapshot.source)
+    scheduled: list[ScheduledItem] = []
+    for day in range(snapshot.day, snapshot.day + HORIZON_DAYS):
+        state.start_day(day, snapshot)
+        waiting: list[ApprovedRequest] = []
+        for request in remaining:
+            item = None
+            if day >= not_before.get(request.id, 0):
+                item, _reason = _try_schedule_request(request, day, snapshot, policy, state)
+            if item is None:
+                waiting.append(request)
+            else:
+                scheduled.append(item)
+        remaining = waiting
+    return tuple(scheduled)
 
 
 def _oracle_horizon_days(ordered: Sequence[ApprovedRequest], snapshot: Snapshot) -> int:

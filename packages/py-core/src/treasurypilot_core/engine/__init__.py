@@ -18,7 +18,7 @@ from .liquidity import (
 )
 from .multi_asset import AssetScheduleInput, schedule_cpsat_multi_asset
 from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, validate_terms
-from .scheduler import schedule_edf, schedule_oracle
+from .scheduler import schedule_edf, schedule_in_order, schedule_oracle
 from .scoring import binding_constraints, compare_plans, exception_values, score
 from .solver import SOLVERS, Solver, SolverName, get_solver
 
@@ -51,6 +51,7 @@ __all__ = [
     "AssetScheduleInput",
     "schedule_cpsat_multi_asset",
     "schedule_edf",
+    "schedule_in_order",
     "schedule_oracle",
     "score",
     "source_capacity",
