@@ -759,7 +759,11 @@ _SWEEP_SQL = (
     "JOIN payment_requests r ON r.onchain_request_id = a.request_id "
     "WHERE r.status IN ('Preparing', 'Paying') AND COALESCE((SELECT o.status::text "
     "FROM operations o WHERE o.request_id = r.id ORDER BY o.created_at DESC, o.id DESC LIMIT 1), "
-    "'Confirmed') IN ('Confirmed', 'NotSubmitted') ORDER BY a.plan_id, a.created_at DESC"
+    "'Confirmed') IN ('Confirmed', 'NotSubmitted') "
+    # Paused or revoked treasuries are skipped; the Resumed event re-enqueues the cycle.
+    "AND NOT EXISTS (SELECT 1 FROM backend_pause b WHERE b.treasury_id = r.treasury_id "
+    "AND b.paused) AND NOT EXISTS (SELECT 1 FROM treasuries t WHERE t.id = r.treasury_id "
+    "AND t.status IN ('Paused', 'Revoked')) ORDER BY a.plan_id, a.created_at DESC"
 )
 
 

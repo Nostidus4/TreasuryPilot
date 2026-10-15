@@ -141,6 +141,9 @@ services:
       # `make seed` points these at /app/deployments/local (mounted below).
       TP_PLATFORM_CHAIN_CONFIG_PATH: ${TP_PLATFORM_CHAIN_CONFIG_PATH:-/app/deployments/chains.json}
       TP_DEPLOYMENTS_DIR: ${TP_DEPLOYMENTS_DIR:-/app/deployments}
+      # Pause-only sentinel; without a secret pause falls back to a Guardian Safe transaction.
+      TP_SIGNER_URL: ${TP_SIGNER_URL:-http://signer:8080}
+      TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
     volumes:
       - ../deployments/local:/app/deployments/local:ro
     depends_on:

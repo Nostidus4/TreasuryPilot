@@ -377,6 +377,15 @@ async def _revoked(connection: asyncpg.Connection, event: IndexedEvent) -> None:
         "WHERE id = $1 AND status <> 'Revoked'",
         event.treasury_id,
     )
+    await connection.execute(
+        "WITH revoked AS (UPDATE mandate_versions SET status = 'Revoked' "
+        "WHERE treasury_id = $1 AND status = 'Active' RETURNING id, org_id) "
+        "INSERT INTO mandate_status_events (id, org_id, mandate_version_id, from_status, "
+        "to_status, tx_hash, by_user_id) SELECT gen_random_uuid(), org_id, id, 'Active', "
+        "'Revoked', $2, NULL FROM revoked",
+        event.treasury_id,
+        event.tx_hash,
+    )
 
 
 async def _exception_granted(connection: asyncpg.Connection, event: IndexedEvent) -> None:

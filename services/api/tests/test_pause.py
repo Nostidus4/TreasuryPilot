@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,7 +56,12 @@ class FakeGovernance:
 
 
 def _client(
-    monkeypatch: pytest.MonkeyPatch, *, role: str, row: BackendPause | None = None, **settings: Any
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    role: str,
+    row: BackendPause | None = None,
+    step_up_age: timedelta = timedelta(0),
+    **settings: Any,
 ) -> tuple[TestClient, dict[str, Any], FakeGovernance]:
     state: dict[str, Any] = {"row": row}
     treasury = SimpleNamespace(
@@ -66,8 +71,20 @@ def _client(
     async def load(*_: object) -> object:
         return treasury
 
-    async def no_pending(*_: object) -> list[dict[str, Any]]:
-        return [{"operationId": "op-1"}]
+    async def no_pending(*_: object) -> list[pause.PendingTransaction]:
+        return [
+            pause.PendingTransaction(
+                operation_id="op-1", request_id="req-1", kind="PAY", status="NotSubmitted"
+            )
+        ]
+
+    async def upsert(*_: object) -> OnchainPauseStatus:
+        if state["row"] is None:
+            state["row"] = _paused_row(OnchainPauseStatus.REQUESTED)
+        return cast(OnchainPauseStatus, state["row"].onchain_status)
+
+    async def safe(*_: object) -> str:
+        return "0x" + "22" * 20
 
     async def no_audit(*_: object, **__: object) -> None:
         return None
@@ -78,6 +95,8 @@ def _client(
     monkeypatch.setattr(pause, "_load", load)
     monkeypatch.setattr(pause, "_org_name", org_name)
     monkeypatch.setattr(pause, "_pending_operations", no_pending)
+    monkeypatch.setattr(pause, "_upsert_pause", upsert)
+    monkeypatch.setattr(pause, "_guardian_safe", safe)
     monkeypatch.setattr(pause, "log_audit_event", no_audit)
     app = create_app(settings=Settings(environment="local", **settings))
     app.state.request_sessions = lambda: FakeSession(state)
@@ -88,7 +107,7 @@ def _client(
         access = SessionAccess(
             user=UserRecord(USER_ID, "u@example.test", None, "active"),
             session_id=uuid.uuid4(),
-            step_up_at=datetime.now(UTC),
+            step_up_at=datetime.now(UTC) - step_up_age,
         )
         return MemberAccess(access=access, organization_id=organization_id, roles=frozenset({role}))
 
@@ -114,8 +133,9 @@ def test_pause_without_sentinel_sets_flag_and_returns_guardian_tx(
     assert body["onchain"] == "GUARDIAN_SAFE_TX_REQUIRED"
     assert body["guardianTx"]["call"]["to"] == "0x" + MODULE.hex()
     assert body["guardianTx"]["call"]["data"] == "0x8456cb59"
-    assert body["pendingTransactions"] == [{"operationId": "op-1"}]
-    assert state["row"].paused and state["row"].reason == "fire"
+    assert body["pendingTransactions"][0]["operationId"] == "op-1"
+    assert body["guardianTx"]["safeAddress"] == "0x" + "22" * 20
+    assert state["row"].paused
 
 
 def test_pause_with_sentinel_reports_submission(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +149,7 @@ def test_pause_with_sentinel_reports_submission(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(pause, "_call_sentinel", sentinel)
     body = client.post(f"{URL}/pause", json={"reason": "r"}).json()
     assert body["onchain"] == "SENTINEL_SUBMITTED" and body["sentinelTxHash"] == "0x" + "ab" * 32
-    assert "guardianTx" not in body and state["row"].paused
+    assert body["guardianTx"] is None and state["row"].paused
 
 
 def test_sentinel_failure_keeps_flag_and_falls_back_to_safe_tx(
@@ -188,3 +208,43 @@ def test_revoke_requires_the_exact_confirmation_name(monkeypatch: pytest.MonkeyP
     ok = client.post(f"{URL}/revoke-tx", json={"confirmName": "Acme Treasury"})
     assert ok.status_code == 201
     assert governance.calls[0]["calls"][0].data.hex() == "b6549f75"
+
+
+def test_stale_step_up_is_refused_on_resume_and_revoke(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _, governance = _client(
+        monkeypatch,
+        role="Owner",
+        row=_paused_row(OnchainPauseStatus.EFFECTIVE),
+        step_up_age=timedelta(hours=1),
+    )
+    for response in (
+        client.post(f"{URL}/resume-tx"),
+        client.post(f"{URL}/revoke-tx", json={"confirmName": "Acme Treasury"}),
+        client.post(f"{URL}/pause/cancel"),
+    ):
+        assert response.status_code == 403 and response.json()["code"] == "STEP_UP_REQUIRED"
+    assert governance.calls == []
+
+
+def test_missing_guardian_safe_is_a_clear_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, state, _ = _client(monkeypatch, role="Owner")
+
+    async def no_safe(*_: object) -> None:
+        return None
+
+    monkeypatch.setattr(pause, "_guardian_safe", no_safe)
+    response = client.post(f"{URL}/pause", json={"reason": "r"})
+    assert response.status_code == 409 and response.json()["code"] == "GUARDIAN_SAFE_MISSING"
+
+
+def test_status_returns_guardian_tx_while_requested(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, *_ = _client(monkeypatch, role="Auditor", row=_paused_row(OnchainPauseStatus.REQUESTED))
+    assert client.get(f"{URL}/pause").json()["guardianTx"]["call"]["data"] == "0x8456cb59"
+    client, *_ = _client(monkeypatch, role="Auditor", row=_paused_row(OnchainPauseStatus.EFFECTIVE))
+    assert client.get(f"{URL}/pause").json()["guardianTx"] is None
+
+
+def test_signer_url_must_be_http() -> None:
+    with pytest.raises(ValueError, match="http"):
+        Settings(environment="local", signer_url="file:///etc/passwd")
+    assert Settings(environment="local", signer_url="").signer_url is None

@@ -141,14 +141,14 @@ def _parse_reply(signed: dict[str, Any]) -> tuple[bytes, int, bytes]:
     return tx_hash, nonce, sender
 
 
-_PAUSED_SQL = (
+PAUSED_SQL = (
     "SELECT (t.status IN ('Paused', 'Revoked') OR COALESCE(bp.paused, false)) AS paused "
     "FROM treasuries t LEFT JOIN backend_pause bp ON bp.treasury_id = t.id WHERE t.id = $1"
 )
 
 
 async def _require_not_paused(connection: asyncpg.Connection, treasury_id: UUID) -> None:
-    if await connection.fetchval(_PAUSED_SQL, treasury_id):
+    if await connection.fetchval(PAUSED_SQL, treasury_id):
         raise TreasuryPaused(str(treasury_id))
 
 

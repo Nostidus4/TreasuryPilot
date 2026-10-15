@@ -274,11 +274,11 @@ export const usePlanFeeDecision = (orgId: string, action: 'accept' | 'defer') =>
 
 export const usePauseTreasury = (orgId: string, treasuryId: string) =>
   useOrgMutation(orgId, (reason: string) =>
-    api.post<{
-      backendPaused: boolean;
-      onchain: string;
-      sentinelTxHash?: Hex;
-    }>(`${base(orgId, treasuryId)}/pause`, { reason }, { idempotent: true }),
+    api.post<components['schemas']['PauseResponse']>(
+      `${base(orgId, treasuryId)}/pause`,
+      { reason },
+      { idempotent: true },
+    ),
   );
 
 export const useResumeTx = (orgId: string, treasuryId: string) =>

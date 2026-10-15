@@ -27,16 +27,20 @@ import asyncpg  # type: ignore[import-untyped]
 
 from treasurypilot_core.policy import Decision, PolicyReasonCode
 from treasurypilot_worker.executor.outbox import (
+    PAUSED_SQL,
     SignerClient,
     SignerRefused,
     StepExecution,
+    TreasuryPaused,
     execute_step,
 )
 from treasurypilot_worker.recovery.retry import ReviewIntent, classify
 
 logger = logging.getLogger(__name__)
 
-SequenceStatus = Literal["Completed", "Waiting", "PartiallyCompleted", "Blocked", "Inactive"]
+SequenceStatus = Literal[
+    "Completed", "Waiting", "PartiallyCompleted", "Blocked", "Inactive", "Paused"
+]
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,9 @@ async def sequence_plan(
         if status in ("Reverted", "Abandoned"):
             return await _stop(pool, run, ReviewIntent("INFRA", f"STEP_{status.upper()}"), seq)
 
+        # Paused is a no-op, not a review: the request stays queued and is re-planned on Resumed.
+        if await _paused(pool, run):
+            return SequenceResult("Paused", completed=seq)
         # A NotSubmitted row with attempts was already validated and sent: replay it as is, the
         # signer answers by step_id (re-validating or re-attesting could strand a sent step).
         if not (row and row["attempts"] > 0):
@@ -213,6 +220,8 @@ async def sequence_plan(
             await execute_step(pool, signer, step)
         except SignerRefused as error:
             return await _stop(pool, run, _refusal_intent(error.code), seq)
+        except TreasuryPaused:  # a pause landed after the check above; the op stays NotSubmitted
+            return SequenceResult("Paused", completed=seq)
         if step.kind == "PAY":
             await _mark(pool, run, "Paying", ("Preparing",))
         return SequenceResult("Waiting", completed=seq)
@@ -222,6 +231,10 @@ async def sequence_plan(
         await _mark(pool, run, "Paying", ("Preparing",))
         await _mark(pool, run, "Paid", ("Paying",))
     return SequenceResult("Completed", completed=len(run.steps))
+
+
+async def _paused(pool: asyncpg.Pool, run: PlanRun) -> bool:
+    return bool(run.steps) and bool(await pool.fetchval(PAUSED_SQL, run.steps[0].treasury_id))
 
 
 async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:

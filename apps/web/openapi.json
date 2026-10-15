@@ -1516,6 +1516,18 @@
         "title": "GovernanceTxPurpose",
         "type": "string"
       },
+      "GovernanceTxResponse": {
+        "properties": {
+          "governanceTx": {
+            "additionalProperties": true,
+            "title": "Governancetx",
+            "type": "object"
+          }
+        },
+        "required": ["governanceTx"],
+        "title": "GovernanceTxResponse",
+        "type": "object"
+      },
       "GrantExceptionRequest": {
         "properties": {
           "expiryHours": {
@@ -1527,6 +1539,20 @@
           }
         },
         "title": "GrantExceptionRequest",
+        "type": "object"
+      },
+      "GuardianTx": {
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/SafeCall"
+          },
+          "safeAddress": {
+            "title": "Safeaddress",
+            "type": "string"
+          }
+        },
+        "required": ["safeAddress", "call"],
+        "title": "GuardianTx",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2669,6 +2695,11 @@
         "title": "NotificationView",
         "type": "object"
       },
+      "OnchainPauseStatus": {
+        "enum": ["NotRequested", "Requested", "Effective"],
+        "title": "OnchainPauseStatus",
+        "type": "string"
+      },
       "OobMethod": {
         "enum": ["PHONE", "IN_PERSON", "SIGNED_LETTER", "OTHER"],
         "title": "OobMethod",
@@ -2953,6 +2984,146 @@
         "title": "OrganizationView",
         "type": "object"
       },
+      "PauseCancelResponse": {
+        "properties": {
+          "backendPaused": {
+            "title": "Backendpaused",
+            "type": "boolean"
+          },
+          "onchainStatus": {
+            "$ref": "#/components/schemas/OnchainPauseStatus"
+          }
+        },
+        "required": ["backendPaused", "onchainStatus"],
+        "title": "PauseCancelResponse",
+        "type": "object"
+      },
+      "PauseRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "PauseRequest",
+        "type": "object"
+      },
+      "PauseResponse": {
+        "properties": {
+          "backendPaused": {
+            "title": "Backendpaused",
+            "type": "boolean"
+          },
+          "guardianTx": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuardianTx"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "onchain": {
+            "enum": [
+              "SENTINEL_SUBMITTED",
+              "ALREADY_PAUSED",
+              "SENTINEL_FAILED",
+              "GUARDIAN_SAFE_TX_REQUIRED"
+            ],
+            "title": "Onchain",
+            "type": "string"
+          },
+          "onchainStatus": {
+            "$ref": "#/components/schemas/OnchainPauseStatus"
+          },
+          "pendingTransactions": {
+            "items": {
+              "$ref": "#/components/schemas/PendingTransaction"
+            },
+            "title": "Pendingtransactions",
+            "type": "array"
+          },
+          "sentinelTxHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentineltxhash"
+          }
+        },
+        "required": [
+          "backendPaused",
+          "onchainStatus",
+          "onchain",
+          "pendingTransactions"
+        ],
+        "title": "PauseResponse",
+        "type": "object"
+      },
+      "PauseStatusResponse": {
+        "properties": {
+          "backendPaused": {
+            "title": "Backendpaused",
+            "type": "boolean"
+          },
+          "effective": {
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "guardianTx": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuardianTx"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "onchainStatus": {
+            "$ref": "#/components/schemas/OnchainPauseStatus"
+          },
+          "pendingTransactions": {
+            "items": {
+              "$ref": "#/components/schemas/PendingTransaction"
+            },
+            "title": "Pendingtransactions",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "treasuryStatus": {
+            "$ref": "#/components/schemas/TreasuryStatus"
+          }
+        },
+        "required": [
+          "backendPaused",
+          "onchainStatus",
+          "effective",
+          "reason",
+          "treasuryStatus",
+          "pendingTransactions"
+        ],
+        "title": "PauseStatusResponse",
+        "type": "object"
+      },
       "PayeeCreate": {
         "properties": {
           "address": {
@@ -3132,6 +3303,29 @@
           "screening"
         ],
         "title": "PayeeView",
+        "type": "object"
+      },
+      "PendingTransaction": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "operationId": {
+            "title": "Operationid",
+            "type": "string"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["operationId", "requestId", "kind", "status"],
+        "title": "PendingTransaction",
         "type": "object"
       },
       "PlanDetailView": {
@@ -4279,6 +4473,19 @@
         "title": "ReviewType",
         "type": "string"
       },
+      "RevokeRequest": {
+        "properties": {
+          "confirmName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirmname",
+            "type": "string"
+          }
+        },
+        "required": ["confirmName"],
+        "title": "RevokeRequest",
+        "type": "object"
+      },
       "RoleUpdateRequest": {
         "properties": {
           "roles": {
@@ -4293,6 +4500,29 @@
         },
         "required": ["roles"],
         "title": "RoleUpdateRequest",
+        "type": "object"
+      },
+      "SafeCall": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "integer"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "value", "data", "operation"],
+        "title": "SafeCall",
         "type": "object"
       },
       "SafeDeploymentRequest": {
@@ -12727,6 +12957,168 @@
         "tags": ["governance"]
       }
     },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/pause": {
+      "get": {
+        "operationId": "pause_status_v1_orgs__organization_id__treasuries__treasury_id__pause_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Status",
+        "tags": ["pause"]
+      },
+      "post": {
+        "operationId": "pause_treasury_v1_orgs__organization_id__treasuries__treasury_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Treasury",
+        "tags": ["pause"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/pause/cancel": {
+      "post": {
+        "description": "Lift a backend-only pause that never became effective on-chain (resume-tx needs Effective).",
+        "operationId": "cancel_pause_v1_orgs__organization_id__treasuries__treasury_id__pause_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseCancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Pause",
+        "tags": ["pause"]
+      }
+    },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/payees": {
       "get": {
         "operationId": "list_payees_v1_orgs__organization_id__treasuries__treasury_id__payees_get",
@@ -13235,6 +13627,118 @@
         "summary": "List Execution Plans",
         "tags": ["execution"],
         "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/resume-tx": {
+      "post": {
+        "operationId": "resume_tx_v1_orgs__organization_id__treasuries__treasury_id__resume_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceTxResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Tx",
+        "tags": ["pause"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/revoke-tx": {
+      "post": {
+        "operationId": "revoke_tx_v1_orgs__organization_id__treasuries__treasury_id__revoke_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceTxResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Tx",
+        "tags": ["pause"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements": {

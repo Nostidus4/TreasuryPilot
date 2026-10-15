@@ -277,3 +277,46 @@ async def _count_operations(database_url: str, step: StepExecution) -> int:
         )
     finally:
         await pool.close()
+
+
+def test_pause_between_insert_and_signing_leaves_the_operation_not_submitted(
+    database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from treasurypilot_worker.executor import outbox
+
+    real, calls = outbox._require_not_paused, list[int]()
+
+    async def pause_after_first_check(connection: Any, treasury_id: uuid.UUID) -> None:
+        calls.append(1)
+        if len(calls) == 2:  # the pause lands after transaction 1, before the signer call
+            await connection.execute(
+                "INSERT INTO backend_pause (treasury_id, org_id, paused, reason) "
+                "VALUES ($1, $2, true, 'mid-flight') "
+                "ON CONFLICT (treasury_id) DO UPDATE SET paused = true",
+                treasury_id,
+                uuid.UUID(_ORG),
+            )
+        await real(connection, treasury_id)
+
+    monkeypatch.setattr(outbox, "_require_not_paused", pause_after_first_check)
+    signer, step = FakeSigner(), _step()
+    try:
+        with pytest.raises(TreasuryPaused):
+            asyncio.run(_run(database_url, signer, step))
+        assert signer.calls == 0
+
+        async def read_and_unpause() -> Any:
+            pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+            try:
+                status = await pool.fetchval(
+                    "SELECT status FROM operations WHERE step_id = $1", step.step_id
+                )
+                await pool.execute("UPDATE backend_pause SET paused = false")
+                return status
+            finally:
+                await pool.close()
+
+        status = asyncio.run(read_and_unpause())
+        assert status == "NotSubmitted"
+    finally:
+        monkeypatch.undo()
