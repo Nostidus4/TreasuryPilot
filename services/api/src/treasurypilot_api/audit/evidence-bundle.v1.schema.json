@@ -66,7 +66,8 @@
         "seq": {"type": "integer", "minimum": 0}, "stepId": {"type": "string"}, "action": {"type": "integer"},
         "chainId": {"type": "integer", "minimum": 1}, "fromAddress": {"type": "string"},
         "toAddress": {"type": "string"}, "assetAddress": {"type": "string"},
-        "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}
+        "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "venue": {"type": "string", "enum": ["TEST_ROUTER"]}
       }
     },
     "plan": {

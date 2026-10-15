@@ -28,15 +28,30 @@ jobs:
           --health-retries 5
     env:
       TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:treasurypilot@localhost:5432/treasurypilot
+      TP_REQUIRE_INTEGRATION: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: '0.11.3'
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install Solidity dependencies
+        run: pnpm install --frozen-lockfile --filter @treasurypilot/contracts...
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.5
+      - name: Build the contracts used by the worker Anvil tests
+        working-directory: contracts
+        run: >-
+          forge build src/test-assets/TestUSDC.sol src/test-assets/MockAavePool.sol
+          test/helpers/ReconcileModuleStandIn.sol
       - name: Install Python workspace
         run: uv sync --frozen
       # This job (with Anvil) is the one that runs the Anvil planning test in
@@ -49,6 +64,7 @@ jobs:
           services/worker/tests/test_tracker_integration.py
           services/worker/tests/test_event_indexer_integration.py
           services/worker/tests/test_recovery_resolve.py
+          services/worker/tests/reconcile/test_verify_anvil.py
           services/worker/tests/test_recovery_partial_anvil.py
           services/worker/tests/planner/test_pipeline_integration.py
           services/worker/tests/test_recovery_crash_suite.py
@@ -292,6 +308,20 @@ jobs:
   scenario-anvil:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tp
+          POSTGRES_PASSWORD: tp
+          POSTGRES_DB: tp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tp -d tp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -329,6 +359,12 @@ jobs:
           exit 1
       - name: Deploy contracts to Anvil
         run: infra/scripts/deploy-local.sh
+      - name: AT-04 gas-shortage swap on the TEST ROUTER (planner, sequencer, tracker, real module)
+        env:
+          TP_TEST_ANVIL_URL: http://127.0.0.1:8545
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
+          TP_REQUIRE_INTEGRATION: '1'
+        run: uv run pytest -q -rs services/worker/tests/executor/test_swap_for_gas_anvil.py
       - name: Run every scenario on Anvil
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545

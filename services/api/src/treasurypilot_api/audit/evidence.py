@@ -89,6 +89,7 @@ class PlanStepEvidence(StrictModel):
     to_address: str
     asset_address: str
     amount: str
+    venue: Literal["TEST_ROUTER"] | None = None  # swap-for-gas steps are labelled TEST ROUTER
 
 
 class PlanEvidence(StrictModel):

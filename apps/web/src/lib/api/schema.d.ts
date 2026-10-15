@@ -4212,6 +4212,8 @@ export interface components {
       stepId: string;
       /** Toaddress */
       toAddress: string;
+      /** Venue */
+      venue?: 'TEST_ROUTER' | null;
     };
     /** PlanStepView */
     PlanStepView: {

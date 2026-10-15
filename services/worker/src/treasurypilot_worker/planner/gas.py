@@ -45,8 +45,6 @@ async def with_gas_swap(
     """``plan`` unchanged without a shortage, else with the swap first.
 
     Raises ``GasSwapUnavailable`` (no quote source) or ``GasSwapInfeasible`` (over the bound).
-    shortcut: ``required_wei`` is the fee of the plan without the swap step; add its gas if the
-    margin matters.
     """
 
     balance = await deps.native_balance(treasury_id)
