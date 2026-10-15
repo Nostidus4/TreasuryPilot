@@ -100,10 +100,10 @@ def anvil_url() -> Iterator[str]:
 
 
 def _unavailable(reason: str) -> None:
-    """A missing tool must not silently skip these tests in CI."""
+    """A missing tool must not silently skip these tests in the integration CI job."""
 
-    if os.environ.get("CI"):
-        pytest.fail(f"{reason} (CI is set, so this must not be skipped)")
+    if os.environ.get("TP_REQUIRE_INTEGRATION"):
+        pytest.fail(f"{reason} (TP_REQUIRE_INTEGRATION is set, so this must not be skipped)")
     pytest.skip(reason)
 
 
