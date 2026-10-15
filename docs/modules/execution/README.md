@@ -156,7 +156,7 @@ Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, complet
 
 | Criterion | Test |
 |---|---|
-| Owner balance change between refill and pay is detected and handled (AT-10 re-check on the current balance) | `test_gate_integration.py::test_wallet_balance_change_between_refill_and_pay_is_blocked`, `test_sequencer_integration.py::test_owner_balance_change_between_refill_and_pay_stops_with_review` |
+| Owner balance change between refill and pay is detected and handled (AT-10 gate-level; two-request race not covered here) | `test_gate_integration.py::test_wallet_balance_change_between_refill_and_pay_is_blocked`, `test_sequencer_integration.py::test_owner_balance_change_between_refill_and_pay_stops_with_review` |
 | Next step not sent while the previous is Pending | `test_sequencer_integration.py::test_steps_run_in_order_and_pay_confirmation_marks_paid` |
 | PRE_STEP then SIMULATION before each step | `test_gate_integration.py::test_wallet_balance_change_between_refill_and_pay_is_blocked` (validations rows) |
 | Expired attestation renewed or plan stops | `test_sequencer_integration.py::test_expired_attestation_is_renewed_or_stops` |
@@ -165,7 +165,7 @@ Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, complet
 | WITHDRAW / SWAP / REFILL steps, leading WITHDRAW | `test_a_request_plan_with_a_leading_withdraw_runs_it_first_and_completes`, `test_a_plan_with_a_swap_for_gas_step_runs_it_first_and_completes` |
 | Partial completion resumes without a second refill (AT-07) | `test_resume_sends_only_the_unfinished_pay_after_revalidation` |
 
-SUPPLY has no `ExecutionPlan` wire mapping, so request plans carry no SUPPLY step; liquidity SUPPLY runs under the swap/yield flow.
+SUPPLY has no `ExecutionPlan` wire mapping, so request plans carry no SUPPLY step; liquidity SUPPLY/WITHDRAW planning is deferred to EXE-014 (#261).
 
 ### 7.4 Gas replacement
 
