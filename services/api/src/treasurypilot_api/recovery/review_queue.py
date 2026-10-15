@@ -113,6 +113,7 @@ async def create_for_outcome(
     reason_codes: tuple[str, ...] = (),
     completed_steps: tuple[dict[str, object], ...] = (),
     plan_id: uuid.UUID | None = None,
+    fee_estimate_wei: int | None = None,
     last_safe_execution_at: datetime | None = None,
     evidence_resolved: bool = False,
     now: datetime | None = None,
@@ -121,6 +122,10 @@ async def create_for_outcome(
     if outcome == "ALLOW":
         return None
     kind = ReviewType(outcome)
+    if kind == ReviewType.FEE_APPROVAL and (plan_id is None or fee_estimate_wei is None):
+        raise ValueError("FEE_APPROVAL requires plan_id and fee_estimate_wei")
+    if fee_estimate_wei is not None and fee_estimate_wei < 0:
+        raise ValueError("fee_estimate_wei must be nonnegative")
     route = route_for(kind, primary_code)
     current = now or datetime.now(UTC)
     if kind == ReviewType.FEE_APPROVAL:
@@ -140,6 +145,7 @@ async def create_for_outcome(
             request_id=request.id,
             request_version=request.version,
             plan_id=plan_id,
+            fee_estimate_wei=fee_estimate_wei,
             type=kind.value,
             primary_code=primary_code,
             reason_codes=list(reason_codes),
@@ -166,6 +172,7 @@ async def create_for_outcome(
         .values(
             request_version=request.version,
             plan_id=plan_id,
+            fee_estimate_wei=fee_estimate_wei,
             version=ReviewItem.version + 1,
         )
     )

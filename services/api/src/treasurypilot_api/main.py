@@ -67,6 +67,8 @@ from treasurypilot_api.invoices.fx import FxQuoteProvider
 from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
 from treasurypilot_api.mandate.api import router as governance_router
+from treasurypilot_api.mandate.fees import FeeHistoryProvider
+from treasurypilot_api.mandate.fees import router as fee_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -244,6 +246,7 @@ def create_app(
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
     fx_quote_provider: FxQuoteProvider | None = None,
+    fee_history_provider: FeeHistoryProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
     mfa_service: MfaService | None = None,
 ) -> FastAPI:
@@ -348,6 +351,8 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if application.state.fee_history_provider is None:
+            application.state.fee_history_provider = RpcSafeVerifier(configuration)
         if application.state.treasury_service is None and sessions is not None:
             application.state.treasury_service = TreasuryService(
                 sessions, RpcSafeVerifier(configuration), configuration
@@ -412,6 +417,7 @@ def create_app(
         async_sessionmaker(engine, expire_on_commit=False) if engine is not None else None
     )
     app.state.treasury_service = treasury_service
+    app.state.fee_history_provider = fee_history_provider
     app.state.governance_service = governance_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository
@@ -464,6 +470,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(treasury_router)
     app.include_router(governance_router)
+    app.include_router(fee_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)
