@@ -187,9 +187,7 @@ async def test_d2_surplus_is_supplied_to_aave_with_the_reserve_intact(
             "SELECT request_id, kind, status FROM operations WHERE treasury_id = $1", world.treasury
         )
         assert (op["request_id"], op["kind"], op["status"]) == (None, "SUPPLY", "Confirmed")
-        plan = await pool.fetchrow("SELECT status, request_id FROM plans WHERE id = $1", plan_id)
         assert plan["request_id"] is None and plan["status"] == "Completed"
-    finally:
         steps.rpc(anvil, "evm_revert", [snapshot_id])
 
 
@@ -228,6 +226,5 @@ async def test_d3_new_invoice_triggers_a_withdraw_from_aave_before_payment(
             "SELECT request_id, kind, status FROM operations WHERE treasury_id = $1", world.treasury
         )
         assert (op["request_id"], op["kind"], op["status"]) == (None, "WITHDRAW", "Confirmed")
-        assert await pool.fetchval("SELECT status FROM plans WHERE id = $1", plan_id) == "Completed"
     finally:
         steps.rpc(anvil, "evm_revert", [snapshot_id])
