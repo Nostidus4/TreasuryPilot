@@ -27,7 +27,12 @@ from treasurypilot_worker.locks import create_worker_pool
 
 CHAIN_ID = 31337
 SENDER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"  # Anvil dev account 0
-KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+# Anvil's published dev mnemonic; deriving account #0 keeps a literal key out of the repo.
+Account.enable_unaudited_hdwallet_features()
+KEY = Account.from_mnemonic(
+    "test test test test test test test test test test test junk",
+    account_path="m/44'/60'/0'/0/0",
+).key.to_0x_hex()
 EXIT_CODE = 77  # distinguishes a deliberate os._exit from any other child failure
 
 
