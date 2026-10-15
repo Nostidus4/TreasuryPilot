@@ -122,4 +122,4 @@ def test_password_file_path_without_a_keystore_map_starts_unconfigured(tmp_path:
     # Compose always sets the password file path (to /dev/null-backed secrets) even with no keys.
     settings = Settings(executor_keystore_password_file=tmp_path / "absent")
     with TestClient(create_app(settings_override=settings)) as client:
-        assert client.get("/health").status_code == 200
+        assert client.get("/health").status_code == 503  # unconfigured, but it started
