@@ -41,9 +41,9 @@ def _perfect_answer(label: dict[str, Any]) -> dict[str, Any]:
             "discount_bps": wanted.get("discount_bps"),
             "discount_days": wanted.get("discount_days"),
             "late_fee": None
-            if "late_fee.kind" not in wanted
+            if "late_fee.rate_bps" not in wanted
             else {
-                "kind": wanted["late_fee.kind"],
+                "kind": label["terms"]["late_fee"]["type"],
                 "rate_bps": wanted["late_fee.rate_bps"],
                 "period_days": wanted["late_fee.period_days"],
             },

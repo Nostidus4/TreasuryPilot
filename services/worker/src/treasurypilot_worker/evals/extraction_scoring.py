@@ -85,8 +85,8 @@ def expected_terms(label: Mapping[str, Any]) -> frozenset[Term]:
         result.add(("discount_bps", terms["discount_bps"]))
         deadline = date.fromisoformat(terms["discount_deadline"])
         result.add(("discount_days", (deadline - issue).days))
+    # late_fee.kind is free text in the schema (no fixed vocabulary), so only the numbers are scored.
     if (fee := terms.get("late_fee")) is not None:
-        result.add(("late_fee.kind", fee["type"]))
         result.add(("late_fee.rate_bps", fee["rate_bps"]))
         result.add(("late_fee.period_days", fee["period_days"]))
     return frozenset(result)
@@ -104,7 +104,6 @@ def predicted_terms(terms: TermsExtraction | None) -> frozenset[Term]:
     ]
     if (fee := terms.late_fee) is not None:
         pairs += [
-            ("late_fee.kind", fee.kind),
             ("late_fee.rate_bps", fee.rate_bps),
             ("late_fee.period_days", fee.period_days),
         ]

@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-006",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "3d92b63e669bf4aedb535bf0af011379bc6b7e85a6a4bb60e83c9a2746756363",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 006 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 006 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0006\",\"page\":1,\"span\":\"TEST-INV-0006\"},\"issue_date\":{\"value\":\"2026-09-15\",\"page\":1,\"span\":\"Issue date: 2026-09-15\"},\"due_date\":{\"value\":\"2026-10-30\",\"page\":1,\"span\":\"Due date: 2026-10-30\"},\"amount_text\":{\"value\":\"250.000000\",\"page\":1,\"span\":\"Amount: 250.000000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"Amount: 250.000000 USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Payee: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":200,\"discount_days\":null,\"net_days\":null,\"late_fee\":null,\"priority_note\":null,\"uncertain\":true,\"uncertain_reason\":\"Early discount of 200 basis points is stated through the calendar date 2026-09-25 inclusive rather than as a number of days, and net terms are given as the date 2026-10-30 rather than a number of days, so discount_days and net_days are not printed and were not inferred.\"},\"invoice_count_in_document\":1,\"suspicious_instructions\":[]}",
+      "input_tokens": 1849,
+      "output_tokens": 491
+    }
+  ]
+}

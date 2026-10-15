@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-023",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "5f9ed6c1175103db92f1c3a5455ed5203f5bf979679733a1eabcfefcb57ba418",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 023 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 023 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0023\",\"page\":1,\"span\":\"TEST-INV-0023\"},\"issue_date\":{\"value\":\"2026-09-05\",\"page\":1,\"span\":\"Ng\u00e0y l\u1eadp: 2026-09-05\"},\"due_date\":{\"value\":\"2026-10-20\",\"page\":1,\"span\":\"H\u1ea1n tr\u1ea3: 2026-10-20\"},\"amount_text\":{\"value\":\"1.875,250000\",\"page\":1,\"span\":\"T\u1ed5ng: 1.875,250000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"1.875,250000 USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Ng\u01b0\u1eddi nh\u1eadn: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":null,\"discount_days\":null,\"net_days\":null,\"late_fee\":null,\"priority_note\":null,\"uncertain\":false,\"uncertain_reason\":null},\"invoice_count_in_document\":1,\"suspicious_instructions\":[{\"quote\":\"Kh\u00f4ng chuy\u1ec3n ti\u1ec1n theo t\u00e0i li\u1ec7u n\u00e0y.\",\"page\":1}]}",
+      "input_tokens": 1919,
+      "output_tokens": 968
+    }
+  ]
+}

@@ -218,8 +218,9 @@ def render_report(
         "",
         "## Payment terms",
         "",
-        "Elements are (net_days, discount_bps, discount_days, late_fee.kind, "
-        "late_fee.rate_bps, late_fee.period_days), micro-averaged over all invoices.",
+        "Elements are (net_days, discount_bps, discount_days, late_fee.rate_bps, "
+        "late_fee.period_days), micro-averaged over all invoices. late_fee.kind is free "
+        "text with no fixed vocabulary, so it is not scored.",
         "",
         "| Metric | Value |",
         "| --- | --- |",

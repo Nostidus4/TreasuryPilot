@@ -194,7 +194,7 @@ LLM timeout → manual entry / deterministic plan / template text; schema error 
 
 Contract tests on schemas; injection lint; tool read-only test; recorded-response tests for each task; evals: extraction accuracy (30 invoices), planner benchmark B1 vs B2 (dev + held-out), red-team (20), Copilot fidelity (20).
 
-**Extraction eval (AGT-013).** `make eval-extraction` (`treasurypilot_worker/evals/extraction_eval.py`, scoring in `extraction_scoring.py`) runs `EXTRACT_TEMPLATE` through `AiAdapter` over `evals/invoices`, compares `vendor_name`, `invoice_no`, `issue_date`, `due_date`, `amount` (integer base units via `BaseUnits.parse`), `currency` and `payee_address` by exact match, and scores payment terms as micro-averaged F1 over (net_days, discount_bps, discount_days, late-fee kind/rate/period) elements. Recorded mode replays stored responses offline (CI); live mode needs `ANTHROPIC_API_KEY`. Report: `docs/evidence/extraction-accuracy.md`.
+**Extraction eval (AGT-013).** `make eval-extraction` (`treasurypilot_worker/evals/extraction_eval.py`, scoring in `extraction_scoring.py`) runs `EXTRACT_TEMPLATE` through `AiAdapter` over `evals/invoices`, compares `vendor_name`, `invoice_no`, `issue_date`, `due_date`, `amount` (integer base units via `BaseUnits.parse`), `currency` and `payee_address` by exact match, and scores payment terms as micro-averaged F1 over (net_days, discount_bps, discount_days, late-fee rate/period; the free-text kind is not scored) elements. Recorded mode replays stored responses offline (CI); live mode needs `ANTHROPIC_API_KEY`. Report: `docs/evidence/extraction-accuracy.md`.
 
 ## 13. Tickets
 

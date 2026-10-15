@@ -65,7 +65,7 @@ def test_perfect_extraction_scores_every_field_and_all_terms() -> None:
     score = score_case("inv-900", LABEL, extraction(), decimals=6)
 
     assert all(score.fields[name] for name in FIELDS)
-    assert score.terms == TermsCounts(6, 0, 0) and score.terms.exact and not score.misses
+    assert score.terms == TermsCounts(5, 0, 0) and score.terms.exact and not score.misses
 
 
 def test_amount_is_compared_in_base_units_not_text() -> None:
@@ -116,18 +116,23 @@ def test_expected_terms_are_day_offsets_from_the_issue_date() -> None:
         ("net_days", 30),
         ("discount_bps", 200),
         ("discount_days", 10),
-        ("late_fee.kind", "percent_per_period"),
         ("late_fee.rate_bps", 150),
         ("late_fee.period_days", 7),
     }
     assert expected_terms({**LABEL, "terms": None}) == frozenset()
 
 
+def test_late_fee_kind_wording_is_not_scored() -> None:
+    dumped = extraction().terms.model_dump()  # type: ignore[union-attr]
+    reworded = {**dumped, "late_fee": {**dumped["late_fee"], "kind": "percentage_per_period"}}
+    assert predicted_terms(TermsExtraction.model_validate(reworded)) == expected_terms(LABEL)
+
+
 def test_wrong_discount_days_costs_one_false_positive_and_one_false_negative() -> None:
     wrong = {**extraction().terms.model_dump(), "discount_days": 15}  # type: ignore[union-attr]
     score = score_case("x", LABEL, extraction(terms=wrong), decimals=6)
 
-    assert score.terms == TermsCounts(5, 1, 1) and not score.terms.exact
+    assert score.terms == TermsCounts(4, 1, 1) and not score.terms.exact
 
 
 def test_terms_invented_for_an_invoice_without_any_hurt_precision_only() -> None:
@@ -143,7 +148,7 @@ def test_terms_invented_for_an_invoice_without_any_hurt_precision_only() -> None
 def test_missing_terms_hurt_recall_only() -> None:
     score = score_case("x", LABEL, extraction(terms=None), decimals=6)
 
-    assert score.terms == TermsCounts(0, 0, 6)
+    assert score.terms == TermsCounts(0, 0, 5)
     result = f1_score([score.terms])
     assert result.precision == 1.0 and result.recall == 0.0 and result.f1 == 0.0
 
@@ -170,7 +175,7 @@ def test_f1_with_nothing_expected_or_predicted_is_one() -> None:
 def test_pipeline_failure_misses_every_field_and_every_term() -> None:
     score = score_failure("inv-900", LABEL, "AiTimeout")
 
-    assert not any(score.fields.values()) and score.terms == TermsCounts(0, 0, 6)
+    assert not any(score.fields.values()) and score.terms == TermsCounts(0, 0, 5)
     assert score.failed == "AiTimeout"
 
 

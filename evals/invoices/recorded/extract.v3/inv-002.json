@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-002",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "96a860b86f5d9271fa0db294dd7f864e6f8429bbeb89f4371b54642b8527caf9",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 002 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 002 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0002\",\"page\":1,\"span\":\"TEST-INV-0002\"},\"issue_date\":{\"value\":\"2026-10-01\",\"page\":1,\"span\":\"Issue date: 2026-10-01\"},\"due_date\":{\"value\":\"2026-10-31\",\"page\":1,\"span\":\"Due date: 2026-10-31\"},\"amount_text\":{\"value\":\"150.000000\",\"page\":1,\"span\":\"Amount: 150.000000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"150.000000 USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Payee: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":200,\"discount_days\":null,\"net_days\":null,\"late_fee\":{\"kind\":\"per_period\",\"amount_text\":null,\"rate_bps\":150,\"period_days\":7,\"cap_text\":null},\"priority_note\":null,\"uncertain\":true,\"uncertain_reason\":\"Discount and net due are given as calendar dates (discount through 2026-10-11 inclusive, net due 2026-10-31) rather than day counts, so discount_days and net_days are not printed and were not inferred. Late fee is 150 bps per started 7-day period after due date, with no cap stated.\"},\"invoice_count_in_document\":1,\"suspicious_instructions\":[]}",
+      "input_tokens": 1873,
+      "output_tokens": 535
+    }
+  ]
+}
