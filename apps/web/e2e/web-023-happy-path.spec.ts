@@ -1,10 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import {
-  APPROVER,
-  SEEDED_PAYMENT_INVOICE,
-  SEEDED_PLAN_ID,
-} from '../src/mocks/seeded';
+import { APPROVER } from '../src/mocks/seeded';
 
 const requesterEmail = 'linh@northwind.test';
 
@@ -38,7 +34,45 @@ test('Anvil RPC is reachable', async ({ request }) => {
   expect(payload).toMatchObject({ result: '0x7a69' });
 });
 
-test('create and submit a request, then approve it with the demo signer', async ({
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`WEB-010 links to the API position card without horizontal overflow at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await signIn(page, requesterEmail);
+
+    if (viewport.width === 1280) {
+      await page.getByRole('link', { name: 'Requests' }).click();
+      await page.getByRole('link', { name: 'Overview' }).click();
+    } else {
+      await page.goto('/o/org_northwind/t/trs_main');
+    }
+    await expect(page).toHaveURL(/\/o\/org_northwind\/t\/trs_main$/);
+
+    const position = page.getByRole('group', { name: 'Position breakdown' });
+    await expect(position).toBeVisible();
+    await expect(position).toContainText('61,440.00');
+    await expect(position).toContainText('101,560.00');
+    await expect(position).toContainText('23,440.00');
+    await expect(position).toContainText('38,000.00');
+
+    const columns = await position.evaluate(
+      (element) =>
+        getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/)
+          .length,
+    );
+    expect(columns).toBe(viewport.width >= 768 ? 2 : 1);
+    const horizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(horizontalOverflow).toBeLessThanOrEqual(0);
+  });
+}
+
+test('create a request, approve it, run its automatic plan, and match that payment', async ({
   page,
 }) => {
   await signIn(page, requesterEmail);
@@ -80,25 +114,27 @@ test('create and submit a request, then approve it with the demo signer', async 
     page
       .getByRole('status')
       .filter({ hasText: 'This request is no longer waiting for approval.' })
-      .getByText('Approved', { exact: true }),
+      .getByText('Scheduled', { exact: true }),
   ).toBeVisible();
-});
 
-test('execute a seeded plan, verify payment, and reconcile its receipt', async ({
-  page,
-}) => {
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
   await signIn(page, requesterEmail);
+
   await page.getByRole('link', { name: 'Plans' }).click();
-  await page.getByRole('row', { name: `Open plan ${SEEDED_PLAN_ID}` }).click();
+  const requestPlan = page.getByRole('row').filter({ hasText: '145.25' });
+  await expect(requestPlan).toHaveCount(1);
+  await requestPlan.click();
+  await expect(page.getByText('Pay Acurast Cloud')).toBeVisible();
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByText('All steps verified')).toBeVisible({
     timeout: 35_000,
   });
+  await expect(page.getByText('Paid · 3 confirmations')).toBeVisible();
 
   await page.getByRole('link', { name: 'Reconciliation' }).click();
-  await page
-    .getByRole('row', { name: `Open payment ${SEEDED_PAYMENT_INVOICE}` })
-    .click();
+  await page.getByRole('row', { name: 'Open payment E2E-WEB-023-001' }).click();
   await expect(page.getByText('Evidence is incomplete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as matched' }).click();
   await expect(page.getByText('Marked as matched')).toBeVisible();

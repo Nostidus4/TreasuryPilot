@@ -15,10 +15,28 @@ from collections.abc import Sequence
 from typing import Any, Final
 
 import asyncpg  # type: ignore[import-untyped]
+from eth_utils import keccak
 
-from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent, registry
-from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_CONFIG, SAFE_EXEC, decode_log
-from treasurypilot_worker.chain.rpc import RpcClient, build_rpc_client
+from treasurypilot_worker.chain.event_handlers import (
+    HandlerRegistry,
+    IndexedEvent,
+    reclassify_unmatched_outflows,
+    registry,
+)
+from treasurypilot_worker.chain.events import (
+    EVENTS,
+    MODULE,
+    SAFE_CONFIG,
+    SAFE_EXEC,
+    TOKEN,
+    decode_log,
+)
+from treasurypilot_worker.chain.rpc import (
+    RpcClient,
+    RpcResponseError,
+    build_rpc_client,
+    decode_rpc_urls,
+)
 from treasurypilot_worker.chain.safe_config import SafeConfigReader, refresh_safe_config_snapshots
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -41,28 +59,50 @@ async def index_events(
     pool = await create_worker_pool(database_url, min_size=1, max_size=2)
     try:
         treasuries = await pool.fetch(
-            "SELECT t.id, t.chain_id, t.module_address, c.rpc_urls, "
-            "COALESCE(array_agg(w.safe_address) FILTER (WHERE w.id IS NOT NULL), '{}') AS safes "
+            "SELECT t.id, t.chain_id, t.module_address, a.address AS asset_address, c.rpc_urls, "
+            "COALESCE(array_agg(w.safe_address ORDER BY w.role, w.id) "
+            "FILTER (WHERE w.id IS NOT NULL), '{}') AS safes "
             "FROM treasuries t JOIN chains c USING (chain_id) "
+            "JOIN assets a ON a.id = t.asset_id AND a.chain_id = t.chain_id "
             "LEFT JOIN treasury_wallets w ON w.treasury_id = t.id "
             "WHERE c.enabled AND t.module_address IS NOT NULL AND t.status <> 'Revoked' "
-            "GROUP BY t.id, c.rpc_urls ORDER BY t.id"
+            "GROUP BY t.id, c.rpc_urls, a.address ORDER BY t.id"
         )
         changed = 0
         for treasury in treasuries:
             urls = treasury["rpc_urls"]
-            rpc = client_factory(list(json.loads(urls) if isinstance(urls, str) else urls))
+            rpc = client_factory(decode_rpc_urls(urls))
             addresses = {
                 MODULE: [bytes(treasury["module_address"])],
                 SAFE_CONFIG: [bytes(safe) for safe in treasury["safes"]],
                 SAFE_EXEC: [bytes(safe) for safe in treasury["safes"]],
             }
+            wallets = [bytes(safe) for safe in treasury["safes"]]
+            asset_address = treasury["asset_address"]
+            if asset_address is not None:
+                addresses[TOKEN] = [bytes(asset_address)]
             for stream, stream_addresses in addresses.items():
                 if not stream_addresses:
                     continue
                 try:
+                    a_token: bytes | None = None
+                    aave_pool: bytes | None = None
+                    if stream == TOKEN:
+                        aave_pool, a_token = await _lending_addresses(
+                            rpc, bytes(treasury["module_address"])
+                        )
+                        if a_token is not None and a_token not in stream_addresses:
+                            stream_addresses = [*stream_addresses, a_token]
                     count = await _index_stream(
-                        pool, rpc, treasury, stream, stream_addresses, handlers
+                        pool,
+                        rpc,
+                        treasury,
+                        stream,
+                        stream_addresses,
+                        handlers,
+                        token_wallets=wallets if stream == TOKEN else (),
+                        a_token_address=a_token if stream == TOKEN else None,
+                        aave_pool_address=aave_pool if stream == TOKEN else None,
                     )
                     if stream == SAFE_CONFIG and count:
                         # Re-read the Safes so coverage reflects the new guard/modules/owners.
@@ -72,6 +112,14 @@ async def index_events(
                             treasury_id=treasury["id"],
                         )
                     changed += count
+                    if stream == TOKEN:
+                        # The executor may store a tx hash after its Transfer was indexed.
+                        changed += await reclassify_unmatched_outflows(
+                            pool,
+                            treasury["id"],
+                            a_token_address=a_token,
+                            aave_pool_address=aave_pool,
+                        )
                 except Exception:
                     # One failing stream or provider answer must not stall the others.
                     logger.exception("indexing %s of treasury %s failed", stream, treasury["id"])
@@ -84,6 +132,35 @@ def index_events_sync(database_url: str) -> dict[str, int]:
     return asyncio.run(index_events(database_url))
 
 
+async def _lending_addresses(rpc: RpcClient, module: bytes) -> tuple[bytes | None, bytes | None]:
+    """Read the configured Aave pool and share token from the treasury module."""
+
+    values: list[bytes | None] = []
+    for getter in ("aavePool()", "aToken()"):
+        try:
+            result = await rpc.call(
+                "eth_call",
+                [
+                    {
+                        "to": "0x" + module.hex(),
+                        "data": "0x" + keccak(text=getter)[:4].hex(),
+                    },
+                    "latest",
+                ],
+            )
+        except RpcResponseError:
+            # Every provider reverted: lending is not configured. Transport errors propagate.
+            values.append(None)
+            continue
+        raw = bytes.fromhex(str(result or "0x").removeprefix("0x"))
+        if len(raw) != 32 or any(raw[:12]):  # empty or malformed return data: also "not configured"
+            values.append(None)
+            continue
+        address = raw[12:]
+        values.append(address if any(address) else None)
+    return values[0], values[1]
+
+
 async def _index_stream(
     pool: asyncpg.Pool,
     rpc: RpcClient,
@@ -91,6 +168,10 @@ async def _index_stream(
     stream: str,
     addresses: Sequence[bytes],
     handlers: HandlerRegistry,
+    *,
+    token_wallets: Sequence[bytes] = (),
+    a_token_address: bytes | None = None,
+    aave_pool_address: bytes | None = None,
 ) -> int:
     treasury_id: uuid.UUID = treasury["id"]
     chain_id: int = treasury["chain_id"]
@@ -118,22 +199,33 @@ async def _index_stream(
 
         # The node's address filter is exact; the re-check below guards a misbehaving provider.
         wanted = {"0x" + address.hex() for address in addresses}
-        logs: list[dict[str, Any]] = []
+        logs_by_key: dict[tuple[str, str], dict[str, Any]] = {}
         for low in range(start, end + 1, CHUNK_BLOCKS):
-            logs += await rpc.call(
-                "eth_getLogs",
-                [
-                    {
-                        "fromBlock": hex(low),
-                        "toBlock": hex(min(low + CHUNK_BLOCKS - 1, end)),
-                        "address": sorted(wanted),
-                        "topics": [list(abis)],
-                    }
-                ],
-            )
+            base_filter: dict[str, Any] = {
+                "fromBlock": hex(low),
+                "toBlock": hex(min(low + CHUNK_BLOCKS - 1, end)),
+                "address": sorted(wanted),
+            }
+            if stream == TOKEN:
+                if not token_wallets:
+                    continue
+                wallet_topics = ["0x" + wallet.hex().rjust(64, "0") for wallet in token_wallets]
+                queries = [
+                    {**base_filter, "topics": [list(abis), wallet_topics, None]},
+                    {**base_filter, "topics": [list(abis), None, wallet_topics]},
+                ]
+            else:
+                queries = [{**base_filter, "topics": [list(abis)]}]
+            for query in queries:
+                for log in await rpc.call("eth_getLogs", [query]):
+                    key = (str(log["transactionHash"]).lower(), str(log["logIndex"]).lower())
+                    logs_by_key[key] = log
+
+        logs = list(logs_by_key.values())
 
         events: list[IndexedEvent] = []
         seen: set[tuple[bytes, int]] = set()
+        wallet_topic_set = {"0x" + wallet.hex().rjust(64, "0") for wallet in token_wallets}
         for log in logs:
             topics = [str(topic).lower() for topic in log["topics"]]
             if (
@@ -141,6 +233,13 @@ async def _index_stream(
                 or str(log["address"]).lower() not in wanted
                 or not topics
                 or topics[0] not in abis
+                or (
+                    stream == TOKEN
+                    and (
+                        len(topics) < 3
+                        or (topics[1] not in wallet_topic_set and topics[2] not in wallet_topic_set)
+                    )
+                )
             ):
                 continue
             abi = abis[topics[0]]
@@ -180,6 +279,8 @@ async def _index_stream(
                         log_index,
                         int(log["blockNumber"], 16),
                         payload,
+                        a_token_address=a_token_address,
+                        aave_pool_address=aave_pool_address,
                     )
                 )
 
@@ -215,6 +316,8 @@ async def _index_stream(
                     row["block_number"],
                     json.loads(payload) if isinstance(payload, str) else payload,
                     removed=True,
+                    a_token_address=a_token_address,
+                    aave_pool_address=aave_pool_address,
                 )
             )
 

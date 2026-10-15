@@ -74,6 +74,14 @@ _ASSET_POLICY_SET_TOPIC = (
 )
 
 
+class _ActivationBlocked(Exception):
+    """Mandate read-back can never succeed; the version must move to Discrepancy."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+
+
 class GovernanceFailure(Exception):
     def __init__(self, code: str, status: int, detail: str) -> None:
         super().__init__(detail)
@@ -274,6 +282,29 @@ class GovernanceService:
             chain_id, "eth_call", [{"to": _address(safe), "data": _NONCE_SELECTOR}, "latest"]
         )
         return int(str(result), 16)
+
+    async def read_used_today(self, chain_id: int, module_address: bytes, asset: bytes) -> int:
+        """Read the authoritative on-chain PAY counter for one asset (action 1)."""
+        if len(module_address) != 20 or len(asset) != 20:
+            raise GovernanceFailure("MODULE_NOT_READY", 409, "Treasury module is unavailable.")
+        selector = keccak(b"usedToday(uint8,address)")[:4]
+        result = await self._read(
+            chain_id,
+            "eth_call",
+            [
+                {
+                    "to": _address(module_address),
+                    "data": _hex(selector + encode(["uint8", "address"], [1, _address(asset)])),
+                },
+                "latest",
+            ],
+        )
+        try:
+            return int(str(result), 16)
+        except (TypeError, ValueError):
+            raise GovernanceFailure(
+                "CHAIN_READ_INVALID", 503, "PAY usage could not be read from the treasury module."
+            ) from None
 
     async def _rpc_first(
         self,
@@ -787,6 +818,54 @@ class GovernanceService:
     async def _record_mandate_activation(
         self, *, organization_id: uuid.UUID, tx_id: uuid.UUID
     ) -> None:
+        try:
+            await self._read_back_mandate_activation(organization_id=organization_id, tx_id=tx_id)
+        except (_ActivationBlocked, KeyError, ValueError, TypeError) as exc:
+            # A permanent failure must surface to Owners instead of leaving PendingActivation forever.
+            code = exc.code if isinstance(exc, _ActivationBlocked) else "MANDATE_CONFIG_INVALID"
+            logger.warning("mandate activation blocked", extra={"tx_id": str(tx_id), "code": code})
+            await self._mark_activation_discrepancy(
+                organization_id=organization_id, tx_id=tx_id, code=code, detail=str(exc)
+            )
+
+    async def _mark_activation_discrepancy(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID, code: str, detail: str
+    ) -> None:
+        from treasurypilot_api.recovery.review_queue import create_for_mandate_discrepancy
+
+        async with self._sessions() as session, session.begin():
+            tx = await self._row(session, organization_id, tx_id)
+            current = await session.scalar(
+                select(MandateVersion)
+                .where(
+                    MandateVersion.id == tx.entity_id,
+                    MandateVersion.org_id == organization_id,
+                    MandateVersion.status == MandateVersionStatus.PENDING_ACTIVATION,
+                )
+                .with_for_update()
+            )
+            if current is None:
+                return
+            current.status = MandateVersionStatus.DISCREPANCY
+            await create_for_mandate_discrepancy(
+                session,
+                mandate_version=current,
+                primary_code=code,
+                actual={"detail": detail},
+            )
+            session.add(
+                MandateStatusEvent(
+                    org_id=organization_id,
+                    mandate_version_id=current.id,
+                    from_status=MandateVersionStatus.PENDING_ACTIVATION,
+                    to_status=MandateVersionStatus.DISCREPANCY,
+                    tx_hash=tx.exec_tx_hash,
+                )
+            )
+
+    async def _read_back_mandate_activation(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID
+    ) -> None:
         async with self._sessions() as session:
             tx = await self._row(session, organization_id, tx_id)
             if (
@@ -833,15 +912,17 @@ class GovernanceService:
             chain_assets = list(
                 await session.scalars(select(Asset).where(Asset.chain_id == tx.chain_id))
             )
+        if mandate is None or mandate.status != MandateVersionStatus.PENDING_ACTIVATION:
+            return
         if (
-            mandate is None
-            or mandate.status != MandateVersionStatus.PENDING_ACTIVATION
-            or treasury is None
+            treasury is None
             or treasury.module_address is None
             or asset is None
             or asset.address is None
         ):
-            return
+            raise _ActivationBlocked(
+                "MANDATE_METADATA_MISSING", "Treasury module or asset metadata is missing."
+            )
 
         chain = next(
             (
@@ -852,7 +933,7 @@ class GovernanceService:
             None,
         )
         if chain is None:
-            return
+            raise _ActivationBlocked("MANDATE_CHAIN_DISABLED", "The treasury chain is not enabled.")
         receipt = await self._read(
             tx.chain_id, "eth_getTransactionReceipt", [_hex(tx.exec_tx_hash)]
         )
@@ -893,7 +974,7 @@ class GovernanceService:
         )
         limits = config.get("limits")
         if not isinstance(limits, Mapping):
-            return
+            raise _ActivationBlocked("MANDATE_CONFIG_INVALID", "Mandate limits are missing.")
         pay = _config_limit(limits, "PAY")
         refill = _config_limit(limits, "REFILL")
         supply = _config_limit(config, "supplyLimits")
@@ -1002,7 +1083,9 @@ class GovernanceService:
         for asset_id in sorted(old_policies.keys() | new_policies.keys()):
             address = metadata.get(asset_id)
             if address is None:
-                return
+                raise _ActivationBlocked(
+                    "MANDATE_METADATA_MISSING", f"Asset {asset_id} has no on-chain address."
+                )
             policy = new_policies.get(asset_id, {})
             enabled = asset_id in new_policies
             policy_limits = policy.get("limits", {}) if enabled else {}
@@ -1173,6 +1256,7 @@ class GovernanceService:
                         select(MandateVersion)
                         .where(
                             MandateVersion.treasury_id == tx.treasury_id,
+                            MandateVersion.org_id == organization_id,
                             MandateVersion.status == MandateVersionStatus.ACTIVE,
                         )
                         .with_for_update()
@@ -1405,6 +1489,7 @@ class GovernanceService:
                 select(MandateVersion)
                 .where(
                     MandateVersion.treasury_id == treasury_id,
+                    MandateVersion.org_id == organization_id,
                     MandateVersion.status == MandateVersionStatus.ACTIVE,
                 )
                 .order_by(MandateVersion.version.desc())
@@ -1439,17 +1524,18 @@ class GovernanceService:
                 )
             except ValueError as exc:
                 raise GovernanceFailure("MANDATE_CALL_INVALID", 422, str(exc)) from None
-        supply_limits = _config_limit(current, "supplyLimits")
-        if any(supply_limits):
-            configured_pool = await self._module_view(
-                treasury.chain_id, treasury.module_address, "aavePool()", ["address"]
-            )
-            if _address_bytes(configured_pool[0]) == bytes(20):
-                raise GovernanceFailure(
-                    "AAVE_POOL_REQUIRED",
-                    409,
-                    "SUPPLY requires a treasury module initialized with an Aave pool.",
+            supply_limits = _config_limit(current, "supplyLimits")
+            if any(supply_limits):
+                configured_pool = await self._module_view(
+                    treasury.chain_id, treasury.module_address, "aavePool()", ["address"]
                 )
+                if _address_bytes(configured_pool[0]) == bytes(20):
+                    raise GovernanceFailure(
+                        "AAVE_POOL_REQUIRED",
+                        409,
+                        "SUPPLY requires a treasury module initialized with an Aave pool.",
+                    )
+            # The row lock is held across create so concurrent submissions cannot both create a Safe tx.
             created = await self.create(
                 organization_id=organization_id,
                 treasury_id=treasury_id,
@@ -1471,10 +1557,11 @@ class GovernanceService:
                     by_user_id=user_id,
                 )
             )
+            version = mandate.version
         return created | {
             "mandate": {
                 "id": str(mandate_id),
-                "version": mandate.version,
+                "version": version,
                 "status": MandateVersionStatus.PENDING_ACTIVATION.value,
             },
             "bundlePreview": preview,

@@ -134,6 +134,12 @@ erDiagram
 | `verifications` | id, operation_id, expected jsonb, observed jsonb, result enum(PASSED,DISCREPANCY,UNKNOWN), at | |
 | `gas_ledger` | id, treasury_id, transaction_id, fee_wei, payer_address, reverted | for F-066 |
 
+The `signer` schema is owned by the dedicated `treasurypilot_signer` DB role. `signer.nonces`
+serializes transaction nonces per executor address; `signer.nonce_bindings` binds each policy
+attestation nonce to one plan hash; `signer.attestation_uses` records `(nonce, step_id)`, the
+payload hash and the allocated transaction nonce. Re-signing the identical step payload reuses its
+transaction nonce; a different plan hash or payload is refused.
+
 ### 2.7 Reconciliation, recovery, notifications, audit (M11–M15)
 
 | Table | Key columns | Notes |

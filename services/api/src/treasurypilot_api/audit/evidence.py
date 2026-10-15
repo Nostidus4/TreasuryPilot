@@ -191,6 +191,10 @@ class EvidenceForbidden(Exception):
     """Caller lacks a role allowed to read financial evidence."""
 
 
+class EvidenceUnavailable(Exception):
+    """Chain verification could not be completed (e.g. every RPC failed); retry later."""
+
+
 class EvidenceBundleInvalid(Exception):
     """The bundle failed an integrity check (e.g. unresolved tx hash); it is withheld."""
 

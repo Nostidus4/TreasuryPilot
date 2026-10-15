@@ -96,6 +96,8 @@ async def _scenario(database_url: str) -> None:
                 )
 
         repository = SqlAlchemyScimIdentityRepository(sessions)
+        assert await repository.organization_exists(organization_id)
+        assert not await repository.organization_exists(uuid.uuid4())
         # Keep revocation timestamps after the database's transaction-timestamp defaults.
         now += timedelta(seconds=1)
         user = await repository.deactivate_user(

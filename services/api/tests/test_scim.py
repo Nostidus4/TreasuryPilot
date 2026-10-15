@@ -35,6 +35,10 @@ class MemoryScimRepository:
         self.list_arguments: dict[str, object] | None = None
         self.deactivation_arguments: dict[str, object] | None = None
         self.deactivation_error: Exception | None = None
+        self.organization_present = True
+
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool:
+        return self.organization_present
 
     async def list_users(
         self,
@@ -212,3 +216,86 @@ def test_scim_cannot_deprovision_the_last_privileged_member(
     assert response.status_code == 409
     assert response.json()["scimType"] == "mutability"
     assert detail in response.json()["detail"]
+
+
+@pytest.mark.parametrize("value", ["False", "false", " FALSE "])
+def test_scim_patch_accepts_entra_string_false(value: str) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(value), headers=_auth())
+        assert response.status_code == 200
+        assert response.json()["active"] is False
+        pathless = client.patch(
+            f"/scim/v2/Users/{USER_ID}",
+            json={
+                "schemas": [SCIM_PATCH_SCHEMA],
+                "Operations": [{"op": "Replace", "value": {"active": value}}],
+            },
+            headers=_auth(),
+        )
+        assert pathless.status_code == 200
+
+
+@pytest.mark.parametrize("value", ["True", "true", "", "no", 0, None])
+def test_scim_patch_still_rejects_other_active_values(value: object) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.patch(f"/scim/v2/Users/{USER_ID}", json=_patch(value), headers=_auth())
+    assert response.status_code == 400
+    assert repository.deactivation_arguments is None
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"startIndex": "1_0"},
+        {"startIndex": " 1"},
+        {"startIndex": "-1"},
+        {"startIndex": "99999999999999999999"},
+        {"startIndex": str(2**31)},
+        {"startIndex": "0"},
+        {"count": "1_0"},
+        {"count": "101"},
+        {"count": "99999999999999999999"},
+        {"count": "\u0661"},
+    ],
+)
+def test_scim_rejects_malformed_or_oversized_pagination(params: dict[str, str]) -> None:
+    repository = MemoryScimRepository()
+    with _client(repository) as client:
+        response = client.get("/scim/v2/Users", params=params, headers=_auth())
+    assert response.status_code == 400
+    assert response.json()["scimType"] == "invalidValue"
+    assert repository.list_arguments is None
+
+
+def test_scim_accepts_maximum_start_index() -> None:
+    with _client(MemoryScimRepository()) as client:
+        response = client.get(
+            "/scim/v2/Users", params={"startIndex": str(2**31 - 1)}, headers=_auth()
+        )
+    assert response.status_code == 200
+
+
+def test_scim_rate_limits_repeated_bad_tokens(caplog: pytest.LogCaptureFixture) -> None:
+    bad = {"Authorization": "Bearer wrong-token-wrong-token-wrong-token"}
+    with _client(MemoryScimRepository()) as client:
+        statuses = [client.get("/scim/v2/Users", headers=bad).status_code for _ in range(11)]
+        assert statuses == [401] * 10 + [429]
+        limited = client.get("/scim/v2/Users", headers=bad)
+        assert int(limited.headers["retry-after"]) >= 1
+        assert limited.json()["status"] == "429"
+    assert "wrong-token" not in caplog.text
+    assert "invalid bearer token" in caplog.text
+
+
+def test_scim_reports_a_missing_configured_organization(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repository = MemoryScimRepository()
+    repository.organization_present = False
+    with _client(repository) as client:
+        response = client.get("/scim/v2/Users", headers=_auth())
+    assert response.status_code == 503
+    assert "organization does not exist" in response.json()["detail"]
+    assert str(ORG_ID) in caplog.text

@@ -16,6 +16,7 @@ from treasurypilot_worker.chain.rpc import (
     RpcClient,
     SafeConfig,
     build_rpc_client,
+    decode_rpc_urls,
     safe_config_changed,
 )
 from treasurypilot_worker.locks import create_worker_pool
@@ -76,7 +77,7 @@ async def refresh_safe_config_snapshots(
         failed_treasuries: set[uuid.UUID] = set()
         for wallet in wallets:
             try:
-                rpc = reader_factory(wallet["rpc_urls"])
+                rpc = reader_factory(decode_rpc_urls(wallet["rpc_urls"]))
                 safe_address = "0x" + bytes(wallet["safe_address"]).hex()
                 safe_config = await rpc.safe_config(safe_address)
                 snapshots_written += await _store_snapshot(

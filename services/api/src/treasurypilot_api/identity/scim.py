@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
+import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.models import AuditActorType
@@ -24,16 +26,23 @@ from treasurypilot_api.identity.memberships import (
 from treasurypilot_api.identity.models import (
     Membership,
     MembershipStatus,
+    Organization,
     Session,
     User,
     UserStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
 SCIM_LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 SCIM_PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
 _USER_NAME_FILTER = re.compile(r'^\s*userName\s+eq\s+"([^"\\]{1,320})"\s*$', re.IGNORECASE)
+_INTEGER = re.compile(r"[0-9]{1,10}")  # ASCII digits only: no signs, spaces or underscores
+_MAX_INDEX = 2**31 - 1
+_AUTH_FAILURE_LIMIT = 10
+_AUTH_FAILURE_WINDOW = timedelta(minutes=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +56,8 @@ class ScimUserRecord:
 
 
 class ScimIdentityRepository(Protocol):
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool: ...
+
     async def list_users(
         self,
         *,
@@ -70,6 +81,12 @@ class SqlAlchemyScimIdentityRepository:
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def organization_exists(self, organization_id: uuid.UUID) -> bool:
+        async with self._sessions() as session:
+            return bool(
+                await session.scalar(select(exists().where(Organization.id == organization_id)))
+            )
 
     async def list_users(
         self,
@@ -211,7 +228,7 @@ def _error(
     return _response(body, status=status, headers=headers)
 
 
-def _authorized(request: Request) -> uuid.UUID | JSONResponse:
+async def _authorized(request: Request) -> uuid.UUID | JSONResponse:
     settings = request.app.state.settings
     if not settings.scim_configured:
         return _error(404, "SCIM is not configured.")
@@ -228,14 +245,43 @@ def _authorized(request: Request) -> uuid.UUID | JSONResponse:
         or not token
         or not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))
     ):
-        return _error(
-            401,
-            "A valid SCIM bearer token is required.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    if getattr(request.app.state, "scim_repository", None) is None:
+        return await _authentication_failed(request)
+    repository = getattr(request.app.state, "scim_repository", None)
+    if repository is None:
         return _error(503, "SCIM storage is not configured.")
+    if not await repository.organization_exists(organization_id):
+        logger.warning("TP_SCIM_ORGANIZATION_ID %s matches no organization", organization_id)
+        return _error(503, "The configured SCIM organization does not exist.")
     return cast(uuid.UUID, organization_id)
+
+
+async def _authentication_failed(request: Request) -> JSONResponse:
+    host = request.client.host if request.client is not None else "unknown"
+    # The token is never logged; the limiter key hashes the IP so the store holds none.
+    logger.warning("Rejected SCIM request with an invalid bearer token from %s", host)
+    limiter = getattr(request.app.state, "api_key_rate_limiter", None)
+    if limiter is not None:
+        digest = hashlib.sha256(host.encode()).hexdigest()
+        try:
+            result = await limiter.hit(
+                f"scim-auth-failure:{digest}",
+                limit=_AUTH_FAILURE_LIMIT,
+                window=_AUTH_FAILURE_WINDOW,
+            )
+        except Exception:  # Already rejected; a limiter outage must not turn 401 into 500.
+            logger.exception("SCIM authentication-failure rate limiter is unavailable")
+        else:
+            if not result.allowed:
+                return _error(
+                    429,
+                    "Too many failed SCIM authentication attempts.",
+                    headers={"Retry-After": str(result.retry_after)},
+                )
+    return _error(
+        401,
+        "A valid SCIM bearer token is required.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def _resource(record: ScimUserRecord, request: Request) -> dict[str, object]:
@@ -269,7 +315,7 @@ async def list_users(
     start_index_value: str = Query(default="1", alias="startIndex"),
     count_value: str = Query(default="100", alias="count"),
 ) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     user_name: str | None = None
@@ -280,15 +326,13 @@ async def list_users(
                 400, 'Only userName eq "email" filters are supported.', scim_type="invalidFilter"
             )
         user_name = normalize_email(match.group(1))
-    try:
-        start_index = int(start_index_value)
-        count = int(count_value)
-    except ValueError:
+    if not (_INTEGER.fullmatch(start_index_value) and _INTEGER.fullmatch(count_value)):
         return _error(400, "startIndex and count must be integers.", scim_type="invalidValue")
-    if start_index < 1 or not 0 <= count <= 100:
+    start_index, count = int(start_index_value), int(count_value)
+    if not 1 <= start_index <= _MAX_INDEX or count > 100:
         return _error(
             400,
-            "startIndex must be positive and count must be between 0 and 100.",
+            "startIndex must be between 1 and 2147483647 and count between 0 and 100.",
             scim_type="invalidValue",
         )
     total, records = await _repo(request).list_users(
@@ -310,7 +354,7 @@ async def list_users(
 
 @router.get("/Users/{user_id}")
 async def get_user(user_id: str, request: Request) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:
@@ -349,14 +393,18 @@ def _is_deactivation_patch(body: object) -> bool:
             }:
                 return False
             active_value = value
-        if active_value is not False:
+        # Entra ID sends booleans as strings ("False").
+        if not (
+            active_value is False
+            or (isinstance(active_value, str) and active_value.strip().casefold() == "false")
+        ):
             return False
     return True
 
 
 @router.patch("/Users/{user_id}")
 async def patch_user(user_id: str, request: Request) -> JSONResponse:
-    organization_id = _authorized(request)
+    organization_id = await _authorized(request)
     if isinstance(organization_id, JSONResponse):
         return organization_id
     try:

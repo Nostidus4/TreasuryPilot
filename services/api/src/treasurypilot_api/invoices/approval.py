@@ -49,7 +49,7 @@ def build_approval_typed_data(
     asset: str,
     expiry: int | None = None,
 ) -> dict[str, object]:
-    """Build exactly the contract's 13-field PaymentApproval for a current request.
+    """Build exactly the contract's 14-field PaymentApproval for a current request.
 
     ``request_id`` must be the stable on-chain ID, not the database UUID. Early
     payment fields are already normalized and bound to the confirmed request
@@ -99,6 +99,7 @@ def build_approval_typed_data(
         "deadline": request.deadline,
         "termsHash": "0x" + request.terms_hash.hex(),
         "expiry": expiry,
+        "isFiat": request.fiat_amount_minor_units is not None,
     }
     return payment_approval_typed_data(
         message, chain_id=chain_id, verifying_contract=module_address
