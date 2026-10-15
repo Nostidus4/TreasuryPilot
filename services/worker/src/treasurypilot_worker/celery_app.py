@@ -124,6 +124,11 @@ def create_celery_app() -> Celery:
                 "schedule": timedelta(minutes=1),
                 "options": {"queue": "core", "expires": 55},
             },
+            "publish-eas-receipts": {
+                "task": "treasurypilot.reconciliation.publish_receipts",
+                "schedule": timedelta(seconds=30),
+                "options": {"queue": "core", "expires": 28},
+            },
             "check-low-gas": {
                 "task": "treasurypilot.execution.check_low_gas",
                 "schedule": timedelta(minutes=5),

@@ -55,6 +55,7 @@ from treasurypilot_api.invoices.models import (
 from treasurypilot_api.mandate.models import Vendor
 from treasurypilot_api.treasury.config import PlatformConfigurationError, resolve_rpc_url
 from treasurypilot_api.treasury.models import Asset, Chain
+from treasurypilot_core.attestations import easscan_url
 
 # These two append-only tables are written by the worker/migrations, so they do
 # not have API ORM models. Lightweight Core tables let the exporter query only
@@ -131,6 +132,13 @@ _reconciliations = Table(
     Column("matched_at", DateTime(timezone=True)),
     Column("finalized_at", DateTime(timezone=True)),
     Column("eas_uid", String(66)),
+)
+_chain_attestations = Table(
+    "chain_attestations",
+    _worker_metadata,
+    Column("request_id", PGUUID(as_uuid=True)),
+    Column("chain_id", BigInteger),
+    Column("attestation_uid", LargeBinary),
 )
 _reconciliation_lines = Table(
     "reconciliation_lines",
@@ -717,6 +725,22 @@ class SqlAlchemyEvidenceRepository:
                 if any(_hex(row["tx_hash"]) not in exported_hashes for row in reconciliation_lines):
                     raise EvidenceBundleInvalid("reconciliation line tx hash is not in the bundle")
                 source["eas_uid"] = reconciliation_row["eas_uid"]
+                receipt_row = (
+                    (
+                        await session.execute(
+                            select(_chain_attestations).where(
+                                _chain_attestations.c.request_id == request_id,
+                                _chain_attestations.c.attestation_uid.is_not(None),
+                            )
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if receipt_row is not None:
+                    source["eas_url"] = easscan_url(
+                        receipt_row["chain_id"], bytes(receipt_row["attestation_uid"])
+                    )
                 source["reconciliation"] = {
                     "status": reconciliation_row["status"],
                     "version": reconciliation_row["version"],

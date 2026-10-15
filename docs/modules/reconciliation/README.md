@@ -47,7 +47,7 @@ M11 answers two questions after money moves: **did the chain end up exactly as p
 | `reconciliation_lines` | id, reconciliation_id, classification enum(INTERNAL_TRANSFER, CONVERSION, EXTERNAL_EXPENSE, LENDING_TRANSFER, FEE) (renamed from `class`), operation_id, transaction_id, tx_hash, from_address, to_address (null for FEE), asset_address (null for FEE), amount, fee_wei, block_number, day | |
 | `account_mappings` | id, org_id, class, account_code, account_name | default generic rows seeded (OQ-12) |
 | `exports` | id, org_id, period_from, period_to, format enum(CSV, JOURNAL), storage_key, sha256, totals jsonb, created_by | |
-| `chain_attestations` | id, request_id, schema_uid, attestation_uid, tx_hash, status enum(Queued, Sent, Confirmed, Failed), attempts | ADR-018 |
+| `chain_attestations` | id, request_id (unique), chain_id, schema_uid, attestation_uid, tx_hash, status enum(Queued, Sent, Confirmed, Failed), attempts, next_attempt_at, last_error (exception type only), created_at, updated_at | ADR-018; written only by the core worker. `reconciliations.eas_uid` is set when Confirmed |
 
 ## 5. State
 
@@ -65,6 +65,8 @@ Reconciliation: `NotReady` (request not Paid) → `Pending` (Paid; lines built) 
 | POST | `/orgs/{o}/exports` | FIN, ADM | `{from, to, format}` → `202 {exportId}` | |
 | GET | `/orgs/{o}/exports/{id}` | FIN, ADM | → signed URL | |
 | GET/PUT | `/orgs/{o}/account-mappings` | FIN, ADM | mapping table | |
+
+The reconciliation detail `evidence` also carries `easUrl` (easscan link, once Confirmed) and `receipt{status, attempts, txHash, nextAttemptAt}`; the evidence bundle carries `easUid` and `easUrl`.
 
 Internal: `verify(operation_id)` (called by M10 before the next step), `build_reconciliation(request_id)`, `publish_receipt(request_id)`.
 
@@ -109,7 +111,8 @@ Period by UTC day of execution. CSV columns: date, request id, vendor, invoice n
 | Auto-match | off (org setting) |
 | Matched requires | finalized block |
 | Verification retries on read failure | 3, then UNKNOWN → review |
-| EAS receipt | as soon as the request is Paid and the PAY block is finalized (independent of matching) |
+| EAS receipt | as soon as the request is Paid and the PAY block is finalized (independent of matching); beat sweep every 30 s (`treasurypilot.reconciliation.publish_receipts`), off unless `TP_EAS_RPC_URL`, `TP_EAS_CONTRACT_ADDRESS` and `TP_EAS_RECEIPT_PRIVATE_KEY` are set (`TP_EAS_RECEIPT_ADDRESS` must be that key's address so the low-gas sweep watches it) |
+| EAS retry | exponential backoff 30 s doubling to 1 h, unbounded; a broadcast not mined after 15 min is retried |
 | Export formats | CSV, journal CSV |
 
 ## 10. Security

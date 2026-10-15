@@ -2,6 +2,7 @@ import pytest
 
 from treasurypilot_core.attestations import (
     PaymentReceipt,
+    easscan_url,
     verify_payment_finality,
     verify_payment_receipt,
 )
@@ -118,3 +119,17 @@ def test_finality_rejects_invalid_block_quantities(number: object) -> None:
             {"number": 1, "hash": block_hash},
             {"number": number, "hash": block_hash},
         )
+
+
+def test_easscan_url_links_the_published_uid() -> None:
+    uid = "0x" + "AB" * 32
+    assert (
+        easscan_url(11155111, uid) == "https://sepolia.easscan.org/attestation/view/0x" + "ab" * 32
+    )
+    assert easscan_url(1, bytes.fromhex("cd" * 32)) == (
+        "https://easscan.org/attestation/view/0x" + "cd" * 32
+    )
+    assert easscan_url(31337, uid) is None  # local Anvil has no explorer
+    assert easscan_url(11155111, None) is None
+    with pytest.raises(ValueError, match="attestationUid"):
+        easscan_url(11155111, "0x1234")

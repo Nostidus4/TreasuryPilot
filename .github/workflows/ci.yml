@@ -107,6 +107,8 @@ jobs:
         run: uv run pytest services/worker/tests/executor/test_sequencer_integration.py
       - name: Reconciliation records PostgreSQL integration
         run: uv run pytest services/worker/tests/reconcile/test_build_integration.py
+      - name: EAS payment receipts PostgreSQL integration
+        run: uv run pytest services/worker/tests/reconcile/test_receipt_integration.py
       - name: Reconciliation match routes PostgreSQL integration
         run: uv run pytest services/api/tests/test_reconciliation_postgres.py
       - name: Plan gate PostgreSQL integration

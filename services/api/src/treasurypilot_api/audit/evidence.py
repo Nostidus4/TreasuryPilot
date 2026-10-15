@@ -204,6 +204,7 @@ class EvidenceBundle(StrictModel):
     verifications: list[VerificationEvidence] = Field(default_factory=list)
     reconciliation: ReconciliationEvidence | None = None
     eas_uid: str | None = None
+    eas_url: str | None = None
     coverage: dict[str, Any] = Field(default_factory=dict)
     fixture_labels: list[str] = Field(default_factory=list)
     generated_at: datetime
