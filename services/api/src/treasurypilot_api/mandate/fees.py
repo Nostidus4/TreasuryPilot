@@ -11,6 +11,7 @@ from pydantic import Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.events.writer import append_execution_cycle_requested
 from treasurypilot_api.execution.models import GasLedger, Operation, Transaction
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
@@ -497,6 +498,13 @@ async def accept_fee_policy(
         proposal.accepted_at = now
         proposal.updated_by = member.user_id
         proposal.updated_at = now
+        append_execution_cycle_requested(
+            session,
+            organization_id=member.organization_id,
+            treasury_id=treasury_id,
+            entity_type="fee_policy",
+            entity_id=proposal.id,
+        )
         await session.flush()
         await session.refresh(proposal)
         active_view = _policy_view(proposal)
@@ -593,6 +601,13 @@ async def accept_held_plan_fee(
     item.resolution = "ACCEPT_FEE"
     item.resolved_by = user_id
     item.resolved_at = now
+    append_execution_cycle_requested(
+        session,
+        organization_id=item.org_id,
+        treasury_id=item.treasury_id,
+        entity_type="plan",
+        entity_id=item.plan_id,
+    )
 
 
 async def _act_on_fee_review(
