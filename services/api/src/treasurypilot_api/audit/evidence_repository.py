@@ -108,6 +108,7 @@ _plan_steps = Table(
     Column("to_address", LargeBinary(20)),
     Column("asset_address", LargeBinary(20)),
     Column("amount", Numeric(78, 0)),
+    Column("venue", String),
 )
 _verifications = Table(
     "verifications",
@@ -706,6 +707,7 @@ class SqlAlchemyEvidenceRepository:
                             "to_address": _hex(row["to_address"]),
                             "asset_address": _hex(row["asset_address"]),
                             "amount": str(int(row["amount"])),
+                            "venue": row["venue"],
                         }
                         for row in step_rows
                     ],
