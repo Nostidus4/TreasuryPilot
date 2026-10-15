@@ -183,18 +183,31 @@ it also freezes subject erasure while authentication artifacts are part of the r
 
 `request_subject_deletion()` disables the account immediately and queues its
 profile-erasure request; `set_subject_legal_hold()` records a subject-level hold on the
-same row. The worker locks
+same row (it raises `ValueError` for an unknown user). The worker locks
 that row before changing identity data, so a concurrent hold cannot pass a deletion that
 already owns the lock. A held request stays pending until the hold is released. If the
-user's email appears in immutable audit evidence, the request is marked for review and
-the account is left intact; the audit chain is never rewritten. Otherwise the worker
+user's email appears as a whole address in immutable audit evidence (case-insensitive;
+`bob@x.com` does not match `bobob@x.com`), the request is marked for review and
+the account is left intact; the audit chain is never rewritten. The audit scan runs in its
+own transaction before any lock is taken, and a dry run applies the same scan, so its
+`examined` count only includes requests a real run would erase. Blocked requests are not
+retried automatically (the evidence is immutable); every run logs how many await review, and a
+new `request_subject_deletion()` clears the block after the review. Otherwise the worker
 disables the account, replaces its email with a generated `.invalid` address, clears the
-display name, and removes current sessions, magic links, wallet/SSO/MFA credentials and
-user notification targets/preferences. It writes a `subject` receipt from the random user
-UUID, and separate hash-only receipts for deleted sessions and magic links, then removes
-the request/hold row. No original email, display name, token or user UUID is kept in a
-receipt. The UUID remains on financial and immutable audit rows where it is needed for
-historical attribution; those records are not erased by this workflow.
+display name, bumps the user version, and removes current sessions, magic links, pending
+invitations addressed to the email, organization memberships, wallet/SSO/MFA credentials
+and user notification targets/preferences. Rows are deleted first and receipts are built
+from the deleted ids, so no row is removed without one. It writes a `subject` receipt and
+separate hash-only receipts for deleted sessions, magic links and invitations, then removes
+the request/hold row. Receipt inserts are chunked (5000 rows). The `subject` receipt is
+an HMAC-SHA256 of the user UUID keyed by `TP_RETENTION_RECEIPT_KEY` (at least 32 bytes,
+never rotated or reused), so the receipt cannot be matched by enumerating UUIDs without
+the key; the CLI refuses to erase a subject without it. Memberships are deleted without the
+last-owner guard that member removal applies, because erasure cannot be refused; an
+organization may be left without an owner and needs an administrator. No original email,
+display name or token is kept in a receipt. The UUID remains on financial and immutable
+audit rows where it is needed for historical attribution; those records are not erased by
+this workflow.
 
 The original one-day CMP-L03 estimate covers only the invitation slice (about half
 a day). This follow-up adds user-wide authentication retention and a bounded profile

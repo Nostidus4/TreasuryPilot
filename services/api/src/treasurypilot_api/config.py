@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     # Signs notification-email unsubscribe links; shared with the egress worker, never the session key.
     email_unsubscribe_key: SecretStr | None = None
+    # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
+    retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
