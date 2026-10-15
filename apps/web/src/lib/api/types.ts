@@ -631,6 +631,21 @@ export interface FeePolicy {
   proposal: FeeSetting & { rationale: string; proposedAt: string };
   presets: Array<FeeSetting & { id: string; label: string; note: string }>;
   observations: Array<{ at: string; baseFeeGwei: number }>;
+  /** Wei amounts are integer base-unit strings. */
+  basis: { avgPlanFeeWei: string; p90PlanFeeWei: string; plansPerDay: number };
+  heldPlans: Array<{
+    planId: string;
+    title: string;
+    estimatedFeeWei: string;
+    deadline: string;
+  }>;
+  history: Array<{
+    id: string;
+    at: string;
+    by: string;
+    label: string;
+    detail: string;
+  }>;
 }
 
 export interface OperationsMetrics {

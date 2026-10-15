@@ -200,6 +200,18 @@ export const useAcceptFeePolicy = (orgId: string, treasuryId: string) =>
     ),
   );
 
+export const usePlanFeeDecision = (
+  orgId: string,
+  treasuryId: string,
+  action: 'accept' | 'defer',
+) =>
+  useOrgMutation(orgId, (planId: string) =>
+    api.post<{ planId: string }>(
+      `/orgs/${orgId}/plans/${planId}/fee/${action}`,
+      {},
+    ),
+  );
+
 export const usePauseTreasury = (orgId: string, treasuryId: string) =>
   useOrgMutation(orgId, (reason: string) =>
     api.post<{

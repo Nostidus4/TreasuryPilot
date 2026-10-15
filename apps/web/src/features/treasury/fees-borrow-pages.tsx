@@ -24,16 +24,69 @@ import {
   useAcceptFeePolicy,
   useBorrowProposal,
   useFeePolicy,
+  usePlanFeeDecision,
 } from '@/features/treasury/api';
 import { errorMessage } from '@/lib/api/http';
-import type { BorrowProposal } from '@/lib/api/types';
-import { formatDate, formatRelative } from '@/lib/format';
+import type { BorrowProposal, FeePolicy } from '@/lib/api/types';
+import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
-import { formatBps } from '@/lib/money';
+import { formatBps, formatUnits } from '@/lib/money';
 import { cn } from '@/lib/utils';
 
 const PROPOSAL = 'proposal';
 const gwei = (value: number) => `${value} gwei`;
+const eth = (wei: string) =>
+  `${formatUnits(wei, 18, { minFraction: 4, maxFraction: 6 })} ETH`;
+
+function HeldPlanBanner({
+  canDecide,
+  held,
+  orgId,
+  treasuryId,
+}: {
+  canDecide: boolean;
+  held: FeePolicy['heldPlans'][number];
+  orgId: string;
+  treasuryId: string;
+}) {
+  const pay = usePlanFeeDecision(orgId, treasuryId, 'accept');
+  const defer = usePlanFeeDecision(orgId, treasuryId, 'defer');
+  const error = pay.error ?? defer.error;
+  return (
+    <Alert
+      tone="warning"
+      title={t('{{title}} is waiting on a network fee', { title: held.title })}
+      action={
+        canDecide && (
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              loading={pay.isPending}
+              disabled={defer.isPending}
+              onClick={() => pay.mutate(held.planId)}
+            >
+              {t('Pay now at {{fee}}', { fee: eth(held.estimatedFeeWei) })}
+            </Button>
+            <Button
+              loading={defer.isPending}
+              disabled={pay.isPending}
+              onClick={() => defer.mutate(held.planId)}
+            >
+              {t('Defer')}
+            </Button>
+          </div>
+        )
+      }
+    >
+      {t('Estimated fee {{fee}}. Decide by {{deadline}}.', {
+        fee: eth(held.estimatedFeeWei),
+        deadline: formatDateTime(held.deadline),
+      })}
+      {!canDecide && ` ${t('Only Finance can decide.')}`}
+      {error && <span role="alert"> {errorMessage(error)}</span>}
+    </Alert>
+  );
+}
 
 /**
  * Fee policy (WEB-024, M16-D11): the system proposes, the Owner accepts it or
@@ -56,6 +109,19 @@ export function FeesPage() {
       <QueryBoundary query={query}>
         {(policy) => (
           <div className="grid items-start gap-4 lg:grid-cols-5">
+            {policy.heldPlans.length > 0 && (
+              <div className="grid gap-2 lg:col-span-5">
+                {policy.heldPlans.map((held) => (
+                  <HeldPlanBanner
+                    key={held.planId}
+                    held={held}
+                    canDecide={scope.can('FIN')}
+                    orgId={scope.orgId}
+                    treasuryId={scope.treasuryId}
+                  />
+                ))}
+              </div>
+            )}
             <div className="grid gap-4 lg:col-span-3">
               <Card>
                 <CardHeader
@@ -67,7 +133,23 @@ export function FeesPage() {
                     },
                   )}
                 />
-                <CardContent>
+                <CardContent className="grid gap-4">
+                  <KeyValueList
+                    items={[
+                      {
+                        label: t('Average fee per plan'),
+                        value: eth(policy.basis.avgPlanFeeWei),
+                      },
+                      {
+                        label: t('90th percentile fee per plan'),
+                        value: eth(policy.basis.p90PlanFeeWei),
+                      },
+                      {
+                        label: t('Plans per day'),
+                        value: policy.basis.plansPerDay,
+                      },
+                    ]}
+                  />
                   <RadioGroup
                     value={choice}
                     onValueChange={setChoice}
@@ -176,7 +258,7 @@ export function FeesPage() {
 
             <Card className="lg:col-span-2">
               <CardHeader title={t('Active policy')} />
-              <CardContent>
+              <CardContent className="grid gap-4">
                 <KeyValueList
                   items={[
                     {
@@ -198,6 +280,21 @@ export function FeesPage() {
                     { label: t('Source'), value: policy.current.source },
                   ]}
                 />
+                <h3 className="text-sm font-medium">{t('Accepted fees')}</h3>
+                <ul className="grid gap-2 text-sm">
+                  {policy.history.map((entry) => (
+                    <li key={entry.id}>
+                      <span className="font-medium">{entry.label}</span>{' '}
+                      <span className="num">{entry.detail}</span>
+                      <span className="block text-muted-foreground">
+                        {t('{{by}}, {{when}}', {
+                          by: entry.by,
+                          when: formatRelative(entry.at),
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           </div>

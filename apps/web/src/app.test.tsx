@@ -717,3 +717,33 @@ test('module setup creates a governance transaction for each treasury Safe', asy
     await screen.findByRole('button', { name: /execute transaction/i }),
   ).toBeInTheDocument();
 });
+
+test('fee policy: owner accepts the proposal in two clicks and sees it in history', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/settings/fees`);
+
+  expect(await screen.findByText(/90th percentile fee/i)).toBeInTheDocument();
+  expect(screen.getByText(/plans per day/i)).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: /system proposal/i }));
+  await user.click(screen.getByRole('button', { name: /^accept$/i }));
+  expect(await screen.findByText('System proposal')).toBeInTheDocument();
+  await waitFor(() => expect(db.feePolicy.history[0].by).toBe('You'));
+});
+
+test('fee policy: a held plan shows its fee and deadline and can be paid', async () => {
+  const user = userEvent.setup();
+  renderApp(`${T}/settings/fees`);
+
+  const banner = await screen.findByText(/is waiting on a network fee/i);
+  const alert = banner.closest('[role="status"]') as HTMLElement;
+  expect(alert).toHaveTextContent(/estimated fee 0\.0042 ETH/i);
+  expect(alert).toHaveTextContent(/decide by/i);
+  expect(within(alert).getByRole('button', { name: /defer/i })).toBeVisible();
+  await user.click(
+    within(alert).getByRole('button', { name: /pay now at 0\.0042 eth/i }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText(/is waiting on a network fee/i)).toBeNull(),
+  );
+  expect(db.feePolicy.history[0].label).toMatch(/held plan/i);
+});

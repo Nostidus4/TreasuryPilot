@@ -421,8 +421,36 @@ export const operationHandlers: RequestHandler[] = [
           ? `Preset “${preset.label}”, accepted just now`
           : 'System proposal, accepted just now',
       };
+      db.feePolicy.history.unshift({
+        id: `fee_h${db.feePolicy.history.length + 1}`,
+        at: new Date().toISOString(),
+        by: 'You',
+        label: preset ? `Preset “${preset.label}”` : 'System proposal',
+        detail: `max ${chosen.maxFeeGwei} gwei · priority ${chosen.priorityGwei} gwei`,
+      });
       return { active: db.feePolicy.current };
     },
+  ),
+
+  ...(['accept', 'defer'] as const).map((action) =>
+    route('post', `/orgs/:orgId/plans/:pId/fee/${action}`, ({ params }) => {
+      requireOrg(params.orgId);
+      const held = db.feePolicy.heldPlans.find((p) => p.planId === params.pId);
+      if (!held)
+        fail(409, 'FEE_NOT_HELD', 'This plan is not waiting on a fee.');
+      db.feePolicy.heldPlans = db.feePolicy.heldPlans.filter(
+        (p) => p.planId !== params.pId,
+      );
+      if (action === 'accept')
+        db.feePolicy.history.unshift({
+          id: `fee_h${db.feePolicy.history.length + 1}`,
+          at: new Date().toISOString(),
+          by: 'You',
+          label: `Held plan ${held.title}`,
+          detail: `cap ${formatUnits(held.estimatedFeeWei, 18)} ETH`,
+        });
+      return { planId: params.pId };
+    }),
   ),
 
   /* ───────────── Metrics ───────────── */

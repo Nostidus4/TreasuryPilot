@@ -1409,6 +1409,28 @@ export function seed(): Db {
         baseFeeGwei:
           Math.round((9 + 5 * Math.sin(index / 2.3) + (index % 5)) * 10) / 10,
       })),
+      basis: {
+        avgPlanFeeWei: '1800000000000000',
+        p90PlanFeeWei: '3100000000000000',
+        plansPerDay: 4.5,
+      },
+      heldPlans: [
+        {
+          planId: 'pln_0421',
+          title: 'Weekly vendor payments',
+          estimatedFeeWei: '4200000000000000',
+          deadline: iso(3 * HOUR),
+        },
+      ],
+      history: [
+        {
+          id: 'fee_h1',
+          at: iso(-20 * DAY),
+          by: 'Linh Tran',
+          label: 'Preset “Balanced”',
+          detail: 'max 30 gwei · priority 2 gwei',
+        },
+      ],
     },
     borrowProposals: [
       {
