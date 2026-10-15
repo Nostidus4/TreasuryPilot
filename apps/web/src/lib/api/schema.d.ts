@@ -225,6 +225,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/inbound/invoices/{local_part}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Receive Inbound Email */
+    post: operations['receive_inbound_email_v1_inbound_invoices__local_part__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/invites/{token}/accept': {
     parameters: {
       query?: never;
@@ -775,6 +792,23 @@ export interface paths {
     post?: never;
     /** Revoke Invite */
     delete: operations['revoke_invite_v1_orgs__organization_id__invites__invite_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invoice-inbound-email': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Configure Inbound Email */
+    put: operations['configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put'];
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -2575,6 +2609,48 @@ export interface components {
       /** Version */
       version: string;
     };
+    /** InboundEmailAttachmentReceipt */
+    InboundEmailAttachmentReceipt: {
+      /**
+       * Documentid
+       * Format: uuid
+       */
+      documentId: string;
+      /** Extractionjobid */
+      extractionJobId: string;
+      /**
+       * Requestid
+       * Format: uuid
+       */
+      requestId: string;
+    };
+    /** InboundEmailConfiguration */
+    InboundEmailConfiguration: {
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled: boolean;
+      /** Treasuryid */
+      treasuryId?: string | null;
+    };
+    /** InboundEmailConfigurationView */
+    InboundEmailConfigurationView: {
+      /** Address */
+      address: string;
+      /** Enabled */
+      enabled: boolean;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+    };
+    /** InboundEmailReceipt */
+    InboundEmailReceipt: {
+      /** Drafts */
+      drafts: components['schemas']['InboundEmailAttachmentReceipt'][];
+    };
     /** InviteCreateRequest */
     InviteCreateRequest: {
       /** Email */
@@ -4363,6 +4439,37 @@ export interface operations {
       };
     };
   };
+  receive_inbound_email_v1_inbound_invoices__local_part__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        local_part: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InboundEmailReceipt'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   accept_invite_v1_invites__token__accept_post: {
     parameters: {
       query?: never;
@@ -5482,6 +5589,41 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['InboundEmailConfiguration'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InboundEmailConfigurationView'];
+        };
       };
       /** @description Validation Error */
       422: {

@@ -1490,6 +1490,84 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "InboundEmailAttachmentReceipt": {
+        "properties": {
+          "documentId": {
+            "format": "uuid",
+            "title": "Documentid",
+            "type": "string"
+          },
+          "extractionJobId": {
+            "title": "Extractionjobid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "title": "Requestid",
+            "type": "string"
+          }
+        },
+        "required": ["requestId", "documentId", "extractionJobId"],
+        "title": "InboundEmailAttachmentReceipt",
+        "type": "object"
+      },
+      "InboundEmailConfiguration": {
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "treasuryId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Treasuryid"
+          }
+        },
+        "title": "InboundEmailConfiguration",
+        "type": "object"
+      },
+      "InboundEmailConfigurationView": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          }
+        },
+        "required": ["enabled", "treasuryId", "address"],
+        "title": "InboundEmailConfigurationView",
+        "type": "object"
+      },
+      "InboundEmailReceipt": {
+        "properties": {
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/InboundEmailAttachmentReceipt"
+            },
+            "title": "Drafts",
+            "type": "array"
+          }
+        },
+        "required": ["drafts"],
+        "title": "InboundEmailReceipt",
+        "type": "object"
+      },
       "InviteCreateRequest": {
         "properties": {
           "email": {
@@ -5607,6 +5685,46 @@
         "tags": ["system"]
       }
     },
+    "/v1/inbound/invoices/{local_part}": {
+      "post": {
+        "operationId": "receive_inbound_email_v1_inbound_invoices__local_part__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "local_part",
+            "required": true,
+            "schema": {
+              "title": "Local Part",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboundEmailReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Inbound Email",
+        "tags": ["invoice email intake"]
+      }
+    },
     "/v1/invites/{token}/accept": {
       "post": {
         "operationId": "accept_invite_v1_invites__token__accept_post",
@@ -7186,6 +7304,58 @@
         },
         "summary": "Revoke Invite",
         "tags": ["membership"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invoice-inbound-email": {
+      "put": {
+        "operationId": "configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboundEmailConfiguration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboundEmailConfigurationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Inbound Email",
+        "tags": ["invoice email intake"],
         "x-organization-scoped": true
       }
     },

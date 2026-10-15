@@ -543,17 +543,22 @@ def _expected_version(if_match: str | None) -> int:
 
 
 INSTRUCTION_TEXT_CODE = "INSTRUCTION_TEXT"  # written by the worker (M09); carried across revisions
+INBOUND_EMAIL_SENDER_UNVERIFIED_CODE = "INBOUND_EMAIL_SENDER_UNVERIFIED"
+PERSISTENT_REVISION_FLAG_CODES = (
+    INSTRUCTION_TEXT_CODE,
+    INBOUND_EMAIL_SENDER_UNVERIFIED_CODE,
+)
 
 
-async def carry_forward_instruction_flags(session: AsyncSession, row: PaymentRequest) -> None:
-    """Re-open the worker's INSTRUCTION_TEXT flag on the current revision; it never supersedes."""
+async def carry_forward_persistent_flags(session: AsyncSession, row: PaymentRequest) -> None:
+    """Re-open persistent high-risk flags on the current revision after an edit."""
     await session.flush()  # fk_flags_request_revision needs the new revision row
     old_flags = (
         await session.scalars(
             select(RequestFlag).where(
                 RequestFlag.request_id == row.id,
                 RequestFlag.revision < row.current_revision,
-                RequestFlag.code == INSTRUCTION_TEXT_CODE,
+                RequestFlag.code.in_(PERSISTENT_REVISION_FLAG_CODES),
                 RequestFlag.status.in_(
                     [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
                 ),
@@ -585,14 +590,14 @@ async def supersede_open_flags(
         .where(
             RequestFlag.request_id == row.id,
             RequestFlag.revision < row.current_revision,
-            RequestFlag.code.not_in((INSTRUCTION_TEXT_CODE, *keep)),
+            RequestFlag.code.not_in((*PERSISTENT_REVISION_FLAG_CODES, *keep)),
             RequestFlag.status.in_(
                 [RequestFlagStatus.OPEN.value, RequestFlagStatus.ACKNOWLEDGED.value]
             ),
         )
         .values(status=RequestFlagStatus.SUPERSEDED.value)
     )
-    await carry_forward_instruction_flags(session, row)
+    await carry_forward_persistent_flags(session, row)
 
 
 async def assert_high_flags_acknowledged(session: AsyncSession, row: PaymentRequest) -> None:
@@ -3086,7 +3091,7 @@ async def renew_request(
                 reason="renewed after expiry",
             )
         )
-        await carry_forward_instruction_flags(session, row)
+        await carry_forward_persistent_flags(session, row)
         session.add(
             RequestStatusEvent(
                 id=uuid7(),

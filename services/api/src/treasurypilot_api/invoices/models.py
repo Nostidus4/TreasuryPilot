@@ -78,6 +78,39 @@ class InvoiceApiKey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class InvoiceInboundEmail(Base):
+    """Organization's private address for authenticated invoice email webhooks."""
+
+    __tablename__ = "invoice_inbound_emails"
+    __table_args__ = (
+        CheckConstraint(
+            "local_part ~ '^[a-f0-9]{48}$'", name="ck_invoice_inbound_emails_local_part"
+        ),
+        ForeignKeyConstraint(
+            ["treasury_id", "org_id"],
+            ["treasuries.id", "treasuries.org_id"],
+            name="fk_invoice_inbound_emails_treasury_org",
+            ondelete="CASCADE",
+        ),
+        Index("uq_invoice_inbound_emails_local_part", "local_part", unique=True),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    treasury_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    local_part: Mapped[str] = mapped_column(String(48), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class RequestSource(StrEnum):
     MANUAL = "MANUAL"
     UPLOAD = "UPLOAD"
