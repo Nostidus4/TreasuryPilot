@@ -4355,6 +4355,84 @@
         "title": "SafeDeploymentTransaction",
         "type": "object"
       },
+      "SavingsMetrics": {
+        "properties": {
+          "methodology": {
+            "title": "Methodology",
+            "type": "string"
+          },
+          "perRequest": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsRow"
+            },
+            "title": "Perrequest",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/SavingsTotals"
+          }
+        },
+        "required": ["totals", "perRequest", "methodology"],
+        "title": "SavingsMetrics",
+        "type": "object"
+      },
+      "SavingsRow": {
+        "properties": {
+          "actual": {
+            "title": "Actual",
+            "type": "string"
+          },
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "invoiceNumber": {
+            "title": "Invoicenumber",
+            "type": "string"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "string"
+          },
+          "vendorName": {
+            "title": "Vendorname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "baseline",
+          "actual",
+          "saved",
+          "requestId",
+          "invoiceNumber",
+          "vendorName"
+        ],
+        "title": "SavingsRow",
+        "type": "object"
+      },
+      "SavingsTotals": {
+        "properties": {
+          "actual": {
+            "title": "Actual",
+            "type": "string"
+          },
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "string"
+          }
+        },
+        "required": ["baseline", "actual", "saved"],
+        "title": "SavingsTotals",
+        "type": "object"
+      },
       "ScreeningView": {
         "properties": {
           "checkedAt": {
@@ -8915,6 +8993,82 @@
           }
         },
         "summary": "Get Operations Metrics",
+        "tags": ["metrics"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/metrics/savings": {
+      "get": {
+        "operationId": "get_savings_metrics_v1_orgs__organization_id__metrics_savings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Savings Metrics",
         "tags": ["metrics"],
         "x-organization-scoped": true
       }

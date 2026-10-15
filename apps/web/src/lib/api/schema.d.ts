@@ -1041,6 +1041,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/metrics/savings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Savings Metrics */
+    get: operations['get_savings_metrics_v1_orgs__organization_id__metrics_savings_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/notifications': {
     parameters: {
       query?: never;
@@ -3969,6 +3986,38 @@ export interface components {
       /** Value */
       value: string;
     };
+    /** SavingsMetrics */
+    SavingsMetrics: {
+      /** Methodology */
+      methodology: string;
+      /** Perrequest */
+      perRequest: components['schemas']['SavingsRow'][];
+      totals: components['schemas']['SavingsTotals'];
+    };
+    /** SavingsRow */
+    SavingsRow: {
+      /** Actual */
+      actual: string;
+      /** Baseline */
+      baseline: string;
+      /** Invoicenumber */
+      invoiceNumber: string;
+      /** Requestid */
+      requestId: string;
+      /** Saved */
+      saved: string;
+      /** Vendorname */
+      vendorName: string;
+    };
+    /** SavingsTotals */
+    SavingsTotals: {
+      /** Actual */
+      actual: string;
+      /** Baseline */
+      baseline: string;
+      /** Saved */
+      saved: string;
+    };
     /** ScreeningView */
     ScreeningView: {
       /**
@@ -6728,6 +6777,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['OperationsMetricsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_savings_metrics_v1_orgs__organization_id__metrics_savings_get: {
+    parameters: {
+      query?: {
+        from?: string | null;
+        to?: string | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavingsMetrics'];
         };
       };
       /** @description Validation Error */
