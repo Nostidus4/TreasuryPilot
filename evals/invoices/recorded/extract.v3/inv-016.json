@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-016",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "57aa0a5920d006ab3cab48da2e2172263ba798e2c7e33b65c0061872e1169dae",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 016 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 016 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0016\",\"page\":1,\"span\":\"TEST-INV-0016\"},\"issue_date\":{\"value\":\"2026-09-10\",\"page\":1,\"span\":\"Issue date: 2026-09-10\"},\"due_date\":{\"value\":\"2026-10-20\",\"page\":1,\"span\":\"Due date: 2026-10-20\"},\"amount_text\":{\"value\":\"500.000000\",\"page\":1,\"span\":\"Amount: 500.000000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"Amount: 500.000000 USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Payee: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":null,\"discount_days\":null,\"net_days\":null,\"late_fee\":null,\"priority_note\":null,\"uncertain\":false,\"uncertain_reason\":null},\"invoice_count_in_document\":1,\"suspicious_instructions\":[]}",
+      "input_tokens": 1826,
+      "output_tokens": 405
+    }
+  ]
+}

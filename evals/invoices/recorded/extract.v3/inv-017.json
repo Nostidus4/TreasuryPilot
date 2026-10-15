@@ -1,0 +1,14 @@
+{
+  "invoice_id": "inv-017",
+  "prompt_version": "extract.v3",
+  "model": "claude-sonnet-5-5",
+  "pdf_sha256": "f90e25f5a063e846e27bf4ca2b7cf3c36b7a2509471236655a145bedb1929476",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "text": "{\"vendor_name\":{\"value\":\"SYNTH Vendor 017 Ltd\",\"page\":1,\"span\":\"SYNTH Vendor 017 Ltd\"},\"invoice_no\":{\"value\":\"TEST-INV-0017\",\"page\":1,\"span\":\"TEST-INV-0017\"},\"issue_date\":{\"value\":\"2026-10-12\",\"page\":1,\"span\":\"Issue date: 2026-10-12\"},\"due_date\":{\"value\":\"2026-10-19\",\"page\":1,\"span\":\"Due date: 2026-10-19\"},\"amount_text\":{\"value\":\"525.000000\",\"page\":1,\"span\":\"Amount: 525.000000 USDC\"},\"currency\":{\"value\":\"USDC\",\"page\":1,\"span\":\"525.000000 USDC\"},\"payee_address_as_found\":{\"value\":\"0x1111111111111111111111111111111111111111\",\"page\":1,\"span\":\"Payee: 0x1111111111111111111111111111111111111111\"},\"terms\":{\"discount_bps\":null,\"discount_days\":null,\"net_days\":null,\"late_fee\":null,\"priority_note\":null,\"uncertain\":false,\"uncertain_reason\":null},\"invoice_count_in_document\":1,\"suspicious_instructions\":[]}",
+      "input_tokens": 1826,
+      "output_tokens": 400
+    }
+  ]
+}
