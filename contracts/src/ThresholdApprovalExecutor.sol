@@ -78,10 +78,10 @@ contract ThresholdApprovalExecutor {
         if (msg.sender != operator) revert E.NotExecutor();
         uint256 required = requiredApprovals(ap.amount);
         address[] memory seen = new address[](sigs.length);
-        uint256 distinct;
+        uint256 distinct = 0;
         for (uint256 i; i < sigs.length; ++i) {
             address signer = module.verifyApproval(ap, sigs[i]); // reverts on a bad or non-approver signature
-            bool dup;
+            bool dup = false;
             for (uint256 j; j < distinct; ++j) {
                 if (seen[j] == signer) {
                     dup = true;
