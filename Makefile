@@ -15,7 +15,7 @@ export COREPACK_HOME
 .DEFAULT_GOAL := help
 
 .PHONY: help bootstrap check-env dev infra down logs ps smoke openapi config-check web-dev \
-	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local verify-sepolia
+	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local seed verify-sepolia
 
 help:
 	@echo "TreasuryPilot developer commands"
@@ -29,6 +29,7 @@ help:
 	@echo "  make web-dev         Start the Vite development server"
 	@echo "  make test            Run Python, web and contract tests"
 	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
+	@echo "  make seed            Deploy to Anvil and seed the idempotent TEST demo dataset (after make dev)"
 	@echo "  make verify-sepolia  Verify the published Sepolia implementation, factory and tUSDC on Etherscan"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
@@ -87,6 +88,13 @@ test-contracts:
 
 deploy-local:
 	infra/scripts/deploy-local.sh
+
+# Skips the (Foundry-only) deploy while the manifest's module still has code on Anvil.
+seed: check-env
+	uv run python infra/scripts/seed_local.py --check-deployed || $(MAKE) deploy-local
+	set -a; . ./$(ENV_FILE); set +a; uv run python infra/scripts/seed_local.py
+	grep -q '^TP_PLATFORM_CHAIN_CONFIG_PATH=' $(ENV_FILE) || printf '\nTP_PLATFORM_CHAIN_CONFIG_PATH=/app/deployments/local/chains.json\nTP_DEPLOYMENTS_DIR=/app/deployments/local\n' >> $(ENV_FILE)
+	$(COMPOSE) up --detach --no-deps --force-recreate --wait api
 
 verify-sepolia:
 	uv run python infra/scripts/verify_sepolia_contracts.py

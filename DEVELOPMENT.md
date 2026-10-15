@@ -101,3 +101,7 @@ Do not enable the `local` or `ci` profiles; anvil is not needed. `worker` and `s
 ## Money
 
 Amounts are integers in base units everywhere (ADR-014). Never use floats for money.
+
+## Seeding the demo dataset
+
+With `make dev` running, `make seed` deploys the contracts and three Safes to Anvil (needs Foundry only when no live deployment exists; re-running reuses `deployments/31337.json` while its module still has code, and a fresh Anvil or redeploy updates the stored addresses in place). It then runs `infra/scripts/seed_local.py`, which inserts one TEST organization with four users, a Ready treasury, an active mandate, a guardian setup with sentinel, an accepted fee policy, three payees (one still cooling), five invoices and a COMPLETE Safe config snapshot per Safe, then prints addresses and login links. The guardian is an EOA stand-in (Anvil account 3), not a Guardian Safe, and rows are written with SQL, not the public API. Snapshots count as fresh for 12 minutes, so re-run `make seed` to restore COMPLETE coverage. The script writes `deployments/local/` (git-ignored, mounted read-only into the `api` container) and `make seed` persists `TP_PLATFORM_CHAIN_CONFIG_PATH`/`TP_DEPLOYMENTS_DIR` in `infra/env/.env`, then recreates `api` so chain 31337 stays enabled across restarts. For an API outside Compose, use the values the script prints.
