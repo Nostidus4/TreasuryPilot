@@ -52,11 +52,13 @@ class VendorRecord:
     has_contact: bool
     notes: str | None
     created_at: datetime
+    country: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class VendorUpdate:
     name: str | None = None
+    country: str | None = None
     notes: str | None = None
     tax_id: bytes | None = None
     contact: bytes | None = None
@@ -77,6 +79,7 @@ class VendorRepository(Protocol):
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         name: str,
+        country: str | None,
         normalized_ref: str,
         tax_id: bytes | None,
         contact: bytes | None,
@@ -107,6 +110,7 @@ def _record(row: Vendor) -> VendorRecord:
         id=row.id,
         org_id=row.org_id,
         name=row.name,
+        country=row.country,
         normalized_ref=row.normalized_ref,
         has_tax_id=row.tax_id_encrypted is not None,
         has_contact=row.contact_encrypted is not None,
@@ -146,6 +150,7 @@ class SqlAlchemyVendorRepository:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         name: str,
+        country: str | None,
         normalized_ref: str,
         tax_id: bytes | None,
         contact: bytes | None,
@@ -165,6 +170,7 @@ class SqlAlchemyVendorRepository:
                     id=uuid7(),
                     org_id=organization_id,
                     name=name,
+                    country=country,
                     normalized_ref=normalized_ref,
                     tax_id_encrypted=tax_id,
                     contact_encrypted=contact,
@@ -209,6 +215,8 @@ class SqlAlchemyVendorRepository:
             # normalized_ref is set once: renaming never changes it (M05-D2).
             if update.name is not None:
                 row.name = update.name
+            if "country" in changed:
+                row.country = update.country
             if update.notes is not None:
                 row.notes = update.notes
             if update.tax_id is not None:
@@ -266,6 +274,7 @@ class SqlAlchemyVendorRepository:
 
 class VendorCreate(ApiModel):
     name: str = Field(min_length=1, max_length=200)
+    country: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
     # Optional stable supplier code; the reference is normalized from it, else from the name.
     supplier_code: str | None = Field(default=None, max_length=200)
     tax_id: str | None = Field(default=None, max_length=100)
@@ -279,9 +288,15 @@ class VendorCreate(ApiModel):
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
 
+    @field_validator("country")
+    @classmethod
+    def uppercase_country(cls, value: str | None) -> str | None:
+        return value.upper() if value is not None else None
+
 
 class VendorPatch(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    country: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
     tax_id: str | None = Field(default=None, max_length=100)
     contact: str | None = Field(default=None, max_length=2000)
     notes: str | None = Field(default=None, max_length=2000)
@@ -293,10 +308,16 @@ class VendorPatch(ApiModel):
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
 
+    @field_validator("country")
+    @classmethod
+    def uppercase_country(cls, value: str | None) -> str | None:
+        return value.upper() if value is not None else None
+
 
 class VendorView(ApiModel):
     id: uuid.UUID
     name: str
+    country: str | None
     normalized_ref: str
     has_tax_id: bool
     has_contact: bool
@@ -308,6 +329,7 @@ class VendorView(ApiModel):
         return cls(
             id=row.id,
             name=row.name,
+            country=row.country,
             normalized_ref=row.normalized_ref,
             has_tax_id=row.has_tax_id,
             has_contact=row.has_contact,
@@ -405,6 +427,7 @@ async def create_vendor(
             organization_id=member.organization_id,
             user_id=member.user_id,
             name=payload.name,
+            country=payload.country,
             normalized_ref=normalized_ref,
             tax_id=tax_id,
             contact=contact,
@@ -451,13 +474,14 @@ async def update_vendor(
     sent = payload.model_fields_set
     update = VendorUpdate(
         name=payload.name,
+        country=payload.country,
         notes=payload.notes,
         tax_id=_encrypt(request, payload.tax_id),
         contact=_encrypt(request, payload.contact),
         clear_tax_id="tax_id" in sent and payload.tax_id is None,
         clear_contact="contact" in sent and payload.contact is None,
     )
-    changed = tuple(sorted(sent & {"name", "tax_id", "contact", "notes"}))
+    changed = tuple(sorted(sent & {"name", "country", "tax_id", "contact", "notes"}))
     row = await _repository(request).update_vendor(
         organization_id=member.organization_id,
         user_id=member.user_id,

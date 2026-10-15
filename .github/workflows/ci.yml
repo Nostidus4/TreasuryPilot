@@ -94,10 +94,15 @@ jobs:
           enable-cache: true
       - name: Install Python workspace
         run: uv sync --frozen
-      - name: Invoice upload and email intake PostgreSQL integration
+      - name: Invoice upload, email intake, and Travel Rule PostgreSQL integration
         env:
           TP_TEST_DATABASE_URL: postgresql+asyncpg://treasurypilot:test-only-password@localhost:5432/treasurypilot_test
-        run: uv run pytest services/api/tests/test_invoice_documents_postgres.py -q
+        run: >-
+          uv run pytest
+          services/api/tests/test_invoice_documents_postgres.py
+          services/api/tests/test_invoice_approval_api.py
+          services/api/tests/test_payees_postgres.py
+          -q
 
   quality:
     runs-on: ubuntu-latest

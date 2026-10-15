@@ -3885,6 +3885,8 @@ export interface components {
     VendorCreate: {
       /** Contact */
       contact?: string | null;
+      /** Country */
+      country?: string | null;
       /** Name */
       name: string;
       /** Notes */
@@ -3903,6 +3905,8 @@ export interface components {
     VendorPatch: {
       /** Contact */
       contact?: string | null;
+      /** Country */
+      country?: string | null;
       /** Name */
       name?: string | null;
       /** Notes */
@@ -3916,6 +3920,8 @@ export interface components {
     };
     /** VendorView */
     VendorView: {
+      /** Country */
+      country: string | null;
       /**
        * Createdat
        * Format: date-time

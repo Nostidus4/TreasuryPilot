@@ -131,6 +131,7 @@ class MemoryStore:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         name: str,
+        country: str | None,
         normalized_ref: str,
         tax_id: bytes | None,
         contact: bytes | None,
@@ -143,7 +144,7 @@ class MemoryStore:
             raise VendorRefExists
         row = VendorRecord(
             uuid.uuid4(), organization_id, name, normalized_ref,
-            tax_id is not None, contact is not None, notes, datetime.now(UTC),
+            tax_id is not None, contact is not None, notes, datetime.now(UTC), country,
         )  # fmt: skip
         self.vendors[row.id] = row
         self._log("vendor.created", "vendor", row.id)
@@ -164,6 +165,7 @@ class MemoryStore:
         vendor = replace(
             vendor,
             name=update.name or vendor.name,
+            country=update.country if "country" in changed else vendor.country,
             has_tax_id=(vendor.has_tax_id or update.tax_id is not None) and not update.clear_tax_id,
         )
         self.vendors[vendor_id] = vendor
@@ -392,9 +394,12 @@ def new_vendor(client: TestClient, name: str = "Acme Supplies") -> str:
 def test_vendor_crud_and_normalized_ref() -> None:
     client, store = make_client()
     with client:
-        created = client.post(VENDORS, json={"name": "  Acme   Supplies ", "taxId": "VN123"})
+        created = client.post(
+            VENDORS,
+            json={"name": "  Acme   Supplies ", "country": "gb", "taxId": "VN123"},
+        )
         vendor_id = created.json()["vendor"]["id"]
-        patched = client.patch(f"{VENDORS}/{vendor_id}", json={"name": "Acme Ltd"})
+        patched = client.patch(f"{VENDORS}/{vendor_id}", json={"name": "Acme Ltd", "country": "ca"})
         fetched = client.get(f"{VENDORS}/{vendor_id}")
         listed = client.get(VENDORS)
         deleted = client.delete(f"{VENDORS}/{vendor_id}")
@@ -402,9 +407,11 @@ def test_vendor_crud_and_normalized_ref() -> None:
 
     assert created.status_code == 201
     assert created.json()["vendor"]["normalizedRef"] == "acme supplies"
+    assert created.json()["vendor"]["country"] == "GB"
     assert created.json()["vendor"]["hasTaxId"] is True
     assert "taxId" not in created.json()["vendor"]
     assert patched.json()["vendor"]["name"] == "Acme Ltd"
+    assert patched.json()["vendor"]["country"] == "CA"
     assert patched.json()["vendor"]["normalizedRef"] == "acme supplies"
     assert fetched.status_code == 200 and len(listed.json()["items"]) == 1
     assert deleted.status_code == 204 and missing.status_code == 404

@@ -7,7 +7,7 @@ load the current request revision and chain configuration before invoking it.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import TypeAdapter
 
@@ -21,7 +21,8 @@ _MAX_DEADLINE_GRACE_SECONDS = 14 * 24 * 60 * 60
 _MIN_APPROVAL_MAX_AGE = 86_400
 _MAX_APPROVAL_MAX_AGE = 60 * 86_400
 _UINT64_MAX = 2**64 - 1
-_ADDRESS: TypeAdapter[str] = TypeAdapter(Address)
+# Pydantic accepts the PEP 695 alias at runtime; TypeAdapter's annotation still requires `type[T]`.
+_ADDRESS: TypeAdapter[str] = TypeAdapter(cast(Any, Address))
 
 
 class ApprovalExpiryError(ValueError):

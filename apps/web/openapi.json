@@ -4738,6 +4738,18 @@
             ],
             "title": "Contact"
           },
+          "country": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "name": {
             "maxLength": 200,
             "minLength": 1,
@@ -4813,6 +4825,18 @@
             ],
             "title": "Contact"
           },
+          "country": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "name": {
             "anyOf": [
               {
@@ -4866,6 +4890,17 @@
       },
       "VendorView": {
         "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -4907,6 +4942,7 @@
         "required": [
           "id",
           "name",
+          "country",
           "normalizedRef",
           "hasTaxId",
           "hasContact",

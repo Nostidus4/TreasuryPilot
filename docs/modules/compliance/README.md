@@ -245,3 +245,27 @@ classification is accepted only when the provider also verifies its attestation.
 is TEST DATA only in `local`, `test` and `demo`; it classifies unknown addresses as unknown and
 does not auto-complete exchanges. Other environments use `UnconfiguredTravelRuleProvider`, so
 qualifying payments fail closed until a commercial adapter is configured.
+
+Production can configure the vendor-neutral HTTP gateway with `TP_TRAVEL_RULE_PROVIDER_URL`
+and `TP_TRAVEL_RULE_PROVIDER_API_KEY`; both are required together, and non-local URLs must
+use HTTPS. The gateway accepts `POST /v1/counterparties/classify` with `chainId`, `address`
+and `jurisdiction`, `POST /v1/exchanges` with the transfer payload and an `Idempotency-Key`
+header, and `GET /v1/exchanges/{providerRef}` for status. Replies use `kind` plus
+`attestationVerified` for classification, or `status` (`PENDING`, `COMPLETED`, `ERROR`) and
+`providerRef` for exchanges. Redirects, malformed replies, transport errors and unknown
+statuses fail closed. The API sends an exchange only after an approver's signature and current
+on-chain approver membership have been verified.
+
+Invoice approval builds the exchange data from the organization's legal name and country,
+vendor name and country, the active payee address, and the request's fiat amount/currency.
+Vendor country is optional at entry, but is required to evaluate jurisdiction thresholds.
+Missing jurisdiction, fiat valuation or threshold coverage holds approval with
+`TRAVEL_RULE_HOLD`; a qualifying transfer also requires both parties' legal identity before
+exchange. The application does not infer a country or convert a crypto amount.
+
+Deliberate consequence: existing vendors have a NULL country, so approving any payment to
+them is held with `TRAVEL_RULE_HOLD` until a country is recorded, even for amounts that would
+fall below every threshold. The applicable threshold is the lower of the origin and beneficiary
+jurisdictions' limits, so it cannot be determined (and "no rule applies" cannot be recorded)
+without the beneficiary country; the system fails closed rather than guess. Set the vendor
+country to release the hold.

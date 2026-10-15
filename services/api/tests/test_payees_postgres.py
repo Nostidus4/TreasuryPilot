@@ -82,12 +82,17 @@ async def _scenario(database_url: str) -> list[AuditEvent]:
         screening = build_screening_service("test", sessions)  # DB fixture provider
 
         vendor = await vendors.create_vendor(
-            organization_id=ORG_ID, user_id=USER_ID, name="Acme", normalized_ref="acme",
+            organization_id=ORG_ID, user_id=USER_ID, name="Acme", country="GB",
+            normalized_ref="acme",
             tax_id=b"enc", contact=None, notes=None,
         )  # fmt: skip
+        assert vendor.country == "GB"
+        fetched_vendor = await vendors.get_vendor(organization_id=ORG_ID, vendor_id=vendor.id)
+        assert fetched_vendor is not None and fetched_vendor.country == "GB"
         with pytest.raises(VendorRefExists):
             await vendors.create_vendor(
-                organization_id=ORG_ID, user_id=USER_ID, name="ACME", normalized_ref="acme",
+                organization_id=ORG_ID, user_id=USER_ID, name="ACME", country=None,
+                normalized_ref="acme",
                 tax_id=None, contact=None, notes=None,
             )  # fmt: skip
 
