@@ -381,7 +381,9 @@ export const treasuryHandlers = [
         );
     }
     return {
-      governanceTx: governanceView(txs.find((tx) => tx.safeLabel.endsWith('(T)'))!),
+      governanceTx: governanceView(
+        txs.find((tx) => tx.safeLabel.endsWith('(T)'))!,
+      ),
       operationalGovernanceTxs: txs
         .filter((tx) => !tx.safeLabel.endsWith('(T)'))
         .map(governanceView),
@@ -455,9 +457,7 @@ export const treasuryHandlers = [
     const open = db.requests.filter(
       (item) =>
         item.treasuryId === params.tId &&
-        (['Approved', 'Scheduled', 'AwaitingApproval'].includes(
-          item.status,
-        ) ||
+        (['Approved', 'Scheduled', 'AwaitingApproval'].includes(item.status) ||
           (query.get('includeDrafts') === 'true' && item.status === 'Draft')),
     );
     const days = Array.from({ length: 7 }, (_, index) => {

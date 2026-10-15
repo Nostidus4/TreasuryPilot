@@ -59,7 +59,7 @@ export const useReviewItems = (orgId: string) =>
 export const useReviewAction = (orgId: string) =>
   useOrgMutation(
     orgId,
-    (input: { id: string; action: string; note: string; version?: number }) =>
+    (input: { id: string; action: string; note: string; version: number }) =>
       api.post<{ item: ReviewItem }>(
         `/orgs/${orgId}/review-items/${input.id}/actions`,
         { action: input.action, note: input.note, version: input.version },

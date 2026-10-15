@@ -709,7 +709,8 @@ function ModuleStep({
   );
   const txsBySafe = treasuryWallets.map((safe) =>
     moduleTxs.find(
-      (item) => item.safeAddress.toLowerCase() === safe.safeAddress.toLowerCase(),
+      (item) =>
+        item.safeAddress.toLowerCase() === safe.safeAddress.toLowerCase(),
     ),
   );
   const hasPreparedTransactions =
@@ -775,14 +776,24 @@ function ModuleStep({
         BigInt(refill.perRequest) > BigInt(refill.daily) ||
         BigInt(supply.perRequest) > BigInt(supply.daily)
       ) {
-        throw new Error(t('A per-request limit cannot exceed its daily limit.'));
+        throw new Error(
+          t('A per-request limit cannot exceed its daily limit.'),
+        );
       }
-      if ((BigInt(supply.perRequest) === 0n) !== (BigInt(supply.daily) === 0n)) {
-        throw new Error(t('Set both supply limits to zero, or set both to a positive amount.'));
+      if (
+        (BigInt(supply.perRequest) === 0n) !==
+        (BigInt(supply.daily) === 0n)
+      ) {
+        throw new Error(
+          t(
+            'Set both supply limits to zero, or set both to a positive amount.',
+          ),
+        );
       }
       const buffers = treasuryWallets.map((safe) => {
         const values = draft.buffers[safe.role];
-        if (!values) throw new Error(t('Add a buffer for every treasury Safe.'));
+        if (!values)
+          throw new Error(t('Add a buffer for every treasury Safe.'));
         const minimum = amount(values.minimum);
         const target = amount(values.target);
         if (safe.role !== 'T' && BigInt(target) < BigInt(minimum)) {
@@ -905,7 +916,9 @@ function ModuleStep({
             <Field
               htmlFor="module-approvers"
               label={t('Approver wallets')}
-              hint={t('Enter distinct addresses, separated by spaces or commas.')}
+              hint={t(
+                'Enter distinct addresses, separated by spaces or commas.',
+              )}
             >
               <Textarea
                 id="module-approvers"
@@ -914,11 +927,13 @@ function ModuleStep({
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-3">
-              {([
-                ['payeeCoolingSeconds', 'Payee cooling (seconds)'],
-                ['approvalMaxAgeDays', 'Approval maximum age (days)'],
-                ['expiresInDays', 'Mandate duration (days)'],
-              ] as const).map(([key, label]) => (
+              {(
+                [
+                  ['payeeCoolingSeconds', 'Payee cooling (seconds)'],
+                  ['approvalMaxAgeDays', 'Approval maximum age (days)'],
+                  ['expiresInDays', 'Mandate duration (days)'],
+                ] as const
+              ).map(([key, label]) => (
                 <Field key={key} htmlFor={`module-${key}`} label={t(label)}>
                   <Input
                     id={`module-${key}`}
@@ -930,11 +945,13 @@ function ModuleStep({
               ))}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {([
-                ['PAY', 'payPerRequest', 'payDaily'],
-                ['REFILL', 'refillPerRequest', 'refillDaily'],
-                ['SUPPLY', 'supplyPerRequest', 'supplyDaily'],
-              ] as const).map(([kind, perRequest, daily]) => (
+              {(
+                [
+                  ['PAY', 'payPerRequest', 'payDaily'],
+                  ['REFILL', 'refillPerRequest', 'refillDaily'],
+                  ['SUPPLY', 'supplyPerRequest', 'supplyDaily'],
+                ] as const
+              ).map(([kind, perRequest, daily]) => (
                 <fieldset
                   key={kind}
                   className="grid gap-3 rounded-md border border-border p-3"
@@ -954,7 +971,9 @@ function ModuleStep({
                         id={`module-${kind.toLowerCase()}-request`}
                         inputMode="decimal"
                         value={draft[perRequest]}
-                        onChange={(event) => update(perRequest, event.target.value)}
+                        onChange={(event) =>
+                          update(perRequest, event.target.value)
+                        }
                       />
                     </Field>
                     <Field

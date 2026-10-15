@@ -12,15 +12,15 @@ here: they call the hooks in `features/*/api.ts`, which use `lib/api/http.ts`.
 
 ## Triggers
 
-| Input | Result |
-|---|---|
-| Sign in as `linh@northwind.test` | Seeded org with data. Any other email is a new user with no org. |
-| Email starting with `ratelimit` | 429 `RATE_LIMITED` |
-| `/verify?token=expired` | 410 `TOKEN_EXPIRED` |
-| Safe or payee address ending in `dead` | `NOT_A_SAFE` / screening hit |
-| Safe address ending in `bad` | Coverage `PARTIAL` |
-| Uploaded file name containing `inject` | Instruction-like text warning |
-| Copilot question containing "budget exceeded" | 429 `AI_BUDGET_EXCEEDED` |
+| Input                                         | Result                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| Sign in as `linh@northwind.test`              | Seeded org with data. Any other email is a new user with no org. |
+| Email starting with `ratelimit`               | 429 `RATE_LIMITED`                                               |
+| `/verify?token=expired`                       | 410 `TOKEN_EXPIRED`                                              |
+| Safe or payee address ending in `dead`        | `NOT_A_SAFE` / screening hit                                     |
+| Safe address ending in `bad`                  | Coverage `PARTIAL`                                               |
+| Uploaded file name containing `inject`        | Instruction-like text warning                                    |
+| Copilot question containing "budget exceeded" | 429 `AI_BUDGET_EXCEEDED`                                         |
 
 ## Endpoints that are not in API_SPEC yet
 

@@ -575,6 +575,7 @@ export interface PlanDetail extends Plan {
 export interface ReviewItem {
   id: string;
   type:
+    | components['schemas']['ReviewType']
     | 'EXCEPTION'
     | 'UNKNOWN_OPERATION'
     | 'FAILED_STEP'
@@ -587,9 +588,11 @@ export interface ReviewItem {
   requestId?: string;
   planId?: string;
   roles: Role[];
-  actions: Array<'RETRY' | 'CANCEL' | 'RESOLVE' | 'EDIT_REAPPROVE'>;
+  actions: Array<
+    components['schemas']['ReviewAction'] | 'RESOLVE' | 'EDIT_REAPPROVE'
+  >;
   /** Optimistic-concurrency token; echoed back when acting. */
-  version?: number;
+  version: components['schemas']['ReviewActionRequest']['version'];
   resolution?: { action: string; note: string; at: string };
 }
 

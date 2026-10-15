@@ -808,3 +808,69 @@ test('acting on a stale review item prompts a refresh and sends the version', as
   expect(posted?.version).toBe(1);
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
 });
+
+test('Refresh refetches the queue and clears the stale prompt', async () => {
+  const user = userEvent.setup();
+  let stale = true;
+  let listCalls = 0;
+  server.use(
+    http.get('*/v1/orgs/:orgId/review-items', () => {
+      listCalls += 1;
+      return HttpResponse.json({ items: db.reviewItems });
+    }),
+    http.post('*/v1/orgs/:orgId/review-items/:id/actions', () =>
+      stale
+        ? HttpResponse.json(
+            {
+              type: 'about:blank',
+              title: 'Conflict',
+              status: 409,
+              code: 'STALE_ITEM',
+              detail: 'x',
+            },
+            {
+              status: 409,
+              headers: { 'content-type': 'application/problem+json' },
+            },
+          )
+        : HttpResponse.json({ item: db.reviewItems[0] }),
+    ),
+  );
+  renderApp(`${BASE}/review?item=rev_unknown`);
+
+  await user.type(await screen.findByLabelText('Note'), 'checked explorer');
+  await user.click(screen.getByRole('button', { name: 'Confirm' }));
+  await screen.findByText('This item changed');
+  const before = listCalls;
+  stale = false;
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+  await waitFor(() => expect(listCalls).toBeGreaterThan(before));
+  await waitFor(() =>
+    expect(screen.queryByText('This item changed')).not.toBeInTheDocument(),
+  );
+});
+
+test('mock review action: 409 on version mismatch, 422 without version, no bump on 422', async () => {
+  const path = '/v1/orgs/org_northwind/review-items/rev_unknown/actions';
+  const post = (body: object) =>
+    api.post(path.replace('/v1', ''), body).then(
+      () => undefined,
+      (error: { status?: number; code?: string }) => error,
+    );
+  renderApp(BASE);
+  const item = db.reviewItems.find((entry) => entry.id === 'rev_unknown')!;
+  expect(
+    await post({ action: 'RETRY', note: 'x', version: item.version + 1 }),
+  ).toMatchObject({ code: 'STALE_ITEM' });
+  expect(await post({ action: 'RETRY', note: 'x' })).toMatchObject({
+    code: 'VALIDATION',
+  });
+  const before = item.version;
+  expect(
+    await post({ action: 'RETRY', note: ' ', version: before }),
+  ).toMatchObject({
+    code: 'VALIDATION',
+  });
+  expect(item.version).toBe(before);
+});

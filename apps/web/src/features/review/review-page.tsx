@@ -35,6 +35,14 @@ import { t } from '@/lib/i18n';
 import { roleLabels } from '@/lib/status';
 
 const typeLabel: Record<ReviewItem['type'], string> = {
+  POLICY_BLOCK: 'Policy block',
+  NEEDS_AUTHORITY: 'Needs authority',
+  FEE_APPROVAL: 'Fee approval',
+  UNCERTAIN_TX: 'Uncertain transaction',
+  DISCREPANCY: 'Discrepancy',
+  AI_REJECTED: 'AI rejected',
+  INFRA: 'Infrastructure issue',
+  UNEXPECTED_OUTFLOW: 'Unexpected outflow',
   EXCEPTION: 'Exception request',
   UNKNOWN_OPERATION: 'Unknown outcome',
   FAILED_STEP: 'Failed step',
@@ -44,13 +52,26 @@ const typeLabel: Record<ReviewItem['type'], string> = {
 
 const actionLabel: Record<ReviewItem['actions'][number], string> = {
   RETRY: 'Look up the transaction again',
+  REPLAN: 'Replan',
   CANCEL: 'Cancel the operation',
+  EDIT_REQUEST: 'Edit the request',
+  GRANT_EXCEPTION: 'Grant an exception',
+  ACCEPT_FEE: 'Accept the fee',
+  DEFER: 'Defer',
+  ACKNOWLEDGE: 'Acknowledge',
+  MARK_MATCHED: 'Mark as matched',
   RESOLVE: 'Mark resolved',
   EDIT_REAPPROVE: 'Edit and re-approve',
 };
 
 /** Shown when the item changed under the user: acting again needs fresh data. */
-function StalePrompt({ orgId }: { orgId: string }) {
+function StalePrompt({
+  orgId,
+  onRefresh,
+}: {
+  orgId: string;
+  onRefresh: () => void;
+}) {
   const queryClient = useQueryClient();
   return (
     <Alert
@@ -61,7 +82,10 @@ function StalePrompt({ orgId }: { orgId: string }) {
           size="sm"
           variant="primary"
           onClick={() => {
-            void queryClient.invalidateQueries({ queryKey: ['org', orgId] });
+            onRefresh();
+            void queryClient.invalidateQueries({
+              queryKey: ['org', orgId, 'review'],
+            });
           }}
         >
           {t('Refresh')}
@@ -190,12 +214,8 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                       ]}
                     />
                   </Field>
-                  {isApiError(grant.error, 'STALE_ITEM') ? (
-                    <StalePrompt orgId={scope.orgId} />
-                  ) : (
-                    grant.isError && (
-                      <Alert tone="danger">{errorMessage(grant.error)}</Alert>
-                    )
+                  {grant.isError && (
+                    <Alert tone="danger">{errorMessage(grant.error)}</Alert>
                   )}
                   <Button
                     variant="primary"
@@ -317,11 +337,11 @@ function ActionPanel({ item }: { item: ReviewItem }) {
               onValueChange={setAction}
               options={item.actions.map((value) => ({
                 value,
-                label: t(actionLabel[value]),
+                label: t(actionLabel[value] ?? value),
               }))}
             />
           </Field>
-          {stale && <StalePrompt orgId={scope.orgId} />}
+          {stale && <StalePrompt orgId={scope.orgId} onRefresh={act.reset} />}
           <Field
             htmlFor="review-note"
             label={t('Note')}
@@ -363,7 +383,7 @@ function ItemDetail({ item }: { item: ReviewItem }) {
           </div>
           <p className="mt-2 text-base text-muted-foreground">{item.detail}</p>
           <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span>{t(typeLabel[item.type])}</span>
+            <span>{t(typeLabel[item.type] ?? item.type)}</span>
             <span>{formatDateTime(item.createdAt)}</span>
             {item.requestId && (
               <Link
@@ -453,7 +473,7 @@ export function ReviewPage() {
             >
               <p className="text-base font-medium">{item.title}</p>
               <p className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>{t(typeLabel[item.type])}</span>
+                <span>{t(typeLabel[item.type] ?? item.type)}</span>
                 <span>{formatRelative(item.createdAt)}</span>
               </p>
             </InboxItem>
