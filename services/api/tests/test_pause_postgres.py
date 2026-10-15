@@ -54,6 +54,9 @@ def url() -> Iterator[str]:
         asyncio.run(_seed(database_url))
         yield database_url
     finally:
+        asyncio.run(
+            _sql(database_url, "DELETE FROM operations")
+        )  # 0085 refuses to downgrade over liquidity rows
         command.downgrade(config, "base")
 
 
@@ -169,12 +172,24 @@ def test_pause_creates_the_row_and_status_lists_pending_transactions(
     url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, treasury = _client(url, monkeypatch), TREASURIES[0]
+    asyncio.run(  # a liquidity operation has no request (EXE-014)
+        _sql(
+            url,
+            "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
+            "payload, idempotency_key, status) VALUES (gen_random_uuid(), :t, gen_random_uuid(), "
+            "NULL, decode(repeat('44', 32), 'hex'), 'SUPPLY', '{}'::jsonb, 'pause-liq', "
+            "'Pending')",
+            t=treasury,
+        )
+    )
     response = client.post(f"{_base(treasury)}/pause", json={"reason": "incident"})
     assert response.status_code == 202 and response.json()["onchain"] == "SENTINEL_SUBMITTED"
     assert _row(url, treasury)[0][:3] == (True, "incident", "Requested")
     status = client.get(f"{_base(treasury)}/pause").json()
     assert status["backendPaused"] is True and status["effective"] is False
-    assert [p["status"] for p in status["pendingTransactions"]] == ["Pending"]
+    pending = status["pendingTransactions"]
+    assert [p["status"] for p in pending] == ["Pending", "Pending"]
+    assert sorted(p["requestId"] for p in pending)[0] == ""  # the liquidity operation
 
 
 def test_pausing_an_already_paused_treasury_keeps_the_first_reason(

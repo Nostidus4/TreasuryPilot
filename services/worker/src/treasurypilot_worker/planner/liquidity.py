@@ -86,13 +86,13 @@ class DbLiquidityStarter:
         if module is None:
             return None
         midnight = datetime.combine(now.date(), time.min, UTC)
-        completed_today = await connection.fetchval(
+        ended_today = await connection.fetchval(
             "SELECT count(*) FROM plans WHERE treasury_id = $1 AND request_id IS NULL "
-            "AND status = 'Completed' AND created_at >= $2",
+            "AND status IN ('Completed', 'PartiallyCompleted') AND created_at >= $2",
             treasury_id,
             midnight,
         )
-        cycle = liquidity_cycle_id("0x" + bytes(module).hex(), utc_day_number(now), completed_today)
+        cycle = liquidity_cycle_id("0x" + bytes(module).hex(), utc_day_number(now), ended_today)
         plan_id: uuid.UUID | None = await connection.fetchval(
             f"""
             INSERT INTO plans (id, org_id, treasury_id, request_id, liquidity_cycle_id)
@@ -126,7 +126,7 @@ def _step(
 async def _end(
     pool: asyncpg.Pool, plan_id: uuid.UUID, status: str, reason: str, *, delete: bool = False
 ) -> PlanOutcome:
-    if delete:  # nothing to do this cycle: leave no row behind
+    if delete:  # an idle cycle's Draft: nothing to record, so it is the one row ever deleted
         await pool.execute("DELETE FROM plans WHERE id = $1 AND status = 'Draft'", plan_id)
     else:
         await pool.execute(

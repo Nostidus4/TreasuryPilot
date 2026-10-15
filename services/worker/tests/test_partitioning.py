@@ -106,8 +106,8 @@ def test_sequence_plans_sweep_enqueues_each_row_to_its_treasury_queue(
     rows = [{"plan_id": uuid4(), "treasury_id": uuid4()} for _ in range(12)]
 
     class _Pool:
-        async def fetch(self, _sql: str) -> list[dict[str, UUID]]:
-            return rows
+        async def fetch(self, sql: str) -> list[dict[str, UUID]]:
+            return rows if sql == tasks._SWEEP_SQL else []  # the liquidity sweep finds none
 
         async def close(self) -> None:
             return None

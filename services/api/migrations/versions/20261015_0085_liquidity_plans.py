@@ -43,18 +43,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Liquidity plans and operations are evidence (an idle cycle's empty Draft is the only row
+    # the worker deletes): refuse to half-revert once any exists.
+    op.execute(
+        """
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM plans WHERE request_id IS NULL)
+               OR EXISTS (SELECT 1 FROM operations WHERE request_id IS NULL) THEN
+                RAISE EXCEPTION 'cannot downgrade 20261015_0085: liquidity rows exist';
+            END IF;
+        END $$
+        """
+    )
     op.drop_index("uq_plans_open_liquidity", table_name="plans")
     op.drop_constraint("ck_plans_liquidity_cycle", "plans", type_="check")
     op.drop_column("plans", "liquidity_cycle_id")
-    # plans and operations are append-only evidence: liquidity rows are never deleted, so the
-    # columns only become NOT NULL again when no liquidity plan or operation was ever written.
-    for table in ("operations", "plans"):
-        op.execute(
-            f"""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM {table} WHERE request_id IS NULL) THEN
-                    ALTER TABLE {table} ALTER COLUMN request_id SET NOT NULL;
-                END IF;
-            END $$
-            """
-        )
+    op.alter_column("operations", "request_id", nullable=False)
+    op.alter_column("plans", "request_id", nullable=False)

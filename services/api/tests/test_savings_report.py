@@ -310,6 +310,27 @@ async def _exercise(database_url: str) -> None:
                 t=ids["treasury"],
                 tx=ids["tx"],
             )
+            # A liquidity operation (no request) with gas must not disturb the per-request numbers.
+            await run(
+                "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
+                "kind, payload, idempotency_key, status) VALUES (gen_random_uuid(), :t, "
+                "gen_random_uuid(), NULL, decode(repeat('02', 32), 'hex'), 'SUPPLY', "
+                "'{}'::jsonb, 'op-liq', 'Confirmed')",
+                t=ids["treasury"],
+            )
+            await run(
+                "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+                "from_address, submitted_at) SELECT gen_random_uuid(), id, 11155111, "
+                "decode(repeat('02', 32), 'hex'), 1, decode(repeat('33', 20), 'hex'), now() "
+                "FROM operations WHERE idempotency_key = 'op-liq'"
+            )
+            await run(
+                "INSERT INTO gas_ledger (id, treasury_id, transaction_id, payer, payer_address, "
+                "fee_wei, day) SELECT gen_random_uuid(), :t, tx.id, 'EXECUTOR', "
+                "decode(repeat('33', 20), 'hex'), 5000000000, CAST('2026-10-10' AS date) "
+                "FROM transactions tx WHERE tx.tx_hash = decode(repeat('02', 32), 'hex')",
+                t=ids["treasury"],
+            )
             await run(
                 "INSERT INTO treasury_fee_policies (id, org_id, treasury_id, preset, "
                 "max_fee_multiplier_bps, tip_percentile, resend_after_s, bump_bps, "

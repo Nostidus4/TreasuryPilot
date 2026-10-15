@@ -269,6 +269,10 @@ async def _close(
 
 
 async def _escalate(pool: asyncpg.Pool, op: asyncpg.Record, now: datetime) -> None:
+    if op["request_id"] is None:
+        # shortcut: review items are keyed by request (ck_review_items_subject), so a liquidity
+        # operation gets no item, only this error log; Unknown still blocks the cycles.
+        logger.error("liquidity operation %s unresolved: UNCERTAIN_TX", op["id"])
     async with pool.acquire() as connection, connection.transaction():
         await connection.execute(
             "UPDATE operations SET status = 'Unknown' WHERE id = $1 "

@@ -153,17 +153,19 @@ async def _stop(
     """Open one review item and move the request to NeedsReview; completed steps stay (BR-054)."""
 
     if run.request_id is None:  # a liquidity plan serves no request: free the cycle, no review
+        # a reverted/abandoned step spent its step id: PartiallyCompleted moves the cycle counter
+        spent = completed or intent.primary_code in ("STEP_REVERTED", "STEP_ABANDONED")
         await pool.execute(
             "UPDATE plans SET status = $2, chosen_reason = left(coalesce(chosen_reason, '') || "
             "' | stopped: ' || $3, 500), updated_at = now() "
             "WHERE id = $1 AND status IN ('Attested', 'Executing')",
             run.plan_id,
-            "PartiallyCompleted" if completed else "Superseded",
+            "PartiallyCompleted" if spent else "Superseded",
             intent.primary_code,
         )
-        logger.warning("liquidity plan %s stopped: %s", run.plan_id, intent.primary_code)
+        logger.error("liquidity plan %s stopped: %s", run.plan_id, intent.primary_code)
         return SequenceResult(
-            "PartiallyCompleted" if completed else "Blocked", intent.primary_code, completed
+            "PartiallyCompleted" if spent else "Blocked", intent.primary_code, completed
         )
     async with pool.acquire() as connection, connection.transaction():
         moved = await transition_request(

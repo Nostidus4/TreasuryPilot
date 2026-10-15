@@ -38,7 +38,11 @@ from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xac
 from treasurypilot_worker.planner.liquidity import DbLiquidityStarter, plan_liquidity
 from treasurypilot_worker.planner.pipeline import PlannerDeps, plan_request
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
-from treasurypilot_worker.trigger.cycles import CycleSkipReason, run_execution_cycle
+from treasurypilot_worker.trigger.cycles import (
+    CycleSkipReason,
+    ScheduledRequest,
+    run_execution_cycle,
+)
 
 API_ROOT = Path(__file__).parents[3] / "api"
 CHAIN_ID = 31337
@@ -77,7 +81,15 @@ def database_url() -> Iterator[str]:
     try:
         yield url
     finally:
-        command.downgrade(config, "base")
+        # liquidity rows are evidence: 0085 refuses to downgrade over them, so reset the schema
+        async def reset() -> None:
+            pool = await create_worker_pool(url, min_size=1, max_size=1)
+            await pool.execute(
+                "DROP SCHEMA IF EXISTS signer CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public"
+            )
+            await pool.close()
+
+        asyncio.run(reset())
 
 
 def pooled(fn: Callable[[Any, str], Awaitable[None]]) -> Callable[[str], None]:
@@ -527,21 +539,17 @@ class _Passed:
         return "PASSED"
 
 
-@pooled
-async def test_the_executor_sequences_a_liquidity_plan_without_a_request(
-    pool: Any, database_url: str
-) -> None:
-    from treasurypilot_core.policy import Check
+_ALLOW = Decision(
+    decision="ALLOW", primary=None, codes=[], warnings=[], checks=[], stage="PRE_STEP",
+    step_seq=0, policy_version=b"\x01" * 32, snapshot_block=1,
+)  # fmt: skip
 
-    world = await _seed(pool, [(1_000, 20)])
-    chain = _chain(world, safe=100_000)
-    _, _, (plan_id,) = await _cycle(pool, world)
-    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+
+async def _run_of(pool: Any, plan_id: uuid.UUID) -> tuple[PlanRun, Any]:
+    from treasurypilot_worker.executor.outbox import StepExecution
 
     loaded = await load_plan(pool, plan_id)
     assert loaded is not None and loaded.request_id is None and loaded.liquidity_cycle_id
-    from treasurypilot_worker.executor.outbox import StepExecution
-
     (step,) = loaded.plan.steps
     assert step.action.value == "SUPPLY"
     execution = StepExecution(
@@ -558,12 +566,20 @@ async def test_the_executor_sequences_a_liquidity_plan_without_a_request(
             "payload": {"to": loaded.plan.treasury, "data": "0x"},
         },
     )
-    run = PlanRun(plan_id, None, (execution,), loaded.valid_until)
-    allow = Decision(
-        decision="ALLOW", primary=None, codes=[], warnings=[], checks=[], stage="PRE_STEP",
-        step_seq=0, policy_version=b"\x01" * 32, snapshot_block=1,
-    )  # fmt: skip
-    del Check
+    return PlanRun(plan_id, None, (execution,), loaded.valid_until), step
+
+
+@pooled
+async def test_the_executor_sequences_a_liquidity_plan_without_a_request(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, [(1_000, 20)])
+    chain = _chain(world, safe=100_000)
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+
+    run, step = await _run_of(pool, plan_id)
+    allow = _ALLOW
     signer = _Signer()
 
     first = await sequence_plan(pool, signer, run, _Gate(allow), _Passed())
@@ -578,3 +594,54 @@ async def test_the_executor_sequences_a_liquidity_plan_without_a_request(
     )
     done = await sequence_plan(pool, signer, run, _Gate(allow), _Passed())
     assert done.status == "Completed" and len(signer.sent) == 1
+
+
+@pooled
+async def test_a_reverted_step_gets_a_fresh_cycle_id_on_the_next_cycle(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, [(1_000, 20)])
+    chain = _chain(world, safe=100_000)
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+    run, step = await _run_of(pool, plan_id)
+    signer = _Signer()
+    await sequence_plan(pool, signer, run, _Gate(_ALLOW), _Passed())
+    await pool.execute("UPDATE operations SET status = 'Reverted' WHERE step_id = $1", step.step_id)
+    stopped = await sequence_plan(pool, signer, run, _Gate(_ALLOW), _Passed())
+    assert stopped.status == "PartiallyCompleted"
+
+    result, _, (next_plan,) = await _cycle(pool, world)
+    assert result.liquidity_plan_id == next_plan
+    cycles = {
+        r["liquidity_cycle_id"]
+        for r in await pool.fetch(
+            "SELECT liquidity_cycle_id FROM plans WHERE request_id IS NULL AND treasury_id = $1",
+            world.treasury,
+        )
+    }
+    assert len(cycles) == 2  # the spent step id is not reused
+
+
+@pooled
+async def test_a_request_plan_waits_for_an_open_liquidity_plan(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, [(1_000, 20)])
+    _, _, (liquidity_plan,) = await _cycle(pool, world)  # Draft
+    request = await pool.fetchval(
+        "SELECT id FROM payment_requests WHERE treasury_id = $1", world.treasury
+    )
+    now = datetime.now(UTC)
+    for status in ("Draft", "Attested"):
+        await pool.execute("UPDATE plans SET status = $2 WHERE id = $1", liquidity_plan, status)
+        async with pool.acquire() as connection:
+            started = await DbPlanStarter(lambda *_: None).start(
+                connection, world.treasury, ScheduledRequest(request, now, 0), now=now
+            )
+        assert not started
+    await pool.execute("UPDATE plans SET status = 'Completed' WHERE id = $1", liquidity_plan)
+    async with pool.acquire() as connection:
+        assert await DbPlanStarter(lambda *_: None).start(
+            connection, world.treasury, ScheduledRequest(request, now, 0), now=now
+        )
