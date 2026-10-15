@@ -59,6 +59,8 @@ def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> 
             return [int(item) for item in value]
         if kind == "bytes32" and isinstance(value, str):
             return bytes.fromhex(value.removeprefix("0x"))
+        if kind.startswith("uint") and isinstance(value, str):
+            return int(value)  # the API stores 256-bit amounts as decimal strings
         return value
 
     return tuple(coerce(f["type"], message[f["name"]]) for f in fields)

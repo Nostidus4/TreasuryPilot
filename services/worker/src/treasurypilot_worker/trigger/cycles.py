@@ -1,8 +1,7 @@
 """Deadline-driven execution-cycle orchestration (EXE-003).
 
-The worker owns when a cycle is entered and its safety gates. EXE-004 owns the
-schedule reader and planner consumer; the protocols here keep that dependency
-small and deterministic while those durable models are still pending.
+The worker owns when a cycle is entered and its safety gates. EXE-004 supplies the
+schedule reader and plan starter (`treasurypilot_worker.planning.start`) behind these protocols.
 """
 
 from __future__ import annotations
@@ -137,30 +136,18 @@ WHERE t.id = $1
 """
 
 
-_plans_table_seen = False
-
-
 async def _read_gates(
     connection: asyncpg.Connection, treasury_id: uuid.UUID, *, now: datetime
 ) -> CycleGateState | None:
     row = await connection.fetchrow(_GATES_SQL, treasury_id, now)
     if row is None:
         return None
-    global _plans_table_seen
-    executing_plan = False
-    # shortcut: only a positive probe is cached, so a worker without plans re-probes each cycle;
-    # drop the probe entirely once EXE-004 ships the plans table.
-    _plans_table_seen = _plans_table_seen or bool(
-        await connection.fetchval("SELECT to_regclass('plans') IS NOT NULL")
-    )
-    if _plans_table_seen:
-        executing_plan = bool(
-            await connection.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM plans WHERE treasury_id = $1 "
-                "AND status::text = 'Executing')",
-                treasury_id,
-            )
+    executing_plan = bool(
+        await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM plans WHERE treasury_id = $1 AND status = 'Executing')",
+            treasury_id,
         )
+    )
     return CycleGateState(
         treasury_ready=bool(row["treasury_ready"]),
         backend_paused=bool(row["backend_paused"]),

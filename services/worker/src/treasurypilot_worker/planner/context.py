@@ -227,7 +227,9 @@ async def load_inputs(
     approval = None
     request = None
     if approval_row is not None and approval_row["approver_user_id"] is not None:
-        typed = _json(approval_row["typed_data"])
+        typed = _json(approval_row["typed_data"])[
+            "message"
+        ]  # the table keeps the full EIP-712 body
         approval = ApprovalView(
             typed=typed,
             signature=bytes(approval_row["signature"]),

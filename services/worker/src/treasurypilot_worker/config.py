@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Internal signer service (EXE-007): base URL and the shared secret it requires.
     signer_url: str | None = None
     signer_shared_secret: SecretStr | None = None
+    # Planning pipeline (EXE-004): the signer's executor address, the AI proposal switch and
+    # timeout (BR-055: 20 s), and the lead time before a deadline when a request becomes eligible.
+    executor_address: str | None = None
+    planning_ai_enabled: bool = True
+    planning_ai_timeout_seconds: float = 20.0
+    execution_lead_time_seconds: int = 86_400
     # Telegram bot token: environment only, never logged (SecretStr masks repr).
     telegram_bot_token: SecretStr | None = None
     # Base of the deep links sent in notifications; the app enforces login and permissions.
