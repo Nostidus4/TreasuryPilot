@@ -152,7 +152,12 @@ test('negative savings are rendered with their negative sign', async () => {
   expect(
     await screen.findByText('Savings against baseline B1'),
   ).toBeInTheDocument();
-  expect(await screen.findAllByText('-0.10')).toHaveLength(2);
+  const savedTile = screen.getByText('Saved', { selector: 'p' }).parentElement!;
+  expect(within(savedTile).getByText('-0.10')).toBeInTheDocument();
+  const row = screen.getByText('NEG-2026-001').closest('tr')!;
+  expect(within(row).getByText('1.00')).toBeInTheDocument();
+  expect(within(row).getByText('1.10')).toBeInTheDocument();
+  expect(within(row).getByText('-0.10')).toBeInTheDocument();
 });
 
 test('the position card shows the reserve breakdown and what is available to supply', async () => {
