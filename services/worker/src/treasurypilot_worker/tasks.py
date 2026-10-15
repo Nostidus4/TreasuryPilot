@@ -337,6 +337,9 @@ def publish_domain_events() -> dict[str, int]:
     return {"published": _publisher.run(database_url, publish)}
 
 
+PLAN_ENQUEUE_COUNTDOWN_SECONDS = 1
+
+
 def _enqueue_plan(plan_id: uuid.UUID) -> None:
     # The claim commits when the cycle's lock transaction ends; the countdown outlasts it and
     # the task retries if it still cannot see the row.
@@ -345,7 +348,7 @@ def _enqueue_plan(plan_id: uuid.UUID) -> None:
         kwargs={"plan_id": str(plan_id)},
         task_id=f"plan:{plan_id}",
         queue="core",
-        countdown=1,
+        countdown=PLAN_ENQUEUE_COUNTDOWN_SECONDS,
     )
 
 

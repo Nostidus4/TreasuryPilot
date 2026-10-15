@@ -43,12 +43,14 @@ from treasurypilot_worker.planner.pipeline import (
     plan_request,
 )
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
+from treasurypilot_worker.tasks import PLAN_ENQUEUE_COUNTDOWN_SECONDS
 from treasurypilot_worker.trigger.cycles import (
     CycleSkipReason,
     run_execution_cycle,
     run_scheduling_cycle,
 )
 
+PICKUP_BUDGET_SECONDS = 1.0  # assumed idle-worker pickup per hop; not measured
 API_ROOT = Path(__file__).parents[3] / "api"
 CHAIN_ID = 31337
 ASSET = uuid.UUID("00000000-0000-7000-8000-000000000030")
@@ -823,7 +825,7 @@ async def test_unknown_operation_skips_the_cycle_with_a_reason(
 
 
 @pooled
-async def test_approval_event_starts_the_request_within_five_seconds(
+async def test_approval_event_chain_and_latency_budget_stay_under_five_seconds(
     pool: Any, database_url: str
 ) -> None:
     world = await _seed(pool)
@@ -851,8 +853,14 @@ async def test_approval_event_starts_the_request_within_five_seconds(
     result, claimed = await _cycle(pool, world)  # what run_treasury_cycle_task does
 
     publisher = celery_app.conf.beat_schedule["publish-domain-events"]
-    # Worst case: next publisher tick + the cycle + the planner's 1 s enqueue countdown.
-    worst_case = publisher["schedule"].total_seconds() + (time.monotonic() - approved_at) + 1
+    # Budgeted estimate (no live broker): next publisher tick + measured cycle + the plan
+    # enqueue countdown + an assumed worker pickup allowance.
+    worst_case = (
+        publisher["schedule"].total_seconds()
+        + (time.monotonic() - approved_at)
+        + PLAN_ENQUEUE_COUNTDOWN_SECONDS
+        + PICKUP_BUDGET_SECONDS
+    )
     assert result.started and result.request_id == world.request and len(claimed) == 1
     assert worst_case < 5
 
@@ -907,9 +915,56 @@ async def test_scheduling_cycle_writes_the_advisory_schedule(pool: Any, database
     rows = await pool.fetch(
         "SELECT solver, items FROM schedules WHERE treasury_id = $1", world.treasury
     )
-    assert len(rows) == 1 and rows[0]["solver"] == "EDF"
+    assert len(rows) == 1 and rows[0]["solver"] == "DUE_DATE"
     (item,) = json.loads(rows[0]["items"])
     deadline = datetime.fromisoformat(item["deadline"])
     assert item["requestId"] == str(world.request) and item["order"] == 0
     assert datetime.fromisoformat(item["scheduledFor"]) == deadline - lead
     assert deadline.date() == datetime.now(UTC).date() + timedelta(days=1)
+
+
+@pooled
+async def test_changed_schedule_appends_and_empty_is_not_stored(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    writer = DbScheduleWriter(timedelta(hours=24))
+    now = datetime.now(UTC)
+    count = "SELECT count(*) FROM schedules WHERE treasury_id = $1"
+    async with pool.acquire() as connection:
+        await writer.refresh_treasury(connection, world.treasury, now=now)
+        await pool.execute(
+            "UPDATE payment_requests SET status = 'Cancelled' WHERE id = $1", world.request
+        )
+        await writer.refresh_treasury(connection, world.treasury, now=now + timedelta(minutes=15))
+        await writer.refresh_treasury(connection, world.treasury, now=now + timedelta(minutes=30))
+    rows = await pool.fetch(
+        "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at", world.treasury
+    )
+    assert [len(json.loads(r["items"])) for r in rows] == [1, 0]  # change appended, repeat not
+    assert await pool.fetchval(count, world.treasury) == 2
+
+
+@pooled
+async def test_untracked_treasury_status_is_skipped_and_old_rows_pruned(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    writer = DbScheduleWriter(timedelta(hours=24))
+    now = datetime.now(UTC)
+    count = "SELECT count(*) FROM schedules WHERE treasury_id = $1"
+    await pool.execute(
+        "INSERT INTO schedules (id, org_id, treasury_id, computed_at, solver, items) "
+        "VALUES ($1, $2, $3, $4, 'DUE_DATE', '[]'::jsonb)",
+        uuid.uuid4(),
+        world.org,
+        world.treasury,
+        now - timedelta(days=31),
+    )
+    async with pool.acquire() as connection:
+        await pool.execute("UPDATE treasuries SET status = 'Revoked' WHERE id = $1", world.treasury)
+        assert not await writer.refresh_treasury(connection, world.treasury, now=now)
+        assert await pool.fetchval(count, world.treasury) == 1
+        await pool.execute("UPDATE treasuries SET status = 'Ready' WHERE id = $1", world.treasury)
+        assert await writer.refresh_treasury(connection, world.treasury, now=now)
+    assert await pool.fetchval(count, world.treasury) == 1  # old pruned, new added

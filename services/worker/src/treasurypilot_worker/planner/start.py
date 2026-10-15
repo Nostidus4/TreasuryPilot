@@ -33,6 +33,9 @@ LIMIT 100
 """
 
 
+SCHEDULE_RETENTION = timedelta(days=30)
+
+
 def _pay_by(due_at: date, terms: PaymentTerms) -> datetime:
     day = datetime.combine(due_at, datetime.min.time(), UTC)
     if terms.discount_deadline_day is not None:
@@ -43,8 +46,10 @@ def _pay_by(due_at: date, terms: PaymentTerms) -> datetime:
 class DbScheduleWriter:
     """Append the advisory `schedules` row: requests in deadline order with window start.
 
-    shortcut: solver "EDF" is the due-date order the provider uses, not the M07 EDF/CP-SAT run;
-    swap in the engine schedule here when the provider reads this table.
+    shortcut: solver "DUE_DATE" is the order the provider uses, not the M07 EDF/CP-SAT run
+    (those labels stay M07's); items are {requestId, order, scheduledFor, deadline}, not the
+    spec's {requestId, day, value, refill}. Swap in the engine schedule when the provider reads it.
+    Empty schedules are not stored while the latest row is also empty (nothing to record).
     """
 
     def __init__(self, lead_time: timedelta = timedelta(hours=24)) -> None:
@@ -75,16 +80,22 @@ class DbScheduleWriter:
             treasury_id,
         )
         # Append-only, but an unchanged schedule is not a new row (96 identical rows a day).
-        if latest is not None and as_json(latest) == items:
+        if (as_json(latest) if latest is not None else []) == items:
             return True
         await connection.execute(
             "INSERT INTO schedules (id, org_id, treasury_id, computed_at, solver, items) "
-            "VALUES ($1, $2, $3, $4, 'EDF', $5::jsonb)",
+            "VALUES ($1, $2, $3, $4, 'DUE_DATE', $5::jsonb)",
             uuid7(),
             org_id,
             treasury_id,
             now,
             json.dumps(items),
+        )
+        # Retention: same transaction as the writer; keep 30 days of history per treasury.
+        await connection.execute(
+            "DELETE FROM schedules WHERE treasury_id = $1 AND computed_at < $2",
+            treasury_id,
+            now - SCHEDULE_RETENTION,
         )
         return True
 
