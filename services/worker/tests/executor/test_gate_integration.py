@@ -369,10 +369,12 @@ def _pay_after_outflow(database_url: str, pay_wallet_balance: int, expect: str) 
 
 
 def test_outflow_signal_blocks_the_pending_pay_on_the_new_balance(database_url: str) -> None:
+    # 900 < PAY amount plus buffer after the outflow: BUFFER_BREACH.
     _pay_after_outflow(database_url, pay_wallet_balance=900, expect="BLOCK")
 
 
 def test_outflow_signal_without_impact_lets_the_pay_pass_and_is_consumed(
     database_url: str,
 ) -> None:
+    # 1050 still covers the PAY amount plus buffer: the signal is consumed but nothing blocks.
     _pay_after_outflow(database_url, pay_wallet_balance=1050, expect="ALLOW")

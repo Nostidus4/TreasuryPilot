@@ -813,7 +813,7 @@ def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
 
     first, _ = asyncio.run(_index(anvil_url, database_url))
 
-    assert first["changed"] == 1
+    assert first["changed"] == 2  # Resumed + PaymentExecuted
     assert (
         asyncio.run(
             _one(
@@ -984,5 +984,18 @@ def test_unexpected_outflow_signal_exists_after_the_first_of_two_indexer_cycles(
 
     asyncio.run(_index(anvil_url, database_url))
     assert asyncio.run(_one(database_url, count))["n"] == 1  # cycle 1
+    first = asyncio.run(
+        _one(
+            database_url,
+            "SELECT id FROM chain_safety_signals WHERE signal_type = 'PRE_STEP_REVALIDATION'",
+        )
+    )
     asyncio.run(_index(anvil_url, database_url))
     assert asyncio.run(_one(database_url, count))["n"] == 1  # cycle 2: still one, no duplicate
+    again = asyncio.run(
+        _one(
+            database_url,
+            "SELECT id FROM chain_safety_signals WHERE signal_type = 'PRE_STEP_REVALIDATION'",
+        )
+    )
+    assert again["id"] == first["id"]
