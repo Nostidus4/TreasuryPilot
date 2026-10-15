@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import sys
 import uuid
@@ -21,6 +22,7 @@ from treasurypilot_core.policy import Check, Decision, PolicyReasonCode
 from treasurypilot_worker.executor.outbox import SignerRefused, SignerUnavailable, StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun, _route, sequence_plan
 from treasurypilot_worker.locks import create_worker_pool
+from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 
 # Tests run in importlib mode, so the sibling module is loaded by path.
 _spec = importlib.util.spec_from_file_location(
@@ -40,6 +42,14 @@ FakeSigner = _outbox.FakeSigner
 _seed = _outbox._seed
 
 _ASSET = "00000000-0000-7000-8000-000000000030"
+
+_verify_spec = importlib.util.spec_from_file_location(
+    "verify_fixtures", Path(__file__).parents[1] / "reconcile" / "test_verify.py"
+)
+assert _verify_spec and _verify_spec.loader
+_verify = importlib.util.module_from_spec(_verify_spec)
+sys.modules["verify_fixtures"] = _verify
+_verify_spec.loader.exec_module(_verify)
 
 
 def _decision(outcome: str, code: PolicyReasonCode | None = None) -> Decision:
@@ -133,8 +143,14 @@ async def _new_run(url: str, valid_for: timedelta = timedelta(minutes=5)) -> Pla
     return PlanRun(uuid.uuid4(), request, steps, datetime.now(UTC) + valid_for)
 
 
+class _Passed:
+    async def verify(self, step_id: bytes, operation_id: uuid.UUID) -> str:
+        return "PASSED"
+
+
 async def _go(url: str, signer: FakeSigner, run: PlanRun, gate: FakeGate, **kw: Any) -> Any:
     pool = await create_worker_pool(url, min_size=1, max_size=2)
+    kw.setdefault("verifier", _Passed())
     try:
         return await sequence_plan(pool, signer, run, gate, **kw)
     finally:
@@ -276,7 +292,7 @@ def test_terminal_refusal_and_reverted_step_open_review(database_url: str) -> No
 
 
 def test_worker_routing_matches_api() -> None:
-    for kind in ("POLICY_BLOCK", "NEEDS_AUTHORITY", "INFRA"):
+    for kind in ("POLICY_BLOCK", "NEEDS_AUTHORITY", "INFRA", "DISCREPANCY"):
         for code in ("BUFFER_BREACH", "AMOUNT_CHANGED"):
             api = route_for(ReviewType(kind), code)
             roles, sla = _route(kind, code)
@@ -396,3 +412,213 @@ def test_paused_treasury_is_a_no_op_and_the_request_stays_queued(database_url: s
     finally:
         asyncio.run(_sql(database_url, flag, _TREASURY, uuid.UUID(_ORG), False))
     assert asyncio.run(_go(database_url, signer, run, gate)).status == "Waiting"
+
+
+class ScriptedVerifier:
+    def __init__(self, *verdicts: str) -> None:
+        self.verdicts, self.calls = list(verdicts), 0
+
+    async def verify(self, step_id: bytes, operation_id: uuid.UUID) -> str:
+        self.calls += 1
+        return self.verdicts.pop(0)
+
+
+async def _go_verified(
+    url: str, signer: FakeSigner, run: PlanRun, gate: FakeGate, verifier: Any
+) -> Any:
+    return await _go(url, signer, run, gate, verifier=verifier)
+
+
+def test_confirmed_step_needs_passed_post_condition_before_the_next_step(
+    database_url: str,
+) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    verifier = ScriptedVerifier("UNKNOWN", "PASSED")
+    asyncio.run(_go_verified(database_url, signer, run, gate, verifier))
+    _tracker_says(database_url, run.steps[0], "Confirmed")
+
+    result = asyncio.run(_go_verified(database_url, signer, run, gate, verifier))
+    assert (result.status, result.code) == ("Waiting", "VERIFICATION_UNKNOWN")
+    assert signer.calls == 1  # UNKNOWN: PAY is not sent
+
+    result = asyncio.run(_go_verified(database_url, signer, run, gate, verifier))
+    assert result.status == "Waiting" and signer.calls == 2 and verifier.calls == 2
+
+
+def test_post_condition_discrepancy_opens_review_and_trips_breaker(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    chain = _verify.pay_chain(run.steps[0].step_id, payee_gets=900)
+    plan_step = _verify.step(_verify.Action.PAY, _verify.OP, _verify.PAYEE)
+    asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    _confirm(database_url, run.steps[0])
+
+    result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+
+    assert (result.status, result.code) == ("PartiallyCompleted", "POST_CONDITION_DISCREPANCY")
+    assert signer.calls == 1
+    rows = asyncio.run(_sql(database_url, "SELECT * FROM verifications"))
+    row = [r for r in rows if r["result"] == "DISCREPANCY"][-1]
+    assert json.loads(row["diffs"]) == {
+        f"balance:{_verify.PAYEE}": {"expected": 1000, "observed": 900}
+    }
+    items = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT type, assigned_roles FROM review_items WHERE request_id = $1",
+            run.request_id,
+        )
+    )
+    assert [(i["type"], i["assigned_roles"]) for i in items] == [
+        ("DISCREPANCY", ["Finance", "Owner"])
+    ]
+    signals = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT signal_type FROM chain_safety_signals WHERE verification_id = $1",
+            row["id"],
+        )
+    )
+    assert [s["signal_type"] for s in signals] == ["CIRCUIT_BREAKER"]
+    with pytest.raises(Exception, match="append-only"):
+        asyncio.run(_sql(database_url, "DELETE FROM verifications"))
+
+
+def test_normal_pay_passes_after_a_failed_read_is_unknown(database_url: str) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    chain = _verify.pay_chain(run.steps[0].step_id)
+    plan_step = _verify.step(_verify.Action.PAY, _verify.OP, _verify.PAYEE)
+    asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    _confirm(database_url, run.steps[0])
+
+    chain.down = True
+    result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    assert (result.status, result.code) == ("Waiting", "VERIFICATION_UNKNOWN")
+    assert signer.calls == 1
+
+    chain.down = False
+    result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    assert result.status == "Waiting" and signer.calls == 2  # PASSED: PAY sent
+    results = [
+        r["result"]
+        for r in asyncio.run(_sql(database_url, "SELECT result FROM verifications ORDER BY at"))
+    ]
+    assert results[-2:] == ["UNKNOWN", "PASSED"]
+
+
+async def _go_real(
+    url: str, signer: FakeSigner, run: PlanRun, gate: FakeGate, chain: Any, plan_step: Any
+) -> Any:
+    pool = await create_worker_pool(url, min_size=1, max_size=2)
+    try:
+        steps = {s.step_id: plan_step.model_copy(update={"step_id": s.step_id}) for s in run.steps}
+        verifier = PostConditionVerifier(pool, chain, steps, _verify.REQUEST, _verify.MODULE)
+        return await sequence_plan(pool, signer, run, gate, verifier=verifier)
+    finally:
+        await pool.close()
+
+
+def _confirm(url: str, step: StepExecution) -> None:
+    asyncio.run(
+        _sql(
+            url,
+            "UPDATE transactions SET status = 'Confirmed', block_number = $2, confirmed_at = now() "
+            "WHERE operation_id = (SELECT id FROM operations WHERE step_id = $1)",
+            step.step_id,
+            _verify.B,
+        )
+    )
+    asyncio.run(
+        _sql(url, "UPDATE operations SET status = 'Confirmed' WHERE step_id = $1", step.step_id)
+    )
+
+
+def test_reorg_is_unknown_and_three_reads_open_infra_review_then_reset(
+    database_url: str,
+) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    chain = _verify.pay_chain(run.steps[0].step_id)
+    plan_step = _verify.step(_verify.Action.PAY, _verify.OP, _verify.PAYEE)
+    asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    _confirm(database_url, run.steps[0])
+
+    chain.receipt_block = _verify.B + 1  # reorged: never a DISCREPANCY
+    for _ in range(2):
+        result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+        assert (result.status, result.code) == ("Waiting", "VERIFICATION_UNKNOWN")
+    result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    assert (result.status, result.code) == ("PartiallyCompleted", "VERIFICATION_UNKNOWN")
+    results = [
+        r["result"]
+        for r in asyncio.run(
+            _sql(
+                database_url,
+                "SELECT result FROM verifications WHERE operation_id IN "
+                "(SELECT id FROM operations WHERE step_id = $1)",
+                run.steps[0].step_id,
+            )
+        )
+    ]
+    assert results.count("UNKNOWN") >= 3 and "DISCREPANCY" not in results
+
+    # Resolving the review resets the count: the next UNKNOWN waits again.
+    asyncio.run(
+        _sql(
+            database_url,
+            "UPDATE review_items SET status = 'Resolved', resolved_at = now() "
+            "WHERE request_id = $1",
+            run.request_id,
+        )
+    )
+    asyncio.run(
+        _sql(
+            database_url,
+            "UPDATE payment_requests SET status = 'Preparing' WHERE id = $1",
+            run.request_id,
+        )
+    )
+    result = asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    assert (result.status, result.code) == ("Waiting", "VERIFICATION_UNKNOWN")
+
+
+def test_concurrent_verifiers_store_one_verdict_and_one_breaker_signal(
+    database_url: str,
+) -> None:
+    run, signer, gate = asyncio.run(_new_run(database_url)), FakeSigner(), FakeGate()
+    chain = _verify.pay_chain(run.steps[0].step_id, payee_gets=900)
+    plan_step = _verify.step(_verify.Action.PAY, _verify.OP, _verify.PAYEE)
+    asyncio.run(_go_real(database_url, signer, run, gate, chain, plan_step))
+    _confirm(database_url, run.steps[0])
+
+    async def race() -> list[str]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=4)
+        try:
+            steps = {
+                s.step_id: plan_step.model_copy(update={"step_id": s.step_id}) for s in run.steps
+            }
+            verifier = PostConditionVerifier(pool, chain, steps, _verify.REQUEST, _verify.MODULE)
+            op = await pool.fetchval(
+                "SELECT id FROM operations WHERE step_id = $1", run.steps[0].step_id
+            )
+            return list(
+                await asyncio.gather(*(verifier.verify(run.steps[0].step_id, op) for _ in range(4)))
+            )
+        finally:
+            await pool.close()
+
+    assert asyncio.run(race()) == ["DISCREPANCY"] * 4
+    rows = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT id FROM verifications WHERE result = 'DISCREPANCY' AND operation_id IN "
+            "(SELECT id FROM operations WHERE step_id = $1)",
+            run.steps[0].step_id,
+        )
+    )
+    signals = asyncio.run(
+        _sql(
+            database_url,
+            "SELECT 1 FROM chain_safety_signals WHERE verification_id = ANY($1)",
+            [r["id"] for r in rows],
+        )
+    )
+    assert len(rows) == 1 and len(signals) == 1

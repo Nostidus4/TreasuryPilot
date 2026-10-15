@@ -10,7 +10,11 @@ The request must be Preparing/Paying on every call and again right before a step
 cancel or review stop that landed meanwhile is honoured. The concrete ``Gate`` is
 ``executor.gate.PlanGate``; the Celery driver is ``tasks.sequence_plan_task``.
 
-Not wired here: the REC-001 post-condition gate (M10-D6); Confirmed is the only wait condition.
+M10-D6: a Confirmed step must have a PASSED REC-001 post-condition before the next step is sent.
+The verifier makes one read attempt per call; an UNKNOWN waits and is retried by the next call, and
+the third UNKNOWN (3 reads in total) newer than the last verdict and the last resolved
+VERIFICATION_UNKNOWN review opens an INFRA review. DISCREPANCY opens a DISCREPANCY review (the verifier has
+already raised the circuit-breaker signal).
 """
 
 from __future__ import annotations
@@ -66,6 +70,12 @@ class Gate(Protocol):
         ...
 
 
+class Verifier(Protocol):
+    async def verify(self, step_id: bytes, operation_id: UUID) -> str:
+        """REC-001: PASSED, DISCREPANCY or UNKNOWN; persisted, and a DISCREPANCY trips the breaker."""
+        ...
+
+
 @dataclass(frozen=True)
 class SequenceResult:
     status: SequenceStatus
@@ -73,6 +83,7 @@ class SequenceResult:
     completed: int = 0
 
 
+MAX_UNKNOWN = 3  # failed verification reads before a human looks
 _OPEN = ("Submitted", "Pending", "Unknown")
 _ACTIVE = ("Preparing", "Paying")  # the only request states in which a step may be sent
 # Mirrors treasurypilot_api.recovery.review_queue routing for the kinds raised here (tested).
@@ -86,6 +97,8 @@ def _route(kind: str, code: str) -> tuple[list[str], timedelta]:
         return ["Owner"], timedelta(hours=24)
     if kind == "POLICY_BLOCK" and code in _POLICY_EDIT_CODES:
         return ["Operator", "Approver"], timedelta(hours=48)
+    if kind == "DISCREPANCY":
+        return ["Finance", "Owner"], timedelta(hours=48)
     if kind in ("INFRA", "AI_REJECTED"):
         return ["Operator"], timedelta(hours=48)
     return ["Owner"], timedelta(hours=48)
@@ -177,6 +190,7 @@ async def sequence_plan(
     signer: SignerClient,
     run: PlanRun,
     gate: Gate,
+    verifier: Verifier,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> SequenceResult:
@@ -186,10 +200,12 @@ async def sequence_plan(
         return SequenceResult("Inactive", request_status)
     for seq, step in enumerate(run.steps):
         row = await pool.fetchrow(
-            "SELECT status, attempts FROM operations WHERE step_id = $1", step.step_id
+            "SELECT id, status, attempts FROM operations WHERE step_id = $1", step.step_id
         )
         status = row["status"] if row else None
         if status == "Confirmed":
+            if outcome := await _post_condition(pool, run, verifier, step, row["id"], seq):
+                return outcome
             continue
         if status in _OPEN:
             if step.kind == "PAY":
@@ -237,6 +253,42 @@ async def _paused(pool: asyncpg.Pool, run: PlanRun) -> bool:
     return bool(run.steps) and bool(await pool.fetchval(PAUSED_SQL, run.steps[0].treasury_id))
 
 
+async def _post_condition(
+    pool: asyncpg.Pool,
+    run: PlanRun,
+    verifier: Verifier,
+    step: StepExecution,
+    operation_id: UUID,
+    seq: int,
+) -> SequenceResult | None:
+    """None when the confirmed step PASSED; otherwise the result that stops this call."""
+
+    verdict = await pool.fetchval(
+        "SELECT result FROM verifications WHERE operation_id = $1 "
+        "AND result IN ('PASSED', 'DISCREPANCY') ORDER BY at DESC LIMIT 1",
+        operation_id,
+    )
+    if verdict is None:
+        verdict = await verifier.verify(step.step_id, operation_id)
+    if verdict == "PASSED":
+        return None
+    if verdict == "DISCREPANCY":
+        intent = ReviewIntent("DISCREPANCY", "POST_CONDITION_DISCREPANCY")
+        return await _stop(pool, run, intent, seq + 1)
+    unknown = await pool.fetchval(
+        "SELECT count(*) FROM verifications WHERE operation_id = $1 AND result = 'UNKNOWN' "
+        "AND at > COALESCE((SELECT max(at) FROM verifications WHERE operation_id = $1 "
+        "AND result <> 'UNKNOWN'), '-infinity') "
+        "AND at > COALESCE((SELECT max(resolved_at) FROM review_items WHERE request_id = $2 "
+        "AND type = 'INFRA' AND primary_code = 'VERIFICATION_UNKNOWN'), '-infinity')",
+        operation_id,
+        run.request_id,
+    )
+    if unknown >= MAX_UNKNOWN:
+        return await _stop(pool, run, ReviewIntent("INFRA", "VERIFICATION_UNKNOWN"), seq + 1)
+    return SequenceResult("Waiting", "VERIFICATION_UNKNOWN", seq)
+
+
 async def _request_status(pool: asyncpg.Pool, run: PlanRun) -> str | None:
     status: str | None = await pool.fetchval(
         "SELECT status FROM payment_requests WHERE id = $1", run.request_id
@@ -249,4 +301,4 @@ async def _mark(pool: asyncpg.Pool, run: PlanRun, to: str, sources: tuple[str, .
         await _transition(connection, run.request_id, to, sources, f"PAY step {to.lower()}")
 
 
-__all__ = ["Gate", "PlanRun", "SequenceResult", "sequence_plan"]
+__all__ = ["Gate", "PlanRun", "SequenceResult", "Verifier", "sequence_plan"]

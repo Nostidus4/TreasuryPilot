@@ -61,6 +61,7 @@ from treasurypilot_worker.planner.pipeline import plan_request
 from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
 from treasurypilot_worker.planner.wiring import build_attest, build_deps
+from treasurypilot_worker.reconcile.verify import PostConditionVerifier
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -721,7 +722,14 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
                     pool, loaded, inputs, rpc=rpc, attest=build_attest(settings), fees=fees
                 ),
             )
-            result = await sequence_plan(pool, signer, run, gate)
+            verifier = PostConditionVerifier(
+                pool,
+                rpc,
+                {step.step_id: step for step in loaded.plan.steps},
+                loaded.plan.request_id,
+                loaded.plan.treasury,
+            )
+            result = await sequence_plan(pool, signer, run, gate, verifier=verifier)
             # The sequencer only moves the request; the plan row follows its outcome.
             if plan_status := _PLAN_STATUS.get(result.status):
                 await pool.execute(
