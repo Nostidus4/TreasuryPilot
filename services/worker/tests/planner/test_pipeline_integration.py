@@ -19,16 +19,19 @@ from alembic import command
 from alembic.config import Config
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from eth_hash.auto import keccak
 
 from treasurypilot_api.audit.chain import DumpRecord, verify_chain
 from treasurypilot_core.domain.fee_policy import FeeDecision
-from treasurypilot_core.eip712 import payment_approval_typed_data
+from treasurypilot_core.eip712 import SWAP_IN, payment_approval_typed_data
+from treasurypilot_core.engine import GasQuote
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.agent.plan_proposer import PlanProposalRejected
 from treasurypilot_worker.attestation import attest
 from treasurypilot_worker.chain.snapshot import Snapshot, SnapshotPurpose, SnapshotScope
 from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xact_lock
 from treasurypilot_worker.planner.ai import CeleryAiProposer
+from treasurypilot_worker.planner.gas import GasSwapDeps
 from treasurypilot_worker.planner.pipeline import (
     AiOutcome,
     PlannerDeps,
@@ -330,7 +333,12 @@ def _chain(world: World, *, wallet_balance: int = 100) -> Snapshot:
 
 
 def _deps(
-    pool: Any, database_url: str, world: World, ai: Any = None, snapshot: Snapshot | None = None
+    pool: Any,
+    database_url: str,
+    world: World,
+    ai: Any = None,
+    snapshot: Snapshot | None = None,
+    gas_swap: GasSwapDeps | None = None,
 ) -> PlannerDeps:
     async def take(treasury_id: uuid.UUID, scope: SnapshotScope) -> tuple[Snapshot, int]:
         taken = snapshot or _chain(world)
@@ -358,7 +366,7 @@ def _deps(
             now=now,
         )
 
-    return PlannerDeps(take, EXECUTOR, fee, issue, ai)
+    return PlannerDeps(take, EXECUTOR, fee, issue, ai, gas_swap)
 
 
 async def _cycle(pool: Any, world: World) -> tuple[Any, list[uuid.UUID]]:
@@ -695,3 +703,90 @@ async def test_reattest_renews_the_attestation_for_the_same_plan(
         await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", outcome.plan_id)
         == 2
     )
+
+
+ROUTER = "0x" + "99" * 20
+
+
+def _gas_swap(balance: int, quote: GasQuote | None) -> GasSwapDeps:
+    async def native_balance(_treasury: uuid.UUID) -> int:
+        return balance
+
+    async def get_quote(_treasury: uuid.UUID, _module: str) -> GasQuote | None:
+        return quote
+
+    return GasSwapDeps(native_balance, get_quote, slippage_bps=100, max_amount_in=10**9)
+
+
+_QUOTE = GasQuote(router=ROUTER, token_out="0x" + "88" * 20, numerator=1, denominator=1)
+
+
+@pooled
+async def test_a_gas_shortage_adds_a_test_router_swap_that_is_persisted_and_encoded(
+    pool: Any, database_url: str
+) -> None:
+    from treasurypilot_worker.executor.plan_loader import load_plan, plan_run
+    from treasurypilot_worker.planner.context import load_inputs
+
+    world = await _seed(pool)
+    result, claimed = await _cycle(pool, world)
+    (plan_id,) = claimed
+    deps = _deps(pool, database_url, world, gas_swap=_gas_swap(500, _QUOTE))
+    outcome = await plan_request(pool, plan_id, deps)
+
+    assert outcome is not None and outcome.status == "Attested"
+    rows = await pool.fetch(
+        "SELECT seq, action, amount, min_out, venue, to_address FROM plan_steps "
+        "WHERE plan_id = $1 ORDER BY seq",
+        plan_id,
+    )
+    assert [r["action"] for r in rows][0] == SWAP_IN and len(rows) == 3  # SWAP, REFILL, PAY
+    swap = rows[0]
+    assert swap["venue"] == "TEST_ROUTER" and bytes(swap["to_address"]) == bytes.fromhex(ROUTER[2:])
+    # Shortfall = 2 base steps x 1000 - 500 = 1500, at 1% slippage: minOut covers it.
+    assert int(swap["min_out"]) >= 1_500 and int(swap["amount"]) < 1_600
+    assert all(r["min_out"] is None and r["venue"] is None for r in rows[1:])
+
+    loaded = await load_plan(pool, plan_id)
+    assert loaded is not None and loaded.plan.steps[0].venue == "TEST_ROUTER"
+    inputs = await load_inputs(pool, loaded.plan, world.treasury, executor=EXECUTOR)
+    run = plan_run(loaded, inputs, {"feeCapWei": 1})
+    request = run.steps[0].sign_request
+    data = bytes.fromhex(request["payload"]["data"][2:])
+    assert run.steps[0].kind == "SWAP"
+    assert data[:4] == keccak(b"swapForGas(bytes32,uint256,uint256)")[:4]
+    assert request["plan"]["swaps"]["0x" + loaded.plan.steps[0].step_id.hex()] == {
+        "minOut": int(swap["min_out"]),
+        "venue": "TEST_ROUTER",
+    }
+
+
+@pooled
+async def test_no_swap_without_a_gas_shortage(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    result, claimed = await _cycle(pool, world)
+    (plan_id,) = claimed
+
+    outcome = await plan_request(
+        pool, plan_id, _deps(pool, database_url, world, gas_swap=_gas_swap(10**18, _QUOTE))
+    )
+
+    assert outcome is not None and outcome.status == "Attested"
+    assert await pool.fetchval("SELECT count(*) FROM plan_steps WHERE plan_id = $1", plan_id) == 2
+
+
+@pooled
+async def test_a_gas_shortage_without_a_quote_source_is_not_attested(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    result, claimed = await _cycle(pool, world)
+    (plan_id,) = claimed
+
+    outcome = await plan_request(
+        pool, plan_id, _deps(pool, database_url, world, gas_swap=_gas_swap(0, None))
+    )
+
+    assert outcome is not None and outcome.status == "Blocked"
+    assert await _reviews(pool, world) == [("INFRA", "GAS_SHORTAGE_UNCOVERED")]
+    assert await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", plan_id) == 0

@@ -3656,6 +3656,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "minOut": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minout"
+          },
           "reason": {
             "title": "Reason",
             "type": "string"
@@ -3712,6 +3723,18 @@
             "format": "date-time",
             "title": "Updatedat",
             "type": "string"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "const": "TEST_ROUTER",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
           },
           "verification": {
             "anyOf": [

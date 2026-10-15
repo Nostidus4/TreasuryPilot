@@ -1051,3 +1051,74 @@ def test_an_exception_removes_only_the_per_request_limit(
     assert (C.OVER_DAILY_LIMIT in result.codes) == (used + amount > 10_000)
     expected = "BLOCK" if hard else "NEEDS_APPROVAL" if over and not valid else "ALLOW"
     assert result.decision == expected
+
+
+def _swap_step(**update: Any) -> PlanStep:
+    fields: dict[str, Any] = {
+        "seq": 0,
+        "step_id": b"\x0c" * 32,
+        "action": Action.SWAP,
+        "from_wallet": SAFE_T,
+        "to": "0x" + "99" * 20,
+        "asset": ASSET,
+        "amount": BaseUnits(700),
+        "min_out": BaseUnits(1_000),
+        "venue": "TEST_ROUTER",
+    }
+    return PlanStep(**(fields | update))
+
+
+def _with_swap(swap: PlanStep) -> ExecutionPlan:
+    base = _plan(refill=100)
+    shifted = [s.model_copy(update={"seq": s.seq + 1}) for s in base.steps]
+    return base.model_copy(update={"steps": [swap, *shifted]})
+
+
+def test_a_leading_swap_for_gas_is_a_well_formed_plan() -> None:
+    checks = authorization_checks(_with_swap(_swap_step()), _ctx())
+
+    assert _failing(checks) == []
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"min_out": None},
+        {"min_out": BaseUnits(0)},
+        {"venue": None},
+        {"from_wallet": O1},
+    ],
+)
+def test_a_malformed_swap_step_is_rejected(update: dict[str, Any]) -> None:
+    checks = authorization_checks(_with_swap(_swap_step(**update)), _ctx())
+
+    assert _failing(checks) == [C.PLAN_MALFORMED]
+
+
+def test_a_swap_after_the_payment_is_rejected() -> None:
+    base = _plan()
+    plan = base.model_copy(update={"steps": [*base.steps, _swap_step(seq=1)]})
+
+    assert _failing(authorization_checks(plan, _ctx())) == [C.PLAN_MALFORMED]
+
+
+def test_validate_plan_projects_the_swap_out_of_safe_t_before_refill() -> None:
+    from treasurypilot_core.policy import validate_plan
+
+    plan = _with_swap(_swap_step())
+    rich = _ctx(
+        policy_state=_policy_state(
+            balances={SAFE_T.lower(): BaseUnits(5_000), O1.lower(): BaseUnits(1_500)}
+        )
+    )
+    assert validate_plan(plan, rich).decision == "ALLOW"
+
+    # 700 swapped + 100 refilled leaves 90 < the 100 buffer: the swap cannot hide a breach.
+    poor = _ctx(
+        policy_state=_policy_state(
+            balances={SAFE_T.lower(): BaseUnits(890), O1.lower(): BaseUnits(1_500)},
+            buffers={SAFE_T.lower(): BaseUnits(100)},
+        )
+    )
+    result = validate_plan(plan, poor)
+    assert result.decision == "BLOCK" and C.SOURCE_BUFFER_BREACH in result.codes

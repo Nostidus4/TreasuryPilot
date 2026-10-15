@@ -69,6 +69,15 @@ def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> 
 def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
     """ABI calldata of the executor function for this step, as the signer sends it."""
 
+    if step.action is Action.SWAP:
+        # The executor's swapForGas takes no attestation; the signer checks the step against the
+        # attested plan and the module bounds the swap by its budget and minOut.
+        if not step.min_out:
+            raise ValueError("a SWAP step needs the minOut the engine computed")
+        swap_types = ["bytes32", "uint256", "uint256"]
+        return error_selector(f"swapForGas({','.join(swap_types)})") + encode(
+            swap_types, [step.step_id, int(step.amount), int(step.min_out)]
+        )
     attestation = _struct(PLAN_ATTESTATION_TYPE, ctx.attestation)
     types: list[str]
     args: list[Any]

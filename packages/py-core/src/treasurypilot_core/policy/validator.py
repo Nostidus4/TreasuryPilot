@@ -204,6 +204,18 @@ def _project(steps: list[PlanStep], ctx: ValidationContext) -> list[Check]:
                 balances[source] -= amount
             available_for_supply -= amount
             used[key] = used.get(key, 0) + amount
+        elif step.action == Action.SWAP:
+            # The module's swap limits have no getter, so only the contract enforces them; the
+            # source buffer and the projected balance are checked here.
+            checks.append(
+                _check(
+                    f"swap_source_buffer_{step.seq}",
+                    _above(balances, state.buffers, source, amount),
+                    C.SOURCE_BUFFER_BREACH,
+                )
+            )
+            if source in balances:
+                balances[source] -= amount
         elif step.action == Action.WITHDRAW:
             checks.append(
                 _check(

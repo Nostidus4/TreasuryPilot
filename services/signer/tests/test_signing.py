@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -25,6 +26,7 @@ from treasurypilot_core.eip712 import (
     PAY,
     REFILL,
     SUPPLY,
+    SWAP_IN,
     WITHDRAW,
     plan_attestation_typed_data,
     plan_hash,
@@ -132,6 +134,67 @@ def _make_request(
         + b",bytes)"
     )[:4]
     calldata += encode(types, args)
+    return SignRequest(
+        treasuryId="01890000-0000-7000-8000-000000000001",
+        plan=plan,
+        attestation=typed_data,
+        signature="0x" + signature.hex(),
+        stepSeq=0,
+        payload={"to": EXECUTOR_CONTRACT, "data": "0x" + calldata.hex()},
+        fees={
+            "maxFeePerGas": 2_000_000_000,
+            "maxPriorityFeePerGas": 1_000_000_000,
+            "feeCapWei": 10**18,
+        },
+    )
+
+
+def _make_swap_request(
+    *,
+    calldata_min_out: int = 190,
+    plan_min_out: int | None = 190,
+    venue: str = "TEST_ROUTER",
+    amount_in: int = 100,
+    nonce: int = 99,
+    executor: LocalAccount = EXECUTOR,
+) -> SignRequest:
+    """A SWAP step: the executor's swapForGas carries no attestation, so the plan binds it."""
+    chain_id, request_id = 31337, "0x" + "01" * 32
+    step = {
+        "seq": 0,
+        "stepId": "0x" + step_id(request_id, SWAP_IN, SAFE_T).hex(),
+        "action": SWAP_IN,
+        "from": SAFE_T,
+        "to": WALLET,  # the router
+        "asset": ASSET,
+        "amount": amount_in,
+    }
+    plan: dict[str, Any] = {
+        "requestId": request_id,
+        "treasury": MODULE,
+        "chainId": chain_id,
+        "steps": [step],
+        "feeCapWei": 10**18,
+    }
+    if plan_min_out is not None:
+        plan["swaps"] = {step["stepId"]: {"minOut": plan_min_out, "venue": venue}}
+    message = {
+        "planHash": "0x" + plan_hash(request_id, MODULE, chain_id, [step]).hex(),
+        "requestId": request_id,
+        "stepIds": [step["stepId"]],
+        "stepAmounts": [amount_in],
+        "policyVersion": "0x" + "66" * 32,
+        "executor": executor.address,
+        "validUntil": VALID_UNTIL,
+        "nonce": nonce,
+        "evidenceDigest": "0x" + "77" * 32,
+    }
+    typed_data = plan_attestation_typed_data(message, chain_id=chain_id, verifying_contract=MODULE)
+    signature = POLICY.sign_message(encode_typed_data(full_message=typed_data)).signature
+    calldata = keccak(b"swapForGas(bytes32,uint256,uint256)")[:4] + encode(
+        ["bytes32", "uint256", "uint256"],
+        [bytes.fromhex(step["stepId"][2:]), amount_in, calldata_min_out],
+    )
     return SignRequest(
         treasuryId="01890000-0000-7000-8000-000000000001",
         plan=plan,
@@ -387,6 +450,9 @@ def _wait_for_receipt(url: str, transaction_hash: str) -> dict[str, Any]:
 
 @pytest.fixture
 def anvil_url() -> Iterator[str]:
+    if "TP_TEST_ANVIL_URL" in os.environ:  # a node started elsewhere (chain id 31337)
+        yield os.environ["TP_TEST_ANVIL_URL"]
+        return
     executable = shutil.which("anvil")
     if executable is None:
         pytest.skip("anvil is required for the signer broadcast integration test")
@@ -449,6 +515,43 @@ def test_pay_and_refill_payloads_are_supported(refill: bool) -> None:
     asyncio.run(service.sign_and_send(_make_payment_request(refill=refill)))
 
     assert len(node.sent) == 1
+
+
+def test_swap_for_gas_payload_is_supported() -> None:
+    service, node, _ = _service()
+
+    asyncio.run(service.sign_and_send(_make_swap_request()))
+
+    assert len(node.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "request_fields",
+    [
+        {"calldata_min_out": 1},  # a lower bound than the engine computed
+        {"plan_min_out": None},  # the plan names no swap
+        {"venue": "UNISWAP"},  # anything but the labelled test router
+        {"plan_min_out": 0, "calldata_min_out": 0},
+    ],
+)
+def test_swap_for_gas_must_match_the_planned_min_out_and_test_router(
+    request_fields: dict[str, Any],
+) -> None:
+    service, node, _ = _service()
+
+    with pytest.raises(SignerFault, match="PAYLOAD_MISMATCH"):
+        asyncio.run(service.sign_and_send(_make_swap_request(**request_fields)))
+    assert node.sent == []
+
+
+def test_swap_for_gas_amount_must_match_the_attested_amount() -> None:
+    service, node, _ = _service()
+    request = _make_swap_request()
+    request.payload.data = _make_swap_request(amount_in=101).payload.data
+
+    with pytest.raises(SignerFault, match="PAYLOAD_MISMATCH"):
+        asyncio.run(service.sign_and_send(request))
+    assert node.sent == []
 
 
 def test_nonce_cannot_be_reused_for_a_different_plan_hash() -> None:
@@ -623,6 +726,46 @@ def test_signed_transaction_is_broadcast_to_anvil(anvil_url: str) -> None:
     assert receipt["status"] == "0x1"
     assert transaction["from"].lower() == executor.address.lower()
     assert int(transaction["nonce"], 16) == result.nonce
+
+
+def test_swap_for_gas_transaction_is_broadcast_to_anvil(anvil_url: str) -> None:
+    executor = Account.from_key(
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    )
+    mandate_data = encode(
+        MANDATE_OUTPUTS,
+        [1, 1, 2, 0, EXECUTOR_CONTRACT, executor.address, (0, 0), (0, 0), 0, (0, 0)],
+    )
+    _rpc(anvil_url, "anvil_setCode", [MODULE, _return_runtime(mandate_data)])
+    # The executor stub reverts unless the call is exactly swapForGas(bytes32,uint256,uint256).
+    selector = keccak(b"swapForGas(bytes32,uint256,uint256)")[:4].hex()
+    stub = (  # PUSH0 CALLDATALOAD PUSH1 0xe0 SHR PUSH4 sel EQ PUSH1 0x0e JUMPI PUSH0 PUSH0 REVERT JUMPDEST STOP
+        "5f35" + "60e01c" + "63" + selector + "14" + "6011" + "57" + "5f5ffd" + "5b00"
+    )
+    _rpc(anvil_url, "anvil_setCode", [EXECUTOR_CONTRACT, "0x" + stub])
+
+    rpc = JsonRpc(anvil_url)
+    service = SigningService(
+        Settings(allowed_chain_ids=[31337], trusted_policy_signers=[POLICY.address]),
+        FakeStore(),
+        rpc,
+        lambda _treasury: executor,
+    )
+    request = _make_swap_request(executor=executor)
+
+    async def sign_and_close_rpc() -> Any:
+        try:
+            return await service.sign_and_send(request)
+        finally:
+            await rpc.close()
+
+    result = asyncio.run(sign_and_close_rpc())
+
+    receipt = _wait_for_receipt(anvil_url, result.tx_hash)
+    transaction = _rpc(anvil_url, "eth_getTransactionByHash", [result.tx_hash])
+    assert receipt["status"] == "0x1"
+    assert transaction["input"] == request.payload.data
+    assert transaction["input"].startswith("0x" + selector)
 
 
 def test_unmapped_treasury_key_is_refused_as_not_configured() -> None:

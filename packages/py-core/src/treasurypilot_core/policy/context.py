@@ -18,7 +18,7 @@ from treasurypilot_core.domain.models import (
     FrozenSequence,
     NonNegativeInt,
 )
-from treasurypilot_core.eip712 import PAY, PAYMENT_APPROVAL_TYPE, REFILL, WITHDRAW
+from treasurypilot_core.eip712 import PAY, PAYMENT_APPROVAL_TYPE, REFILL, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 
 type Address = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
@@ -36,11 +36,16 @@ class Action(StrEnum):
     PAY = "PAY"
     SUPPLY = "SUPPLY"
     WITHDRAW = "WITHDRAW"  # pool → Safe T ahead of a REFILL
-    SWAP = "SWAP"  # P2
+    SWAP = "SWAP"  # swap-for-gas on the test router
 
 
-# The module's uint8 action codes (M08 §8.4); SWAP is P2 and not mapped to SWAP_IN yet.
-_ACTION_CODES = {Action.PAY: PAY, Action.REFILL: REFILL, Action.WITHDRAW: WITHDRAW}
+# The module's uint8 action codes (M08 §8.4); SUPPLY has no ExecutionPlan wire mapping yet.
+_ACTION_CODES = {
+    Action.PAY: PAY,
+    Action.REFILL: REFILL,
+    Action.WITHDRAW: WITHDRAW,
+    Action.SWAP: SWAP_IN,
+}
 
 
 class PlanStep(_HexModel):
@@ -50,7 +55,10 @@ class PlanStep(_HexModel):
     from_wallet: Address
     to: Address  # payingWallet for REFILL, payee for PAY, Safe T for WITHDRAW
     asset: Address
-    amount: BaseUnits
+    amount: BaseUnits  # amountIn for a SWAP
+    # SWAP only: the engine's output bound and the labelled venue (never a production router).
+    min_out: BaseUnits | None = None
+    venue: Literal["TEST_ROUTER"] | None = None
 
 
 class ExecutionPlan(_HexModel):
@@ -63,7 +71,7 @@ class ExecutionPlan(_HexModel):
 
     def message(self) -> dict[str, Any]:
         """The §8.3 Plan mapping that ``plan_hash`` and the attestation take, steps in plan order."""
-        return {
+        message: dict[str, Any] = {
             "requestId": "0x" + self.request_id.hex(),
             "treasury": self.treasury,
             "chainId": self.chain_id,
@@ -80,6 +88,15 @@ class ExecutionPlan(_HexModel):
                 for s in self.steps
             ],
         }
+        # Outside the hashed steps (the planHash fields are fixed): minOut/venue ride beside them.
+        swaps = {
+            "0x" + s.step_id.hex(): {"minOut": int(s.min_out or 0), "venue": s.venue}
+            for s in self.steps
+            if s.action == Action.SWAP
+        }
+        if swaps:
+            message["swaps"] = swaps
+        return message
 
 
 class MandateView(FrozenModel):

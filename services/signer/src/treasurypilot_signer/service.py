@@ -14,6 +14,7 @@ from treasurypilot_core.eip712 import (
     PAY,
     REFILL,
     SUPPLY,
+    SWAP_IN,
     WITHDRAW,
     plan_hash,
 )
@@ -50,8 +51,16 @@ _FUNCTIONS: dict[int, tuple[str, Sequence[str]]] = {
     ),
     SUPPLY: ("supply", ("bytes32", "bytes32", "uint256", _ATTESTATION, "bytes")),
     WITHDRAW: ("withdraw", ("bytes32", "bytes32", "uint256", _ATTESTATION, "bytes")),
+    # The executor's swapForGas carries no attestation: the signer checks it against the plan.
+    SWAP_IN: ("swapForGas", ("bytes32", "uint256", "uint256")),
 }
-_ACTION_NAMES = {"PAY": PAY, "REFILL": REFILL, "SUPPLY": SUPPLY, "WITHDRAW": WITHDRAW}
+_ACTION_NAMES = {
+    "PAY": PAY,
+    "REFILL": REFILL,
+    "SUPPLY": SUPPLY,
+    "WITHDRAW": WITHDRAW,
+    "SWAP": SWAP_IN,
+}
 
 
 class SignerFault(Exception):
@@ -185,6 +194,19 @@ def _check_payload(request: SignRequest, step: Mapping[str, Any]) -> None:
         raise SignerFault("PAYLOAD_MISMATCH") from error
 
     checks: Sequence[bool]
+    if action == SWAP_IN:
+        # shortcut: minOut/venue come from the unattested plan.swaps (outside plan_hash); fine for
+        # the test router only, production needs minOut in the attestation or an on-chain floor.
+        swap = request.plan.get("swaps", {}).get(step["stepId"])
+        if swap is None or swap.get("venue") != "TEST_ROUTER" or int(swap["minOut"]) <= 0:
+            raise SignerFault("PAYLOAD_MISMATCH")
+        if not (
+            bytes(args[0]) == step_id
+            and int(args[1]) == step_amount
+            and int(args[2]) == int(swap["minOut"])
+        ):
+            raise SignerFault("PAYLOAD_MISMATCH")
+        return
     if action in (PAY, REFILL):
         approval = args[0]
         # PaymentApproval: requestId, invoiceHash, fingerprint, treasury, payingWallet,

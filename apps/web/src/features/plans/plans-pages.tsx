@@ -259,6 +259,9 @@ function StepTimeline({ plan }: { plan: PlanDetail }) {
                     {step.option === 'EARLY' && (
                       <Badge tone="info">{t('Early payment')}</Badge>
                     )}
+                    {step.venue === 'TEST_ROUTER' && (
+                      <Badge tone="warning">{t('TEST ROUTER')}</Badge>
+                    )}
                   </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
                     {step.from}
