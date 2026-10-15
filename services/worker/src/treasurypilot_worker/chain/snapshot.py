@@ -50,6 +50,7 @@ class SnapshotPurpose(StrEnum):
     PLAN = "PLAN"
     PRE_STEP = "PRE_STEP"
     DASHBOARD = "DASHBOARD"
+    DAILY = "DAILY"  # kept forever: reconciliation interest reads the day-boundary aToken balance
     READBACK = "READBACK"
 
 
@@ -541,8 +542,9 @@ async def snapshot_dashboards(
     database_url: str,
     *,
     reader_factory: Callable[[Sequence[str]], RpcClient] = build_rpc_client,
+    purpose: SnapshotPurpose = SnapshotPurpose.DASHBOARD,
 ) -> int:
-    """Store a DASHBOARD snapshot per live treasury and prune those older than 7 days."""
+    """Store a snapshot per live treasury; DASHBOARD runs also prune rows older than 7 days."""
 
     pool = await create_worker_pool(database_url)
     try:
@@ -554,20 +556,19 @@ async def snapshot_dashboards(
                 ORDER BY t.id
                 """
             )
-            await connection.execute(
-                "DELETE FROM snapshots WHERE purpose = 'DASHBOARD' AND observed_at < $1",
-                datetime.now(UTC) - DASHBOARD_RETENTION,
-            )
+            if purpose is SnapshotPurpose.DASHBOARD:
+                await connection.execute(
+                    "DELETE FROM snapshots WHERE purpose = 'DASHBOARD' AND observed_at < $1",
+                    datetime.now(UTC) - DASHBOARD_RETENTION,
+                )
         stored = 0
         for row in treasuries:
             try:
-                await take_snapshot(
-                    pool, row["id"], SnapshotPurpose.DASHBOARD, reader_factory=reader_factory
-                )
+                await take_snapshot(pool, row["id"], purpose, reader_factory=reader_factory)
                 stored += 1
             except Exception:
                 # One unreadable treasury must not starve the others; nothing is stored for it.
-                logger.exception("dashboard snapshot failed for treasury %s", row["id"])
+                logger.exception("%s snapshot failed for treasury %s", purpose.value, row["id"])
         return stored
     finally:
         await pool.close()
@@ -577,3 +578,7 @@ def snapshot_dashboards_sync(database_url: str) -> int:
     """Synchronous entrypoint for Celery's prefork worker."""
 
     return asyncio.run(snapshot_dashboards(database_url))
+
+
+def snapshot_daily_sync(database_url: str) -> int:
+    return asyncio.run(snapshot_dashboards(database_url, purpose=SnapshotPurpose.DAILY))

@@ -241,6 +241,12 @@ export interface MandateAssetPolicy {
   buffers: Array<{ wallet: Hex; minimum: string; target?: string }>;
 }
 
+/** `upTo` is inclusive, in base units; the last band is unbounded and has no `upTo`. */
+export interface ApprovalBand {
+  upTo?: string;
+  k: number;
+}
+
 export interface MandateConfig {
   actions: Array<'REFILL' | 'PAY'>;
   limits: {
@@ -251,6 +257,7 @@ export interface MandateConfig {
   assetPolicies?: MandateAssetPolicy[];
   executor: Hex;
   approvers: Hex[];
+  approvalBands?: ApprovalBand[];
   guardian: Hex;
   validFrom: string;
   expiresAt: string;

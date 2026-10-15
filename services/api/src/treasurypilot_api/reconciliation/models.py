@@ -107,3 +107,22 @@ class ReconciliationLine(Base):
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
     block_number: Mapped[int | None] = mapped_column(BigInteger)
     day: Mapped[date | None] = mapped_column(Date)
+
+
+class AccountMapping(Base):
+    """Per-org override of one side of the generic journal mapping (M11-D6)."""
+
+    __tablename__ = "account_mappings"
+    __table_args__ = (
+        CheckConstraint("side IN ('DEBIT', 'CREDIT')", name="ck_account_mappings_side"),
+        UniqueConstraint("org_id", "classification", "side", name="uq_account_mappings_slot"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    side: Mapped[str] = mapped_column(String(6), nullable=False)
+    account_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    account_name: Mapped[str] = mapped_column(String(100), nullable=False)
