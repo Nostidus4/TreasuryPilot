@@ -12,7 +12,9 @@
 
 M1 key storage is an encrypted JSON keystore mounted read-only, with the password from a Docker secret. Prod uses a KMS adapter (AWS/GCP).
 
-The signer has no DB write access. The worker records outcomes.
+The signer can write only its own `signer` schema. It records attestation nonce bindings, step use,
+and the executor-address nonce lane before broadcast; worker and API database roles cannot write
+those tables. The worker records execution outcomes in the application schema.
 
 ## Alternatives
 - Key in the worker: next to LLM-calling code.

@@ -85,7 +85,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 
 | Method | Endpoint | Request → Response | Errors |
 |---|---|---|---|
-| POST | `/sign-and-send` | `{plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED{selector}`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `INSUFFICIENT_GAS` |
+| POST | `/sign-and-send` | `{treasuryId, plan, attestation, signature, stepSeq, payload{to, data}, fees{maxFeePerGas, maxPriorityFeePerGas, feeCapWei}}` → `{txHash, nonce, from}` | `ATTESTATION_INVALID`, `ATTESTATION_EXPIRED`, `NONCE_REUSED`, `PAYLOAD_MISMATCH`, `SIMULATION_REVERTED`, `FEE_CAP_EXCEEDED`, `CHAIN_NOT_ALLOWED`, `SIGNER_KEY_UNAVAILABLE` |
 | POST | `/replace` | `{txHash, fees}` → `{txHash, nonce}` (same nonce, same payload, higher fees) | `NOT_PENDING`, `FEE_CAP_EXCEEDED` |
 | POST | `/sentinel/pause` | `{treasuryId}` → `{txHash}` | `NOT_CONFIGURED` |
 | GET | `/sentinel/address`, `/health` | → addresses and gas balances only | |
@@ -183,6 +183,16 @@ Before attestation, estimate each step with `eth_estimateGas` and sum `gasEstima
 | Replacement | per fee preset (NORMAL: after 60 s, +12.5 %, capped by accepted fee) |
 | Low-gas thresholds | executor 0.05 ETH, sentinel 0.01 ETH, receipt key 0.01 ETH (Sepolia) |
 | Celery | `acks_late`, `reject_on_worker_lost`, visibility timeout 1 h |
+
+The signer accepts `X-Signer-Secret` only on the internal network. Configure
+`TP_TRUSTED_POLICY_SIGNERS` and `TP_ALLOWED_CHAIN_IDS` as JSON arrays, and map every treasury UUID
+to an encrypted keystore path in `TP_EXECUTOR_KEYSTORE_MAP` (JSON object). The signer reads the
+password from `TP_EXECUTOR_KEYSTORE_PASSWORD_FILE`. M1 may map multiple treasury IDs to one
+keystore. Missing signer configuration fails closed. The database migration creates the `signer`
+schema and `treasurypilot_signer` role; signer connections execute as that role, which has write
+access only to the signer nonce and attestation-use tables. The migration grants role membership
+to the migration login; if the signer uses a different login, the database administrator must
+grant `treasurypilot_signer` to that login before startup.
 
 ## 10. Security
 
