@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.request
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery import Celery
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
@@ -45,6 +47,7 @@ from treasurypilot_worker.planner.pipeline import (
     plan_request,
 )
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
+from treasurypilot_worker.planner.wiring import make_ask
 from treasurypilot_worker.tasks import PLAN_ENQUEUE_COUNTDOWN_SECONDS
 from treasurypilot_worker.trigger.cycles import (
     CycleSkipReason,
@@ -505,6 +508,118 @@ async def test_needs_approval_creates_exactly_one_review_item(pool: Any, databas
 
 
 @pooled
+async def test_needs_approval_rerun_keeps_one_review_item(pool: Any, database_url: str) -> None:
+    world = await _seed(pool, amount=9_000)
+    first = await _plan(pool, database_url, world)
+    assert first.status == "AwaitingAuthority"
+
+    await plan_request(pool, first.plan_id, _deps(pool, database_url, world))
+    again, claimed = await _cycle(pool, world)
+
+    assert not claimed and not again.started
+    assert [kind for kind, _ in await _reviews(pool, world)] == ["NEEDS_AUTHORITY"]
+
+
+@pooled
+async def test_a_real_ai_queue_timeout_falls_back_to_rule_based(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, terms={"net_due_day": 30_000, "priority_note": "critical vendor"})
+    # A broker with no worker on the `ai` queue: the result never arrives, so `get` times out
+    # exactly as wiring.ask does when the AI worker is down.
+    quiet = Celery("quiet", broker="memory://", backend="cache+memory://")
+    # 0.3 s keeps the test fast; production uses settings.planning_ai_timeout_seconds.
+    ask = make_ask(quiet, 0.3)
+
+    outcome = await _plan(pool, database_url, world, ai=CeleryAiProposer(ask))
+
+    assert (outcome.status, outcome.planner_source) == ("Attested", "RULE_BASED")
+    reason = await pool.fetchval("SELECT chosen_reason FROM plans WHERE id = $1", outcome.plan_id)
+    assert "AiTimeout" in reason
+
+
+def _anvil_rpc(url: str, method: str, params: list[Any] | None = None) -> Any:
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}
+    ).encode()
+    request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.load(response)
+    assert "error" not in payload, payload
+    return payload["result"]
+
+
+@pytest.mark.parametrize(
+    ("balance", "steps"), [(500, 3), (10**18, 2)], ids=["gas-shortage-swaps", "funded-no-swap"]
+)
+def test_executor_balance_read_from_anvil_drives_the_gas_swap_decision(
+    anvil_url: str, database_url: str, balance: int, steps: int
+) -> None:
+    """Chain-dependent: the executor balance and the snapshot block come from a live Anvil.
+
+    anvil_setBalance sets the executor balance and the pipeline's GasSwapDeps.native_balance
+    reads it back over eth_getBalance, so the same request plans SWAP+REFILL+PAY at 500 wei and
+    REFILL+PAY at 1e18 wei. Still fixture-fed, because the Safe/module stack is only deployed
+    by the scenario-anvil job: the treasury/wallet balances in the snapshot data and the swap
+    quote (_QUOTE). Upgrade when a deployed-module fixture is shared with the worker tests.
+    """
+
+    async def scenario(pool: Any, database_url: str) -> None:
+        _anvil_rpc(anvil_url, "anvil_setBalance", [EXECUTOR, hex(balance)])
+        _anvil_rpc(anvil_url, "evm_mine")
+        head = _anvil_rpc(anvil_url, "eth_getBlockByNumber", ["latest", False])
+        world = await _seed(pool)
+        snapshot = Snapshot(
+            purpose=SnapshotPurpose.PLAN,
+            block_number=int(head["number"], 16),
+            block_hash=head["hash"],
+            block_timestamp=datetime.fromtimestamp(int(head["timestamp"], 16), UTC)
+            - timedelta(seconds=5),
+            provider="anvil",
+            data=_chain(world).data,
+            coverage="COMPLETE",
+            missing=(),
+        )
+
+        async def executor_balance(_treasury: uuid.UUID) -> int:
+            return int(
+                await asyncio.to_thread(
+                    _anvil_rpc, anvil_url, "eth_getBalance", [EXECUTOR, "latest"]
+                ),
+                16,
+            )
+
+        async def quote(_treasury: uuid.UUID, _module: str) -> GasQuote | None:
+            return _QUOTE
+
+        _, claimed = await _cycle(pool, world)
+        (plan_id,) = claimed
+        deps = _deps(
+            pool,
+            database_url,
+            world,
+            snapshot=snapshot,
+            gas_swap=GasSwapDeps(executor_balance, quote, slippage_bps=100, max_amount_in=10**9),
+        )
+        outcome = await plan_request(pool, plan_id, deps)
+
+        assert outcome is not None and outcome.status == "Attested"
+        assert (
+            await pool.fetchval("SELECT count(*) FROM plan_steps WHERE plan_id = $1", plan_id)
+            == steps
+        )
+        stored = await pool.fetchrow(
+            "SELECT s.block_number, s.block_hash FROM plans p JOIN snapshots s "
+            "ON s.id = p.snapshot_id WHERE p.id = $1",
+            plan_id,
+        )
+        assert stored["block_number"] == snapshot.block_number
+        assert "0x" + bytes(stored["block_hash"]).hex() == head["hash"]
+
+    pooled(scenario)(database_url)
+
+
+@pooled
 async def test_fee_above_the_accepted_threshold_waits_for_acceptance(
     pool: Any, database_url: str
 ) -> None:
@@ -875,6 +990,205 @@ async def test_unknown_operation_skips_the_cycle_with_a_reason(
     result, claimed = await _cycle(pool, world)
 
     assert not result.started and result.reason is CycleSkipReason.UNKNOWN_OPERATION_PENDING
+    assert claimed == []
+
+
+@pooled
+async def test_provider_consumes_the_schedule_and_schedules_the_request(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)
+    result, claimed = await _cycle(pool, world)  # no schedule row yet: the provider refreshes it
+
+    assert result.started and result.request_id == world.request and len(claimed) == 1
+    assert (
+        await pool.fetchval("SELECT count(*) FROM schedules WHERE treasury_id = $1", world.treasury)
+        == 1
+    )
+    assert (
+        await pool.fetchval("SELECT status FROM payment_requests WHERE id = $1", world.request)
+        == "Scheduled"
+    )
+    assert (
+        await pool.fetchval(
+            'SELECT count(*) FROM request_status_events WHERE request_id = $1 AND "from" = '
+            "'Approved' AND \"to\" = 'Scheduled' AND actor_type = 'SYSTEM'",
+            world.request,
+        )
+        == 1
+    )
+
+
+async def _sibling(
+    pool: Any,
+    world: World,
+    *,
+    due_offset: int,
+    status: str = "Approved",
+    discount_offset: int | None = None,
+) -> uuid.UUID:
+    """Another Approved request of the seeded treasury (same payee/wallet/approval), own due date."""
+    new = uuid.uuid4()
+    due = datetime.now(UTC).date() + timedelta(days=due_offset)
+    day = (due - datetime(1970, 1, 1).date()).days
+    terms_dict: dict[str, int] = {"net_due_day": day}
+    if discount_offset is not None:  # pay-by is the earlier discount deadline
+        terms_dict |= {"discount_bps": 100, "discount_deadline_day": day + discount_offset}
+    terms = json.dumps(terms_dict)
+    async with pool.acquire() as c, c.transaction():
+        await c.execute(
+            "INSERT INTO payment_requests (id, org_id, treasury_id, chain_id, vendor_id, payee_id,"
+            " asset_id, issue_date, due_at, invoice_no, amount, status, fingerprint, invoice_hash,"
+            " terms_hash, onchain_request_id, paying_wallet_id, terms, terms_confirmed_by,"
+            " terms_confirmed_at, created_by, last_edited_by) SELECT $1, org_id, treasury_id,"
+            " chain_id, vendor_id, payee_id, asset_id, issue_date, $2, 'INV-' || $6::text, amount,"
+            " $3, sha256(('f' || $6::text)::bytea), invoice_hash, terms_hash,"
+            " sha256(('r' || $6::text)::bytea),"
+            " paying_wallet_id, $4::jsonb, terms_confirmed_by, terms_confirmed_at, created_by,"
+            " last_edited_by FROM payment_requests WHERE id = $5",
+            new,
+            due,
+            status,
+            terms,
+            world.request,
+            str(new),
+        )
+        await c.execute(
+            "INSERT INTO request_revisions (id, request_id, revision, snapshot) "
+            "VALUES (gen_random_uuid(), $1, 1, '{}')",
+            new,
+        )
+        await c.execute(
+            "INSERT INTO approvals (id, request_id, revision, approver_user_id, approver_address,"
+            " typed_data, signature, expires_at) SELECT gen_random_uuid(), $1, revision,"
+            " approver_user_id, approver_address, typed_data, signature, expires_at"
+            " FROM approvals WHERE request_id = $2",
+            new,
+            world.request,
+        )
+    return new
+
+
+async def _provider_pick(
+    pool: Any, world: World, now: datetime, lead: timedelta = timedelta(hours=24)
+) -> Any:
+    async with pool.acquire() as connection:
+        return await DbScheduleProvider(lead).next_eligible_request(
+            connection, world.treasury, now=now
+        )
+
+
+@pooled
+async def test_provider_skips_items_that_are_no_longer_live_candidates(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)  # due tomorrow, window open
+    cooling = await _sibling(pool, world, due_offset=0)  # earlier deadline, so first in the row
+    await pool.execute(
+        "INSERT INTO plans (id, org_id, treasury_id, request_id, status) "
+        "SELECT gen_random_uuid(), org_id, id, $1, 'Expired' FROM treasuries WHERE id = $2",
+        cooling,
+        world.treasury,
+    )
+
+    selection = await _provider_pick(pool, world, datetime.now(UTC))
+
+    stored = await pool.fetchval(
+        "SELECT items FROM schedules WHERE treasury_id = $1 ORDER BY computed_at DESC LIMIT 1",
+        world.treasury,
+    )
+    assert [i["requestId"] for i in json.loads(stored)] == [str(cooling), str(world.request)]
+    assert selection.candidate is not None and selection.candidate.request_id == world.request
+    assert selection.candidate.order == 1  # position in the stored schedule, not in the live set
+
+
+@pooled
+async def test_provider_takes_the_open_second_item_when_the_first_is_closed(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, due_offset=2)  # first by due date; window opens tomorrow
+    # Due later but with a discount deadline tomorrow: pay-by tomorrow, window open today.
+    second = await _sibling(pool, world, due_offset=3, discount_offset=-2)
+
+    selection = await _provider_pick(pool, world, datetime.now(UTC))
+
+    assert selection.candidate is not None and selection.candidate.request_id == second
+    assert selection.candidate.order == 1
+
+
+@pooled
+async def test_writer_schedules_only_open_windows_and_is_idempotent(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool)  # window open
+    far = await _sibling(pool, world, due_offset=10)
+    draft = await _sibling(pool, world, due_offset=1, status="Draft")
+    writer = DbScheduleWriter()
+    async with pool.acquire() as connection:
+        await writer.refresh_treasury(connection, world.treasury, now=datetime.now(UTC))
+        await writer.refresh_treasury(connection, world.treasury, now=datetime.now(UTC))
+
+    async def state(rid: uuid.UUID) -> tuple[str, int, int]:
+        row = await pool.fetchrow(
+            "SELECT status, version, (SELECT count(*) FROM request_status_events "
+            "WHERE request_id = $1) AS events FROM payment_requests WHERE id = $1",
+            rid,
+        )
+        return row["status"], row["version"], row["events"]
+
+    opened = await state(world.request)
+    assert opened[0] == "Scheduled" and opened[2] == 1  # one event despite the rerun
+    assert await state(far) == ("Approved", 1, 0)  # outside its window: still editable
+    assert await state(draft) == ("Draft", 1, 0)
+
+
+@pooled
+async def test_two_simultaneous_cycles_run_one(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    entered, release = asyncio.Event(), asyncio.Event()
+    inner = DbScheduleProvider()
+
+    class Slow:
+        async def next_eligible_request(
+            self, connection: Any, treasury_id: Any, *, now: Any
+        ) -> Any:
+            entered.set()
+            await release.wait()
+            return await inner.next_eligible_request(connection, treasury_id, now=now)
+
+    claimed: list[uuid.UUID] = []
+
+    async def run(provider: Any) -> Any:
+        return await run_execution_cycle(
+            world.treasury,
+            lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
+            schedule_provider=provider,
+            plan_starter=DbPlanStarter(lambda plan_id, _t: claimed.append(plan_id)),
+        )
+
+    first = asyncio.create_task(run(Slow()))
+    await entered.wait()
+    second = await run(inner)
+    release.set()
+    first_result = await first
+
+    assert second.reason is CycleSkipReason.LOCK_BUSY and not second.started
+    assert first_result.started and len(claimed) == 1
+
+
+@pooled
+async def test_paused_treasury_is_skipped_with_a_reason(pool: Any, database_url: str) -> None:
+    world = await _seed(pool)
+    await pool.execute(
+        "INSERT INTO backend_pause (treasury_id, org_id, paused, reason) "
+        "VALUES ($1, $2, true, 'incident')",
+        world.treasury,
+        world.org,
+    )
+
+    result, claimed = await _cycle(pool, world)
+
+    assert not result.started and result.reason is CycleSkipReason.BACKEND_PAUSED
     assert claimed == []
 
 

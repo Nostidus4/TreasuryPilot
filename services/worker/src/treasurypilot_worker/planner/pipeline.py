@@ -131,6 +131,7 @@ def _build_plan(
             wallet=pay.from_wallet,
             payee=pay.to,
             refill=int(item.refill),
+            refill_from=item.refill_from,
             pay=int(pay_amount(request, item.day)),
         ),
         planner_source=source,  # type: ignore[arg-type]

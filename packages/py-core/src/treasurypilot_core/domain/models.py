@@ -146,9 +146,13 @@ class Snapshot(FrozenModel):
     borrow_rate_bps: BasisPoints
     health_factor: NonNegativeInt | None = None
     debt: BaseUnits
+    # Owner-allowlisted operational (from, to) refill paths (SC-L06, F-059). Empty = Safe T only.
+    refill_paths: FrozenSequence[tuple[str, str]] = ()
 
     @model_validator(mode="after")
     def validate_usage_counters(self) -> Snapshot:
+        if any(source == target for source, target in self.refill_paths):
+            raise ValueError("a refill path cannot start and end at the same wallet")
         if not {"pay", "refill"} <= set(self.used_today):
             raise ValueError("used_today must contain the pay and refill counters")
         if self.debt > 0 and self.health_factor is None:
@@ -195,6 +199,8 @@ class ScheduledItem(FrozenModel):
     value: int
     # ``default`` preserves the meaning of schedules produced by the single-asset API.
     asset_id: Annotated[str, Field(min_length=1)] = "default"
+    # Operational wallet funding the refill; None means Safe T (the default source).
+    refill_from: Annotated[str, Field(min_length=1)] | None = None
 
 
 class Infeasible(FrozenModel):
