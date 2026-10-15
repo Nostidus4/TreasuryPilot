@@ -144,6 +144,8 @@ def _approval_matches_request(i: _Inputs) -> bool:
         and int(t["earlyAmount"]) == r.early_amount
         and int(t["earlyPayBy"]) == r.early_pay_by
         and int(t["deadline"]) == r.deadline
+        # The on-chain module lets only a signed isFiat approval pay below its cap.
+        and t["isFiat"] is (r.fiat_amount_minor_units is not None)
     )
 
 
@@ -242,14 +244,12 @@ def _plan_well_formed(i: _Inputs) -> bool:
         or i.plan.request_id != r.request_id
     ):
         return False
-    # Same choice as the module's pay(): the early option while it is open (ADR-019).
-    early = r.early_amount > 0 and i.ctx.now <= r.early_pay_by
     by_action = {s.action: s for s in steps}
     pay, refill, withdraw = (by_action.get(a) for a in (Action.PAY, Action.REFILL, Action.WITHDRAW))
     if pay is None:
         return False
     return (
-        pay.amount == (r.early_amount if early else r.amount)
+        r.allows_pay_amount(pay.amount, i.ctx.now)
         and _same(pay.from_wallet, r.paying_wallet)
         and _same(pay.to, r.payee)
         and (

@@ -1737,6 +1737,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
         { name: 'deadline', type: 'uint64' },
         { name: 'termsHash', type: 'bytes32' },
         { name: 'expiry', type: 'uint64' },
+        { name: 'isFiat', type: 'bool' },
       ],
     },
     primaryType: 'PaymentApproval',
@@ -1757,6 +1758,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
       deadline: seconds(request.dueDate),
       termsHash: h32(JSON.stringify(request.terms)),
       expiry: seconds(request.dueDate) + 7 * 24 * 3600,
+      isFiat: false,
     },
   };
 }

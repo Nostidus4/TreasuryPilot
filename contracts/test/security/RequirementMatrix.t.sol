@@ -42,7 +42,7 @@ contract RequirementMatrixTest is TreasuryFixture {
         // the call can only fail because `pay` is non-payable, not on NotExecutor.
         vm.deal(executor, 1);
         I.PaymentApproval memory ap = _approval(1, 1);
-        bytes memory call = abi.encodeCall(module.pay, (ap, _sign(ap), keccak256("rejected step")));
+        bytes memory call = abi.encodeCall(module.pay, (ap, _sign(ap), keccak256("rejected step"), ap.amount));
         vm.prank(executor);
         (bool native, bytes memory reason) = address(module).call{value: 1}(call);
         require(!native && reason.length == 0, "native value not rejected by the non-payable check");
@@ -69,7 +69,7 @@ contract RequirementMatrixTest is TreasuryFixture {
         bytes memory signature = _sign(ap);
         vm.warp((previousDay + 1) * 1 days);
         vm.prank(executor);
-        module.pay(ap, signature, bytes32(uint256(2)));
+        module.pay(ap, signature, bytes32(uint256(2)), ap.amount);
         require(module.usedToday(module.PAY()) == 100e6, "execution day cap");
         require(
             module.usedOn(keccak256(abi.encode(module.PAY(), address(token), previousDay))) == 100e6,

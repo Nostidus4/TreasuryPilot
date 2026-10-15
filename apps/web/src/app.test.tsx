@@ -357,9 +357,9 @@ test('signing is blocked until high-risk flags are acknowledged, then the reques
     screen.getAllByRole('button', { name: /acknowledge flag/i })[0],
   );
 
-  // Now the 13-field object appears and matches what the server built.
+  // Now the 14-field object appears and matches what the server built.
   expect(await screen.findByText('PaymentApproval')).toBeInTheDocument();
-  expect(screen.getByText(/13 fields/i)).toBeInTheDocument();
+  expect(screen.getByText(/14 fields/i)).toBeInTheDocument();
   expect(screen.getByText('875000000')).toBeInTheDocument();
 
   await waitFor(() =>

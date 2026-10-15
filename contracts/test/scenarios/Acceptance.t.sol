@@ -93,7 +93,7 @@ contract AcceptanceTest is TreasuryFixture {
         _pay(first, bytes32(uint256(1)));
         vm.expectRevert(E.BufferBreach.selector);
         vm.prank(executor);
-        module.pay(second, staleSignature, bytes32(uint256(2)));
+        module.pay(second, staleSignature, bytes32(uint256(2)), second.amount);
         require(token.balanceOf(address(op1)) == 10e6 && !module.requestPaid(second.requestId), "competing cash");
     }
 

@@ -117,9 +117,24 @@ class RequestView(_HexModel):
     paying_wallet: Address
     payee: Address
     amount: BaseUnits
+    fiat_amount_minor_units: NonNegativeInt | None  # set exactly for a fiat request
     early_amount: BaseUnits  # 0 = no early option (ADR-019)
     early_pay_by: NonNegativeInt
     deadline: NonNegativeInt
+
+    def approved_amount(self, now: int) -> int:
+        """The option pay() selects: the early amount while it is open (ADR-019), else the normal one."""
+        early = self.early_amount > 0 and now <= self.early_pay_by
+        return int(self.early_amount if early else self.amount)
+
+    def allows_pay_amount(self, amount: int, now: int) -> bool:
+        """Mirror of pay(): the approved amount exactly, or 1..approved for a fiat request."""
+        approved = self.approved_amount(now)
+        return (
+            0 < amount <= approved
+            if self.fiat_amount_minor_units is not None
+            else amount == approved
+        )
 
 
 class ApprovalView(FrozenModel):

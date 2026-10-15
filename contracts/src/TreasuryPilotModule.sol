@@ -17,7 +17,7 @@ interface ITestRouter {
 /// @notice Executes fixed ERC20 and Aave calls through Safes, within signed and owner-set rules.
 contract TreasuryPilotModule is TreasuryPilotGovernance {
     /// @inheritdoc ITreasuryPilotModule
-    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId)
+    function pay(PaymentApproval calldata ap, bytes calldata approverSig, bytes32 stepId, uint256 paymentAmount)
         external
         onlyExecutor
         nonReentrant
@@ -32,14 +32,19 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
             delete duplicateAllowedFor[ap.fingerprint];
         }
         bool early = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy;
-        uint256 amount = early ? ap.earlyAmount : ap.amount;
+        uint256 approvedAmount = early ? ap.earlyAmount : ap.amount;
+        if (paymentAmount == 0) revert E.InvalidAmount();
+        // Only an owner-signed fiat approval may pay below the signed option; everything else pays it exactly.
+        if (ap.isFiat ? paymentAmount > approvedAmount : paymentAmount != approvedAmount) {
+            revert E.WrongPaymentOption();
+        }
         bool usedException = false;
         Limits storage limits = _assetPolicies[ap.asset].pay;
-        if (amount > limits.perRequest) {
+        if (paymentAmount > limits.perRequest) {
             Exception storage ex = exceptions[ap.requestId];
             if (ex.amount == 0) revert E.OverPerRequestLimit();
             if (
-                ex.amount != amount || ex.payee != ap.payee || ex.used || block.timestamp > ex.expiry
+                ex.amount != approvedAmount || ex.payee != ap.payee || ex.used || block.timestamp > ex.expiry
                     || ex.mandateVersion != _mandate.version
             ) revert E.ExceptionInvalid();
             ex.used = true;
@@ -47,18 +52,18 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         }
         uint256 day = block.timestamp / 1 days;
         bytes32 key = _counterKey(PAY, ap.asset, day);
-        if (_exceedsDaily(usedOn[key], amount, limits.daily)) revert E.OverDailyLimit();
-        _requireFloor(ap.asset, ap.payingWallet, amount, false);
+        if (_exceedsDaily(usedOn[key], paymentAmount, limits.daily)) revert E.OverDailyLimit();
+        _requireFloor(ap.asset, ap.payingWallet, paymentAmount, false);
         requestPaid[ap.requestId] = true;
         stepUsed[stepId] = true;
         fingerprintPaid[ap.fingerprint] = true;
-        usedOn[key] += amount;
-        _transfer(ap.asset, ap.payingWallet, ap.payee, amount);
+        usedOn[key] += paymentAmount;
+        _transfer(ap.asset, ap.payingWallet, ap.payee, paymentAmount);
         if (_balance(ap.asset, ap.payingWallet) < bufferOf(ap.asset, ap.payingWallet)) {
             revert E.BufferBreach();
         }
         emit PaymentExecuted(
-            ap.requestId, stepId, ap.fingerprint, ap.payingWallet, ap.payee, amount, day, usedException, early
+            ap.requestId, stepId, ap.fingerprint, ap.payingWallet, ap.payee, paymentAmount, day, usedException, early
         );
     }
 
@@ -177,19 +182,13 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
         BorrowAuthorization storage auth = borrowAuthorizations[planId];
         if (auth.amount == 0 || auth.used) revert E.BorrowNotAuthorized();
         if (block.timestamp > auth.expiry) revert E.AuthorizationExpired();
-        if (_healthFactor() < auth.minHealthFactor) revert E.HealthFactorTooLow();
-        if (IAavePool(aavePool).getReserveData(asset).currentVariableBorrowRate > auth.maxRateRay) {
-            revert E.BorrowRateTooHigh();
-        }
+        _requireBorrowGuards(auth);
         uint256 beforeCash = _balance(safeT);
         auth.used = true;
         _safeCall(safeT, aavePool, abi.encodeCall(IAavePool.borrow, (asset, auth.amount, 2, 0, safeT)));
         uint256 afterCash = _balance(safeT);
         if (afterCash < beforeCash || afterCash - beforeCash != auth.amount) revert E.BalanceDeltaMismatch();
-        if (_healthFactor() < auth.minHealthFactor) revert E.HealthFactorTooLow();
-        if (IAavePool(aavePool).getReserveData(asset).currentVariableBorrowRate > auth.maxRateRay) {
-            revert E.BorrowRateTooHigh();
-        }
+        _requireBorrowGuards(auth);
         emit BorrowExecuted(planId, auth.amount);
     }
 
@@ -383,6 +382,14 @@ contract TreasuryPilotModule is TreasuryPilotGovernance {
 
     function _requirePool() internal view {
         if (aavePool == address(0)) revert E.InvalidConfiguration();
+    }
+
+    /// @dev Health factor and borrow rate must hold both before and after the borrow.
+    function _requireBorrowGuards(BorrowAuthorization storage auth) internal view {
+        if (_healthFactor() < auth.minHealthFactor) revert E.HealthFactorTooLow();
+        if (IAavePool(aavePool).getReserveData(asset).currentVariableBorrowRate > auth.maxRateRay) {
+            revert E.BorrowRateTooHigh();
+        }
     }
 
     function _healthFactor() internal view returns (uint256 healthFactor) {

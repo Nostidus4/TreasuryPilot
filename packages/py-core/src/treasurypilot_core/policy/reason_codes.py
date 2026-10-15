@@ -140,7 +140,7 @@ REASON_CODES: dict[PolicyReasonCode, ReasonInfo] = {
     PolicyReasonCode.APPROVAL_STALE: _info(
         _G.APPROVAL,
         "BR-002",
-        note="invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/payee differ from the current request",
+        note="invoiceHash/termsHash/amount/earlyAmount/earlyPayBy/deadline/isFiat/payee differ from the current request",
     ),
     PolicyReasonCode.MAKER_CHECKER: _info(_G.APPROVAL, "BR-005"),
     PolicyReasonCode.FLAG_UNACKNOWLEDGED: _info(_G.APPROVAL, "BR-066, FR-313"),
