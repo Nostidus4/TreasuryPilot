@@ -90,6 +90,42 @@
         "title": "ActionLimits",
         "type": "object"
       },
+      "ActivityView": {
+        "properties": {
+          "actor": {
+            "enum": ["agent", "user", "chain"],
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "href": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Href"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["id", "at", "actor", "text"],
+        "title": "ActivityView",
+        "type": "object"
+      },
       "AllowDuplicateRequest": {
         "properties": {
           "reason": {
@@ -480,6 +516,30 @@
         },
         "required": ["treasury_id", "file"],
         "title": "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post",
+        "type": "object"
+      },
+      "BudgetView": {
+        "properties": {
+          "action": {
+            "enum": ["PAY", "REFILL"],
+            "title": "Action",
+            "type": "string"
+          },
+          "dailyLimit": {
+            "title": "Dailylimit",
+            "type": "string"
+          },
+          "perRequest": {
+            "title": "Perrequest",
+            "type": "string"
+          },
+          "usedToday": {
+            "title": "Usedtoday",
+            "type": "string"
+          }
+        },
+        "required": ["action", "usedToday", "dailyLimit", "perRequest"],
+        "title": "BudgetView",
         "type": "object"
       },
       "BundleRequest": {
@@ -2102,6 +2162,49 @@
         "title": "LabelRequest",
         "type": "object"
       },
+      "LastActionView": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "enum": ["SUPPLY", "WITHDRAW", "NONE"],
+            "title": "Kind",
+            "type": "string"
+          },
+          "txHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Txhash"
+          }
+        },
+        "required": ["kind", "amount", "at", "explanation"],
+        "title": "LastActionView",
+        "type": "object"
+      },
       "Latency": {
         "properties": {
           "count": {
@@ -2477,6 +2580,38 @@
         "required": ["items"],
         "title": "MandateListResponse",
         "type": "object"
+      },
+      "MandateSummaryView": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MandateVersionStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["version", "status", "expiresAt"],
+        "title": "MandateSummaryView",
+        "type": "object"
+      },
+      "MandateVersionStatus": {
+        "enum": [
+          "Draft",
+          "PendingActivation",
+          "Active",
+          "Superseded",
+          "Expired",
+          "Revoked",
+          "Discrepancy"
+        ],
+        "title": "MandateVersionStatus",
+        "type": "string"
       },
       "MandateView": {
         "properties": {
@@ -4261,6 +4396,70 @@
         "title": "PlanView",
         "type": "object"
       },
+      "PositionView": {
+        "properties": {
+          "aUsdc": {
+            "title": "Ausdc",
+            "type": "string"
+          },
+          "availableForSupply": {
+            "title": "Availableforsupply",
+            "type": "string"
+          },
+          "lastAction": {
+            "$ref": "#/components/schemas/LastActionView"
+          },
+          "poolLiquidity": {
+            "title": "Poolliquidity",
+            "type": "string"
+          },
+          "requiredReserve": {
+            "$ref": "#/components/schemas/RequiredReserveView"
+          },
+          "safeUsdc": {
+            "title": "Safeusdc",
+            "type": "string"
+          },
+          "supplyApyBps": {
+            "title": "Supplyapybps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "safeUsdc",
+          "aUsdc",
+          "poolLiquidity",
+          "requiredReserve",
+          "availableForSupply",
+          "supplyApyBps",
+          "lastAction"
+        ],
+        "title": "PositionView",
+        "type": "object"
+      },
+      "QueuesView": {
+        "properties": {
+          "approvals": {
+            "title": "Approvals",
+            "type": "integer"
+          },
+          "governance": {
+            "title": "Governance",
+            "type": "integer"
+          },
+          "reconciliation": {
+            "title": "Reconciliation",
+            "type": "integer"
+          },
+          "review": {
+            "title": "Review",
+            "type": "integer"
+          }
+        },
+        "required": ["approvals", "governance", "review", "reconciliation"],
+        "title": "QueuesView",
+        "type": "object"
+      },
       "ReconciliationEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -5097,6 +5296,29 @@
         "title": "RequestReason",
         "type": "object"
       },
+      "RequiredReserveView": {
+        "properties": {
+          "floor": {
+            "title": "Floor",
+            "type": "string"
+          },
+          "holds": {
+            "title": "Holds",
+            "type": "string"
+          },
+          "paymentReserve": {
+            "title": "Paymentreserve",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": ["paymentReserve", "floor", "holds", "total"],
+        "title": "RequiredReserveView",
+        "type": "object"
+      },
       "ResolveRequest": {
         "properties": {
           "acknowledge": {
@@ -5873,6 +6095,26 @@
         "title": "SiweNonceResponse",
         "type": "object"
       },
+      "StalenessView": {
+        "properties": {
+          "blockNumber": {
+            "title": "Blocknumber",
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": ["blockNumber", "observedAt", "stale"],
+        "title": "StalenessView",
+        "type": "object"
+      },
       "StepUpRequest": {
         "properties": {
           "code": {
@@ -6374,6 +6616,74 @@
       },
       "TreasuryResponse": {
         "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ActivityView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity"
+          },
+          "budgets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budgets"
+          },
+          "mandate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MandateSummaryView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PositionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queues": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueuesView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "staleness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StalenessView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "treasury": {
             "$ref": "#/components/schemas/TreasuryView"
           },
@@ -7354,6 +7664,28 @@
       },
       "treasurypilot_api__treasury__api__WalletView": {
         "properties": {
+          "balance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          },
+          "buffer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buffer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -7376,6 +7708,17 @@
           "safeAddress": {
             "title": "Safeaddress",
             "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
           },
           "threshold": {
             "title": "Threshold",
