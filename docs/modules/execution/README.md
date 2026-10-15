@@ -143,6 +143,8 @@ For each step in order:
 
 Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, completed steps stay (BR-054).
 
+**RCV-003 resume** (`recovery/partial.py`): `resume_partial(pool, request_id)` moves a `PartiallyCompleted` plan back to `Executing` and its request `NeedsReview → Preparing`, resolves the open review items (RETRY, only POLICY_BLOCK/INFRA; otherwise `NotRetryable`, also when a step is Reverted/Abandoned) and sends nothing; the next `sequence_plan` skips Confirmed steps (no second refill) and re-validates the first unfinished one with `pre_step`. It refuses with `InFlight` while an operation is Submitted/Pending/Unknown (M12 resolves those first). Callers (review RETRY, startup scan, unknown resolution) enqueue `sequence_plan_task` afterwards; the sweep also does. The internal tasks `treasurypilot.recovery.resume_partial` / `cancel_partial` call them (resume then enqueues `sequence_plan`); the API review action is RCV-004. `cancel_partial` (same lock and in-flight guard) moves the request to `Cancelled`, the plan to `Superseded`, resolves items with CANCEL and reports the Confirmed steps whose funds stay where they are.
+
 ### 7.4 Gas replacement
 
 Tracker sees a tx Pending longer than the preset's `resend_after` (NORMAL 60 s) → executor calls `/replace` with fees × 1.125, never above the plan's accepted fee cap; after the cap, it waits (no further bumps) and the request may become NeedsReview at the deadline.
@@ -260,6 +262,7 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 | M10-D12 | Partial completion → plan PartiallyCompleted, request NeedsReview; resumption creates a new plan for the remaining steps (M12). |
 | M10-D13 | Low-gas thresholds per key (executor/sentinel/receipt). (reviewed) |
 | M10-D14 | Run-now uses the same gates and enqueues exactly one execution cycle. |
+| M10-D15 | RETRY on PartiallyCompleted resumes the same plan; REPLAN remains for plan-shape changes. |
 
 ## 15. v0.3 changes (ADR-019)
 

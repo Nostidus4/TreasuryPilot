@@ -44,6 +44,7 @@ class TransitionAction(StrEnum):
     PAY_CONFIRMED = "pay_confirmed"
     PAY_UNKNOWN = "pay_unknown"
     REVIEW_RESOLVED = "review_resolved"
+    RESUME_PARTIAL = "resume_partial"
     EXPIRE = "expire"
     RENEW = "renew"
     CANCEL = "cancel"
@@ -200,6 +201,9 @@ _RULES: tuple[TransitionRule, ...] = (
         RequestStatus.NEEDS_REVIEW,
         RequestStatus.SCHEDULED,
         TransitionAction.REVIEW_RESOLVED,
+    ),
+    _system_rule(
+        RequestStatus.NEEDS_REVIEW, RequestStatus.PREPARING, TransitionAction.RESUME_PARTIAL
     ),
     _system_rule(RequestStatus.SCHEDULED, RequestStatus.EXPIRED, TransitionAction.EXPIRE),
     _system_rule(
