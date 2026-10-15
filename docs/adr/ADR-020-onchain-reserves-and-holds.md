@@ -35,7 +35,7 @@ Funds approved for one payment request must not be spendable by another request 
 | Reservation and hold storage per request | `commitments` / `reservedOf` / `heldOf`; `invariant_R2_TotalsEqualPerRequestLedger`; `testReserveGuards` |
 | R to L transition | `testReserveToHoldKeepsCommittedTotal`; `invariant_R3_NoFlaggedTransitions` |
 | Release on known outcome | `testHoldReleaseNeedsKnownOutcome`, `testOperatorCannotReleaseReserveUntilPaidOrCancelled`, `testOwnerReleasesAnyCommitmentUnconditionally`, `testReleaseManyIsOwnerOnlyAndSkipsUnregistered`, `testPayingOwnRequestConsumesCommitment`, `testPayLeavesCommitmentOnAnotherWalletUntilReleased` |
-| Invariant tests | `ReserveHoldInvariantTest` (1000 runs, 32000 calls) |
+| Invariant tests | `ReserveHoldInvariantTest` (per foundry.toml invariant config) |
 | DoD: ADR | this document |
 | DoD: integer base units, no LLM dependency | all amounts `uint256` base units; no off-chain input decides enforcement |
 | Backend/worker integration | Not part of this issue's scope (contract level); listed under Known gaps |
