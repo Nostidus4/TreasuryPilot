@@ -22,12 +22,37 @@ logger = logging.getLogger(__name__)
 _SIGNER_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 
+# Refusals no retry can fix: the attestation, payload or chain is wrong for this step. The
+# operation is marked Abandoned so it never sits in NotSubmitted looking retryable. Other
+# refusals (e.g. SIMULATION_REVERTED) stay NotSubmitted with last_error for a later decision.
+TERMINAL_REFUSALS = frozenset(
+    {
+        "ATTESTATION_INVALID",
+        "ATTESTATION_EXPIRED",
+        "PAYLOAD_MISMATCH",
+        "FEE_CAP_EXCEEDED",
+        "CHAIN_NOT_ALLOWED",
+        "NONCE_REUSED",
+    }
+)
+# Mirrors treasurypilot_api.execution.models.OperationKind (the worker cannot import the api).
+_OPERATION_KINDS = frozenset({"PAY", "REFILL", "SWAP", "WITHDRAW", "SUPPLY"})
+
+
 class SignerRefused(Exception):
     """A typed, definitive signer refusal (ATTESTATION_EXPIRED, FEE_CAP_EXCEEDED, ...)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+    @property
+    def terminal(self) -> bool:
+        return self.code in TERMINAL_REFUSALS
+
+
+class SignerMisconfigured(Exception):
+    """HTTP 401 from the signer: our shared secret is wrong. A deploy error, not a refusal."""
 
 
 class SignerUnavailable(Exception):
@@ -47,13 +72,20 @@ class HttpSignerClient:
         try:
             async with aiohttp.ClientSession(timeout=_SIGNER_TIMEOUT) as session:
                 async with session.post(self._url, json=request, headers=self._headers) as reply:
-                    body = await reply.json(content_type=None)
                     status = reply.status
-        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
+                    try:
+                        body = await reply.json(content_type=None)
+                    except ValueError:  # non-JSON body: fall back to the status code alone
+                        body = None
+        except (aiohttp.ClientError, TimeoutError) as error:
             raise SignerUnavailable(type(error).__name__) from error
-        if status == 200 and isinstance(body, dict):
-            return body
+        if status == 200:
+            if isinstance(body, dict):
+                return body
+            raise SignerUnavailable("MALFORMED_SIGNER_RESPONSE")
         code = str(body.get("code")) if isinstance(body, dict) else "SIGNER_ERROR"
+        if status == 401:
+            raise SignerMisconfigured("signer rejected the shared secret")
         if status >= 500:
             raise SignerUnavailable(code)
         raise SignerRefused(code)
@@ -80,11 +112,42 @@ class StepOutcome:
     nonce: int | None = None
 
 
+def _validate(step: StepExecution) -> None:
+    """Reject a step whose fields disagree with the request the signer will act on."""
+
+    request = step.sign_request
+    if step.kind not in _OPERATION_KINDS:
+        raise ValueError(f"unknown operation kind {step.kind!r}")
+    if str(request.get("treasuryId")) != str(step.treasury_id):
+        raise ValueError("sign_request treasuryId does not match the step treasury")
+    try:
+        signer_step_id = request["plan"]["steps"][request["stepSeq"]]["stepId"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise ValueError("sign_request has no plan step at stepSeq") from error
+    if str(signer_step_id).lower().removeprefix("0x") != step.step_id.hex():
+        raise ValueError("step_id does not match the signer's plan step id")
+
+
+def _parse_reply(signed: dict[str, Any]) -> tuple[bytes, int, bytes]:
+    tx_hash = bytes.fromhex(str(signed["txHash"]).removeprefix("0x"))
+    sender = bytes.fromhex(str(signed["from"]).removeprefix("0x"))
+    nonce = int(signed["nonce"])
+    if len(tx_hash) != 32 or len(sender) != 20 or nonce < 0:
+        raise ValueError("bad txHash, from or nonce length")
+    return tx_hash, nonce, sender
+
+
 async def execute_step(
     pool: asyncpg.Pool, signer: SignerClient, step: StepExecution
 ) -> StepOutcome:
-    """Record, sign and hand one step to the tracker. Safe to re-run at any point."""
+    """Record, sign and hand one step to the tracker. Safe to re-run at any point.
 
+    A terminal refusal (``TERMINAL_REFUSALS``) marks the operation Abandoned and re-raises.
+    ``plan_steps`` is append-only and carries no status, so there is no step state to update here;
+    EXE-008 owns plan-level progress.
+    """
+
+    _validate(step)
     async with pool.acquire() as connection:
         # Transaction 1: the outbox row exists (and the attempt is counted) before any signing.
         async with connection.transaction():
@@ -114,20 +177,15 @@ async def execute_step(
         operation_id: UUID = operation["id"]
 
         try:
-            signed = await signer.sign_and_send(step.sign_request)
-            tx_hash = bytes.fromhex(str(signed["txHash"]).removeprefix("0x"))
-            nonce, sender = int(signed["nonce"]), bytes.fromhex(str(signed["from"])[2:])
+            tx_hash, nonce, sender = _parse_reply(await signer.sign_and_send(step.sign_request))
         except SignerRefused as error:
-            await connection.execute(
-                "UPDATE operations SET last_error = $2 WHERE id = $1", operation_id, error.code
-            )
+            await _record_failure(connection, operation_id, error.code, abandon=error.terminal)
             raise
         except SignerUnavailable as error:
-            await connection.execute(
-                "UPDATE operations SET last_error = $2 WHERE id = $1", operation_id, str(error)
-            )
+            await _record_failure(connection, operation_id, str(error))
             raise
         except (KeyError, TypeError, ValueError) as error:
+            await _record_failure(connection, operation_id, "MALFORMED_SIGNER_RESPONSE")
             raise SignerUnavailable("MALFORMED_SIGNER_RESPONSE") from error
 
         # Transaction 2: tx hash + nonce and the Submitted status commit together.
@@ -148,6 +206,20 @@ async def execute_step(
                 operation_id,
             )
     return StepOutcome(operation_id, "Submitted", "0x" + tx_hash.hex(), nonce)
+
+
+async def _record_failure(
+    connection: asyncpg.Connection, operation_id: UUID, error: str, *, abandon: bool = False
+) -> None:
+    # Conditional: a concurrent run may already have moved the operation past NotSubmitted.
+    await connection.execute(
+        "UPDATE operations SET last_error = $2, status = CASE WHEN $3 THEN "
+        "'Abandoned'::operation_status ELSE status END "
+        "WHERE id = $1 AND status = 'NotSubmitted'",
+        operation_id,
+        error,
+        abandon,
+    )
 
 
 async def _existing_outcome(

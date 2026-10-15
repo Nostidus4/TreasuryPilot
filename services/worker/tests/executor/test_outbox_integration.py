@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import os
 import uuid
 from collections.abc import Iterator
@@ -50,10 +51,10 @@ class FakeSigner:
         self.calls += 1
         if self.fail_with is not None:
             raise self.fail_with
-        key = request["stepId"]
+        key = request["plan"]["steps"][request["stepSeq"]]["stepId"].removeprefix("0x")
         reply = self.signed.setdefault(
             key,
-            {"txHash": "0x" + key * 32, "nonce": len(self.signed), "from": "0x" + "ab" * 20},
+            {"txHash": "0x" + key[:2] * 32, "nonce": len(self.signed), "from": "0x" + "ab" * 20},
         )
         if self.crash_after_reply:
             raise Crash
@@ -114,7 +115,9 @@ def _step() -> StepExecution:
         kind="PAY",
         chain_id=CHAIN_ID,
         sign_request={
-            "stepId": step_id.hex()[:2],  # short key for the fake; the real body is opaque here
+            "treasuryId": str(_TREASURY),
+            "plan": {"steps": [{"stepId": "0x" + step_id.hex()}]},
+            "stepSeq": 0,
             "payload": {"to": "0x" + "33" * 20, "data": "0xdeadbeef"},
         },
     )
@@ -176,11 +179,11 @@ def test_crash_after_signer_reply_is_recovered_by_step_id(database_url: str) -> 
 
 def test_signer_refusal_and_outage_keep_operation_retryable(database_url: str) -> None:
     signer, step = FakeSigner(), _step()
-    signer.fail_with = SignerRefused("ATTESTATION_EXPIRED")
+    signer.fail_with = SignerRefused("SIMULATION_REVERTED")
     with pytest.raises(SignerRefused):
         asyncio.run(_run(database_url, signer, step))
     operation, _ = asyncio.run(_rows(database_url, step))
-    assert (operation["status"], operation["last_error"]) == ("NotSubmitted", "ATTESTATION_EXPIRED")
+    assert (operation["status"], operation["last_error"]) == ("NotSubmitted", "SIMULATION_REVERTED")
 
     signer.fail_with = SignerUnavailable("TimeoutError")
     with pytest.raises(SignerUnavailable):
@@ -191,3 +194,45 @@ def test_signer_refusal_and_outage_keep_operation_retryable(database_url: str) -
     operation, transactions = asyncio.run(_rows(database_url, step))
     assert operation["status"] == "Submitted" and operation["last_error"] is None
     assert len(transactions) == 1
+
+
+def test_terminal_refusal_abandons_and_unknown_refusal_stays_retryable(database_url: str) -> None:
+    signer, step = FakeSigner(), _step()
+    signer.fail_with = SignerRefused("PAYLOAD_MISMATCH")
+    with pytest.raises(SignerRefused):
+        asyncio.run(_run(database_url, signer, step))
+    operation, _ = asyncio.run(_rows(database_url, step))
+    assert (operation["status"], operation["last_error"]) == ("Abandoned", "PAYLOAD_MISMATCH")
+    asyncio.run(_run(database_url, signer, step))  # Abandoned is final: the signer is not called
+    assert signer.calls == 1
+
+    other = _step()
+    signer.fail_with = SignerRefused("SIMULATION_REVERTED")
+    with pytest.raises(SignerRefused):
+        asyncio.run(_run(database_url, signer, other))
+    operation, _ = asyncio.run(_rows(database_url, other))
+    assert operation["status"] == "NotSubmitted"
+
+
+def test_malformed_reply_is_recorded_and_retryable(database_url: str) -> None:
+    class Bad(FakeSigner):
+        async def sign_and_send(self, request: dict[str, Any]) -> dict[str, Any]:
+            return {"txHash": "0x12", "nonce": 1, "from": "0x" + "ab" * 20}
+
+    step = _step()
+    with pytest.raises(SignerUnavailable):
+        asyncio.run(_run(database_url, Bad(), step))
+    operation, transactions = asyncio.run(_rows(database_url, step))
+    assert operation["last_error"] == "MALFORMED_SIGNER_RESPONSE" and transactions == []
+
+
+def test_step_validation_rejects_mismatches(database_url: str) -> None:
+    step = _step()
+    wrong_id = dataclasses.replace(step, step_id=b"\x01" * 32)
+    wrong_kind = dataclasses.replace(step, kind="BOGUS")
+    wrong_treasury = dataclasses.replace(
+        step, sign_request={**step.sign_request, "treasuryId": str(uuid.uuid4())}
+    )
+    for bad in (wrong_id, wrong_kind, wrong_treasury):
+        with pytest.raises(ValueError):
+            asyncio.run(_run(database_url, FakeSigner(), bad))

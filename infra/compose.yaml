@@ -187,6 +187,7 @@ services:
       # Core-only credentials are deliberately not part of x-app-environment.
       TP_POLICY_KEYSTORE_PATH: /run/secrets/policy_keystore
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
+      TP_SIGNER_URL: ${TP_SIGNER_URL:-http://signer:8080}
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
     secrets: [policy_keystore, policy_keystore_password]

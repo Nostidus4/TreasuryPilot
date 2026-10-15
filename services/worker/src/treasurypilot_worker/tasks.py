@@ -24,6 +24,7 @@ from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.executor.outbox import (
     HttpSignerClient,
+    SignerRefused,
     SignerUnavailable,
     StepExecution,
     execute_step,
@@ -565,6 +566,9 @@ def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
 
     try:
         return asyncio.run(run())
+    except SignerRefused as error:
+        # Definitive answer: retrying the same request cannot succeed (see TERMINAL_REFUSALS).
+        return {"status": "Refused", "code": error.code, "terminal": error.terminal}
     except SignerUnavailable as error:
         # Same step_id on retry: the signer replays the original transaction, never a new one.
         raise RetryableTaskError(f"signer unavailable: {error}") from error
