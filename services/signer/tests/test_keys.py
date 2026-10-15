@@ -116,3 +116,10 @@ def test_private_key_never_reaches_logs_or_health(
         assert secret not in text.lower()
         assert PRIVATE_KEY not in text.lower()
         assert PASSWORD not in text
+
+
+def test_password_file_path_without_a_keystore_map_starts_unconfigured(tmp_path: Path) -> None:
+    # Compose always sets the password file path (to /dev/null-backed secrets) even with no keys.
+    settings = Settings(executor_keystore_password_file=tmp_path / "absent")
+    with TestClient(create_app(settings_override=settings)) as client:
+        assert client.get("/health").status_code == 200
