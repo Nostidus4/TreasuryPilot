@@ -126,6 +126,7 @@ from treasurypilot_api.notifications.telegram import router as telegram_router
 from treasurypilot_api.notifications.webhook_api import router as webhook_router
 from treasurypilot_api.observability.metrics import router as metrics_router
 from treasurypilot_api.observability.savings import router as savings_router
+from treasurypilot_api.reconciliation.export import router as reconciliation_export_router
 from treasurypilot_api.reconciliation.routes import router as reconciliation_router
 from treasurypilot_api.recovery.circuit import router as circuit_router
 from treasurypilot_api.recovery.routes import router as review_router
@@ -571,6 +572,7 @@ def create_app(
     app.include_router(webhook_router)
     app.include_router(notification_email_router)
     app.include_router(requests_router)
+    app.include_router(reconciliation_export_router)
     app.include_router(recurring_schedules_router)
     app.include_router(invoice_api_keys_router)
     app.include_router(notification_preferences_router)

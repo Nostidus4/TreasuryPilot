@@ -93,3 +93,13 @@ REC-001 xác minh → REC-002 bản ghi đối soát → REC-003 khớp/tự kh�
 ## 15. Thay đổi theo v0.3 (ADR-019)
 
 SUPPLY/WITHDRAW là dòng `LENDING_TRANSFER` (giữa quỹ và vị thế cho vay), không phải chi phí. Hậu điều kiện: SUPPLY → USDC giảm đúng, aToken tăng, allowance 0; WITHDRAW → USDC tăng đúng. File xuất có lãi gửi kiếm được trong kỳ.
+
+## Ghi chú triển khai export (REC-004, #158)
+
+- **M1 cung cấp `GET /v1/orgs/{o}/reconciliation/export?from=&to=&format=csv|journal` đồng bộ**, trả CSV ngay trong response. Luồng bất đồng bộ `POST /exports` -> `202`, signed URL, bảng `exports` và sha256 được hoãn lại.
+- **Vai trò:** chỉ Finance và OrgAdmin (Owner, Operator nhận 403).
+- **Kỳ:** ngày UTC, gồm cả hai đầu; `to` không được trước `from` (422), tối đa 366 ngày (422 `EXPORT_PERIOD_TOO_LONG`).
+- **Kiểm tra tổng (M11-D7):** tổng số nguyên theo (class, asset) của các dòng xuất được so với phép tổng độc lập trên dữ liệu gốc (`plan_steps.amount` của operation/transaction Confirmed; `gas_ledger.fee_wei` theo `day` cho FEE). Lệch trả 409 `EXPORT_TOTALS_MISMATCH` kèm (class, asset, expected, exported). ERC-20 không có trong `assets` trả 409 `EXPORT_ASSET_UNKNOWN`.
+- **Cột `fee (ETH)`:** phí tx tính bằng ETH, lặp lại trên mọi dòng không phải FEE của cùng giao dịch; để trống ở dòng FEE vì `amount` đã là phí. Không cộng cột này.
+- Dòng chưa khớp (Pending) vẫn được xuất kèm trạng thái.
+- Việc tiếp theo: bảng ánh xạ tài khoản theo org, lãi supply, export bất đồng bộ với sha256.
