@@ -143,6 +143,8 @@ For each step in order:
 
 Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, completed steps stay (BR-054).
 
+**RCV-003 resume** (`recovery/partial.py`): `resume_partial(pool, request_id)` moves a `PartiallyCompleted` plan back to `Executing` and its request `NeedsReview → Preparing`, resolves the open review items (RETRY) and sends nothing; the next `sequence_plan` skips Confirmed steps (no second refill) and re-validates the first unfinished one with `pre_step`. It refuses with `InFlight` while an operation is Submitted/Pending/Unknown (M12 resolves those first). Callers (review RETRY, startup scan, unknown resolution) enqueue `sequence_plan_task` afterwards; the sweep also does. `cancel_partial` moves the request to `Cancelled` and reports the Confirmed steps whose funds stay where they are.
+
 ### 7.4 Gas replacement
 
 Tracker sees a tx Pending longer than the preset's `resend_after` (NORMAL 60 s) → executor calls `/replace` with fees × 1.125, never above the plan's accepted fee cap; after the cap, it waits (no further bumps) and the request may become NeedsReview at the deadline.
