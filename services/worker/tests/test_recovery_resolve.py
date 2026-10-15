@@ -44,9 +44,9 @@ class FakeRpc:
 
     def __init__(self) -> None:
         self.receipt: dict[str, str] | None = None
-        self.in_mempool = False
-        self.step_used = False
-        self.next_nonce = 0
+        self.in_mempool: bool = False
+        self.step_used: bool = False
+        self.next_nonce: int = 0
         self.fail: str | None = None
         self.step_used_raw: str | None = None
 
@@ -256,52 +256,146 @@ def test_consumed_nonce_without_evidence_escalates_after_30_minutes(database_url
 
 
 def test_scan_runs_on_worker_start_and_every_minute(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
     from treasurypilot_worker.celery_app import _scan_on_start, app
 
     assert app.conf.beat_schedule["scan-in-flight-operations"]["schedule"].total_seconds() == 60
     sent: list[str] = []
     monkeypatch.setattr(app, "send_task", lambda name, **_: sent.append(name))
-    _scan_on_start()
+
+    def consumer(*names: str) -> Any:
+        return SimpleNamespace(
+            task_consumer=SimpleNamespace(queues=[SimpleNamespace(name=n) for n in names])
+        )
+
+    _scan_on_start(sender=consumer("ai"))
+    assert sent == []  # a worker that does not consume the core queue does not send the scan
+    _scan_on_start(sender=consumer("core", "ai"))
     assert sent == ["treasurypilot.recovery.scan_in_flight"]
 
 
-def test_scan_resolves_in_flight_and_reports_blocked_treasuries(database_url: str) -> None:
-    async def scan() -> dict[str, int]:
-        pool = await create_worker_pool(database_url, min_size=1, max_size=2)
+async def _insert_op(
+    pool: Any, status: str, *, nonce: int, tx_hash: bytes | None = None
+) -> uuid.UUID:
+    op = uuid.uuid4()
+    await pool.execute(
+        "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
+        "kind, payload, idempotency_key, status, attempts) VALUES ($1, $2, $3, $4, $5, "
+        "'PAY', '{}'::jsonb, $6, $7::operation_status, 1)",
+        op,
+        _TREASURY,
+        uuid.uuid4(),
+        _REQUEST,
+        uuid.uuid4().bytes * 2,
+        str(op),
+        status,
+    )
+    await pool.execute(
+        "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+        "from_address, status, submitted_at) VALUES (gen_random_uuid(), $1, $2, $3, "
+        "$4, $5, $6::transaction_status, $7)",
+        op,
+        CHAIN_ID,
+        tx_hash or uuid.uuid4().bytes * 2,
+        nonce,
+        SENDER,
+        status,
+        datetime.now(UTC) - timedelta(minutes=20),
+    )
+    return op
+
+
+async def _statuses(pool: Any, ops: Sequence[uuid.UUID]) -> list[str]:
+    return [
+        str(await pool.fetchval("SELECT status FROM operations WHERE id = $1", op)) for op in ops
+    ]
+
+
+async def _clean(pool: Any) -> None:
+    await pool.execute("DELETE FROM review_items WHERE request_id = $1", _REQUEST)
+    await pool.execute(
+        "UPDATE operations SET status = 'Confirmed' WHERE status IN ('Pending', 'Unknown', 'Submitted')"
+    )
+
+
+def test_scan_leaves_unconfirmed_in_flight_and_reports_blocked(database_url: str) -> None:
+    async def scan() -> tuple[dict[str, int], list[str], list[str]]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=4)
         try:
-            await pool.execute("DELETE FROM review_items WHERE request_id = $1", _REQUEST)
-            old = datetime.now(UTC) - timedelta(minutes=20)
-            for status in ("Pending", "Unknown"):
-                op = uuid.uuid4()
-                await pool.execute(
-                    "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
-                    "kind, payload, idempotency_key, status, attempts) VALUES ($1, $2, $3, $4, $5, "
-                    "'PAY', '{}'::jsonb, $6, $7::operation_status, 1)",
-                    op,
-                    _TREASURY,
-                    uuid.uuid4(),
-                    _REQUEST,
-                    uuid.uuid4().bytes * 2,
-                    str(op),
-                    status,
-                )
-                await pool.execute(
-                    "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
-                    "from_address, status, submitted_at) VALUES (gen_random_uuid(), $1, $2, $3, "
-                    "7, $4, $5::transaction_status, $6)",
-                    op,
-                    CHAIN_ID,
-                    uuid.uuid4().bytes * 2,
-                    SENDER,
-                    status,
-                    old,
-                )
+            await _clean(pool)
+            ops = [await _insert_op(pool, s, nonce=7) for s in ("Pending", "Unknown")]
             rpc = FakeRpc()
             rpc.in_mempool = True  # both stay in flight, the Unknown one keeps its treasury blocked
             result = await scan_in_flight(pool, client_factory=lambda _urls: rpc)  # type: ignore[arg-type]
-            return result
+            blocked = [
+                str(r["treasury_id"])
+                for r in await pool.fetch(
+                    "SELECT treasury_id FROM operations WHERE id = $1", ops[1]
+                )
+            ]
+            return result, await _statuses(pool, ops), blocked
         finally:
             await pool.close()
 
-    result = asyncio.run(scan())
-    assert result["scanned"] >= 2 and result["blocked_treasuries"] == 1
+    result, statuses, blocked = asyncio.run(scan())
+    assert statuses == ["Pending", "Unknown"]
+    assert result["scanned"] == 2 and result["blocked_treasuries"] == 1
+    assert blocked == [str(_TREASURY)]
+
+
+def test_scan_confirms_from_chain_evidence_and_survives_a_failing_operation(
+    database_url: str,
+) -> None:
+    class FlakyRpc(FakeRpc):
+        """Fails with a non-RPC error for one tx hash, answers step-used for the rest."""
+
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            if method == "eth_getTransactionReceipt" and params[0] == "0x" + "ee" * 32:
+                raise RuntimeError("unexpected")
+            return await super().call(method, params)
+
+    async def scan() -> list[str]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=4)
+        try:
+            await _clean(pool)
+            bad = await _insert_op(pool, "Unknown", nonce=1, tx_hash=bytes.fromhex("ee" * 32))
+            good = await _insert_op(pool, "Unknown", nonce=2)
+            rpc = FlakyRpc()
+            rpc.step_used = True
+            await scan_in_flight(pool, client_factory=lambda _urls: rpc)  # type: ignore[arg-type]
+            return await _statuses(pool, [bad, good])
+        finally:
+            await pool.close()
+
+    statuses = asyncio.run(scan())
+    # The failing one is left as it was; the other is still confirmed from stepUsed.
+    assert statuses == ["Unknown", "Confirmed"]
+
+
+def test_second_concurrent_scan_returns_early(database_url: str) -> None:
+    async def scan() -> tuple[dict[str, int], dict[str, int]]:
+        pool = await create_worker_pool(database_url, min_size=1, max_size=4)
+        try:
+            await _clean(pool)
+            await _insert_op(pool, "Unknown", nonce=3)
+            gate = asyncio.Event()
+
+            class SlowRpc(FakeRpc):
+                async def call(self, method: str, params: Sequence[Any]) -> Any:
+                    gate.set()
+                    await asyncio.sleep(0.5)
+                    return await super().call(method, params)
+
+            first = asyncio.create_task(
+                scan_in_flight(pool, client_factory=lambda _urls: SlowRpc())  # type: ignore[arg-type,return-value]
+            )
+            await gate.wait()
+            second = await scan_in_flight(pool, client_factory=lambda _urls: FakeRpc())  # type: ignore[arg-type]
+            return await first, second
+        finally:
+            await pool.close()
+
+    first, second = asyncio.run(scan())
+    assert second == {"scanned": 0, "blocked_treasuries": 0, "skipped": 1}
+    assert first["scanned"] == 1 and first["skipped"] == 0

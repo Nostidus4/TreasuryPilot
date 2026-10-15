@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from celery import Celery, signals
 from celery.schedules import crontab
@@ -193,5 +194,7 @@ def _serve_metrics(**_: object) -> None:
 
 # Every worker start re-reads old work before anything new runs (RCV-001).
 @signals.worker_ready.connect
-def _scan_on_start(**_: object) -> None:
-    app.send_task(SCAN_TASK, queue="core")
+def _scan_on_start(sender: Any = None, **_: object) -> None:
+    queues = {q.name for q in getattr(getattr(sender, "task_consumer", None), "queues", [])}
+    if "core" in queues:
+        app.send_task(SCAN_TASK, queue="core")
