@@ -2620,6 +2620,21 @@ async def _approval_typed_data(
             "The active mandate has an invalid approvalMaxAge setting.",
         )
     approval_max_age = approval_max_age_value
+    # Every approver of a threshold band signs the same typed data, so the expiry is pinned
+    # to the first live approval of this revision.
+    pinned_expiry = await session.scalar(
+        select(PaymentApproval.expires_at)
+        .where(
+            PaymentApproval.request_id == row.id,
+            PaymentApproval.revision == row.current_revision,
+            PaymentApproval.status == ApprovalStatus.VALID.value,
+            PaymentApproval.expires_at > func.now(),
+        )
+        .order_by(PaymentApproval.expires_at)
+        .limit(1)
+    )
+    if pinned_expiry is not None:
+        expiry = int(pinned_expiry.timestamp())
     if row.amount is None or row.due_at is None:  # unreachable: drafts cannot be in review
         raise RuntimeError("Approval inputs are incomplete")
     terms = confirmed_payment_terms(row)
@@ -2688,6 +2703,27 @@ async def _enforce_maker_checker(
     if not solo_mode and member.user_id in {row.created_by, row.last_edited_by}:
         raise maker_checker_conflict()
     return solo_mode
+
+
+async def _required_approvals(session: AsyncSession, row: PaymentRequest) -> int:
+    """k for the request's signed amount from the active mandate's approval bands (1 if none)."""
+    mandate = await session.scalar(
+        select(MandateVersion)
+        .where(
+            MandateVersion.treasury_id == row.treasury_id,
+            MandateVersion.status == MandateVersionStatus.ACTIVE,
+            MandateVersion.expires_at > func.now(),
+        )
+        .order_by(MandateVersion.version.desc())
+        .limit(1)
+    )
+    bands = mandate.config.get("approvalBands") if mandate is not None else None
+    if not isinstance(bands, list) or row.amount is None:
+        return 1
+    for band in bands:  # same rule as ThresholdApprovalExecutor.requiredApprovals
+        if band.get("upTo") is None or int(row.amount) <= int(band["upTo"]):
+            return int(band["k"])
+    return int(bands[-1]["k"])
 
 
 def _approval_view(row: PaymentApproval) -> dict[str, object]:
@@ -3082,6 +3118,38 @@ async def approve_request(
                 status=ApprovalStatus.VALID.value,
             )
             session.add(approval)
+            await session.flush()
+            required = await _required_approvals(session, row)
+            collected = int(
+                await session.scalar(
+                    select(func.count(func.distinct(PaymentApproval.approver_address))).where(
+                        PaymentApproval.request_id == row.id,
+                        PaymentApproval.revision == row.current_revision,
+                        PaymentApproval.status == ApprovalStatus.VALID.value,
+                        PaymentApproval.expires_at > func.now(),
+                    )
+                )
+                or 0
+            )
+            progress = {"collected": collected, "required": required}
+            if collected < required:
+                # Threshold band: the request stays AwaitingApproval until k distinct approvers signed.
+                await write_audit(
+                    session,
+                    org_id=organization_id,
+                    actor=AuditActor(AuditActorType.USER, member.user_id),
+                    action="approval_collected",
+                    entity=AuditEntity("payment_request", row.id),
+                    data=progress,
+                )
+                await session.refresh(row)
+                await session.refresh(approval)
+                response.headers["ETag"] = f'"{row.version}"'
+                return {
+                    "request": _serialize(row),
+                    "approval": _approval_view(approval),
+                    "approvalProgress": progress,
+                }
             previous_status = row.status
             row.status = RequestStatus.APPROVED.value
             append_execution_cycle_requested(
@@ -3116,13 +3184,15 @@ async def approve_request(
             result = {
                 "request": _serialize(row),
                 "approval": _approval_view(approval),
+                "approvalProgress": progress,
             }
             version = row.version
     except IntegrityError as error:
+        driver_error = getattr(error.orig, "__cause__", None) or error.orig
         constraint_name = getattr(
-            getattr(error.orig, "diag", None),
+            getattr(driver_error, "diag", None),
             "constraint_name",
-            getattr(error.orig, "constraint_name", None),
+            getattr(driver_error, "constraint_name", None),
         )
         if constraint_name not in {
             "uq_approvals_valid_request_revision_address",
