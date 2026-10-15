@@ -6,9 +6,6 @@ import asyncio
 import hashlib
 import json
 import os
-import shutil
-import socket
-import subprocess
 import time
 import urllib.request
 import uuid
@@ -50,6 +47,7 @@ from treasurypilot_worker.planner.pipeline import (
     plan_request,
 )
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
+from treasurypilot_worker.planner.wiring import make_ask
 from treasurypilot_worker.tasks import PLAN_ENQUEUE_COUNTDOWN_SECONDS
 from treasurypilot_worker.trigger.cycles import (
     CycleSkipReason,
@@ -530,11 +528,8 @@ async def test_a_real_ai_queue_timeout_falls_back_to_rule_based(
     # A broker with no worker on the `ai` queue: the result never arrives, so `get` times out
     # exactly as wiring.ask does when the AI worker is down.
     quiet = Celery("quiet", broker="memory://", backend="cache+memory://")
-
-    def ask(request: dict[str, Any]) -> dict[str, Any]:
-        sent = quiet.send_task("treasurypilot.planning.propose", kwargs=request, queue="ai")
-        payload: dict[str, Any] = sent.get(timeout=0.3, disable_sync_subtasks=False)
-        return payload
+    # 0.3 s keeps the test fast; production uses settings.planning_ai_timeout_seconds.
+    ask = make_ask(quiet, 0.3)
 
     outcome = await _plan(pool, database_url, world, ai=CeleryAiProposer(ask))
 
@@ -543,55 +538,37 @@ async def test_a_real_ai_queue_timeout_falls_back_to_rule_based(
     assert "AiTimeout" in reason
 
 
-def _anvil_rpc(url: str, method: str, params: list[Any]) -> Any:
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+def _anvil_rpc(url: str, method: str, params: list[Any] | None = None) -> Any:
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}
+    ).encode()
     request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=5) as response:
-        return json.load(response)["result"]
+        payload = json.load(response)
+    assert "error" not in payload, payload
+    return payload["result"]
 
 
-@pytest.fixture(scope="module")
-def anvil_url() -> Iterator[str]:
-    if "TP_TEST_ANVIL_URL" in os.environ:
-        yield os.environ["TP_TEST_ANVIL_URL"]
-        return
-    if shutil.which("anvil") is None:
-        pytest.skip("anvil is required for the Anvil-backed planning test")
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
-    process = subprocess.Popen(
-        ["anvil", "--silent", "--port", str(port), "--chain-id", str(CHAIN_ID)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    url = f"http://127.0.0.1:{port}"
-    try:
-        for _ in range(50):
-            try:
-                _anvil_rpc(url, "eth_chainId", [])
-                break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            pytest.fail("anvil did not start")
-        yield url
-    finally:
-        process.terminate()
-        process.wait(timeout=5)
-
-
-def test_deterministic_plan_on_a_snapshot_pinned_to_an_anvil_block(
-    anvil_url: str, database_url: str
+@pytest.mark.parametrize(
+    ("balance", "steps"), [(500, 3), (10**18, 2)], ids=["gas-shortage-swaps", "funded-no-swap"]
+)
+def test_executor_balance_read_from_anvil_drives_the_gas_swap_decision(
+    anvil_url: str, database_url: str, balance: int, steps: int
 ) -> None:
-    # shortcut: the block identity comes from a live Anvil head, the contract reads come from the
-    # fixture (the Safe/module stack is deployed by the scenario-anvil job); upgrade when a
-    # deployed-module fixture is shared with the worker tests.
+    """Chain-dependent: the executor balance and the snapshot block come from a live Anvil.
+
+    anvil_setBalance sets the executor balance and the pipeline's GasSwapDeps.native_balance
+    reads it back over eth_getBalance, so the same request plans SWAP+REFILL+PAY at 500 wei and
+    REFILL+PAY at 1e18 wei. Still fixture-fed, because the Safe/module stack is only deployed
+    by the scenario-anvil job: the treasury/wallet balances in the snapshot data and the swap
+    quote (_QUOTE). Upgrade when a deployed-module fixture is shared with the worker tests.
+    """
+
     async def scenario(pool: Any, database_url: str) -> None:
-        world = await _seed(pool)
-        _anvil_rpc(anvil_url, "evm_mine", [])
+        _anvil_rpc(anvil_url, "anvil_setBalance", [EXECUTOR, hex(balance)])
+        _anvil_rpc(anvil_url, "evm_mine")
         head = _anvil_rpc(anvil_url, "eth_getBlockByNumber", ["latest", False])
-        base = _chain(world)
+        world = await _seed(pool)
         snapshot = Snapshot(
             purpose=SnapshotPurpose.PLAN,
             block_number=int(head["number"], 16),
@@ -599,17 +576,42 @@ def test_deterministic_plan_on_a_snapshot_pinned_to_an_anvil_block(
             block_timestamp=datetime.fromtimestamp(int(head["timestamp"], 16), UTC)
             - timedelta(seconds=5),
             provider="anvil",
-            data=base.data,
+            data=_chain(world).data,
             coverage="COMPLETE",
             missing=(),
         )
-        outcome = await _plan(pool, database_url, world, snapshot=snapshot)
 
-        assert (outcome.status, outcome.planner_source) == ("Attested", "DETERMINISTIC")
+        async def executor_balance(_treasury: uuid.UUID) -> int:
+            return int(
+                await asyncio.to_thread(
+                    _anvil_rpc, anvil_url, "eth_getBalance", [EXECUTOR, "latest"]
+                ),
+                16,
+            )
+
+        async def quote(_treasury: uuid.UUID, _module: str) -> GasQuote | None:
+            return _QUOTE
+
+        _, claimed = await _cycle(pool, world)
+        (plan_id,) = claimed
+        deps = _deps(
+            pool,
+            database_url,
+            world,
+            snapshot=snapshot,
+            gas_swap=GasSwapDeps(executor_balance, quote, slippage_bps=100, max_amount_in=10**9),
+        )
+        outcome = await plan_request(pool, plan_id, deps)
+
+        assert outcome is not None and outcome.status == "Attested"
+        assert (
+            await pool.fetchval("SELECT count(*) FROM plan_steps WHERE plan_id = $1", plan_id)
+            == steps
+        )
         stored = await pool.fetchrow(
             "SELECT s.block_number, s.block_hash FROM plans p JOIN snapshots s "
             "ON s.id = p.snapshot_id WHERE p.id = $1",
-            outcome.plan_id,
+            plan_id,
         )
         assert stored["block_number"] == snapshot.block_number
         assert "0x" + bytes(stored["block_hash"]).hex() == head["hash"]

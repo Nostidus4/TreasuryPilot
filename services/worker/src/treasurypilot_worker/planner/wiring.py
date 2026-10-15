@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -83,6 +83,16 @@ async def read_test_router_quote(rpc: RpcClient, module: str) -> GasQuote | None
     )
 
 
+def make_ask(celery_app: Any, timeout: float) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    def ask(request: dict[str, Any]) -> dict[str, Any]:
+        result = celery_app.send_task(PROPOSE_TASK, kwargs=request, queue="ai")
+        # Blocking inside a task is safe here: the AI task runs on another queue and worker.
+        payload: dict[str, Any] = result.get(timeout=timeout, disable_sync_subtasks=False)
+        return payload
+
+    return ask
+
+
 def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
     if not (settings.executor_address and settings.database_url):
         raise RuntimeError("TP_EXECUTOR_ADDRESS and DATABASE_URL are required for planning")
@@ -115,13 +125,7 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
         steps = len(plan.steps)
         return estimate_plan_fee_wei([STEP_GAS] * steps, [max_fee] * steps)
 
-    def ask(request: dict[str, Any]) -> dict[str, Any]:
-        result = app.send_task(PROPOSE_TASK, kwargs=request, queue="ai")
-        # Blocking inside a task is safe here: the AI task runs on another queue and worker.
-        payload: dict[str, Any] = result.get(
-            timeout=settings.planning_ai_timeout_seconds, disable_sync_subtasks=False
-        )
-        return payload
+    ask = make_ask(app, settings.planning_ai_timeout_seconds)
 
     async def balance(treasury_id: uuid.UUID) -> int:
         rpc = await treasury_rpc(treasury_id)
