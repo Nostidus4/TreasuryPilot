@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.audit.events import AuditEvent, log_audit_event
-from treasurypilot_api.identity.api import ApiModel
+from treasurypilot_api.identity.api import ApiModel, _wallet_service
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import Organization, OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
@@ -104,18 +104,34 @@ async def _lock(
     )
     if row is None:
         raise _failure(404, "RECONCILIATION_NOT_FOUND", "The reconciliation is unavailable.")
-    if if_match is not None and if_match != f'"{row.version}"':
+    # If-Match is optional on every route (no other route requires it); accepts "N", W/"N", N.
+    if if_match is not None and if_match.strip().removeprefix("W/").strip('"') != str(row.version):
         raise _failure(412, "VERSION_CONFLICT", "The reconciliation changed. Reload it.")
     return row
 
 
-async def _finalized_block(request: Request, session: AsyncSession, request_id: uuid.UUID) -> int:
+async def _chain_id(
+    session: AsyncSession, member: MemberAccess, reconciliation_id: uuid.UUID
+) -> int:
     chain_id = await session.scalar(
-        text("SELECT chain_id FROM payment_requests WHERE id = :id"), {"id": request_id}
+        text(
+            "SELECT q.chain_id FROM reconciliations r JOIN payment_requests q "
+            "ON q.id = r.request_id WHERE r.id = :id AND r.org_id = :org"
+        ),
+        {"id": reconciliation_id, "org": member.organization_id},
     )
+    if chain_id is None:
+        raise _failure(404, "RECONCILIATION_NOT_FOUND", "The reconciliation is unavailable.")
+    return int(chain_id)
+
+
+async def _finalized_block(request: Request, chain_id: int) -> int:
+    """Read the finalized block. Call it before taking a row lock."""
+
     provider = getattr(request.app.state, "fee_history_provider", None)  # the shared RPC client
+    if provider is None:
+        raise _failure(503, "FINALITY_UNAVAILABLE", "No chain RPC client is configured.")
     try:
-        assert provider is not None
         block = await provider.call(chain_id, "eth_getBlockByNumber", ["finalized", False])
         return int(block["number"], 16)
     except Exception as error:
@@ -140,9 +156,8 @@ async def _audit(
     )
 
 
-def _bump(row: Reconciliation) -> dict[str, object]:
+def _bump(row: Reconciliation) -> None:
     row.version += 1
-    return {"status": row.status, "version": row.version}
 
 
 @router.get("", openapi_extra={"x-organization-scoped": True})
@@ -273,6 +288,9 @@ async def match_reconciliation(
     member: Annotated[MemberAccess, Depends(_finance)],
     if_match: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
+    async with _sessions(request)() as session:
+        chain_id = await _chain_id(session, member, reconciliation_id)
+    head = await _finalized_block(request, chain_id)  # RPC before the row lock
     async with _sessions(request)() as session, session.begin():
         row = await _lock(session, member, reconciliation_id, if_match)
         if row.status != "Pending":
@@ -282,15 +300,15 @@ async def match_reconciliation(
         facts = await _facts(session, row.id)
         if missing := missing_evidence(facts, strict=False):
             raise _failure(409, "EVIDENCE_INCOMPLETE", "Evidence is incomplete.", missing=missing)
-        # shortcut: RPC read under the row lock, bounded by the provider's timeout.
-        if not is_finalized(facts, await _finalized_block(request, session, row.request_id)):
+        if not is_finalized(facts, head):
             raise _failure(409, "NOT_FINALIZED", "The PAY block is not finalized yet.")
         now = datetime.now(UTC)
         row.status, row.matched_by, row.matched_user_id = "Matched", "USER", member.user_id
         row.matched_at = row.finalized_at = now
         row.note = payload.note
         await _audit(session, member, row, "matched", matchedBy="USER")
-        return _bump(row)
+        _bump(row)
+        return _view(row)
 
 
 @router.post("/{reconciliation_id}/discrepancy", openapi_extra={"x-organization-scoped": True})
@@ -311,7 +329,8 @@ async def flag_discrepancy(
             )
         row.status, row.note = "Discrepancy", payload.note
         await _audit(session, member, row, "discrepancy_flagged")
-        return _bump(row)
+        _bump(row)
+        return _view(row)
 
 
 @router.post("/{reconciliation_id}/resolve", openapi_extra={"x-organization-scoped": True})
@@ -322,7 +341,8 @@ async def resolve_discrepancy(
     member: Annotated[MemberAccess, Depends(_resolve_roles)],
     if_match: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
-    """Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record."""
+    """Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record
+    and the PAY block is finalized."""
 
     if payload.note is None and not payload.acknowledge:
         raise _failure(
@@ -332,6 +352,23 @@ async def resolve_discrepancy(
         raise _failure(403, "FORBIDDEN", "Only Finance writes the resolution note.")
     if payload.acknowledge and _R.OWNER.value not in member.roles:
         raise _failure(403, "FORBIDDEN", "Only an Owner acknowledges a discrepancy.")
+    if payload.acknowledge and getattr(request.app.state, "wallet_repository", None) is not None:
+        await _wallet_service(request).require_onchain_owner(  # fresh check, M01-D5
+            org_id=member.organization_id, user_id=member.user_id
+        )
+    async with _sessions(request)() as session:
+        chain_id = await _chain_id(session, member, reconciliation_id)
+        state = (
+            await session.execute(
+                select(Reconciliation.resolved_by, Reconciliation.owner_ack_by).where(
+                    Reconciliation.id == reconciliation_id
+                )
+            )
+        ).one()
+    completes = (payload.note is not None or state.resolved_by is not None) and (
+        payload.acknowledge or state.owner_ack_by is not None
+    )
+    head = await _finalized_block(request, chain_id) if completes else None  # before the lock
     now = datetime.now(UTC)
     async with _sessions(request)() as session, session.begin():
         row = await _lock(session, member, reconciliation_id, if_match)
@@ -347,11 +384,16 @@ async def resolve_discrepancy(
             row.owner_ack_by, row.owner_ack_at = member.user_id, now
             await _audit(session, member, row, "owner_acknowledged")
         if row.resolved_by and row.owner_ack_by:
+            if head is None:  # the other half was recorded since the pre-read
+                raise _failure(409, "VERSION_CONFLICT", "The reconciliation changed. Retry.")
+            if not is_finalized(await _facts(session, row.id), head):
+                raise _failure(409, "NOT_FINALIZED", "The PAY block is not finalized yet.")
             if row.resolved_by == row.owner_ack_by and not solo:
                 raise _failure(
                     409, "SEPARATE_OWNER_REQUIRED", "The Owner acknowledgment needs another user."
                 )
             row.status, row.matched_by, row.matched_user_id = "Matched", "USER", row.resolved_by
-            row.matched_at = now
+            row.matched_at = row.finalized_at = now
             await _audit(session, member, row, "discrepancy_resolved")
-        return _bump(row)
+        _bump(row)
+        return _view(row)

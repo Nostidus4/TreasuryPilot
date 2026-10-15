@@ -163,9 +163,10 @@
 
 | Method | Endpoint | Purpose | Perm | Request → Response | Errors |
 |---|---|---|---|---|---|
-| GET | `/orgs/{o}/reconciliations` | List | FIN, AUD | `?status=&from=&to=` → `{items}` | |
-| POST | `/orgs/{o}/reconciliations/{id}/match` | Mark Matched | FIN | `{note}` → `{reconciliation}` | 409 `EVIDENCE_INCOMPLETE` |
-| POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | Flag a discrepancy | FIN | `{note}` → `{reconciliation}` | |
+| GET | `/orgs/{o}/reconciliations` | List | FIN, OWN, ADM | `?status=&from=&to=` → `{items}` | |
+| POST | `/orgs/{o}/reconciliations/{id}/match` | Mark Matched (optional `If-Match`) | FIN | `{note}` → reconciliation view (incl. `version`) | 409 `EVIDENCE_INCOMPLETE`, `NOT_FINALIZED`, `INVALID_STATE`; 412 `VERSION_CONFLICT`; 503 `FINALITY_UNAVAILABLE` |
+| POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | Flag a discrepancy | FIN | `{note}` → reconciliation view | 422 `NOTE_REQUIRED`; 409 `INVALID_STATE`; 412 |
+| POST | `/orgs/{o}/reconciliations/{id}/resolve` | Resolve a Discrepancy: FIN sends `{note}`, OWN sends `{acknowledge: true}` (separate users unless solo mode) | FIN, OWN | → reconciliation view | 403; 409 `INVALID_STATE`, `SEPARATE_OWNER_REQUIRED`, `NOT_FINALIZED`; 412 |
 | GET | `/orgs/{o}/exports/reconciliation.csv` | CSV/journal export | FIN, AUD | `?from=&to=&treasuryId=&format=csv\|journal` → file | |
 | GET | `/orgs/{o}/requests/{rId}/evidence` | Evidence bundle | FIN, AUD, ADM | → JSON (schema `evidence-bundle.v1`) | |
 | GET | `/orgs/{o}/audit-log` | Audit records in `seq` order | AUD, OWN, ADM | `?entityType=&entityId=&actor=&from=&to=&cursor=&limit=` → `{items, nextCursor}` | 422 naive `from`/`to` |

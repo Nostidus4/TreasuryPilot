@@ -29,8 +29,10 @@ FACTS_SQL = """
 SELECT
   EXISTS (SELECT 1 FROM approvals a WHERE a.request_id = r.request_id AND a.status = 'Valid')
     AS approval_valid,
-  EXISTS (SELECT 1 FROM attestations at JOIN operations o ON o.step_id = ANY(at.step_ids)
-          WHERE o.request_id = r.request_id) AS attestation_present,
+  -- every operation's step must be covered by an attestation
+  ((SELECT count(*) FROM operations o WHERE o.request_id = r.request_id) > 0 AND NOT EXISTS (
+     SELECT 1 FROM operations o WHERE o.request_id = r.request_id AND NOT EXISTS (
+       SELECT 1 FROM attestations at WHERE o.step_id = ANY(at.step_ids)))) AS attestation_present,
   (SELECT count(*) FROM operations o WHERE o.request_id = r.request_id) AS operations,
   (SELECT count(*) FROM operations o WHERE o.request_id = r.request_id
      AND o.status NOT IN ('Confirmed', 'Abandoned')) AS operations_unconfirmed,
@@ -45,25 +47,37 @@ SELECT
   (SELECT count(*) FROM reconciliation_lines l WHERE l.reconciliation_id = r.id AND (
      (l.classification <> 'FEE' AND NOT EXISTS (
          SELECT 1 FROM transactions t WHERE t.id = l.transaction_id AND t.status = 'Confirmed'
-         AND t.block_number IS NOT DISTINCT FROM l.block_number))
+         AND t.block_number IS NOT DISTINCT FROM l.block_number
+         AND t.tx_hash = l.tx_hash))
      OR (l.classification = 'FEE' AND NOT EXISTS (
          SELECT 1 FROM gas_ledger g JOIN transactions t ON t.id = g.transaction_id
          WHERE g.transaction_id = l.transaction_id AND g.fee_wei = l.amount
-         AND t.block_number IS NOT DISTINCT FROM l.block_number)))
+         AND t.block_number IS NOT DISTINCT FROM l.block_number
+         AND t.tx_hash = l.tx_hash)))
   ) + (SELECT count(*) FROM gas_ledger g JOIN transactions t ON t.id = g.transaction_id
        JOIN operations o ON o.id = t.operation_id WHERE o.request_id = r.request_id
        AND NOT EXISTS (SELECT 1 FROM reconciliation_lines l WHERE l.reconciliation_id = r.id
                        AND l.transaction_id = t.id AND l.classification = 'FEE')) AS stale_lines,
   (SELECT max(l.block_number) FROM reconciliation_lines l
      WHERE l.reconciliation_id = r.id AND l.classification = 'EXTERNAL_EXPENSE') AS pay_block,
-  (NOT EXISTS (SELECT 1 FROM documents d WHERE d.request_id = r.request_id)
-   OR EXISTS (SELECT 1 FROM documents d JOIN approvals a ON a.request_id = d.request_id
-              WHERE d.request_id = r.request_id AND a.status = 'Valid'
-              AND a.typed_data->'message'->>'invoiceHash' = '0x' || encode(d.sha256, 'hex'))
+  -- no document may differ from the request's invoice hash, and the Valid approval signed it
+  (NOT EXISTS (SELECT 1 FROM documents d WHERE d.request_id = r.request_id
+               AND d.sha256 IS DISTINCT FROM q.invoice_hash)
+   AND (q.invoice_hash IS NULL OR EXISTS (
+          SELECT 1 FROM approvals a WHERE a.request_id = r.request_id AND a.status = 'Valid'
+          AND a.typed_data->'message'->>'invoiceHash' = '0x' || encode(q.invoice_hash, 'hex')))
   ) AS document_hash_ok,
-  COALESCE((SELECT sum(l.amount) FROM reconciliation_lines l
-            WHERE l.reconciliation_id = r.id AND l.classification = 'EXTERNAL_EXPENSE')
-           = q.amount, false) AS amount_ok
+  -- the PAY lines add up to the invoice and went to the request's payee and asset
+  (COALESCE((SELECT sum(l.amount) FROM reconciliation_lines l
+             WHERE l.reconciliation_id = r.id AND l.classification = 'EXTERNAL_EXPENSE')
+            = q.amount, false)
+   AND NOT EXISTS (SELECT 1 FROM reconciliation_lines l
+                   WHERE l.reconciliation_id = r.id AND l.classification = 'EXTERNAL_EXPENSE'
+                   AND (l.to_address IS DISTINCT FROM (SELECT p.address FROM payees p
+                                                        WHERE p.id = q.payee_id)
+                        OR l.asset_address IS DISTINCT FROM (SELECT x.address FROM assets x
+                                                              WHERE x.id = q.asset_id)))
+  ) AS amount_ok
 FROM reconciliations r JOIN payment_requests q ON q.id = r.request_id
 WHERE r.id = :rid
 """

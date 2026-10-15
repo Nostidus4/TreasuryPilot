@@ -6,6 +6,7 @@ applies the same evidence rule as the manual match, plus the strict checks of §
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -21,15 +22,19 @@ from treasurypilot_worker.audit import append_audit
 
 logger = logging.getLogger(__name__)
 
+_RPC_TIMEOUT = 15.0  # seconds per finalized-block read
 _FACTS = FACTS_SQL.replace(":rid", "$1")
 
 # A DISCREPANCY verdict on any operation of the request makes the reconciliation a Discrepancy.
 _FLAG_DISCREPANCIES = """
 UPDATE reconciliations r SET status = 'Discrepancy', version = version + 1,
     note = 'Post-condition verification reported a DISCREPANCY'
-WHERE r.status = 'Pending' AND EXISTS (
-    SELECT 1 FROM verifications v JOIN operations o ON o.id = v.operation_id
-    WHERE o.request_id = r.request_id AND v.result = 'DISCREPANCY')
+WHERE r.id IN (
+    SELECT r2.id FROM reconciliations r2 WHERE r2.status = 'Pending' AND EXISTS (
+        SELECT 1 FROM verifications v JOIN operations o ON o.id = v.operation_id
+        WHERE o.request_id = r2.request_id AND v.result = 'DISCREPANCY')
+    FOR UPDATE SKIP LOCKED)
+RETURNING r.id, r.org_id
 """
 
 _CANDIDATES = """
@@ -51,14 +56,25 @@ FinalizedBlock = Callable[[int], Awaitable[int]]
 async def auto_match_reconciliations(
     pool: asyncpg.Pool, finalized_block: FinalizedBlock
 ) -> dict[str, int]:
-    flagged = int((await pool.execute(_FLAG_DISCREPANCIES)).split()[-1])
+    async with pool.acquire() as connection, connection.transaction():
+        flagged_rows = await connection.fetch(_FLAG_DISCREPANCIES)
+        for flagged_row in flagged_rows:
+            await append_audit(
+                connection,
+                flagged_row["org_id"],
+                action="reconciliation.discrepancy_flagged",
+                entity_type="reconciliation",
+                entity_id=str(flagged_row["id"]),
+                data={"source": "verification"},
+            )
+    flagged = len(flagged_rows)
     matched = 0
     finalized: dict[int, int | None] = {}
     for candidate in await pool.fetch(_CANDIDATES):
         chain_id = candidate["chain_id"]
         if chain_id not in finalized:
             try:
-                finalized[chain_id] = await finalized_block(chain_id)
+                finalized[chain_id] = await asyncio.wait_for(finalized_block(chain_id), _RPC_TIMEOUT)
             except Exception:  # an unreadable chain only delays its matches
                 logger.warning("finalized block unavailable for chain %s", chain_id, exc_info=True)
                 finalized[chain_id] = None
@@ -66,7 +82,7 @@ async def auto_match_reconciliations(
             continue
         async with pool.acquire() as connection, connection.transaction():
             locked = await connection.fetchval(
-                "SELECT status FROM reconciliations WHERE id = $1 FOR UPDATE", candidate["id"]
+                "SELECT status FROM reconciliations WHERE id = $1 FOR UPDATE SKIP LOCKED", candidate["id"]
             )
             if locked != "Pending":
                 continue

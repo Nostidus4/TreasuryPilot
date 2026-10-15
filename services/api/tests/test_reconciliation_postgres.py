@@ -299,3 +299,93 @@ def test_discrepancy_needs_a_finance_note_and_a_separate_owner_acknowledgment(ur
     resolved = owner.post(_path(recon, "/resolve"), json={"acknowledge": True})
     assert resolved.status_code == 200 and resolved.json()["status"] == "Matched"
     assert _state(url, recon)[:2] == ("Matched", "USER")
+
+
+def _flag(client: TestClient, recon: uuid.UUID) -> None:
+    assert client.post(_path(recon, "/discrepancy"), json={"note": "off"}).status_code == 200
+
+
+def test_owner_may_acknowledge_first_and_resolve_waits_for_finality(url: str) -> None:
+    recon = asyncio.run(_scenario(url))
+    finance, chain = _client(url)
+    _flag(finance, recon)
+    owner, _ = _client(url, "Owner", OWNER)
+    first = owner.post(_path(recon, "/resolve"), json={"acknowledge": True})
+    assert first.json()["status"] == "Discrepancy" and first.json()["version"] == 3
+    chain.finalized = PAY_BLOCK - 1
+    blocked = finance.post(_path(recon, "/resolve"), json={"note": "fixed"})
+    assert blocked.status_code == 409 and blocked.json()["code"] == "NOT_FINALIZED"
+    assert _state(url, recon)[0] == "Discrepancy"
+    chain.finalized = PAY_BLOCK
+    done = finance.post(_path(recon, "/resolve"), json={"note": "fixed"})
+    assert done.json()["status"] == "Matched" and done.json()["finalizedAt"]
+
+
+def test_manual_match_is_a_human_call_on_document_and_amount(url: str) -> None:
+    recon = asyncio.run(_scenario(url))
+    asyncio.run(
+        _sql(
+            url,
+            (
+                "INSERT INTO documents (id, request_id, storage_key, sha256, mime, size) "
+                "SELECT gen_random_uuid(), request_id, 'k' || :r, decode(repeat('01', 32), 'hex'), "
+                "'application/pdf', 1 FROM reconciliations WHERE id = :rid",
+                {"r": recon.hex, "rid": recon},
+            ),
+            ("UPDATE payment_requests SET amount = 999 WHERE id IN (SELECT request_id FROM reconciliations WHERE id = :rid)", {"rid": recon}),
+        )
+    )
+    client, _ = _client(url)
+    assert client.get(_path(recon)).json()["evidence"]["missing"] == []  # strict checks are auto-only
+    assert client.post(_path(recon, "/match"), json={}).json()["status"] == "Matched"
+
+
+def test_if_match_accepts_weak_and_unquoted_forms(url: str) -> None:
+    recon = asyncio.run(_scenario(url))
+    client, _ = _client(url)
+    assert client.post(_path(recon, "/match"), json={}, headers={"If-Match": 'W/"9"'}).status_code == 412
+    assert client.post(_path(recon, "/match"), json={}, headers={"If-Match": "1"}).status_code == 200
+
+
+def _missing(url: str, recon: uuid.UUID) -> list[str]:
+    return _client(url)[0].get(_path(recon)).json()["evidence"]["missing"]
+
+
+def test_stale_lines_cover_tx_hash_status_and_orphan_ledger_rows(url: str) -> None:
+    changed = asyncio.run(_scenario(url))
+    asyncio.run(
+        _sql(url, ("UPDATE transactions SET tx_hash = decode(repeat('99', 32), 'hex') WHERE id IN "
+                   "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
+                   {"r": changed}))
+    )
+    assert _missing(url, changed) == ["transactions"]
+
+    dropped = asyncio.run(_scenario(url))
+    asyncio.run(
+        _sql(url, ("UPDATE transactions SET status = 'Dropped' WHERE id IN "
+                   "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
+                   {"r": dropped}))
+    )
+    assert _missing(url, dropped) == ["transactions"]
+
+    orphan = asyncio.run(_scenario(url))
+    asyncio.run(
+        _sql(
+            url,
+            (
+                "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+                "from_address, status, block_number, fee_wei) SELECT gen_random_uuid(), "
+                "operation_id, 31337, decode(repeat('98', 32), 'hex'), 2, from_address, "
+                "'Reverted', 99, 5 FROM reconciliation_lines WHERE reconciliation_id = :r LIMIT 1",
+                {"r": orphan},
+            ),
+            (
+                "INSERT INTO gas_ledger (id, treasury_id, transaction_id, payer, payer_address, "
+                "fee_wei, reverted, day) SELECT gen_random_uuid(), :t, id, 'EXECUTOR', "
+                "from_address, 5, true, '2026-10-02' FROM transactions "
+                "WHERE tx_hash = decode(repeat('98', 32), 'hex')",
+                {"t": TREASURY},
+            ),
+        )
+    )
+    assert _missing(url, orphan) == ["transactions"]

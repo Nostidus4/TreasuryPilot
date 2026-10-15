@@ -42,6 +42,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Irreversible data change: the UPDATE above cannot be undone, so earlier ``true`` values are
+    # not restored. Only the column default goes back.
     op.drop_column("reconciliations", "owner_ack_at")
     for column in ("owner_ack_by", "resolved_by"):
         op.drop_constraint(f"fk_reconciliations_{column}", "reconciliations", type_="foreignkey")

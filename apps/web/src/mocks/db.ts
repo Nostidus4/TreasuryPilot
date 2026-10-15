@@ -1089,7 +1089,7 @@ export function seed(): Db {
         country: 'SG',
         displayTz: 'Asia/Ho_Chi_Minh',
         soloMode: false,
-        autoMatch: true,
+        autoMatch: false,
         treasuries: [{ id: 'trs_main', name: 'Operating treasury' }],
       },
     ],
