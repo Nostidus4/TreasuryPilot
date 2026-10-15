@@ -477,6 +477,10 @@ export const operationHandlers: RequestHandler[] = [
             .slice(0, 10),
           paid,
           volume: usdc(paid * 870),
+          completed: paid,
+          onTime: paid > 0 ? paid - 1 : 0,
+          interventions: paid > 3 ? 1 : 0,
+          feesWei: String(paid * 130_000_000_000_000),
         };
       });
       return {
@@ -488,7 +492,20 @@ export const operationHandlers: RequestHandler[] = [
               aiPlanRate: 0.84,
               exceptions: 2,
               unknownOperations: 1,
+              completionRate: 0.941,
+              interventionsPerRequest: 0.25,
+              txCount: 41,
+              fees: {
+                totalWei: '5400000000000000',
+                byStepType: {
+                  APPROVE: '1200000000000000',
+                  PAY: '4200000000000000',
+                },
+              },
               series,
+              latencyByPhase: {},
+              rejectionsByReason: {},
+              revertsBySelector: {},
             }
           : {
               paymentsCount: 0,
@@ -497,7 +514,14 @@ export const operationHandlers: RequestHandler[] = [
               aiPlanRate: 0,
               exceptions: 0,
               unknownOperations: 0,
+              completionRate: 0,
+              interventionsPerRequest: 0,
+              txCount: 0,
+              fees: { totalWei: '0', byStepType: {} },
               series,
+              latencyByPhase: {},
+              rejectionsByReason: {},
+              revertsBySelector: {},
             },
       };
     },

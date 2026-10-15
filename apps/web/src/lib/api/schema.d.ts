@@ -4552,8 +4552,16 @@ export interface components {
     };
     /** SeriesPoint */
     SeriesPoint: {
+      /** Completed */
+      completed: number;
       /** Date */
       date: string;
+      /** Feeswei */
+      feesWei: string;
+      /** Interventions */
+      interventions: number;
+      /** Ontime */
+      onTime: number;
       /** Paid */
       paid: number;
       /** Volume */

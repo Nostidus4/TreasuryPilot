@@ -79,6 +79,10 @@ class SeriesPoint(ApiModel):
     date: str
     paid: int
     volume: str
+    completed: int  # scheduled-cohort requests that ended Paid, by Paid day
+    on_time: int  # paid on or before due date, by Paid day
+    interventions: int  # human review actions on requests paid that day
+    fees_wei: str  # fees of transactions submitted that day
 
 
 class OperationsMetrics(ApiModel):
@@ -151,12 +155,14 @@ def compute_operations_metrics(data: MetricInputs) -> OperationsMetrics:
     completed = sum(1 for r in scheduled if r.events[-1].to == "Paid")
 
     # shortcut: Paid event time stands in for the PAY block time; use the block time once stored.
-    on_time = sum(
-        1
+    on_time_ids = {
+        r.id
         for r in paid
         if r.due_at is not None
         and paid_at[r.id] <= datetime.combine(r.due_at, time(23, 59, 59), tzinfo=UTC)
-    )
+    }
+    on_time = len(on_time_ids)
+    completed_ids = {r.id for r in scheduled if r.events[-1].to == "Paid"}
 
     paid_ids = {r.id for r in paid}
     interventions = sum(n for rid, n in data.interventions.items() if rid in paid_ids)
@@ -182,12 +188,19 @@ def compute_operations_metrics(data: MetricInputs) -> OperationsMetrics:
     for i in range(days):
         day = data.start.date() + timedelta(days=i)
         todays = [r for r in paid if paid_at[r.id].date() == day]
+        today_ids = {r.id for r in todays}
         series.append(
             SeriesPoint(
                 date=day.isoformat(),
                 paid=len(todays),
                 # shortcut: sums raw amounts across assets (USDC-only); group by asset when others land.
                 volume=str(sum(r.amount for r in todays)),
+                completed=len(today_ids & completed_ids),
+                on_time=len(today_ids & on_time_ids),
+                interventions=sum(n for rid, n in data.interventions.items() if rid in today_ids),
+                fees_wei=str(
+                    sum(t.fee_wei for t in txs if t.submitted_at.astimezone(UTC).date() == day)
+                ),
             )
         )
 

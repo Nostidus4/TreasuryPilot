@@ -1,7 +1,7 @@
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 
-import { BarSeriesChart } from '@/components/charts';
+import { BarSeriesChart, LineSeriesChart } from '@/components/charts';
 import { Amount, AmountHeader } from '@/components/domain/amount';
 import { EmptyState, QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
@@ -42,6 +42,9 @@ function Stat({
   );
 }
 
+// Date-only strings: parseISO reads them as local days, new Date() as UTC.
+const dayLabel = (date: string) => format(parseISO(date), 'MMM d');
+
 const percent = (ratio: number) => `${(ratio * 100).toFixed(1)}%`;
 
 /** Operations metrics and savings against baseline B1 (WEB-018). */
@@ -65,7 +68,7 @@ export function MetricsPage() {
         >
           {({ metrics }) => (
             <section aria-label={t('Operations')} className="grid gap-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <Stat
                   label={t('Payments executed')}
                   value={String(metrics.paymentsCount)}
@@ -88,7 +91,157 @@ export function MetricsPage() {
                   value={percent(metrics.aiPlanRate)}
                   hint={t('The rest used the rule-based fallback')}
                 />
+                <Stat
+                  label={t('Interventions per request')}
+                  value={metrics.interventionsPerRequest.toFixed(2)}
+                  hint={t('Human review actions on paid requests')}
+                />
               </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader
+                    title={t('Completion and on-time')}
+                    description={t('Share of requests in the period.')}
+                  />
+                  <CardContent>
+                    <BarSeriesChart
+                      summary={t(
+                        'Bar chart of the completion rate and the on-time rate.',
+                      )}
+                      seriesLabel={t('Rate')}
+                      xLabel={t('Measure')}
+                      yTickFormatter={(value) => `${value}%`}
+                      data={[
+                        [t('Completed'), metrics.completionRate],
+                        [t('On time'), metrics.onTimeRate],
+                      ].map(([label, ratio]) => ({
+                        label: String(label),
+                        value: Number(ratio) * 100,
+                        display: percent(Number(ratio)),
+                      }))}
+                    />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader
+                    title={t('Fees by step type')}
+                    description={t(
+                      '{{count}} transactions, total {{total}} ETH.',
+                      {
+                        count: metrics.txCount,
+                        total: formatUnits(metrics.fees.totalWei, 18),
+                      },
+                    )}
+                  />
+                  <CardContent>
+                    {Object.keys(metrics.fees.byStepType).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        {t('No fees were paid in this period.')}
+                      </p>
+                    ) : (
+                      <BarSeriesChart
+                        summary={t(
+                          'Bar chart of network fees paid, by transaction step type.',
+                        )}
+                        seriesLabel={t('Fees (ETH)')}
+                        xLabel={t('Step type')}
+                        yTickFormatter={(value) => String(value)}
+                        // Float only sets the bar height; the label text is exact wei.
+                        data={Object.entries(metrics.fees.byStepType).map(
+                          ([step, wei]) => ({
+                            label: step,
+                            value: Number(
+                              formatUnits(wei, 18, { group: false }),
+                            ),
+                            display: `${formatUnits(wei, 18)} ETH`,
+                          }),
+                        )}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {[
+                  {
+                    title: t('Completed per day'),
+                    seriesLabel: t('Completed'),
+                    pick: (p: (typeof metrics.series)[number]) => p.completed,
+                  },
+                  {
+                    title: t('Paid on time per day'),
+                    seriesLabel: t('On time'),
+                    pick: (p: (typeof metrics.series)[number]) => p.onTime,
+                  },
+                  {
+                    title: t('Interventions per day'),
+                    seriesLabel: t('Interventions'),
+                    pick: (p: (typeof metrics.series)[number]) =>
+                      p.interventions,
+                  },
+                ].map(({ pick, seriesLabel, title }) => (
+                  <Card key={title}>
+                    <CardHeader title={title} />
+                    <CardContent>
+                      <LineSeriesChart
+                        summary={t('Line chart of {{series}} for each day.', {
+                          series: title,
+                        })}
+                        seriesLabel={seriesLabel}
+                        xLabel={t('Day')}
+                        data={metrics.series.map((point) => ({
+                          label: dayLabel(point.date),
+                          value: pick(point),
+                          display: String(pick(point)),
+                        }))}
+                      />
+                    </CardContent>
+                  </Card>
+                ))}
+                <Card>
+                  <CardHeader title={t('Fees per day')} />
+                  <CardContent>
+                    <LineSeriesChart
+                      summary={t(
+                        'Line chart of network fees paid for each day.',
+                      )}
+                      seriesLabel={t('Fees (ETH)')}
+                      xLabel={t('Day')}
+                      yTickFormatter={(value) => String(value)}
+                      // Float only sets the point height; the label text is exact wei.
+                      data={metrics.series.map((point) => ({
+                        label: dayLabel(point.date),
+                        value: Number(
+                          formatUnits(point.feesWei, 18, { group: false }),
+                        ),
+                        display: `${formatUnits(point.feesWei, 18)} ETH`,
+                      }))}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+              <Card>
+                <CardHeader title={t('Payment volume per day')} />
+                <CardContent>
+                  <LineSeriesChart
+                    summary={t(
+                      'Line chart of the payment volume executed on each of the last 14 days.',
+                    )}
+                    seriesLabel={t('Volume')}
+                    xLabel={t('Day')}
+                    data={metrics.series.map((point) => ({
+                      label: dayLabel(point.date),
+                      value: Number(
+                        formatUnits(point.volume, info?.asset.decimals ?? 6, {
+                          group: false,
+                        }),
+                      ),
+                      display:
+                        `${formatUnits(point.volume, info?.asset.decimals ?? 6)} ${info?.asset.symbol ?? ''}`.trim(),
+                    }))}
+                  />
+                </CardContent>
+              </Card>
               <Card>
                 <CardHeader
                   title={t('Payments per day')}
@@ -108,7 +261,7 @@ export function MetricsPage() {
                     seriesLabel={t('Payments')}
                     xLabel={t('Day')}
                     data={metrics.series.map((point) => ({
-                      label: format(new Date(point.date), 'MMM d'),
+                      label: dayLabel(point.date),
                       value: point.paid,
                       display: String(point.paid),
                       note: info

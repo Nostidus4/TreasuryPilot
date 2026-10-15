@@ -714,15 +714,7 @@ export interface FeePolicy {
   history: FeePolicyResponse['history'];
 }
 
-export interface OperationsMetrics {
-  paymentsCount: number;
-  onTimeRate: number;
-  medianApprovalMinutes: number;
-  aiPlanRate: number;
-  exceptions: number;
-  unknownOperations: number;
-  series: Array<{ date: string; paid: number; volume: string }>;
-}
+export type OperationsMetrics = components['schemas']['OperationsMetrics'];
 
 export interface SavingsMetrics {
   totals: { baseline: string; actual: string; saved: string };
