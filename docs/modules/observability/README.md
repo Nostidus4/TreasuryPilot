@@ -36,11 +36,11 @@ F-140 (FR-921), F-141 (FR-922), F-142 (FR-923, NFR-AUD-04).
 
 - **Completion rate:** the last status event decides "Paid"; a request whose last event is a `Rejected`/`Cancelled` by a `USER` actor is excluded. Policy-blocked requests (`NeedsReview`) stay in the denominator.
 - **On-time %:** the `Paid` status-event time stands in for the PAY block time. A request without a due date is not counted on time.
-- **Interventions per request:** resolved review items (review actions, fee acceptances and exception grants all resolve one) on requests paid in the period, ÷ paid. Review items are counted by creation time.
+- **Interventions per request:** resolved review items (review actions, fee acceptances and exception grants all resolve one) on requests paid in the period, ÷ paid. Items are found by request, so ones created before the period still count.
 - **Fees:** `gas_ledger.fee_wei` of transactions submitted in the period, reverts included, per operation kind; wei as decimal strings.
 - **Latency:** `approvalToScheduled` (Approved → Scheduled) and `submitToConfirmed` (transaction submitted → confirmed) report median and p90 in seconds (nearest-rank p90). The other three phases have no stored timestamps yet and are `null`.
 - **Rejections by reason:** policy BLOCK / AI-rejected review items by primary code, plus human `Rejected` requests by status-event reason (`REJECTED` when none), so rejected requests are counted. Reverts by selector come from `transactions.revert_selector`.
-- **Web fields:** `paymentsCount` = requests paid in the period, `medianApprovalMinutes` = median AwaitingApproval → Approved, `exceptions` = NEEDS_AUTHORITY review items created, `unknownOperations` = operations currently `Unknown`, `series` = daily paid count and volume. `aiPlanRate` is always 0 until AI-plan provenance is stored.
+- **Web fields:** `paymentsCount` = requests paid in the period, `medianApprovalMinutes` = median AwaitingApproval → Approved, `exceptions` = NEEDS_AUTHORITY review items created, `unknownOperations` = operations currently `Unknown`, `series` = daily paid count and volume (raw amounts summed across assets; assumes USDC only). `aiPlanRate` is always 0 until AI-plan provenance is stored.
 
 ## 4. Data model
 

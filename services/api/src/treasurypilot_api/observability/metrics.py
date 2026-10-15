@@ -12,10 +12,10 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from treasurypilot_api.execution.models import GasLedger, Operation, Transaction
+from treasurypilot_api.execution.models import GasLedger, Operation, OperationStatus, Transaction
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole
@@ -104,6 +104,11 @@ class OperationsMetricsResponse(ApiModel):
     metrics: OperationsMetrics
 
 
+def _utc(value: datetime) -> datetime:
+    """Naive values are read as UTC so they compare with timestamptz columns."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def _ratio(num: int, den: int) -> float:
     return round(num / den, 4) if den else 0.0
 
@@ -131,7 +136,7 @@ def _gaps(requests: Sequence[RequestFacts], src: str, dst: str) -> list[float]:
 
 def compute_operations_metrics(data: MetricInputs) -> OperationsMetrics:
     def in_period(at: datetime | None) -> bool:
-        return at is not None and data.start <= at <= data.end
+        return at is not None and data.start <= at.astimezone(UTC) <= data.end
 
     paid = [r for r in data.requests if in_period(_first(r.events, "Paid"))]
     paid_at = {r.id: cast(datetime, _first(r.events, "Paid")) for r in paid}
@@ -181,6 +186,7 @@ def compute_operations_metrics(data: MetricInputs) -> OperationsMetrics:
             SeriesPoint(
                 date=day.isoformat(),
                 paid=len(todays),
+                # shortcut: sums raw amounts across assets (USDC-only); group by asset when others land.
                 volume=str(sum(r.amount for r in todays)),
             )
         )
@@ -252,18 +258,34 @@ async def load_inputs(
     if treasury_id is not None:
         review_scope.append(ReviewItem.treasury_id == treasury_id)
     review = (await session.scalars(select(ReviewItem).where(*review_scope))).all()
+
     # Resolved review items stand in for human actions (review actions, fee acceptances, grants).
-    interventions = Counter(
-        i.request_id for i in review if i.resolved_by is not None and i.request_id is not None
-    )
+    # Loaded by request, not by creation time: an item created before the period still counts.
+    paid_ids = [
+        r.id
+        for r in requests
+        if (p := _first(r.events, "Paid")) is not None and start <= p.astimezone(UTC) <= end
+    ]
+    acted: Sequence[uuid.UUID | None] = []
+    if paid_ids:
+        acted = (
+            await session.scalars(
+                select(ReviewItem.request_id).where(
+                    ReviewItem.org_id == org_id,
+                    ReviewItem.request_id.in_(paid_ids),
+                    ReviewItem.resolved_by.is_not(None),
+                )
+            )
+        ).all()
+    interventions = Counter(i for i in acted if i is not None)
 
     ops = (
         await session.execute(
-            select(Operation.kind, Operation.status, Transaction, GasLedger.fee_wei)
+            select(Operation.kind, Transaction, GasLedger.fee_wei)
             .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
-            .outerjoin(Transaction, Transaction.operation_id == Operation.id)
+            .join(Transaction, Transaction.operation_id == Operation.id)
             .outerjoin(GasLedger, GasLedger.transaction_id == Transaction.id)
-            .where(*scope)
+            .where(*scope, Transaction.submitted_at.between(start, end))
         )
     ).all()
     txs = [
@@ -274,9 +296,14 @@ async def load_inputs(
             fee_wei=int(fee or 0),
             revert_selector=tx.revert_selector.hex() if tx.revert_selector else None,
         )
-        for kind, _status, tx, fee in ops
-        if tx is not None
+        for kind, tx, fee in ops
     ]
+    unknown = await session.scalar(
+        select(func.count())
+        .select_from(Operation)
+        .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
+        .where(*scope, Operation.status == OperationStatus.UNKNOWN)
+    )
     return MetricInputs(
         start=start,
         end=end,
@@ -284,7 +311,7 @@ async def load_inputs(
         interventions=interventions,
         blocks=[i.primary_code for i in review if i.type in _BLOCK_REVIEW_TYPES],
         exceptions=sum(1 for i in review if i.type == "NEEDS_AUTHORITY"),
-        unknown_operations=sum(1 for _k, status, _t, _f in ops if status.value == "Unknown"),
+        unknown_operations=unknown or 0,
         transactions=txs,
     )
 
@@ -327,8 +354,8 @@ async def get_operations_metrics(
             title="Metrics unavailable",
             detail="Metrics storage is not configured.",
         )
-    end = end or datetime.now(UTC)
-    start = start or end - timedelta(days=30)
+    end = _utc(end or datetime.now(UTC))
+    start = _utc(start or end - timedelta(days=30))
     if start > end or (end - start).days > 366:
         raise AuthFailure(
             status=422, code="INVALID_PERIOD", title="Invalid period", detail="Bad from/to range."
