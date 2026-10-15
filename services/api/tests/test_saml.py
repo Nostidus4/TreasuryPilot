@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 from fastapi.testclient import TestClient
-from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT
+from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT, time_util
 from saml2.saml import NAMEID_FORMAT_PERSISTENT
 
 from treasurypilot_api import identity as identity_package
@@ -141,7 +141,7 @@ def test_saml_client_uses_local_metadata_and_requires_signed_correlated_response
     service = client.config.getattr("endpoints", "sp")
     assert service["assertion_consumer_service"] == [(ACS_URL, BINDING_HTTP_POST)]
     assert (
-        client.metadata[IDP_ENTITY_ID].single_sign_on_service(binding=BINDING_HTTP_REDIRECT)[0][
+        client.metadata.single_sign_on_service(IDP_ENTITY_ID, binding=BINDING_HTTP_REDIRECT)[0][
             "location"
         ]
         == "https://id.example/sso"
@@ -172,7 +172,11 @@ def test_saml_response_requires_signature_verifier_correlation_and_persistent_id
 @pytest.mark.skipif(shutil.which("xmlsec1") is None, reason="xmlsec1 is required by PySAML2")
 def test_real_saml_signed_response_is_accepted_and_tampered_or_unsigned_messages_rejected(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The signed fixture uses the deterministic NOW timestamp. Make PySAML2's own
+    # timestamp validation use that same clock instead of the wall clock.
+    monkeypatch.setattr(time_util, "utc_now", lambda: int(NOW.timestamp()))
     fixture_path = Path(__file__).parent / "fixtures" / "saml_signed_response.xml"
     response_xml = fixture_path.read_bytes()
     response_root = ET.fromstring(response_xml)
