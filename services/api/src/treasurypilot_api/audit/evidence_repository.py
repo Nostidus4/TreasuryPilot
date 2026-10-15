@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import http.client
 import json
 import os
-import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -38,9 +38,10 @@ from treasurypilot_api.audit.evidence import (
     EvidenceBundle,
     EvidenceBundleInvalid,
     EvidenceNotFound,
+    EvidenceUnavailable,
     build_evidence_bundle,
 )
-from treasurypilot_api.execution.models import Operation, Transaction
+from treasurypilot_api.execution.models import Operation, Transaction, TransactionStatus
 from treasurypilot_api.invoices.models import (
     PaymentApproval,
     PaymentRequest,
@@ -91,6 +92,18 @@ class ReceiptResult:
     block_number: int | None = None
     block_hash: str | None = None
     status: str | None = None
+    # True when no configured RPC answered, so "not found" was never actually observed.
+    unreachable: bool = False
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: only the scheme/host validated in ``verify`` may be contacted."""
+
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 class ReceiptVerifier(Protocol):
@@ -162,6 +175,8 @@ class JsonRpcReceiptVerifier:
     def __init__(self, environ: Mapping[str, str] | None = None, *, timeout: float = 5.0) -> None:
         self._environ = environ if environ is not None else os.environ
         self._timeout = timeout
+        # A URL's chain id never changes; cache it so each export asks once per endpoint.
+        self._chain_ids: dict[str, int] = {}
 
     async def verify(
         self,
@@ -172,6 +187,7 @@ class JsonRpcReceiptVerifier:
         expected_block_number: int | None,
         expected_block_hash: str | None,
     ) -> ReceiptResult:
+        responded = False
         for template in rpc_urls:
             try:
                 url = resolve_rpc_url(template, self._environ)
@@ -192,11 +208,18 @@ class JsonRpcReceiptVerifier:
                     expected_block_number,
                     expected_block_hash,
                 )
+                responded = True
                 if result.resolved:
                     return result
-            except (PlatformConfigurationError, TimeoutError, OSError, ValueError):
+            except (
+                PlatformConfigurationError,
+                TimeoutError,
+                OSError,
+                ValueError,
+                http.client.HTTPException,
+            ):
                 continue
-        return ReceiptResult(resolved=False)
+        return ReceiptResult(resolved=False, unreachable=not responded)
 
     def _verify_url(
         self,
@@ -206,12 +229,19 @@ class JsonRpcReceiptVerifier:
         expected_block_number: int | None,
         expected_block_hash: str | None,
     ) -> ReceiptResult:
-        chain_id_result = self._rpc(url, 1, "eth_chainId", [])
+        if url not in self._chain_ids:
+            chain_id_result = self._rpc(url, 1, "eth_chainId", [])
+            if not isinstance(chain_id_result, str):
+                return ReceiptResult(resolved=False)
+            try:
+                self._chain_ids[url] = int(chain_id_result, 16)
+            except ValueError:
+                return ReceiptResult(resolved=False)
         receipt = self._rpc(url, 2, "eth_getTransactionReceipt", [tx_hash])
-        if not isinstance(chain_id_result, str) or not isinstance(receipt, Mapping):
+        if not isinstance(receipt, Mapping):
             return ReceiptResult(resolved=False)
         try:
-            chain_id = int(chain_id_result, 16)
+            chain_id = self._chain_ids[url]
             actual_hash = str(receipt["transactionHash"]).lower()
             block_number = int(str(receipt["blockNumber"]), 16)
             block_hash = str(receipt["blockHash"]).lower()
@@ -243,11 +273,8 @@ class JsonRpcReceiptVerifier:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                payload = response.read(1_000_001)
-        except (urllib.error.URLError, TimeoutError, OSError):
-            raise
+        with _OPENER.open(request, timeout=self._timeout) as response:
+            payload = response.read(1_000_001)
         if len(payload) > 1_000_000:
             raise ValueError("RPC response exceeded the configured limit")
         decoded = json.loads(payload)
@@ -270,8 +297,10 @@ class SqlAlchemyEvidenceRepository:
         *,
         receipt_verifier: ReceiptVerifier | None = None,
         app_version: str = __version__,
+        receipt_deadline: float = 15.0,
     ) -> None:
         self._sessions = sessions
+        self._receipt_deadline = receipt_deadline
         self._receipt_verifier = receipt_verifier or JsonRpcReceiptVerifier()
         self._app_version = app_version
 
@@ -302,7 +331,7 @@ class SqlAlchemyEvidenceRepository:
                 raise EvidenceNotFound
             payment, vendor_name, asset_symbol, asset_is_test, chain_is_testnet = request_row
 
-            approvals = list(
+            approval = (
                 await session.scalars(
                     select(PaymentApproval)
                     .where(
@@ -313,7 +342,7 @@ class SqlAlchemyEvidenceRepository:
                     .order_by(PaymentApproval.created_at.desc(), PaymentApproval.id.desc())
                     .limit(1)
                 )
-            )
+            ).first()
             flags = list(
                 await session.scalars(
                     select(RequestFlag)
@@ -371,18 +400,23 @@ class SqlAlchemyEvidenceRepository:
             attestation_row = None
             validation_rows = []
             if payment.onchain_request_id is not None:
-                attestation_row = (
+                # Approvals sign request fields, not a plan, so the exported operations'
+                # step ids are the link: take the newest attestation covering all of them.
+                executed_steps = {row.step_id for row in operations}
+                candidates = list(
                     (
                         await session.execute(
                             select(_attestations)
                             .where(_attestations.c.request_id == payment.onchain_request_id)
                             .order_by(_attestations.c.created_at.desc(), _attestations.c.id.desc())
-                            .limit(1)
                         )
-                    )
-                    .mappings()
-                    .one_or_none()
+                    ).mappings()
                 )
+                attestation_row = next(
+                    (row for row in candidates if executed_steps <= set(row["step_ids"])), None
+                )
+                if candidates and attestation_row is None:
+                    raise EvidenceBundleInvalid("no stored attestation covers the executed steps")
                 if attestation_row is not None:
                     validation_rows = list(
                         (
@@ -484,8 +518,7 @@ class SqlAlchemyEvidenceRepository:
                 "app_version": self._app_version,
             }
 
-            if approvals:
-                approval = approvals[0]
+            if approval is not None:
                 source["approval"] = {
                     "typed_data": approval.typed_data,
                     "signer_address": _hex(approval.approver_address),
@@ -520,7 +553,13 @@ class SqlAlchemyEvidenceRepository:
         if any(row.chain_id not in chain_rows for row in transaction_rows):
             raise EvidenceBundleInvalid("persisted transaction chain is not configured")
 
-        receipt_results: dict[str, ReceiptResult] = {}
+        # Only mined (Confirmed) rows have a receipt to resolve; in-flight or dropped
+        # attempts are exported as unverified rather than failing the whole bundle.
+        needs_receipt = [
+            row
+            for row in transaction_rows
+            if _enum_value(row.status) == TransactionStatus.CONFIRMED
+        ]
 
         async def resolve_row(row: Transaction) -> tuple[str, ReceiptResult]:
             chain = chain_rows[row.chain_id]
@@ -534,15 +573,21 @@ class SqlAlchemyEvidenceRepository:
                 expected_block_hash=_hex(row.block_hash),
             )
 
-        receipt_results.update(
-            dict(await asyncio.gather(*(resolve_row(row) for row in transaction_rows)))
-        )
+        try:
+            async with asyncio.timeout(self._receipt_deadline):
+                receipt_results = dict(
+                    await asyncio.gather(*(resolve_row(row) for row in needs_receipt))
+                )
+        except TimeoutError as error:
+            raise EvidenceUnavailable("chain verification timed out") from error
+        if any(result.unreachable for result in receipt_results.values()):
+            raise EvidenceUnavailable("no configured chain RPC answered")
         for row in transaction_rows:
             tx_hash = _hex(row.tx_hash)
             assert tx_hash is not None
             operation = operation_by_id[row.operation_id]
             checked_at = row.confirmed_at or row.last_seen_pending_at or row.submitted_at
-            receipt = receipt_results[tx_hash]
+            receipt = receipt_results.get(tx_hash, ReceiptResult(resolved=False))
             source["verifications"].append(
                 {
                     "tx_hash": tx_hash,
@@ -552,6 +597,7 @@ class SqlAlchemyEvidenceRepository:
                         "operationStatus": _enum_value(operation.status),
                         "crosscheck": _enum_value(row.crosscheck),
                         "confirmations": row.confirmations,
+                        "receiptChecked": tx_hash in receipt_results,
                         "receiptResolved": receipt.resolved,
                         "receiptStatus": receipt.status,
                         "receiptBlockNumber": receipt.block_number,
@@ -560,23 +606,22 @@ class SqlAlchemyEvidenceRepository:
             )
 
         if payment.status == "Paid":
-            confirmed = any(
-                _enum_value(row.status) == "Confirmed"
-                and row.block_number is not None
+            # Every mined attempt must check out, so a good one cannot hide a bad one.
+            if not needs_receipt or not all(
+                row.block_number is not None
                 and _enum_value(operation_by_id[row.operation_id].status) == "Confirmed"
                 and _enum_value(row.crosscheck) == "Match"
-                and receipt_results.get(_hex(row.tx_hash) or "", ReceiptResult(False)).resolved
+                and receipt_results[_hex(row.tx_hash) or ""].resolved
                 and receipt_results[_hex(row.tx_hash) or ""].status == "0x1"
-                for row in transaction_rows
-            )
-            if not confirmed:
+                for row in needs_receipt
+            ):
                 raise EvidenceBundleInvalid(
                     "paid request lacks a persisted confirmed, crosschecked transaction receipt"
                 )
 
         async def transaction_resolves(tx: Any) -> bool:
             result = receipt_results.get(tx.tx_hash)
-            return result is not None and result.resolved
+            return result is None or result.resolved
 
         try:
             return await build_evidence_bundle(

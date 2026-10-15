@@ -11,7 +11,11 @@ from typing import Any
 
 import pytest
 
-from treasurypilot_api.audit.evidence import EvidenceBundleInvalid, EvidenceNotFound
+from treasurypilot_api.audit.evidence import (
+    EvidenceBundleInvalid,
+    EvidenceNotFound,
+    EvidenceUnavailable,
+)
 from treasurypilot_api.audit.evidence_repository import (
     ReceiptResult,
     SqlAlchemyEvidenceRepository,
@@ -36,6 +40,9 @@ class _Result:
 
     def one_or_none(self) -> Any:
         return self._value
+
+    def first(self) -> Any:
+        return self._values[0] if self._values else None
 
     def mappings(self) -> _Result:
         return self
@@ -76,7 +83,8 @@ class _FakeSession:
         if entity is None:
             table_name = statement.get_final_froms()[0].name
             if table_name == "attestations":
-                return _Result(self.data.get("attestation"))
+                attestation = self.data.get("attestation")
+                return _Result(values=[attestation] if attestation else [])
             if table_name == "validations":
                 return _Result(values=self.data.get("validations", []))
             raise AssertionError(f"unexpected Core table: {table_name}")
@@ -399,3 +407,176 @@ def test_invalid_route_response_exposes_invalid_status_without_a_bundle() -> Non
     assert raised.value.status == 409
     assert raised.value.code == "EVIDENCE_INVALID"
     assert raised.value.extensions == {"evidenceStatus": "INVALID"}
+
+
+def _export(
+    data: dict[str, Any], organization_id: uuid.UUID, request_id: uuid.UUID, verifier: Any
+) -> Any:
+    repository = SqlAlchemyEvidenceRepository(
+        _FakeSessions(data), receipt_verifier=verifier, app_version="test", receipt_deadline=0.2
+    )
+    return asyncio.run(
+        repository.export_request(organization_id=organization_id, request_id=request_id)
+    )
+
+
+def test_in_flight_transaction_is_exported_unverified_without_an_rpc_call() -> None:
+    data, organization_id, request_id = _fixture(status="NeedsReview", with_transaction=True)
+    data["transactions"][0].status = "Pending"
+    bundle = _export(data, organization_id, request_id, _UnresolvedReceiptVerifier())
+    details = bundle.verifications[0].details
+    assert details["receiptChecked"] is False
+    assert details["receiptResolved"] is False
+
+
+def test_paid_request_requires_every_confirmed_transaction_to_check_out() -> None:
+    data, organization_id, request_id = _fixture(status="Paid", with_transaction=True)
+    bad = _row(**{**vars(data["transactions"][0]), "tx_hash": bytes.fromhex("ee" * 32)})
+    data["transactions"].append(bad)
+
+    class OneRevertedVerifier(_MatchingReceiptVerifier):
+        async def verify(self, **kwargs: Any) -> ReceiptResult:
+            result = await super().verify(**kwargs)
+            if kwargs["tx_hash"] == "0x" + "ee" * 32:
+                return ReceiptResult(resolved=True, status="0x0")
+            return result
+
+    with pytest.raises(EvidenceBundleInvalid, match="lacks a persisted confirmed"):
+        _export(data, organization_id, request_id, OneRevertedVerifier())
+
+
+def test_rpc_outage_is_unavailable_not_invalid() -> None:
+    data, organization_id, request_id = _fixture(status="Paid", with_transaction=True)
+
+    class DownVerifier:
+        async def verify(self, **_kwargs: Any) -> ReceiptResult:
+            return ReceiptResult(resolved=False, unreachable=True)
+
+    with pytest.raises(EvidenceUnavailable):
+        _export(data, organization_id, request_id, DownVerifier())
+
+
+def test_slow_rpc_hits_the_overall_deadline() -> None:
+    data, organization_id, request_id = _fixture(status="Paid", with_transaction=True)
+
+    class SlowVerifier:
+        async def verify(self, **_kwargs: Any) -> ReceiptResult:
+            await asyncio.sleep(5)
+            raise AssertionError("unreachable")
+
+    with pytest.raises(EvidenceUnavailable):
+        _export(data, organization_id, request_id, SlowVerifier())
+
+
+def test_attestation_for_other_steps_is_rejected() -> None:
+    data, organization_id, request_id = _fixture(status="Paid", with_transaction=True)
+    data["attestation"]["step_ids"] = [bytes.fromhex("99" * 32)]
+    with pytest.raises(EvidenceBundleInvalid, match="covers the executed steps"):
+        _export(data, organization_id, request_id, _MatchingReceiptVerifier())
+
+
+def test_all_rpcs_failing_marks_the_receipt_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+
+    from treasurypilot_api.audit.evidence_repository import JsonRpcReceiptVerifier
+
+    verifier = JsonRpcReceiptVerifier()
+
+    def broken(*_args: Any) -> ReceiptResult:
+        raise http.client.IncompleteRead(b"")
+
+    monkeypatch.setattr(verifier, "_verify_url", broken)
+    result = asyncio.run(
+        verifier.verify(
+            tx_hash="0x" + "ab" * 32,
+            chain_id=1,
+            rpc_urls=["https://one.example", "https://two.example"],
+            expected_block_number=None,
+            expected_block_hash=None,
+        )
+    )
+    assert result.unreachable is True
+
+
+def test_http_exception_falls_back_to_the_next_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+
+    from treasurypilot_api.audit.evidence_repository import JsonRpcReceiptVerifier
+
+    verifier = JsonRpcReceiptVerifier()
+
+    def flaky(url: str, *_args: Any) -> ReceiptResult:
+        if url == "https://one.example":
+            raise http.client.BadStatusLine("bad")
+        return ReceiptResult(resolved=True)
+
+    monkeypatch.setattr(verifier, "_verify_url", flaky)
+    result = asyncio.run(
+        verifier.verify(
+            tx_hash="0x" + "ab" * 32,
+            chain_id=1,
+            rpc_urls=["https://one.example", "https://two.example"],
+            expected_block_number=None,
+            expected_block_hash=None,
+        )
+    )
+    assert result.resolved is True
+
+
+def test_rpc_redirects_are_refused() -> None:
+    import threading
+    import urllib.error
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from treasurypilot_api.audit.evidence_repository import JsonRpcReceiptVerifier
+
+    hits: list[str] = []
+
+    class Target(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args: object) -> None:
+            return None
+
+    target = HTTPServer(("127.0.0.1", 0), Target)
+
+    class Redirector(Target):
+        def do_POST(self) -> None:
+            self.send_response(307)
+            self.send_header("Location", f"http://127.0.0.1:{target.server_port}/internal")
+            self.end_headers()
+
+    redirector = HTTPServer(("127.0.0.1", 0), Redirector)
+    servers = (target, redirector)
+    for server in servers:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(urllib.error.HTTPError):
+            JsonRpcReceiptVerifier()._rpc(
+                f"http://127.0.0.1:{redirector.server_port}", 1, "eth_chainId", []
+            )
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
+    assert hits == []
+
+
+def test_unavailable_route_response_is_503() -> None:
+    from treasurypilot_api.audit.api import get_request_evidence
+    from treasurypilot_api.identity.auth import AuthFailure
+
+    class DownRepository:
+        async def export_request(self, **_kwargs: Any) -> Any:
+            raise EvidenceUnavailable
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(evidence_repository=DownRepository()))
+    )
+    member = SimpleNamespace(organization_id=uuid.uuid4(), user_id=uuid.uuid4())
+    with pytest.raises(AuthFailure) as raised:
+        asyncio.run(get_request_evidence(request, member, uuid.uuid4()))
+    assert raised.value.status == 503
