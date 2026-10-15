@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -153,6 +154,18 @@ async def _seed(url: str) -> None:
         await _request(pool, ORG_A, T_A, a, "INV-A3", [("PAY", 99, USDC)], "2026-10-03 00:00:00")
         await _request(pool, ORG_B, T_B, b, "INV-B1", [("PAY", 777, USDC)], "2026-10-02 12:00:00")
         await _request(pool, ORG_A, T_A, a, "INV-A4", [("PAY", 5, UNKNOWN)], "2026-11-05 10:00:00")
+        await _request(
+            pool, ORG_A, T_A, a, "INV-S1", [("SUPPLY", 100, USDC)], "2026-09-15 10:00:00"
+        )
+        for stamp, balance in (("2026-08-31 12:00:00", 1000), ("2026-09-30 12:00:00", 1250)):
+            await pool.execute(
+                "INSERT INTO snapshots (id, org_id, treasury_id, purpose, block_number, "
+                "block_hash, block_timestamp, provider, data, coverage, missing) VALUES "
+                "(gen_random_uuid(), $1, $2, 'DASHBOARD', 1, $3, $4, 'p', $5::jsonb, 'COMPLETE', "
+                "'[]')",
+                ORG_A, T_A, b"\x01" * 32, datetime.fromisoformat(stamp).replace(tzinfo=UTC),
+                json.dumps({"aave": {"a_token_balance": str(balance)}}),
+            )  # fmt: skip
         await pool.execute(
             "UPDATE reconciliations SET status = 'Matched', matched_by = 'USER' "
             "WHERE request_id = $1",
@@ -275,3 +288,40 @@ def test_totals_mismatch_returns_409_with_differences(url: str) -> None:
 def test_unknown_erc20_is_a_distinct_error(url: str) -> None:
     response = _get(url, "2026-11-01", "2026-11-30")
     assert response.status_code == 409 and response.json()["code"] == "EXPORT_ASSET_UNKNOWN"
+
+
+def test_supply_interest_is_aToken_growth_minus_net_supplied(url: str) -> None:
+    rows = _rows(_get(url, "2026-09-01", "2026-09-30"))
+    interest = [r for r in rows if r[4] == "SUPPLY_INTEREST"]
+    assert [(r[0], r[5], r[6], r[9]) for r in interest] == [
+        ("2026-09-30", "0.000150", "USDC", "Computed")
+    ]
+    assert any(r[4] == "LENDING_TRANSFER" and r[5] == "0.000100" for r in rows)
+    journal = _rows(_get(url, "2026-09-01", "2026-09-30", "journal"))
+    legs = [(r[3], r[5], r[6]) for r in journal if r[2] == "SUPPLY_INTEREST"]
+    assert legs == [("1300", "0.000150", "0"), ("4100", "0", "0.000150")]
+    assert not any(r[4] == "SUPPLY_INTEREST" for r in _rows(_get(url, "2026-10-01", "2026-10-02")))
+
+
+def test_org_account_mappings_override_journal_and_are_scoped(url: str) -> None:
+    client = _client(url, "Finance")
+    mappings = f"/v1/orgs/{ORG_A}/reconciliation/account-mappings"
+    body = {"items": [{"classification": "EXTERNAL_EXPENSE", "side": "DEBIT",
+                       "accountCode": "=7000", "accountName": "Vendor costs"}]}  # fmt: skip
+    put = client.put(mappings, json=body)
+    assert put.status_code == 200
+    by_slot = {(i["classification"], i["side"]): i for i in put.json()["items"]}
+    assert by_slot[("EXTERNAL_EXPENSE", "DEBIT")]["source"] == "ORG"
+    assert by_slot[("EXTERNAL_EXPENSE", "CREDIT")]["source"] == "DEFAULT"
+    journal = _rows(_get(url, "2026-10-01", "2026-10-02", "journal"))
+    pay = [r for r in journal if r[2] == "EXTERNAL_EXPENSE"]
+    assert {r[3] for r in pay} == {"'=7000", "1110"}  # overridden debit, default credit
+    assert (
+        client.put(
+            mappings, json={"items": [{**body["items"][0], "classification": "NOPE"}]}
+        ).status_code
+        == 422
+    )
+    assert _client(url, "Owner").get(mappings).status_code == 403
+    assert client.put(mappings, json={"items": []}).status_code == 200  # reset to defaults
+    assert client.get(mappings).json()["items"][0]["source"] == "DEFAULT"

@@ -2476,6 +2476,97 @@
         "title": "MandateView",
         "type": "object"
       },
+      "MappingBody": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MappingItem"
+            },
+            "maxItems": 12,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "MappingBody",
+        "type": "object"
+      },
+      "MappingItem": {
+        "properties": {
+          "accountCode": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Accountcode",
+            "type": "string"
+          },
+          "accountName": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Accountname",
+            "type": "string"
+          },
+          "classification": {
+            "pattern": "^[A-Z_]{1,32}$",
+            "title": "Classification",
+            "type": "string"
+          },
+          "side": {
+            "pattern": "^(DEBIT|CREDIT)$",
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": ["classification", "side", "accountCode", "accountName"],
+        "title": "MappingItem",
+        "type": "object"
+      },
+      "MappingOut": {
+        "properties": {
+          "accountCode": {
+            "title": "Accountcode",
+            "type": "string"
+          },
+          "accountName": {
+            "title": "Accountname",
+            "type": "string"
+          },
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "classification",
+          "side",
+          "accountCode",
+          "accountName",
+          "source"
+        ],
+        "title": "MappingOut",
+        "type": "object"
+      },
+      "MappingsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MappingOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "MappingsOut",
+        "type": "object"
+      },
       "MarkReadRequest": {
         "properties": {
           "ids": {
@@ -10370,6 +10461,99 @@
         },
         "summary": "Defer Plan Fee",
         "tags": ["fees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/reconciliation/account-mappings": {
+      "get": {
+        "operationId": "get_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Account Mappings",
+        "tags": ["reconciliation"],
+        "x-organization-scoped": true
+      },
+      "put": {
+        "description": "Replace the org's overrides; sides not listed fall back to the generic default.",
+        "operationId": "put_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Account Mappings",
+        "tags": ["reconciliation"],
         "x-organization-scoped": true
       }
     },

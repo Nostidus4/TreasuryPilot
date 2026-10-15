@@ -1197,6 +1197,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/reconciliation/account-mappings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Account Mappings */
+    get: operations['get_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_get'];
+    /**
+     * Put Account Mappings
+     * @description Replace the org's overrides; sides not listed fall back to the generic default.
+     */
+    put: operations['put_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/reconciliation/export': {
     parameters: {
       query?: never;
@@ -3587,6 +3608,40 @@ export interface components {
       treasuryId: string;
       /** Version */
       version: number;
+    };
+    /** MappingBody */
+    MappingBody: {
+      /** Items */
+      items: components['schemas']['MappingItem'][];
+    };
+    /** MappingItem */
+    MappingItem: {
+      /** Accountcode */
+      accountCode: string;
+      /** Accountname */
+      accountName: string;
+      /** Classification */
+      classification: string;
+      /** Side */
+      side: string;
+    };
+    /** MappingOut */
+    MappingOut: {
+      /** Accountcode */
+      accountCode: string;
+      /** Accountname */
+      accountName: string;
+      /** Classification */
+      classification: string;
+      /** Side */
+      side: string;
+      /** Source */
+      source: string;
+    };
+    /** MappingsOut */
+    MappingsOut: {
+      /** Items */
+      items: components['schemas']['MappingOut'][];
     };
     /** MarkReadRequest */
     MarkReadRequest: {
@@ -7718,6 +7773,72 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MappingsOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  put_account_mappings_v1_orgs__organization_id__reconciliation_account_mappings_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MappingBody'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MappingsOut'];
         };
       };
       /** @description Validation Error */
