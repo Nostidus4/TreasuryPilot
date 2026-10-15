@@ -350,3 +350,54 @@ def test_with_the_llm_down_the_keyword_fallback_flags_obvious_cases(database_url
     evidence = json.loads(flag["evidence"])
     assert evidence["reducedCoverage"] is True and evidence["detector"] == "keyword_fallback"
     assert "pre-approved" in evidence["matches"][0]["quote"]
+
+
+_TERMS = {"discount_bps": 200, "discount_days": 10, "net_days": 30, "uncertain": False}
+
+
+def test_extracted_terms_are_stored_unconfirmed(database_url: str) -> None:
+    request_id, document_id = _upload(database_url)
+    recorded = json.loads(RECORDED) | {"terms": _TERMS}
+    adapter, _ = _adapter(database_url, fake_text(json.dumps(recorded)))
+
+    outcome = extract_invoice_document(
+        request_id,
+        document_id,
+        adapter=adapter,
+        reader=StoredFiles(),
+        database_url=database_url,
+    )
+
+    assert outcome == "Extracted"
+    request = _request_row(database_url, request_id)
+    assert json.loads(request["terms"]) == {
+        "net_due_day": 30,
+        "discount_bps": 200,
+        "discount_deadline_day": 10,
+    }
+    assert request["terms_confirmed_by"] is None
+
+
+def test_extraction_never_overwrites_existing_terms(database_url: str) -> None:
+    request_id, document_id = _upload(database_url)
+    existing = {"net_due_day": 60, "discount_bps": 0}
+    asyncio.run(
+        _run(
+            database_url,
+            "UPDATE payment_requests SET terms = $2::jsonb WHERE id = $1",
+            request_id,
+            json.dumps(existing),
+        )
+    )
+    recorded = json.loads(RECORDED) | {"terms": _TERMS}
+    adapter, _ = _adapter(database_url, fake_text(json.dumps(recorded)))
+
+    extract_invoice_document(
+        request_id,
+        document_id,
+        adapter=adapter,
+        reader=StoredFiles(),
+        database_url=database_url,
+    )
+
+    assert json.loads(_request_row(database_url, request_id)["terms"]) == existing
