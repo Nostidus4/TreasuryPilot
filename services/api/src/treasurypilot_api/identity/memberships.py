@@ -20,6 +20,7 @@ from treasurypilot_api.identity.models import (
     Invite,
     Membership,
     MembershipStatus,
+    OIDCIdentity,
     Organization,
     OrganizationRole,
     User,
@@ -27,6 +28,7 @@ from treasurypilot_api.identity.models import (
     uuid7,
 )
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
+from treasurypilot_api.identity.role_grants import initialize_legacy_role_sources
 
 INVITE_LIFETIME = timedelta(days=7)
 _SIMPLE_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -88,6 +90,10 @@ class LastOwner(Exception):
     """An organization must retain an active Owner once it has one."""
 
 
+class RoleSourceManaged(Exception):
+    """The update would remove a role that SCIM or SSO still grants."""
+
+
 class MembershipRepository(Protocol):
     async def create_invite(
         self,
@@ -132,8 +138,14 @@ class MembershipRepository(Protocol):
 
 
 class SqlAlchemyMembershipRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        oidc_organization_id: uuid.UUID | None = None,
+    ) -> None:
         self._sessions = sessions
+        self._oidc_organization_id = oidc_organization_id
 
     async def create_invite(
         self,
@@ -340,12 +352,18 @@ class SqlAlchemyMembershipRepository:
             membership = next((item for item in memberships if item.user_id == user_id), None)
             if membership is None:
                 return None
+            oidc_linked = org_id == self._oidc_organization_id and bool(
+                await session.scalar(select(exists().where(OIDCIdentity.user_id == user_id)))
+            )
+            initialize_legacy_role_sources(membership, oidc_identity_linked=oidc_linked)
             managed_roles = set(membership.oidc_roles) | set(membership.scim_roles)
-            manual_roles = set(roles) - managed_roles
-            effective_roles = manual_roles | managed_roles
-            _guard_last_roles(memberships, membership, effective_roles)
+            if managed_roles - set(roles):
+                raise RoleSourceManaged
+            # Roles an admin sends are explicit grants even if SCIM or SSO also grant them.
+            manual_roles = set(roles)
+            _guard_last_roles(memberships, membership, manual_roles | managed_roles)
             membership.manual_roles = sorted(manual_roles)
-            membership.roles = sorted(effective_roles)
+            membership.roles = sorted(manual_roles | managed_roles)
             membership.updated_by = updated_by
             await session.flush()
             user = await session.scalar(select(User).where(User.id == user_id))
@@ -671,6 +689,13 @@ async def update_member(
             roles=tuple(role.value for role in payload.roles),
             updated_by=member.user_id,
         )
+    except RoleSourceManaged:
+        raise _api_failure(
+            409,
+            "ROLE_SOURCE_MANAGED",
+            "Role managed by SCIM or SSO",
+            "Remove the role in the identity provider; it cannot be removed here.",
+        ) from None
     except LastAdministrator:
         raise _api_failure(
             409,

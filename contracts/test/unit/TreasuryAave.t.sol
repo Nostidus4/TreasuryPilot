@@ -93,7 +93,7 @@ contract TreasuryAaveTest is TreasuryFixture {
         vm.prank(executor);
         module.withdraw(bytes32(uint256(1)), 1);
         _owner(abi.encodeCall(module.pause, ()));
-        vm.expectRevert(E.NotActive.selector);
+        vm.expectRevert(E.MandatePaused.selector);
         vm.prank(executor);
         module.withdraw(bytes32(uint256(2)), 1);
     }

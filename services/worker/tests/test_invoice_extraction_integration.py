@@ -302,6 +302,31 @@ def test_clean_extraction_creates_no_flag(database_url: str) -> None:
     assert _flags(database_url, request_id) == []
 
 
+def test_multi_invoice_report_creates_a_high_flag_and_does_not_prefill(
+    database_url: str,
+) -> None:
+    request_id, document_id = _upload(database_url)
+    recorded = json.loads(RECORDED) | {"invoice_count_in_document": 2}
+    adapter, _ = _adapter(database_url, fake_text(json.dumps(recorded)))
+
+    outcome = extract_invoice_document(
+        request_id, document_id, adapter=adapter, reader=StoredFiles(), database_url=database_url
+    )
+
+    assert outcome == "Extracted"
+    (flag,) = _flags(database_url, request_id)
+    assert (flag["code"], flag["severity"], flag["source"], flag["status"]) == (
+        "MULTI_INVOICE_DOCUMENT",
+        "HIGH",
+        "AI",
+        "Open",
+    )
+    assert json.loads(flag["evidence"]) == {"invoiceCountInDocument": 2}
+    request = _request_row(database_url, request_id)
+    assert request["invoice_no"] is None and request["amount"] is None
+    assert request["extraction_confirmed_by"] is None
+
+
 def test_with_the_llm_down_the_keyword_fallback_flags_obvious_cases(database_url: str) -> None:
     request_id, document_id = _upload(database_url)
     adapter, _ = _adapter(database_url, AiTimeout("EXTRACT exceeded its 60.0s deadline"))

@@ -18,14 +18,12 @@ from treasurypilot_api.identity.models import (
 )
 from treasurypilot_api.identity.oidc import OIDCFailure
 from treasurypilot_api.identity.role_grants import (
+    OIDC_ASSIGNABLE_ROLES,
     initialize_legacy_role_sources,
     recompute_membership_roles,
 )
 from treasurypilot_core.ids import uuid7
 
-# SSO group claims may grant work roles, never organization ownership, approval,
-# guardian, or platform administration privileges.
-OIDC_ASSIGNABLE_ROLES = frozenset({"Operator", "Finance", "Auditor"})
 # Membership rule: SSO manages only OIDC_ASSIGNABLE_ROLES. Any other role an existing
 # member holds (Owner, Approver, ...) is preserved, so SSO can never demote or suspend
 # an owner. SSO never re-activates a suspended membership: login is rejected instead.

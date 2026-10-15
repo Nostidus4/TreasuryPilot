@@ -23,7 +23,7 @@ M05 turns an invoice into a **payment request** that a human approves with a wal
 
 ### Forwarded invoice attachments (INV-L01 partial)
 
-An OrgAdmin can configure one inbound address per organization and select the treasury used for its drafts. The API accepts provider webhooks only when they carry an HMAC-SHA256 signature over `<unix timestamp>.<raw JSON body>` in `X-TP-Email-Signature` (`t=<timestamp>,v1=<hex>`). Signatures outside a five-minute window are rejected. Configure `TP_INBOUND_EMAIL_DOMAIN` and a `TP_INBOUND_EMAIL_WEBHOOK_SECRET` of at least 32 bytes, and configure the mail provider to sign callbacks with that secret. The signed provider event must include the exact recipient address and SPF/DKIM results with their authenticated domains. A passing SPF or DKIM domain must exactly match the sender's From domain; otherwise each attachment draft receives an open HIGH `INBOUND_EMAIL_SENDER_UNVERIFIED` flag.
+An OrgAdmin can configure one inbound address per organization and select the treasury used for its drafts. The API accepts provider webhooks only when they carry an HMAC-SHA256 signature over `<unix timestamp>.<raw JSON body>` in `X-TP-Email-Signature` (`t=<timestamp>,v1=<hex>`). Signatures outside a five-minute window are rejected. Configure `TP_INBOUND_EMAIL_DOMAIN` and a `TP_INBOUND_EMAIL_WEBHOOK_SECRET` of at least 32 bytes, and configure the mail provider to sign callbacks with that secret. The signed provider event must include the exact recipient address and SPF/DKIM results with their authenticated domains. A passing SPF or DKIM domain must match the sender's From domain or be a parent domain of it (relaxed alignment); otherwise each attachment draft receives an open HIGH `INBOUND_EMAIL_SENDER_UNVERIFIED` flag. Every attachment is validated before any draft is stored, so one invalid attachment rejects the whole message (retries are idempotent per message and attachment, independent of later treasury changes). Signed callbacks are rate limited to 60 per minute per address (429).
 
 The webhook accepts up to five PDF, PNG or JPEG attachments, with a 10 MiB combined content limit. Each attachment goes through the same type, size, page, private-storage and extraction-queue path as a user upload. It creates an ordinary `Draft`; it does not create an approval or transition the request. The email body is ignored and never sent to extraction. Messages without attachments are rejected. Provider/MX deployment and body-only parsing remain outside this partial slice.
 
@@ -46,6 +46,18 @@ no amount; the caller must not clamp an over-cap amount or reuse the reference
 quote. `FxQuoteProvider` is the adapter boundary; adapters report transient
 provider failures as `FxProviderUnavailable`. Hashes of non-fiat requests keep the
 original encoding; the four fiat fields are appended only when `fiatCurrency` is set.
+
+The returned base-unit amount is the fiat request's PAY step amount; it must stay
+separate from the signed maximum in the approval. Worker pre-sign simulation encodes
+that amount in the PAY call. The approval carries an owner-signed `isFiat` flag: only
+when it is set may the module pay a positive amount at or below the selected signed
+limit (the early-payment amount while its option is open, otherwise the normal
+maximum); every other approval must pay that limit exactly. The policy attestation
+binds each step's exact amount (`stepAmounts`) and the executor contract checks it. The
+module's daily counters and emitted payment amount record the amount actually
+transferred, and an owner exception is granted for and matched against the signed
+amount. Plan policy and the validator apply the same rule: non-fiat PAY steps equal the
+approved amount, fiat PAY steps are positive and at or below it.
 
 Configuration: fiat requests are enabled only when `TP_FX_SOURCE_ID` and
 `TP_FX_TOLERANCE_BPS` (0..10000) are set (optional `TP_FX_MAX_QUOTE_AGE_SECONDS`,
@@ -317,7 +329,7 @@ AI flags from M09 (e.g. `INSTRUCTION_TEXT`, `EXTRACTION_UNCERTAIN`) use the same
 7. Signer address ∈ the **on-chain** approver set read from the module (`NOT_IN_APPROVER_SET`).
 8. Store the approval (`acknowledged_flag_ids` = ids of acknowledged flags on this revision), transition to Approved, audit event, notification.
 
-`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 13-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
+`services/api/src/treasurypilot_api/invoices/approval.py` builds the exact 14-field EIP-712/domain data from the current normalized request view and module context. The typed-data endpoint checks the request state, linked wallet, and HIGH flag acknowledgments. The approval endpoint rebuilds the data, verifies an EOA signature or checks a linked ERC-1271 wallet, reads the current on-chain approver set, then stores the approval and transitions the request to Approved. The typed-data response carries the current revision in `X-Request-Revision`; the approver signs `message.expiry` as issued, and the approval body returns it (`{signature, revision, expiry}`) so the server rebuilds identical typed data (`APPROVAL_EXPIRY_INVALID` unless `now < expiry <= min(deadline + 14 days, now + approvalMaxAge)`). The request must carry an explicit paying wallet. `Idempotency-Key` is required on approval submissions; its hash is stored with the immutable approval so a matching retry returns the original result.
 
 M1 needs **one** valid Approver signature (M05-D1, BR-007).
 

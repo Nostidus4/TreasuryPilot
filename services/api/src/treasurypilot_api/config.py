@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_api.identity.role_grants import OIDC_ASSIGNABLE_ROLES
 from treasurypilot_core.observability import LogFormat
 
 # services/api/src/treasurypilot_api/config.py -> repository root
@@ -31,6 +32,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     # Signs notification-email unsubscribe links; shared with the egress worker, never the session key.
     email_unsubscribe_key: SecretStr | None = None
+    # Keys subject-erasure receipts (>= 32 bytes); fixed for the life of the receipts.
+    retention_receipt_key: SecretStr | None = None
     redis_url: SecretStr | None = None
     s3_endpoint_url: str | None = Field(
         default=None,
@@ -146,6 +149,14 @@ class Settings(BaseSettings):
                 raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
         return self
 
+    @field_validator("travel_rule_provider_url", "travel_rule_provider_api_key", mode="before")
+    @classmethod
+    def _blank_travel_rule_provider_is_unset(cls, value: object) -> object:
+        # `.env.example` ships these empty; an empty env var must mean "not configured".
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def _validate_travel_rule_provider(self) -> "Settings":
         provider_url = self.travel_rule_provider_url
@@ -186,7 +197,7 @@ class Settings(BaseSettings):
             group_role_map = json.loads(self.scim_group_role_map)
         except json.JSONDecodeError as exc:
             raise ValueError("TP_SCIM_GROUP_ROLE_MAP must be a JSON object") from exc
-        assignable_roles = {"Operator", "Finance", "Auditor"}
+        assignable_roles = OIDC_ASSIGNABLE_ROLES
         if not isinstance(group_role_map, dict) or any(
             not isinstance(group, str)
             or not group.strip()
@@ -252,7 +263,11 @@ class Settings(BaseSettings):
                     raise ValueError(
                         "Travel Rule thresholds require ISO codes and nonnegative integer minor units"
                     )
+                if currency.upper() in normalized_currencies:
+                    raise ValueError("Duplicate Travel Rule currency after normalization")
                 normalized_currencies[currency.upper()] = threshold
+            if jurisdiction.upper() in normalized:
+                raise ValueError("Duplicate Travel Rule jurisdiction after normalization")
             normalized[jurisdiction.upper()] = normalized_currencies
         return json.dumps(normalized, sort_keys=True)
 

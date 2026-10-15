@@ -16,10 +16,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from treasurypilot_api.identity.memberships import (
     LastAdministrator,
     LastOwner,
+    RoleSourceManaged,
     SqlAlchemyMembershipRepository,
 )
 from treasurypilot_api.identity.oidc_repository import OIDCIdentityRepository
-from treasurypilot_api.identity.scim import SqlAlchemyScimIdentityRepository
+from treasurypilot_api.identity.scim import ScimGroupNotAllowed, SqlAlchemyScimIdentityRepository
 
 pytestmark = pytest.mark.skipif(
     "TP_TEST_DATABASE_URL" not in os.environ,
@@ -127,6 +128,8 @@ async def _scenario(database_url: str) -> None:
                 )
 
         repository = SqlAlchemyScimIdentityRepository(sessions)
+        assert await repository.organization_exists(organization_id)
+        assert not await repository.organization_exists(uuid.uuid4())
         # Keep revocation timestamps after the database's transaction-timestamp defaults.
         now += timedelta(seconds=1)
         user = await repository.deactivate_user(
@@ -390,18 +393,20 @@ async def _group_scenario(database_url: str) -> None:
             ["Operator"],
             "active",
         )
+        # Disabling SCIM entirely clears every SCIM group and derived role, and revokes
+        # sessions only for members that lost access.
         await scim_repository.reconcile_group_roles(
             organization_id=None, role_map={}, now=now + timedelta(seconds=1)
         )
         assert (
             await scim_repository.get_group(organization_id=organization_id, group_id=group.id)
-            is not None
+            is None
         )
         assert await membership(manual_user_id) == (
-            ["Finance", "Operator"],
+            ["Finance"],
             ["Finance"],
             [],
-            ["Operator"],
+            [],
             "active",
         )
         async with sessions() as session:
@@ -409,7 +414,22 @@ async def _group_scenario(database_url: str) -> None:
                 text("SELECT revoked_at FROM sessions WHERE id = :id"),
                 {"id": scoped_session_id},
             )
-        assert no_config_revoked_at is None
+        assert no_config_revoked_at is None  # the manual grant keeps access, so sessions stay
+        group = await scim_repository.create_group(
+            organization_id=organization_id,
+            display_name="Operators",
+            member_ids=(),
+            role_map=role_map,
+            now=now + timedelta(seconds=1),
+        )
+        await scim_repository.patch_group_members(
+            organization_id=organization_id,
+            group_id=group.id,
+            add_member_ids=(manual_user_id, scim_only_user_id, oidc_user.id),
+            remove_member_ids=(),
+            role_map=role_map,
+            now=now + timedelta(seconds=1),
+        )
 
         other_group = await scim_repository.create_group(
             organization_id=other_organization_id,
@@ -549,15 +569,6 @@ async def _group_scenario(database_url: str) -> None:
             role_map=finance_group_map,
             now=now + timedelta(seconds=4),
         )
-        await scim_repository.reconcile_group_roles(
-            organization_id=None, role_map={}, now=now + timedelta(seconds=5)
-        )
-        assert (
-            await scim_repository.get_group(
-                organization_id=organization_id, group_id=finance_group.id
-            )
-            is not None
-        )
         assert await membership(manual_user_id) == (
             ["Finance"],
             ["Finance"],
@@ -566,7 +577,7 @@ async def _group_scenario(database_url: str) -> None:
             "active",
         )
 
-        # An explicitly configured empty allowlist revokes groups only for this tenant.
+        # An explicitly configured empty allowlist revokes this tenant's groups.
         # The manual Finance role keeps effective access unchanged, but group removal is audited.
         await scim_repository.reconcile_group_roles(
             organization_id=organization_id, role_map={}, now=now + timedelta(seconds=6)
@@ -660,9 +671,11 @@ async def _assert_legacy_role_sources_are_scoped(database_url: str) -> None:
     now = datetime.now(UTC) + timedelta(seconds=1)
     try:
         oidc_repository = OIDCIdentityRepository(sessions)
-        # Editing a migrated membership must not freeze the migration's temporary
-        # all-manual attribution before configured-tenant OIDC sync can classify it.
-        edited_member = await SqlAlchemyMembershipRepository(sessions).update_member(
+        # Editing a migrated membership first classifies its legacy roles for the OIDC
+        # tenant; the roles the admin submits then become explicit manual grants.
+        edited_member = await SqlAlchemyMembershipRepository(
+            sessions, oidc_organization_id=primary_org_id
+        ).update_member(
             org_id=primary_org_id,
             user_id=user_id,
             roles=("Finance", "Owner"),
@@ -710,8 +723,8 @@ async def _assert_legacy_role_sources_are_scoped(database_url: str) -> None:
         assert tuple(
             list(value) if index < 3 else value for index, value in enumerate(primary)
         ) == (
-            ["Owner"],
-            ["Owner"],
+            ["Finance", "Owner"],
+            ["Finance", "Owner"],
             [],
             True,
             "active",
@@ -778,7 +791,7 @@ async def _assert_legacy_role_sources_are_scoped(database_url: str) -> None:
 def test_migration_and_oidc_role_initialization_are_organization_scoped() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
     config = _alembic_config(database_url)
-    command.upgrade(config, "20261015_0054")
+    command.upgrade(config, "20261015_0058")
     try:
         asyncio.run(_insert_pre_source_roles(database_url))
         command.upgrade(config, "head")
@@ -825,6 +838,129 @@ def test_migration_downgrade_refuses_active_scim_role_grants() -> None:
 
         asyncio.run(_seed_active_scim_role())
         with pytest.raises(DBAPIError, match="clear all SCIM role grants"):
-            command.downgrade(config, "20261015_0054")
+            command.downgrade(config, "20261015_0058")
+    finally:
+        _downgrade_test_schema(config, database_url)
+
+
+async def _review_scenario(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    org_id, admin_id, member_id, other_id = (uuid.uuid4() for _ in range(4))
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("INSERT INTO organizations (id, name) VALUES (:id, 'Review')"), {"id": org_id}
+            )
+            for user_id, email, roles in (
+                (admin_id, "admin@example.com", ["Owner", "OrgAdmin"]),
+                (member_id, "member@example.com", ["Finance"]),
+                (other_id, "other@example.com", ["Operator"]),
+            ):
+                await connection.execute(
+                    text("INSERT INTO users (id, email) VALUES (:id, :email)"),
+                    {"id": user_id, "email": email},
+                )
+                await connection.execute(
+                    text(
+                        "INSERT INTO memberships (id, org_id, user_id, roles) "
+                        "VALUES (gen_random_uuid(), :org, :user, :roles)"
+                    ),
+                    {"org": org_id, "user": user_id, "roles": roles},
+                )
+
+        async def sources(user_id: uuid.UUID) -> tuple[list[str], list[str], list[str], bool]:
+            async with sessions() as session:
+                row = (
+                    await session.execute(
+                        text(
+                            "SELECT roles, manual_roles, scim_roles, role_sources_initialized "
+                            "FROM memberships WHERE org_id = :org AND user_id = :user"
+                        ),
+                        {"org": org_id, "user": user_id},
+                    )
+                ).one()
+            return list(row[0]), list(row[1]), list(row[2]), row[3]
+
+        scim = SqlAlchemyScimIdentityRepository(sessions)
+        members = SqlAlchemyMembershipRepository(sessions)
+        role_map = {"Ops": ("Operator",)}
+        group = await scim.create_group(
+            organization_id=org_id,
+            display_name="Ops",
+            member_ids=(member_id,),
+            role_map=role_map,
+            now=now,
+        )
+        assert await sources(member_id) == (
+            ["Finance", "Operator"],
+            ["Finance"],
+            ["Operator"],
+            True,
+        )
+
+        # An admin edit that drops a SCIM-granted role is refused; keeping it records
+        # the role as an explicit grant that outlives the SCIM assignment.
+        with pytest.raises(RoleSourceManaged):
+            await members.update_member(
+                org_id=org_id, user_id=member_id, roles=("Finance",), updated_by=admin_id
+            )
+        await members.update_member(
+            org_id=org_id, user_id=member_id, roles=("Finance", "Operator"), updated_by=admin_id
+        )
+        assert (await sources(member_id))[1] == ["Finance", "Operator"]
+
+        # Editing a legacy membership initializes its role sources first.
+        assert (await sources(other_id))[3] is False
+        await members.update_member(
+            org_id=org_id, user_id=other_id, roles=("Operator", "Auditor"), updated_by=admin_id
+        )
+        assert await sources(other_id) == (
+            ["Auditor", "Operator"],
+            ["Auditor", "Operator"],
+            [],
+            True,
+        )
+
+        # Adding and removing the same user nets out to "stays a member".
+        record = await scim.patch_group_members(
+            organization_id=org_id,
+            group_id=group.id,
+            add_member_ids=(member_id, other_id),
+            remove_member_ids=(member_id,),
+            role_map=role_map,
+            now=now,
+        )
+        assert record is not None and set(record.member_ids) == {member_id, other_id}
+
+        # A group outside the allowlist cannot be deleted through the repository.
+        with pytest.raises(ScimGroupNotAllowed):
+            await scim.delete_group(organization_id=org_id, group_id=group.id, role_map={}, now=now)
+
+        # Widening the mapping recomputes members of groups that remain allowed.
+        await scim.reconcile_group_roles(
+            organization_id=org_id, role_map={"Ops": ("Operator", "Auditor")}, now=now
+        )
+        assert (await sources(other_id))[2] == ["Auditor", "Operator"]
+
+        # Disabling SCIM clears every group and derived role.
+        await scim.reconcile_group_roles(organization_id=None, role_map={}, now=now)
+        assert await scim.get_group(organization_id=org_id, group_id=group.id) is None
+        assert (await sources(other_id))[2] == []
+        total, _ = await scim.list_groups(
+            organization_id=org_id, display_name=None, start_index=1, count=10
+        )
+        assert total == 0
+    finally:
+        await engine.dispose()
+
+
+def test_scim_review_fixes_on_postgres() -> None:
+    database_url = os.environ["TP_TEST_DATABASE_URL"]
+    config = _alembic_config(database_url)
+    command.upgrade(config, "head")
+    try:
+        asyncio.run(_review_scenario(database_url))
     finally:
         _downgrade_test_schema(config, database_url)

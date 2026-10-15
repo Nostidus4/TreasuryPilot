@@ -1,6 +1,6 @@
 """Add allowlisted SCIM groups and membership role-source grants.
 
-Revision ID: 20261015_0055
+Revision ID: 20261015_0059
 Revises: 20261015_0054
 Create Date: 2026-10-15 00:00:00
 """
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0055"
-down_revision: str | None = "20261015_0054"
+revision: str = "20261015_0059"
+down_revision: str | None = "20261015_0058"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -142,13 +142,13 @@ def downgrade() -> None:
             IF EXISTS (
                 SELECT 1 FROM memberships WHERE cardinality(scim_roles) > 0
             ) THEN
-                RAISE EXCEPTION 'clear all SCIM role grants before downgrading revision 20261015_0055';
+                RAISE EXCEPTION 'clear all SCIM role grants before downgrading revision 20261015_0059';
             END IF;
             IF EXISTS (
                 SELECT 1 FROM memberships
                 WHERE cardinality(roles) = 0 AND status = 'suspended'
             ) THEN
-                RAISE EXCEPTION 'restore a role grant before downgrading revision 20261015_0055';
+                RAISE EXCEPTION 'restore a role grant before downgrading revision 20261015_0059';
             END IF;
         END;
         $scim_groups_downgrade$

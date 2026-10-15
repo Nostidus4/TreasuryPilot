@@ -23,6 +23,10 @@
         "type": "bytes32[]"
       },
       {
+        "name": "stepAmounts",
+        "type": "uint256[]"
+      },
+      {
         "name": "policyVersion",
         "type": "bytes32"
       },
@@ -51,16 +55,20 @@
       "0xbd5e8aec576cded71fa9cd80c51add04bac247399e644dbf5560bebd9a9a0dea",
       "0xfdb3898afa654624f9aeb76cbd245e83fa0757b62486f8c23c12ebba9de828b4"
     ],
+    "stepAmounts": [
+      "90000000",
+      "75000000"
+    ],
     "policyVersion": "0x13c79f7f07a5767ec3ff738d1f6356b537a66c4df34031b82afb23388c29bc45",
     "executor": "0x22223333444455556666777788889999aaaabbbb",
     "validUntil": 1800000900,
     "nonce": "340282366920938463463374607431768211455",
     "evidenceDigest": "0xa35bb791cca35a96b14f5f74b6df1344134bb51c29abde414c1adb496f076b21"
   },
-  "typeHash": "0xc66df038ccb78e5a23ea91d7b374b2b434c89af3c0603a92618692f142a6027f",
-  "structHash": "0xe729e9a46c00172d1373dda88d822481809fec475537687e7e941718c74450cc",
+  "typeHash": "0xa709954e9ef6f9a8c3941b149ba134deeffbcaa3288e3c04d33b8ed5e0c9ddfc",
+  "structHash": "0x1b9588e65c5e6741a994e60704d291d3ce351ea8822864856656cc527ebd488b",
   "domainSeparator": "0x3763e8b9148ffe1e30e842db2f09d53fe2513f05f5cd6be4b76dda3aa752f123",
-  "digest": "0x6d67d495dc63e12d1135033ddbfeca9dfbee05b949694242255d84f754f7629f",
+  "digest": "0xed31a71ed66a61e91e58145d2f44e3801dfa9b55fecf4ba95bf38216eaba50ae",
   "signer": "0xF1F6619B38A98d6De0800F1DefC0a6399eB6d30C",
-  "signature": "0x42cf47a9c000225e73fbb5d002f6d555999ef0452e8a7df4365c996844b59c0367f9c8b45cbdc8e42edbf0a46fd4fc92110be68c1f8453aa7d2c99263d1ce8381c"
+  "signature": "0x2036b4a6ec7119d905631f5f703a7ec6fe16a067a8e093738a025cb41939fbf12f49191464d5a73e8c9db1e0e4f00497a31643afe736d54fa49dce9f3c536b151c"
 }

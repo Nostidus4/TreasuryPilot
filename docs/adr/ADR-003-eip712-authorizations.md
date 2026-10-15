@@ -9,14 +9,14 @@ Human authority (approve, grant exception) and system authority (validated plan)
 
 ## Original decision
 
-The current PaymentApproval has 13 fields per ADR-019. Signer-side
+The current PaymentApproval has 14 fields (ADR-019 plus the signed `isFiat` flag). Signer-side
 PlanAttestation uses the separate `TreasuryPilot Policy` domain defined in M08
 section 6.3; SC-017 publishes vectors for it. The original signatures below are
 historical, including the superseded on-chain exception and duplicate flag.
 Three typed structs, each under the domain `{name: "TreasuryPilot", version: "1", chainId, verifyingContract: module}`:
 - `PaymentApproval{requestId, invoiceHash, fingerprint, treasury, payingWallet, asset, payee, amount, deadline, termsHash, overrideDuplicate, expiry}`. Signed by an Approver; verified on-chain.
 - `OneTimeException{requestId, mandateVersion, payingWallet, payee, asset, amount, expiry, nonce}`. Signed by the Owner; verified on-chain, consumed once.
-- `PlanAttestation{planHash, requestId, stepIds[], policyVersion, executor, validUntil, nonce, evidenceDigest}`. Signed by the policy-engine key; verified by the signer service in M1, and on-chain by `PlanAttestedExecutor` (SC-L04, opt-in).
+- `PlanAttestation{planHash, requestId, stepIds[], stepAmounts[], policyVersion, executor, validUntil, nonce, evidenceDigest}`. Signed by the policy-engine key; verified by the signer service in M1, and on-chain by `PlanAttestedExecutor` (SC-L04, opt-in).
 
 ERC-1271 is supported for contract-wallet signers. Nonces and used-flags provide replay protection, because EIP-712 alone does not (GA p.22).
 

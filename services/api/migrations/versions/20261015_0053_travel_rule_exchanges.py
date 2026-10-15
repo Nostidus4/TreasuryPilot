@@ -1,7 +1,7 @@
 """Persist Travel Rule exchanges and encrypted party data.
 
-Revision ID: 20261015_0052
-Revises: 20261015_0051
+Revision ID: 20261015_0053
+Revises: 20261015_0052
 """
 
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261015_0052"
-down_revision: str | None = "20261015_0051"
+revision: str = "20261015_0053"
+down_revision: str | None = "20261015_0052"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -25,6 +25,7 @@ def upgrade() -> None:
         sa.Column("provider", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("amount", sa.Numeric(precision=78, scale=0), nullable=False),
+        sa.Column("threshold", sa.Numeric(precision=78, scale=0), nullable=True),
         sa.Column("currency", sa.String(length=3), nullable=False),
         sa.Column("origin_jurisdiction", sa.String(length=2), nullable=False),
         sa.Column("beneficiary_jurisdiction", sa.String(length=2), nullable=False),
@@ -45,7 +46,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'ERROR')",
+            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'NOT_REQUIRED', 'ERROR')",
             name="ck_travel_rule_exchanges_status",
         ),
         sa.CheckConstraint("amount > 0", name="ck_travel_rule_exchanges_amount"),

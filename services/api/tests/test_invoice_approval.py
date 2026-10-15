@@ -22,6 +22,7 @@ def _request(**overrides: object) -> RequestView:
         "paying_wallet": WALLET,
         "payee": PAYEE,
         "amount": 100_000,
+        "fiat_amount_minor_units": None,
         "early_amount": 95_000,
         "early_pay_by": 1_800_000_000,
         "deadline": 1_800_100_000,
@@ -64,6 +65,7 @@ def test_builds_exact_contract_typed_data_and_caps_expiry() -> None:
         "deadline": 1_800_100_000,
         "termsHash": "0x" + "04" * 32,
         "expiry": 1_801_309_600,
+        "isFiat": False,
     }
 
 

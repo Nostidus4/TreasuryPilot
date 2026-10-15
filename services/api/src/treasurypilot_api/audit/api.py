@@ -18,6 +18,7 @@ from treasurypilot_api.audit.evidence import (
     EvidenceForbidden,
     EvidenceNotFound,
     EvidenceRepository,
+    EvidenceUnavailable,
 )
 from treasurypilot_api.audit.models import AuditHead, AuditLog
 from treasurypilot_api.audit.writer import AuditHeadMissing
@@ -302,6 +303,14 @@ async def get_request_evidence(
             title="Forbidden",
             detail="An organization role with access to financial evidence is required.",
         ) from None
+    except EvidenceUnavailable:
+        raise AuthFailure(
+            status=503,
+            code="EVIDENCE_UNAVAILABLE",
+            title="Evidence export unavailable",
+            detail="Chain verification is temporarily unavailable; retry later.",
+            retry_after=30,
+        ) from None
     except EvidenceBundleInvalid as exc:
         raise AuthFailure(
             status=409,
@@ -309,4 +318,5 @@ async def get_request_evidence(
             title="Evidence bundle is invalid",
             detail="The bundle failed an integrity check (e.g. an unresolved transaction hash); "
             "it was withheld.",
+            extensions={"evidenceStatus": "INVALID"},
         ) from exc

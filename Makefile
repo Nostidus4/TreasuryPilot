@@ -15,7 +15,7 @@ export COREPACK_HOME
 .DEFAULT_GOAL := help
 
 .PHONY: help bootstrap check-env dev infra down logs ps smoke openapi config-check web-dev \
-	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local
+	test test-python test-web test-contracts lint lint-python lint-web lint-contracts slither format deploy-local verify-sepolia
 
 help:
 	@echo "TreasuryPilot developer commands"
@@ -29,6 +29,7 @@ help:
 	@echo "  make web-dev         Start the Vite development server"
 	@echo "  make test            Run Python, web and contract tests"
 	@echo "  make deploy-local    Deploy demo Safes and TreasuryPilot to a fresh Anvil chain"
+	@echo "  make verify-sepolia  Verify the published Sepolia implementation, factory and tUSDC on Etherscan"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
@@ -86,6 +87,9 @@ test-contracts:
 
 deploy-local:
 	infra/scripts/deploy-local.sh
+
+verify-sepolia:
+	uv run python infra/scripts/verify_sepolia_contracts.py
 
 lint: lint-python lint-web lint-contracts
 

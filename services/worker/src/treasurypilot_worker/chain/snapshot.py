@@ -23,6 +23,7 @@ from treasurypilot_worker.chain.rpc import (
     RpcClient,
     RpcError,
     build_rpc_client,
+    decode_rpc_urls,
 )
 from treasurypilot_worker.locks import create_worker_pool
 
@@ -527,11 +528,7 @@ async def take_snapshot(
         safe_t=sources[0],
         operational=tuple(_hex(w["safe_address"]) for w in wallets if w["role"] != "SOURCE"),
     )
-    rpc = reader_factory(
-        json.loads(treasury["rpc_urls"])
-        if isinstance(treasury["rpc_urls"], str)
-        else treasury["rpc_urls"]
-    )
+    rpc = reader_factory(decode_rpc_urls(treasury["rpc_urls"]))
     snapshot = await read_snapshot(
         rpc, target, purpose, scope, block=block, coverage=treasury["coverage"]
     )
