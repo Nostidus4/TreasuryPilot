@@ -101,3 +101,7 @@ Do not enable the `local` or `ci` profiles; anvil is not needed. `worker` and `s
 ## Money
 
 Amounts are integers in base units everywhere (ADR-014). Never use floats for money.
+
+## Seeding the demo dataset
+
+With `make dev` running and Foundry installed, `make seed` deploys the contracts and three Safes to Anvil (re-using the Compose Anvil), then runs `infra/scripts/seed_local.py`. It inserts one TEST organization with four users, a Ready treasury, an active mandate, a guardian setup with sentinel, an accepted fee policy, three payees (one still cooling) and five invoices, then prints addresses and login links. Re-running leaves one dataset. The script writes `deployments/local/` (git-ignored); start the API with the `TP_PLATFORM_CHAIN_CONFIG_PATH` and `TP_DEPLOYMENTS_DIR` values it prints so the local chain stays enabled.

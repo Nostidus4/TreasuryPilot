@@ -3,14 +3,21 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 anvil_log="$(mktemp)"
-anvil --silent --chain-id 31337 --port 8545 >"$anvil_log" 2>&1 &
-anvil_pid=$!
+anvil_pid=""
 cleanup() {
-  kill "$anvil_pid" 2>/dev/null || true
-  wait "$anvil_pid" 2>/dev/null || true
+  if [[ -n "$anvil_pid" ]]; then
+    kill "$anvil_pid" 2>/dev/null || true
+    wait "$anvil_pid" 2>/dev/null || true
+  fi
   rm -f "$anvil_log"
 }
 trap cleanup EXIT
+
+# Reuse the Compose Anvil (make dev/infra) when it is already up; deployments are CREATE2-idempotent.
+if ! cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+  anvil --silent --chain-id 31337 --port 8545 >"$anvil_log" 2>&1 &
+  anvil_pid=$!
+fi
 
 ready=false
 for _ in $(seq 1 40); do

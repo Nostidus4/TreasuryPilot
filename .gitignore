@@ -39,3 +39,4 @@ infra/env/.env
 # Playwright
 test-results/
 playwright-report/
+deployments/local/
