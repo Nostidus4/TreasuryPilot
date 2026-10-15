@@ -53,9 +53,10 @@ class FakeSigner:
         if self.fail_with is not None:
             raise self.fail_with
         key = request["plan"]["steps"][request["stepSeq"]]["stepId"].removeprefix("0x")
+        # Hash from the whole step id: a 1-byte hash collided across tests (ON CONFLICT DO NOTHING).
         reply = self.signed.setdefault(
             key,
-            {"txHash": "0x" + key[:2] * 32, "nonce": len(self.signed), "from": "0x" + "ab" * 20},
+            {"txHash": "0x" + key, "nonce": len(self.signed), "from": "0x" + "ab" * 20},
         )
         if self.crash_after_reply:
             raise Crash
