@@ -62,8 +62,8 @@ Reconciliation: `NotReady` (request not Paid) → `Pending` (Paid; lines built) 
 | POST | `/orgs/{o}/reconciliations/{id}/match` | FIN | `{note?}` → `{status: Matched}` | 409 `EVIDENCE_INCOMPLETE{missing}`, `NOT_FINALIZED` |
 | POST | `/orgs/{o}/reconciliations/{id}/discrepancy` | FIN | `{note}` → `{status: Discrepancy}` | |
 | POST | `/orgs/{o}/reconciliations/{id}/resolve` | FIN + OWN ack | `{note}` → `{status: Matched}` | |
-| POST | `/orgs/{o}/exports` | FIN | `{from, to, format}` → `202 {exportId}` | |
-| GET | `/orgs/{o}/exports/{id}` | FIN | → signed URL | |
+| POST | `/orgs/{o}/exports` | FIN, ADM | `{from, to, format}` → `202 {exportId}` | |
+| GET | `/orgs/{o}/exports/{id}` | FIN, ADM | → signed URL | |
 | GET/PUT | `/orgs/{o}/account-mappings` | FIN, ADM | mapping table | |
 
 Internal: `verify(operation_id)` (called by M10 before the next step), `build_reconciliation(request_id)`, `publish_receipt(request_id)`.
@@ -167,3 +167,13 @@ SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ len
 - Each verifier call makes one read attempt. The sequencer opens the INFRA review on the 3rd UNKNOWN newer than the operation's last PASSED/DISCREPANCY and the request's last resolved `VERIFICATION_UNKNOWN` review.
 - One PASSED/DISCREPANCY per operation (partial unique index), so concurrent verifiers raise one breaker signal.
 - `chain_safety_signals.observed_event_id` and `token_movement_id` are nullable now; a check constraint requires either both or a `verification_id`.
+
+## Export implementation notes (REC-004, #158)
+
+- **M1 ships a synchronous `GET /v1/orgs/{o}/reconciliation/export?from=&to=&format=csv|journal`** that streams the CSV in the response. The async `POST /exports` -> `202`, signed URL, `exports` table and stored sha256 flow are deferred.
+- **Roles:** Finance and OrgAdmin only (Owner and Operator get 403). The spec's export rows above are aligned to FIN, ADM.
+- **Period:** inclusive UTC days, `to` must not precede `from` (422 `EXPORT_PERIOD_INVALID`), at most 366 days (422 `EXPORT_PERIOD_TOO_LONG`).
+- **Totals check (M11-D7):** per (class, asset), the integer sum of exported lines is compared with an independent aggregate over the source rows: `SUM(plan_steps.amount)` of Confirmed operations with Confirmed transactions (by `confirmed_at` UTC day) for non-FEE classes, and `SUM(gas_ledger.fee_wei)` by `gas_ledger.day` for FEE, both limited to requests that have a reconciliation. A difference returns 409 `EXPORT_TOTALS_MISMATCH` listing `(class, asset, expected, exported)`. An ERC-20 without an `assets` row returns 409 `EXPORT_ASSET_UNKNOWN`.
+- **Fee column (`fee (ETH)`):** the tx fee in ETH, repeated on every non-FEE line of the same transaction. It is blank on FEE lines, whose `amount` already is the fee. Do not sum the column.
+- Unmatched (Pending) and other-status reconciliations are included with their status.
+- Follow-ups: per-org `account_mappings` (generic mapping only for now), supply interest in exports, async export with sha256.

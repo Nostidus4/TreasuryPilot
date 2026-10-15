@@ -8,10 +8,9 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.execution.models import Transaction
@@ -25,6 +24,7 @@ from treasurypilot_api.treasury.models import Asset
 from treasurypilot_core.money import BaseUnits
 
 ETH_DECIMALS = 18
+MAX_PERIOD_DAYS = 366
 
 # Generic default mapping (M11-D6): class -> (debit, credit) as (code, name).
 # shortcut: per-org account_mappings table and PUT endpoint not built, add with exports persistence.
@@ -64,7 +64,18 @@ JOURNAL_HEADER = (
 
 
 class ExportTotalsMismatch(Exception):
-    """Exported class totals differ from the on-chain amounts (M11-D7)."""
+    """Exported class totals differ from the independent on-chain totals (M11-D7)."""
+
+    def __init__(self, diffs: list[tuple[str, str, int, int]]) -> None:
+        self.diffs = diffs  # (class, asset, expected, exported)
+        super().__init__(
+            "export totals differ from on-chain totals: "
+            + "; ".join(f"{c}/{a} expected {e} exported {x}" for c, a, e, x in diffs)
+        )
+
+
+class ExportAssetUnknown(Exception):
+    """A line's ERC-20 has no assets row, so its decimals cannot be known."""
 
 
 @dataclass(frozen=True)
@@ -86,27 +97,29 @@ class ExportLine:
 def neutralize(value: object) -> str:
     """Prefix formula-leading cells with an apostrophe (FR-307)."""
     text = str(value)
-    return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r")) else text
+    return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r", "\n")) else text
 
 
 def _dec(amount: int, decimals: int) -> str:
     return BaseUnits(amount).format(decimals)
 
 
-def _check_totals(lines: list[ExportLine], rendered: list[tuple[ExportLine, str]]) -> None:
-    onchain: dict[tuple[str, str], int] = defaultdict(int)
+def _check_totals(lines: list[ExportLine], expected: dict[tuple[str, str], int]) -> None:
     exported: dict[tuple[str, str], int] = defaultdict(int)
-    for line, text in rendered:
-        key = (line.classification, line.asset)
-        onchain[key] += line.amount
-        exported[key] += int(Decimal(text).scaleb(line.decimals))
-    if onchain != exported or len(rendered) != len(lines):
-        raise ExportTotalsMismatch("export totals differ from on-chain totals")
+    for line in lines:
+        exported[(line.classification, line.asset)] += line.amount
+    diffs = [
+        (c, a, expected.get((c, a), 0), exported.get((c, a), 0))
+        for c, a in sorted(expected.keys() | exported.keys())
+        if expected.get((c, a), 0) != exported.get((c, a), 0)
+    ]
+    if diffs:
+        raise ExportTotalsMismatch(diffs)
 
 
-def render(lines: list[ExportLine], fmt: str) -> str:
+def render(lines: list[ExportLine], fmt: str, expected: dict[tuple[str, str], int]) -> str:
+    _check_totals(lines, expected)
     rendered = [(line, _dec(line.amount, line.decimals)) for line in lines]
-    _check_totals(lines, rendered)
     out = io.StringIO(newline="")
     writer = csv.writer(out, lineterminator="\r\n")
     if fmt == "journal":
@@ -124,7 +137,12 @@ def render(lines: list[ExportLine], fmt: str) -> str:
     else:
         writer.writerow(CSV_HEADER)
         for line, amount in rendered:
-            fee = "" if line.fee_wei is None else _dec(line.fee_wei, ETH_DECIMALS)
+            # FEE lines already carry the fee as their amount; other lines repeat their tx's fee.
+            fee = (
+                ""
+                if line.fee_wei is None or line.classification == "FEE"
+                else _dec(line.fee_wei, ETH_DECIMALS)
+            )
             cells = (
                 line.day.isoformat() if line.day else "",
                 line.request_id,
@@ -142,9 +160,37 @@ def render(lines: list[ExportLine], fmt: str) -> str:
     return out.getvalue()
 
 
+# Independent of reconciliation_lines: sums the source rows (plan steps / gas ledger) of the
+# requests that have a reconciliation. The CASE mirrors worker reconcile/build.py.
+_EXPECTED_SQL = text(
+    """
+SELECT cls, chain_id, asset_address, SUM(amt)::text AS total FROM (
+    SELECT CASE o.kind WHEN 'REFILL' THEN 'INTERNAL_TRANSFER' WHEN 'SWAP' THEN 'CONVERSION'
+            WHEN 'PAY' THEN 'EXTERNAL_EXPENSE' ELSE 'LENDING_TRANSFER' END AS cls,
+        ps.chain_id, ps.asset_address, ps.amount AS amt
+    FROM operations o
+    JOIN plan_steps ps ON ps.id = o.plan_step_id
+    JOIN transactions t ON t.operation_id = o.id AND t.status = 'Confirmed'
+    JOIN reconciliations r ON r.request_id = o.request_id
+    WHERE o.status = 'Confirmed' AND r.org_id = :org
+        AND (t.confirmed_at AT TIME ZONE 'UTC')::date BETWEEN :start AND :end
+    UNION ALL
+    SELECT 'FEE', t.chain_id, NULL, g.fee_wei
+    FROM gas_ledger g
+    JOIN transactions t ON t.id = g.transaction_id
+    JOIN operations o ON o.id = t.operation_id
+    JOIN reconciliations r ON r.request_id = o.request_id
+    WHERE r.org_id = :org AND g.day BETWEEN :start AND :end
+) x GROUP BY cls, chain_id, asset_address
+"""
+)
+
+
 async def load_lines(
     session: AsyncSession, org_id: uuid.UUID, start: date, end: date
-) -> list[ExportLine]:
+) -> tuple[list[ExportLine], dict[tuple[str, str], int]]:
+    """The period's lines and the independent expected total per (class, asset symbol)."""
+
     rows = await session.execute(
         select(ReconciliationLine, Reconciliation, PaymentRequest, Vendor.name, Transaction.fee_wei)
         .join(Reconciliation, Reconciliation.id == ReconciliationLine.reconciliation_id)
@@ -159,23 +205,27 @@ async def load_lines(
         .order_by(ReconciliationLine.day, ReconciliationLine.block_number, ReconciliationLine.id)
     )
     assets: dict[tuple[int, bytes | None], tuple[str, int]] = {}
-    lines: list[ExportLine] = []
-    for line, rec, req, vendor, fee_wei in rows.all():
-        key = (req.chain_id, line.asset_address)
+
+    async def resolve(chain_id: int, address: bytes | None) -> tuple[str, int]:
+        key = (chain_id, address)
         if key not in assets:
-            # Native (NULL address) is ETH; unknown ERC-20 aborts rather than guessing decimals.
             asset = await session.scalar(
-                select(Asset).where(Asset.chain_id == key[0], Asset.address == key[1])
-                if key[1] is not None
-                else select(Asset).where(Asset.chain_id == key[0], Asset.is_native.is_(True))
+                select(Asset).where(Asset.chain_id == chain_id, Asset.address == address)
+                if address is not None
+                else select(Asset).where(Asset.chain_id == chain_id, Asset.is_native.is_(True))
             )
             if asset is not None:
                 assets[key] = (asset.symbol, asset.decimals)
-            elif key[1] is None:
+            elif address is None:
+                # shortcut: assume ETH/18 when the chain has no native assets row, seed one to drop this.
                 assets[key] = ("ETH", ETH_DECIMALS)
             else:
-                raise ExportTotalsMismatch("unknown asset for " + key[1].hex())
-        symbol, decimals = assets[key]
+                raise ExportAssetUnknown("unknown asset " + address.hex())
+        return assets[key]
+
+    lines: list[ExportLine] = []
+    for line, rec, req, vendor, fee_wei in rows.all():
+        symbol, decimals = await resolve(req.chain_id, line.asset_address)
         lines.append(
             ExportLine(
                 day=line.day,
@@ -192,7 +242,11 @@ async def load_lines(
                 matched_by=rec.matched_by or "",
             )
         )
-    return lines
+    expected: dict[tuple[str, str], int] = defaultdict(int)
+    for row in await session.execute(_EXPECTED_SQL, {"org": org_id, "start": start, "end": end}):
+        symbol, _ = await resolve(row.chain_id, row.asset_address)
+        expected[(row.cls, symbol)] += int(row.total)
+    return lines, dict(expected)
 
 
 router = APIRouter(prefix="/v1/orgs/{organization_id}/reconciliation", tags=["reconciliation"])
@@ -220,6 +274,13 @@ async def export_reconciliation(
             title="Invalid period",
             detail="'to' must not precede 'from'.",
         )
+    if (period_to - period_from).days + 1 > MAX_PERIOD_DAYS:
+        raise AuthFailure(
+            status=422,
+            code="EXPORT_PERIOD_TOO_LONG",
+            title="Period too long",
+            detail=f"The period must not exceed {MAX_PERIOD_DAYS} days.",
+        )
     factory: async_sessionmaker[AsyncSession] | None = getattr(
         request.app.state, "request_sessions", None
     )
@@ -230,18 +291,32 @@ async def export_reconciliation(
             title="Requests unavailable",
             detail="Request storage is not configured.",
         )
-    async with factory() as session:
-        lines = await load_lines(session, member.organization_id, period_from, period_to)
     try:
-        body = render(lines, export_format)
+        async with factory() as session:
+            lines, expected = await load_lines(
+                session, member.organization_id, period_from, period_to
+            )
+        body = render(lines, export_format, expected)
+    except ExportAssetUnknown as exc:
+        raise AuthFailure(
+            status=409, code="EXPORT_ASSET_UNKNOWN", title="Export aborted", detail=str(exc)
+        ) from exc
     except ExportTotalsMismatch as exc:
         raise AuthFailure(
-            status=409, code="EXPORT_TOTALS_MISMATCH", title="Export aborted", detail=str(exc)
+            status=409,
+            code="EXPORT_TOTALS_MISMATCH",
+            title="Export aborted",
+            detail=str(exc),
+            extensions={
+                "differences": [
+                    {"class": c, "asset": a, "expected": str(e), "exported": str(x)}
+                    for c, a, e, x in exc.diffs
+                ]
+            },
         ) from exc
+    name = f"reconciliation-{period_from}-{period_to}-{export_format}.csv"
     return Response(
         body,
         media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="reconciliation-{export_format}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
