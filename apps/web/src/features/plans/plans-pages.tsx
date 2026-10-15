@@ -457,15 +457,6 @@ export function PlanDetailPage() {
                 </Alert>
               )}
 
-              {data.steps.length < data.stepCount && (
-                <Alert tone="warning" title={t('Execution details incomplete')}>
-                  {t(
-                    'Live execution records are available for {{recorded}} of {{total}} signed steps. Steps without operation records cannot be shown yet.',
-                    { recorded: data.steps.length, total: data.stepCount },
-                  )}
-                </Alert>
-              )}
-
               <Card>
                 <CardHeader
                   title={t('Steps')}

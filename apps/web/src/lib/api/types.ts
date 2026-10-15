@@ -360,7 +360,7 @@ export interface TypedData {
   };
   types: Record<string, Array<{ name: string; type: string }>>;
   primaryType: string;
-  message: Record<string, string | number>;
+  message: Record<string, string | number | boolean>;
 }
 
 export interface TxCall {

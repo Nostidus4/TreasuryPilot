@@ -28,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from web3 import AsyncHTTPProvider
 
+from treasurypilot_core.ids import uuid7
 from treasurypilot_worker.chain.event_handlers import HandlerRegistry, IndexedEvent
 from treasurypilot_worker.chain.events import EVENTS, MODULE, SAFE_EXEC
 from treasurypilot_worker.chain.indexer import index_events
@@ -39,6 +40,7 @@ CHAIN_ID = 31337
 SENDER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 MODULE_ADDR = "0x" + "aa" * 20
 SAFE_ADDR = "0x" + "bb" * 20
+OPERATIONAL_ADDR = "0x" + "dd" * 20
 OTHER_ADDR = "0x" + "cc" * 20
 PAYEE_ADDR = "0x" + "22" * 20
 OTHER_PAYEE_ADDR = "0x" + "23" * 20
@@ -46,10 +48,13 @@ REQUEST_ID = bytes.fromhex("07" * 32)
 SAFE_TX_HASH = bytes.fromhex("5a" * 32)
 IMPLEMENTATION = "0x" + "e1" * 20
 FALLBACK = "0x" + "e2" * 20
+ATOKEN_ADDR = "0x" + "e3" * 20
 GUARD = "0x" + "99" * 20
 _ID = "00000000-0000-7000-8000-0000000000{:02d}"
 ORG, ASSET, TREASURY, VENDOR, PAYEE, OTHER_PAYEE = (_ID.format(n) for n in (10, 30, 40, 50, 60, 61))
-REQUEST, USER, WALLET, EXCEPTION, GOVERNANCE = (_ID.format(n) for n in (70, 71, 72, 73, 74))
+REQUEST, USER, WALLET, EXCEPTION, GOVERNANCE, WALLET_O1 = (
+    _ID.format(n) for n in (70, 71, 72, 73, 74, 75)
+)
 
 
 def _rpc(url: str, method: str, params: Sequence[object] = ()) -> Any:
@@ -154,6 +159,10 @@ async def _seed(database_url: str) -> None:
         f"safe_address, owners, threshold) VALUES ('{WALLET}', '{ORG}', '{TREASURY}', "
         f"{CHAIN_ID}, 'SOURCE', 'Source', decode('{SAFE_ADDR[2:]}', 'hex'), "
         f"'[\"{SENDER}\"]'::jsonb, 1)",
+        "INSERT INTO treasury_wallets (id, org_id, treasury_id, chain_id, role, label, "
+        f"safe_address, owners, threshold) VALUES ('{WALLET_O1}', '{ORG}', '{TREASURY}', "
+        f"{CHAIN_ID}, 'OPERATIONAL', 'Operational 1', "
+        f"decode('{OPERATIONAL_ADDR[2:]}', 'hex'), '[\"{SENDER}\"]'::jsonb, 1)",
         "INSERT INTO vendors (id, org_id, name, normalized_ref) "
         f"VALUES ('{VENDOR}', '{ORG}', 'Vendor', 'vendor')",
         *(
@@ -216,15 +225,25 @@ def database_url() -> Iterator[str]:
 class Client(RpcClient):
     """Real Anvil reads; ``safe_config`` is scripted because the Safe here is an emitter."""
 
-    def __init__(self, url: str, guard: str | None = None) -> None:
+    def __init__(self, url: str, guard: str | None = None, a_token: str | None = None) -> None:
         super().__init__(
             [RpcProvider("anvil", AsyncHTTPProvider(url, exception_retry_configuration=None))]
         )  # type: ignore[arg-type]
         self.guard = guard
+        self.a_token = a_token
+        self.aave_pool = OTHER_ADDR if a_token is not None else None
         self.methods: list[str] = []
 
     async def call(self, method: str, params: Sequence[Any]) -> Any:
         self.methods.append(method)
+        if method == "eth_call":
+            selector = params[0]["data"][-8:]
+            address = (
+                self.aave_pool if selector == keccak(text="aavePool()")[:4].hex() else self.a_token
+            )
+            return (
+                "0x" + "00" * 12 + address[2:].lower() if address is not None else "0x" + "00" * 32
+            )
         return await super().call(method, params)
 
     async def safe_config(self, safe: str) -> SafeConfig:
@@ -244,7 +263,7 @@ class Client(RpcClient):
 
 
 async def _index(url: str, database_url: str, **kwargs: Any) -> tuple[dict[str, int], Client]:
-    client = Client(url, kwargs.pop("guard", None))
+    client = Client(url, kwargs.pop("guard", None), kwargs.pop("a_token", None))
     result = await index_events(database_url, client_factory=lambda _urls: client, **kwargs)
     return result, client
 
@@ -288,8 +307,56 @@ def _address_topic(address: str) -> bytes:
     return _addr(address)
 
 
+async def _record_operation(database_url: str, tx_hash: str, kind: str) -> None:
+    operation_id = uuid.uuid4()
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        await pool.execute(
+            "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
+            "payload, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6::operation_kind, '{}'::jsonb, $7)",
+            operation_id,
+            uuid.UUID(TREASURY),
+            uuid.uuid4(),
+            uuid.UUID(REQUEST),
+            uuid.uuid4().bytes + uuid.uuid4().bytes,
+            kind,
+            f"test:{kind}:{tx_hash}",
+        )
+        await pool.execute(
+            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address, "
+            "status, confirmations, crosscheck) VALUES ($1, $2, $3, $4, 0, $5, "
+            "'Confirmed'::transaction_status, 3, 'Match'::transaction_crosscheck)",
+            uuid.uuid4(),
+            operation_id,
+            CHAIN_ID,
+            _addr(tx_hash),
+            _addr(SENDER),
+        )
+    finally:
+        await pool.close()
+
+
+def _emit_transfer(url: str, token_address: str, sender: str, recipient: str, amount: int) -> str:
+    return _emit(
+        url,
+        token_address,
+        "Transfer",
+        _address_topic(sender),
+        _address_topic(recipient),
+        data=encode(["uint256"], [amount]),
+    )
+
+
 def test_module_and_safe_events_update_application_state(anvil_url: str, database_url: str) -> None:
     activation = int(time.time()) + 3600
+    exception_expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
     _emit(
         anvil_url,
         MODULE_ADDR,
@@ -303,7 +370,10 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         MODULE_ADDR,
         "ExceptionGranted",
         REQUEST_ID,
-        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, activation, 1]),
+        data=encode(
+            ["uint128", "address", "uint64", "uint64"],
+            [1000, PAYEE_ADDR, exception_expiry, 1],
+        ),
     )
     cancel = _emit(anvil_url, MODULE_ADDR, "RequestCancelled", REQUEST_ID, _address_topic(SENDER))
     _emit(
@@ -378,6 +448,79 @@ def test_module_and_safe_events_update_application_state(anvil_url: str, databas
         )
     )["p"]
     assert json.loads(supplied) == {"stepId": "0x" + "01" * 32, "amount": "5000000", "day": "20000"}
+
+
+def test_exception_revocation_consumption_and_mandate_invalidation(
+    anvil_url: str, database_url: str
+) -> None:
+    expiry = int(
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT floor(extract(epoch FROM expiry))::bigint AS expiry FROM exceptions",
+            )
+        )["expiry"]
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "ExceptionGranted",
+        REQUEST_ID,
+        data=encode(["uint128", "address", "uint64", "uint64"], [1000, PAYEE_ADDR, expiry, 1]),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Granted"
+    )
+
+    _emit(anvil_url, MODULE_ADDR, "ExceptionRevoked", REQUEST_ID)
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Revoked"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "PaymentExecuted",
+        REQUEST_ID,
+        b"\x01" * 32,
+        b"\x02" * 32,
+        data=encode(
+            ["address", "address", "uint256", "uint256", "bool", "bool"],
+            [SENDER, PAYEE_ADDR, 1000, 20_000, True, False],
+        ),
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Consumed"
+    )
+
+    asyncio.run(
+        _one(
+            database_url,
+            "UPDATE exceptions SET status = 'Granted' WHERE id = $1 RETURNING id",
+            uuid.UUID(EXCEPTION),
+        )
+    )
+    _emit(
+        anvil_url, MODULE_ADDR, "MandateConfigured", data=encode(["uint64", "uint64"], [2, expiry])
+    )
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT status::text AS s FROM exceptions"))["s"]
+        == "Invalidated"
+    )
 
 
 def test_rereading_the_same_range_creates_no_duplicates_or_repeat_effects(
@@ -509,6 +652,133 @@ def test_a_reorged_out_log_is_marked_removed_and_subscribers_hear_about_it(
     )
 
 
+def test_token_movements_classify_refill_outflow_and_lending_and_emit_safety_signals(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    refill_tx = _emit_transfer(anvil_url, "0x" + "11" * 20, SAFE_ADDR, OPERATIONAL_ADDR, 90_000_000)
+    asyncio.run(_record_operation(database_url, refill_tx, "REFILL"))
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    _emit_transfer(anvil_url, ATOKEN_ADDR, "0x" + "00" * 20, SAFE_ADDR, 75_000_000)
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OTHER_ADDR, SAFE_ADDR, 25_000_000)
+    pay_tx = _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, PAYEE_ADDR, 10_000_000)
+    asyncio.run(_record_operation(database_url, pay_tx, "PAY"))
+    _mine(anvil_url)
+
+    first, _ = asyncio.run(_index(anvil_url, database_url, a_token=ATOKEN_ADDR))
+    movements = asyncio.run(
+        _one(
+            database_url,
+            'SELECT array_agg("class" ORDER BY "class") AS classes, '
+            'array_agg(amount::text ORDER BY "class") AS amounts, '
+            'array_agg(direction ORDER BY "class") AS directions '
+            "FROM token_movements",
+        )
+    )
+    signals = asyncio.run(
+        _one(
+            database_url,
+            "SELECT array_agg(signal_type ORDER BY signal_type) AS kinds FROM chain_safety_signals",
+        )
+    )["kinds"]
+    alerts = asyncio.run(
+        _one(
+            database_url,
+            "SELECT count(*) AS n FROM domain_events WHERE type = 'UnexpectedOutflow'",
+        )
+    )["n"]
+
+    assert first["changed"] == 6
+    assert movements["classes"] == [
+        "AGENT",
+        "INFLOW",
+        "INTERNAL_REFILL",
+        "LENDING",
+        "UNEXPECTED_OUTFLOW",
+    ]
+    assert movements["amounts"] == [
+        "10000000",
+        "25000000",
+        "90000000",
+        "75000000",
+        "50000000",
+    ]
+    assert movements["directions"] == ["OUT", "IN", "IN", "IN", "OUT"]
+    assert signals == ["CIRCUIT_BREAKER", "PRE_STEP_REVALIDATION"]
+    assert alerts == 1
+    assert asyncio.run(_index(anvil_url, database_url, a_token=ATOKEN_ADDR))[0]["changed"] == 0
+    assert asyncio.run(_one(database_url, "SELECT count(*) AS n FROM token_movements"))["n"] == 5
+
+
+def test_supply_asset_transfer_is_classified_as_lending(anvil_url: str, database_url: str) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    supply_tx = _emit_transfer(anvil_url, "0x" + "11" * 20, SAFE_ADDR, OTHER_ADDR, 75_000_000)
+    asyncio.run(_record_operation(database_url, supply_tx, "SUPPLY"))
+    _mine(anvil_url)
+
+    result, _ = asyncio.run(_index(anvil_url, database_url, a_token=ATOKEN_ADDR))
+    movement = asyncio.run(_one(database_url, 'SELECT "class", direction FROM token_movements'))
+    assert result["changed"] == 2  # Resumed + Transfer
+    assert movement["class"] == "LENDING"
+    assert movement["direction"] == "OUT"
+    assert (
+        asyncio.run(_one(database_url, "SELECT count(*) AS n FROM chain_safety_signals"))["n"] == 0
+    )
+
+
+def test_unexpected_outflow_reorg_invalidates_its_safety_signals(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _mine(anvil_url)
+    snapshot = _rpc(anvil_url, "evm_snapshot")
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    assert (
+        asyncio.run(_one(database_url, "SELECT count(*) AS n FROM chain_safety_signals"))["n"] == 2
+    )
+
+    assert _rpc(anvil_url, "evm_revert", [snapshot])
+    _mine(anvil_url, 3)
+    asyncio.run(_index(anvil_url, database_url))
+
+    assert asyncio.run(_one(database_url, "SELECT removed FROM token_movements"))["removed"] is True
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM chain_safety_signals WHERE invalidated_at IS NOT NULL",
+            )
+        )["n"]
+        == 2
+    )
+
+
+def test_unplanned_atoken_transfer_from_source_is_an_unexpected_outflow(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _emit_transfer(anvil_url, ATOKEN_ADDR, SAFE_ADDR, OTHER_ADDR, 75_000_000)
+    _mine(anvil_url)
+
+    result, _ = asyncio.run(_index(anvil_url, database_url, a_token=ATOKEN_ADDR))
+    movement = asyncio.run(_one(database_url, 'SELECT "class", direction FROM token_movements'))
+    signals = asyncio.run(_one(database_url, "SELECT count(*) AS n FROM chain_safety_signals"))["n"]
+    alerts = asyncio.run(
+        _one(
+            database_url,
+            "SELECT count(*) AS n FROM domain_events WHERE type = 'UnexpectedOutflow'",
+        )
+    )["n"]
+
+    assert result["changed"] == 2  # Resumed + Transfer
+    assert movement["class"] == "UNEXPECTED_OUTFLOW"
+    assert movement["direction"] == "OUT"
+    assert signals == 2
+    assert alerts == 1
+
+
 def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
     anvil_url: str, database_url: str
 ) -> None:
@@ -528,6 +798,18 @@ def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
         ),
     )
     asyncio.run(_seed_operation_transaction(database_url, _addr(tx_hash)))
+    cursor = uuid7()
+    asyncio.run(
+        _one(
+            database_url,
+            "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, "
+            "payload) SELECT $1, org_id, id, 'Cursor', 'treasury', id, '{}'::jsonb "
+            "FROM treasuries WHERE id = $2 RETURNING id",
+            cursor,
+            uuid.UUID(TREASURY),
+        )
+    )
+    time.sleep(0.01)
 
     first, _ = asyncio.run(_index(anvil_url, database_url))
 
@@ -556,6 +838,15 @@ def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
         )["n"]
         == 2
     )
+    # The SSE stream resumes with `id > cursor`, so indexer events must be time-ordered ids.
+    assert asyncio.run(
+        _one(
+            database_url,
+            "SELECT bool_and(id > $1 AND substr(id::text, 15, 1) = '7') AS ok FROM domain_events "
+            "WHERE type = 'OperationUpdated'",
+            cursor,
+        )
+    )["ok"]
     assert (
         asyncio.run(
             _one(
@@ -571,3 +862,100 @@ def test_event_signatures_match_the_published_topics() -> None:
     # 0x442e... is Safe's well-known ExecutionSuccess(bytes32,uint256) topic.
     assert "0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e" in EVENTS[SAFE_EXEC]
     assert "0x" + keccak(text="Paused(address)").hex() in EVENTS[MODULE]
+    assert "0x" + keccak(text="Transfer(address,address,uint256)").hex() in EVENTS["TOKEN"]
+
+
+def test_pay_transfer_to_a_non_payee_in_an_operation_tx_is_still_an_unexpected_outflow(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    tx = _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    asyncio.run(_record_operation(database_url, tx, "PAY"))
+    _mine(anvil_url)
+
+    asyncio.run(_index(anvil_url, database_url))
+
+    assert asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == (
+        "UNEXPECTED_OUTFLOW"
+    )
+
+
+def test_outflow_later_matched_to_an_operation_is_reclassified_and_its_alert_retracted(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    tx = _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, PAYEE_ADDR, 10_000_000)
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    assert asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == (
+        "UNEXPECTED_OUTFLOW"
+    )
+
+    asyncio.run(_record_operation(database_url, tx, "PAY"))
+    result, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert result["changed"] == 1
+    assert (
+        asyncio.run(_one(database_url, 'SELECT "class" FROM token_movements'))["class"] == "AGENT"
+    )
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM chain_safety_signals WHERE invalidated_at IS NULL",
+            )
+        )["n"]
+        == 0
+    )
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events "
+                "WHERE type = 'UnexpectedOutflow' AND failed_at IS NOT NULL",
+            )
+        )["n"]
+        == 1
+    )
+
+
+def test_a_readded_transfer_clears_its_earlier_acknowledgement(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _emit_transfer(anvil_url, "0x" + "11" * 20, OPERATIONAL_ADDR, OTHER_ADDR, 50_000_000)
+    _mine(anvil_url)
+    asyncio.run(_index(anvil_url, database_url))
+    asyncio.run(
+        _one(
+            database_url,
+            "WITH ack AS (UPDATE token_movements SET acknowledged_by = $1, "
+            "acknowledged_at = now(), acknowledgement_reason = 'mine' RETURNING 1), "
+            "moved AS (UPDATE observed_events SET block_hash = decode(repeat('01', 32), 'hex') "
+            "WHERE stream = 'TOKEN' RETURNING 1) SELECT 1",
+            uuid.UUID(USER),
+        )
+    )
+
+    asyncio.run(_index(anvil_url, database_url))
+
+    row = asyncio.run(
+        _one(database_url, "SELECT acknowledged_at, acknowledgement_reason FROM token_movements")
+    )
+    assert row["acknowledged_at"] is None and row["acknowledgement_reason"] is None
+
+
+def test_unreadable_lending_getters_mean_lending_is_not_configured() -> None:
+    from treasurypilot_worker.chain.indexer import _lending_addresses
+    from treasurypilot_worker.chain.rpc import RpcResponseError
+
+    class Reverts:
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            raise RpcResponseError(3, "execution reverted")
+
+    class Empty:
+        async def call(self, method: str, params: Sequence[Any]) -> Any:
+            return "0x"
+
+    assert asyncio.run(_lending_addresses(Reverts(), bytes(20))) == (None, None)  # type: ignore[arg-type]
+    assert asyncio.run(_lending_addresses(Empty(), bytes(20))) == (None, None)  # type: ignore[arg-type]

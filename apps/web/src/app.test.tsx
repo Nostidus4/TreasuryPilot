@@ -1,8 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { expect, test } from 'vitest';
 
+import { api } from '@/lib/api/http';
+import type { Forecast } from '@/lib/api/types';
 import { db } from '@/mocks/db';
+import { server } from '@/mocks/server';
 import { renderApp } from '@/test/render';
 
 const BASE = '/o/org_northwind';
@@ -71,7 +75,9 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
   const timeline = screen.getByRole('list', { name: /execution steps/i });
   expect(
-    within(timeline).getByText('Event matched checked fields · 3 confirmations'),
+    within(timeline).getByText(
+      'Event matched checked fields · 3 confirmations',
+    ),
   ).toBeInTheDocument();
   expect(
     within(timeline).getByText(
@@ -124,6 +130,85 @@ test('the dashboard shows the position with symbol, network and the TEST label',
   expect(within(position).getAllByText('Sepolia').length).toBeGreaterThan(0);
   expect(within(position).getAllByText('TEST').length).toBeGreaterThan(0);
   expect(within(position).getByText('Testnet rate')).toBeInTheDocument();
+});
+
+test('negative savings are rendered with their negative sign', async () => {
+  server.use(
+    http.get('*/v1/orgs/org_northwind/metrics/savings', () =>
+      HttpResponse.json({
+        totals: { baseline: '1000000', actual: '1100000', saved: '-100000' },
+        perRequest: [
+          {
+            requestId: 'req_negative_savings',
+            invoiceNumber: 'NEG-2026-001',
+            vendorName: 'Negative Savings Vendor',
+            baseline: '1000000',
+            actual: '1100000',
+            saved: '-100000',
+          },
+        ],
+        methodology: 'Actual payment exceeded the due-date baseline.',
+      }),
+    ),
+  );
+  renderApp(`${BASE}/metrics`);
+
+  expect(
+    await screen.findByText('Savings against baseline B1'),
+  ).toBeInTheDocument();
+  const savedTile = screen.getByText('Saved', { selector: 'p' }).parentElement!;
+  expect(within(savedTile).getByText('-0.10')).toBeInTheDocument();
+  const row = screen.getByText('NEG-2026-001').closest('tr')!;
+  expect(within(row).getByText('1.00')).toBeInTheDocument();
+  expect(within(row).getByText('1.10')).toBeInTheDocument();
+  expect(within(row).getByText('-0.10')).toBeInTheDocument();
+});
+
+test('the runway toggle requests the forecast with drafts enabled', async () => {
+  const user = userEvent.setup();
+  let includeDrafts: string | null = null;
+  server.use(
+    http.get(
+      '*/v1/orgs/org_northwind/treasuries/trs_main/forecast',
+      ({ request }) => {
+        includeDrafts = new URL(request.url).searchParams.get('includeDrafts');
+        return HttpResponse.json({ days: [], alerts: [] });
+      },
+    ),
+  );
+  renderApp(T);
+
+  const toggle = await screen.findByRole('switch', { name: 'Include drafts' });
+  expect(toggle).not.toBeChecked();
+  await user.click(toggle);
+  await waitFor(() => expect(includeDrafts).toBe('true'));
+});
+
+test('the forecast mock adds draft outflow when requested', async () => {
+  const dueDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  renderApp(T, {
+    beforeRender: () => {
+      const draft = db.requests.find((item) => item.id === 'req_090')!;
+      draft.dueDate = `${dueDate}T12:00:00.000Z`;
+    },
+  });
+
+  const draft = db.requests.find((item) => item.id === 'req_090')!;
+  const path = '/orgs/org_northwind/treasuries/trs_main/forecast';
+  const [withoutDrafts, withDrafts] = await Promise.all([
+    api.get<Forecast>(path),
+    api.get<Forecast>(`${path}?includeDrafts=true`),
+  ]);
+  const baseDay = withoutDrafts.days.find((day) => day.date === dueDate);
+  const includedDay = withDrafts.days.find((day) => day.date === dueDate);
+
+  expect(baseDay).toBeDefined();
+  expect(includedDay).toBeDefined();
+  expect(BigInt(includedDay!.outflow) - BigInt(baseDay!.outflow)).toBe(
+    BigInt(draft.amount),
+  );
 });
 
 test('the position card shows the reserve breakdown and what is available to supply', async () => {
@@ -274,9 +359,9 @@ test('signing is blocked until high-risk flags are acknowledged, then the reques
     screen.getAllByRole('button', { name: /acknowledge flag/i })[0],
   );
 
-  // Now the 13-field object appears and matches what the server built.
+  // Now the 14-field object appears and matches what the server built.
   expect(await screen.findByText('PaymentApproval')).toBeInTheDocument();
-  expect(screen.getByText(/13 fields/i)).toBeInTheDocument();
+  expect(screen.getByText(/14 fields/i)).toBeInTheDocument();
   expect(screen.getByText('875000000')).toBeInTheDocument();
 
   await waitFor(() =>
@@ -286,6 +371,7 @@ test('signing is blocked until high-risk flags are acknowledged, then the reques
   );
   await user.click(screen.getByRole('button', { name: /sign approval/i }));
 
+  expect((await screen.findAllByText('Scheduled')).length).toBeGreaterThan(0);
   await waitFor(() =>
     expect(db.requests.find((item) => item.id === 'req_288')?.status).toBe(
       'Scheduled',
@@ -439,6 +525,25 @@ test('pausing asks for a reason and shows Pausing, then Paused on-chain', async 
   ).toBeInTheDocument();
 });
 
+test('an expired mandate stays visible and links Owners to review it', async () => {
+  renderApp(T, {
+    beforeRender: () => {
+      db.treasuries.trs_main.mandate!.status = 'Expired';
+    },
+  });
+
+  expect(await screen.findByText('Mandate expired')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Review mandate' })).toHaveAttribute(
+    'href',
+    `${T}/mandate`,
+  );
+  expect(
+    screen.getByText(
+      'The agent cannot run new plans until an Owner activates a current mandate.',
+    ),
+  ).toBeInTheDocument();
+});
+
 test('a manual request validates the amount before it reaches the API', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/requests/new`);
@@ -515,6 +620,64 @@ test('a non-Safe verification error is shown beside the affected wallet field', 
   );
 });
 
+test('the setup wizard clearly labels Sepolia and its supported asset as TEST', async () => {
+  const user = userEvent.setup();
+  renderApp(`${BASE}/treasuries/new`);
+
+  expect(await screen.findByText('Sepolia · TEST')).toBeInTheDocument();
+  expect(screen.getByText('Test network')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /continue/i }));
+  expect(await screen.findByText('USDC · TEST')).toBeInTheDocument();
+});
+
+test('the unsupported Guardian step stays pending and cannot finish setup', async () => {
+  renderApp(`${BASE}/treasuries/new?t=trs_main`, {
+    beforeRender: () => {
+      window.sessionStorage.setItem(
+        'treasurypilot.module-draft.trs_main',
+        JSON.stringify({ guardian: `0x${'3'.repeat(40)}` }),
+      );
+    },
+  });
+
+  expect(
+    await screen.findByRole('heading', { name: 'Guardian Safe' }),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByText(/guardian setup pending/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByLabelText(
+      /address included in module settings \(unverified\)/i,
+    ),
+  ).toHaveValue(`0x${'3'.repeat(40)}`);
+  expect(
+    screen.getByRole('button', {
+      name: /finish setup — guardian verification required/i,
+    }),
+  ).toBeDisabled();
+  expect(screen.getByText(/MDT-010/i)).toBeInTheDocument();
+  expect(screen.getByText('Verification pending')).toBeInTheDocument();
+});
+
+test('a malformed stored guardian address is not shown as module settings', async () => {
+  renderApp(`${BASE}/treasuries/new?t=trs_main`, {
+    beforeRender: () => {
+      window.sessionStorage.setItem(
+        'treasurypilot.module-draft.trs_main',
+        JSON.stringify({ guardian: 'not-an-address' }),
+      );
+    },
+  });
+
+  expect(
+    await screen.findByText(/guardian setup pending/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/address included in module settings/i),
+  ).not.toBeInTheDocument();
+});
+
 test('module setup creates a governance transaction for each treasury Safe', async () => {
   const user = userEvent.setup();
   renderApp(`${BASE}/treasuries/new`, { demoWallet: true });
@@ -527,7 +690,7 @@ test('module setup creates a governance transaction for each treasury Safe', asy
     screen.getByRole('button', { name: /check safes and continue/i }),
   );
   await user.type(
-    await screen.findByLabelText(/guardian safe address/i),
+    await screen.findByLabelText(/guardian address in module config/i),
     `0x${'3'.repeat(36)}cc33`,
   );
   await user.click(
@@ -543,5 +706,14 @@ test('module setup creates a governance transaction for each treasury Safe', asy
   });
   expect(
     await screen.findByText(/Enable the TreasuryPilot module on O1/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText('Guardian Safe verification is pending'),
+  ).toBeInTheDocument();
+  await user.click(
+    screen.getAllByRole('button', { name: /sign with wallet/i })[0],
+  );
+  expect(
+    await screen.findByRole('button', { name: /execute transaction/i }),
   ).toBeInTheDocument();
 });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -108,6 +109,7 @@ class MemoryStore:
         self.vendors: dict[uuid.UUID, VendorRecord] = {}
         self.payees: dict[uuid.UUID, PayeeRecord] = {}
         self.audit: list[AuditEvent] = []
+        self.module_address: bytes | None = MODULE
         self.screenings = screenings
 
     def _log(self, action: str, entity_type: str, entity_id: uuid.UUID, **data: object) -> None:
@@ -187,7 +189,9 @@ class MemoryStore:
         if (organization_id, treasury_id) != (ORG_ID, TREASURY_ID):
             return None
         return PayeeContext(
-            chain_id=CHAIN_ID, wallet_addresses=frozenset({SAFE}), module_address=MODULE
+            chain_id=CHAIN_ID,
+            wallet_addresses=frozenset({SAFE}),
+            module_address=self.module_address,
         )
 
     async def vendor_exists(self, *, organization_id: uuid.UUID, vendor_id: uuid.UUID) -> bool:
@@ -267,21 +271,41 @@ class MemoryStore:
             return None
         return self._with_screening(row)
 
-    async def attach_registration_tx(
+    async def register_with_tx(
         self,
         *,
         organization_id: uuid.UUID,
         treasury_id: uuid.UUID,
         payee_id: uuid.UUID,
-        governance_tx_id: uuid.UUID,
-    ) -> bool:
+        create_tx: Callable[[], Awaitable[tuple[uuid.UUID, dict[str, object]]]],
+    ) -> dict[str, object] | None:
         row = self.payees.get(payee_id)
-        if row is None or row.status != PayeeStatus.AWAITING_OWNER.value:
-            return False
-        if row.registration_tx_id not in (None, governance_tx_id):
-            return False
-        self.payees[payee_id] = replace(row, registration_tx_id=governance_tx_id)
-        return True
+        if (
+            row is None
+            or row.status != PayeeStatus.AWAITING_OWNER.value
+            or row.registration_tx_id is not None
+        ):
+            return None
+        tx_id, governance_tx = await create_tx()
+        self.payees[payee_id] = replace(row, registration_tx_id=tx_id)
+        return governance_tx
+
+    async def record_deactivation_requested(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        payee_id: uuid.UUID,
+        user_id: uuid.UUID,
+        reason: str,
+        governance_tx_id: object,
+    ) -> None:
+        self._log(
+            "payee.deactivation_requested",
+            "payee",
+            payee_id,
+            reason=reason,
+            governanceTxId=str(governance_tx_id),
+        )
 
     async def verify_oob(
         self,
@@ -665,6 +689,46 @@ def test_deactivation_builds_governance_transaction_for_registered_payee() -> No
     assert call["data"][-40:].lower() == CLEAN[2:]
     assert governance.created[-1]["entity_type"] == "payee"
     assert governance.created[-1]["entity_id"] == payee_id
+    assert [(e.action, e.data["reason"]) for e in store.audit if "deactivation" in e.action] == [
+        ("payee.deactivation_requested", "Vendor requested")
+    ]
+
+
+def test_replacement_without_module_leaves_no_stray_payee_row() -> None:
+    owner, store = make_client(governance_service=FakeGovernanceService())
+    with owner:
+        vendor_id = new_vendor(owner)
+        old = owner.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Main account", "address": CLEAN}
+        ).json()["payee"]
+        old_id = uuid.UUID(old["id"])
+        store.payees[old_id] = replace(store.payees[old_id], status=PayeeStatus.ACTIVE.value)
+        store.module_address = None
+
+        response = owner.post(
+            f"{PAYEES}/{old_id}/replace-address",
+            json={"address": "0x" + "cd" * 20, "reason": "Vendor bank account changed"},
+        )
+
+    assert response.status_code == 409 and response.json()["code"] == "MODULE_NOT_READY"
+    assert list(store.payees) == [old_id]
+
+
+def test_registration_tx_is_created_once() -> None:
+    governance = FakeGovernanceService()
+    owner, _ = make_client(governance_service=governance)
+    with owner:
+        vendor_id = new_vendor(owner)
+        payee_id = owner.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Main", "address": CLEAN}
+        ).json()["payee"]["id"]
+        owner.post(f"{PAYEES}/{payee_id}/verify-oob", json={"method": "PHONE", "note": "ok"})
+        first = owner.post(f"{PAYEES}/{payee_id}/registration-tx")
+        second = owner.post(f"{PAYEES}/{payee_id}/registration-tx")
+
+    assert first.status_code == 201
+    assert second.status_code == 409 and second.json()["code"] == "REGISTRATION_TX_EXISTS"
+    assert len(governance.created) == 1
 
 
 def test_replacing_address_creates_new_payee_and_deactivation_governance_tx() -> None:

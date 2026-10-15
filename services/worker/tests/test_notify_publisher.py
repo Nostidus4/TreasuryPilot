@@ -41,9 +41,12 @@ def test_routing_table_covers_documented_notification_events() -> None:
         "CoverageChanged",
         "LowGas",
         "MandateExpiring",
+        "MandateExpired",
         "Discrepancy",
     } <= ROUTING_TABLE.keys()
     assert policy_for_event("NeedsReview:Finance").roles == ("Finance",)
+    for event_type in ("MandateExpiring", "MandateExpired"):
+        assert policy_for_event(event_type).roles == ("Owner", "OrgAdmin")
 
 
 class _FakeTransaction:
@@ -186,6 +189,47 @@ def test_publisher_claims_with_skip_locked_and_is_idempotent() -> None:
     assert len(connection.notifications) == 1
     assert next(iter(connection.notifications))[0] == connection.approver_id
     assert "ON CONFLICT (user_id, event_id) DO NOTHING" in connection.insert_query
+
+
+def test_execution_cycle_outbox_is_forwarded_to_core_dispatcher() -> None:
+    connection = _FakeConnection()
+    event = connection.event_data
+    event["type"] = "ExecutionCycleRequested"
+    event["treasury_id"] = uuid.uuid4()
+    dispatched: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    asyncio.run(
+        publish_from_pool(
+            _FakePool(connection),  # type: ignore[arg-type]
+            dispatch_execution_cycle=lambda event_id, treasury_id: dispatched.append(
+                (event_id, treasury_id)
+            ),
+        )
+    )
+
+    assert dispatched == [(event["id"], event["treasury_id"])]
+    assert event["published"]
+    assert connection.webhook_event_ids == []
+
+
+def test_execution_cycle_dispatch_failure_leaves_event_unpublished_without_rollback() -> None:
+    connection = _FakeConnection()
+    event = connection.event_data
+    event["type"] = "ExecutionCycleRequested"
+    event["treasury_id"] = uuid.uuid4()
+
+    def broken(_event_id: uuid.UUID, _treasury_id: uuid.UUID) -> None:
+        raise ConnectionError("broker down")
+
+    asyncio.run(
+        publish_from_pool(
+            _FakePool(connection),  # type: ignore[arg-type]
+            dispatch_execution_cycle=broken,
+        )
+    )
+    asyncio.run(publish_from_pool(_FakePool(connection)))  # type: ignore[arg-type]
+
+    assert not event["published"] and not event["failed"]
 
 
 def test_operation_updates_are_streamed_without_creating_notifications() -> None:

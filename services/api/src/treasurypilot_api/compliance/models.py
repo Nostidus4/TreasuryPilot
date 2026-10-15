@@ -63,16 +63,11 @@ class AuthRetentionPolicy(Base):
             "magic_link_retention_days IS NULL OR magic_link_retention_days BETWEEN 0 AND 36500",
             name="ck_auth_retention_policies_magic_link_days",
         ),
-        CheckConstraint(
-            "siwe_nonce_retention_days IS NULL OR siwe_nonce_retention_days BETWEEN 0 AND 36500",
-            name="ck_auth_retention_policies_siwe_nonce_days",
-        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
     session_retention_days: Mapped[int | None] = mapped_column(Integer)
     magic_link_retention_days: Mapped[int | None] = mapped_column(Integer)
-    siwe_nonce_retention_days: Mapped[int | None] = mapped_column(Integer)
     legal_hold: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -108,7 +103,7 @@ class DeletionReceipt(Base):
     __table_args__ = (
         CheckConstraint("octet_length(record_hash) = 32", name="ck_deletion_receipts_hash_length"),
         CheckConstraint(
-            "record_type IN ('invite', 'session', 'magic_link', 'siwe_nonce', 'subject')",
+            "record_type IN ('invite', 'session', 'magic_link', 'subject')",
             name="ck_deletion_receipts_record_type",
         ),
     )
@@ -165,7 +160,7 @@ class TravelRuleExchange(Base):
     __tablename__ = "travel_rule_exchanges"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'ERROR')",
+            "status IN ('PENDING', 'COMPLETED', 'SELF_HOSTED', 'NOT_REQUIRED', 'ERROR')",
             name="ck_travel_rule_exchanges_status",
         ),
         CheckConstraint("amount > 0", name="ck_travel_rule_exchanges_amount"),
@@ -196,6 +191,8 @@ class TravelRuleExchange(Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    # Effective threshold at decision time; recorded for NOT_REQUIRED cases as evidence.
+    threshold: Mapped[int | None] = mapped_column(Numeric(78, 0))
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     origin_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)
     beneficiary_jurisdiction: Mapped[str] = mapped_column(String(2), nullable=False)

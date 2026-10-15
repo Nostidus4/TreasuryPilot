@@ -228,6 +228,28 @@ async def _approve_in_postgres(database_url: str) -> None:
                     approver,
                 )
             assert error.value.code == code
+        # Intended: a vendor without a country cannot be evaluated, so approval is held
+        # (fail closed) without contacting the gateway; see docs/modules/compliance.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("UPDATE vendors SET country = NULL WHERE id = :vendor"), {"vendor": VENDOR}
+            )
+        with pytest.raises(AuthFailure) as error:
+            await approve_request(
+                ORG,
+                REQUEST,
+                ApproveRequest(signature=signature, revision=1, expiry=expiry),
+                request,
+                Response(),
+                "approve-key",
+                approver,
+            )
+        assert error.value.code == "TRAVEL_RULE_HOLD"
+        assert gateway_calls == []
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("UPDATE vendors SET country = 'GB' WHERE id = :vendor"), {"vendor": VENDOR}
+            )
         with pytest.raises(AuthFailure) as error:
             await approve_request(
                 ORG,
@@ -251,6 +273,24 @@ async def _approve_in_postgres(database_url: str) -> None:
         assert result["request"]["status"] == "Approved"  # type: ignore[index]
         assert result["approval"]["typedData"] == typed  # type: ignore[index]
         assert [method for method, _url in gateway_calls] == ["POST", "POST", "GET"]
+        await approve_request(
+            ORG,
+            REQUEST,
+            ApproveRequest(signature=signature, revision=1, expiry=expiry),
+            request,
+            Response(),
+            "approve-key",
+            approver,
+        )
+        async with engine.connect() as connection:
+            event_count = await connection.scalar(
+                text(
+                    "SELECT count(*) FROM domain_events WHERE type = 'ExecutionCycleRequested' "
+                    "AND treasury_id = :treasury AND entity_id = :request"
+                ),
+                {"treasury": TREASURY, "request": REQUEST},
+            )
+        assert event_count == 1
     finally:
         await engine.dispose()
 

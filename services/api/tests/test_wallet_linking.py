@@ -20,7 +20,7 @@ from web3 import Web3
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.identity import wallets as wallet_module
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import Membership, Organization, SiweNonce, User, WalletLink
+from treasurypilot_api.identity.models import Membership, Organization, User, WalletLink
 from treasurypilot_api.identity.repository import SqlAlchemyAuthRepository
 from treasurypilot_api.identity.wallets import (
     MAX_OPEN_SIWE_NONCES,
@@ -484,28 +484,6 @@ async def _exercise_postgres(database_url: str) -> None:
         assert profile is not None
         assert [item.signer_roles_active for item in profile.memberships] == [False]
 
-        # Closed challenges do not count toward the open cap and remain for the
-        # policy-aware retention worker to remove with hash-only receipts.
-        now = datetime.now(UTC)
-        async with sessions() as session, session.begin():
-            session.add_all(
-                [
-                    SiweNonce(
-                        nonce="old-used-challenge",
-                        user_id=user.id,
-                        created_at=now - timedelta(days=1),
-                        expires_at=now + timedelta(minutes=5),
-                        used_at=now,
-                    ),
-                    SiweNonce(
-                        nonce="old-expired-challenge",
-                        user_id=user.id,
-                        created_at=now - timedelta(days=1),
-                        expires_at=now - timedelta(hours=1),
-                    ),
-                ]
-            )
-
         # Concurrent challenge requests cannot exceed the open-nonce cap.
         repository = WalletRepository(sessions)
         results = await asyncio.gather(
@@ -519,9 +497,6 @@ async def _exercise_postgres(database_url: str) -> None:
         )
         assert sum(not isinstance(item, Exception) for item in results) == MAX_OPEN_SIWE_NONCES
         assert all(isinstance(item, AuthFailure) for item in results if isinstance(item, Exception))
-        async with sessions() as session:
-            assert await session.get(SiweNonce, "old-used-challenge") is not None
-            assert await session.get(SiweNonce, "old-expired-challenge") is not None
     finally:
         await engine.dispose()
 
@@ -530,7 +505,7 @@ async def _exercise_postgres(database_url: str) -> None:
     "TP_TEST_DATABASE_URL" not in os.environ,
     reason="TP_TEST_DATABASE_URL is required for the PostgreSQL wallet integration test",
 )
-def test_postgres_suspended_signer_and_open_nonce_cap_without_cleanup() -> None:
+def test_postgres_suspended_signer_and_concurrent_nonce_cap() -> None:
     database_url = os.environ["TP_TEST_DATABASE_URL"]
     config = Config(str(API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(API_ROOT / "migrations"))

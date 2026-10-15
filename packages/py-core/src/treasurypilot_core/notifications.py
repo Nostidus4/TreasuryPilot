@@ -55,6 +55,7 @@ _OPERATION_EVENT_TYPES = frozenset(
     {
         "LowGas",
         "MandateExpiring",
+        "MandateExpired",
         "OperationConfirmed",
         "OperationUpdated",
         "PlanUpdated",

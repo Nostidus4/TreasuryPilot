@@ -10,7 +10,7 @@ from pypdf import PdfWriter
 
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.invoices.documents import _read_document, build_document_storage
+from treasurypilot_api.invoices.documents import build_document_storage, read_document
 
 
 def _png() -> bytes:
@@ -30,7 +30,7 @@ def _pdf(page_count: int = 1) -> bytes:
 
 def test_upload_accepts_private_pdf_and_detects_pages() -> None:
     body, mime, pages = asyncio.run(
-        _read_document(UploadFile(file=BytesIO(_pdf(2)), filename="invoice.pdf"))
+        read_document(UploadFile(file=BytesIO(_pdf(2)), filename="invoice.pdf"))
     )
     assert body.startswith(b"%PDF-")
     assert mime == "application/pdf"
@@ -39,7 +39,7 @@ def test_upload_accepts_private_pdf_and_detects_pages() -> None:
 
 def test_upload_accepts_valid_png_from_content_signature() -> None:
     body, mime, pages = asyncio.run(
-        _read_document(UploadFile(file=BytesIO(_png()), filename="invoice.png"))
+        read_document(UploadFile(file=BytesIO(_png()), filename="invoice.png"))
     )
     assert body.startswith(b"\x89PNG\r\n\x1a\n")
     assert mime == "image/png"
@@ -49,7 +49,7 @@ def test_upload_accepts_valid_png_from_content_signature() -> None:
 def test_upload_rejects_executable_renamed_as_pdf() -> None:
     with pytest.raises(AuthFailure) as error:
         asyncio.run(
-            _read_document(UploadFile(file=BytesIO(b"MZ" + b"x" * 512), filename="invoice.pdf"))
+            read_document(UploadFile(file=BytesIO(b"MZ" + b"x" * 512), filename="invoice.pdf"))
         )
     assert error.value.status == 415
     assert error.value.code == "UNSUPPORTED_DOCUMENT_TYPE"
@@ -58,14 +58,14 @@ def test_upload_rejects_executable_renamed_as_pdf() -> None:
 def test_upload_rejects_oversized_document_before_parsing() -> None:
     body = b"%PDF-" + b"x" * (10 * 1024 * 1024)
     with pytest.raises(AuthFailure) as error:
-        asyncio.run(_read_document(UploadFile(file=BytesIO(body), filename="invoice.pdf")))
+        asyncio.run(read_document(UploadFile(file=BytesIO(body), filename="invoice.pdf")))
     assert error.value.status == 413
     assert error.value.code == "DOCUMENT_TOO_LARGE"
 
 
 def test_upload_rejects_more_than_twenty_pdf_pages() -> None:
     with pytest.raises(AuthFailure) as error:
-        asyncio.run(_read_document(UploadFile(file=BytesIO(_pdf(21)), filename="invoice.pdf")))
+        asyncio.run(read_document(UploadFile(file=BytesIO(_pdf(21)), filename="invoice.pdf")))
     assert error.value.status == 413
     assert error.value.code == "DOCUMENT_TOO_MANY_PAGES"
 

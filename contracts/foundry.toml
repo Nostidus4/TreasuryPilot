@@ -19,6 +19,8 @@ fuzz = { runs = 1000 }
 invariant = { runs = 1000, depth = 32, fail_on_revert = true }
 fs_permissions = [
   { access = "read", path = "test/vectors" },
+  # vm.getCode reads Safe, module, factory and TestUSDC artifacts from out/, so it is not Safe-only.
+  { access = "read", path = "out" },
   { access = "read-write", path = "../deployments/predictions" },
   { access = "read", path = "../deployments" },
 ]

@@ -135,7 +135,8 @@ abstract contract TreasuryFixture is SafeTestHelper {
             0,
             uint64(block.timestamp + 1 days),
             keccak256("synthetic terms"),
-            uint64(block.timestamp + 14 days)
+            uint64(block.timestamp + 14 days),
+            false
         );
     }
 
@@ -146,8 +147,9 @@ abstract contract TreasuryFixture is SafeTestHelper {
 
     function _pay(I.PaymentApproval memory ap, bytes32 step) internal {
         bytes memory signature = _sign(ap);
+        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
         vm.prank(executor);
-        module.pay(ap, signature, step);
+        module.pay(ap, signature, step, amount);
     }
 
     function _refill(I.PaymentApproval memory ap, bytes32 step, uint256 amount) internal {
@@ -158,8 +160,9 @@ abstract contract TreasuryFixture is SafeTestHelper {
 
     function _expectPayError(I.PaymentApproval memory ap, bytes4 selector) internal {
         bytes memory signature = _sign(ap);
+        uint256 amount = ap.earlyAmount > 0 && block.timestamp <= ap.earlyPayBy ? ap.earlyAmount : ap.amount;
         vm.expectRevert(selector);
         vm.prank(executor);
-        module.pay(ap, signature, keccak256("rejected step"));
+        module.pay(ap, signature, keccak256("rejected step"), amount);
     }
 }

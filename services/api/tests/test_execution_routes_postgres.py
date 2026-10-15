@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from treasurypilot_api.database import create_session_factory
 from treasurypilot_api.execution.routes import (
+    PlanStepView,
     _plan_status,
     _step_verification,
     _total_amount,
@@ -37,6 +38,7 @@ VENDOR_ID = uuid.UUID("00000000-0000-7000-8000-000000000050")
 PAYEE_ID = uuid.UUID("00000000-0000-7000-8000-000000000060")
 REQUEST_ID = uuid.UUID("00000000-0000-7000-8000-000000000070")
 PLAN_ID = uuid.UUID("00000000-0000-7000-8000-000000000080")
+BROKEN_PLAN_ID = uuid.UUID("00000000-0000-7000-8000-000000000081")
 OPERATION_ID = uuid.UUID("00000000-0000-7000-8000-000000000090")
 TRANSACTION_ID = uuid.UUID("00000000-0000-7000-8000-000000000091")
 PLAN_STEP_ID = uuid.UUID("00000000-0000-7000-8000-000000000092")
@@ -146,14 +148,49 @@ def test_swap_event_is_not_marked_mismatched_without_supported_event_fields() ->
     assert _step_verification(signed_step, [event]) is None
 
 
+def _step(status: str, kind: str = "PAY", verification: str | None = None) -> PlanStepView:
+    return PlanStepView.model_validate(
+        {
+            "id": uuid.uuid4(),
+            "index": 1,
+            "kind": kind,
+            "title": "step",
+            "from": "0x" + "55" * 20,
+            "to": "0x" + "22" * 20,
+            "amount": "1",
+            "request_id": None,
+            "reason": "",
+            "status": status,
+            "tx_hash": None,
+            "confirmations": None,
+            "verification": verification,
+            "updated_at": "2026-10-15T00:00:00Z",
+        }
+    )
+
+
 def test_plan_status_only_claims_states_supported_by_persisted_rows() -> None:
-    assert _plan_status(["Planned"], 1) == "Proposed"
-    assert _plan_status(["Pending"], 1) == "Executing"
-    assert _plan_status(["Confirmed"], 1) == "Unknown"
-    assert _plan_status(["Failed"], 1) == "Unknown"
-    assert _plan_status(["Verified"], 1) == "Completed"
-    assert _plan_status(["Verified", "Failed"], 2) == "PartiallyCompleted"
-    assert _plan_status(["Pending"], 2) == "Unknown"
+    assert _plan_status([_step("Planned")], 1) == "Proposed"
+    assert _plan_status([_step("Pending")], 1) == "Executing"
+    assert _plan_status([_step("Failed")], 1) == "Unknown"
+    assert _plan_status([_step("Verified")], 1) == "Completed"
+    assert _plan_status([_step("Verified"), _step("Failed")], 2) == "PartiallyCompleted"
+    assert _plan_status([_step("Pending")], 2) == "Unknown"
+
+
+def test_plan_status_keeps_partly_executed_plans_executing_and_completes_unverifiable_steps() -> (
+    None
+):
+    assert _plan_status([_step("Verified"), _step("Planned")], 2) == "Executing"
+    # A confirmed PAY with no module event yet is still awaiting verification.
+    assert _plan_status([_step("Confirmed")], 1) == "Executing"
+    assert _plan_status([_step("Confirmed", verification="MISMATCH")], 1) == "Unknown"
+    # SUPPLY/WITHDRAW/SWAP steps can never become Verified, so Confirmed is terminal.
+    assert _plan_status([_step("Confirmed", "SUPPLY")], 1) == "Completed"
+    assert _plan_status([_step("Confirmed", "SWAP"), _step("Verified")], 2) == "Completed"
+    assert (
+        _plan_status([_step("Confirmed", "WITHDRAW"), _step("Failed")], 2) == "PartiallyCompleted"
+    )
 
 
 def test_plan_total_requires_every_signed_step_amount() -> None:
@@ -303,6 +340,75 @@ async def _seed(
                     "from_address": EXPECTED_FROM,
                     "to_address": EXPECTED_TO,
                     "plan": PLAN_ID,
+                },
+            )
+            # A newer attestation of the same plan must not duplicate the list entry.
+            await connection.execute(
+                text(
+                    "INSERT INTO attestations (id, plan_id, request_id, plan_hash, step_ids, "
+                    "policy_version, executor, nonce, valid_until, evidence_digest, typed_data, "
+                    "signature, policy_signer, created_at) SELECT :id, plan_id, request_id, plan_hash, "
+                    "step_ids, policy_version, executor, nonce + 1, valid_until, evidence_digest, "
+                    "typed_data, signature, policy_signer, created_at + interval '1 minute' "
+                    "FROM attestations WHERE plan_id = :plan"
+                ),
+                {"id": uuid.uuid4(), "plan": PLAN_ID},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plan_steps (id, attestation_id, plan_id, seq, step_id, action, "
+                    "request_id, treasury_address, chain_id, from_address, to_address, "
+                    "asset_address, amount) SELECT :id, a.id, a.plan_id, p.seq, p.step_id, p.action, "
+                    "p.request_id, p.treasury_address, p.chain_id, p.from_address, p.to_address, "
+                    "p.asset_address, p.amount FROM attestations a JOIN plan_steps p "
+                    "ON p.plan_id = a.plan_id AND p.attestation_id <> a.id "
+                    "WHERE a.id = (SELECT id FROM attestations WHERE plan_id = :plan "
+                    "ORDER BY created_at DESC LIMIT 1)"
+                ),
+                {"id": uuid.uuid4(), "plan": PLAN_ID},
+            )
+            # An inconsistent plan (hash does not match its rows) is skipped, not a list-wide 404.
+            await connection.execute(
+                text(
+                    "INSERT INTO attestations (id, plan_id, request_id, plan_hash, step_ids, "
+                    "policy_version, executor, nonce, valid_until, evidence_digest, typed_data, "
+                    "signature, policy_signer, created_at) SELECT :id, :plan, request_id, "
+                    "decode(repeat('ee', 32), 'hex'), step_ids, policy_version, executor, nonce + 2, "
+                    "valid_until, evidence_digest, typed_data, signature, policy_signer, "
+                    "created_at + interval '2 minutes' FROM attestations WHERE plan_id = :source LIMIT 1"
+                ),
+                {"id": uuid.uuid4(), "plan": BROKEN_PLAN_ID, "source": PLAN_ID},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plan_steps (id, attestation_id, plan_id, seq, step_id, action, "
+                    "request_id, treasury_address, chain_id, from_address, to_address, "
+                    "asset_address, amount) SELECT :id, a.id, a.plan_id, 0, :hash, 1, :request, "
+                    ":module, 31337, :from_address, :to_address, decode(repeat('11', 20), 'hex'), 975 "
+                    "FROM attestations a WHERE a.plan_id = :plan"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "plan": BROKEN_PLAN_ID,
+                    "hash": STEP_ID,
+                    "request": SIGNED_REQUEST_ID,
+                    "module": MODULE_ADDRESS,
+                    "from_address": EXPECTED_FROM,
+                    "to_address": EXPECTED_TO,
+                },
+            )
+            # A newer Dropped transaction must not hide the live Pending one.
+            await connection.execute(
+                text(
+                    "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, "
+                    "from_address, status, submitted_at, crosscheck) VALUES (:id, :operation, "
+                    ":chain_id, decode(repeat('45', 32), 'hex'), 2, decode(repeat('55', 20), 'hex'), "
+                    "'Dropped', now() + interval '1 hour', 'Match')"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "operation": OPERATION_ID,
+                    "chain_id": transaction_chain_id,
                 },
             )
             if add_matching_module_event:

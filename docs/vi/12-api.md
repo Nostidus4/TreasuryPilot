@@ -56,6 +56,9 @@
 | POST | `…/payees` | Đề xuất hoặc thêm payee (chạy sàng lọc) | OPR, ADM, OWN |
 | POST | `…/payees/{id}/registration-tx` | Tạo giao dịch đăng ký payee | OWN |
 | POST | `…/payees/{id}/deactivation-tx` | Tạo giao dịch vô hiệu payee | OWN |
+| GET | `/orgs/{o}/treasuries/{t}/fee-policy` | Đề xuất hệ thống, chính sách đã duyệt, cơ sở tính và chi phí gas hôm nay | ANY |
+| POST | `…/treasuries/{t}/fee-policy/accept` | Chấp nhận ngưỡng hệ thống hoặc chọn preset | OWN + step-up |
+| PUT | `…/treasuries/{t}/fee-policy/reference-price` | Đặt giá ETH tham chiếu có nhãn (đơn vị nhỏ của tài sản / ETH) | OWN + step-up |
 | POST 🔁 | `…/pause` | Dừng backend ngay và tạo giao dịch dừng on-chain | OWN, GRD |
 | POST | `…/resume-tx` | Tạo giao dịch chạy lại | OWN |
 | GET | `/orgs/{o}/requests/{r}/exception` | Xem yêu cầu ngoại lệ (bản AI soạn + số liệu) | OWN, OPR, FIN |
@@ -88,6 +91,8 @@
 | GET | `…/treasuries/{t}/forecast` | Runway 7 ngày | ANY |
 | GET | `/orgs/{o}/review-items` | Hàng đợi cần xem xét | ANY (lọc theo vai trò) |
 | POST 🔁 | `…/review-items/{id}/actions` | Thử lại, hủy, đánh dấu xong | theo loại mục |
+| POST | `/orgs/{o}/plans/{p}/fee/accept` | Chấp nhận phí ước tính làm mức trần của kế hoạch bị giữ | OWN, FIN, OPR |
+| POST | `/orgs/{o}/plans/{p}/fee/defer` | Để kế hoạch chờ thời điểm phí thấp hơn | OWN, FIN, OPR |
 | GET | `/orgs/{o}/events` | Luồng SSE | ANY |
 
 ## 7. Đối soát, bằng chứng, chỉ số (M11, M15, M17)

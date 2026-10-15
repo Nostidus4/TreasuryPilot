@@ -98,7 +98,16 @@ ROUTING_TABLE: dict[str, NotificationPolicy] = {
         "A treasury wallet needs gas funding.",
     ),
     "MandateExpiring": NotificationPolicy(
-        ("Owner",), "ACTION", "Mandate expiring", "A treasury mandate is nearing expiry."
+        ("Owner", "OrgAdmin"),
+        "ACTION",
+        "Mandate expiring",
+        "A treasury mandate is nearing expiry. Review it and clone a new version before the deadline.",
+    ),
+    "MandateExpired": NotificationPolicy(
+        ("Owner", "OrgAdmin"),
+        "ACTION",
+        "Mandate expired",
+        "A treasury mandate has expired. Clone a new version before planning can resume.",
     ),
     "Discrepancy": NotificationPolicy(
         ("Finance", "Owner"),

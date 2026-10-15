@@ -4,7 +4,7 @@ The implementation follows M04 section 15 and ADR-019 when they supersede older 
 
 ## Interfaces and errors (#28)
 
-`ITreasuryPilotModule` defines the 13-field `PaymentApproval`, complete governance/executor interfaces, and indexed lifecycle events. `TreasuryPilotStorage` contains independent per-clone state. PAY, REFILL, SWAP_IN and SUPPLY use action ids 1, 2, 3 and 4 respectively; the sole asset is implicit in `keccak256(abi.encode(action, day))` within each module.
+`ITreasuryPilotModule` defines the 14-field `PaymentApproval`, complete governance/executor interfaces, and indexed lifecycle events. `TreasuryPilotStorage` contains independent per-clone state. PAY, REFILL, SWAP_IN and SUPPLY use action ids 1, 2, 3 and 4 respectively; the sole asset is implicit in `keccak256(abi.encode(action, day))` within each module.
 
 Errors are in `TreasuryPilotErrors` because Solidity cannot declare an event and error with the same identifier in one scope. This preserves the specified `RequestCancelled()` and `Revoked()` error selectors and the `RequestCancelled(bytes32,address)` and `Revoked()` events. Consumers should use the module's compiled ABI and match error selectors rather than source qualification.
 

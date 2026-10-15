@@ -1533,12 +1533,28 @@ export function planApprovedRequest(
   ) {
     return undefined;
   }
+  if (
+    BigInt(payLimit.usedToday) + BigInt(request.amount) >
+    BigInt(payLimit.dailyLimit)
+  ) {
+    request.timeline.push({
+      at: iso(),
+      label: 'Approved but not planned: would exceed the daily PAY limit',
+    });
+    return undefined;
+  }
 
   const optionKind = request.approvals.at(-1)?.option ?? 'STANDARD';
   const option = request.options.find(
     (candidate) => candidate.kind === optionKind,
   );
-  if (!option) return undefined;
+  if (!option) {
+    request.timeline.push({
+      at: iso(),
+      label: 'Planning skipped: no matching option',
+    });
+    return undefined;
+  }
 
   const id = `pln_${request.id.replace(/^req_/, '')}`;
   const plan: PlanDetail = {
@@ -1721,6 +1737,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
         { name: 'deadline', type: 'uint64' },
         { name: 'termsHash', type: 'bytes32' },
         { name: 'expiry', type: 'uint64' },
+        { name: 'isFiat', type: 'bool' },
       ],
     },
     primaryType: 'PaymentApproval',
@@ -1741,6 +1758,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
       deadline: seconds(request.dueDate),
       termsHash: h32(JSON.stringify(request.terms)),
       expiry: seconds(request.dueDate) + 7 * 24 * 3600,
+      isFiat: false,
     },
   };
 }

@@ -88,6 +88,8 @@ def attestation_typed_data(
             "planHash": _plan_hash(plan),
             "requestId": plan["requestId"],
             "stepIds": [step["stepId"] for step in steps],
+            # The contract checks the amount each step moves against this, not only the plan hash.
+            "stepAmounts": [int(step["amount"]) for step in steps],
             "policyVersion": "0x" + decision.policy_version.hex(),
             "executor": executor,
             "validUntil": int((_aware(now) + ATTESTATION_TTL).timestamp()),
@@ -139,6 +141,7 @@ def verify_attestation(
         message["planHash"].lower() != _plan_hash(plan)
         or message["requestId"].lower() != plan["requestId"].lower()
         or [s.lower() for s in message["stepIds"]] != [s["stepId"].lower() for s in plan["steps"]]
+        or [int(a) for a in message["stepAmounts"]] != [int(s["amount"]) for s in plan["steps"]]
         or message["executor"].lower() != executor.lower()
     ):
         return PolicyReasonCode.ATTESTATION_INVALID

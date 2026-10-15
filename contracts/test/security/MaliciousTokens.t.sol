@@ -86,9 +86,13 @@ contract MaliciousTokenTest is TreasuryFixture {
         _owner(abi.encodeCall(module.configureMandate, (config)));
         I.PaymentApproval memory outer = _approval(1, 100e6);
         I.PaymentApproval memory inner = _approval(2, 100e6);
-        evil.setCallback(address(module), abi.encodeCall(module.pay, (inner, _sign(inner), bytes32(uint256(2)))));
+        evil.setCallback(
+            address(module), abi.encodeCall(module.pay, (inner, _sign(inner), bytes32(uint256(2)), inner.amount))
+        );
         evil.setMode(4);
-        evil.execute(address(module), abi.encodeCall(module.pay, (outer, _sign(outer), bytes32(uint256(1)))));
+        evil.execute(
+            address(module), abi.encodeCall(module.pay, (outer, _sign(outer), bytes32(uint256(1)), outer.amount))
+        );
         require(!evil.callbackSucceeded() && !module.requestPaid(inner.requestId), "reentrant payment");
         require(token.balanceOf(vendor) == 100e6 && module.usedToday(module.PAY()) == 100e6, "outer payment");
     }

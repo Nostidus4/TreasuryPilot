@@ -401,6 +401,20 @@ def rpc_health_sink(pool: asyncpg.Pool) -> HealthSink:
     return record
 
 
+def decode_rpc_urls(value: object) -> list[str]:
+    """Normalize asyncpg's JSONB text result and validate configured provider URLs."""
+
+    if isinstance(value, str):
+        value = json.loads(value)
+    if (
+        not isinstance(value, list | tuple)
+        or not value
+        or any(not isinstance(url, str) or not url.strip() for url in value)
+    ):
+        raise ValueError("chain rpc_urls must be a non-empty list of URL strings")
+    return list(value)
+
+
 def build_rpc_client(
     rpc_urls: Sequence[str],
     *,

@@ -15,7 +15,6 @@ dependencies = [
     "minio==7.2.18",
     "pillow>=11,<12",
     "pypdf>=5.4,<6",
-    "pysaml2>=7.5.5,<8",
     "pydantic-settings>=2.7,<3",
     "python-multipart>=0.0.20,<1",
     "redis>=5.2,<7",

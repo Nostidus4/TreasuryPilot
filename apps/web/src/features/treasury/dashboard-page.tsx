@@ -18,6 +18,7 @@ import { Page } from '@/components/layout/page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Switch } from '@/components/ui/controls';
 import { Skeleton } from '@/components/ui/misc';
 import { useTreasuryScope } from '@/features/orgs/org-scope';
 import { useRequests } from '@/features/requests/api';
@@ -334,7 +335,8 @@ function PositionBreakdown({
 /** Charts first: where the money is, how long it lasts, and what is left today. */
 function Overview({ state }: { state: TreasuryState }) {
   const scope = useTreasuryScope();
-  const forecast = useForecast(scope.orgId, scope.treasuryId);
+  const [includeDrafts, setIncludeDrafts] = useState(false);
+  const forecast = useForecast(scope.orgId, scope.treasuryId, includeDrafts);
   const requests = useRequests(scope.orgId);
   const info = useAssetInfo(state.treasury.asset);
   if (!info) return <DashboardSkeleton />;
@@ -370,6 +372,16 @@ function Overview({ state }: { state: TreasuryState }) {
                 ? t('{{wallet}}, if nothing is refilled', { wallet: o1.label })
                 : undefined
             }
+            action={
+              <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <span>{t('Include drafts')}</span>
+                <Switch
+                  aria-label={t('Include drafts')}
+                  checked={includeDrafts}
+                  onCheckedChange={setIncludeDrafts}
+                />
+              </label>
+            }
           />
           <CardContent>
             {forecast.data && requests.data ? (
@@ -379,6 +391,7 @@ function Overview({ state }: { state: TreasuryState }) {
                   (request) => request.treasuryId === state.treasury.id,
                 )}
                 requestHref={(id) => `${scope.base}/requests/${id}`}
+                includeDrafts={includeDrafts}
                 units={units}
                 walletLabel={o1?.label ?? t('Payments Safe')}
               />

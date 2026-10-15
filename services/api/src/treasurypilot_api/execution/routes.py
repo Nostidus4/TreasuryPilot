@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -10,7 +11,7 @@ from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.execution.models import (
@@ -29,6 +30,7 @@ from treasurypilot_api.mandate.models import Vendor
 from treasurypilot_api.treasury.models import Treasury
 from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW, plan_hash
 
+logger = logging.getLogger(__name__)
 _BASE_UNITS = re.compile(r"^(0|[1-9][0-9]*)$")
 
 PlanStatus = Literal[
@@ -216,18 +218,34 @@ def _step_verification(
     return None
 
 
-def _plan_status(statuses: list[StepStatus], expected_steps: int) -> PlanStatus:
-    if len(statuses) < expected_steps:
+# Supply, withdraw and swap steps never get a destination check (see _step_verification),
+# so a confirmed transaction is as final as they can be.
+_UNVERIFIABLE_KINDS = frozenset({"SUPPLY", "WITHDRAW", "SWAP"})
+
+
+def _plan_status(steps: list[PlanStepView], expected_steps: int) -> PlanStatus:
+    if len(steps) < expected_steps:
         return "Unknown"
-    if any(status in {"Submitted", "Pending", "Unknown"} for status in statuses):
-        return "Executing"
-    if statuses and all(status == "Planned" for status in statuses):
+    if all(step.status == "Planned" for step in steps):
         return "Proposed"
-    if statuses and all(status == "Verified" for status in statuses):
+
+    def complete(step: PlanStepView) -> bool:
+        return step.status == "Verified" or (
+            step.status == "Confirmed" and step.kind in _UNVERIFIABLE_KINDS
+        )
+
+    if all(complete(step) for step in steps):
         return "Completed"
-    if "Verified" in statuses and all(
-        status in {"Verified", "Failed", "Skipped", "Dropped", "Replaced", "Final"}
-        for status in statuses
+    # A confirmed PAY/REFILL without a verification result is still waiting for the indexer.
+    if any(
+        step.status in {"Planned", "Submitted", "Pending", "Unknown"}
+        or (step.status == "Confirmed" and step.verification is None and not complete(step))
+        for step in steps
+    ):
+        return "Executing"
+    if any(complete(step) for step in steps) and all(
+        complete(step) or step.status in {"Failed", "Skipped", "Dropped", "Replaced", "Final"}
+        for step in steps
     ):
         return "PartiallyCompleted"
     return "Unknown"
@@ -341,7 +359,8 @@ async def _plan_detail(
             ).all()
         )
     latest_transaction: dict[uuid.UUID, Transaction] = {}
-    for transaction in transactions:
+    # Prefer the newest live transaction; a Dropped one only shows when nothing else exists.
+    for transaction in sorted(transactions, key=lambda tx: tx.status.value == "Dropped"):
         latest_transaction.setdefault(transaction.operation_id, transaction)
 
     steps: list[PlanStepView] = []
@@ -409,7 +428,7 @@ async def _plan_detail(
     steps.sort(key=lambda step: step.index)
 
     total_amount = _total_amount([step.amount for step in steps], len(attestation.step_ids))
-    plan_status = _plan_status([step.status for step in steps], len(attestation.step_ids))
+    plan_status = _plan_status(steps, len(attestation.step_ids))
     return PlanDetailView(
         id=attestation.plan_id,
         treasury_id=treasury.id,
@@ -453,29 +472,33 @@ async def list_execution_plans(
     if member.organization_id != organization_id:
         raise _not_found()
     async with _sessions(request)() as session:
-        plans = (
+        plan_ids = (
             await session.scalars(
-                select(Attestation)
-                .join(ExecutionPlanStep, ExecutionPlanStep.attestation_id == Attestation.id)
-                .join(Treasury, Treasury.module_address == ExecutionPlanStep.treasury_address)
+                select(Attestation.plan_id)
                 .where(
-                    Treasury.org_id == organization_id,
-                    Treasury.id == treasury_id,
-                    Treasury.chain_id == ExecutionPlanStep.chain_id,
+                    exists().where(
+                        ExecutionPlanStep.attestation_id == Attestation.id,
+                        Treasury.module_address == ExecutionPlanStep.treasury_address,
+                        Treasury.chain_id == ExecutionPlanStep.chain_id,
+                        Treasury.org_id == organization_id,
+                        Treasury.id == treasury_id,
+                    )
                 )
-                .order_by(Attestation.created_at.desc())
+                .group_by(Attestation.plan_id)
+                .order_by(func.max(Attestation.created_at).desc())
                 .limit(100)
             )
         ).all()
-        seen: set[uuid.UUID] = set()
         items: list[PlanView] = []
-        for attestation in plans:
-            if attestation.plan_id in seen:
+        for plan_id in plan_ids:
+            try:
+                detail = await _plan_detail(
+                    session, organization_id=organization_id, plan_id=plan_id
+                )
+            except AuthFailure as failure:
+                # One inconsistent plan must not hide the rest of the list.
+                logger.warning("Skipping unreadable plan %s: %s", plan_id, failure.code)
                 continue
-            seen.add(attestation.plan_id)
-            detail = await _plan_detail(
-                session, organization_id=organization_id, plan_id=attestation.plan_id
-            )
             items.append(
                 PlanView(
                     **detail.model_dump(

@@ -45,8 +45,8 @@ Nội bộ: `screen(address, chain)`, `encrypt(value, cls)` / `decrypt`, các pr
 
 Trước khi validate policy, caller cũng phải chạy `travel_rule_before_pay()`. Hàm đánh giá
 ngưỡng theo tuyến, phân loại địa chỉ nhận qua provider rồi tạo hoặc kiểm tra trạng thái trao
-đổi. `ValidationContext.travel_rule_clear` mặc định là false: PAY bị chặn bằng `DATA_MISSING`
-cho đến khi dưới ngưỡng, provider xác minh attestation ví tự quản, hoặc exchange hoàn tất.
+đổi. `ValidationContext.travel_rule_clear` mặc định là `None` (chưa chạy preflight, không áp dụng);
+khi bằng `false`, PAY bị chặn bằng `DATA_MISSING` cho đến khi dưới ngưỡng, provider xác minh attestation ví tự quản, hoặc exchange hoàn tất.
 
 ## 8. Thuật toán
 

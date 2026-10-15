@@ -46,12 +46,17 @@ class SimulationContext:
     # Required for PAY and REFILL; the PaymentApproval message and its wire-format signature.
     approval: Mapping[str, Any] | None = None
     approver_signature: bytes = b""
+    # None = preflight not run (no-op); False = Travel Rule exchange held, which blocks PAY.
+    # REFILL is intentionally out of scope: it moves treasury funds, not a payee transfer.
+    travel_rule_clear: bool | None = None
 
 
 def _struct(fields: Sequence[Mapping[str, str]], message: Mapping[str, Any]) -> tuple[Any, ...]:
     def coerce(kind: str, value: Any) -> Any:
         if kind == "bytes32[]":
             return [coerce("bytes32", item) for item in value]
+        if kind == "uint256[]":
+            return [int(item) for item in value]
         if kind == "bytes32" and isinstance(value, str):
             return bytes.fromhex(value.removeprefix("0x"))
         return value
@@ -70,8 +75,13 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
             raise ValueError(f"a {step.action} step needs the approval it was planned with")
         types = [_APPROVAL, "bytes", "bytes32"]
         args = [_struct(PAYMENT_APPROVAL_TYPE, ctx.approval), ctx.approver_signature, step.step_id]
-        if step.action is Action.REFILL:
+        if step.action is Action.PAY:
+            # Fiat payment plans use the fresh-quote amount while the approval carries its cap.
+            types, args = [*types, "uint256"], [*args, int(step.amount)]
+        elif step.action is Action.REFILL:
             types, args = [*types, "address", "uint256"], [*args, step.to, int(step.amount)]
+        else:
+            raise ValueError(f"{step.action} steps cannot be simulated")
     elif step.action in (Action.SUPPLY, Action.WITHDRAW):
         # attestation[1] is requestId (0x0 for a liquidity plan), as the executor expects.
         types, args = (
@@ -100,6 +110,37 @@ def _revert_data(error: RpcResponseError) -> bytes | None:
 async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> Decision:
     """`eth_call` the step from the executor at `latest`; revert or RPC failure is BLOCK."""
 
+    if step.action is Action.PAY and ctx.travel_rule_clear is False:
+        # Held before any RPC call: an existing approval signature must not bypass the exchange.
+        codes: tuple[PolicyReasonCode, ...] = (PolicyReasonCode.DATA_MISSING,)
+        checks = [
+            Check(
+                name="travel_rule_clear",
+                passed=False,
+                code=PolicyReasonCode.DATA_MISSING,
+                expected="completed or non-qualifying Travel Rule exchange",
+                observed="Travel Rule exchange held for this transfer",
+            )
+        ]
+    else:
+        codes, checks = await _simulate_call(rpc, step, ctx)
+    outcome, primary = aggregate(codes)
+    return Decision(
+        decision=outcome,
+        primary=primary,
+        codes=list(codes),
+        warnings=[],
+        checks=checks,
+        stage="SIMULATION",
+        step_seq=step.seq,
+        policy_version=ctx.policy_version,
+        snapshot_block=ctx.snapshot_block,
+    )
+
+
+async def _simulate_call(
+    rpc: RpcClient, step: PlanStep, ctx: SimulationContext
+) -> tuple[tuple[PolicyReasonCode, ...], list[Check]]:
     call = {"from": ctx.executor, "to": ctx.target, "data": "0x" + build_calldata(step, ctx).hex()}
     codes: tuple[PolicyReasonCode, ...] = ()
     observed = None
@@ -131,18 +172,7 @@ async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> De
             for code in codes
         ]
     )
-    outcome, primary = aggregate(codes)
-    return Decision(
-        decision=outcome,
-        primary=primary,
-        codes=list(codes),
-        warnings=[],
-        checks=checks,
-        stage="SIMULATION",
-        step_seq=step.seq,
-        policy_version=ctx.policy_version,
-        snapshot_block=ctx.snapshot_block,
-    )
+    return codes, checks
 
 
 async def record_validation(pool: asyncpg.Pool, plan_id: UUID, decision: Decision) -> None:
