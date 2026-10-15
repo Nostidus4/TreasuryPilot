@@ -1,0 +1,42 @@
+{
+  "case_id": "cp-007",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "3bf1d74edcd72a21e1ca6df5232fa073457ea911a33a687edc5147d12c603774",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_018ehDBNhkwKXcfY3RQHMj6E",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 219,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_014hWMryAyswPL12F1Det2sZ",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 382,
+      "output_tokens": 202
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"If r1 is paid today at face value, the remaining PAY budget today is 100000000 base units. r2's early-payment amount is 270000000 base units. The discount forgone relative to r2's standard amount is 30000000 base units. That discount excludes fees and forgone interest. This is read-only information and does not mean the discount should be taken. I can't pay, approve or schedule anything. Any payment decision goes through the approval flow.\",\"citations\":[{\"tool_call_id\":\"toolu_018ehDBNhkwKXcfY3RQHMj6E\",\"path\":\"result.deterministic_tool.remaining_daily_pay_after_r1.remaining_daily_pay_after_r1\"},{\"tool_call_id\":\"toolu_018ehDBNhkwKXcfY3RQHMj6E\",\"path\":\"result.deterministic_tool.approved_options.early_amount\"},{\"tool_call_id\":\"toolu_018ehDBNhkwKXcfY3RQHMj6E\",\"path\":\"result.deterministic_tool.approved_options.forgone_discount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 715,
+      "output_tokens": 358
+    }
+  ]
+}

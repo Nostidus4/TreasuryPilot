@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-009",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "949bee4575276fe48c13efb3f097a1786cadefb39c3f5890ce8a37f3dbcec540",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_014463veAL3bxC1ecZSVVUWE",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 142,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"The remaining daily PAY budget today is 100000000 base units. The tool result gives this figure directly. As you noted, REFILL usage doesn't consume the PAY counter.\",\"citations\":[{\"tool_call_id\":\"toolu_014463veAL3bxC1ecZSVVUWE\",\"path\":\"result.deterministic_tool.remaining_daily_pay.remaining_daily_pay\"}]}",
+      "tool_calls": [],
+      "input_tokens": 253,
+      "output_tokens": 140
+    }
+  ]
+}
