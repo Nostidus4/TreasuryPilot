@@ -34,9 +34,23 @@ jobs:
         with:
           version: '0.11.3'
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install Solidity dependencies
+        run: pnpm install --frozen-lockfile --filter @treasurypilot/contracts...
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.5
+      - name: Build the contracts used by the worker Anvil tests
+        working-directory: contracts
+        run: >-
+          forge build src/test-assets/TestUSDC.sol src/test-assets/MockAavePool.sol
+          test/helpers/ReconcileModuleStandIn.sol
       - name: Install Python workspace
         run: uv sync --frozen
       - name: Run execution API and Anvil integration tests
