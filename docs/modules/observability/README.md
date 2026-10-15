@@ -45,7 +45,7 @@ F-140 (FR-921), F-141 (FR-922), F-142 (FR-923, NFR-AUD-04).
 **As implemented (OBS-005, `GET /orgs/{o}/metrics/savings`, default last 30 days, Owner and Finance):**
 
 - **Batches:** requests paid in the period, grouped by the UTC day of their `Scheduled` event. B1 is `schedule_edf` run on each batch; per request, cost = amount - `request_value` (discount captured, minus early-payment gas per FEE-2, minus late fees), `baseline` = B1 cost, `actual` = cost at the real `Paid` day, `saved` = baseline - actual (negative is reported as negative). Money is integer base-unit strings. The same gas fee (gas ledger x the accepted fee policy's reference ETH price) is charged on both sides; only an early payment bears it. Requests B1 cannot schedule are not compared. The methodology text is returned in `methodology`.
-- **Shortcut:** no planner snapshot is persisted yet, so B1 runs on an unconstrained snapshot (no caps, ample liquidity, payee active); supply interest is 0. Switch to the stored snapshot and rate when they exist.
+- **Constraints:** B1 runs under the mandate version Active at the batch's `Scheduled` time (PAY/REFILL per-request and daily caps, payee cooling), each payee's `active_from`, and the PAY amount other requests already paid that UTC day. Gas counts only PAY operations. **Shortcuts:** no balances are persisted, so liquidity is assumed ample (B1 is an upper bound; savings are conservative); supply interest is 0; a missing ETH reference price counts gas as 0 (reported in `warnings`). Requests with no `Scheduled` event, no Active mandate, or that B1 cannot schedule are counted in `skipped`.
 
 ## 4. Data model
 
@@ -58,7 +58,7 @@ No new business tables: metrics are computed from `request_status_events`, `plan
 | Method | Endpoint | Perm |
 |---|---|---|
 | GET | `/orgs/{o}/metrics/operations?from=&to=&treasuryId=` | OWN, FIN, ADM, Auditor |
-| GET | `/orgs/{o}/metrics/savings?from=&to=` → `{totals{baseline,actual,saved}, perRequest[], methodology}` | OWN, FIN |
+| GET | `/orgs/{o}/metrics/savings?from=&to=` → `{totals{baseline,actual,saved}, perRequest[], skipped, warnings[], methodology}` | OWN, FIN |
 | GET | `/metrics` (Prometheus, served by each worker on `:9100`, internal network only) | infra |
 
 Prometheus series: `tp_queue_depth{queue}`, `tp_rpc_errors_total{provider}`, `tp_rpc_latency_seconds`, `tp_llm_latency_seconds{task}`, `tp_llm_cost_usd_total{task}`, `tp_tx_status_total{status}`, `tp_validation_decisions_total{decision,code}`, `tp_unknown_operations`, `tp_executor_gas_eth{key}`, `tp_circuit_trips_total{rule}`.

@@ -13,6 +13,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 
 from treasurypilot_api.observability.savings import (
+    LoadedSavings,
     SavingsBatch,
     SavingsMetrics,
     SavingsRequest,
@@ -110,6 +111,15 @@ def test_negative_savings_are_reported_negative() -> None:
     assert m.per_request[0].saved == "-7"
 
 
+def test_unschedulable_requests_are_counted_as_skipped() -> None:
+    # Cap below the amount: B1 can never pay r1, so it is not compared but is counted.
+    batch = SavingsBatch(
+        _snapshot(100), _policy(10), [SavingsRequest(_req("r1", 1000, 101), "I", "A", 101, 0)]
+    )
+    m = compute_savings([batch], skipped=1)
+    assert (m.per_request, m.skipped) == ([], 2)
+
+
 def test_empty_is_zero() -> None:
     m = compute_savings([])
     assert (m.totals.saved, m.per_request) == ("0", [])
@@ -133,6 +143,9 @@ _IDS = {
         "other_treasury": "e4",
         "other_vendor": "e5",
         "other_req": "e6",
+        "req2": "d9",
+        "payee": "da",
+        "other_payee": "ea",
     }.items()
 }
 _START = datetime(2026, 10, 1, tzinfo=UTC)
@@ -210,6 +223,71 @@ async def _exercise(database_url: str) -> None:
                         to=to,
                         at=at,
                     )
+            for org, treasury, vendor, payee, cap in [
+                ("org", "treasury", "vendor", "payee", 1000),
+                ("other_org", "other_treasury", "other_vendor", "other_payee", 10**9),
+            ]:
+                await run(
+                    "INSERT INTO payees (id, org_id, treasury_id, vendor_id, label, address, "
+                    "status, active_from, oob_verified_by, oob_verified_at, oob_method, oob_note, "
+                    "version) VALUES (:p, :o, :t, :v, 'Acme', decode(repeat('44', 20), 'hex'), "
+                    "'Active', CAST('2026-09-01' AS timestamptz), :u, now(), 'PHONE', 'ok', 1)",
+                    p=ids[payee],
+                    o=ids[org],
+                    t=ids[treasury],
+                    v=ids[vendor],
+                    u=ids["user"],
+                )
+                await run(
+                    "INSERT INTO mandate_versions (id, org_id, treasury_id, version, "
+                    "onchain_version, status, config, config_hash, valid_from, expires_at, "
+                    "created_by, activated_at) VALUES (gen_random_uuid(), :o, :t, 1, 1, 'Active', "
+                    "CAST(:cfg AS jsonb), decode(repeat('55', 32), 'hex'), "
+                    "CAST('2026-09-01' AS timestamptz), CAST('2027-01-01' AS timestamptz), :u, "
+                    "CAST('2026-09-01' AS timestamptz))",
+                    o=ids[org],
+                    t=ids[treasury],
+                    u=ids["user"],
+                    cfg=f'{{"limits": {{"PAY": {{"perRequest": "{cap}", "daily": "{cap}"}}}}}}',
+                )
+            await run(
+                "UPDATE payment_requests SET payee_id = :p WHERE id = :r",
+                p=ids["payee"],
+                r=ids["req"],
+            )
+            await run(
+                "UPDATE payment_requests SET payee_id = :p WHERE id = :r",
+                p=ids["other_payee"],
+                r=ids["other_req"],
+            )
+            # req2: bigger discount, lapses after day 8, so the day-8 daily cap decides who gets it.
+            await run(
+                "INSERT INTO payment_requests (id, org_id, treasury_id, chain_id, vendor_id, "
+                "payee_id, invoice_no, issue_date, due_at, amount, asset_id, status, terms, "
+                "terms_confirmed_by, terms_confirmed_at) VALUES (:r, :o, :t, 11155111, :v, :p, "
+                "'INV-8', CAST('2026-10-01' AS date), CAST('2026-10-11' AS date), 1000, :a, "
+                "'Draft', CAST(:terms AS jsonb), :u, now())",
+                r=ids["req2"],
+                o=ids["org"],
+                t=ids["treasury"],
+                v=ids["vendor"],
+                p=ids["payee"],
+                a=ids["asset"],
+                terms=f'{{"net_due_day": {day + 1}, "discount_bps": 500, '
+                f'"discount_deadline_day": {day - 2}}}',
+                u=ids["user"],
+            )
+            for to, at in [
+                ("Scheduled", datetime(2026, 10, 8, 12, tzinfo=UTC)),
+                ("Paid", datetime(2026, 10, 8, 13, tzinfo=UTC)),
+            ]:
+                await run(
+                    'INSERT INTO request_status_events (id, request_id, "to", actor_type, at) '
+                    "VALUES (gen_random_uuid(), :r, :to, 'SYSTEM', :at)",
+                    r=ids["req2"],
+                    to=to,
+                    at=at,
+                )
             await run(
                 "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, "
                 "kind, payload, idempotency_key, status) VALUES (:id, :t, :id, :r, "
@@ -245,15 +323,18 @@ async def _exercise(database_url: str) -> None:
 
         async def savings(org: uuid.UUID) -> SavingsMetrics:
             async with sessions() as session:
-                return compute_savings(await load_savings_batches(session, org, _START, _END))
+                loaded = await load_savings_batches(session, org, _START, _END)
+                return compute_savings(loaded.batches, loaded.skipped, loaded.warnings)
 
-        # Fee 2e9 wei * 2e9 / 1e18 = 4. B1 pays on the scheduled day (early, 1% = 10 off, fee
-        # 4): cost 994. Actual pays on the due day, no discount: cost 1000. Saved -6.
+        # Fee 2e9 wei * 2e9 / 1e18 = 4 on INV-7 only (INV-8 has no gas). The 1000 daily cap binds
+        # on day 8: B1 (EDF, INV-7 due first) takes the cap for INV-7 (1% off, cost 994) and
+        # INV-8 misses its 5% window (1000). Actual: INV-8 early (950), INV-7 on its due day
+        # (1000). Saved: (994 + 1000) - (1000 + 950) = +44, from persisted data alone.
         m = await savings(ids["org"])
-        (row,) = m.per_request
-        assert (row.invoice_number, row.vendor_name) == ("INV-7", "Acme Ltd")
-        assert (row.baseline, row.actual, row.saved) == ("994", "1000", "-6")
-        assert m.totals.saved == "-6"
+        rows = {r.invoice_number: (r.baseline, r.actual, r.saved) for r in m.per_request}
+        assert rows == {"INV-7": ("994", "1000", "-6"), "INV-8": ("1000", "950", "50")}
+        assert m.totals.saved == "44"
+        assert m.skipped == 0 and m.warnings == []
 
         other = await savings(ids["other_org"])  # no fee policy: fee 0 -> B1 cost 990
         assert [r.baseline for r in other.per_request] == ["990"]
@@ -312,8 +393,8 @@ def _client(
         async def __aexit__(self, *_: object) -> None:
             return None
 
-    async def fake_load(*_: object) -> list[SavingsBatch]:
-        return _batches()
+    async def fake_load(*_: object) -> LoadedSavings:
+        return LoadedSavings(_batches(), skipped=2, warnings=("w",))
 
     monkeypatch.setattr(savings, "load_savings_batches", fake_load)
     app = create_app(settings=Settings(environment="local"))
@@ -338,7 +419,8 @@ def _url(query: str = "") -> str:
 
 def test_route_returns_web_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     body = cast(dict[str, object], _client(monkeypatch).get(_url()).json())
-    assert set(body) == {"totals", "perRequest", "methodology"}
+    assert set(body) == {"totals", "perRequest", "skipped", "warnings", "methodology"}
+    assert (body["skipped"], body["warnings"]) == (2, ["w"])
     assert body["totals"] == {"baseline": "1995", "actual": "1982", "saved": "13"}
 
 

@@ -551,8 +551,10 @@ export const operationHandlers: RequestHandler[] = [
         saved: total('saved'),
       },
       perRequest,
+      skipped: 0,
+      warnings: [],
       methodology:
-        'Baseline B1 pays every invoice on its due date at the full amount (earliest deadline first). “Actual” is what the executed plans paid. Savings come only from early-payment discounts that were captured; gas fees are excluded on both sides.',
+        'Baseline B1 re-runs the earliest-deadline-first scheduler on the same requests under the mandate version that was Active when each batch was scheduled (PAY and REFILL caps, payee cooling and activation, amounts already paid that day). No balances are persisted, so liquidity is assumed ample and B1 is an upper bound. Value is the early-payment discount captured, minus early-payment gas (FEE-2, PAY operations only), minus late fees. Savings = B1 cost - actual cost; negative savings are reported as negative. Requests that could not be compared are counted in skipped.',
     };
   }),
 

@@ -713,6 +713,8 @@ export interface SavingsMetrics {
     actual: string;
     saved: string;
   }>;
+  skipped: number;
+  warnings: string[];
   methodology: string;
 }
 

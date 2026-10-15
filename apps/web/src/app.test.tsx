@@ -147,6 +147,8 @@ test('negative savings are rendered with their negative sign', async () => {
             saved: '-100000',
           },
         ],
+        skipped: 3,
+        warnings: ['No accepted ETH reference price'],
         methodology: 'Actual payment exceeded the due-date baseline.',
       }),
     ),
@@ -162,6 +164,8 @@ test('negative savings are rendered with their negative sign', async () => {
   expect(within(row).getByText('1.00')).toBeInTheDocument();
   expect(within(row).getByText('1.10')).toBeInTheDocument();
   expect(within(row).getByText('-0.10')).toBeInTheDocument();
+  expect(screen.getByText('Not compared: 3')).toBeInTheDocument();
+  expect(screen.getByText('No accepted ETH reference price')).toBeInTheDocument();
 });
 
 test('the runway toggle requests the forecast with drafts enabled', async () => {

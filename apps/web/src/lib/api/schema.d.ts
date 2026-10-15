@@ -3992,7 +3992,11 @@ export interface components {
       methodology: string;
       /** Perrequest */
       perRequest: components['schemas']['SavingsRow'][];
+      /** Skipped */
+      skipped: number;
       totals: components['schemas']['SavingsTotals'];
+      /** Warnings */
+      warnings: string[];
     };
     /** SavingsRow */
     SavingsRow: {

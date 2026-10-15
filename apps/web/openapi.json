@@ -4368,11 +4368,28 @@
             "title": "Perrequest",
             "type": "array"
           },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
           "totals": {
             "$ref": "#/components/schemas/SavingsTotals"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
-        "required": ["totals", "perRequest", "methodology"],
+        "required": [
+          "totals",
+          "perRequest",
+          "skipped",
+          "warnings",
+          "methodology"
+        ],
         "title": "SavingsMetrics",
         "type": "object"
       },
