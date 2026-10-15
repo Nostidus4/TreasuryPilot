@@ -3583,6 +3583,31 @@
         "title": "PayeeResponse",
         "type": "object"
       },
+      "PayeeStatus": {
+        "enum": [
+          "Proposed",
+          "Screening",
+          "ScreeningFailed",
+          "AwaitingOwner",
+          "Cooling",
+          "Active",
+          "Deactivated"
+        ],
+        "title": "PayeeStatus",
+        "type": "string"
+      },
+      "PayeeTxResponse": {
+        "properties": {
+          "governanceTx": {
+            "additionalProperties": true,
+            "title": "Governancetx",
+            "type": "object"
+          }
+        },
+        "required": ["governanceTx"],
+        "title": "PayeeTxResponse",
+        "type": "object"
+      },
       "PayeeView": {
         "properties": {
           "activeFrom": {
@@ -3684,8 +3709,7 @@
             ]
           },
           "status": {
-            "title": "Status",
-            "type": "string"
+            "$ref": "#/components/schemas/PayeeStatus"
           },
           "treasuryId": {
             "format": "uuid",
@@ -4670,6 +4694,21 @@
         "title": "ReplacePayeeAddressRequest",
         "type": "object"
       },
+      "ReplacePayeeAddressResponse": {
+        "properties": {
+          "deactivationGovernanceTx": {
+            "additionalProperties": true,
+            "title": "Deactivationgovernancetx",
+            "type": "object"
+          },
+          "payee": {
+            "$ref": "#/components/schemas/PayeeView"
+          }
+        },
+        "required": ["payee", "deactivationGovernanceTx"],
+        "title": "ReplacePayeeAddressResponse",
+        "type": "object"
+      },
       "RequestBulkCreate": {
         "properties": {
           "requests": {
@@ -5333,6 +5372,11 @@
         "title": "SavingsTotals",
         "type": "object"
       },
+      "ScreeningResult": {
+        "enum": ["CLEAR", "HIT", "ERROR"],
+        "title": "ScreeningResult",
+        "type": "string"
+      },
       "ScreeningView": {
         "properties": {
           "checkedAt": {
@@ -5345,8 +5389,7 @@
             "type": "string"
           },
           "result": {
-            "title": "Result",
-            "type": "string"
+            "$ref": "#/components/schemas/ScreeningResult"
           },
           "sourceRef": {
             "anyOf": [
@@ -14964,9 +15007,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Build Deactivation Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Deactivation Tx Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PayeeTxResponse"
                 }
               }
             },
@@ -15028,9 +15069,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Build Registration Tx V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Registration Tx Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PayeeTxResponse"
                 }
               }
             },
@@ -15102,9 +15141,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Replace Payee Address V1 Orgs  Organization Id  Treasuries  Treasury Id  Payees  Payee Id  Replace Address Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReplacePayeeAddressResponse"
                 }
               }
             },

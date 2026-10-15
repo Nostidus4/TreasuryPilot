@@ -218,6 +218,28 @@ export const requestHandlers = [
     };
   }),
 
+  route<{ name?: string }>(
+    'post',
+    '/orgs/:orgId/vendors',
+    ({ params, body }) => {
+      requireOrg(params.orgId);
+      const name = body.name?.trim();
+      if (!name)
+        fail(422, 'VALIDATION', 'Enter the vendor name.', [
+          { field: 'name', message: 'Enter the vendor name.' },
+        ]);
+      const vendor = {
+        id: `vnd_${db.vendors.length}`,
+        name,
+        payeeAddress: null,
+        payeeStatus: null,
+      };
+      db.vendors.push(vendor);
+      return { vendor };
+    },
+    { status: 201 },
+  ),
+
   route('get', R, ({ params, query }) => {
     const org = requireOrg(params.orgId);
     const status = query.get('status');

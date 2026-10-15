@@ -284,28 +284,10 @@ export interface MandateDraft {
   diff: DiffEntry[];
 }
 
-export type PayeeStatus =
-  | 'Screening'
-  | 'ScreeningHit'
-  | 'AwaitingVerification'
-  | 'AwaitingRegistration'
-  | 'Cooling'
-  | 'Active'
-  | 'Deactivated';
-
-export interface Payee {
-  id: string;
-  treasuryId: string;
-  vendorId: string;
-  vendorName: string;
-  label: string;
-  address: Hex;
-  status: PayeeStatus;
-  screening: { result: 'CLEAR' | 'HIT' | 'PENDING'; checkedAt?: string };
-  oobVerified: boolean;
-  activeFrom?: string;
-  createdAt: string;
-}
+export type PayeeStatus = components['schemas']['PayeeStatus'];
+/** The API payee row; the vendor name is joined from the vendor list. */
+export type Payee = components['schemas']['PayeeView'];
+export type ScreeningResult = components['schemas']['ScreeningResult'];
 
 export interface DecodedCall {
   to: Hex;

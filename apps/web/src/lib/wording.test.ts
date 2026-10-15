@@ -47,7 +47,7 @@ const all = {
   request: keysOf(requestStatuses).map(requestStatus),
   governance: keysOf(governanceStatuses).map(governanceStatus),
   plan: keysOf(planStatuses).map(planStatus),
-  payee: keysOf(payeeStatuses).map(payeeStatus),
+  payee: keysOf(payeeStatuses).map((status) => payeeStatus(status)),
   mandate: keysOf(mandateStatuses).map(mandateStatus),
   treasury: keysOf(treasuryStatuses).map(treasuryStatus),
 };
