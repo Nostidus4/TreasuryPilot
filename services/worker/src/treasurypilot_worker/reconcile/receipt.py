@@ -24,6 +24,7 @@ import asyncpg  # type: ignore[import-untyped]
 from hexbytes import HexBytes
 from web3 import Account, Web3
 from web3.exceptions import TransactionNotFound
+from web3.types import Nonce
 
 from treasurypilot_core.attestations import (
     ATTESTED_EVENT,
@@ -175,7 +176,7 @@ class Web3ReceiptPublisher:
             ),
         )
         function = self.contract.functions.attest(request)
-        use_nonce = (
+        use_nonce = Nonce(
             nonce
             if nonce is not None
             else self.web3.eth.get_transaction_count(self.account.address, "pending")
@@ -190,9 +191,7 @@ class Web3ReceiptPublisher:
             }
         )
         signed = self.account.sign_transaction(transaction)
-        return SignedReceipt(
-            bytes(signed.hash), bytes(signed.raw_transaction), transaction["nonce"]
-        )
+        return SignedReceipt(bytes(signed.hash), bytes(signed.raw_transaction), use_nonce)
 
     def broadcast(self, raw_tx: bytes) -> None:
         self.web3.eth.send_raw_transaction(raw_tx)
