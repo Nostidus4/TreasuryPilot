@@ -196,7 +196,12 @@ test('the runway toggle requests the forecast with drafts enabled', async () => 
       '*/v1/orgs/org_northwind/treasuries/trs_main/forecast',
       ({ request }) => {
         includeDrafts = new URL(request.url).searchParams.get('includeDrafts');
-        return HttpResponse.json({ days: [], alerts: [] });
+        return HttpResponse.json({
+          days: [],
+          wallets: [],
+          suggestedRefills: [],
+          alerts: [],
+        });
       },
     ),
   );

@@ -33,6 +33,7 @@ import {
 } from '@/features/treasury/overview-charts';
 import { PendingTransactions } from '@/features/treasury/pending-transactions';
 import { PauseDialog } from '@/features/treasury/status-banner';
+import { WalletRunways } from '@/features/treasury/wallet-runways';
 import { useAssetInfo } from '@/lib/api/chains';
 import type { TreasuryState } from '@/lib/api/types';
 import { formatDate, formatRelative } from '@/lib/format';
@@ -363,6 +364,17 @@ function Overview({ state }: { state: TreasuryState }) {
           <LiquidityIcicle branches={branches} units={units} />
         </CardContent>
       </Card>
+
+      {forecast.data && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <WalletRunways
+            asset={state.treasury.asset}
+            forecast={forecast.data}
+            units={units}
+            wallets={state.wallets}
+          />
+        </div>
+      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>
