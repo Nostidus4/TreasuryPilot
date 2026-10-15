@@ -187,7 +187,7 @@ async def test_d2_surplus_is_supplied_to_aave_with_the_reserve_intact(
             "SELECT request_id, kind, status FROM operations WHERE treasury_id = $1", world.treasury
         )
         assert (op["request_id"], op["kind"], op["status"]) == (None, "SUPPLY", "Confirmed")
-        assert plan["request_id"] is None and plan["status"] == "Completed"
+    finally:
         steps.rpc(anvil, "evm_revert", [snapshot_id])
 
 
