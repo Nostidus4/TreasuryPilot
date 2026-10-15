@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
+import {Vm} from "../helpers/Vm.sol";
 import {TreasuryFixture} from "../helpers/TreasuryFixture.sol";
 import {ThresholdApprovalExecutor as T} from "../../src/ThresholdApprovalExecutor.sol";
 import {TreasuryPilotErrors as E} from "../../src/libraries/TreasuryPilotErrors.sol";
@@ -106,6 +107,67 @@ contract ThresholdApprovalExecutorTest is TreasuryFixture {
         bytes[] memory s = _sigs(1, ap);
         vm.expectRevert(E.NotExecutor.selector);
         gate.pay(ap, s, keccak256("step"), ap.amount);
+    }
+
+    function testFiatPaymentBelowSignedAmountStillUsesSignedBand() external {
+        I.PaymentApproval memory ap = _approval(205, 500e6);
+        bytes[] memory s = _sigs(1, ap);
+        vm.expectRevert(abi.encodeWithSelector(T.InsufficientApprovals.selector, 1, 2));
+        vm.prank(executor);
+        gate.pay(ap, s, ap.requestId, 50e6); // 50e6 alone would be band k=1
+    }
+
+    function testDirectModulePayRejected() external {
+        I.PaymentApproval memory ap = _approval(206, 50e6);
+        bytes memory sig = _sigBy(APPROVER_KEY, ap);
+        vm.expectRevert(E.NotExecutor.selector);
+        vm.prank(executor);
+        module.pay(ap, sig, ap.requestId, ap.amount);
+        vm.expectRevert(E.NotExecutor.selector);
+        module.pay(ap, sig, ap.requestId, ap.amount);
+    }
+
+    function testRemovedApproverSignatureRejected() external {
+        I.PaymentApproval memory ap = _approval(207, 500e6);
+        bytes[] memory s = _sigs(2, ap);
+        address[] memory rm = new address[](1);
+        rm[0] = vm.addr(K2);
+        _owner(abi.encodeCall(module.setApprovers, (new address[](0), rm)));
+        _pay(ap, s, abi.encodeWithSelector(E.NotApprover.selector));
+    }
+
+    /// A different but valid encoding of the same signature (high-s twin) must not count twice.
+    function testMalleatedSignatureCountedOnce() external {
+        I.PaymentApproval memory ap = _approval(208, 500e6);
+        (uint8 v, bytes32 r, bytes32 s0) = vm.sign(APPROVER_KEY, module.hashApproval(ap));
+        bytes32 hi = bytes32(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - uint256(s0));
+        bytes[] memory s = new bytes[](2);
+        s[0] = abi.encode(vm.addr(APPROVER_KEY), abi.encodePacked(r, s0, v));
+        s[1] = abi.encode(vm.addr(APPROVER_KEY), abi.encodePacked(r, hi, v == 27 ? uint8(28) : uint8(27)));
+        vm.prank(executor);
+        try gate.pay(ap, s, ap.requestId, ap.amount) {
+            revert("must not pass");
+        } catch (bytes memory e) {
+            // either the module rejects the high-s twin, or it is counted once
+            require(bytes4(e) == E.ApprovalInvalid.selector || bytes4(e) == T.InsufficientApprovals.selector, "reason");
+        }
+    }
+
+    function testBandsSetEventAndReplacement() external {
+        T.Band[] memory b = new T.Band[](2);
+        b[0] = T.Band(10e6, 2);
+        b[1] = T.Band(type(uint128).max, 2); // equal k is allowed
+        vm.recordLogs();
+        _setBands(b);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 hits;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(gate) && logs[i].topics[0] == T.BandsSet.selector) ++hits;
+        }
+        require(hits == 1, "BandsSet");
+        T.Band[] memory got = gate.bands();
+        require(got.length == 2 && got[0].upTo == 10e6 && got[1].k == 2, "replaced");
+        require(gate.requiredApprovals(1) == 2 && gate.requiredApprovals(5000e6) == 2, "k");
     }
 
     function testBandsUnsetAndOwnerOnlyAndValidation() external {
