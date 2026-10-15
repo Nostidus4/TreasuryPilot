@@ -6,7 +6,11 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
+import socket
+import subprocess
 import time
+import urllib.request
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -18,6 +22,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery import Celery
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
@@ -502,6 +507,114 @@ async def test_needs_approval_creates_exactly_one_review_item(pool: Any, databas
 
     assert outcome.status == "AwaitingAuthority" and outcome.planner_source is None
     assert [kind for kind, _ in await _reviews(pool, world)] == ["NEEDS_AUTHORITY"]
+
+
+@pooled
+async def test_needs_approval_rerun_keeps_one_review_item(pool: Any, database_url: str) -> None:
+    world = await _seed(pool, amount=9_000)
+    first = await _plan(pool, database_url, world)
+    assert first.status == "AwaitingAuthority"
+
+    await plan_request(pool, first.plan_id, _deps(pool, database_url, world))
+    again, claimed = await _cycle(pool, world)
+
+    assert not claimed and not again.started
+    assert [kind for kind, _ in await _reviews(pool, world)] == ["NEEDS_AUTHORITY"]
+
+
+@pooled
+async def test_a_real_ai_queue_timeout_falls_back_to_rule_based(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, terms={"net_due_day": 30_000, "priority_note": "critical vendor"})
+    # A broker with no worker on the `ai` queue: the result never arrives, so `get` times out
+    # exactly as wiring.ask does when the AI worker is down.
+    quiet = Celery("quiet", broker="memory://", backend="cache+memory://")
+
+    def ask(request: dict[str, Any]) -> dict[str, Any]:
+        sent = quiet.send_task("treasurypilot.planning.propose", kwargs=request, queue="ai")
+        payload: dict[str, Any] = sent.get(timeout=0.3, disable_sync_subtasks=False)
+        return payload
+
+    outcome = await _plan(pool, database_url, world, ai=CeleryAiProposer(ask))
+
+    assert (outcome.status, outcome.planner_source) == ("Attested", "RULE_BASED")
+    reason = await pool.fetchval("SELECT chosen_reason FROM plans WHERE id = $1", outcome.plan_id)
+    assert "AiTimeout" in reason
+
+
+def _anvil_rpc(url: str, method: str, params: list[Any]) -> Any:
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.load(response)["result"]
+
+
+@pytest.fixture(scope="module")
+def anvil_url() -> Iterator[str]:
+    if "TP_TEST_ANVIL_URL" in os.environ:
+        yield os.environ["TP_TEST_ANVIL_URL"]
+        return
+    if shutil.which("anvil") is None:
+        pytest.skip("anvil is required for the Anvil-backed planning test")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = int(probe.getsockname()[1])
+    process = subprocess.Popen(
+        ["anvil", "--silent", "--port", str(port), "--chain-id", str(CHAIN_ID)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    url = f"http://127.0.0.1:{port}"
+    try:
+        for _ in range(50):
+            try:
+                _anvil_rpc(url, "eth_chainId", [])
+                break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            pytest.fail("anvil did not start")
+        yield url
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_deterministic_plan_on_a_snapshot_pinned_to_an_anvil_block(
+    anvil_url: str, database_url: str
+) -> None:
+    # shortcut: the block identity comes from a live Anvil head, the contract reads come from the
+    # fixture (the Safe/module stack is deployed by the scenario-anvil job); upgrade when a
+    # deployed-module fixture is shared with the worker tests.
+    async def scenario(pool: Any, database_url: str) -> None:
+        world = await _seed(pool)
+        _anvil_rpc(anvil_url, "evm_mine", [])
+        head = _anvil_rpc(anvil_url, "eth_getBlockByNumber", ["latest", False])
+        base = _chain(world)
+        snapshot = Snapshot(
+            purpose=SnapshotPurpose.PLAN,
+            block_number=int(head["number"], 16),
+            block_hash=head["hash"],
+            block_timestamp=datetime.fromtimestamp(int(head["timestamp"], 16), UTC)
+            - timedelta(seconds=5),
+            provider="anvil",
+            data=base.data,
+            coverage="COMPLETE",
+            missing=(),
+        )
+        outcome = await _plan(pool, database_url, world, snapshot=snapshot)
+
+        assert (outcome.status, outcome.planner_source) == ("Attested", "DETERMINISTIC")
+        stored = await pool.fetchrow(
+            "SELECT s.block_number, s.block_hash FROM plans p JOIN snapshots s "
+            "ON s.id = p.snapshot_id WHERE p.id = $1",
+            outcome.plan_id,
+        )
+        assert stored["block_number"] == snapshot.block_number
+        assert "0x" + bytes(stored["block_hash"]).hex() == head["hash"]
+
+    pooled(scenario)(database_url)
 
 
 @pooled
