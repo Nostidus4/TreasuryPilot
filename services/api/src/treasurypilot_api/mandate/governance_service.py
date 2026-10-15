@@ -283,8 +283,10 @@ class GovernanceService:
         )
         return int(str(result), 16)
 
-    async def read_used_today(self, chain_id: int, module_address: bytes, asset: bytes) -> int:
-        """Read the authoritative on-chain PAY counter for one asset (action 1)."""
+    async def read_used_today(
+        self, chain_id: int, module_address: bytes, asset: bytes, action: int = 1
+    ) -> int:
+        """Read the authoritative on-chain counter for one asset (action 1 PAY, 2 REFILL)."""
         if len(module_address) != 20 or len(asset) != 20:
             raise GovernanceFailure("MODULE_NOT_READY", 409, "Treasury module is unavailable.")
         selector = keccak(b"usedToday(uint8,address)")[:4]
@@ -294,7 +296,9 @@ class GovernanceService:
             [
                 {
                     "to": _address(module_address),
-                    "data": _hex(selector + encode(["uint8", "address"], [1, _address(asset)])),
+                    "data": _hex(
+                        selector + encode(["uint8", "address"], [action, _address(asset)])
+                    ),
                 },
                 "latest",
             ],

@@ -202,37 +202,10 @@ export interface TreasuryState {
   borrowProposalId?: string;
 }
 
-export interface ForecastDay {
-  date: string;
-  balance: string;
-  outflow: string;
-  buffer: string;
-}
-
-export interface ForecastWallet {
-  role: WalletRole;
-  label: string;
-  safeAddress: Hex;
-  buffer: string;
-  days: Array<{ date: string; balance: string }>;
-}
-
-export interface ForecastRefill {
-  date: string;
-  requestId: string;
-  sourceAddress: Hex;
-  targetAddress: Hex;
-  amount: string;
-}
-
-export interface Forecast {
-  /** The payments wallet (O1) series, kept for the outflow chart. */
-  days: ForecastDay[];
-  /** One balance series per operational wallet. */
-  wallets: ForecastWallet[];
-  suggestedRefills: ForecastRefill[];
-  alerts: Array<{ date: string; message: string }>;
-}
+export type Forecast = components['schemas']['ForecastResponse'];
+export type ForecastDay = components['schemas']['ForecastDay'];
+export type ForecastWallet = components['schemas']['ForecastWallet'];
+export type ForecastRefill = components['schemas']['ForecastRefill'];
 
 export interface BorrowProposal {
   id: string;
