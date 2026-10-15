@@ -257,7 +257,8 @@ async def sequence_plan(
         await _mark(pool, run, "Paying", ("Preparing",))
         async with pool.acquire() as connection, connection.transaction():
             await _transition(connection, run.request_id, "Paid", ("Paying",), "PAY step paid")
-            await build_reconciliation(connection, run.request_id)  # REC-002, atomic with Paid
+            # Must raise, never swallow: a failed build has to roll Paid back (REC-002).
+            await build_reconciliation(connection, run.request_id)
     return SequenceResult("Completed", completed=len(run.steps))
 
 

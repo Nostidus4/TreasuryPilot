@@ -172,42 +172,131 @@ def test_refill_without_a_paid_request_has_no_reconciliation_or_expense(
     assert rid is None and lines == []
 
 
-@pytest.mark.parametrize("kind", ["PAY"])
-def test_sequencer_creates_the_reconciliation_with_the_paid_transition(
-    database_url: str, kind: str
-) -> None:
-    async def scenario() -> tuple[str, int]:
-        pool = await create_worker_pool(database_url, min_size=1, max_size=2)
-        try:
-            request = await _seed_request(pool, [("REFILL", 7), (kind, 6)], "Paying")
-            steps = await pool.fetch(
-                "SELECT step_id, kind::text AS kind, plan_step_id FROM operations "
-                "WHERE request_id = $1 ORDER BY created_at, id",
-                request,
-            )
-            run = _seq.PlanRun(
-                uuid.uuid4(),
-                request,
-                tuple(
-                    _seq.StepExecution(
-                        treasury_id=_seq._TREASURY,
-                        request_id=request,
-                        plan_step_id=s["plan_step_id"],
-                        step_id=s["step_id"],
-                        kind=s["kind"],
-                        chain_id=_seq.CHAIN_ID,
-                        sign_request={},
-                    )
-                    for s in steps
-                ),
-                _seq.datetime.now(_seq.UTC) + _seq.timedelta(minutes=5),
-            )
-            result = await _seq.sequence_plan(
-                pool, _seq.FakeSigner(), run, _seq.FakeGate(), _seq._Passed()
-            )
-            lines = await _lines(pool, request)
-            return result.status, len(lines)
-        finally:
-            await pool.close()
+async def _sequence(database_url: str, ops: list[tuple[str, int]]) -> tuple[str | None, int, str]:
+    """Run the sequencer over Confirmed-seeded ops; (result status or None if it raised, lines, request status)."""
 
-    assert asyncio.run(scenario()) == ("Completed", 4)
+    pool = await create_worker_pool(database_url, min_size=1, max_size=2)
+    try:
+        request = await _seed_request(pool, ops, "Paying")
+        steps = await pool.fetch(
+            "SELECT step_id, kind::text AS kind, plan_step_id FROM operations "
+            "WHERE request_id = $1 ORDER BY created_at, id",
+            request,
+        )
+        run = _seq.PlanRun(
+            uuid.uuid4(),
+            request,
+            tuple(
+                _seq.StepExecution(
+                    treasury_id=_seq._TREASURY,
+                    request_id=request,
+                    plan_step_id=s["plan_step_id"],
+                    step_id=s["step_id"],
+                    kind=s["kind"],
+                    chain_id=_seq.CHAIN_ID,
+                    sign_request={},
+                )
+                for s in steps
+            ),
+            _seq.datetime.now(_seq.UTC) + _seq.timedelta(minutes=5),
+        )
+        try:
+            result = (
+                await _seq.sequence_plan(
+                    pool, _seq.FakeSigner(), run, _seq.FakeGate(), _seq._Passed()
+                )
+            ).status
+        except RuntimeError:
+            result = None
+        lines = await _lines(pool, request)
+        status = await pool.fetchval("SELECT status FROM payment_requests WHERE id=$1", request)
+        return result, len(lines), status
+    finally:
+        await pool.close()
+
+
+def test_sequencer_creates_the_reconciliation_with_the_paid_transition(
+    database_url: str,
+) -> None:
+    ops = [("REFILL", 7), ("PAY", 6)]
+    assert asyncio.run(_sequence(database_url, ops)) == ("Completed", 4, "Paid")
+
+
+def test_builder_failure_rolls_back_the_paid_transition(
+    database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def boom(*_: Any) -> None:
+        raise RuntimeError("build failed")
+
+    monkeypatch.setattr("treasurypilot_worker.executor.sequencer.build_reconciliation", boom)
+    ops = [("REFILL", 7), ("PAY", 6)]
+    assert asyncio.run(_sequence(database_url, ops)) == (None, 0, "Paying")
+
+
+async def _reverted_then_confirmed(
+    url: str, *, replacement_status: str, with_ledger: bool
+) -> list[tuple[str, int, bool]]:
+    """A PAY op whose first tx Reverted and whose replacement has `replacement_status`."""
+
+    pool = await create_worker_pool(url, min_size=1, max_size=1)
+    try:
+        request = await _seed_request(pool, [("PAY", 600)], "Paid")
+        op = await pool.fetchval("SELECT id FROM operations WHERE request_id = $1", request)
+        first = await pool.fetchrow("SELECT * FROM transactions WHERE operation_id = $1", op)
+        await pool.execute("UPDATE transactions SET status = 'Reverted' WHERE id = $1", first["id"])
+        await pool.execute(
+            "UPDATE gas_ledger SET reverted = true WHERE transaction_id = $1", first["id"]
+        )
+        second = uuid.uuid4()
+        await pool.execute(
+            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address, "
+            "status, block_number, fee_wei, confirmed_at) VALUES ($1, $2, $3, $4, 9, $5, $6, 101, "
+            "$7, '2026-10-03 01:00:00+00')",
+            second,
+            op,
+            _seq.CHAIN_ID,
+            second.bytes * 2,
+            b"\xee" * 20,
+            replacement_status,
+            _ETH_FEE,
+        )
+        if with_ledger:
+            await pool.execute(
+                "INSERT INTO gas_ledger (id, treasury_id, transaction_id, payer, payer_address, "
+                "fee_wei, reverted, day) VALUES (gen_random_uuid(), $1, $2, 'EXECUTOR', $3, $4, "
+                "false, '2026-10-03')",
+                _seq._TREASURY,
+                second,
+                b"\xee" * 20,
+                _ETH_FEE,
+            )
+        async with pool.acquire() as connection:
+            await build_reconciliation(connection, request)
+        return await _lines(pool, request)
+    finally:
+        await pool.close()
+
+
+def test_reverted_attempt_pays_a_fee_but_only_the_confirmed_one_is_an_expense(
+    database_url: str,
+) -> None:
+    lines = asyncio.run(
+        _reverted_then_confirmed(database_url, replacement_status="Confirmed", with_ledger=True)
+    )
+    assert lines == [
+        ("EXTERNAL_EXPENSE", 600, False),
+        ("FEE", _ETH_FEE, True),
+        ("FEE", _ETH_FEE, True),
+    ]
+
+
+def test_dropped_tx_or_missing_gas_ledger_row_gives_no_fee_line(database_url: str) -> None:
+    dropped = asyncio.run(
+        _reverted_then_confirmed(database_url, replacement_status="Dropped", with_ledger=False)
+    )
+    # The Reverted first attempt keeps its FEE; the Dropped one has no gas_ledger row.
+    assert [c for c, _, _ in dropped].count("FEE") == 1
+    missing = asyncio.run(
+        _reverted_then_confirmed(database_url, replacement_status="Confirmed", with_ledger=False)
+    )
+    assert [c for c, _, _ in missing].count("FEE") == 1

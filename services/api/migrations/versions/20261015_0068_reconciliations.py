@@ -18,7 +18,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Match/discrepancy columns (matched_by, matched_at, note, ...) arrive with REC-003.
     op.create_table(
         "reconciliations",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -30,6 +29,15 @@ def upgrade() -> None:
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
+        # Written by REC-003 (match) and REC-005 (EAS receipt); nullable until then.
+        sa.Column("matched_by", sa.String(length=8), nullable=True),
+        sa.Column("matched_user_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("matched_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("finalized_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("eas_uid", sa.String(length=66), nullable=True),
+        sa.CheckConstraint("matched_by IN ('USER', 'AUTO')", name="ck_reconciliations_matched_by"),
+        sa.ForeignKeyConstraint(["matched_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.CheckConstraint(
             "status IN ('NotReady', 'Pending', 'Matched', 'Discrepancy')",
             name="ck_reconciliations_status",

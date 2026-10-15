@@ -14,6 +14,7 @@ from sqlalchemy import (
     LargeBinary,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -32,6 +33,7 @@ class Reconciliation(Base):
             "status IN ('NotReady', 'Pending', 'Matched', 'Discrepancy')",
             name="ck_reconciliations_status",
         ),
+        CheckConstraint("matched_by IN ('USER', 'AUTO')", name="ck_reconciliations_matched_by"),
         UniqueConstraint("request_id", name="uq_reconciliations_request"),
         Index("ix_reconciliations_org_status", "org_id", "status"),
     )
@@ -51,6 +53,14 @@ class Reconciliation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    matched_by: Mapped[str | None] = mapped_column(String(8))
+    matched_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    eas_uid: Mapped[str | None] = mapped_column(String(66))
 
 
 class ReconciliationLine(Base):

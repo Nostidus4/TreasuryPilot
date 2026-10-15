@@ -4,6 +4,11 @@ Lines come only from Confirmed operations, so a refill whose PAY never succeeded
 EXTERNAL_EXPENSE (and, as the request is not Paid, no reconciliation at all). Every final
 transaction's gas (``gas_ledger``, including reverted attempts) becomes a FEE line. Idempotent:
 the sequencer calls it in the transaction that moves the request to Paid.
+
+The tracker upserts ``gas_ledger`` in the same transaction that marks a tx Confirmed, so FEE
+lines are complete at Paid time. Known limit: a reorg after Paid can leave stale FEE lines;
+REC-003 must re-check them before moving the reconciliation to Matched.
+Failures must propagate (never be swallowed) so the Paid transition rolls back.
 """
 
 from __future__ import annotations
