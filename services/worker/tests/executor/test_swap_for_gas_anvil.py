@@ -61,8 +61,8 @@ USDC = 10**6
 
 
 def _unavailable(reason: str) -> None:
-    """Skip locally, but fail in CI so a missing prerequisite cannot pass silently."""
-    if os.environ.get("CI"):
+    """Skip locally, but fail in the AT-04 CI step so a missing prerequisite cannot pass silently."""
+    if os.environ.get("TP_REQUIRE_INTEGRATION"):
         pytest.fail(f"AT-04 prerequisite missing in CI: {reason}")
     pytest.skip(reason)
 
