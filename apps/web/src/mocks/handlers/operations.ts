@@ -488,6 +488,16 @@ export const operationHandlers: RequestHandler[] = [
               aiPlanRate: 0.84,
               exceptions: 2,
               unknownOperations: 1,
+              completionRate: 0.941,
+              interventionsPerRequest: 0.25,
+              txCount: 41,
+              fees: {
+                totalWei: '5400000000000000',
+                byStepType: {
+                  APPROVE: '1200000000000000',
+                  PAY: '4200000000000000',
+                },
+              },
               series,
             }
           : {
@@ -497,6 +507,10 @@ export const operationHandlers: RequestHandler[] = [
               aiPlanRate: 0,
               exceptions: 0,
               unknownOperations: 0,
+              completionRate: 0,
+              interventionsPerRequest: 0,
+              txCount: 0,
+              fees: { totalWei: '0', byStepType: {} },
               series,
             },
       };

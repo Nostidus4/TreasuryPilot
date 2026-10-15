@@ -721,6 +721,10 @@ export interface OperationsMetrics {
   aiPlanRate: number;
   exceptions: number;
   unknownOperations: number;
+  completionRate: number;
+  interventionsPerRequest: number;
+  txCount: number;
+  fees: { totalWei: string; byStepType: Record<string, string> };
   series: Array<{ date: string; paid: number; volume: string }>;
 }
 
