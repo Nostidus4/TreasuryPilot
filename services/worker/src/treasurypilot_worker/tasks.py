@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from functools import cache
 from typing import Any
 
@@ -54,6 +55,10 @@ from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.planner.context import load_inputs
+from treasurypilot_worker.planner.ai import PROPOSE_TASK, run_proposal
+from treasurypilot_worker.planner.pipeline import plan_request
+from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
+from treasurypilot_worker.planner.wiring import build_deps
 from treasurypilot_worker.runtime import MAX_TASK_RETRIES, RetryableTaskError
 from treasurypilot_worker.tracker import track_transactions_sync
 from treasurypilot_worker.trigger.cycles import (
@@ -268,6 +273,7 @@ class _PublisherRuntime:
 
 _publisher = _PublisherRuntime()
 _execution_cycles = _PublisherRuntime()
+_planning = _PublisherRuntime()
 _telegram = _PublisherRuntime()
 _chat = _PublisherRuntime()
 _webhooks = _PublisherRuntime()
@@ -300,12 +306,25 @@ def publish_domain_events() -> dict[str, int]:
     return {"published": _publisher.run(database_url, publish)}
 
 
+def _enqueue_plan(plan_id: uuid.UUID) -> None:
+    # The claim commits when the cycle's lock transaction ends; the countdown outlasts it and
+    # the task retries if it still cannot see the row.
+    app.send_task(
+        "treasurypilot.planning.plan_request",
+        kwargs={"plan_id": str(plan_id)},
+        task_id=f"plan:{plan_id}",
+        queue="core",
+        countdown=1,
+    )
+
+
 async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> CycleResult:
+    lead = timedelta(seconds=get_settings().execution_lead_time_seconds)
     return await run_execution_cycle(
         treasury_id,
         lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
-        schedule_provider=None,
-        plan_starter=None,
+        schedule_provider=DbScheduleProvider(lead),
+        plan_starter=DbPlanStarter(_enqueue_plan),
     )
 
 
@@ -343,6 +362,38 @@ async def _run_all_treasury_cycles(pool: asyncpg.Pool, *, scheduling: bool) -> i
             extra={"scheduling": scheduling, "treasuries": unavailable},
         )
     return started
+
+
+@app.task(name="treasurypilot.planning.plan_request", queue="core")
+def plan_request_task(plan_id: str) -> dict[str, str]:
+    """Run the planning pipeline for one claimed plan (EXE-004)."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for planning")
+
+    async def plan(pool: Any) -> Any:
+        try:
+            return await plan_request(pool, uuid.UUID(plan_id), build_deps(pool, settings))
+        except LookupError as error:  # the starter's transaction has not committed yet
+            raise RetryableTaskError(str(error)) from error
+
+    outcome: Any = _planning.run(settings.database_url, plan)
+    return {"status": outcome.status if outcome else "AlreadyPlanned"}
+
+
+@app.task(name=PROPOSE_TASK, queue="ai", ignore_result=False)
+def propose_plan_task(org_id: str, treasury_id: str, eligible_ids: list[str]) -> dict[str, Any]:
+    """AI plan proposal for the planning pipeline; failures return a code (BR-055)."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for plan proposals")
+    return run_proposal(
+        get_ai_adapter(),
+        PostgresToolBackend(settings.database_url),
+        org_id=org_id,
+        treasury_id=treasury_id,
+        eligible_ids=eligible_ids,
+    )
 
 
 @app.task(name="treasurypilot.execution.activate_due_payees", queue="core")

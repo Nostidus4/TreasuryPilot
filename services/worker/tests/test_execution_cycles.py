@@ -31,8 +31,6 @@ class _Connection:
         return self.gates
 
     async def fetchval(self, query: str, *_args: object) -> bool:
-        if "to_regclass" in query:
-            return self.executing_plan
         return self.executing_plan
 
 
