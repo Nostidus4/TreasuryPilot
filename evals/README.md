@@ -1,3 +1,12 @@
 # Evaluation datasets
 
 Versioned invoice labels, planner ground truth, prompt-injection cases and Copilot numeric-fidelity cases live here. Dataset authoring is handled by the matching M09/M20 tickets.
+
+## Extraction accuracy (AGT-013)
+
+`make eval-extraction` runs the production extraction call over `evals/invoices` and writes
+`docs/evidence/extraction-accuracy.md` (per-field exact-match accuracy and terms F1). Recorded
+mode replays `evals/invoices/recorded/<prompt version>/<id>.json` offline and is refused when the
+prompt version or a PDF hash has changed; live mode runs when `ANTHROPIC_API_KEY` is set, and
+`make eval-extraction-record` stores that run as the new recordings. Code:
+`services/worker/src/treasurypilot_worker/evals/`.

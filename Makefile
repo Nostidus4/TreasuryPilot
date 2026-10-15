@@ -35,7 +35,15 @@ help:
 	@echo "  make verify-sepolia  Verify the published Sepolia implementation, factory and tUSDC on Etherscan"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
+	@echo "  make eval-extraction Score invoice extraction against evals/invoices (recorded or live)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+
+.PHONY: eval-extraction eval-extraction-record
+eval-extraction:
+	uv run --frozen python -m treasurypilot_worker.evals.extraction_eval
+
+eval-extraction-record:
+	uv run --frozen python -m treasurypilot_worker.evals.extraction_eval --mode live --record
 
 .PHONY: eval-validate
 eval-validate:
