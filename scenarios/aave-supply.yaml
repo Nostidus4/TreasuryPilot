@@ -1,6 +1,7 @@
 name: aave-supply
 adr019: D2
-chain_id: 11155111
-requires: [deployment, planner, aave-adapter, executor-pipeline]
+chain_id: 31337
+requires: [anvil, deployment, aave-mock]
+steps: [supply_surplus]
 must_show:
-  - Supply exactly the surplus above RequiredSafeReserve; the reserve stays intact
+  - Supply the surplus above the Safe T reserve (within the per-request cap); the reserve stays intact

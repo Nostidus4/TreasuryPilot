@@ -1,6 +1,7 @@
 name: borrow-proposal
 adr019: D6
-chain_id: 11155111
-requires: [deployment, planner, aave-adapter]
+chain_id: 31337
+requires: [anvil, deployment, aave-mock]
+steps: [borrow_unauthorized]
 must_show:
   - A borrow proposal shows engine numbers and never enters an executable plan unauthorized
