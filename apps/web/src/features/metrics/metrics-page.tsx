@@ -129,12 +129,12 @@ export function MetricsPage() {
         </QueryBoundary>
 
         <QueryBoundary query={savings} loading={<Skeleton className="h-64" />}>
-          {({ methodology, perRequest, totals }) => (
+          {({ methodology, perRequest, skipped, totals, warnings }) => (
             <Card className="overflow-hidden">
               <CardHeader
                 title={t('Savings against baseline B1')}
                 description={t(
-                  'B1 pays every invoice in full on its due date.',
+                  'Earliest-deadline-first rule baseline under the active mandate caps.',
                 )}
               />
               {perRequest.length === 0 ? (
@@ -235,6 +235,16 @@ export function MetricsPage() {
                   {t('Method')}:
                 </span>{' '}
                 {methodology}
+                {skipped > 0 && (
+                  <p className="mt-2">
+                    {t('Not compared')}: {skipped}
+                  </p>
+                )}
+                {warnings.map((warning) => (
+                  <p key={warning} className="mt-2">
+                    {warning}
+                  </p>
+                ))}
               </CardContent>
             </Card>
           )}
