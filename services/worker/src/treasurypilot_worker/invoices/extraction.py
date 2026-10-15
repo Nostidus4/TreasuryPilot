@@ -195,6 +195,8 @@ SELECT $1, id, current_revision, '{INSTRUCTION_REASON_CODE}', '{INSTRUCTION_SEVE
   $3::jsonb, $4
 FROM payment_requests WHERE id = $2
 """
+# Run after _EXTRACTED in one transaction: that UPDATE holds the payment_requests row lock the
+# API's confirm takes with FOR UPDATE, so this NOT EXISTS cannot race its check-then-insert.
 _INSERT_MULTI_INVOICE_FLAG = """
 INSERT INTO flags (id, request_id, revision, code, severity, evidence, source)
 SELECT $1, r.id, r.current_revision, 'MULTI_INVOICE_DOCUMENT', 'HIGH',

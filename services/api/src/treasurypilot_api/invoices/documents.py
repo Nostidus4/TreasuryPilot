@@ -467,7 +467,6 @@ async def confirm_extraction(
     _validate_dates(payload.issue_date, payload.due_date)
     factory = _sessions(request)
     scope: tuple[uuid.UUID, bytes] | None = None
-    multi_invoice = payload.invoice_count_in_document > 1
     try:
         async with factory() as session, session.begin():
             row = await session.scalar(
@@ -486,31 +485,33 @@ async def confirm_extraction(
                     "Request not editable",
                     "Only upload drafts can be confirmed.",
                 )
-            extraction = await session.scalar(
-                select(Extraction)
-                .join(RequestDocument, RequestDocument.id == Extraction.document_id)
+            if row.extraction_status == ExtractionStatus.EXTRACTING.value:
+                raise _fail(
+                    409,
+                    "EXTRACTION_PENDING",
+                    "Extraction pending",
+                    "The document is still being extracted; confirm once it settles.",
+                )
+            document = await session.scalar(
+                select(RequestDocument)
                 .where(RequestDocument.request_id == row.id)
+                .order_by(RequestDocument.created_at.desc(), RequestDocument.id.desc())
+                .limit(1)
             )
-            reported_count = (
-                extraction.fields.get("invoice_count_in_document")
-                if extraction is not None
+            extraction = (
+                await session.scalar(
+                    select(Extraction).where(Extraction.document_id == document.id)
+                )
+                if document is not None
                 else None
             )
-            if reported_count is not None and (
-                isinstance(reported_count, bool)
-                or not isinstance(reported_count, int)
-                or reported_count < 1
-            ):
-                raise _fail(
-                    422,
-                    "EXTRACTION_FIELDS_INVALID",
-                    "Extracted fields invalid",
-                    "The uploaded document's extraction result is invalid.",
-                )
-            multi_invoice = multi_invoice or (
-                isinstance(reported_count, int) and reported_count > 1
-            )
-            if multi_invoice:
+            stored = extraction.fields.get("invoice_count_in_document") if extraction else None
+            # A malformed stored count is ignored so the operator's own report still decides.
+            if isinstance(stored, int) and not isinstance(stored, bool) and stored >= 1:
+                reported_count = max(stored, payload.invoice_count_in_document)
+            else:
+                reported_count = payload.invoice_count_in_document
+            if reported_count > 1:
                 open_flag = await session.scalar(
                     select(RequestFlag.id)
                     .where(
@@ -528,11 +529,7 @@ async def confirm_extraction(
                             revision=row.current_revision,
                             code="MULTI_INVOICE_DOCUMENT",
                             severity=RequestFlagSeverity.HIGH.value,
-                            evidence={
-                                "invoiceCountInDocument": reported_count
-                                if isinstance(reported_count, int)
-                                else payload.invoice_count_in_document
-                            },
+                            evidence={"invoiceCountInDocument": reported_count},
                             source=RequestFlagSource.AI.value,
                             status=RequestFlagStatus.OPEN.value,
                         )
@@ -546,9 +543,6 @@ async def confirm_extraction(
                     payee_id=payload.payee_id,
                     asset_id=row.asset_id,
                     paying_wallet_id=None,
-                )
-                document = await session.scalar(
-                    select(RequestDocument).where(RequestDocument.request_id == row.id)
                 )
                 if document is None:
                     raise _fail(
