@@ -146,11 +146,26 @@ For each step in order:
 5. M11 post-condition check (REC-001) must be **PASSED** before the next step (M10-D6). DISCREPANCY → stop, review item, circuit-breaker signal.
 6. After PAY Verified → request `Paid`, plan `Completed`; EAS receipt and reconciliation follow (M11).
 
-**EXE-008 implementation** (`executor/sequencer.py`, `executor/gate.py`, `tasks.sequence_plan_task`): `sequence_plan` is resumable and sends at most one step per call, returning `Waiting` while the previous operation is Submitted/Pending/Unknown. It only runs while the request is Preparing/Paying (checked on entry and again right before a step is sent). Before each step `PlanGate.pre_step` takes a PRE_STEP snapshot, builds a `ValidationContext` (`planner/context.py`), runs `validate_step` then `simulate`, recording both in `validations`; a non-ALLOW or a terminal signer refusal opens one review item and moves the request to `NeedsReview` (only if that transition happened). A step already attempted (operation row with attempts > 0) is replayed without re-validation. PAY submitted → `Paying`; PAY Confirmed → `Paid` (always via `Paying`). The Celery task runs under the treasury advisory lock; the tracker enqueues it when an operation is Confirmed and a 15 s beat sweep backs that up. Not yet wired: the REC-001 post-condition gate, fee estimation for the signer request (`tasks.plan_fees`) and re-attestation (`PlanGate.reattest_fn`, owned by the planner pipeline).
+**EXE-008 implementation** (`executor/sequencer.py`, `executor/gate.py`, `tasks.sequence_plan_task`): `sequence_plan` is resumable and sends at most one step per call, returning `Waiting` while the previous operation is Submitted/Pending/Unknown. It only runs while the request is Preparing/Paying (checked on entry and again right before a step is sent). Before each step `PlanGate.pre_step` takes a PRE_STEP snapshot, builds a `ValidationContext` (`planner/context.py`), runs `validate_step` then `simulate`, recording both in `validations`; a non-ALLOW or a terminal signer refusal opens one review item and moves the request to `NeedsReview` (only if that transition happened). A step already attempted (operation row with attempts > 0) is replayed without re-validation. PAY submitted → `Paying`; PAY Confirmed → `Paid` (always via `Paying`). The Celery task runs under the treasury advisory lock; the tracker enqueues it when an operation is Confirmed and a 15 s beat sweep backs that up. The REC-001 post-condition gate (`verifier`) and re-attestation (`PlanGate.reattest_fn` = `planner/reattest.py`, wired in `tasks.py`) are in place.
 
 Stop at step k > 0 → plan `PartiallyCompleted`, request `NeedsReview`, completed steps stay (BR-054).
 
 **RCV-003 resume** (`recovery/partial.py`): `resume_partial(pool, request_id)` moves a `PartiallyCompleted` plan back to `Executing` and its request `NeedsReview → Preparing`, resolves the open review items (RETRY, only POLICY_BLOCK/INFRA; otherwise `NotRetryable`, also when a step is Reverted/Abandoned) and sends nothing; the next `sequence_plan` skips Confirmed steps (no second refill) and re-validates the first unfinished one with `pre_step`. It refuses with `InFlight` while an operation is Submitted/Pending/Unknown (M12 resolves those first). Callers (review RETRY, startup scan, unknown resolution) enqueue `sequence_plan_task` afterwards; the sweep also does. The internal tasks `treasurypilot.recovery.resume_partial` / `cancel_partial` call them (resume then enqueues `sequence_plan`); the API review action is RCV-004. `cancel_partial` (same lock and in-flight guard) moves the request to `Cancelled`, the plan to `Superseded`, resolves items with CANCEL and reports the Confirmed steps whose funds stay where they are.
+
+**EXE-008 traceability** (tests in `services/worker/tests/executor/`; Postgres, `TP_TEST_DATABASE_URL`):
+
+| Criterion | Test |
+|---|---|
+| Owner balance change between refill and pay is detected and handled (AT-10 re-check on the current balance) | `test_gate_integration.py::test_wallet_balance_change_between_refill_and_pay_is_blocked`, `test_sequencer_integration.py::test_owner_balance_change_between_refill_and_pay_stops_with_review` |
+| Next step not sent while the previous is Pending | `test_sequencer_integration.py::test_steps_run_in_order_and_pay_confirmation_marks_paid` |
+| PRE_STEP then SIMULATION before each step | `test_gate_integration.py::test_wallet_balance_change_between_refill_and_pay_is_blocked` (validations rows) |
+| Expired attestation renewed or plan stops | `test_sequencer_integration.py::test_expired_attestation_is_renewed_or_stops` |
+| Non-ALLOW stops, PartiallyCompleted, review item with primary code | `test_owner_balance_change_...`, `test_first_step_block_is_blocked_not_partial`, `test_terminal_refusal_and_reverted_step_open_review` |
+| Paying then Paid | `test_paid_goes_through_paying_with_both_events` |
+| WITHDRAW / SWAP / REFILL steps, leading WITHDRAW | `test_a_request_plan_with_a_leading_withdraw_runs_it_first_and_completes`, `test_a_plan_with_a_swap_for_gas_step_runs_it_first_and_completes` |
+| Partial completion resumes without a second refill (AT-07) | `test_resume_sends_only_the_unfinished_pay_after_revalidation` |
+
+SUPPLY has no `ExecutionPlan` wire mapping, so request plans carry no SUPPLY step; liquidity SUPPLY runs under the swap/yield flow.
 
 ### 7.4 Gas replacement
 
