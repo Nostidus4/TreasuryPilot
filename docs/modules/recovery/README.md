@@ -67,7 +67,7 @@ Operation recovery: `Unknown → (Confirmed | Reverted | Abandoned (never broadc
 
 ### 7.1 Startup / periodic scan (every 60 s and on worker start)
 
-Load in-flight operations → mark their treasuries blocked → for each: `resolve(op)` (§8.1) → unblock when none remain Unknown.
+Load operations in Submitted, Pending or Unknown that have a transaction (`recovery/scan.py`; NotSubmitted is excluded, the executor owns it) → for each: `resolve(op)` (§8.1), inline, with a 30 s timeout per operation; one failing or slow operation is logged and does not stall the rest. A treasury is blocked exactly while one of its operations is Unknown (the execution cycle skips it); there is no separate flag, so it unblocks when none remain Unknown. Scans never overlap (a Postgres session advisory lock; a second scan returns early). The worker-start scan is sent only by workers that consume the `core` queue. There is no per-treasury advisory lock: `resolve_operation` relies on the `FOR UPDATE` row locks and re-checks in `_close`.
 
 ### 7.2 Partial completion (AT-07)
 
