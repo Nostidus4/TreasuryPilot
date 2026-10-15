@@ -89,6 +89,8 @@ jobs:
         run: uv run pytest services/worker/tests/executor/test_gate_integration.py
       - name: Planning pipeline PostgreSQL integration
         run: uv run pytest services/worker/tests/planner/test_pipeline_integration.py
+      - name: Circuit breaker PostgreSQL integration
+        run: uv run pytest services/worker/tests/test_circuit_breaker_integration.py
 
   retention-integration:
     runs-on: ubuntu-latest
