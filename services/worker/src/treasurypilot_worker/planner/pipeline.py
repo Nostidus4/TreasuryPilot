@@ -428,17 +428,27 @@ async def _finish(
     chain = context.chain
     request = context.inputs.request
     if plan is not None and deps.gas_swap is not None:
-        # shortcut: the swap is sized on the fee of the plan WITHOUT the swap step; the fee check
-        # below estimates again WITH it, so the swap's own gas is not covered by the sizing.
+        # The swap is sized on the plan's fee, then once more on the fee WITH the swap step so
+        # that its own gas is covered (the swap's gas barely depends on its size: one pass).
         try:
-            plan = await with_gas_swap(
-                deps.gas_swap,
-                treasury_id,
-                plan,
-                required_wei=await deps.estimate_fee(treasury_id, plan),
-                safe_t=context.inputs.safe_t,
-                asset=context.inputs.asset,
-            )
+            bare = plan
+            required = await deps.estimate_fee(treasury_id, bare)
+            for _ in range(2):
+                swapped = await with_gas_swap(
+                    deps.gas_swap,
+                    treasury_id,
+                    bare,
+                    required_wei=required,
+                    safe_t=context.inputs.safe_t,
+                    asset=context.inputs.asset,
+                )
+                if swapped is bare:  # no shortage
+                    break
+                with_swap = await deps.estimate_fee(treasury_id, swapped)
+                plan = swapped
+                if with_swap <= required:
+                    break
+                required = with_swap
         except (GasSwapUnavailable, GasSwapInfeasible) as error:
             # Fail closed: a plan the executor cannot pay for must not be attested.
             plan, refusal = None, ("INFRA", "GAS_SHORTAGE_UNCOVERED")

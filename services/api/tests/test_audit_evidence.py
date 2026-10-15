@@ -5,6 +5,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -266,3 +267,25 @@ def _models(annotation: object) -> list[type]:
 
 async def _resolved(value: bool) -> bool:
     return value
+
+
+def test_swap_step_carries_the_test_router_label_and_others_omit_it() -> None:
+    request_id = uuid.uuid4()
+    step = {
+        "seq": 0, "step_id": "0x" + "1" * 64, "action": 3, "chain_id": 31337,
+        "from_address": "0x" + "1" * 40, "to_address": "0x" + "2" * 40,
+        "asset_address": "0x" + "3" * 40, "amount": "1500",
+    }  # fmt: skip
+    plan = {"planner_source": "DETERMINISTIC", "steps": [{**step, "venue": "TEST_ROUTER"}, step]}
+
+    async def scenario() -> dict[str, Any]:
+        bundle = await build_evidence_bundle(
+            organization_id=uuid.uuid4(),
+            request_id=request_id,
+            source=_source(request_id, plan=plan),
+            transaction_resolves=lambda _tx: _resolved(True),
+        )
+        return bundle.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    steps = asyncio.run(scenario())["plan"]["steps"]
+    assert steps[0]["venue"] == "TEST_ROUTER" and "venue" not in steps[1]

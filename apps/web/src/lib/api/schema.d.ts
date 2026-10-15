@@ -4212,6 +4212,8 @@ export interface components {
       stepId: string;
       /** Toaddress */
       toAddress: string;
+      /** Venue */
+      venue?: 'TEST_ROUTER' | null;
     };
     /** PlanStepView */
     PlanStepView: {
@@ -9400,6 +9402,13 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+      /** @description RECOVERY_UNAVAILABLE: the resume/cancel task was not queued */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

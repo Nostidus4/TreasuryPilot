@@ -3990,6 +3990,18 @@
           "toAddress": {
             "title": "Toaddress",
             "type": "string"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "const": "TEST_ROUTER",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
           }
         },
         "required": [
@@ -13607,6 +13619,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "RECOVERY_UNAVAILABLE: the resume/cancel task was not queued"
           }
         },
         "summary": "Act On Review Item",
