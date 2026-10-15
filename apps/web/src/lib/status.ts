@@ -44,14 +44,14 @@ export function stepStatus(
       };
     case 'Verified':
       return {
-        label: t('Paid · {{count}} confirmations', {
+        label: t('Event matched checked fields · {{count}} confirmations', {
           count: confirmations ?? 0,
         }),
         tone: 'success',
       };
     case 'Final':
       return {
-        label: t('Paid · {{count}} confirmations · Final', {
+        label: t('Final · {{count}} confirmations', {
           count: confirmations ?? 0,
         }),
         tone: 'success',
@@ -107,9 +107,13 @@ export const planStatuses: Record<PlanStatus, StatusMeta> = {
   Proposed: { label: 'Proposed', tone: 'neutral' },
   Validated: { label: 'Validated by policy', tone: 'info' },
   Executing: { label: 'Executing', tone: 'info', live: true },
-  Completed: { label: 'All steps verified', tone: 'success' },
+  Completed: {
+    label: 'All checked module event fields match',
+    tone: 'success',
+  },
   PartiallyCompleted: { label: 'Partially completed', tone: 'warning' },
   Rejected: { label: 'Rejected by policy', tone: 'danger' },
+  Unknown: { label: 'Execution status unavailable', tone: 'warning' },
 };
 
 export const payeeStatuses: Record<PayeeStatus, StatusMeta> = {

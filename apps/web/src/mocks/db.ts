@@ -1948,6 +1948,7 @@ export function startCooling(payeeId: string) {
 /* ───────────── Plan execution ───────────── */
 
 export function startExecution(plan: PlanDetail) {
+  if (plan.steps.some((planStep) => planStep.amount === null)) return;
   plan.status = 'Executing';
   emit('plan', plan.id);
   const state = db.treasuries[plan.treasuryId];
@@ -1982,13 +1983,13 @@ export function startExecution(plan: PlanDetail) {
     logActivity(
       plan.treasuryId,
       'agent',
-      `Plan ${plan.id} finished: every step verified on-chain`,
+      `Plan ${plan.id} finished: every step matched its available module event fields`,
       `plans/${plan.id}`,
     );
     notify({
       kind: 'execution',
       title: 'Plan completed',
-      body: `${plan.id}: all ${plan.steps.length} steps verified.`,
+      body: `${plan.id}: ${plan.steps.length} steps matched their available module event fields.`,
       href: `plans/${plan.id}`,
     });
     refreshQueues();
@@ -2001,6 +2002,7 @@ function settleStep(
   planStep: PlanStep,
   state: TreasuryState,
 ) {
+  if (planStep.amount === null) return;
   const amount = BigInt(planStep.amount);
   const adjust = (role: string, delta: bigint) => {
     const wallet = state.wallets.find((item) => item.role === role);

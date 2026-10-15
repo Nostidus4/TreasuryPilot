@@ -23,6 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from web3 import AsyncHTTPProvider
 
+from treasurypilot_core.ids import uuid7
 from treasurypilot_core.policy import PolicyReasonCode, error_selector
 from treasurypilot_core.policy.reason_codes import REASON_CODES
 from treasurypilot_worker.chain.rpc import RpcClient, RpcProvider
@@ -230,6 +231,36 @@ async def _gas_ledger(database_url: str, transaction_id: str) -> Any:
     )
 
 
+async def _stream_cursor(database_url: str) -> uuid.UUID:
+    """Insert the newest event an SSE client could already have seen; return its id."""
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        cursor = uuid7()
+        await pool.execute(
+            "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, "
+            "payload) SELECT $1, org_id, id, 'Cursor', 'treasury', id, '{}'::jsonb "
+            "FROM treasuries WHERE id = $2",
+            cursor,
+            uuid.UUID(_TREASURY),
+        )
+        return cursor
+    finally:
+        await pool.close()
+
+
+async def _operation_events(database_url: str, operation_id: str) -> list[Any]:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        return await pool.fetch(
+            "SELECT id, type, entity_type, entity_id, treasury_id, "
+            "jsonb_typeof(payload) AS payload_type, payload FROM domain_events "
+            "WHERE entity_id = $1 ORDER BY created_at, id",
+            uuid.UUID(operation_id),
+        )
+    finally:
+        await pool.close()
+
+
 def _nonce(url: str) -> int:
     return int(_rpc(url, "eth_getTransactionCount", [SENDER, "latest"]), 16)
 
@@ -242,16 +273,36 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
         tx_hash = _send(anvil_url, nonce=hex(nonce))
         tx_id, operation_id = await _register(database_url, tx_hash, nonce)
         client = _client(anvil_url)
+        cursor = await _stream_cursor(database_url)
+        await asyncio.sleep(0.01)
 
         await _track(database_url, client)  # mined in 1 block: 1 confirmation
         row = await _tx(database_url, tx_id)
         assert (row["status"], row["confirmations"]) == ("Pending", 1)
         assert row["block_number"] is not None and row["confirmed_at"] is None
         assert await _operation_status(database_url, operation_id) == "Pending"
+        events = await _operation_events(database_url, operation_id)
+        assert len(events) == 1
+        assert (
+            events[0]["type"],
+            events[0]["entity_type"],
+            events[0]["entity_id"],
+            events[0]["treasury_id"],
+        ) == (
+            "OperationUpdated",
+            "operation",
+            uuid.UUID(operation_id),
+            uuid.UUID(_TREASURY),
+        )
+        # asyncpg returns JSONB as text by default. Assert storage is an object, then
+        # decode the transport value before checking the ids-only event contract.
+        assert events[0]["payload_type"] == "object"
+        assert json.loads(events[0]["payload"]) == {"operationId": operation_id}
 
         _mine(anvil_url)
         await _track(database_url, client)  # 2 confirmations
         assert (await _tx(database_url, tx_id))["status"] == "Pending"
+        assert len(await _operation_events(database_url, operation_id)) == 2
 
         _mine(anvil_url)
         await _track(database_url, client)  # 3 confirmations + secondary agrees
@@ -271,6 +322,24 @@ def test_confirmed_only_at_three_confirmations_with_matching_crosscheck(
         assert ledger["fee_wei"] == row["fee_wei"]
         assert ledger["day"] == row["confirmed_at"].date()
         assert await _operation_status(database_url, operation_id) == "Confirmed"
+        assert len(await _operation_events(database_url, operation_id)) == 3
+
+        # A stale operation row is repaired even when the transaction itself did not
+        # change; subscribers still receive an operation event for that state repair.
+        pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+        try:
+            await pool.execute(
+                "UPDATE operations SET status = 'Submitted' WHERE id = $1",
+                uuid.UUID(operation_id),
+            )
+        finally:
+            await pool.close()
+        await _track(database_url, client)
+        assert await _operation_status(database_url, operation_id) == "Confirmed"
+        events = await _operation_events(database_url, operation_id)
+        assert len(events) == 4
+        # The SSE stream resumes with `id > cursor`, so every tracker event must sort after it.
+        assert all(event["id"].version == 7 and event["id"] > cursor for event in events)
 
     asyncio.run(scenario())
 

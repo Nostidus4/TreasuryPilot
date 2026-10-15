@@ -270,6 +270,26 @@
         "title": "AttestationEvidence",
         "type": "object"
       },
+      "AttestationView": {
+        "properties": {
+          "planHash": {
+            "title": "Planhash",
+            "type": "string"
+          },
+          "signedAt": {
+            "format": "date-time",
+            "title": "Signedat",
+            "type": "string"
+          },
+          "signer": {
+            "title": "Signer",
+            "type": "string"
+          }
+        },
+        "required": ["planHash", "signer", "signedAt"],
+        "title": "AttestationView",
+        "type": "object"
+      },
       "AuditLogResponse": {
         "properties": {
           "items": {
@@ -2906,6 +2926,113 @@
         "title": "PayeeView",
         "type": "object"
       },
+      "PlanDetailView": {
+        "properties": {
+          "attestation": {
+            "$ref": "#/components/schemas/AttestationView"
+          },
+          "bindingConstraints": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Bindingconstraints",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expectedSaving": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedsaving"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "plannerSource": {
+            "enum": ["AI", "RULE_BASED", "UNKNOWN"],
+            "title": "Plannersource",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Proposed",
+              "Validated",
+              "Executing",
+              "Completed",
+              "PartiallyCompleted",
+              "Rejected",
+              "Unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stepCount": {
+            "title": "Stepcount",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStepView"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "totalAmount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalamount"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "validations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Validations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "createdAt",
+          "status",
+          "plannerSource",
+          "expectedSaving",
+          "totalAmount",
+          "stepCount",
+          "steps",
+          "validations",
+          "bindingConstraints",
+          "attestation"
+        ],
+        "title": "PlanDetailView",
+        "type": "object"
+      },
       "PlanEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -2953,6 +3080,225 @@
           }
         },
         "title": "PlanFeeActionRequest",
+        "type": "object"
+      },
+      "PlanList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "PlanList",
+        "type": "object"
+      },
+      "PlanStepView": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "confirmations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmations"
+          },
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": ["REFILL", "PAY", "SUPPLY", "WITHDRAW", "SWAP"],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requestId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid"
+          },
+          "status": {
+            "enum": [
+              "Planned",
+              "Submitted",
+              "Pending",
+              "Confirmed",
+              "Verified",
+              "Final",
+              "Dropped",
+              "Replaced",
+              "Unknown",
+              "Failed",
+              "Skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "txHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Txhash"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "enum": ["VERIFIED", "MISMATCH"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification"
+          }
+        },
+        "required": [
+          "id",
+          "index",
+          "kind",
+          "title",
+          "from",
+          "to",
+          "amount",
+          "requestId",
+          "reason",
+          "status",
+          "txHash",
+          "confirmations",
+          "updatedAt"
+        ],
+        "title": "PlanStepView",
+        "type": "object"
+      },
+      "PlanView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "expectedSaving": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedsaving"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "plannerSource": {
+            "enum": ["AI", "RULE_BASED", "UNKNOWN"],
+            "title": "Plannersource",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Proposed",
+              "Validated",
+              "Executing",
+              "Completed",
+              "PartiallyCompleted",
+              "Rejected",
+              "Unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stepCount": {
+            "title": "Stepcount",
+            "type": "integer"
+          },
+          "totalAmount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalamount"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "createdAt",
+          "status",
+          "plannerSource",
+          "expectedSaving",
+          "totalAmount",
+          "stepCount"
+        ],
+        "title": "PlanView",
         "type": "object"
       },
       "RecurrenceCadence": {
@@ -8040,6 +8386,58 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/plans/{plan_id}": {
+      "get": {
+        "operationId": "get_execution_plan_v1_orgs__organization_id__plans__plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Execution Plan",
+        "tags": ["execution"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/plans/{plan_id}/fee/accept": {
       "post": {
         "operationId": "accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post",
@@ -11911,6 +12309,58 @@
         },
         "summary": "Verify Oob",
         "tags": ["payees"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/plans": {
+      "get": {
+        "operationId": "list_execution_plans_v1_orgs__organization_id__treasuries__treasury_id__plans_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Execution Plans",
+        "tags": ["execution"],
         "x-organization-scoped": true
       }
     },

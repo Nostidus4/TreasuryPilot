@@ -975,6 +975,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/plans/{plan_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Execution Plan */
+    get: operations['get_execution_plan_v1_orgs__organization_id__plans__plan_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/plans/{plan_id}/fee/accept': {
     parameters: {
       query?: never;
@@ -1935,6 +1952,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/plans': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Execution Plans */
+    get: operations['list_execution_plans_v1_orgs__organization_id__treasuries__treasury_id__plans_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements': {
     parameters: {
       query?: never;
@@ -2172,6 +2206,18 @@ export interface components {
       typedData?: {
         [key: string]: unknown;
       } | null;
+    };
+    /** AttestationView */
+    AttestationView: {
+      /** Planhash */
+      planHash: string;
+      /**
+       * Signedat
+       * Format: date-time
+       */
+      signedAt: string;
+      /** Signer */
+      signer: string;
     };
     /** AuditLogResponse */
     AuditLogResponse: {
@@ -3258,6 +3304,58 @@ export interface components {
        */
       vendorId: string;
     };
+    /** PlanDetailView */
+    PlanDetailView: {
+      attestation: components['schemas']['AttestationView'];
+      /** Bindingconstraints */
+      bindingConstraints: {
+        [key: string]: string;
+      }[];
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Expectedsaving */
+      expectedSaving: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Plannersource
+       * @enum {string}
+       */
+      plannerSource: 'AI' | 'RULE_BASED' | 'UNKNOWN';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | 'Proposed'
+        | 'Validated'
+        | 'Executing'
+        | 'Completed'
+        | 'PartiallyCompleted'
+        | 'Rejected'
+        | 'Unknown';
+      /** Stepcount */
+      stepCount: number;
+      /** Steps */
+      steps: components['schemas']['PlanStepView'][];
+      /** Totalamount */
+      totalAmount: string | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Validations */
+      validations: {
+        [key: string]: unknown;
+      }[];
+    };
     /** PlanEvidence */
     PlanEvidence: {
       /** Planhash */
@@ -3273,6 +3371,106 @@ export interface components {
     PlanFeeActionRequest: {
       /** Reason */
       reason?: string | null;
+    };
+    /** PlanList */
+    PlanList: {
+      /** Items */
+      items: components['schemas']['PlanView'][];
+    };
+    /** PlanStepView */
+    PlanStepView: {
+      /** Amount */
+      amount: string | null;
+      /** Confirmations */
+      confirmations: number | null;
+      /** From */
+      from: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Index */
+      index: number;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: 'REFILL' | 'PAY' | 'SUPPLY' | 'WITHDRAW' | 'SWAP';
+      /** Reason */
+      reason: string;
+      /** Requestid */
+      requestId: string | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | 'Planned'
+        | 'Submitted'
+        | 'Pending'
+        | 'Confirmed'
+        | 'Verified'
+        | 'Final'
+        | 'Dropped'
+        | 'Replaced'
+        | 'Unknown'
+        | 'Failed'
+        | 'Skipped';
+      /** Title */
+      title: string;
+      /** To */
+      to: string;
+      /** Txhash */
+      txHash: string | null;
+      /**
+       * Updatedat
+       * Format: date-time
+       */
+      updatedAt: string;
+      /** Verification */
+      verification?: ('VERIFIED' | 'MISMATCH') | null;
+    };
+    /** PlanView */
+    PlanView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Expectedsaving */
+      expectedSaving: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Plannersource
+       * @enum {string}
+       */
+      plannerSource: 'AI' | 'RULE_BASED' | 'UNKNOWN';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | 'Proposed'
+        | 'Validated'
+        | 'Executing'
+        | 'Completed'
+        | 'PartiallyCompleted'
+        | 'Rejected'
+        | 'Unknown';
+      /** Stepcount */
+      stepCount: number;
+      /** Totalamount */
+      totalAmount: string | null;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
     };
     /**
      * RecurrenceCadence
@@ -6153,6 +6351,38 @@ export interface operations {
       };
     };
   };
+  get_execution_plan_v1_orgs__organization_id__plans__plan_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanDetailView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   accept_plan_fee_v1_orgs__organization_id__plans__plan_id__fee_accept_post: {
     parameters: {
       query?: never;
@@ -8350,6 +8580,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PayeeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_execution_plans_v1_orgs__organization_id__treasuries__treasury_id__plans_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanList'];
         };
       };
       /** @description Validation Error */

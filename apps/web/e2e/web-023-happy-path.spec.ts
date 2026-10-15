@@ -127,15 +127,72 @@ test('create a request, approve it, run its automatic plan, and match that payme
   await expect(requestPlan).toHaveCount(1);
   await requestPlan.click();
   await expect(page.getByText('Pay Acurast Cloud')).toBeVisible();
-  await page.getByRole('button', { name: 'Run now' }).click();
-  await expect(page.getByText('All steps verified')).toBeVisible({
-    timeout: 35_000,
+  const planId = new URL(page.url()).pathname.match(/\/plans\/([^/]+)$/)?.[1];
+  expect(planId).toBeTruthy();
+  const timeline = page.getByRole('list', { name: 'Execution steps' });
+  let submittedHash: string | undefined;
+  const submittedPlanResponse = page.waitForResponse(async (response) => {
+    if (
+      response.request().method() !== 'GET' ||
+      !response.url().endsWith(`/v1/orgs/org_northwind/plans/${planId}`)
+    ) {
+      return false;
+    }
+    const plan = (await response.json()) as {
+      steps: Array<{ status: string; txHash?: string }>;
+    };
+    submittedHash = plan.steps.find(
+      (step) => step.status === 'Submitted' && step.txHash,
+    )?.txHash;
+    return Boolean(submittedHash);
   });
-  await expect(page.getByText('Paid · 3 confirmations')).toBeVisible();
+  const submittedAt = Date.now();
+  await page.getByRole('button', { name: 'Run now' }).click();
+  await expect(
+    timeline
+      .getByText('Sent — waiting for the network', { exact: true })
+      .first(),
+  ).toBeVisible({ timeout: 2_000 });
+  expect(Date.now() - submittedAt).toBeLessThan(2_000);
+  await submittedPlanResponse;
+  expect(submittedHash).toMatch(/^0x[\da-f]{64}$/i);
+  await expect
+    .poll(async () =>
+      timeline
+        .getByRole('link', { name: 'Open transaction in the block explorer' })
+        .evaluateAll((links) =>
+          links.map((link) => (link as HTMLAnchorElement).href),
+        ),
+    )
+    .toContain(`https://sepolia.etherscan.io/tx/${submittedHash}`);
+
+  await expect(
+    page.getByText('All checked module event fields match'),
+  ).toBeVisible({ timeout: 35_000 });
+  await expect(
+    page.getByText('Event matched checked fields · 3 confirmations'),
+  ).toBeVisible();
 
   await page.getByRole('link', { name: 'Reconciliation' }).click();
   await page.getByRole('row', { name: 'Open payment E2E-WEB-023-001' }).click();
   await expect(page.getByText('Evidence is incomplete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as matched' }).click();
   await expect(page.getByText('Marked as matched')).toBeVisible();
+});
+
+test('an unknown execution outcome stays in chain-checking state', async ({
+  page,
+}) => {
+  await signIn(page, requesterEmail);
+  await page.goto('/o/org_northwind/t/trs_main/plans/pln_0419');
+
+  const timeline = page.getByRole('list', { name: 'Execution steps' });
+  const checking = timeline.getByText(
+    'Checking the chain — no new payment will be sent',
+  );
+  await expect(checking).toBeVisible();
+  await expect(timeline.getByText('Failed', { exact: true })).toHaveCount(0);
+  await expect(checking.locator('xpath=ancestor::li')).not.toContainText(
+    /failed|error|revert/i,
+  );
 });

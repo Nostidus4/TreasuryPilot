@@ -27,6 +27,7 @@ from treasurypilot_api.compliance.screening import ScreeningService, build_scree
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
 from treasurypilot_api.database import create_session_factory
+from treasurypilot_api.execution.routes import router as execution_router
 from treasurypilot_api.identity.api import problem_response
 from treasurypilot_api.identity.api import router as identity_router
 from treasurypilot_api.identity.auth import (
@@ -525,6 +526,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(treasury_router)
     app.include_router(chain_router)
+    app.include_router(execution_router)
     app.include_router(governance_router)
     app.include_router(mandate_exceptions_router)
     app.include_router(fee_router)

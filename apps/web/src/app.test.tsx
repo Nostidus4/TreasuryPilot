@@ -70,16 +70,18 @@ test('plan timeline shows partial completion, verification evidence and unknown 
   plan.steps[2].status = 'Dropped';
 
   expect(
-    await screen.findByText(/steps are verified on-chain/),
+    await screen.findByText(/steps have matching module event fields/),
   ).toBeInTheDocument();
   expect(screen.getByText('Progress').parentElement).toHaveTextContent('1/3');
   const timeline = screen.getByRole('list', { name: /execution steps/i });
   expect(
-    within(timeline).getByText('Paid · 3 confirmations'),
+    within(timeline).getByText(
+      'Event matched checked fields · 3 confirmations',
+    ),
   ).toBeInTheDocument();
   expect(
     within(timeline).getByText(
-      'Verification passed: amount and recipient match the plan',
+      'Refill event matches request, destination, and amount',
     ),
   ).toBeInTheDocument();
   expect(
@@ -459,11 +461,17 @@ test('a plan separates the policy decision from the AI explanation and runs to P
   await user.click(screen.getByRole('button', { name: /run now/i }));
 
   expect(
-    await screen.findAllByText('Paid · 3 confirmations', undefined, {
-      timeout: 4000,
-    }),
+    await screen.findAllByText(
+      'Event matched checked fields · 3 confirmations',
+      undefined,
+      {
+        timeout: 4000,
+      },
+    ),
   ).toHaveLength(3);
-  expect(await screen.findByText('All steps verified')).toBeInTheDocument();
+  expect(
+    await screen.findByText('All checked module event fields match'),
+  ).toBeInTheDocument();
   expect(db.requests.find((item) => item.id === 'req_219')?.status).toBe(
     'Paid',
   );
@@ -635,9 +643,13 @@ test('the unsupported Guardian step stays pending and cannot finish setup', asyn
   expect(
     await screen.findByRole('heading', { name: 'Guardian Safe' }),
   ).toBeInTheDocument();
-  expect(await screen.findByText(/guardian setup pending/i)).toBeInTheDocument();
   expect(
-    screen.getByLabelText(/address included in module settings \(unverified\)/i),
+    await screen.findByText(/guardian setup pending/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByLabelText(
+      /address included in module settings \(unverified\)/i,
+    ),
   ).toHaveValue(`0x${'3'.repeat(40)}`);
   expect(
     screen.getByRole('button', {

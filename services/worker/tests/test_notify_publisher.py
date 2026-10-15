@@ -232,6 +232,19 @@ def test_execution_cycle_dispatch_failure_leaves_event_unpublished_without_rollb
     assert not event["published"] and not event["failed"]
 
 
+def test_operation_updates_are_streamed_without_creating_notifications() -> None:
+    connection = _FakeConnection()
+    connection.event.update(type="OperationUpdated", entity_type="operation")
+
+    async def exercise() -> None:
+        assert await publish_from_pool(_FakePool(connection)) == 1  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+
+    assert connection.event["published"] is True
+    assert connection.notifications == {}
+
+
 def test_governance_signature_routes_only_to_safe_owner_user_ids() -> None:
     connection = _FakeConnection()
     connection.event["type"] = "GovernanceSignatureNeeded"

@@ -523,27 +523,28 @@ export type PlanStatus =
   | 'Executing'
   | 'Completed'
   | 'PartiallyCompleted'
-  | 'Rejected';
+  | 'Rejected'
+  | 'Unknown';
 
 export interface Plan {
   id: string;
   treasuryId: string;
   createdAt: string;
   status: PlanStatus;
-  plannerSource: 'AI' | 'RULE_BASED';
-  expectedSaving: string;
-  totalAmount: string;
+  plannerSource: 'AI' | 'RULE_BASED' | 'UNKNOWN';
+  expectedSaving: string | null;
+  totalAmount: string | null;
   stepCount: number;
 }
 
 export interface PlanStep {
   id: string;
   index: number;
-  kind: 'REFILL' | 'PAY' | 'SUPPLY' | 'WITHDRAW';
+  kind: 'REFILL' | 'PAY' | 'SUPPLY' | 'WITHDRAW' | 'SWAP';
   title: string;
   from: string;
   to: string;
-  amount: string;
+  amount: string | null;
   requestId?: string;
   option?: PaymentOption['kind'];
   reason: string;
