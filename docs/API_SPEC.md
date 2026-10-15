@@ -152,7 +152,7 @@
 | GET | `/orgs/{o}/plans/{pId}` | Plan, steps, validations, AI explanation, attestation | ANY | → `PlanDetail` | |
 | POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | Operator trigger (same checks as the scheduler) | OPR, OWN | → `202 {jobId}` | 400 `IDEMPOTENCY_KEY_REQUIRED`; 404 `TREASURY_NOT_FOUND`; 409 `TREASURY_PAUSED`, `TREASURY_NOT_READY`, `MANDATE_NOT_ACTIVE`, `COVERAGE_INCOMPLETE`, `UNKNOWN_OPERATION_PENDING`, `EXECUTING_PLAN_EXISTS` |
 | GET | `/orgs/{o}/operations/{opId}` | Operation, transactions, verification | ANY | → `OperationDetail` | |
-| GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], wallets[], suggestedRefills[], alerts[]}` (see below) | |
+| GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], wallets[], suggestedRefills[], alerts[]}` (see below) | 404 `TREASURY_NOT_FOUND`; 409 `MANDATE_NOT_ACTIVE`, `TREASURY_NOT_READY`; 503 `FORECAST_UNAVAILABLE` |
 | GET | `/orgs/{o}/review-items` | Review queue | ANY (role-filtered) | `?status=Open&type=` → `{items}` | |
 | POST | `/orgs/{o}/review-items/{id}/actions` 🔁 | Retry, cancel, mark resolved, or edit and re-approve | role per type | `{action, note}` → `{item}` | 409 `STALE_ITEM`, 403 |
 | POST | `/orgs/{o}/plans/{pId}/fee/accept` | Accept a held plan at its system estimate; stores that estimate as the cap | OWN, FIN, OPR | `{reason?}` → `{planId, acceptedCapWei}` | 404 `FEE_REVIEW_NOT_FOUND`, 409 `FEE_REVIEW_STALE` |
@@ -167,6 +167,10 @@
 - `alerts[]`: `{date, message}`.
 
 The API serializer maps the engine's `ForecastDay.day` index to an ISO date and wallet ids to Safe addresses. `buffer` comes from the mandate.
+
+Inputs and failures. Balances are read from chain and today's PAY and REFILL usage from the module's `usedToday`, so the daily caps limit what lands today. `MANDATE_NOT_ACTIVE` also covers a mandate that does not validate, has no PAY or REFILL limits (no fallback), or has no buffer for an operational wallet. `TREASURY_NOT_READY` means a missing source or payments wallet, module or asset. A failed chain read is `FORECAST_UNAVAILABLE`.
+
+Requests included: Approved, Scheduled and AwaitingApproval (plus Draft with `includeDrafts`), ordered by first valid approval time then id. Skipped: no amount, payee or confirmed terms, or a paying wallet outside the treasury's operational wallets. A request with no paying wallet is projected on O1 (the worker's planner requires one; the forecast is advisory and covers requests not yet assigned).
 
 ## 6. Reconciliation, evidence, analytics (M11, M15, M17)
 

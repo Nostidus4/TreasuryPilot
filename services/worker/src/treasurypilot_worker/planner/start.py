@@ -135,7 +135,7 @@ class DbScheduleProvider:
 class DbPlanStarter:
     """Claim a `Draft` plan (unique per open request) and hand it to the planning task."""
 
-    def __init__(self, enqueue: Callable[[uuid.UUID], None]) -> None:
+    def __init__(self, enqueue: Callable[[uuid.UUID, uuid.UUID], None]) -> None:
         self.enqueue = enqueue
 
     async def start(
@@ -166,5 +166,5 @@ class DbPlanStarter:
         )
         if plan_id is None:
             return False
-        self.enqueue(plan_id)
+        self.enqueue(plan_id, treasury_id)
         return True

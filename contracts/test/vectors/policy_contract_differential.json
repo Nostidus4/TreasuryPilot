@@ -112,5 +112,103 @@
     "primary": "MANDATE_PAUSED",
     "contract_success": false,
     "contract_error": "MandatePaused()"
+  },
+  "approval_payee_changed": {
+    "validator_decision": "BLOCK",
+    "primary": "APPROVAL_STALE",
+    "contract_success": false,
+    "contract_error": "ApprovalInvalid()",
+    "contract_code": "APPROVAL_INVALID"
+  },
+  "approval_missing": {
+    "validator_decision": "BLOCK",
+    "primary": "NOT_APPROVED",
+    "contract_success": false,
+    "contract_error": "ApprovalInvalid()",
+    "contract_code": "APPROVAL_INVALID"
+  },
+  "approval_bad_signature": {
+    "validator_decision": "BLOCK",
+    "primary": "APPROVAL_INVALID",
+    "contract_success": false,
+    "contract_error": "ApprovalInvalid()"
+  },
+  "approval_signer_not_approver": {
+    "validator_decision": "BLOCK",
+    "primary": "NOT_IN_APPROVER_SET",
+    "contract_success": false,
+    "contract_error": "NotApprover()"
+  },
+  "buffer_breach": {
+    "validator_decision": "BLOCK",
+    "primary": "BUFFER_BREACH",
+    "contract_success": false,
+    "contract_error": "BufferBreach()"
+  },
+  "source_buffer_breach": {
+    "validator_decision": "BLOCK",
+    "primary": "SOURCE_BUFFER_BREACH",
+    "contract_success": false,
+    "contract_error": "SourceBufferBreach()"
+  },
+  "daily_exact": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "refill_bound_exact": {
+    "validator_decision": "ALLOW",
+    "primary": null,
+    "contract_success": true,
+    "contract_error": null
+  },
+  "refill_per_request": {
+    "validator_decision": "BLOCK",
+    "primary": "OVER_REFILL_PER_REQUEST",
+    "contract_success": false,
+    "contract_error": "OverRefillPerRequest()"
+  },
+  "refill_daily": {
+    "validator_decision": "BLOCK",
+    "primary": "OVER_REFILL_DAILY",
+    "contract_success": false,
+    "contract_error": "OverRefillDaily()"
+  },
+  "wrong_payment_option": {
+    "validator_decision": "BLOCK",
+    "primary": "WRONG_PAYMENT_OPTION",
+    "contract_success": false,
+    "contract_error": "WrongPaymentOption()"
+  },
+  "request_already_paid": {
+    "validator_decision": "BLOCK",
+    "primary": "REQUEST_ALREADY_PAID",
+    "contract_success": false,
+    "contract_error": "RequestAlreadyPaid()"
+  },
+  "request_cancelled": {
+    "validator_decision": "BLOCK",
+    "primary": "REQUEST_CANCELLED",
+    "contract_success": false,
+    "contract_error": "RequestCancelled()"
+  },
+  "step_already_executed": {
+    "validator_decision": "BLOCK",
+    "primary": "STEP_ALREADY_EXECUTED",
+    "contract_success": false,
+    "contract_error": "StepAlreadyExecuted()"
+  },
+  "refill_already_done": {
+    "validator_decision": "BLOCK",
+    "primary": "ALREADY_REFILLED_FOR_REQUEST",
+    "contract_success": false,
+    "contract_error": "AlreadyRefilledForRequest()"
+  },
+  "not_executor": {
+    "validator_decision": "BLOCK",
+    "primary": "EXECUTOR_MISMATCH",
+    "contract_success": false,
+    "contract_error": "NotExecutor()"
   }
 }

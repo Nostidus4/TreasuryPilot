@@ -132,6 +132,7 @@ from treasurypilot_api.recovery.circuit import router as circuit_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
+from treasurypilot_api.treasury.forecast import router as forecast_router
 from treasurypilot_api.treasury.safe import RpcSafeVerifier
 from treasurypilot_api.treasury.service import TreasuryService
 from treasurypilot_api.treasury.sync import sync_platform_configuration
@@ -552,6 +553,7 @@ def create_app(
     app.include_router(memberships_router)
     app.include_router(audit_router)
     app.include_router(treasury_router)
+    app.include_router(forecast_router)
     app.include_router(chain_router)
     app.include_router(execution_router)
     app.include_router(metrics_router)

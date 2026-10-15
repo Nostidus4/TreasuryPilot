@@ -39,3 +39,9 @@ Funds approved for one payment request must not be spendable by another request 
 | DoD: ADR | this document |
 | DoD: integer base units, no LLM dependency | all amounts `uint256` base units; no off-chain input decides enforcement |
 | Backend/worker integration | Not part of this issue's scope (contract level); listed under Known gaps |
+
+## Addendum: ThresholdApprovalExecutor trust model (#87)
+- `pay` is operator-only (`msg.sender == operator`); the module accepts calls only from the executor, so a direct `module.pay` by the operator EOA or anyone else reverts `NotExecutor`.
+- The executor does not compose with `PlanAttestedExecutor` or `ReserveHoldExecutor`. Using several needs a new combined executor and `configureMandate`.
+- Refill and supply are not exposed, so they are unavailable while it is the mandate executor; Safe T must switch executors to use them.
+- `k` counts approver addresses and the band is chosen by the signed `ap.amount`.

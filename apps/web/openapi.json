@@ -1612,6 +1612,157 @@
         "title": "FlagEvidence",
         "type": "object"
       },
+      "ForecastAlert": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["date", "message"],
+        "title": "ForecastAlert",
+        "type": "object"
+      },
+      "ForecastDay": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "string"
+          },
+          "buffer": {
+            "title": "Buffer",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "outflow": {
+            "title": "Outflow",
+            "type": "string"
+          }
+        },
+        "required": ["date", "balance", "outflow", "buffer"],
+        "title": "ForecastDay",
+        "type": "object"
+      },
+      "ForecastRefill": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "sourceAddress": {
+            "title": "Sourceaddress",
+            "type": "string"
+          },
+          "targetAddress": {
+            "title": "Targetaddress",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "sourceAddress",
+          "targetAddress",
+          "amount",
+          "requestId"
+        ],
+        "title": "ForecastRefill",
+        "type": "object"
+      },
+      "ForecastResponse": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastAlert"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "suggestedRefills": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastRefill"
+            },
+            "title": "Suggestedrefills",
+            "type": "array"
+          },
+          "wallets": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastWallet"
+            },
+            "title": "Wallets",
+            "type": "array"
+          }
+        },
+        "required": ["days", "wallets", "suggestedRefills", "alerts"],
+        "title": "ForecastResponse",
+        "type": "object"
+      },
+      "ForecastWallet": {
+        "properties": {
+          "buffer": {
+            "title": "Buffer",
+            "type": "string"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastWalletDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "safeAddress": {
+            "title": "Safeaddress",
+            "type": "string"
+          }
+        },
+        "required": ["role", "label", "safeAddress", "buffer", "days"],
+        "title": "ForecastWallet",
+        "type": "object"
+      },
+      "ForecastWalletDay": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": ["date", "balance"],
+        "title": "ForecastWalletDay",
+        "type": "object"
+      },
       "GovernanceTxPurpose": {
         "enum": [
           "MODULE_SETUP",
@@ -13723,6 +13874,67 @@
         "summary": "Set Fee Reference Price",
         "tags": ["fees"],
         "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/forecast": {
+      "get": {
+        "operationId": "get_forecast_v1_orgs__organization_id__treasuries__treasury_id__forecast_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeDrafts",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Includedrafts",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Forecast",
+        "tags": ["treasury"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs": {
