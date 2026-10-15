@@ -2597,6 +2597,13 @@ export interface components {
       /** Scopes */
       scopes: string[];
     };
+    /** ApprovalBand */
+    ApprovalBand: {
+      /** K */
+      k: number;
+      /** Upto */
+      upTo?: string | null;
+    };
     /** ApprovalEvidence */
     ApprovalEvidence: {
       /** Signaturehash */
@@ -3495,6 +3502,8 @@ export interface components {
     MandateConfig: {
       /** Actions */
       actions?: ('REFILL' | 'PAY' | 'SUPPLY' | 'SWAP')[] | null;
+      /** Approvalbands */
+      approvalBands?: components['schemas']['ApprovalBand'][] | null;
       /**
        * Approvalmaxage
        * @default 1209600

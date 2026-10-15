@@ -23,6 +23,11 @@ import {
   useMandates,
   useSaveMandateDraft,
 } from '@/features/controls/api';
+import { ApprovalBandsEditor } from '@/features/mandate/approval-bands';
+import {
+  bandsDraftFrom,
+  buildApprovalBands,
+} from '@/features/mandate/approval-bands-model';
 import { useMembers } from '@/features/orgs/api';
 import { useTreasuryScope } from '@/features/orgs/org-scope';
 import { useTreasury } from '@/features/treasury/api';
@@ -188,6 +193,29 @@ function Summary({ version }: { version: MandateVersion }) {
             </span>
           ),
         },
+        ...(config.approvalBands
+          ? [
+              {
+                label: t('Approvals by amount'),
+                value: (
+                  <span className="grid justify-items-end">
+                    {config.approvalBands.map((band) => (
+                      <span key={band.upTo ?? 'above'}>
+                        {band.upTo === undefined ? (
+                          t('above: {{k}}', { k: band.k })
+                        ) : (
+                          <>
+                            <Amount value={band.upTo} context="column" />
+                            {`: ${band.k}`}
+                          </>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
         { label: t('Executor'), value: <Address address={config.executor} /> },
         { label: t('Guardian'), value: <Address address={config.guardian} /> },
         { label: t('Expires'), value: formatDate(config.expiresAt) },
@@ -242,6 +270,9 @@ function Editor({
   );
   const [approvers, setApprovers] = useState<Hex[]>(base.approvers);
   const [newApprover, setNewApprover] = useState('');
+  const [bandsDraft, setBandsDraft] = useState(() =>
+    bandsDraftFrom(base.approvalBands, decimals),
+  );
   const [expiresAt, setExpiresAt] = useState(base.expiresAt.slice(0, 10));
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<MandateDraft>();
@@ -336,6 +367,10 @@ function Editor({
       approvers,
       expiresAt: `${expiresAt}T00:00:00.000Z`,
     };
+    const banded = buildApprovalBands(bandsDraft, decimals, approvers.length);
+    if (banded.error) errors.approvalBands = banded.error;
+    if (banded.bands) config.approvalBands = banded.bands;
+    else delete config.approvalBands;
     if (!expiresAt || config.expiresAt <= new Date().toISOString()) {
       errors.expiresAt = t('Choose a date in the future.');
     }
@@ -672,6 +707,16 @@ function Editor({
             </Field>
           </CardContent>
         </Card>
+
+        <ApprovalBandsEditor
+          draft={bandsDraft}
+          symbol={state.treasury.asset.symbol}
+          error={errorFor('approvalBands')}
+          onChange={(next) => {
+            touch();
+            setBandsDraft(next);
+          }}
+        />
 
         <Card>
           <CardHeader

@@ -238,3 +238,19 @@ def test_activation_without_supply_limits_persists_pending_activation() -> None:
         asyncio.run(run())
     finally:
         command.downgrade(alembic, "base")
+
+
+def test_set_bands_is_encoded_for_the_executor_not_the_module() -> None:
+    previous = config()
+    current = config() | {"approvalBands": [{"upTo": "1000", "k": 1}, {"k": 2}]}
+    preview = build_bundle_preview(previous, current)
+
+    encoded = build_mandate_calls(MODULE, cast(list[dict[str, object]], preview["calls"]))
+
+    assert len(encoded) == 1
+    assert encoded[0].to == bytes.fromhex(EXECUTOR[2:])
+    assert encoded[0].data[:4] == keccak(b"setBands((uint128,uint32)[])")[:4]
+    assert decode(["(uint128,uint32)[]"], encoded[0].data[4:])[0] == (
+        (1000, 1),
+        (2**128 - 1, 2),
+    )
