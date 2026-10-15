@@ -2074,6 +2074,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/forecast': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Forecast */
+    get: operations['get_forecast_v1_orgs__organization_id__treasuries__treasury_id__forecast_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/governance-txs': {
     parameters: {
       query?: never;
@@ -3194,6 +3211,68 @@ export interface components {
       severity: string;
       /** Status */
       status: string;
+    };
+    /** ForecastAlert */
+    ForecastAlert: {
+      /** Date */
+      date: string;
+      /** Message */
+      message: string;
+    };
+    /** ForecastDay */
+    ForecastDay: {
+      /** Balance */
+      balance: string;
+      /** Buffer */
+      buffer: string;
+      /** Date */
+      date: string;
+      /** Outflow */
+      outflow: string;
+    };
+    /** ForecastRefill */
+    ForecastRefill: {
+      /** Amount */
+      amount: string;
+      /** Date */
+      date: string;
+      /** Requestid */
+      requestId: string;
+      /** Sourceaddress */
+      sourceAddress: string;
+      /** Targetaddress */
+      targetAddress: string;
+    };
+    /** ForecastResponse */
+    ForecastResponse: {
+      /** Alerts */
+      alerts: components['schemas']['ForecastAlert'][];
+      /** Days */
+      days: components['schemas']['ForecastDay'][];
+      /** Suggestedrefills */
+      suggestedRefills: components['schemas']['ForecastRefill'][];
+      /** Wallets */
+      wallets: components['schemas']['ForecastWallet'][];
+    };
+    /** ForecastWallet */
+    ForecastWallet: {
+      /** Buffer */
+      buffer: string;
+      /** Days */
+      days: components['schemas']['ForecastWalletDay'][];
+      /** Label */
+      label: string;
+      /** Role */
+      role: string;
+      /** Safeaddress */
+      safeAddress: string;
+    };
+    /** ForecastWalletDay */
+    ForecastWalletDay: {
+      /** Balance */
+      balance: string;
+      /** Date */
+      date: string;
     };
     /**
      * GovernanceTxPurpose
@@ -9606,6 +9685,40 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_forecast_v1_orgs__organization_id__treasuries__treasury_id__forecast_get: {
+    parameters: {
+      query?: {
+        includeDrafts?: boolean;
+      };
+      header?: never;
+      path: {
+        treasury_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ForecastResponse'];
         };
       };
       /** @description Validation Error */
