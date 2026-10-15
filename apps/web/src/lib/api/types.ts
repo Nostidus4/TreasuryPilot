@@ -219,7 +219,7 @@ export interface ForecastWallet {
 
 export interface ForecastRefill {
   date: string;
-  requestId?: string;
+  requestId: string;
   sourceAddress: Hex;
   targetAddress: Hex;
   amount: string;

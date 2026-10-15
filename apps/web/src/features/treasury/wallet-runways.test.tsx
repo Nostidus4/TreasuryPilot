@@ -43,6 +43,7 @@ test('renders one runway chart per wallet that matches the forecast, with sugges
         sourceAddress: safeT.safeAddress,
         targetAddress: o1.safeAddress,
         amount: '4500000000',
+        requestId: 'req_1',
       },
     ],
     alerts: [],
@@ -53,20 +54,44 @@ test('renders one runway chart per wallet that matches the forecast, with sugges
     ),
   );
 
-  const charts = await screen.findAllByRole('img', {
-    name: /projected balance for the next 7 days$/i,
+  // O1 is charted by the 7-day runway card, so only O2 gets its own chart.
+  const chart = await screen.findByRole('img', {
+    name: `${o2.label} projected balance for the next 7 days`,
   });
-  expect(charts.map((chart) => chart.getAttribute('aria-label'))).toEqual([
-    `${o1.label} projected balance for the next 7 days`,
-    `${o2.label} projected balance for the next 7 days`,
-  ]);
-
-  const o1Table = within(charts[0].closest('figure')!).getByRole('table');
-  expect(within(o1Table).getByText(/4,000\.00/)).toBeInTheDocument();
-  expect(within(o1Table).getByText(/1,500\.00/)).toBeInTheDocument();
-
+  const table = within(chart.closest('figure')!).getByRole('table');
+  expect(within(table).getAllByText(/1,010\.00/)).toHaveLength(2);
   expect(
-    await screen.findByRole('heading', { name: 'Suggested refills' }),
-  ).toBeInTheDocument();
-  expect(screen.getByText('4,500.00')).toBeInTheDocument();
+    screen.queryByRole('img', {
+      name: `${o1.label} projected balance for the next 7 days`,
+    }),
+  ).not.toBeInTheDocument();
+
+  const refills = (
+    await screen.findByRole('heading', { name: 'Suggested refills' })
+  ).closest('[class*="rounded-lg"]') as HTMLElement;
+  expect(within(refills).getByText('4,500.00')).toBeInTheDocument();
+});
+
+test('says no refills are suggested when the forecast has none', async () => {
+  renderApp(T);
+  const o2 = db.treasuries.trs_main.wallets[2];
+  server.use(
+    http.get('*/v1/orgs/org_northwind/treasuries/trs_main/forecast', () =>
+      HttpResponse.json({
+        days: [],
+        wallets: [
+          {
+            role: 'O2',
+            label: o2.label,
+            safeAddress: o2.safeAddress,
+            buffer: '500000000',
+            days: [{ date: '2099-01-01', balance: '1010000000' }],
+          },
+        ],
+        suggestedRefills: [],
+        alerts: [],
+      } satisfies Forecast),
+    ),
+  );
+  expect(await screen.findByText('No refills suggested')).toBeInTheDocument();
 });

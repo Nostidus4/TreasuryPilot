@@ -477,6 +477,9 @@ export const treasuryHandlers = [
     });
     const breach = days.find((day) => BigInt(day.balance) < BigInt(day.buffer));
     const source = state.wallets.find((wallet) => wallet.role === 'T');
+    const cause =
+      open.find((item) => item.dueDate.slice(0, 10) === breach?.date) ??
+      open[0];
     const wallets = state.wallets
       .filter((wallet) => wallet.role === 'O1' || wallet.role === 'O2')
       .map((wallet) => ({
@@ -494,10 +497,11 @@ export const treasuryHandlers = [
       days,
       wallets,
       suggestedRefills:
-        breach && source
+        breach && source && cause
           ? [
               {
                 date: breach.date,
+                requestId: cause.id,
                 sourceAddress: source.safeAddress,
                 targetAddress: o1.safeAddress,
                 amount: (BigInt(o1.target) - BigInt(breach.balance)).toString(),

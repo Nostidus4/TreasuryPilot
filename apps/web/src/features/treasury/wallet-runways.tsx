@@ -19,14 +19,20 @@ export function WalletRunways({
   wallets: TreasuryWallet[];
   units: { decimals: number; symbol: string };
 }) {
+  // Number is for chart display only; amounts elsewhere stay as base-unit strings.
   const num = (value: string) =>
     Number(formatUnits(value, units.decimals, { group: false }));
   const labelOf = (address: string) =>
     wallets.find((wallet) => wallet.safeAddress === address)?.label;
 
+  // The O1 wallet is already charted by the 7-day runway card.
+  const charted = forecast.wallets.filter((wallet) => wallet.role !== 'O1');
+  if (charted.length === 0 && forecast.suggestedRefills.length === 0)
+    return null;
+
   return (
-    <>
-      {forecast.wallets.map((wallet) => (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {charted.map((wallet) => (
         <Card key={wallet.safeAddress}>
           <CardHeader
             title={t('{{wallet}} runway', { wallet: wallet.label })}
@@ -49,14 +55,18 @@ export function WalletRunways({
           </CardContent>
         </Card>
       ))}
-      {forecast.suggestedRefills.length > 0 && (
-        <Card>
-          <CardHeader title={t('Suggested refills')} />
-          <CardContent>
+      <Card>
+        <CardHeader title={t('Suggested refills')} />
+        <CardContent>
+          {forecast.suggestedRefills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('No refills suggested')}
+            </p>
+          ) : (
             <ul className="grid gap-3">
               {forecast.suggestedRefills.map((refill) => (
                 <li
-                  key={`${refill.date}-${refill.targetAddress}`}
+                  key={`${refill.requestId}-${refill.date}-${refill.targetAddress}`}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
                 >
                   <span className="text-muted-foreground">
@@ -76,9 +86,9 @@ export function WalletRunways({
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-      )}
-    </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

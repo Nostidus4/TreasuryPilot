@@ -366,14 +366,12 @@ function Overview({ state }: { state: TreasuryState }) {
       </Card>
 
       {forecast.data && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <WalletRunways
-            asset={state.treasury.asset}
-            forecast={forecast.data}
-            units={units}
-            wallets={state.wallets}
-          />
-        </div>
+        <WalletRunways
+          asset={state.treasury.asset}
+          forecast={forecast.data}
+          units={units}
+          wallets={state.wallets}
+        />
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
