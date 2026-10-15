@@ -150,7 +150,7 @@
 |---|---|---|---|---|---|
 | GET | `/orgs/{o}/treasuries/{t}/plans` | Recent plans | ANY | → `{items}` | |
 | GET | `/orgs/{o}/plans/{pId}` | Plan, steps, validations, AI explanation, attestation | ANY | → `PlanDetail` | |
-| POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | Operator trigger (same checks as the scheduler) | OPR | → `202 {jobId}` | 409 `TREASURY_PAUSED`, `COVERAGE_INCOMPLETE`, `UNKNOWN_OPERATION_PENDING` |
+| POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | Operator trigger (same checks as the scheduler) | OPR, OWN | → `202 {jobId}` | 400 `IDEMPOTENCY_KEY_REQUIRED`; 404 `TREASURY_NOT_FOUND`; 409 `TREASURY_PAUSED`, `TREASURY_NOT_READY`, `MANDATE_NOT_ACTIVE`, `COVERAGE_INCOMPLETE`, `UNKNOWN_OPERATION_PENDING`, `EXECUTING_PLAN_EXISTS` |
 | GET | `/orgs/{o}/operations/{opId}` | Operation, transactions, verification | ANY | → `OperationDetail` | |
 | GET | `/orgs/{o}/treasuries/{t}/forecast` | 7-day runway | ANY | `?includeDrafts=` → `{days[], alerts[]}` | |
 | GET | `/orgs/{o}/review-items` | Review queue | ANY (role-filtered) | `?status=Open&type=` → `{items}` | |

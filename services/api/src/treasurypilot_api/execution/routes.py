@@ -545,6 +545,7 @@ class RunNowResponse(ApiModel):
     job_id: uuid.UUID
 
 
+# Operator or Owner (docs/modules/execution README, identity README).
 _require_run_now = require_role(OrganizationRole.OPERATOR, OrganizationRole.OWNER)
 _RUN_NOW_ENTITY = "RunNow"
 _RUN_NOW_NAMESPACE = uuid.UUID("5d0a2c7e-3c3b-4c0a-9a43-1f1f6b7f0e48")
@@ -557,7 +558,10 @@ def _run_now_blocked(code: str, detail: str) -> AuthFailure:
 
 
 async def _run_now_gate(session: AsyncSession, treasury: Treasury) -> None:
-    """The scheduler's gates (worker trigger/cycles.py), mapped to API error codes."""
+    """The scheduler's gates (worker trigger/cycles.py), mapped to API error codes.
+
+    The order is deliberate: paused is checked first, so a paused treasury always says so.
+    """
     paused = await session.scalar(
         select(BackendPause.paused).where(BackendPause.treasury_id == treasury.id)
     )
@@ -631,12 +635,22 @@ async def run_now(
     treasury_id: uuid.UUID,
     request: Request,
     member: Annotated[MemberAccess, Depends(_require_run_now)],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)],
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
 ) -> RunNowResponse:
     """Enqueue one execution cycle through the outbox, behind the scheduler's gates."""
+    if idempotency_key is None:
+        raise AuthFailure(
+            status=400,
+            code="IDEMPOTENCY_KEY_REQUIRED",
+            title="Idempotency key required",
+            detail="Provide an Idempotency-Key for this run-now request.",
+        )
     if member.organization_id != organization_id:
         raise _not_found_treasury()
     # One event per (treasury, key): its id is the job id, so a replay returns the same job.
+    # Idempotency relies on the advisory lock below: domain_events has no unique constraint.
     entity_id = uuid.uuid5(_RUN_NOW_NAMESPACE, f"{treasury_id}:{idempotency_key}")
     async with _sessions(request)() as session, session.begin():
         await session.execute(

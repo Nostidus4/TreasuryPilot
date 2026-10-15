@@ -2212,6 +2212,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/run-now': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run Now
+     * @description Enqueue one execution cycle through the outbox, behind the scheduler's gates.
+     */
+    post: operations['run_now_v1_orgs__organization_id__treasuries__treasury_id__run_now_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/token-movements': {
     parameters: {
       query?: never;
@@ -4146,6 +4166,14 @@ export interface components {
     RoleUpdateRequest: {
       /** Roles */
       roles: components['schemas']['OrganizationRole'][];
+    };
+    /** RunNowResponse */
+    RunNowResponse: {
+      /**
+       * Jobid
+       * Format: uuid
+       */
+      jobId: string;
     };
     /** SafeCall */
     SafeCall: {
@@ -9647,6 +9675,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['GovernanceTxResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  run_now_v1_orgs__organization_id__treasuries__treasury_id__run_now_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RunNowResponse'];
         };
       };
       /** @description Validation Error */

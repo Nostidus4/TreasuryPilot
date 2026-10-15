@@ -75,7 +75,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
-| POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | OPR, OWN | → `202 {jobId}` | 409 `TREASURY_PAUSED`, `UNKNOWN_OPERATION_PENDING`, `COVERAGE_INCOMPLETE`, `MANDATE_NOT_ACTIVE` |
+| POST | `/orgs/{o}/treasuries/{t}/run-now` 🔁 | OPR, OWN | → `202 {jobId}` | 400 `IDEMPOTENCY_KEY_REQUIRED`; 404 `TREASURY_NOT_FOUND`; 409 `TREASURY_PAUSED`, `TREASURY_NOT_READY`, `MANDATE_NOT_ACTIVE`, `COVERAGE_INCOMPLETE`, `UNKNOWN_OPERATION_PENDING`, `EXECUTING_PLAN_EXISTS` |
 | GET | `/orgs/{o}/treasuries/{t}/schedule` | ANY | → `{schedule, items[{requestId, day, value, refill}], infeasible[]}` | |
 | GET | `/orgs/{o}/plans/{p}` | ANY | → `{plan, steps[], validations[], attestation, aiRationale?, why}` | |
 | GET | `/orgs/{o}/operations/{id}` | ANY | → `{operation, transactions[], verification}` | |
