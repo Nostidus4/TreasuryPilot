@@ -62,7 +62,8 @@ from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.planner.ai import PROPOSE_TASK, run_proposal
-from treasurypilot_worker.planner.context import load_inputs
+from treasurypilot_worker.planner.context import load_inputs, load_liquidity_context
+from treasurypilot_worker.planner.liquidity import DbLiquidityStarter, plan_liquidity
 from treasurypilot_worker.planner.pipeline import plan_request
 from treasurypilot_worker.planner.reattest import reattest_fn
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider, DbScheduleWriter
@@ -401,6 +402,16 @@ def _enqueue_plan(plan_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
     )
 
 
+def _enqueue_liquidity_plan(plan_id: uuid.UUID, treasury_id: uuid.UUID) -> None:
+    app.send_task(
+        "treasurypilot.planning.plan_liquidity",
+        kwargs={"plan_id": str(plan_id)},
+        task_id=f"plan:{plan_id}",
+        queue=treasury_queue(treasury_id, get_settings().treasury_queue_shards),
+        countdown=PLAN_ENQUEUE_COUNTDOWN_SECONDS,
+    )
+
+
 async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) -> CycleResult:
     lead = timedelta(seconds=get_settings().execution_lead_time_seconds)
     return await run_execution_cycle(
@@ -408,6 +419,7 @@ async def _execute_treasury_cycle(pool: asyncpg.Pool, treasury_id: uuid.UUID) ->
         lock_for=lambda item: treasury_advisory_xact_lock(pool, item),
         schedule_provider=DbScheduleProvider(lead),
         plan_starter=DbPlanStarter(_enqueue_plan),
+        liquidity_starter=DbLiquidityStarter(_enqueue_liquidity_plan),
     )
 
 
@@ -459,6 +471,23 @@ def plan_request_task(plan_id: str) -> dict[str, str]:
     async def plan(pool: Any) -> Any:
         try:
             return await plan_request(pool, uuid.UUID(plan_id), build_deps(pool, settings))
+        except LookupError as error:  # the starter's transaction has not committed yet
+            raise RetryableTaskError(str(error)) from error
+
+    outcome: Any = _planning.run(settings.database_url, plan)
+    return {"status": outcome.status if outcome else "AlreadyPlanned"}
+
+
+@app.task(name="treasurypilot.planning.plan_liquidity", queue="core")
+def plan_liquidity_task(plan_id: str) -> dict[str, str]:
+    """Run the liquidity decision for one claimed Draft liquidity plan (EXE-014)."""
+    settings = get_settings()
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL is required for planning")
+
+    async def plan(pool: Any) -> Any:
+        try:
+            return await plan_liquidity(pool, uuid.UUID(plan_id), build_deps(pool, settings))
         except LookupError as error:  # the starter's transaction has not committed yet
             raise RetryableTaskError(str(error)) from error
 
@@ -794,8 +823,12 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
         async with treasury_advisory_xact_lock(pool, loaded.treasury_id) as lock:
             if lock is None:  # another worker is advancing this treasury; the sweep retries
                 return {"status": "Locked"}
-            inputs = await load_inputs(
-                pool, loaded.plan, loaded.treasury_id, executor=loaded.executor
+            inputs = (
+                await load_liquidity_context(pool, loaded.treasury_id, executor=loaded.executor)
+                if loaded.request_id is None
+                else await load_inputs(
+                    pool, loaded.plan, loaded.treasury_id, executor=loaded.executor
+                )
             )
             urls = await pool.fetchval(
                 "SELECT rpc_urls FROM chains WHERE chain_id = $1", loaded.plan.chain_id
@@ -907,6 +940,16 @@ _SWEEP_SQL = (
     "AND b.paused) AND NOT EXISTS (SELECT 1 FROM treasuries t WHERE t.id = r.treasury_id "
     "AND t.status IN ('Paused', 'Revoked')) ORDER BY a.plan_id, a.created_at DESC"
 )
+# The same for a liquidity plan (EXE-014): it has no request, so its plan row is the state.
+_LIQUIDITY_SWEEP_SQL = (
+    "SELECT p.id AS plan_id, p.treasury_id FROM plans p WHERE p.request_id IS NULL "
+    "AND p.status IN ('Attested', 'Executing') AND COALESCE((SELECT o.status::text "
+    "FROM operations o JOIN plan_steps s ON s.id = o.plan_step_id WHERE s.plan_id = p.id "
+    "ORDER BY o.created_at DESC, o.id DESC LIMIT 1), 'Confirmed') IN ('Confirmed', 'NotSubmitted') "
+    "AND NOT EXISTS (SELECT 1 FROM backend_pause b WHERE b.treasury_id = p.treasury_id "
+    "AND b.paused) AND NOT EXISTS (SELECT 1 FROM treasuries t WHERE t.id = p.treasury_id "
+    "AND t.status IN ('Paused', 'Revoked'))"
+)
 
 
 @app.task(name="treasurypilot.execution.sequence_plans_sweep", queue="core")
@@ -920,7 +963,7 @@ def sequence_plans_sweep() -> dict[str, int]:
     async def ids() -> list[Any]:
         pool = await create_worker_pool(database_url, min_size=1, max_size=1)
         try:
-            return list(await pool.fetch(_SWEEP_SQL))
+            return [*await pool.fetch(_SWEEP_SQL), *await pool.fetch(_LIQUIDITY_SWEEP_SQL)]
         finally:
             await pool.close()
 

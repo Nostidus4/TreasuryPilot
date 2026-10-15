@@ -101,7 +101,10 @@ def _answers() -> dict[tuple[str, str], Answer]:
             lambda args: [{SAFE_T: 1000, OP_1: 110, OP_2: 5, A_TOKEN: 7777}[args[0].lower()]],
         ),
         (MODULE, "status()"): (["uint8"], const(0)),
-        (MODULE, "usedToday(uint8,address)"): (["uint256"], lambda args: [{1: 40, 2: 15}[args[0]]]),
+        (MODULE, "usedToday(uint8,address)"): (
+            ["uint256"],
+            lambda args: [{1: 40, 2: 15, 4: 25}[args[0]]],
+        ),
         (MODULE, "bufferOf(address,address)"): (["uint256"], const(10)),
         (MODULE, "targetOf(address,address)"): (["uint256"], const(100)),
         (MODULE, "isApprover(address)"): (["bool"], const(True)),
@@ -182,7 +185,7 @@ async def test_snapshot_reads_the_full_set_at_one_pinned_block() -> None:
     data = snapshot.data
     assert data["balances"] == {SAFE_T: "1000", OP_1: "110", OP_2: "5"}
     assert data["asset"]["decimals"] == 6
-    assert data["module"]["used_today"] == {"PAY": "40", "REFILL": "15"}
+    assert data["module"]["used_today"] == {"PAY": "40", "REFILL": "15", "SUPPLY": "25"}
     assert data["module"]["mandate"]["pay"] == {"per_request": "200", "daily": "1000"}
     assert data["module"]["mandate"]["version"] == 3
     assert data["module"]["approvers"] == {APPROVER: True}

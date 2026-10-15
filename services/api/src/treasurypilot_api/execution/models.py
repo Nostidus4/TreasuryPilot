@@ -111,7 +111,8 @@ class Operation(Base):
         UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
     )
     plan_step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # NULL for the operations of a liquidity plan (EXE-014).
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     step_id: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     kind: Mapped[OperationKind] = mapped_column(operation_kind_enum, nullable=False)
     payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)

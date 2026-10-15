@@ -18,7 +18,7 @@ from treasurypilot_core.domain.models import (
     FrozenSequence,
     NonNegativeInt,
 )
-from treasurypilot_core.eip712 import PAY, PAYMENT_APPROVAL_TYPE, REFILL, SWAP_IN, WITHDRAW
+from treasurypilot_core.eip712 import PAY, PAYMENT_APPROVAL_TYPE, REFILL, SUPPLY, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 
 type Address = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
@@ -39,10 +39,11 @@ class Action(StrEnum):
     SWAP = "SWAP"  # swap-for-gas on the test router
 
 
-# The module's uint8 action codes (M08 §8.4); SUPPLY has no ExecutionPlan wire mapping yet.
+# The module's uint8 action codes (M08 §8.4).
 _ACTION_CODES = {
     Action.PAY: PAY,
     Action.REFILL: REFILL,
+    Action.SUPPLY: SUPPLY,
     Action.WITHDRAW: WITHDRAW,
     Action.SWAP: SWAP_IN,
 }

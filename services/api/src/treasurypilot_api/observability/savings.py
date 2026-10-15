@@ -211,14 +211,15 @@ async def load_savings_batches(
     ):
         first[rid, to] = _utc(at)
     fees: dict[uuid.UUID, int] = defaultdict(int)
-    for rid, fee in await session.execute(
+    for owner, fee in await session.execute(
         select(Operation.request_id, func.sum(GasLedger.fee_wei))
         .join(Transaction, Transaction.operation_id == Operation.id)
         .join(GasLedger, GasLedger.transaction_id == Transaction.id)
         .where(Operation.request_id.in_(ids), Operation.kind == OperationKind.PAY)
         .group_by(Operation.request_id)
     ):
-        fees[rid] = int(fee)
+        if owner is not None:  # the filter above leaves only requests
+            fees[owner] = int(fee)
     prices = {
         treasury: price
         for treasury, price in await session.execute(

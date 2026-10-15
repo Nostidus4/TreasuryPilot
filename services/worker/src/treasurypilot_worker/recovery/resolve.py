@@ -69,7 +69,7 @@ async def resolve_operation(
     op = await pool.fetchrow(
         "SELECT o.id, o.step_id, o.kind, o.status, o.request_id, t.module_address, "
         "r.onchain_request_id FROM operations o JOIN treasuries t ON t.id = o.treasury_id "
-        "JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
+        "LEFT JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
         operation_id,
     )
     if op is None or op["status"] not in _IN_FLIGHT:

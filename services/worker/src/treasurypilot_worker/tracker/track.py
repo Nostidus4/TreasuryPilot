@@ -119,6 +119,14 @@ async def _announce_confirmed(
         operation_id,
     )
     if row is None:
+        # An operation of a liquidity plan has no request: the plan is found through its step.
+        row = await pool.fetchrow(
+            "SELECT s.plan_id, o.treasury_id FROM operations o "
+            "JOIN plan_steps s ON s.id = o.plan_step_id "
+            "WHERE o.id = $1 AND o.status = 'Confirmed' AND o.request_id IS NULL LIMIT 1",
+            operation_id,
+        )
+    if row is None:
         return
     plan_id = row["plan_id"]
     try:
