@@ -508,3 +508,66 @@ def test_mandate_reconfiguration_reenables_unchanged_secondary_policies() -> Non
         for call in build_bundle_preview(previous, current, asset_metadata=metadata)["calls"]
     ]
     assert methods == ["configureMandate", "setAssetBuffer", "setAssetBuffer", "setAssetPolicy"]
+
+
+def _banded(bands: list[dict[str, object]], approvers: int = 2) -> MandateConfig:
+    return MandateConfig.model_validate(
+        config_payload()
+        | {
+            "approvalBands": bands,
+            "approvers": ["0x" + f"{44 + i:02x}" * 20 for i in range(approvers)],
+        }
+    )
+
+
+def _validate_bands(bands: list[dict[str, object]], approvers: int = 2) -> None:
+    validate_mandate_config(
+        _banded(bands, approvers),
+        known_wallets=known_wallets(),
+        environment="sandbox",
+        asset_decimals=6,
+        now=NOW,
+    )
+
+
+def test_valid_approval_bands_pass_and_summarize() -> None:
+    bands = [{"upTo": "1000", "k": 1}, {"upTo": "5000", "k": 1}, {"k": 2}]
+    _validate_bands(bands)
+    summary = build_summary(_banded(bands), decimals=6, symbol="USDC")
+    assert any(item["field"] == "approvalBands" for item in summary)
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [
+        [{"upTo": "1000", "k": 1}],  # last band must be unbounded
+        [{"upTo": "1000", "k": 1}, {"upTo": "1000", "k": 2}, {"k": 2}],  # strictly increasing
+        [{"upTo": "1000", "k": 2}, {"k": 1}],  # k must not decrease
+        [{"k": 1}, {"k": 2}],  # only the last band is unbounded
+        [{"upTo": str(2**128 - 1), "k": 1}, {"k": 1}],  # uint128 max is the unbounded marker
+        [{"upTo": "1000", "k": 1}, {"k": 3}],  # more than the two approvers
+        [],
+    ],
+)
+def test_invalid_approval_bands_are_rejected(bands: list[dict[str, object]]) -> None:
+    with pytest.raises(MandateValidationError) as error:
+        _validate_bands(bands)
+    assert error.value.code == "APPROVAL_BANDS_INVALID"
+
+
+def test_zero_k_is_rejected_by_the_model() -> None:
+    with pytest.raises(ValidationError):
+        _banded([{"k": 0}])
+
+
+def test_bands_produce_a_set_bands_call_on_the_executor() -> None:
+    previous = config_payload()
+    current = previous | {"approvalBands": [{"upTo": "1000", "k": 1}, {"k": 2}]}
+    calls = build_bundle_preview(previous, current)["calls"]
+    assert isinstance(calls, list)
+    call = next(item for item in calls if item["method"] == "setBands")
+    assert call["arguments"] == {
+        "executor": current["executor"],
+        "bands": [{"upTo": "1000", "k": 1}, {"upTo": str(2**128 - 1), "k": 2}],
+    }
+    assert any(item["path"] == "approvalBands" for item in build_diff(previous, current))
