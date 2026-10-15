@@ -129,6 +129,10 @@ from treasurypilot_api.observability.savings import router as savings_router
 from treasurypilot_api.reconciliation.export import router as reconciliation_export_router
 from treasurypilot_api.reconciliation.routes import router as reconciliation_router
 from treasurypilot_api.recovery.circuit import router as circuit_router
+from treasurypilot_api.recovery.partial_queue import (
+    PartialRecoveryQueue,
+    build_partial_recovery_queue,
+)
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError
@@ -278,6 +282,7 @@ def create_app(
     copilot_answerer: CopilotAnswerer | None = None,
     document_storage: ObjectStorage | None = None,
     extraction_queue: ExtractionQueue | None = None,
+    partial_recovery_queue: PartialRecoveryQueue | None = None,
     fx_quote_provider: FxQuoteProvider | None = None,
     fee_history_provider: FeeHistoryProvider | None = None,
     telegram_repository: TelegramRepository | None = None,
@@ -503,6 +508,9 @@ def create_app(
     app.state.copilot_answerer = copilot_answerer or build_copilot_answerer(settings)
     app.state.document_storage = document_storage or build_document_storage(settings)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
+    app.state.partial_recovery_queue = partial_recovery_queue or build_partial_recovery_queue(
+        settings
+    )
     # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
     # three they respond 503 FX_UNAVAILABLE.
     app.state.fx_quote_provider = fx_quote_provider

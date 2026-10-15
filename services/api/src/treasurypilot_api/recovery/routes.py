@@ -6,7 +6,7 @@ from typing import cast
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.identity.api import ApiModel
@@ -88,6 +88,24 @@ def _view(item: ReviewItem, member: MemberAccess) -> dict[str, object]:
         "version": item.version,
         "allowedActions": _allowed_actions(item, member),
     }
+
+
+async def _is_partial_recovery(
+    session: AsyncSession, item: ReviewItem, action: ReviewAction
+) -> bool:
+    """RETRY/CANCEL on a stop of a PartiallyCompleted plan runs in the worker (RCV-003)."""
+
+    if action not in {ReviewAction.RETRY, ReviewAction.CANCEL} or item.request_id is None:
+        return False
+    if item.type not in {ReviewType.POLICY_BLOCK.value, ReviewType.INFRA.value}:
+        return False
+    return (
+        await session.scalar(
+            text("SELECT 1 FROM plans WHERE request_id = :r AND status = 'PartiallyCompleted'"),
+            {"r": item.request_id},
+        )
+        is not None
+    )
 
 
 @router.get("", openapi_extra={"x-organization-scoped": True})
@@ -223,6 +241,19 @@ async def act_on_review_item(
                 reason=payload.note,
                 now=datetime.now(UTC),
             )
+        elif await _is_partial_recovery(session, item, payload.action):
+            # The worker task resolves the item once it has reopened (or cancelled) the plan, so a
+            # failed hand-off leaves the item Open and retryable.
+            queue = getattr(request.app.state, "partial_recovery_queue", None)
+            if queue is None:
+                raise _failure(503, "RECOVERY_UNAVAILABLE", "Recovery queue is not configured.")
+            assert item.request_id is not None
+            try:
+                queue.enqueue(payload.action.value, item.request_id, member.user_id)
+            except Exception as error:
+                raise _failure(
+                    503, "RECOVERY_UNAVAILABLE", "The recovery task could not be queued."
+                ) from error
         elif payload.action != ReviewAction.DEFER:
             item.status = "Resolved"
             item.resolution = payload.action.value
