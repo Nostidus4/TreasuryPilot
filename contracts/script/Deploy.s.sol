@@ -10,6 +10,7 @@ import {MultiSend} from "@safe-global/safe-contracts/contracts/libraries/MultiSe
 import {SafeTestHelper} from "../test/helpers/SafeTestHelper.sol";
 import {Enum} from "@safe-global/safe-contracts/contracts/common/Enum.sol";
 import {TestUSDC} from "../src/test-assets/TestUSDC.sol";
+import {MockAavePool} from "../src/test-assets/MockAavePool.sol";
 import {MockReceiptSchemaRegistry, MockReceiptEAS} from "../src/test-assets/MockReceiptEAS.sol";
 import {ReceiptSchema} from "./ReceiptSchema.sol";
 
@@ -72,7 +73,7 @@ contract Deploy is SafeTestHelper {
 
         if (block.chainid == 31337) {
             asset = address(testToken);
-            pool = address(0);
+            pool = address(new MockAavePool(asset)); // TEST-only Aave stand-in for D2/D3/D6-D8
             registry = address(new MockReceiptSchemaRegistry());
             eas = address(new MockReceiptEAS(registry));
         } else {
@@ -115,6 +116,7 @@ contract Deploy is SafeTestHelper {
             testToken.mint(address(treasury), 30000e6);
             testToken.mint(address(op1), 100e6);
             testToken.mint(address(op2), 100e6);
+            testToken.mint(pool, 30000e6); // liquidity for the mock pool's borrow
         }
         vm.stopBroadcast();
         _manifest();

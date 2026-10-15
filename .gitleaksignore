@@ -4,3 +4,5 @@
 # Published Anvil account 0 used as the throwaway keystore fixture in signer tests (#147).
 221f0ed976222ce9ce53d2dd107e64cb3cede582:services/signer/tests/test_keys.py:generic-api-key:15
 b133afc466925b69a8be394cf8cf3010977903c9:services/signer/tests/test_keys.py:generic-api-key:26
+# Published Anvil account key in the scenario runner commit later replaced by a mnemonic derivation (#67).
+9573cdf7f8ddcce921abb9e006d621cdc7b434dd:infra/scripts/scenario_steps.py:generic-api-key:32

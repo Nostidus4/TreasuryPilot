@@ -4,9 +4,12 @@ Step-by-step script for the 5-minute judge demo (DEV-008, #68). Scenes follow AD
 each one names its scenario file in `scenarios/` (DEV-007 runner). Scene timing and narrative:
 `docs/research/TreasuryPilot-Ke-hoach-nang-diem-80-90.md` section 7.
 
-**Status today:** only `pause` (D10) is runnable end to end. Every other scene is `NOT_RUNNABLE`
-(the runner exits 2 and writes no evidence); use the manual fallback given per scene. Re-check with
-`make scenario`, which lists every scenario as `runnable` or `not runnable yet`.
+**Status today:** all twelve scenarios run on Anvil (the Aave scenarios use the TEST-only mock pool
+that `make deploy-local` deploys). The runner drives the contracts and policy math and asserts each
+scene's on-chain outcome; it does not run the planner, AI extraction, worker or UI, so the screens
+and fallbacks below are still the way to show those parts. Each run reverts Anvil to a snapshot
+afterwards (`--keep-state` to keep the result), so a scene can be replayed on the same deployment.
+`make scenario` lists them.
 
 ## Numbering
 
@@ -69,11 +72,11 @@ The seeded guardian is an Anvil EOA, account #3 (`0x90F79bf6EB2c4f870365E785982E
 ## Running a scenario
 
 ```sh
-make scenario                 # list names and runnable state
+make scenario                 # list names
 make scenario NAME=pause      # run one
 ```
 
-Exit codes: 0 passed, 2 `NOT_RUNNABLE`, anything else failed. A passed run writes
+Exit codes: 0 passed, 1 failed or refused (for example a chain id outside 31337/11155111). A passed run writes
 `docs/evidence/scenarios/<name>-<UTC time>/run.json` and `evidence-bundle.json`. Evidence is
 written only by the runner; for manual fallbacks, take screenshots and tx hashes and store them in
 the same folder layout by hand.
@@ -89,60 +92,60 @@ it from `docs/submission/README.md`.
 Routes are from `apps/web/src/app.tsx`; `:t` is the treasury id and `:org` the org id. What is
 visible is the target state; confirm it against the running build during the dry run.
 
-### D1 - Refill then pay (`demo-main`) - NOT_RUNNABLE
-Waits on: `planner`, `sequencer` (#65), `executor-pipeline`.
+### D1 - Refill then pay (`demo-main`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/plans`, then `/o/:org/t/:t/plans/:p`: plan with a refill (Safe T to Safe O1) followed by the invoice payment, both with tx hashes.
 - Must show: invoice paid once from Safe O1; evidence lists both transactions and resolves them on chain.
 - Fallback: show the approved request (seeded INV-TEST-003) at `/o/:org/requests/:r`. Without the planner, `/plans` has no plan to open and shows its empty state (confirm in the dry run); say the plan and execution are pending. No `cast` fallback: refill and pay run through the executor and a Safe T move needs an owner signature, so there is no honest one-liner. Show screenshots of the request and the seeded Safe balances instead.
 - Evidence: `docs/evidence/scenarios/demo-main-*/`; manual: screenshots plus both tx hashes.
 
-### D2 - Supply surplus (`aave-supply`) - NOT_RUNNABLE (Sepolia)
-Waits on: `planner`, `aave-adapter`, `executor-pipeline`.
+### D2 - Supply surplus (`aave-supply`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/plans/:p` showing a supply of exactly the surplus above RequiredSafeReserve.
 - Fallback: without the planner the plans page is empty (confirm in the dry run), so there are no plan numbers; show the Aave position on Sepolia via the block explorer and say planning and execution are pending.
 - Evidence: `docs/evidence/scenarios/aave-supply-*/`; manual: screenshot of the plan, explorer link.
 
-### D3 - Withdraw for a new invoice (`aave-withdraw`) - NOT_RUNNABLE (Sepolia)
-Waits on: `planner`, `aave-adapter`, `executor-pipeline`.
+### D3 - Withdraw for a new invoice (`aave-withdraw`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/requests/:r` (new approved invoice), then its plan with a withdraw that restores the reserve.
 - Fallback: as D2 (empty plans page without the planner); show the approved request and say the withdraw plan is pending.
 - Evidence: `docs/evidence/scenarios/aave-withdraw-*/`.
 
-### D4 - Injected invoice, unknown payee (`injected-invoice`) - NOT_RUNNABLE
-Waits on: `ai-extraction`, `planner`.
+### D4 - Injected invoice, unknown payee (`injected-invoice`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/review` (review queue) with the invoice flagged for the injected instruction and the unknown payee; `/o/:org/t/:t/payees` shows the payee is not Active.
 - Must show: never paid.
 - Fallback: upload the prepared injected invoice at `/o/:org/requests/upload` (or create it at `requests/new`) and show it held in review; no payment appears.
 - Evidence: `docs/evidence/scenarios/injected-invoice-*/`; manual: screenshots of the flag and the empty payment list.
 
-### D5 - Over-cap payment and owner exception (`over-cap-exception`) - NOT_RUNNABLE
-Waits on: `planner`, `executor-pipeline`.
+### D5 - Over-cap payment and owner exception (`over-cap-exception`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/mandate` (cap), `/o/:org/approvals` (exception request), then the plan page.
 - Must show: blocked above the cap; one-time owner exception lets it through once.
 - Fallback: show the mandate cap at `/mandate` and the approvals page. No `cast` fallback: the pay path is executor-only with typed arguments and `grantException` is a Safe-owner call, so it cannot be a safe one-liner. Describe the revert from the contract tests (`make test-contracts`) and use screenshots.
 - Evidence: `docs/evidence/scenarios/over-cap-exception-*/`; manual: revert output plus the approval screenshot.
 
-### D6 - Borrow proposal (`borrow-proposal`) - NOT_RUNNABLE (Sepolia)
-Waits on: `planner`, `aave-adapter`.
+### D6 - Borrow proposal (`borrow-proposal`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/borrow/:id` with engine numbers (cost vs withdraw, health factor before and after, reason) and no executable plan.
 - Fallback: show the proposal numbers from the API response or the borrow page and state that nothing executes.
 - Evidence: `docs/evidence/scenarios/borrow-proposal-*/`.
 
-### D7 - Owner-signed borrow (`borrow-execution`) - NOT_RUNNABLE (Sepolia, P2)
-Waits on: `planner`, `aave-adapter`, `executor-pipeline`, `borrow-authorization`.
+### D7 - Owner-signed borrow (`borrow-execution`) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/borrow/:id` after the owner signs the one-time authorization; borrowed amount equals the authorized amount.
 - Fallback: skip live; show the D6 proposal and describe the authorization step (P2 scope).
 - Evidence: `docs/evidence/scenarios/borrow-execution-*/`.
 
-### D8 - Borrow repayment (`borrow-repay`, YAML D8; ADR D8 = AI outage) - NOT_RUNNABLE (Sepolia, P2, name provisional)
-Waits on: `planner`, `aave-adapter`, `executor-pipeline`, `borrow-authorization`.
+### D8 - Borrow repayment (`borrow-repay`, YAML D8; ADR D8 = AI outage) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/borrow/:id` showing the borrow closed.
 - Fallback: as D7.
 - Evidence: `docs/evidence/scenarios/borrow-repay-*/`.
 - Note: see Numbering; reconcile in the follow-up decision.
 
-### D9 - Crash recovery (`crash-recovery`, YAML D9; ADR D9 = unknown tx) - NOT_RUNNABLE
-Waits on: `executor-pipeline`, `outbox-recovery`.
+### D9 - Crash recovery (`crash-recovery`, YAML D9; ADR D9 = unknown tx) - runs on chain (contract/policy level)
+Runner: on-chain outcome only (planner, AI and UI not driven); see `scenarios/README.md`.
 - Screen: `/o/:org/t/:t/plans/:p` before and after the restart; one payment, no duplicate.
 - Fallback (only works once `executor-pipeline` exists; before that there is nothing executing to kill): with a plan executing, kill the core worker (celery queue `core`, compose service `worker`) and start it again:
   ```sh
@@ -156,11 +159,11 @@ Waits on: `executor-pipeline`, `outbox-recovery`.
 - Fallback: `docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local kill worker-ai`, then show that manual review still works (`/o/:org/review`, create a request at `requests/new`). Restore with `... up -d worker-ai`.
 - Evidence: screenshots only.
 
-### Unknown tx (ADR D9, `unexpected-outflow`, YAML M19-D5) - NOT_RUNNABLE
-Waits on `chain-reader-alerts`. Fallback: show the alerts page and explain the rule; no `cast` fallback, because moving funds out of Safe T needs an owner signature.
+### Unknown tx (ADR D9, `unexpected-outflow`, YAML M19-D5) - runs on chain (contract/policy level)
+Runner flags a transfer out of Safe O1 that bypasses the module (a stand-in for the chain-reader alert). UI fallback: show the alerts page and explain the rule; no `cast` fallback, because moving funds out of Safe T needs an owner signature.
 
 ### D10 - Guardian pause (`pause`, YAML D10) - RUNNABLE
-Needs: Anvil and a fresh deployment (`make deploy-local`; resume is a Safe-owner transaction).
+Needs: Anvil and `make deploy-local`. The run reverts to its snapshot, so the module is Active again afterwards (use `--keep-state` for the visible pause).
 - Run: `make scenario NAME=pause`.
 - Screen, accurately: the runner sends `pause()` straight to the module as Anvil #3. The worker indexer's `Paused` handler (`chain/event_handlers.py`) then writes `backend_pause` with `onchain_status = Effective`; it does not set `treasuries.status`, and the dashboard badge reads `treasury.status`. So with the stack running, expect the dashboard badge to stay as is, while `GET /v1/orgs/:org/treasuries/:t/pause` reports `effective: true`. Use the runner output and `cast call` for the on-chain proof.
 - For a visible UI pause, pause from the dashboard instead: sign in as the owner (OWN/GRD) and click Pause (needs the treasury status Active). Do this on a fresh module (not after the runner has paused it), since a module is paused only once.
@@ -174,17 +177,17 @@ Needs: Anvil and a fresh deployment (`make deploy-local`; resume is a Safe-owner
 - Evidence: `docs/evidence/scenarios/pause-<UTC time>/run.json` and `evidence-bundle.json`.
 
 ### Not in D1-D10
-`fee-spike` (YAML M19-D5, `fee-policy-runtime`) is NOT_RUNNABLE; fallback: show `/o/:org/t/:t/settings/fees` and explain the pause rule.
+`fee-spike` (YAML M19-D5) is RUNNABLE: the runner spikes the Anvil base fee and applies the fee policy math. UI fallback: show `/o/:org/t/:t/settings/fees` and explain the pause rule.
 
 ## Dry run
 The acceptance criterion "a teammate who did not write this completes a dry run" is manual.
 
 - [ ] Setup steps 1-7 completed from a clean checkout
 - [ ] `make ps` all healthy; `make smoke` passes
-- [ ] `make scenario` output matches the sample below (only `pause` runnable until the planner lands)
+- [ ] `make scenario` output matches the sample below
 - [ ] `make scenario NAME=pause` passes and writes `run.json` and `evidence-bundle.json`
 - [ ] Each scene's screens and fallback walked through; the routes marked "confirm in the dry run" checked
-- [ ] Reset (`make deploy-local`, `make seed`) and replay of `pause` works
+- [ ] Replay of `pause` works (the runner resets Anvil itself)
 
 | Date | Name |
 |---|---|
@@ -193,16 +196,16 @@ The acceptance criterion "a teammate who did not write this completes a dry run"
 Sample `make scenario` output (name, ADR label, chain, state):
 
 ```
-aave-supply          D2     chain 11155111  not runnable yet
-aave-withdraw        D3     chain 11155111  not runnable yet
-borrow-execution     D7     chain 11155111  not runnable yet
-borrow-proposal      D6     chain 11155111  not runnable yet
-borrow-repay         D8     chain 11155111  not runnable yet
-crash-recovery       D9     chain 31337  not runnable yet
-demo-main            D1     chain 31337  not runnable yet
-fee-spike            M19-D5 chain 31337  not runnable yet
-injected-invoice     D4     chain 31337  not runnable yet
-over-cap-exception   D5     chain 31337  not runnable yet
+aave-supply          D2     chain 31337  runnable
+aave-withdraw        D3     chain 31337  runnable
+borrow-execution     D7     chain 31337  runnable
+borrow-proposal      D6     chain 31337  runnable
+borrow-repay         D8     chain 31337  runnable
+crash-recovery       D9     chain 31337  runnable
+demo-main            D1     chain 31337  runnable
+fee-spike            M19-D5 chain 31337  runnable
+injected-invoice     D4     chain 31337  runnable
+over-cap-exception   D5     chain 31337  runnable
 pause                D10    chain 31337  runnable
-unexpected-outflow   M19-D5 chain 31337  not runnable yet
+unexpected-outflow   M19-D5 chain 31337  runnable
 ```

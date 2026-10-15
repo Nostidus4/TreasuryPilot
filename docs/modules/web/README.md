@@ -28,7 +28,7 @@ F-130 (FR-915), F-131 (FR-916, FR-313), F-132 (FR-917, BR-057), F-133 (FR-918), 
 | `/me/wallets` | Wallet link (SIWE) | all | WEB-003 |
 | `/o/:org/treasuries/new` | Setup wizard: chain/asset → Safes → module governance tx → coverage → Guardian Safe | OWN, ADM | WEB-004 |
 | `/o/:org/t/:t` | Dashboard: balances vs buffer/target, budgets, coverage, mandate, queues, runway, activity, banners | all | WEB-010, WEB-019, WEB-021 |
-| `/o/:org/t/:t/mandate` | Mandate editor: form, summary, diff (looser/stricter), create governance tx | OWN (edit), all (view) | WEB-005 |
+| `/o/:org/t/:t/mandate` | Mandate editor: form, summary, diff (looser/stricter), create governance tx; any looser entry (even in a mixed diff) needs an explicit confirm before the tx is created | OWN (edit), all (view) | WEB-005 |
 | `/o/:org/t/:t/payees` | Vendors & payees: propose, screening, OOB verification, registration tx, cooling countdown | OPR, OWN | WEB-006 |
 | `/o/:org/governance` | Governance signing inbox: decoded calls, summary, sign SafeTx, execute | OWN | WEB-025 |
 | `/o/:org/requests`, `/new`, `/:r` | Requests list, manual form, detail (revisions, flags, approvals, timeline, cancel / cancel on-chain) | OPR, all | WEB-007 |

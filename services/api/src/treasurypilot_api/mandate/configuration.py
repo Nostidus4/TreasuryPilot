@@ -11,6 +11,8 @@ from treasurypilot_core.money import BaseUnits, format_base_units
 
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ZERO_ADDRESS = "0x" + "0" * 40
+# ThresholdApprovalExecutor encodes the unbounded last band as uint128 max.
+UNBOUNDED_BAND = 2**128 - 1
 _MAX_UINT128 = (1 << 128) - 1
 _DAY = timedelta(days=1)
 
@@ -96,6 +98,12 @@ class WalletBuffer(MandateModel):
         return _address(value)
 
 
+class ApprovalBand(MandateModel):
+    # ``up_to`` is the inclusive upper bound in base units; None is the unbounded last band.
+    up_to: BaseUnits | None = None
+    k: int = Field(ge=1)
+
+
 class MandateAssetPolicy(MandateModel):
     asset_id: uuid.UUID
     limits: dict[str, ActionLimits]
@@ -112,6 +120,8 @@ class MandateConfig(MandateModel):
     swap: dict[str, object] | None = None
     executor: str | None = None
     approvers: list[str] | None = None
+    # k-of-n approvals by amount band (F-029); requires ``executor`` to be a ThresholdApprovalExecutor.
+    approval_bands: list[ApprovalBand] | None = None
     guardian: str | None = None
     valid_from: datetime | None = None
     expires_at: datetime | None = None
@@ -156,6 +166,33 @@ class MandateValidationError(Exception):
         self.code = code
         self.detail = detail
         self.fields = fields
+
+
+def _validate_approval_bands(bands: list[ApprovalBand], approver_count: int) -> None:
+    """Mirror ThresholdApprovalExecutor.setBands, plus k reachable by the approver set."""
+
+    def bad(detail: str) -> MandateValidationError:
+        return MandateValidationError("APPROVAL_BANDS_INVALID", detail, fields=["approvalBands"])
+
+    if not bands or bands[-1].up_to is not None:
+        raise bad("The last approval band must be unbounded.")
+    for index, band in enumerate(bands):
+        if band.up_to is None and index != len(bands) - 1:
+            raise bad("Only the last approval band can be unbounded.")
+        if band.up_to is not None and int(band.up_to) >= UNBOUNDED_BAND:
+            raise bad("Approval band limits must be below the unbounded maximum.")
+        if band.k > approver_count:
+            raise bad("A band cannot require more approvals than there are approvers.")
+        if index > 0:
+            previous = bands[index - 1]
+            if (
+                band.up_to is not None
+                and previous.up_to is not None
+                and band.up_to <= previous.up_to
+            ):
+                raise bad("Approval band limits must strictly increase.")
+            if band.k < previous.k:
+                raise bad("A larger payment cannot need fewer approvals.")
 
 
 def validate_mandate_config(
@@ -223,6 +260,8 @@ def validate_mandate_config(
         raise MandateValidationError("NO_APPROVERS", "At least one approver is required.")
     if len(set(config.approvers)) != len(config.approvers):
         raise MandateValidationError("MANDATE_INCOMPLETE", "Approver addresses must be unique.")
+    if config.approval_bands is not None:
+        _validate_approval_bands(config.approval_bands, len(config.approvers))
 
     if config.valid_from >= config.expires_at:
         raise MandateValidationError("EXPIRY_BEFORE_START", "expiresAt must be after validFrom.")
@@ -536,6 +575,19 @@ def build_summary(
                 "text": f"Approvers: {', '.join(sorted(config.approvers)) or 'none'}.",
             }
         )
+    if config.approval_bands is not None:
+        parts = [
+            f"up to {format_base_units(band.up_to, decimals)} {symbol}: {band.k}"
+            if band.up_to is not None
+            else f"above: {band.k}"
+            for band in config.approval_bands
+        ]
+        summary.append(
+            {
+                "field": "approvalBands",
+                "text": f"Approvals required by amount band: {'; '.join(parts)}.",
+            }
+        )
     if config.guardian is not None:
         summary.append({"field": "guardian", "text": f"Guardian: {config.guardian}."})
     if config.valid_from is not None:
@@ -817,7 +869,7 @@ def build_diff(
             "changed",
             critical=True,
         )
-    for field in ("executor", "guardian", "swap"):
+    for field in ("executor", "guardian", "swap", "approvalBands"):
         before, after = previous.get(field), current.get(field)
         add(field, before, after, "changed", critical=True)
 
@@ -863,6 +915,24 @@ def build_bundle_preview(
             {
                 "method": "configureMandate",
                 "arguments": {field: current.get(field) for field in governance_fields},
+            }
+        )
+    bands = current.get("approvalBands")
+    if bands is not None and (
+        previous.get("approvalBands") != bands
+        or previous.get("executor") != current.get("executor")
+    ):
+        # setBands runs on the executor (Safe T only); a new executor starts with no bands.
+        calls.append(
+            {
+                "method": "setBands",
+                "arguments": {
+                    "executor": current.get("executor"),
+                    "bands": [
+                        {"upTo": item.get("upTo") or str(UNBOUNDED_BAND), "k": item.get("k")}
+                        for item in _object_list(bands)
+                    ],
+                },
             }
         )
     old_approvers = _string_set(previous.get("approvers", []))

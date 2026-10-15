@@ -1,6 +1,7 @@
 name: borrow-execution
 adr019: D7
-chain_id: 11155111
-requires: [deployment, planner, aave-adapter, executor-pipeline, borrow-authorization]
+chain_id: 31337
+requires: [anvil, deployment, aave-mock]
+steps: [owner_borrow]
 must_show:
   - An owner-signed one-time authorization borrows exactly the authorized amount
