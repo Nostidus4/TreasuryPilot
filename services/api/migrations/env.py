@@ -21,6 +21,7 @@ from treasurypilot_api.identity import models as identity_models  # noqa: F401
 from treasurypilot_api.invoices import models as invoice_models  # noqa: F401
 from treasurypilot_api.mandate import models as mandate_models  # noqa: F401
 from treasurypilot_api.notifications import models as notification_models  # noqa: F401
+from treasurypilot_api.reconciliation import models as reconciliation_models  # noqa: F401
 from treasurypilot_api.recovery import models as recovery_models  # noqa: F401
 from treasurypilot_api.treasury import models as treasury_models  # noqa: F401
 
