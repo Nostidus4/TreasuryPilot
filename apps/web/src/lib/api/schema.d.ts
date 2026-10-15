@@ -1024,6 +1024,23 @@ export interface paths {
     patch: operations['update_member_v1_orgs__organization_id__members__user_id__patch'];
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/metrics/operations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Operations Metrics */
+    get: operations['get_operations_metrics_v1_orgs__organization_id__metrics_operations_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/notifications': {
     parameters: {
       query?: never;
@@ -2783,6 +2800,15 @@ export interface components {
      * @enum {string}
      */
     FeePreset: 'ECONOMY' | 'NORMAL' | 'FAST';
+    /** Fees */
+    Fees: {
+      /** Bysteptype */
+      byStepType: {
+        [key: string]: string;
+      };
+      /** Totalwei */
+      totalWei: string;
+    };
     /** FlagAcknowledgment */
     FlagAcknowledgment: {
       /** Note */
@@ -2964,6 +2990,15 @@ export interface components {
        * @default Authenticator app
        */
       label: string;
+    };
+    /** Latency */
+    Latency: {
+      /** Count */
+      count: number;
+      /** Medianseconds */
+      medianSeconds: number;
+      /** P90Seconds */
+      p90Seconds: number;
     };
     /** LinkCodeIssued */
     LinkCodeIssued: {
@@ -3314,6 +3349,46 @@ export interface components {
       method: components['schemas']['OobMethod'];
       /** Note */
       note: string;
+    };
+    /** OperationsMetrics */
+    OperationsMetrics: {
+      /** Aiplanrate */
+      aiPlanRate: number;
+      /** Completionrate */
+      completionRate: number;
+      /** Exceptions */
+      exceptions: number;
+      fees: components['schemas']['Fees'];
+      /** Interventionsperrequest */
+      interventionsPerRequest: number;
+      /** Latencybyphase */
+      latencyByPhase: {
+        [key: string]: components['schemas']['Latency'] | null;
+      };
+      /** Medianapprovalminutes */
+      medianApprovalMinutes: number;
+      /** Ontimerate */
+      onTimeRate: number;
+      /** Paymentscount */
+      paymentsCount: number;
+      /** Rejectionsbyreason */
+      rejectionsByReason: {
+        [key: string]: number;
+      };
+      /** Revertsbyselector */
+      revertsBySelector: {
+        [key: string]: number;
+      };
+      /** Series */
+      series: components['schemas']['SeriesPoint'][];
+      /** Txcount */
+      txCount: number;
+      /** Unknownoperations */
+      unknownOperations: number;
+    };
+    /** OperationsMetricsResponse */
+    OperationsMetricsResponse: {
+      metrics: components['schemas']['OperationsMetrics'];
     };
     /** OrganizationChecklist */
     OrganizationChecklist: {
@@ -3909,6 +3984,15 @@ export interface components {
       sourceRef: string | null;
       /** Ttluntil */
       ttlUntil: string | null;
+    };
+    /** SeriesPoint */
+    SeriesPoint: {
+      /** Date */
+      date: string;
+      /** Paid */
+      paid: number;
+      /** Volume */
+      volume: string;
     };
     /** SignatureRequest */
     SignatureRequest: {
@@ -6609,6 +6693,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MemberResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_operations_metrics_v1_orgs__organization_id__metrics_operations_get: {
+    parameters: {
+      query?: {
+        from?: string | null;
+        to?: string | null;
+        treasuryId?: string | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OperationsMetricsResponse'];
         };
       };
       /** @description Validation Error */
