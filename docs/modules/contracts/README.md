@@ -14,7 +14,7 @@ The contracts are the **final authority over money** (AP-1). Every rule marked *
 | `TreasuryPilotModule` (one clone per treasury) enabled on Safes T, O1, O2 | Generic execution, `delegatecall`, owner/module changes |
 | `TreasuryPilotModuleFactory` (EIP-1167 clones) | Upgradeability (replace = disable old + enable new) |
 | Stablecoin moves: `refill` T→Ox, `pay` Ox→payee | Native-token (gas) transfers — **none** in M1 (M04-D10) |
-| Mandate, approvers, payees (with cooling), limits, buffers, targets, counters, replay protection, exceptions, duplicate overrides, pause/revoke | Reserves/holds on-chain (F-028, Later), n-of-m approvals (F-029, Later), signed quotes (F-065, Later), on-chain plan attestation (SC-L04, Later) |
+| Mandate, approvers, payees (with cooling), limits, buffers, targets, counters, replay protection, exceptions, duplicate overrides, pause/revoke | Reserves/holds on-chain (F-028, opt-in `ReserveHoldExecutor`, section 17), n-of-m approvals (F-029, Later), signed quotes (F-065, Later), on-chain plan attestation (SC-L04, Later) |
 | `TestUSDC` (labelled TEST) for local/CI | Real DEX integration |
 | `TestRouter` + `swapForGas` — **P2, optional** | Bridge |
 
@@ -470,3 +470,16 @@ maintained in [contract-rule-test-mapping.md](../../security/contract-rule-test-
 Verification matches `PlanAttestation` of M08 section 6.3 and the golden vectors: domain `TreasuryPilot Policy` v1 with `chainId` and the module clone as `verifyingContract`; a signature from `policySigner` (raw ECDSA or ERC-1271); `executor == msg.sender`; `requestId` matches; `stepId` is in `stepIds` and the amount the call moves equals the parallel `stepAmounts[i]` (`stepAmounts.length == stepIds.length`), so the operator cannot choose another amount; `block.timestamp <= validUntil`. The nonce binds to its `planHash` on first use and every step of that plan shares it. A different plan with a used nonce reverts. Errors: `AttestationInvalid`, `AttestationExpired`, `NonceReused`, `NotExecutor`.
 
 Limits: the contract trusts the signed `planHash` (one step cannot recompute it), and the policy key and operator are immutable, so rotating either means deploying a new executor and calling `configureMandate`. Deployment scripts are not changed by this ticket.
+
+## 17. On-chain reserves and execution holds (SC-L01, opt-in)
+
+`ReserveHoldExecutor(module, operator)` stores a reservation (R) and execution hold (L) per request (`commitments[requestId] = {asset, wallet, reserved, held}`) and totals per `(asset, wallet)`. Safe T opts in by setting it as `mandate.executor`. Like section 16 it lives outside the module (about 100 bytes under EIP-170), so the module ABI and storage layout are unchanged and no Python or web ABI consumer is affected. It can be composed with `PlanAttestedExecutor` by pointing that executor's `module` at this contract, which mirrors the same call signatures (untested).
+
+| Function | Behaviour |
+|---|---|
+| `reserve(requestId, asset, wallet, amount)` (operator) | Approval. Requires `balance - bufferOf - committed >= amount`, so a funding deficit reverts `InsufficientUncommitted` and is reported by the backend. Fund the wallet first (refill) or reserve on Safe T. |
+| `beginExecution(requestId)` (operator) | Execution start. R becomes L; the committed total does not change, so nothing is counted twice. |
+| `release(requestId)` | Operator or Safe T owner cancels a plain reservation. A hold is released by the operator only once the module shows the request paid or cancelled; otherwise only the owner can release it by declaring the outcome failed. There is no timeout release. |
+| `pay`, `refill`, `supply`, `swapForGas`, `repay` (operator) | Forward to the module, then require `balance(wallet) >= bufferOf + committed` for the spending wallet (`CommittedFundsBreach`). `pay` first clears the paid request's own commitment. `withdraw`, `borrow` add cash and pass through. |
+
+Invariant R1 (acceptance criterion): for each wallet, reserved plus held never exceeds balance minus buffer on the executor path. `test/invariant/ReserveHoldInvariant.t.sol` also checks the per-request ledger against the totals (R2) and R-to-L and release rules (R3). Limits: protection covers only spends routed through this executor (a direct Safe transaction by the owner is outside the module); the operator can reserve capacity (griefing) but the owner can always release.
