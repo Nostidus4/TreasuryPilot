@@ -126,8 +126,8 @@ from treasurypilot_api.notifications.telegram import router as telegram_router
 from treasurypilot_api.notifications.webhook_api import router as webhook_router
 from treasurypilot_api.observability.metrics import router as metrics_router
 from treasurypilot_api.observability.savings import router as savings_router
-from treasurypilot_api.recovery.circuit import router as circuit_router
 from treasurypilot_api.reconciliation.routes import router as reconciliation_router
+from treasurypilot_api.recovery.circuit import router as circuit_router
 from treasurypilot_api.recovery.routes import router as review_router
 from treasurypilot_api.treasury.api import router as treasury_router
 from treasurypilot_api.treasury.config import PlatformConfiguration, PlatformConfigurationError

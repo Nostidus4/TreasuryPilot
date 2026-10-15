@@ -1,7 +1,7 @@
 """reconciliation resolution columns and auto-match off by default
 
 Revision ID: 20261015_0073
-Revises: 20261015_0068
+Revises: 20261015_0072
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261015_0073"
-down_revision: str | None = "20261015_0068"
+down_revision: str | None = "20261015_0072"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

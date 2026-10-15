@@ -74,7 +74,9 @@ async def auto_match_reconciliations(
         chain_id = candidate["chain_id"]
         if chain_id not in finalized:
             try:
-                finalized[chain_id] = await asyncio.wait_for(finalized_block(chain_id), _RPC_TIMEOUT)
+                finalized[chain_id] = await asyncio.wait_for(
+                    finalized_block(chain_id), _RPC_TIMEOUT
+                )
             except Exception:  # an unreadable chain only delays its matches
                 logger.warning("finalized block unavailable for chain %s", chain_id, exc_info=True)
                 finalized[chain_id] = None
@@ -82,7 +84,8 @@ async def auto_match_reconciliations(
             continue
         async with pool.acquire() as connection, connection.transaction():
             locked = await connection.fetchval(
-                "SELECT status FROM reconciliations WHERE id = $1 FOR UPDATE SKIP LOCKED", candidate["id"]
+                "SELECT status FROM reconciliations WHERE id = $1 FOR UPDATE SKIP LOCKED",
+                candidate["id"],
             )
             if locked != "Pending":
                 continue

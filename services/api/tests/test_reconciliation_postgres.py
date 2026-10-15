@@ -332,19 +332,29 @@ def test_manual_match_is_a_human_call_on_document_and_amount(url: str) -> None:
                 "'application/pdf', 1 FROM reconciliations WHERE id = :rid",
                 {"r": recon.hex, "rid": recon},
             ),
-            ("UPDATE payment_requests SET amount = 999 WHERE id IN (SELECT request_id FROM reconciliations WHERE id = :rid)", {"rid": recon}),
+            (
+                "UPDATE payment_requests SET amount = 999 WHERE id IN (SELECT request_id FROM reconciliations WHERE id = :rid)",
+                {"rid": recon},
+            ),
         )
     )
     client, _ = _client(url)
-    assert client.get(_path(recon)).json()["evidence"]["missing"] == []  # strict checks are auto-only
+    assert (
+        client.get(_path(recon)).json()["evidence"]["missing"] == []
+    )  # strict checks are auto-only
     assert client.post(_path(recon, "/match"), json={}).json()["status"] == "Matched"
 
 
 def test_if_match_accepts_weak_and_unquoted_forms(url: str) -> None:
     recon = asyncio.run(_scenario(url))
     client, _ = _client(url)
-    assert client.post(_path(recon, "/match"), json={}, headers={"If-Match": 'W/"9"'}).status_code == 412
-    assert client.post(_path(recon, "/match"), json={}, headers={"If-Match": "1"}).status_code == 200
+    assert (
+        client.post(_path(recon, "/match"), json={}, headers={"If-Match": 'W/"9"'}).status_code
+        == 412
+    )
+    assert (
+        client.post(_path(recon, "/match"), json={}, headers={"If-Match": "1"}).status_code == 200
+    )
 
 
 def _missing(url: str, recon: uuid.UUID) -> list[str]:
@@ -354,17 +364,27 @@ def _missing(url: str, recon: uuid.UUID) -> list[str]:
 def test_stale_lines_cover_tx_hash_status_and_orphan_ledger_rows(url: str) -> None:
     changed = asyncio.run(_scenario(url))
     asyncio.run(
-        _sql(url, ("UPDATE transactions SET tx_hash = decode(repeat('99', 32), 'hex') WHERE id IN "
-                   "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
-                   {"r": changed}))
+        _sql(
+            url,
+            (
+                "UPDATE transactions SET tx_hash = decode(repeat('99', 32), 'hex') WHERE id IN "
+                "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
+                {"r": changed},
+            ),
+        )
     )
     assert _missing(url, changed) == ["transactions"]
 
     dropped = asyncio.run(_scenario(url))
     asyncio.run(
-        _sql(url, ("UPDATE transactions SET status = 'Dropped' WHERE id IN "
-                   "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
-                   {"r": dropped}))
+        _sql(
+            url,
+            (
+                "UPDATE transactions SET status = 'Dropped' WHERE id IN "
+                "(SELECT transaction_id FROM reconciliation_lines WHERE reconciliation_id = :r)",
+                {"r": dropped},
+            ),
+        )
     )
     assert _missing(url, dropped) == ["transactions"]
 

@@ -10316,7 +10316,7 @@
     },
     "/v1/orgs/{organization_id}/reconciliations/{reconciliation_id}/resolve": {
       "post": {
-        "description": "Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record.",
+        "description": "Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record\nand the PAY block is finalized.",
         "operationId": "resolve_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__resolve_post",
         "parameters": [
           {

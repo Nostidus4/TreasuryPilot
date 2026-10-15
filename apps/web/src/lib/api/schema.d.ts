@@ -1276,7 +1276,8 @@ export interface paths {
     put?: never;
     /**
      * Resolve Discrepancy
-     * @description Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record.
+     * @description Finance sends ``note``, an Owner sends ``acknowledge``; Matched once both are on record
+     *     and the PAY block is finalized.
      */
     post: operations['resolve_discrepancy_v1_orgs__organization_id__reconciliations__reconciliation_id__resolve_post'];
     delete?: never;

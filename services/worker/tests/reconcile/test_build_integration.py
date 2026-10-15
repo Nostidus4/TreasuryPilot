@@ -303,8 +303,14 @@ def test_dropped_tx_or_missing_gas_ledger_row_gives_no_fee_line(database_url: st
 
 
 async def _auto_match(
-    url: str, *, auto_match: bool, finalized: int = 100, verified: bool = True,
-    docs: tuple[bytes, ...] = (), flagged: bool = False
+    url: str,
+    *,
+    auto_match: bool,
+    finalized: int = 100,
+    verified: bool = True,
+    docs: tuple[bytes, ...] = (),
+    flagged: bool = False,
+    payee_ok: bool = True,
 ) -> tuple[str, str | None]:
     """Build a one-PAY reconciliation with full evidence, run the sweep; (status, matched_by)."""
 
@@ -343,6 +349,16 @@ async def _auto_match(
                     "'{}', 'PASSED' FROM operations WHERE request_id = $1",
                     request,
                 )
+            await connection.execute(  # the PAY lines go to the request's payee and asset
+                "UPDATE reconciliation_lines l SET to_address = CASE WHEN $2 THEN "
+                "(SELECT address FROM payees WHERE id = q.payee_id) ELSE '\\x01'::bytea END, "
+                "asset_address = (SELECT address FROM assets WHERE id = q.asset_id) "
+                "FROM reconciliations r JOIN payment_requests q ON q.id = r.request_id "
+                "WHERE r.id = l.reconciliation_id AND r.request_id = $1 "
+                "AND l.classification = 'EXTERNAL_EXPENSE'",
+                request,
+                payee_ok,
+            )
             await connection.execute(
                 "UPDATE payment_requests SET invoice_hash = $2 WHERE id = $1", request, b"\x77" * 32
             )
@@ -378,7 +394,11 @@ async def _auto_match(
             audited = await pool.fetchval(
                 "SELECT count(*) FROM audit_log WHERE action = 'reconciliation.discrepancy_flagged'"
                 " AND entity_id = $1",
-                str(await pool.fetchval("SELECT id FROM reconciliations WHERE request_id = $1", request)),
+                str(
+                    await pool.fetchval(
+                        "SELECT id FROM reconciliations WHERE request_id = $1", request
+                    )
+                ),
             )
             assert audited == 1
         return row["status"], row["matched_by"]
@@ -398,10 +418,11 @@ def test_auto_match_waits_for_finality_and_every_check(database_url: str) -> Non
     bad, good = b"\x01" * 32, b"\x77" * 32
     assert asyncio.run(_auto_match(database_url, auto_match=True, docs=(bad,)))[0] == "Pending"
     assert asyncio.run(_auto_match(database_url, auto_match=True, docs=(good,)))[0] == "Matched"
+    assert asyncio.run(_auto_match(database_url, auto_match=True, payee_ok=False))[0] == "Pending"
     # One matching document does not excuse a differing one.
     assert asyncio.run(_auto_match(database_url, auto_match=True, docs=(good, bad)))[0] == "Pending"
 
 
 def test_sweep_flags_a_verification_discrepancy_and_audits_it(database_url: str) -> None:
-    result = asyncio.run(_auto_match(database_url, auto_match=True, flagged=True))
+    result = asyncio.run(_auto_match(database_url, auto_match=True, verified=False, flagged=True))
     assert result == ("Discrepancy", None)
