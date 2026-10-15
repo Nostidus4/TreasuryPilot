@@ -13,8 +13,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Reuse the Compose Anvil (make dev/infra) when it is already up; deployments are CREATE2-idempotent.
-if ! cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+# Reuse the Compose Anvil (make dev/infra) when it is already up. Only the core contracts are
+# CREATE2; the demo Safes use `new`, so each deploy yields new Safe addresses.
+if existing_chain="$(cast chain-id --rpc-url http://127.0.0.1:8545 2>/dev/null)"; then
+  if [[ "$existing_chain" != "31337" ]]; then
+    echo "Port 8545 serves chain id $existing_chain, expected 31337; refusing to deploy there" >&2
+    exit 1
+  fi
+else
   anvil --silent --chain-id 31337 --port 8545 >"$anvil_log" 2>&1 &
   anvil_pid=$!
 fi

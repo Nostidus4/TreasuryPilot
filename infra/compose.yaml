@@ -138,6 +138,11 @@ services:
       TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
       # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
       TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
+      # `make seed` points these at /app/deployments/local (mounted below).
+      TP_PLATFORM_CHAIN_CONFIG_PATH: ${TP_PLATFORM_CHAIN_CONFIG_PATH:-/app/deployments/chains.json}
+      TP_DEPLOYMENTS_DIR: ${TP_DEPLOYMENTS_DIR:-/app/deployments}
+    volumes:
+      - ../deployments/local:/app/deployments/local:ro
     depends_on:
       postgres:
         condition: service_healthy

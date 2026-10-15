@@ -1,7 +1,10 @@
 """Seed the local demo dataset after `deploy-local` (DEV-006).
 
-Everything is keyed by deterministic UUIDs and inserted with ON CONFLICT DO NOTHING, so
-running twice leaves one dataset. All seeded names and the tUSDC asset carry a TEST label.
+Everything is keyed by deterministic UUIDs and upserted by id, so running twice leaves one
+dataset; chain-linked columns (module/Safe/asset addresses) follow the latest deployment
+manifest, because Deploy.s.sol uses `new Safe()` and addresses change per deploy. The mandate is
+immutable (DB trigger), so its expiry is not refreshed. All seeded names and the tUSDC asset
+carry a TEST label.
 shortcut: rows are written with SQL, not the HTTP API (it needs SIWE + MFA step-up sessions),
 upgrade when a service-account API client exists.
 """
@@ -69,7 +72,18 @@ def rpc(url: str, method: str, params: list[object]) -> Any:
     return payload["result"]
 
 
-def write_platform_config(manifest: dict[str, Any], rpc_url: str, out_dir: Path) -> None:
+def is_deployed(manifest_path: Path, rpc_url: str) -> bool:
+    """True when the manifest exists and its module still has code (Anvil not restarted)."""
+    try:
+        module = json.loads(manifest_path.read_text())["module"]
+        return rpc(rpc_url, "eth_getCode", [module, "latest"]) not in ("0x", "")
+    except (OSError, KeyError, ValueError, RuntimeError):
+        return False
+
+
+def write_platform_config(
+    manifest: dict[str, Any], rpc_url: str, out_dir: Path, serve_rpc_url: str
+) -> None:
     """Write the API's chain config + deployment manifest for the local Anvil chain."""
 
     def deployment(field: str, version: str) -> dict[str, str]:
@@ -91,8 +105,9 @@ def write_platform_config(manifest: dict[str, Any], rpc_url: str, out_dir: Path)
                 "isTestnet": True,
                 "confirmations": 0,
                 "explorerUrl": "http://localhost:8545",
-                # The API needs two distinct RPC URLs for failover.
-                "rpcUrls": [rpc_url, rpc_url.replace("127.0.0.1", "localhost")],
+                # shortcut: one node listed twice (the trailing slash only makes the failover URLs
+                # distinct), upgrade with a 2nd node.
+                "rpcUrls": [serve_rpc_url, serve_rpc_url + "/"],
                 "assets": [
                     {
                         "address": manifest["testToken"],
@@ -113,6 +128,9 @@ def write_platform_config(manifest: dict[str, Any], rpc_url: str, out_dir: Path)
             "SAFE_MULTISEND_CALL_ONLY": deployment("multiSend", "1.4.1"),
             "TREASURY_MODULE_IMPLEMENTATION": deployment("implementation", "1.0.0"),
             "TREASURY_MODULE_FACTORY": deployment("factory", "1.0.0"),
+            # shortcut: Deploy.s.sol sets no fallback handler; the Safe singleton stands in so the
+            # seeded snapshots can be COMPLETE. A live coverage refresh will report PARTIAL.
+            "SAFE_FALLBACK_HANDLER": deployment("safeSingleton", "1.4.1"),
         },
     }
     (out_dir / "chains.json").write_text(json.dumps(chains, indent=2) + "\n")
@@ -163,7 +181,8 @@ async def seed_database(
         c,
         "INSERT INTO treasuries (id, org_id, chain_id, asset_id, module_address, status, coverage, "
         "created_by) VALUES (:id, :org, :chain, :asset, :module, 'Ready', 'COMPLETE', :u) "
-        "ON CONFLICT DO NOTHING",
+        "ON CONFLICT (id) DO UPDATE SET asset_id = EXCLUDED.asset_id, "
+        "module_address = EXCLUDED.module_address",
         id=treasury, org=org, chain=CHAIN_ID, asset=token, module=b(manifest["module"]), u=owner_user,
     )  # fmt: skip
     wallets = (
@@ -179,7 +198,8 @@ async def seed_database(
             "INSERT INTO treasury_wallets (id, org_id, treasury_id, chain_id, role, label, "
             "safe_address, owners, threshold, created_by) "
             "VALUES (:id, :org, :t, :chain, :role, :label, :addr, CAST(:owners AS jsonb), 1, :u) "
-            "ON CONFLICT DO NOTHING",
+            "ON CONFLICT (id) DO UPDATE SET safe_address = EXCLUDED.safe_address, "
+            "owners = EXCLUDED.owners",
             id=wallet_ids[field], org=org, t=treasury, chain=CHAIN_ID, role=role, label=label,
             addr=b(manifest[field]), owners=json.dumps([manifest["demoOwner"]]), u=owner_user,
         )  # fmt: skip
@@ -203,17 +223,18 @@ async def seed_database(
         "INSERT INTO mandate_versions (id, org_id, treasury_id, version, onchain_version, status, "
         "config, config_hash, valid_from, expires_at, created_by, activated_at) "
         "VALUES (:id, :org, :t, 1, 1, 'Active', CAST(:config AS jsonb), :hash, :vf, :exp, :u, :vf) "
-        "ON CONFLICT DO NOTHING",
+        "ON CONFLICT DO NOTHING",  # a DB trigger makes mandate config immutable, so no refresh
         id=sid("mandate:1"), org=org, t=treasury, config=json.dumps(config),
         hash=hashlib.sha256(canonical.encode()).digest(), vf=valid_from, exp=expires, u=owner_user,
     )  # fmt: skip
-    # Guardian Safe 1-of-N {humans, sentinel}. shortcut: Deploy.s.sol makes the module guardian an
-    # EOA (Anvil #3), not a Safe, so that address stands in until the Guardian Safe is deployed.
+    # shortcut: Deploy.s.sol makes the module guardian an EOA (Anvil #3), not a Guardian Safe, so
+    # that "EOA stand-in" fills guardian_safe until a real Guardian Safe is deployed.
     await _run(
         c,
         "INSERT INTO guardian_setups (id, org_id, treasury_id, guardian_safe, human_owners, "
         "sentinel_address, status, created_by) "
-        "VALUES (:id, :org, :t, :g, :humans, :s, 'Active', :u) ON CONFLICT DO NOTHING",
+        "VALUES (:id, :org, :t, :g, :humans, :s, 'Active', :u) "
+        "ON CONFLICT (id) DO UPDATE SET human_owners = EXCLUDED.human_owners",
         id=sid("guardian"), org=org, t=treasury, g=b(guardian), humans=[b(manifest["demoOwner"])],
         s=b(sentinel), u=owner_user,
     )  # fmt: skip
@@ -226,6 +247,23 @@ async def seed_database(
         "100000000000000000, 3000, :u, :now, 1, :u) ON CONFLICT DO NOTHING",
         id=sid("fee-policy"), org=org, t=treasury, u=owner_user, now=now,
     )  # fmt: skip
+
+    for field in wallet_ids:  # fresh COMPLETE snapshot per Safe (valid for 12 min, see service.py)
+        await _run(
+            c,
+            "INSERT INTO safe_config_snapshots (id, org_id, wallet_id, block_number, block_hash, "
+            "owners, threshold, modules, guard, fallback_handler, module_implementations, "
+            "observed_at) VALUES (:id, :org, :w, 1, :bh, CAST(:owners AS jsonb), 1, :mods, NULL, "
+            ":fh, CAST(:impls AS jsonb), :now) "
+            "ON CONFLICT (id) DO UPDATE SET modules = EXCLUDED.modules, "
+            "fallback_handler = EXCLUDED.fallback_handler, "
+            "module_implementations = EXCLUDED.module_implementations, "
+            "observed_at = EXCLUDED.observed_at",
+            id=sid(f"snapshot:{field}"), org=org, w=wallet_ids[field],
+            bh=hashlib.sha256(field.encode()).digest(), owners=json.dumps([manifest["demoOwner"]]),
+            mods=[b(manifest["module"])], fh=b(manifest["safeSingleton"]), now=now,
+            impls=json.dumps({manifest["module"].lower(): manifest["implementation"].lower()}),
+        )  # fmt: skip
 
     payees = (  # (key, vendor, address, status, active_from)
         ("acme", "Acme Supplies (TEST)", payee_addr, "Active", now - timedelta(days=1)),
@@ -275,7 +313,8 @@ async def seed_database(
             "invoice_no, issue_date, due_at, amount, asset_id, paying_wallet_id, fingerprint, "
             "status, created_by, last_edited_by, note, tags) "
             "VALUES (:id, :org, :t, :chain, :v, :p, :no, :issued, :due, :amount, :asset, :w, :fp, "
-            ":status, :u, :u, 'Seeded TEST invoice', ARRAY['TEST']) ON CONFLICT DO NOTHING",
+            ":status, :u, :u, 'Seeded TEST invoice', ARRAY['TEST']) "
+            "ON CONFLICT (id) DO UPDATE SET asset_id = EXCLUDED.asset_id",
             id=request, org=org, t=treasury, chain=CHAIN_ID, v=vendor, p=payee, no=invoice_no,
             issued=issued, due=issued + timedelta(days=30), amount=amount * BASE_UNITS, asset=token,
             w=wallet_ids[wallet], fp=fingerprint, status=status, u=owner_user,
@@ -325,26 +364,32 @@ def database_url() -> str:
 async def main_async(args: argparse.Namespace) -> None:
     manifest = json.loads(Path(args.manifest).read_text())
     config_dir = Path(args.config_dir)
-    write_platform_config(manifest, args.rpc_url, config_dir)
+    # The sync below reads decimals() from this host, so it needs host-reachable RPC URLs; the
+    # file is rewritten afterwards with the container-reachable ones the API will load.
+    write_platform_config(manifest, args.rpc_url, config_dir, args.rpc_url)
     configuration = PlatformConfiguration.load(config_dir / "chains.json", config_dir)
     now = datetime.now(UTC)
     engine = create_async_engine(database_url())
     try:
-        async with AsyncSession(engine) as session, session.begin():
+        # sync_platform_configuration commits itself, so it cannot run inside session.begin().
+        async with AsyncSession(engine) as session:
             await sync_platform_configuration(session, configuration)
-            tokens = await seed_database(await session.connection(), manifest, now)
+        async with engine.begin() as connection:
+            tokens = await seed_database(connection, manifest, now)
+        write_platform_config(manifest, args.rpc_url, config_dir, args.api_rpc_url)
     finally:
         await engine.dispose()
     print("Seeded TEST dataset (safe to re-run). Addresses:")
     for field in ("safeT", "safeO1", "safeO2", "module", "testToken"):
         print(f"  {field:9} {manifest[field]}")
-    print(f"  guardian  {ANVIL[3]} (sentinel {ANVIL[6]})")
+    print(f"  guardian  {ANVIL[3]} (EOA stand-in, not a Safe; sentinel {ANVIL[6]})")
     print("Login links (valid 12h):")
     for email, token in tokens.items():
         print(f"  {email}: {args.web_url}?{urlencode({'token': token})}")
     print(
-        f"Point the API at the chain config: TP_PLATFORM_CHAIN_CONFIG_PATH={config_dir}/chains.json "
-        f"TP_DEPLOYMENTS_DIR={config_dir}"
+        "Safe snapshots are fresh for 12 minutes; re-run `make seed` to refresh coverage.\n"
+        f"Host API: TP_PLATFORM_CHAIN_CONFIG_PATH={config_dir}/chains.json "
+        f"TP_DEPLOYMENTS_DIR={config_dir} (and --api-rpc-url http://127.0.0.1:8545)"
     )
 
 
@@ -352,9 +397,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default=str(REPO_ROOT / "deployments" / "31337.json"))
     parser.add_argument("--rpc-url", default="http://127.0.0.1:8545")
+    parser.add_argument("--api-rpc-url", default="http://anvil:8545", help="as seen by the API")
+    parser.add_argument(
+        "--check-deployed", action="store_true", help="exit 0 if the manifest is live on the RPC"
+    )
     parser.add_argument("--config-dir", default=str(REPO_ROOT / "deployments" / "local"))
     parser.add_argument("--web-url", default="http://localhost:5173/auth/verify")
     args = parser.parse_args()
+    if args.check_deployed:
+        raise SystemExit(0 if is_deployed(Path(args.manifest), args.rpc_url) else 1)
     asyncio.run(main_async(args))
 
 

@@ -89,8 +89,12 @@ test-contracts:
 deploy-local:
 	infra/scripts/deploy-local.sh
 
-seed: check-env deploy-local
+# Skips the (Foundry-only) deploy while the manifest's module still has code on Anvil.
+seed: check-env
+	uv run python infra/scripts/seed_local.py --check-deployed || $(MAKE) deploy-local
 	set -a; . ./$(ENV_FILE); set +a; uv run python infra/scripts/seed_local.py
+	grep -q '^TP_PLATFORM_CHAIN_CONFIG_PATH=' $(ENV_FILE) || printf '\nTP_PLATFORM_CHAIN_CONFIG_PATH=/app/deployments/local/chains.json\nTP_DEPLOYMENTS_DIR=/app/deployments/local\n' >> $(ENV_FILE)
+	$(COMPOSE) up --detach --no-deps --force-recreate --wait api
 
 verify-sepolia:
 	uv run python infra/scripts/verify_sepolia_contracts.py
