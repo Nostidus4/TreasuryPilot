@@ -36,12 +36,14 @@ from treasurypilot_api.mandate.governance import (
     safe_tx_hash,
 )
 from treasurypilot_api.mandate.models import (
+    ExceptionStatus,
     GovernanceSignature,
     GovernanceTx,
     GovernanceTxPurpose,
     GovernanceTxStatus,
     GuardianSetup,
     GuardianSetupStatus,
+    MandateException,
     MandateStatusEvent,
     MandateVersion,
     MandateVersionStatus,
@@ -1714,6 +1716,13 @@ class GovernanceService:
         elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MODULE_SETUP:
             # Retry the module reconciliation if a transient RPC failure skipped it earlier.
             await self._record_module_event(organization_id=organization_id, tx_id=governance_tx_id)
+        elif (
+            status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.EXCEPTION_GRANT
+        ):
+            # Idempotent: retry the exception and review-item close if the first pass failed.
+            await self._record_exception_grant(
+                organization_id=organization_id, tx_id=governance_tx_id
+            )
         elif status == GovernanceTxStatus.EXECUTED and purpose == GovernanceTxPurpose.MANDATE:
             # Retry read-back after confirmations if the first receipt check was too early.
             await self._record_mandate_activation(
@@ -1744,6 +1753,68 @@ class GovernanceService:
                     await self._record_mandate_activation(
                         organization_id=organization_id, tx_id=governance_tx_id
                     )
+                elif purpose == GovernanceTxPurpose.EXCEPTION_GRANT:
+                    await self._record_exception_grant(
+                        organization_id=organization_id, tx_id=governance_tx_id
+                    )
+
+    async def _record_exception_grant(
+        self, *, organization_id: uuid.UUID, tx_id: uuid.UUID
+    ) -> None:
+        """Mark the exception Granted and close the NEEDS_AUTHORITY item once the grant executed."""
+        from treasurypilot_api.audit.events import AuditEvent, log_audit_event
+        from treasurypilot_api.recovery.models import ReviewItem
+
+        async with self._sessions() as session, session.begin():
+            tx = await self._row(session, organization_id, tx_id)
+            if (
+                tx.purpose != GovernanceTxPurpose.EXCEPTION_GRANT
+                or tx.status != GovernanceTxStatus.EXECUTED
+                or tx.entity_id is None
+            ):
+                return
+            exception = await session.scalar(
+                select(MandateException)
+                .where(
+                    MandateException.id == tx.entity_id,
+                    MandateException.org_id == organization_id,
+                    MandateException.governance_tx_id == tx.id,
+                )
+                .with_for_update()
+            )
+            if exception is None or exception.status != ExceptionStatus.PROPOSED:
+                return
+            exception.status = ExceptionStatus.GRANTED
+            items = await session.scalars(
+                select(ReviewItem)
+                .where(
+                    ReviewItem.org_id == organization_id,
+                    ReviewItem.request_id == exception.request_id,
+                    ReviewItem.type == "NEEDS_AUTHORITY",
+                    ReviewItem.status == "Open",
+                )
+                .with_for_update()
+            )
+            for item in items:
+                item.status = "Resolved"
+                item.resolution = "EXCEPTION_GRANTED"
+                item.resolved_at = datetime.now(UTC)
+            actor = exception.updated_by or exception.created_by
+            if actor is not None:
+                await log_audit_event(
+                    session,
+                    AuditEvent(
+                        org_id=organization_id,
+                        actor_id=actor,
+                        action="exception.granted",
+                        entity_type="exception",
+                        entity_id=exception.id,
+                        data={
+                            "requestId": str(exception.request_id),
+                            "governanceTxId": str(tx.id),
+                        },
+                    ),
+                )
 
     async def sign(
         self,

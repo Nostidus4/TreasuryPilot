@@ -1,0 +1,55 @@
+{
+  "case_id": "cp-005",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "3739969523c244e9ecd65114706927b99a5e15d456a07d76745dd4be3fe4954d",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01Sj1F35Bb4xDToCb5RvKzea",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 219,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01Kihaj9TN8sguq6MmxvMztW",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 382,
+      "output_tokens": 106
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_017tp7Qpf68c6FtY4WS5HSN3",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 620,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"If r1 is paid today at face value, these are the figures the tool returned, in base units:\\n- PAY budget remaining today: 100000000.\\n- r2's early-payment amount: 180000000.\\n- Discount forgone relative to r2's standard amount: 20000000. This excludes fees and forgone interest.\\n\\nThese figures describe the options only. I am not recommending that the discount be taken. I also can't pay, approve or schedule anything. Any payment has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"toolu_01Sj1F35Bb4xDToCb5RvKzea\",\"path\":\"deterministic_tool.remaining_daily_pay_after_r1.remaining_daily_pay_after_r1\"},{\"tool_call_id\":\"toolu_01Sj1F35Bb4xDToCb5RvKzea\",\"path\":\"deterministic_tool.approved_options.early_amount\"},{\"tool_call_id\":\"toolu_01Sj1F35Bb4xDToCb5RvKzea\",\"path\":\"deterministic_tool.approved_options.forgone_discount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 783,
+      "output_tokens": 373
+    }
+  ]
+}

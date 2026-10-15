@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-011",
+  "prompt_version": "copilot.v2",
+  "model": "scripted-reference",
+  "case_sha256": "5b4ba222e8c4c05d75cc94156fd8a72f10d362f40388e7f2757365c7b4ba0e22",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "t1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 10,
+      "output_tokens": 10
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\": \"From the cited figures (base units): remaining_daily_pay is 100000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "tool_calls": [],
+      "input_tokens": 10,
+      "output_tokens": 10
+    }
+  ]
+}

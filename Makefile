@@ -35,16 +35,44 @@ help:
 	@echo "  make verify-sepolia  Verify the published Sepolia implementation, factory and tUSDC on Etherscan"
 	@echo "  make lint            Run all configured quality gates"
 	@echo "  make slither         Run Slither on contracts (report in contracts/slither-report/)"
+	@echo "  make eval-extraction Score invoice extraction against evals/invoices (recorded or live)"
 	@echo "  make eval-validate   Validate synthetic evaluation fixtures and reference labels"
+	@echo "  make eval-copilot    Check Copilot answers against engine numbers (recorded model)"
+	@echo "  make eval-copilot-record  Live Copilot run that rewrites the recordings (needs ANTHROPIC_API_KEY)"
 	@echo "  make eval-redteam    Run the red-team invoices through extraction (recorded model)"
+	@echo "  make bench           Planner benchmark B0 vs B1 vs B2 (live, recorded or stand-in; build/bench)"
+	@echo "  make bench-record    Live B2 run (needs ANTHROPIC_API_KEY) that stores the model turns"
+
+.PHONY: eval-extraction eval-extraction-record
+eval-extraction:
+	uv run --frozen python -m treasurypilot_worker.evals.extraction_eval
+
+eval-extraction-record:
+	uv run --frozen python -m treasurypilot_worker.evals.extraction_eval --mode live --record
 
 .PHONY: eval-validate
 eval-validate:
 	uv run --frozen python evals/validate.py
 
+.PHONY: eval-copilot
+eval-copilot:
+	uv run --frozen python -m treasurypilot_worker.evals.copilot_fidelity --mode recorded
+
+.PHONY: eval-copilot-record
+eval-copilot-record:
+	uv run --frozen python -m treasurypilot_worker.evals.copilot_fidelity --mode live --record
+
 .PHONY: eval-redteam
 eval-redteam:
 	uv run --frozen python -m treasurypilot_worker.redteam --out docs/evidence/redteam-results.md
+
+.PHONY: bench
+bench:
+	uv run --frozen python -m treasurypilot_worker.planner_bench
+
+.PHONY: bench-record
+bench-record:
+	uv run --frozen python -m treasurypilot_worker.planner_bench --mode live --record
 
 bootstrap:
 	uv sync

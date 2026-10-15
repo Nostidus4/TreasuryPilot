@@ -1,0 +1,68 @@
+{
+  "case_id": "cp-006",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "243d564939d0d38bb374ac6596007b1000bbbb88733f8a3974cc984be8a7e8e3",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01DoqmEav6bTMe23i8wzmVGT",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 219,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_012CGUM9BXhB6kFRJ1VrWvFp",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 381,
+      "output_tokens": 91
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01KeMLFAmKQDCJpMFcvogKqq",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 606,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01LrK9oRKq3syeRSUmS8kDq1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 769,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"If r1 is paid today at face value, the tool results give these figures in base units:\\n- Remaining PAY budget today: 100000000.\\n- r2's early-payment amount: 225000000.\\n- Discount forgone relative to r2's standard amount: 25000000. This excludes fees and forgone interest.\\n\\nThese are figures only. I am not recommending that the discount be taken. I also can't pay, approve or schedule anything. Any payment has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"toolu_01DoqmEav6bTMe23i8wzmVGT\",\"path\":\"deterministic_tool.remaining_daily_pay_after_r1.remaining_daily_pay_after_r1\"},{\"tool_call_id\":\"toolu_01DoqmEav6bTMe23i8wzmVGT\",\"path\":\"deterministic_tool.approved_options.early_amount\"},{\"tool_call_id\":\"toolu_01DoqmEav6bTMe23i8wzmVGT\",\"path\":\"deterministic_tool.approved_options.forgone_discount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 932,
+      "output_tokens": 365
+    }
+  ]
+}

@@ -2664,6 +2664,25 @@ export interface components {
       /** Perrequest */
       perRequest: string;
     };
+    /** ActivityView */
+    ActivityView: {
+      /**
+       * Actor
+       * @enum {string}
+       */
+      actor: 'agent' | 'user' | 'chain';
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Href */
+      href?: string | null;
+      /** Id */
+      id: string;
+      /** Text */
+      text: string;
+    };
     /** AllowDuplicateRequest */
     AllowDuplicateRequest: {
       /** Reason */
@@ -2818,6 +2837,20 @@ export interface components {
        * Format: uuid
        */
       treasury_id: string;
+    };
+    /** BudgetView */
+    BudgetView: {
+      /**
+       * Action
+       * @enum {string}
+       */
+      action: 'PAY' | 'REFILL';
+      /** Dailylimit */
+      dailyLimit: string;
+      /** Perrequest */
+      perRequest: string;
+      /** Usedtoday */
+      usedToday: string;
     };
     /** BundleRequest */
     BundleRequest: {
@@ -3626,6 +3659,22 @@ export interface components {
        */
       label: string;
     };
+    /** LastActionView */
+    LastActionView: {
+      /** Amount */
+      amount: string;
+      /** At */
+      at: string | null;
+      /** Explanation */
+      explanation: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: 'SUPPLY' | 'WITHDRAW' | 'NONE';
+      /** Txhash */
+      txHash?: string | null;
+    };
     /** Latency */
     Latency: {
       /** Count */
@@ -3744,6 +3793,29 @@ export interface components {
       /** Items */
       items: components['schemas']['MandateView'][];
     };
+    /** MandateSummaryView */
+    MandateSummaryView: {
+      /**
+       * Expiresat
+       * Format: date-time
+       */
+      expiresAt: string;
+      status: components['schemas']['MandateVersionStatus'];
+      /** Version */
+      version: number;
+    };
+    /**
+     * MandateVersionStatus
+     * @enum {string}
+     */
+    MandateVersionStatus:
+      | 'Draft'
+      | 'PendingActivation'
+      | 'Active'
+      | 'Superseded'
+      | 'Expired'
+      | 'Revoked'
+      | 'Discrepancy';
     /** MandateView */
     MandateView: {
       /** Config */
@@ -4470,6 +4542,32 @@ export interface components {
        */
       treasuryId: string;
     };
+    /** PositionView */
+    PositionView: {
+      /** Ausdc */
+      aUsdc: string;
+      /** Availableforsupply */
+      availableForSupply: string;
+      lastAction: components['schemas']['LastActionView'];
+      /** Poolliquidity */
+      poolLiquidity: string;
+      requiredReserve: components['schemas']['RequiredReserveView'];
+      /** Safeusdc */
+      safeUsdc: string;
+      /** Supplyapybps */
+      supplyApyBps: number;
+    };
+    /** QueuesView */
+    QueuesView: {
+      /** Approvals */
+      approvals: number;
+      /** Governance */
+      governance: number;
+      /** Reconciliation */
+      reconciliation: number;
+      /** Review */
+      review: number;
+    };
     /** ReconciliationEvidence */
     ReconciliationEvidence: {
       /** Finalizedat */
@@ -4721,6 +4819,17 @@ export interface components {
     RequestReason: {
       /** Reason */
       reason: string;
+    };
+    /** RequiredReserveView */
+    RequiredReserveView: {
+      /** Floor */
+      floor: string;
+      /** Holds */
+      holds: string;
+      /** Paymentreserve */
+      paymentReserve: string;
+      /** Total */
+      total: string;
     };
     /** ResolveRequest */
     ResolveRequest: {
@@ -5015,6 +5124,18 @@ export interface components {
       /** Scheme */
       scheme: string;
     };
+    /** StalenessView */
+    StalenessView: {
+      /** Blocknumber */
+      blockNumber: number;
+      /**
+       * Observedat
+       * Format: date-time
+       */
+      observedAt: string;
+      /** Stale */
+      stale: boolean;
+    };
     /** StepUpRequest */
     StepUpRequest: {
       /** Code */
@@ -5234,6 +5355,14 @@ export interface components {
     };
     /** TreasuryResponse */
     TreasuryResponse: {
+      /** Activity */
+      activity?: components['schemas']['ActivityView'][] | null;
+      /** Budgets */
+      budgets?: components['schemas']['BudgetView'][] | null;
+      mandate?: components['schemas']['MandateSummaryView'] | null;
+      position?: components['schemas']['PositionView'] | null;
+      queues?: components['schemas']['QueuesView'] | null;
+      staleness?: components['schemas']['StalenessView'] | null;
       treasury: components['schemas']['TreasuryView'];
       /** Wallets */
       wallets: components['schemas']['treasurypilot_api__treasury__api__WalletView'][];
@@ -5635,6 +5764,10 @@ export interface components {
     };
     /** WalletView */
     treasurypilot_api__treasury__api__WalletView: {
+      /** Balance */
+      balance?: string | null;
+      /** Buffer */
+      buffer?: string | null;
       /**
        * Id
        * Format: uuid
@@ -5647,6 +5780,8 @@ export interface components {
       role: components['schemas']['WalletRole'];
       /** Safeaddress */
       safeAddress: string;
+      /** Target */
+      target?: string | null;
       /** Threshold */
       threshold: number;
     };

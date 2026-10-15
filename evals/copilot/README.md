@@ -22,3 +22,15 @@ referenced scenario, absence of YAML aliases, and four refusal cases. Changing s
 answers and requires review. Human ground-truth review and AGT-016 runtime
 evaluation remain pending; no measured fidelity or zero-side-effect result is
 claimed. These public AI-authored cases are not an unseen test set.
+
+## Runtime fidelity suite (AGT-016 / #182)
+
+`make eval-copilot` runs the production Copilot turn (`ask_copilot`, with its numeric
+post-check) over these 20 cases; the only tool serves each case's deterministic output.
+A case passes when the answer holds every expected number exactly, no number outside the
+engine output, a citation, and a refusal exactly when `must_refuse`. Failures are listed in
+`docs/evidence/copilot-fidelity.md`. Replayed responses live in `recorded/<prompt version>/`
+and are refused when the prompt version or case file changes. The committed recordings are
+a live `claude-sonnet-5-5` run (2026-10-15); re-record with `make eval-copilot-record`
+(requires `ANTHROPIC_API_KEY`). Scripted reference answers, used only to test the scorer,
+are in `services/worker/tests/evals/fixtures/copilot_scripted/`.

@@ -190,9 +190,11 @@ jobs:
           services/api/tests/test_operations_metrics.py
           services/api/tests/test_savings_report.py
           services/api/tests/test_treasury_forecast_postgres.py
+          services/api/tests/test_treasury_state_postgres.py
           services/worker/tests/test_exception_draft_integration.py
           services/api/tests/test_usage_metering.py
           services/api/tests/test_reconciliation_export_integration.py
+          services/api/tests/test_exception_grant_review_close.py
           -q
 
   quality:
@@ -371,6 +373,12 @@ jobs:
           TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
           TP_REQUIRE_INTEGRATION: '1'
         run: uv run pytest -q -rs services/worker/tests/executor/test_swap_for_gas_anvil.py
+      - name: EXE-014 liquidity cycle supply / withdraw on Aave mock (planner, sequencer, tracker, real module)
+        env:
+          TP_TEST_ANVIL_URL: http://127.0.0.1:8545
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
+          TP_REQUIRE_INTEGRATION: '1'
+        run: uv run pytest -q -rs services/worker/tests/executor/test_liquidity_cycle_anvil.py
       - name: Run every scenario on Anvil
         env:
           TP_TEST_ANVIL_URL: http://127.0.0.1:8545

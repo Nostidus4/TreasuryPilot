@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-013",
+  "prompt_version": "copilot.v2",
+  "model": "scripted-reference",
+  "case_sha256": "a1887051f9ee70aa99f63160adafd950f51b5292c468a39b07053d7924df992b",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "t1",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 10,
+      "output_tokens": 10
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\": \"From the cited figures (base units): supply_amount is 1000000000; required_safe_reserve is 1000000000.\", \"citations\": [{\"tool_call_id\": \"t1\", \"path\": \"$\"}]}",
+      "tool_calls": [],
+      "input_tokens": 10,
+      "output_tokens": 10
+    }
+  ]
+}

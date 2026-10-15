@@ -20,10 +20,16 @@ from treasurypilot_worker.agent import (
     fake_tool_use,
 )
 from treasurypilot_worker.agent.call_log import ValidationResult
-from treasurypilot_worker.agent.copilot import REFUSAL, PostCheckFailed, ask_copilot
+from treasurypilot_worker.agent.copilot import (
+    REFUSAL,
+    CopilotAnswer,
+    PostCheckFailed,
+    ask_copilot,
+    post_check,
+)
 from treasurypilot_worker.agent.tools.backend import ToolBackend
 from treasurypilot_worker.agent.tools.read_only import TOOL_NAMES, build_tools
-from treasurypilot_worker.agent.types import ProviderRequest
+from treasurypilot_worker.agent.types import ProviderRequest, ToolCallRecord, ToolResult
 
 CASES = sorted((Path(__file__).resolve().parents[4] / "evals" / "copilot").glob("cp-*.yaml"))
 
@@ -253,3 +259,66 @@ def test_turn_uses_only_read_only_tools_and_backend_reads(repo_config: AiConfig)
     assert {t.name for t in seen[0].tools} <= set(TOOL_NAMES)
     assert called and set(called) <= reads  # the backend type has no write method at all
     assert not any(w in n for n in reads for w in ("insert", "update", "delete", "write", "add"))
+
+
+def _record(call_id: str, name: str, result: str, *, is_error: bool = False) -> ToolCallRecord:
+    return ToolCallRecord(call_id, name, {}, result, is_error, False)
+
+
+def _out(text: str, *ids: str) -> CopilotAnswer:
+    return CopilotAnswer.model_validate_json(_answer(text, *ids))
+
+
+def test_tool_result_shown_to_model_carries_the_call_id(repo_config: AiConfig) -> None:
+    provider = FakeProvider(
+        [
+            fake_tool_use(ToolCall("toolu_01XyZ", "simulate_schedule", {})),
+            fake_text(_answer("Shortage 90000000.", "toolu_01XyZ")),
+        ]
+    )
+    adapter, _ = _adapter(provider, repo_config)
+    ask_copilot(adapter, org_id="org-1", question="q", tools=[_tool({"shortage": "90000000"}, [])])
+    sent = next(
+        block
+        for message in provider.calls[-1][0].messages
+        for block in message.content
+        if isinstance(block, ToolResult)
+    )
+    assert json.loads(sent.content) == {
+        "tool_call_id": "toolu_01XyZ",
+        "result": {"shortage": "90000000"},
+    }
+
+
+def test_call_id_digits_do_not_widen_the_allowed_numbers(repo_config: AiConfig) -> None:
+    provider = FakeProvider(
+        [
+            fake_tool_use(ToolCall("call_7", "simulate_schedule", {})),
+            fake_text(_answer("The shortage is 7.", "call_7")),
+        ]
+    )
+    adapter, _ = _adapter(provider, repo_config)
+    with pytest.raises(PostCheckFailed):
+        ask_copilot(
+            adapter, org_id="org-1", question="q", tools=[_tool({"shortage": "90000000"}, [])]
+        )
+
+
+def test_tool_name_citation_accepted_only_when_unique_successful_call() -> None:
+    one = [_record("toolu_1", "deterministic_tool", '{"s": "90"}')]
+    post_check(_out("It is 90.", "deterministic_tool"), one)
+    with pytest.raises(PostCheckFailed):
+        post_check(_out("It is 90.", "other_tool"), one)
+
+
+def test_tool_name_citation_rejected_when_ambiguous_or_failed() -> None:
+    two = [
+        _record("toolu_1", "deterministic_tool", '{"s": "90"}'),
+        _record("toolu_2", "deterministic_tool", '{"s": "80"}'),
+    ]
+    with pytest.raises(PostCheckFailed):
+        post_check(_out("It is 90.", "deterministic_tool"), two)
+    failed = [_record("toolu_1", "deterministic_tool", '{"s": "90"}', is_error=True)]
+    with pytest.raises(PostCheckFailed):
+        post_check(_out("It is 90.", "deterministic_tool"), failed)
+    post_check(_out("It is 90.", "toolu_1"), [two[0]])

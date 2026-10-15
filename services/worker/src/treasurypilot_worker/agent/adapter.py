@@ -281,7 +281,7 @@ class AiAdapter:
         for call in calls:
             content, is_error = _execute(call, tools_by_name)
             content, truncated = _cap(content, run.task.tool_result_max_bytes)
-            results.append(ToolResult(call.id, content, is_error=is_error))
+            results.append(ToolResult(call.id, _label(call.id, content), is_error=is_error))
             run.tool_calls.append(
                 ToolCallRecord(call.id, call.name, call.input, content, is_error, truncated)
             )
@@ -325,6 +325,18 @@ def _execute(call: ToolCall, tools_by_name: dict[str, Tool[Any]]) -> tuple[str, 
     if isinstance(result, BaseModel):
         return result.model_dump_json(), False
     return json.dumps(result), False
+
+
+def _label(call_id: str, content: str) -> str:
+    """What the model reads: the call id beside the result, so it can cite the id, not the tool name.
+
+    `ToolCallRecord.result` keeps the raw content, so post-check number extraction never sees the id.
+    """
+    try:
+        result: object = json.loads(content)
+    except ValueError:
+        result = content
+    return json.dumps({"tool_call_id": call_id, "result": result}, separators=(",", ":"))
 
 
 def _cap(content: str, max_bytes: int) -> tuple[str, bool]:

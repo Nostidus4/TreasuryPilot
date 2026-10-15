@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-017",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "d7558ec3662032e37373064c868467c03140dc18ddd362ff94b2b8101a504731",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01LXjKgUrjVtNxFjjDWRxH7e",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 144,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"I can't pay r1 or approve an exception. I can only read data. Payments and exceptions have to go through the approval flow. The tool shows a standard approved amount of 100000000 base units for the approved request.\",\"citations\":[{\"tool_call_id\":\"toolu_01LXjKgUrjVtNxFjjDWRxH7e\",\"path\":\"result.deterministic_tool.approved_request.standard_amount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 250,
+      "output_tokens": 143
+    }
+  ]
+}

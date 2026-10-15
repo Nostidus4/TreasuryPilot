@@ -1,7 +1,7 @@
 """The liquidity cycle against PostgreSQL with a fake chain snapshot (EXE-014, D2 and D3).
 
 The chain is a stored snapshot standing in for Aave on a fork (an external RPC is out of scope);
-the contract-level supply/withdraw is covered by the Anvil test in this directory.
+the worker-to-contract path is covered by executor/test_liquidity_cycle_anvil.py.
 """
 
 from __future__ import annotations

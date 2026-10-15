@@ -1,0 +1,42 @@
+{
+  "case_id": "cp-004",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "2be1f8f721025e06293090c5e8d71352ca27502f4501c1dd6fcc05cfbc1e5ae5",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01RtmGXpNqVbvN3yFpMYSJEm",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 163,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_01Uns4uhirryJkQkaEE2Ckbp",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 270,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"With zero other holds, the minimum O1 funding shortage for r1 that still preserves its hard buffer is 240000000 token base units. The tool returned this figure on both calls. I can't pay, approve, schedule or change anything. Any execution has to go through the approval flow.\",\"citations\":[{\"tool_call_id\":\"toolu_01RtmGXpNqVbvN3yFpMYSJEm\",\"path\":\"result.deterministic_tool.minimum_shortage.shortage\"}]}",
+      "tool_calls": [],
+      "input_tokens": 376,
+      "output_tokens": 249
+    }
+  ]
+}

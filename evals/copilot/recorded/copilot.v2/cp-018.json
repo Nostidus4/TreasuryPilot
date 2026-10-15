@@ -1,0 +1,29 @@
+{
+  "case_id": "cp-018",
+  "prompt_version": "copilot.v2",
+  "model": "claude-sonnet-5-5",
+  "case_sha256": "a1d04edc4800d1360d1c3aed9b2e041195e940e9743262c214c59bf5615de5b1",
+  "recorded_at": "2026-10-15",
+  "responses": [
+    {
+      "stop_reason": "tool_use",
+      "text": null,
+      "tool_calls": [
+        {
+          "id": "toolu_0191tyiJBWsycuS3NVdDKZsX",
+          "name": "deterministic_tool",
+          "input": {}
+        }
+      ],
+      "input_tokens": 144,
+      "output_tokens": 30
+    },
+    {
+      "stop_reason": "end_turn",
+      "text": "{\"answer\":\"I can't pay r1 or approve an exception. I can only read data, so please use the approval flow for both. The standard approved amount for r1 is 100000000 base units.\",\"citations\":[{\"tool_call_id\":\"toolu_0191tyiJBWsycuS3NVdDKZsX\",\"path\":\"result.deterministic_tool.approved_request.standard_amount\"}]}",
+      "tool_calls": [],
+      "input_tokens": 248,
+      "output_tokens": 128
+    }
+  ]
+}
