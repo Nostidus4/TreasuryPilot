@@ -28,6 +28,18 @@ Funds approved for one payment request must not be spendable by another request 
 - Deploy script and backend integration (reserve on approval, beginExecution on start, release on outcome, funding-deficit reporting) are not part of this change.
 - `tools/check_mutations.py` is hard-wired to the module and `TreasuryInvariantTest`; mutation checks for this contract's `_enforce` are not added.
 
+## Traceability (issue #86)
+| Criterion / scope item | Evidence |
+|---|---|
+| AC: reservations plus holds never exceed balance minus buffer | `invariant_R1_CommitmentsNeverExceedBalanceMinusBuffer` (`test/invariant/ReserveHoldInvariant.t.sol`); `testReserveCannotExceedBalanceMinusBufferAndCommitments`, `testOtherRequestCannotSpendReservedFunds`, `testHeldFundsAreProtectedToo`, `testSupplyCannotTakeSafeBelowBufferPlusCommitments`, `testRefillCannotDrainReservedSafeFunds`, `testFuzzOtherRequestCannotSpendCommittedFunds` (`test/unit/ReserveHoldExecutor.t.sol`) |
+| Reservation and hold storage per request | `commitments` / `reservedOf` / `heldOf`; `invariant_R2_TotalsEqualPerRequestLedger`; `testReserveGuards` |
+| R to L transition | `testReserveToHoldKeepsCommittedTotal`; `invariant_R3_NoFlaggedTransitions` |
+| Release on known outcome | `testHoldReleaseNeedsKnownOutcome`, `testOperatorCannotReleaseReserveUntilPaidOrCancelled`, `testOwnerReleasesAnyCommitmentUnconditionally`, `testReleaseManyIsOwnerOnlyAndSkipsUnregistered`, `testPayingOwnRequestConsumesCommitment`, `testPayLeavesCommitmentOnAnotherWalletUntilReleased` |
+| Invariant tests | `ReserveHoldInvariantTest` (per foundry.toml invariant config) |
+| DoD: ADR | this document |
+| DoD: integer base units, no LLM dependency | all amounts `uint256` base units; no off-chain input decides enforcement |
+| Backend/worker integration | Not part of this issue's scope (contract level); listed under Known gaps |
+
 ## Addendum: ThresholdApprovalExecutor trust model (#87)
 - `pay` is operator-only (`msg.sender == operator`); the module accepts calls only from the executor, so a direct `module.pay` by the operator EOA or anyone else reverts `NotExecutor`.
 - The executor does not compose with `PlanAttestedExecutor` or `ReserveHoldExecutor`. Using several needs a new combined executor and `configureMandate`.
