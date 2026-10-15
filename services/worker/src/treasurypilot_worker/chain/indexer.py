@@ -26,6 +26,9 @@ REORG_WINDOW: Final = 64
 CHUNK_BLOCKS: Final = 2000
 # Bounds one run's memory and RPC time while a new treasury catches up.
 MAX_CHUNKS_PER_RUN: Final = 50
+_EXECUTION_EVENT_NAMES: Final = frozenset(
+    {"PaymentExecuted", "RefillExecuted", "Supplied", "Withdrawn"}
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +223,26 @@ async def _index_stream(
 
         for event in events:
             await handlers.dispatch(connection, event)
+            if event.stream == MODULE and event.name in _EXECUTION_EVENT_NAMES:
+                step_id = bytes.fromhex(str(event.payload["stepId"]).removeprefix("0x"))
+                # A new canonical log or a reorg removal changes the verification result
+                # shown by plan detail. Reuse the existing operation SSE invalidation.
+                await connection.execute(
+                    "INSERT INTO domain_events "
+                    "(id, org_id, treasury_id, type, entity_type, entity_id, payload) "
+                    "SELECT gen_random_uuid(), treasury.org_id, treasury.id, "
+                    "'OperationUpdated', 'operation', operation.id, "
+                    "jsonb_build_object('operationId', operation.id::text) "
+                    "FROM transactions AS tx "
+                    "JOIN operations AS operation ON operation.id = tx.operation_id "
+                    "JOIN treasuries AS treasury ON treasury.id = operation.treasury_id "
+                    "WHERE tx.chain_id = $1 AND tx.tx_hash = $2 "
+                    "AND operation.treasury_id = $3 AND operation.step_id = $4",
+                    event.chain_id,
+                    event.tx_hash,
+                    event.treasury_id,
+                    step_id,
+                )
 
         block = await rpc.call("eth_getBlockByNumber", [hex(end), False])
         await connection.execute(

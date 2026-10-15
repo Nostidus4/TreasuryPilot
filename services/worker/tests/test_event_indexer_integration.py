@@ -257,6 +257,33 @@ async def _one(database_url: str, query: str, *args: Any) -> Any:
         await pool.close()
 
 
+async def _seed_operation_transaction(database_url: str, tx_hash: bytes) -> None:
+    pool = await create_worker_pool(database_url, min_size=1, max_size=1)
+    try:
+        operation_id = uuid.UUID(_ID.format(75))
+        await pool.execute(
+            "INSERT INTO operations (id, treasury_id, plan_step_id, request_id, step_id, kind, "
+            "payload, idempotency_key, status) VALUES ($1, $2, $3, $4, $5, 'PAY', '{}'::jsonb, "
+            "'indexer-timeline-test', 'Pending')",
+            operation_id,
+            uuid.UUID(TREASURY),
+            uuid.UUID(_ID.format(76)),
+            uuid.UUID(REQUEST),
+            b"\x31" * 32,
+        )
+        await pool.execute(
+            "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address) "
+            "VALUES ($1, $2, $3, $4, 1, $5)",
+            uuid.UUID(_ID.format(77)),
+            operation_id,
+            CHAIN_ID,
+            tx_hash,
+            _addr(SENDER),
+        )
+    finally:
+        await pool.close()
+
+
 def _address_topic(address: str) -> bytes:
     return _addr(address)
 
@@ -477,6 +504,64 @@ def test_a_reorged_out_log_is_marked_removed_and_subscribers_hear_about_it(
     assert (
         asyncio.run(
             _one(database_url, "SELECT removed FROM observed_events WHERE event_name = 'Paused'")
+        )["removed"]
+        is True
+    )
+
+
+def test_execution_log_changes_and_reorgs_invalidate_the_live_timeline(
+    anvil_url: str, database_url: str
+) -> None:
+    _emit(anvil_url, MODULE_ADDR, "Resumed")
+    _mine(anvil_url)
+    snapshot = _rpc(anvil_url, "evm_snapshot")
+    tx_hash = _emit(
+        anvil_url,
+        MODULE_ADDR,
+        "PaymentExecuted",
+        REQUEST_ID,
+        b"\x31" * 32,
+        b"\x32" * 32,
+        data=encode(
+            ["address", "address", "uint256", "uint256", "bool", "bool"],
+            [SENDER, PAYEE_ADDR, 975, 20_000, False, False],
+        ),
+    )
+    asyncio.run(_seed_operation_transaction(database_url, _addr(tx_hash)))
+
+    first, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert first["changed"] == 1
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events WHERE type = 'OperationUpdated'",
+            )
+        )["n"]
+        == 1
+    )
+
+    assert _rpc(anvil_url, "evm_revert", [snapshot])
+    _mine(anvil_url, 3)
+    second, _ = asyncio.run(_index(anvil_url, database_url))
+
+    assert second["changed"] == 1
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT count(*) AS n FROM domain_events WHERE type = 'OperationUpdated'",
+            )
+        )["n"]
+        == 2
+    )
+    assert (
+        asyncio.run(
+            _one(
+                database_url,
+                "SELECT removed FROM observed_events WHERE event_name = 'PaymentExecuted'",
+            )
         )["removed"]
         is True
     )

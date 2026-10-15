@@ -15,10 +15,8 @@ from fastapi import FastAPI, Request
 from sqlalchemy import text
 
 from treasurypilot_api.database import create_session_factory
-from treasurypilot_api.execution.models import TransactionCrosscheck
 from treasurypilot_api.execution.routes import (
     _plan_status,
-    _step_amount,
     _step_verification,
     _total_amount,
     get_execution_plan,
@@ -27,6 +25,7 @@ from treasurypilot_api.execution.routes import (
 )
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.rbac import MemberAccess
+from treasurypilot_core.eip712 import plan_hash
 
 API_ROOT = Path(__file__).parents[1]
 ORG_ID = uuid.UUID("00000000-0000-7000-8000-000000000010")
@@ -41,18 +40,93 @@ OPERATION_ID = uuid.UUID("00000000-0000-7000-8000-000000000090")
 TRANSACTION_ID = uuid.UUID("00000000-0000-7000-8000-000000000091")
 PLAN_STEP_ID = uuid.UUID("00000000-0000-7000-8000-000000000092")
 STEP_ID = bytes.fromhex("33" * 32)
+SIGNED_REQUEST_ID = bytes.fromhex("77" * 32)
+MODULE_ADDRESS = bytes.fromhex("aa" * 20)
+EXPECTED_FROM = bytes.fromhex("55" * 20)
+EXPECTED_TO = bytes.fromhex("22" * 20)
+SIGNED_PLAN_HASH = plan_hash(
+    "0x" + SIGNED_REQUEST_ID.hex(),
+    "0x" + MODULE_ADDRESS.hex(),
+    31337,
+    [
+        {
+            "seq": 0,
+            "stepId": "0x" + STEP_ID.hex(),
+            "action": 1,
+            "from": "0x" + EXPECTED_FROM.hex(),
+            "to": "0x" + EXPECTED_TO.hex(),
+            "asset": "0x" + bytes.fromhex("11" * 20).hex(),
+            "amount": 975,
+        }
+    ],
+)
 
 
-def test_step_amount_uses_the_signed_operation_payload() -> None:
-    operation = SimpleNamespace(payload={"amountBaseUnits": "975", "amount": "1000"})
-    assert _step_amount(operation) == "975"
-    assert _step_amount(SimpleNamespace(payload={})) is None
+def test_verification_compares_the_signed_fields_to_the_module_event() -> None:
+    signed_step = SimpleNamespace(
+        step_id=STEP_ID,
+        action=1,
+        request_id=SIGNED_REQUEST_ID,
+        from_address=EXPECTED_FROM,
+        to_address=EXPECTED_TO,
+        amount=975,
+    )
+    event = SimpleNamespace(
+        event_name="PaymentExecuted",
+        payload={
+            "stepId": "0x" + STEP_ID.hex(),
+            "requestId": "0x" + SIGNED_REQUEST_ID.hex(),
+            "payingWallet": "0x" + EXPECTED_FROM.hex(),
+            "payee": "0x" + EXPECTED_TO.hex(),
+            "amount": "975",
+        },
+    )
+    assert _step_verification(signed_step, [event]) == "VERIFIED"
+    assert _step_verification(signed_step, []) is None
+
+    event.payload["payee"] = "0x" + bytes.fromhex("99" * 20).hex()
+    assert _step_verification(signed_step, [event]) == "MISMATCH"
 
 
-def test_receipt_verification_requires_a_completed_crosscheck() -> None:
-    assert _step_verification(TransactionCrosscheck.NOT_RUN) is None
-    assert _step_verification(TransactionCrosscheck.MATCH) == "VERIFIED"
-    assert _step_verification(TransactionCrosscheck.MISMATCH) == "MISMATCH"
+def test_refill_verification_needs_the_actual_target_and_amount() -> None:
+    signed_step = SimpleNamespace(
+        step_id=STEP_ID,
+        action=2,
+        request_id=SIGNED_REQUEST_ID,
+        from_address=EXPECTED_FROM,
+        to_address=EXPECTED_TO,
+        amount=975,
+    )
+    event = SimpleNamespace(
+        event_name="RefillExecuted",
+        payload={
+            "stepId": "0x" + STEP_ID.hex(),
+            "requestId": "0x" + SIGNED_REQUEST_ID.hex(),
+            "toWallet": "0x" + EXPECTED_TO.hex(),
+            "amount": "975",
+        },
+    )
+    assert _step_verification(signed_step, [event]) == "VERIFIED"
+    event.payload["amount"] = "974"
+    assert _step_verification(signed_step, [event]) == "MISMATCH"
+
+
+def test_liquidity_events_do_not_claim_recipient_verification_without_recipient_data() -> None:
+    signed_step = SimpleNamespace(
+        step_id=STEP_ID,
+        action=4,
+        request_id=SIGNED_REQUEST_ID,
+        from_address=EXPECTED_FROM,
+        to_address=EXPECTED_TO,
+        amount=975,
+    )
+    event = SimpleNamespace(
+        event_name="Supplied",
+        payload={"stepId": "0x" + STEP_ID.hex(), "amount": "975"},
+    )
+    assert _step_verification(signed_step, [event]) is None
+    event.payload["amount"] = "974"
+    assert _step_verification(signed_step, [event]) == "MISMATCH"
 
 
 def test_plan_status_only_claims_states_supported_by_persisted_rows() -> None:
@@ -60,6 +134,8 @@ def test_plan_status_only_claims_states_supported_by_persisted_rows() -> None:
     assert _plan_status(["Pending"], 1) == "Executing"
     assert _plan_status(["Confirmed"], 1) == "Unknown"
     assert _plan_status(["Failed"], 1) == "Unknown"
+    assert _plan_status(["Verified"], 1) == "Completed"
+    assert _plan_status(["Verified", "Failed"], 2) == "PartiallyCompleted"
     assert _plan_status(["Pending"], 2) == "Unknown"
 
 
@@ -103,10 +179,15 @@ async def _seed(database_url: str) -> None:
             )
             await connection.execute(
                 text(
-                    "INSERT INTO treasuries (id, org_id, chain_id, asset_id) "
-                    "VALUES (:id, :org, 31337, :asset)"
+                    "INSERT INTO treasuries (id, org_id, chain_id, asset_id, module_address) "
+                    "VALUES (:id, :org, 31337, :asset, :module)"
                 ),
-                {"id": TREASURY_ID, "org": ORG_ID, "asset": ASSET_ID},
+                {
+                    "id": TREASURY_ID,
+                    "org": ORG_ID,
+                    "asset": ASSET_ID,
+                    "module": MODULE_ADDRESS,
+                },
             )
             await connection.execute(
                 text(
@@ -156,9 +237,10 @@ async def _seed(database_url: str) -> None:
             await connection.execute(
                 text(
                     "INSERT INTO transactions (id, operation_id, chain_id, tx_hash, nonce, from_address, "
-                    "status, block_number, block_hash, confirmations, last_seen_pending_at) "
+                    "status, block_number, block_hash, confirmations, last_seen_pending_at, crosscheck) "
                     "VALUES (:id, :operation, 31337, decode(repeat('44', 32), 'hex'), 1, "
-                    "decode(repeat('55', 20), 'hex'), 'Pending', 123, decode(repeat('66', 32), 'hex'), 2, now())"
+                    "decode(repeat('55', 20), 'hex'), 'Pending', 123, decode(repeat('66', 32), 'hex'), "
+                    "2, now(), 'Match')"
                 ),
                 {"id": TRANSACTION_ID, "operation": OPERATION_ID},
             )
@@ -166,12 +248,30 @@ async def _seed(database_url: str) -> None:
                 text(
                     "INSERT INTO attestations (id, plan_id, request_id, plan_hash, step_ids, policy_version, "
                     "executor, nonce, valid_until, evidence_digest, typed_data, signature, policy_signer) "
-                    "VALUES (:id, :plan, decode(repeat('77', 32), 'hex'), decode(repeat('88', 32), 'hex'), "
+                    "VALUES (:id, :plan, decode(repeat('77', 32), 'hex'), :plan_hash, "
                     "ARRAY[decode(repeat('33', 32), 'hex')], decode(repeat('99', 32), 'hex'), "
                     "'0x0000000000000000000000000000000000000001', 1, now(), decode(repeat('aa', 32), 'hex'), "
                     "'{}'::jsonb, decode(repeat('bb', 65), 'hex'), '0x0000000000000000000000000000000000000002')"
                 ),
-                {"id": uuid.uuid4(), "plan": PLAN_ID},
+                {"id": uuid.uuid4(), "plan": PLAN_ID, "plan_hash": SIGNED_PLAN_HASH},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plan_steps (id, attestation_id, plan_id, seq, step_id, action, "
+                    "request_id, treasury_address, chain_id, from_address, to_address, asset_address, amount) "
+                    "SELECT :step_id, a.id, a.plan_id, 0, :hash, 1, :request, :module, 31337, "
+                    ":from_address, :to_address, decode(repeat('11', 20), 'hex'), 975 FROM attestations a "
+                    "WHERE a.plan_id = :plan"
+                ),
+                {
+                    "step_id": PLAN_STEP_ID,
+                    "hash": STEP_ID,
+                    "request": SIGNED_REQUEST_ID,
+                    "module": MODULE_ADDRESS,
+                    "from_address": EXPECTED_FROM,
+                    "to_address": EXPECTED_TO,
+                    "plan": PLAN_ID,
+                },
             )
     finally:
         await engine.dispose()
@@ -209,9 +309,12 @@ async def _read_routes(database_url: str) -> None:
         assert step["id"] == str(PLAN_STEP_ID)
         assert step["requestId"] == str(REQUEST_ID)
         assert step["kind"] == "PAY"
-        assert step["to"] == "Unavailable"
+        assert step["to"] == "0x" + EXPECTED_TO.hex()
+        assert step["from"] == "0x" + EXPECTED_FROM.hex()
         assert step["status"] == "Pending"
         assert step["amount"] == "975"
+        # A provider-to-provider receipt match alone is not evidence that the signed
+        # recipient and amount were executed; no module log is present in this fixture.
         assert step["verification"] is None
         assert step["txHash"] == "0x" + "44" * 32
         assert step["confirmations"] == 2

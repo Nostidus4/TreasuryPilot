@@ -50,10 +50,23 @@ INSERT INTO attestations (
     valid_until, evidence_digest, typed_data, signature, policy_signer
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
 """
+_INSERT_PLAN_STEP = """
+INSERT INTO plan_steps (
+    id, attestation_id, plan_id, seq, step_id, action, request_id, treasury_address,
+    chain_id, from_address, to_address, asset_address, amount
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+"""
 
 
 def _b32(value: str) -> bytes:
     return bytes.fromhex(value.removeprefix("0x"))
+
+
+def _address(value: str) -> bytes:
+    address = bytes.fromhex(value.removeprefix("0x"))
+    if len(address) != 20:
+        raise ValueError("execution plan address must be 20 bytes")
+    return address
 
 
 def attest(
@@ -79,14 +92,19 @@ def attest(
     )
     signature = sign_attestation(typed, policy_key)
     try:
-        asyncio.run(_insert(database_url, plan_id, typed, signature, policy_key.address))
+        asyncio.run(_insert(database_url, plan_id, plan, typed, signature, policy_key.address))
     except Exception as error:
         raise AttestationLogError(f"attestations write failed: {type(error).__name__}") from error
     return typed, signature
 
 
 async def _insert(
-    database_url: str, plan_id: UUID, typed: dict[str, Any], signature: bytes, signer: str
+    database_url: str,
+    plan_id: UUID,
+    plan: Mapping[str, Any],
+    typed: dict[str, Any],
+    signature: bytes,
+    signer: str,
 ) -> None:
     # shortcut: one connection per attestation (one per plan); pool it if plans get frequent.
     message = typed["message"]
@@ -96,21 +114,42 @@ async def _insert(
         command_timeout=DB_TIMEOUT_S,
     )
     try:
-        await connection.execute(
-            _INSERT,
-            uuid7(),
-            plan_id,
-            _b32(message["requestId"]),
-            _b32(message["planHash"]),
-            [_b32(step_id) for step_id in message["stepIds"]],
-            _b32(message["policyVersion"]),
-            message["executor"],
-            message["nonce"],
-            datetime.fromtimestamp(message["validUntil"], UTC),
-            _b32(message["evidenceDigest"]),
-            json.dumps(typed),
-            signature,
-            signer,
-        )
+        attestation_id = uuid7()
+        async with connection.transaction():
+            await connection.execute(
+                _INSERT,
+                attestation_id,
+                plan_id,
+                _b32(message["requestId"]),
+                _b32(message["planHash"]),
+                [_b32(step_id) for step_id in message["stepIds"]],
+                _b32(message["policyVersion"]),
+                message["executor"],
+                message["nonce"],
+                datetime.fromtimestamp(message["validUntil"], UTC),
+                _b32(message["evidenceDigest"]),
+                json.dumps(typed),
+                signature,
+                signer,
+            )
+            steps = [
+                (
+                    uuid7(),
+                    attestation_id,
+                    plan_id,
+                    int(step["seq"]),
+                    _b32(step["stepId"]),
+                    int(step["action"]),
+                    _b32(plan["requestId"]),
+                    _address(plan["treasury"]),
+                    int(plan["chainId"]),
+                    _address(step["from"]),
+                    _address(step["to"]),
+                    _address(step["asset"]),
+                    int(step["amount"]),
+                )
+                for step in plan["steps"]
+            ]
+            await connection.executemany(_INSERT_PLAN_STEP, steps)
     finally:
         await connection.close()

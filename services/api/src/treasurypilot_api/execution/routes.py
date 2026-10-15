@@ -10,14 +10,16 @@ from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import Field
-from sqlalchemy import any_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.execution.models import (
     Attestation,
+    ExecutionPlanStep,
+    IndexStream,
+    ObservedEvent,
     Operation,
     Transaction,
-    TransactionCrosscheck,
 )
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
@@ -25,6 +27,7 @@ from treasurypilot_api.identity.rbac import MemberAccess, require_member
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.mandate.models import Vendor
 from treasurypilot_api.treasury.models import Treasury
+from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW, plan_hash
 
 _BASE_UNITS = re.compile(r"^(0|[1-9][0-9]*)$")
 
@@ -45,6 +48,19 @@ StepStatus = Literal[
     "Skipped",
 ]
 StepKind = Literal["REFILL", "PAY", "SUPPLY", "WITHDRAW", "SWAP"]
+_ACTION_KIND: dict[int, StepKind] = {
+    PAY: "PAY",
+    REFILL: "REFILL",
+    SWAP_IN: "SWAP",
+    SUPPLY: "SUPPLY",
+    WITHDRAW: "WITHDRAW",
+}
+_EVENT_ACTION = {
+    "PAY": "PaymentExecuted",
+    "REFILL": "RefillExecuted",
+    "SUPPLY": "Supplied",
+    "WITHDRAW": "Withdrawn",
+}
 
 
 class PlanView(ApiModel):
@@ -147,19 +163,48 @@ def _step_status(operation: Operation, transaction: Transaction | None) -> StepS
     return "Planned"
 
 
-def _step_amount(operation: Operation) -> str | None:
-    # Use the signed operation payload, never the invoice face value: a confirmed
-    # partial payment may differ from the request amount. Missing amounts stay unavailable.
-    payload = operation.payload
-    return _base_units(payload.get("amountBaseUnits", payload.get("amount")))
-
-
 def _step_verification(
-    crosscheck: TransactionCrosscheck | None,
+    step: ExecutionPlanStep,
+    events: list[ObservedEvent],
 ) -> Literal["VERIFIED", "MISMATCH"] | None:
-    if crosscheck is TransactionCrosscheck.MATCH:
-        return "VERIFIED"
-    if crosscheck is TransactionCrosscheck.MISMATCH:
+    """Compare the signed plan with the canonical module log for this transaction."""
+    step_id = "0x" + step.step_id.hex()
+    matches = [event for event in events if str(event.payload.get("stepId", "")).lower() == step_id]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        return "MISMATCH"
+
+    event = matches[0]
+    kind = _ACTION_KIND.get(step.action)
+    if kind is None or event.event_name != _EVENT_ACTION.get(kind):
+        return "MISMATCH"
+    payload = event.payload
+    expected_request = "0x" + step.request_id.hex()
+    expected_to = "0x" + step.to_address.hex()
+    expected_from = "0x" + step.from_address.hex()
+    expected_amount = str(int(step.amount))
+    amount_matches = str(payload.get("amount", "")) == expected_amount
+    if kind == "PAY":
+        return (
+            "VERIFIED"
+            if amount_matches
+            and str(payload.get("requestId", "")).lower() == expected_request
+            and str(payload.get("payingWallet", "")).lower() == expected_from
+            and str(payload.get("payee", "")).lower() == expected_to
+            else "MISMATCH"
+        )
+    if kind == "REFILL":
+        return (
+            "VERIFIED"
+            if amount_matches
+            and str(payload.get("requestId", "")).lower() == expected_request
+            and str(payload.get("toWallet", "")).lower() == expected_to
+            else "MISMATCH"
+        )
+    # Supply/withdraw module events carry an amount and step id, but no recipient.
+    # A matching amount is not enough to assert the signed destination.
+    if not amount_matches:
         return "MISMATCH"
     return None
 
@@ -171,8 +216,13 @@ def _plan_status(statuses: list[StepStatus], expected_steps: int) -> PlanStatus:
         return "Executing"
     if statuses and all(status == "Planned" for status in statuses):
         return "Proposed"
-    # Confirmed receipts are not proof that the signed plan was paid as intended;
-    # terminal failures likewise cannot be aggregated without persisted plan state.
+    if statuses and all(status == "Verified" for status in statuses):
+        return "Completed"
+    if "Verified" in statuses and all(
+        status in {"Verified", "Failed", "Skipped", "Dropped", "Replaced", "Final"}
+        for status in statuses
+    ):
+        return "PartiallyCompleted"
     return "Unknown"
 
 
@@ -195,38 +245,102 @@ async def _plan_detail(
 
     rows = (
         await session.execute(
-            select(Operation, Vendor)
-            .join(Treasury, Treasury.id == Operation.treasury_id)
-            .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
-            .outerjoin(Vendor, Vendor.id == PaymentRequest.vendor_id)
+            select(ExecutionPlanStep, Treasury)
+            .join(Treasury, Treasury.module_address == ExecutionPlanStep.treasury_address)
             .where(
+                ExecutionPlanStep.attestation_id == attestation.id,
+                Treasury.chain_id == ExecutionPlanStep.chain_id,
                 Treasury.org_id == organization_id,
-                Operation.step_id.in_(attestation.step_ids),
+            )
+            .order_by(ExecutionPlanStep.seq)
+        )
+    ).all()
+    if not rows or [row.step_id for row, _treasury in rows] != attestation.step_ids:
+        raise _not_found()
+
+    signed_steps = [row for row, _treasury in rows]
+    treasury = rows[0][1]
+    first_step = signed_steps[0]
+    if any(
+        step.plan_id != attestation.plan_id
+        or step.chain_id != treasury.chain_id
+        or step.request_id != first_step.request_id
+        or step.treasury_address != first_step.treasury_address
+        for step in signed_steps
+    ):
+        raise _not_found()
+    treasury_candidates = (
+        await session.scalars(
+            select(Treasury).where(
+                Treasury.chain_id == first_step.chain_id,
+                Treasury.module_address == first_step.treasury_address,
             )
         )
     ).all()
-    if not rows:
+    if len(treasury_candidates) != 1 or treasury_candidates[0].id != treasury.id:
+        raise _not_found()
+    plan = [
+        {
+            "seq": step.seq,
+            "stepId": "0x" + step.step_id.hex(),
+            "action": step.action,
+            "from": "0x" + step.from_address.hex(),
+            "to": "0x" + step.to_address.hex(),
+            "asset": "0x" + step.asset_address.hex(),
+            "amount": int(step.amount),
+        }
+        for step in signed_steps
+    ]
+    # The durable rows must still hash to the planHash that the signer attested.
+    if (
+        plan_hash(
+            "0x" + signed_steps[0].request_id.hex(),
+            "0x" + signed_steps[0].treasury_address.hex(),
+            signed_steps[0].chain_id,
+            plan,
+        )
+        != attestation.plan_hash
+    ):
         raise _not_found()
 
-    operation_ids = [operation.id for operation, _vendor in rows]
-    transactions = (
-        await session.scalars(
-            select(Transaction)
-            .where(Transaction.operation_id.in_(operation_ids))
-            .order_by(Transaction.submitted_at.desc(), Transaction.id.desc())
+    operations = (
+        await session.execute(
+            select(Operation, Vendor)
+            .join(PaymentRequest, PaymentRequest.id == Operation.request_id, isouter=True)
+            .outerjoin(Vendor, Vendor.id == PaymentRequest.vendor_id)
+            .where(
+                Operation.treasury_id == treasury.id,
+                Operation.step_id.in_([step.step_id for step in signed_steps]),
+            )
         )
     ).all()
+    operations_by_step = {
+        operation.step_id: (operation, vendor) for operation, vendor in operations
+    }
+
+    operation_ids = [operation.id for operation, _vendor in operations]
+    transactions: list[Transaction] = []
+    if operation_ids:
+        transactions = list(
+            (
+                await session.scalars(
+                    select(Transaction)
+                    .where(Transaction.operation_id.in_(operation_ids))
+                    .order_by(Transaction.submitted_at.desc(), Transaction.id.desc())
+                )
+            ).all()
+        )
     latest_transaction: dict[uuid.UUID, Transaction] = {}
     for transaction in transactions:
         latest_transaction.setdefault(transaction.operation_id, transaction)
 
-    step_order = {step_id: index for index, step_id in enumerate(attestation.step_ids, start=1)}
     steps: list[PlanStepView] = []
-    for operation, vendor in rows:
-        tx = latest_transaction.get(operation.id)
-        kind = operation.kind.value
-        amount = _step_amount(operation)
-        payload = operation.payload
+    for signed_step in signed_steps:
+        operation, vendor = operations_by_step.get(signed_step.step_id, (None, None))
+        tx = latest_transaction.get(operation.id) if operation is not None else None
+        kind = _ACTION_KIND.get(signed_step.action)
+        if kind is None:
+            raise _not_found()
         title = {
             "PAY": f"Pay {vendor.name if vendor else 'vendor'}",
             "REFILL": "Refill treasury reserve",
@@ -234,31 +348,50 @@ async def _plan_detail(
             "WITHDRAW": "Withdraw treasury reserve",
             "SWAP": "Swap treasury assets",
         }[kind]
-        # The payee record is mutable. Show only the destination carried in the
-        # signed operation payload, so later payee edits cannot rewrite history.
-        to_address = _address(payload.get("to")) or "Unavailable"
-        from_address = _address(payload.get("from")) or "Treasury"
+        event_rows: list[ObservedEvent] = []
+        if tx is not None:
+            event_rows = list(
+                (
+                    await session.scalars(
+                        select(ObservedEvent)
+                        .where(
+                            ObservedEvent.treasury_id == treasury.id,
+                            ObservedEvent.chain_id == signed_step.chain_id,
+                            ObservedEvent.stream == IndexStream.MODULE,
+                            ObservedEvent.removed.is_(False),
+                            ObservedEvent.tx_hash == tx.tx_hash,
+                        )
+                        .order_by(ObservedEvent.block_number, ObservedEvent.log_index)
+                    )
+                ).all()
+            )
+        verification = _step_verification(signed_step, list(event_rows))
+        status = _step_status(operation, tx) if operation is not None else "Planned"
+        if status == "Confirmed" and verification == "VERIFIED":
+            status = "Verified"
         updated_at = (
             tx.confirmed_at or tx.last_seen_pending_at or tx.submitted_at
             if tx is not None
             else operation.created_at
+            if operation is not None
+            else signed_step.created_at
         )
         steps.append(
             PlanStepView.model_validate(
                 {
-                    "id": operation.plan_step_id,
-                    "index": step_order.get(operation.step_id, len(steps) + 1),
+                    "id": operation.plan_step_id if operation is not None else signed_step.id,
+                    "index": signed_step.seq + 1,
                     "kind": kind,
                     "title": title,
-                    "from": from_address,
-                    "to": to_address,
-                    "amount": amount,
-                    "request_id": operation.request_id,
-                    "reason": "Live status comes from the persisted operation and transaction records.",
-                    "status": _step_status(operation, tx),
+                    "from": _address(signed_step.from_address) or "Unavailable",
+                    "to": _address(signed_step.to_address) or "Unavailable",
+                    "amount": _base_units(signed_step.amount),
+                    "request_id": operation.request_id if operation is not None else None,
+                    "reason": "Expected fields come from the signed plan; live status uses persisted execution records.",
+                    "status": status,
                     "tx_hash": ("0x" + tx.tx_hash.hex()) if tx is not None else None,
                     "confirmations": tx.confirmations if tx is not None else None,
-                    "verification": _step_verification(tx.crosscheck if tx is not None else None),
+                    "verification": verification,
                     "updated_at": updated_at,
                 }
             )
@@ -266,13 +399,12 @@ async def _plan_detail(
     steps.sort(key=lambda step: step.index)
 
     total_amount = _total_amount([step.amount for step in steps], len(attestation.step_ids))
-    first_operation = min((row[0] for row in rows), key=lambda item: item.created_at)
-    status = _plan_status([step.status for step in steps], len(attestation.step_ids))
+    plan_status = _plan_status([step.status for step in steps], len(attestation.step_ids))
     return PlanDetailView(
         id=attestation.plan_id,
-        treasury_id=first_operation.treasury_id,
+        treasury_id=treasury.id,
         created_at=attestation.created_at,
-        status=status,
+        status=plan_status,
         planner_source="UNKNOWN",
         expected_saving=None,
         total_amount=total_amount,
@@ -314,11 +446,12 @@ async def list_execution_plans(
         plans = (
             await session.scalars(
                 select(Attestation)
-                .join(Operation, Operation.step_id == any_(Attestation.step_ids))
-                .join(Treasury, Treasury.id == Operation.treasury_id)
+                .join(ExecutionPlanStep, ExecutionPlanStep.attestation_id == Attestation.id)
+                .join(Treasury, Treasury.module_address == ExecutionPlanStep.treasury_address)
                 .where(
                     Treasury.org_id == organization_id,
                     Treasury.id == treasury_id,
+                    Treasury.chain_id == ExecutionPlanStep.chain_id,
                 )
                 .order_by(Attestation.created_at.desc())
                 .limit(100)
