@@ -878,3 +878,22 @@ test('mock review action: 409 on version mismatch, 422 without version, no bump 
   });
   expect(item.version).toBe(before);
 });
+
+test('a mandate that failed read-back shows Discrepancy, and non-owners see pending as read-only', async () => {
+  renderApp(`${T}/mandate`, {
+    beforeRender: () => {
+      const [active] = db.mandates.trs_main;
+      db.mandates.trs_main = [
+        { ...active, version: 9, status: 'Discrepancy' },
+        { ...active, version: 8, status: 'PendingActivation' },
+        ...db.mandates.trs_main,
+      ];
+    },
+  });
+
+  expect(
+    await screen.findByText('v9 does not match the chain'),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText('Discrepancy').length).toBeGreaterThan(0);
+  expect(screen.getByText('v8 is waiting for signatures')).toBeInTheDocument();
+});

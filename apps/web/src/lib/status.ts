@@ -132,6 +132,8 @@ export const mandateStatuses: Record<MandateStatus, StatusMeta> = {
   Active: { label: 'Active on-chain', tone: 'success' },
   Superseded: { label: 'Superseded', tone: 'neutral' },
   Expired: { label: 'Expired', tone: 'danger' },
+  Revoked: { label: 'Revoked', tone: 'danger' },
+  Discrepancy: { label: 'Discrepancy', tone: 'danger' },
 };
 
 export const treasuryStatuses: Record<TreasuryStatus, StatusMeta> = {
