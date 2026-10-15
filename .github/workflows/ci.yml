@@ -79,7 +79,7 @@ jobs:
         run: uv run pytest services/worker/tests/executor/test_outbox_integration.py
       - name: Pause routes PostgreSQL integration
         run: uv run pytest services/api/tests/test_pause_postgres.py
-      - name: Step sequencer PostgreSQL integration
+      - name: Step sequencer and post-condition PostgreSQL integration
         run: uv run pytest services/worker/tests/executor/test_sequencer_integration.py
       - name: Plan gate PostgreSQL integration
         run: uv run pytest services/worker/tests/executor/test_gate_integration.py

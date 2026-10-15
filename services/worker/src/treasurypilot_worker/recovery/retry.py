@@ -24,7 +24,7 @@ MAX_ATTEMPTS: Final = 6
 BASE_DELAY_SECONDS: Final = 2.0
 
 # Values of treasurypilot_api.recovery.review_queue.ReviewType (checked in the tests).
-ReviewKind = Literal["POLICY_BLOCK", "AI_REJECTED", "INFRA", "UNCERTAIN_TX"]
+ReviewKind = Literal["POLICY_BLOCK", "AI_REJECTED", "INFRA", "UNCERTAIN_TX", "DISCREPANCY"]
 
 
 class Remedy(StrEnum):

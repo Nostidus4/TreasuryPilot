@@ -231,6 +231,11 @@ def _plan(run: PlanRun) -> ExecutionPlan:
     )
 
 
+class _Passed:
+    async def verify(self, step_id: bytes, operation_id: Any) -> str:
+        return "PASSED"
+
+
 def test_wallet_balance_change_between_refill_and_pay_is_blocked(database_url: str) -> None:
     async def scenario() -> None:
         run = await _new_run(database_url)
@@ -255,13 +260,13 @@ def test_wallet_balance_change_between_refill_and_pay_is_blocked(database_url: s
         )  # type: ignore[arg-type]
         signer = FakeSigner()
         try:
-            assert (await sequence_plan(pool, signer, run, gate)).status == "Waiting"
+            assert (await sequence_plan(pool, signer, run, gate, _Passed())).status == "Waiting"
             assert signer.calls == 1  # REFILL validated (ALLOW), simulated and sent
             await pool.execute(
                 "UPDATE operations SET status = 'Confirmed' WHERE step_id = $1",
                 run.steps[0].step_id,
             )
-            result = await sequence_plan(pool, signer, run, gate)
+            result = await sequence_plan(pool, signer, run, gate, _Passed())
             assert (result.status, result.code) == ("PartiallyCompleted", "BUFFER_BREACH")
             assert signer.calls == 1
             rows = await pool.fetch(

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -90,6 +91,14 @@ class ChainSafetySignal(Base):
         UniqueConstraint(
             "token_movement_id", "signal_type", name="uq_chain_safety_signals_movement_type"
         ),
+        UniqueConstraint(
+            "verification_id", "signal_type", name="uq_chain_safety_signals_verification_type"
+        ),
+        CheckConstraint(
+            "(token_movement_id IS NOT NULL AND observed_event_id IS NOT NULL) "
+            "OR verification_id IS NOT NULL",
+            name="ck_chain_safety_signals_source",
+        ),
         Index(
             "ix_chain_safety_signals_pending",
             "treasury_id",
@@ -102,11 +111,17 @@ class ChainSafetySignal(Base):
     treasury_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
     )
-    observed_event_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("observed_events.id", ondelete="RESTRICT"), nullable=False
+    observed_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("observed_events.id", ondelete="RESTRICT")
     )
-    token_movement_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("token_movements.id", ondelete="RESTRICT"), nullable=False
+    token_movement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("token_movements.id", ondelete="RESTRICT")
+    )
+    verification_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "verifications.id", ondelete="RESTRICT", name="fk_chain_safety_signals_verification"
+        ),
     )
     signal_type: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
@@ -115,3 +130,28 @@ class ChainSafetySignal(Base):
     )
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Verification(Base):
+    """Append-only post-condition verification of a confirmed operation (REC-001)."""
+
+    __tablename__ = "verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "result IN ('PASSED', 'DISCREPANCY', 'UNKNOWN')", name="ck_verifications_result"
+        ),
+        Index("ix_verifications_operation_at", "operation_id", "at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    operation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("operations.id", ondelete="RESTRICT"), nullable=False
+    )
+    block_number: Mapped[int | None] = mapped_column(BigInteger)
+    expected: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    observed: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    diffs: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

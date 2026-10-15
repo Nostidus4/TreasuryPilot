@@ -157,3 +157,13 @@ REC-001 verification → REC-002 reconciliation records → REC-003 match/auto-m
 ## 15. v0.3 changes (ADR-019)
 
 SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ lending position), not expenses; post-conditions: SUPPLY → Safe USDC −x, aToken +≥ x−1, allowance 0; WITHDRAW → Safe USDC +x, aToken −≈x. Exports show supply interest earned for the period (aToken growth minus net supplied). **Tickets:** REC-001, REC-002, REC-004 revised.
+
+## Post-condition verification implementation notes (REC-001, #155)
+
+- Observed effects come from `eth_getLogs` (by `blockHash`) plus Multicall3 reads, not from `token_movements`: the indexer lags the confirmation and a movement row may not exist yet when the next step must be gated. Logs with `removed: true`, a receipt whose `blockHash` differs from header(B), or any unreadable state raise `RpcError`; the step ends as UNKNOWN (never DISCREPANCY) and is retried.
+- The B-1 pin is `header(B).parentHash`. Other transactions' transfers in block B are netted out (inflow and outflow).
+- `used_today` is not diffed: the module's day key is `block.timestamp / 1 days`, so the counter can reset between B-1 and B. It only has to be `>=` the step amount at B.
+- aToken: underlying balances are exact. The aToken delta may be at most 2 wei below expected and at most 2 wei + `before_atoken * 1e-6` above it (one block of interest; conservative).
+- Each verifier call makes one read attempt. The sequencer opens the INFRA review on the 3rd UNKNOWN newer than the operation's last PASSED/DISCREPANCY and the request's last resolved `VERIFICATION_UNKNOWN` review.
+- One PASSED/DISCREPANCY per operation (partial unique index), so concurrent verifiers raise one breaker signal.
+- `chain_safety_signals.observed_event_id` and `token_movement_id` are nullable now; a check constraint requires either both or a `verification_id`.
