@@ -222,6 +222,11 @@ def test_dashboard_snapshots_are_written_and_old_ones_pruned(
             assert [row["provider"] for row in dashboards].count("old") == 0
             assert len(dashboards) == before  # one old removed, one new added
             assert await pool.fetchval("SELECT count(*) FROM snapshots WHERE provider='old'") == 1
+
+            # DAILY rows are retained: a daily run stores one and prunes nothing.
+            assert await snapshot_dashboards(database_url, purpose=SnapshotPurpose.DAILY) == 1
+            assert await pool.fetchval("SELECT count(*) FROM snapshots WHERE purpose='DAILY'") == 1
+            assert await pool.fetchval("SELECT count(*) FROM snapshots WHERE provider='old'") == 1
         finally:
             await pool.close()
 
