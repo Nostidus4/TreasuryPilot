@@ -1080,7 +1080,8 @@ test('only Owners get the exception decision; the queue filters by type and flag
   expect(
     within(list).queryByText(/no confirmed outcome/),
   ).not.toBeInTheDocument();
-=======
+});
+
 test('mandate editor: the summary matches the saved base units, a looser change needs confirmation, and activation stays pending', async () => {
   const user = userEvent.setup();
   renderApp(`${T}/mandate`);
@@ -1205,5 +1206,4 @@ test('mandate editor is read-only for non-owners', async () => {
     screen.queryByRole('button', { name: /save draft/i }),
   ).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
->>>>>>> refs/remotes/origin/main
 });
