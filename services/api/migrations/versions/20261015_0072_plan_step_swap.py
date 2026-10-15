@@ -1,7 +1,7 @@
 """plan_steps: minOut and the labelled venue of a swap-for-gas step (EXE-011)
 
-Revision ID: 20261015_0068
-Revises: 20261015_0067
+Revision ID: 20261015_0072
+Revises: 20261015_0071
 Create Date: 2026-10-15 00:00:00
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261015_0068"
-down_revision: str | None = "20261015_0067"
+revision: str = "20261015_0072"
+down_revision: str | None = "20261015_0071"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
