@@ -166,10 +166,12 @@ test('create a request, approve it, run its automatic plan, and match that payme
     )
     .toContain(`https://sepolia.etherscan.io/tx/${submittedHash}`);
 
-  await expect(page.getByText('All steps verified')).toBeVisible({
-    timeout: 35_000,
-  });
-  await expect(page.getByText('Paid · 3 confirmations')).toBeVisible();
+  await expect(
+    page.getByText('All checked module event fields match'),
+  ).toBeVisible({ timeout: 35_000 });
+  await expect(
+    page.getByText('Event matched checked fields · 3 confirmations'),
+  ).toBeVisible();
 
   await page.getByRole('link', { name: 'Reconciliation' }).click();
   await page.getByRole('row', { name: 'Open payment E2E-WEB-023-001' }).click();
