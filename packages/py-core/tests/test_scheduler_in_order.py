@@ -1,5 +1,4 @@
 from tests.test_scheduler import obligation, policy, snapshot
-
 from treasurypilot_core.engine import schedule_edf, schedule_in_order
 
 REQS = [obligation("a", 100, due=1, seq=1), obligation("b", 100, due=2, seq=2)]

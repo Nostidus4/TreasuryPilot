@@ -1,8 +1,8 @@
 """Choose between the AI proposal and the deterministic plan (AGT-009, M09 section 8.2)."""
 
 import logging
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
@@ -99,6 +99,8 @@ def select_plan(
     ai_score = score(ai_items, requests, snapshot, policy)
     log.info("plan comparison: ai=%s deterministic=%s", ai_score, det_score)
     if ai_score[0] == 0 and ai_score < det_score:
-        reason = f"AI plan scored better: {_gain(ai_score, det_score)}, score {ai_score} vs {det_score}"
+        reason = (
+            f"AI plan scored better: {_gain(ai_score, det_score)}, score {ai_score} vs {det_score}"
+        )
         return PlanSelection("AI", ai_items, reason, det_score, ai_score)
     return keep(f"AI plan not better: score {ai_score} vs {det_score}", ai_score)
