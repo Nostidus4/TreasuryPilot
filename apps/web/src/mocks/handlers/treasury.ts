@@ -484,7 +484,7 @@ export const treasuryHandlers = [
     },
   ),
 
-  route('get', `${T}/forecast`, ({ params }): Forecast => {
+  route('get', `${T}/forecast`, ({ params, query }): Forecast => {
     const state = requireTreasury(params);
     const o1 =
       state.wallets.find((wallet) => wallet.role === 'O1') ?? state.wallets[0];
@@ -492,7 +492,10 @@ export const treasuryHandlers = [
     const open = db.requests.filter(
       (item) =>
         item.treasuryId === params.tId &&
-        ['Approved', 'Scheduled', 'AwaitingApproval'].includes(item.status),
+        (['Approved', 'Scheduled', 'AwaitingApproval'].includes(
+          item.status,
+        ) ||
+          (query.get('includeDrafts') === 'true' && item.status === 'Draft')),
     );
     const days = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(Date.now() + index * 86_400_000)

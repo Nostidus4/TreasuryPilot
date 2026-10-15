@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { expect, test } from 'vitest';
 
+import { api } from '@/lib/api/http';
+import type { Forecast } from '@/lib/api/types';
 import { db } from '@/mocks/db';
 import { server } from '@/mocks/server';
 import { renderApp } from '@/test/render';
@@ -158,6 +160,53 @@ test('negative savings are rendered with their negative sign', async () => {
   expect(within(row).getByText('1.00')).toBeInTheDocument();
   expect(within(row).getByText('1.10')).toBeInTheDocument();
   expect(within(row).getByText('-0.10')).toBeInTheDocument();
+});
+
+test('the runway toggle requests the forecast with drafts enabled', async () => {
+  const user = userEvent.setup();
+  let includeDrafts: string | null = null;
+  server.use(
+    http.get(
+      '*/v1/orgs/org_northwind/treasuries/trs_main/forecast',
+      ({ request }) => {
+        includeDrafts = new URL(request.url).searchParams.get('includeDrafts');
+        return HttpResponse.json({ days: [], alerts: [] });
+      },
+    ),
+  );
+  renderApp(T);
+
+  const toggle = await screen.findByRole('switch', { name: 'Include drafts' });
+  expect(toggle).not.toBeChecked();
+  await user.click(toggle);
+  await waitFor(() => expect(includeDrafts).toBe('true'));
+});
+
+test('the forecast mock adds draft outflow when requested', async () => {
+  const dueDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  renderApp(T, {
+    beforeRender: () => {
+      const draft = db.requests.find((item) => item.id === 'req_090')!;
+      draft.dueDate = `${dueDate}T12:00:00.000Z`;
+    },
+  });
+
+  const draft = db.requests.find((item) => item.id === 'req_090')!;
+  const path = '/orgs/org_northwind/treasuries/trs_main/forecast';
+  const [withoutDrafts, withDrafts] = await Promise.all([
+    api.get<Forecast>(path),
+    api.get<Forecast>(`${path}?includeDrafts=true`),
+  ]);
+  const baseDay = withoutDrafts.days.find((day) => day.date === dueDate);
+  const includedDay = withDrafts.days.find((day) => day.date === dueDate);
+
+  expect(baseDay).toBeDefined();
+  expect(includedDay).toBeDefined();
+  expect(BigInt(includedDay!.outflow) - BigInt(baseDay!.outflow)).toBe(
+    BigInt(draft.amount),
+  );
 });
 
 test('the position card shows the reserve breakdown and what is available to supply', async () => {
