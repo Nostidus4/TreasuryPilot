@@ -22,6 +22,12 @@ from treasurypilot_worker.chain.indexer import index_events_sync
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
 from treasurypilot_worker.chain.snapshot import snapshot_dashboards_sync
 from treasurypilot_worker.config import get_settings
+from treasurypilot_worker.executor.outbox import (
+    HttpSignerClient,
+    SignerUnavailable,
+    StepExecution,
+    execute_step,
+)
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
 from treasurypilot_worker.invoices.extraction import extract_invoice_document
 from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
@@ -524,3 +530,41 @@ def send_notification_emails() -> dict[str, int]:
 def send_daily_notification_digests() -> dict[str, int]:
     """Deliver 08:00 UTC digests to users who selected daily email."""
     return _deliver_emails("daily")
+
+
+@app.task(name="treasurypilot.execution.execute_step", queue="core")
+def execute_step_task(step: dict[str, Any]) -> dict[str, Any]:
+    """Outbox-execute one attested step: operation row, signer call, tx hash (EXE-007)."""
+
+    settings = get_settings()
+    if not (settings.database_url and settings.signer_url and settings.signer_shared_secret):
+        raise RuntimeError("DATABASE_URL, TP_SIGNER_URL and TP_SIGNER_SHARED_SECRET are required")
+    execution = StepExecution(
+        treasury_id=uuid.UUID(step["treasury_id"]),
+        request_id=uuid.UUID(step["request_id"]),
+        plan_step_id=uuid.UUID(step["plan_step_id"]),
+        step_id=bytes.fromhex(step["step_id"]),
+        kind=step["kind"],
+        chain_id=int(step["chain_id"]),
+        sign_request=step["sign_request"],
+    )
+    signer = HttpSignerClient(settings.signer_url, settings.signer_shared_secret.get_secret_value())
+
+    async def run() -> dict[str, Any]:
+        pool = await create_worker_pool(settings.database_url or "", min_size=1, max_size=2)
+        try:
+            outcome = await execute_step(pool, signer, execution)
+        finally:
+            await pool.close()
+        return {
+            "operation_id": str(outcome.operation_id),
+            "status": outcome.status,
+            "tx_hash": outcome.tx_hash,
+            "nonce": outcome.nonce,
+        }
+
+    try:
+        return asyncio.run(run())
+    except SignerUnavailable as error:
+        # Same step_id on retry: the signer replays the original transaction, never a new one.
+        raise RetryableTaskError(f"signer unavailable: {error}") from error
