@@ -19,6 +19,7 @@ from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.invoices.models import PaymentRequest
 from treasurypilot_api.mandate.models import MandateVersion
+from treasurypilot_api.mandate.models import FeeAcceptance
 from treasurypilot_api.recovery.models import ReviewItem
 from treasurypilot_api.recovery.review_queue import (
     ReviewType,
@@ -291,11 +292,14 @@ async def _exercise_review_queue(database_url: str) -> None:
             assert refreshed is not None and refreshed.id == uncertain_id
             assert refreshed.request_version == payment.version
             refreshed_version = refreshed.version
+            fee_plan_id = uuid.uuid4()
             fee = await create_for_outcome(
                 session,
                 request=payment,
                 outcome=ReviewType.FEE_APPROVAL,
                 primary_code="FEE_HIGH",
+                plan_id=fee_plan_id,
+                fee_estimate_wei=123_000_000_000_000,
                 last_safe_execution_at=now + timedelta(days=1),
                 now=now,
             )
@@ -329,6 +333,24 @@ async def _exercise_review_queue(database_url: str) -> None:
             operator,
         )
         assert again["item"]["note"] == "waiting"
+        accepted = await act_on_review_item(
+            ORG_ID,
+            fee_id,
+            ReviewActionRequest(action="ACCEPT_FEE", version=again["item"]["version"]),
+            request,
+            Response(),
+            operator,
+        )
+        assert accepted["item"]["status"] == "Resolved"
+        assert accepted["item"]["resolution"] == "ACCEPT_FEE"
+        async with sessions() as session:
+            fee_acceptance = await session.scalar(
+                select(FeeAcceptance).where(FeeAcceptance.plan_id == fee_plan_id)
+            )
+            assert fee_acceptance is not None
+            assert fee_acceptance.estimated_fee_wei == 123_000_000_000_000
+            assert fee_acceptance.accepted_cap_wei == 123_000_000_000_000
+
 
         async with sessions() as session, session.begin():
             mandate_version = await session.scalar(

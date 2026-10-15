@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -51,6 +52,14 @@ class ReviewItem(Base):
             name="fk_review_items_mandate_version_org",
             ondelete="RESTRICT",
         ),
+        CheckConstraint(
+            "fee_estimate_wei IS NULL OR fee_estimate_wei >= 0",
+            name="ck_review_items_fee_estimate_nonnegative",
+        ),
+        CheckConstraint(
+            "type <> 'FEE_APPROVAL' OR (plan_id IS NOT NULL AND fee_estimate_wei IS NOT NULL)",
+            name="ck_review_items_fee_approval_details",
+        ),
         Index(
             "uq_review_items_open_request_type",
             "request_id",
@@ -81,6 +90,7 @@ class ReviewItem(Base):
     request_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    fee_estimate_wei: Mapped[int | None] = mapped_column(Numeric(78, 0, asdecimal=False))
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     primary_code: Mapped[str] = mapped_column(String(100), nullable=False)
     reason_codes: Mapped[list[str]] = mapped_column(ARRAY(String(100)), nullable=False)
