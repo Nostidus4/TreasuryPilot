@@ -341,7 +341,7 @@ async def get_exception(
             "dailyRemainingAfter": str(daily - daily_used - int(payment.amount)),
             "valueIfGranted": str(value) if value is not None else None,
         },
-        "aiDraft": None,
+        "aiDraft": exception.draft if exception is not None else None,
     }
 
 
