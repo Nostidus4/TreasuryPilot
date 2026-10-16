@@ -36,6 +36,7 @@ from treasurypilot_api.integrations.erp.provider import (
     ErpError,
     ErpPermanentError,
     ErpProvider,
+    ErpTenant,
     ErpTransientError,
     TokenSet,
 )
@@ -155,7 +156,11 @@ class ErpService:
         self._check_state(state, provider_key, org_id, user_id)
         try:
             tokens = await provider.exchange_code(code, self._redirect_uri)
-            tenant = await provider.resolve_tenant(tokens.access_token)
+            tenant = (
+                ErpTenant(tokens.tenant_hint)
+                if tokens.tenant_hint
+                else await provider.resolve_tenant(tokens.access_token)
+            )
         except ErpError as error:
             raise ErpServiceError(502, "ERP_CONNECT_FAILED", str(error)) from None
         async with self._sessions() as session, session.begin():

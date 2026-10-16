@@ -54,6 +54,9 @@ class TokenSet:
     refresh_token: str
     expires_at: datetime
     scopes: str = ""
+    # Set when the ERP names the company in the OAuth redirect (QuickBooks ``realmId``), so the
+    # framework needs no ``resolve_tenant`` round trip.
+    tenant_hint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

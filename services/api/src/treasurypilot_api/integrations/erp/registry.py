@@ -8,6 +8,7 @@ from treasurypilot_api.config import Settings
 from treasurypilot_api.integrations.erp.http import HttpClient, UrllibHttpClient
 from treasurypilot_api.integrations.erp.netsuite import NetSuiteProvider
 from treasurypilot_api.integrations.erp.provider import ErpProvider
+from treasurypilot_api.integrations.erp.quickbooks import QuickBooksProvider
 from treasurypilot_api.integrations.erp.xero import XeroProvider
 
 
@@ -23,6 +24,13 @@ def build_providers(
             client,
             client_id=settings.xero_client_id,
             client_secret=settings.xero_client_secret.get_secret_value(),
+        )
+    if settings.quickbooks_client_id and settings.quickbooks_client_secret is not None:
+        providers["quickbooks"] = QuickBooksProvider(
+            client,
+            client_id=settings.quickbooks_client_id,
+            client_secret=settings.quickbooks_client_secret.get_secret_value(),
+            sandbox=settings.quickbooks_sandbox,
         )
     if (
         settings.netsuite_account_id

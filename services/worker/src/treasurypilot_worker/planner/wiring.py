@@ -29,7 +29,12 @@ from treasurypilot_worker.planner.reattest import AttestFn
 # simulation context yet); the signer re-estimates with a 20 % margin and refuses any step whose
 # gas_limit * maxFeePerGas exceeds the cap, so an under-estimate fails closed (FEE_CAP_EXCEEDED).
 # Upgrade when the executor's calldata builder is usable at plan time.
-STEP_GAS = 150_000
+# Measured on Anvil: a first PAY/REFILL through PlanAttestedExecutor estimates ~271k gas (cold nonce and
+# counter slots), and the signer's 20 % margin makes that ~326k, so the budget must cover it per step.
+# Headroom: 3 steps x 400k x 2x fee multiplier x gas price stays under the seeded 0.01 ETH per-plan
+# threshold up to ~4 gwei. shortcut: one flat figure over-gates the cheaper steps, upgrade to a
+# per-action table or eth_estimateGas when the calldata builder is usable at plan time.
+STEP_GAS = 400_000
 
 
 def build_attest(settings: Settings) -> AttestFn:

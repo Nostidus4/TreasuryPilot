@@ -136,7 +136,7 @@ def no_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     ("action", "selector"),
     [
         (Action.PAY, "88e7aeaf"),
-        (Action.REFILL, "c6ad3596"),
+        (Action.REFILL, "9e5b5716"),
         (Action.WITHDRAW, "eb371d41"),
         (Action.SUPPLY, "6453ca48"),
     ],

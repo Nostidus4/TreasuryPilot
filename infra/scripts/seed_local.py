@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -150,6 +151,8 @@ FALLBACK_HANDLER_SLOT = "0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c6
 # funds on a local chain. The keystore password is a fixed TEST string.
 EXECUTOR_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"  # gitleaks:allow -- published Anvil fixture
 POLICY_TEST_KEY = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97"  # gitleaks:allow -- published Anvil fixture
+# Must equal DEMO_PAYEE_COOLING in deploy-local.sh (the on-chain cooling `make seed` deploys with).
+PAYEE_COOLING_SECONDS = 5
 KEYSTORE_TEST_PASSWORD = "TEST-local-keystore-password"  # noqa: S105
 
 
@@ -158,6 +161,20 @@ def install_fallback_handlers(manifest: dict[str, Any], rpc_url: str) -> None:
     value = "0x" + manifest["safeSingleton"][2:].lower().rjust(64, "0")
     for field in ("safeT", "safeO1", "safeO2"):
         rpc(rpc_url, "anvil_setStorageAt", [manifest[field], FALLBACK_HANDLER_SLOT, value])
+
+
+def wait_payee_active(manifest: dict[str, Any], rpc_url: str, payee: str) -> None:
+    """Sit out the on-chain payee cooling of a fresh deploy: the planner reads the payee as Cooling
+    (PAYEE_UNKNOWN, request NeedsReview) until then. A block is mined so Anvil's latest timestamp
+    is wall-clock again; time is not warped because the validator rejects snapshots from the future."""
+    data = "0x" + keccak(text="payeeStatus(address)")[:4].hex() + payee[2:].lower().rjust(64, "0")
+    result = rpc(rpc_url, "eth_call", [{"to": manifest["module"], "data": data}, "latest"])
+    active_from = int(result[66:130], 16)
+    latest = int(rpc(rpc_url, "eth_getBlockByNumber", ["latest", False])["timestamp"], 16)
+    if active_from and (wait := active_from + 1 - latest) > 0:
+        print(f"Waiting {wait:.0f}s for the demo payee to leave its on-chain cooling...")
+        time.sleep(wait)
+        rpc(rpc_url, "evm_mine", [])
 
 
 def upsert_env(path: Path, values: dict[str, str]) -> None:
@@ -282,9 +299,10 @@ async def seed_database(
             await _run(c, f"DELETE FROM {table} WHERE user_id = :id", id=uid)
     await _run(
         c,
-        "INSERT INTO organizations (id, name, legal_name, country, created_by) "
-        "VALUES (:id, 'TreasuryPilot Demo (TEST)', 'Demo Treasury Ltd (TEST)', 'GB', :u) "
-        "ON CONFLICT DO NOTHING",
+        # auto_match: the stack E2E waits for the worker to match the paid request (REC-003).
+        "INSERT INTO organizations (id, name, legal_name, country, created_by, auto_match) "
+        "VALUES (:id, 'TreasuryPilot Demo (TEST)', 'Demo Treasury Ltd (TEST)', 'GB', :u, true) "
+        "ON CONFLICT (id) DO UPDATE SET auto_match = true",
         id=org, u=owner_user,
     )  # fmt: skip
     for email, (_, roles) in USERS.items():
@@ -334,7 +352,7 @@ async def seed_database(
     config = {
         "validFrom": int(valid_from.timestamp()),
         "expiresAt": int(expires.timestamp()),
-        "payeeCoolingSeconds": 300,
+        "payeeCoolingSeconds": PAYEE_COOLING_SECONDS,
         "executor": executor,
         "guardian": guardian,
         "limits": {
@@ -518,6 +536,7 @@ async def main_async(args: argparse.Namespace) -> None:
     # file is rewritten afterwards with the container-reachable ones the API will load.
     write_platform_config(manifest, args.rpc_url, config_dir, args.rpc_url)
     install_fallback_handlers(manifest, args.rpc_url)
+    wait_payee_active(manifest, args.rpc_url, ANVIL[4])
     if args.env_file:
         write_local_keystores(Path(args.env_file), config_dir / "keys")
     configuration = PlatformConfiguration.load(config_dir / "chains.json", config_dir)

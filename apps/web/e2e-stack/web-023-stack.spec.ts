@@ -229,11 +229,42 @@ test.describe
     expect(response.status(), await response.text()).toBe(200);
   });
 
-  // The stack gets through approve, the execution cycle, planning (rule-based fallback, no AI key)
-  // and the policy attestation. The worker -> signer -> chain wiring is now consistent (#229):
-  // `make seed` deploys PlanAttestedExecutor as mandate.executor (operator = the worker key, policy
-  // signer = the TEST policy key), the worker sends attested calldata to it and the validator
-  // compares the worker key with its operator(). Turn this into a real test once CI (`stack-e2e`)
-  // shows the plan reaching Paid and Matched; it was not run against the Docker stack locally.
-  test.fixme('approval is recorded, then auto plan, paid, matched', () => {});
+  // After the approval the worker plans (rule-based fallback, no AI key), the signer attests the
+  // plan, the worker executes it on Anvil (PlanAttestedExecutor -> module) and the reconciliation
+  // is matched automatically; each step is picked up by a beat task, so poll generously.
+  test('approval is recorded, then auto plan, paid, matched', async () => {
+    test.setTimeout(360_000);
+    const page = approver;
+    await page.goto(requestPath);
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByTestId('request-status').getByText('Paid', { exact: true })).toBeVisible(
+        {
+          timeout: 2_000,
+        },
+      );
+    }).toPass({ timeout: 150_000, intervals: [3_000] });
+    await expect(page.getByText(invoice).first()).toBeVisible();
+
+    const [, orgId, requestId] =
+      /\/o\/([^/]+)\/.*requests\/([0-9a-f-]{36})$/.exec(requestPath) ?? [];
+    await expect(async () => {
+      const matched = await finance.evaluate(
+        async ({ orgId, requestId }) => {
+          const response = await fetch(
+            `http://localhost:8000/v1/orgs/${orgId}/reconciliations?status=Matched`,
+            { credentials: 'include' },
+          );
+          const body = (await response.json()) as {
+            items?: Array<{ requestId: string }>;
+          };
+          return (body.items ?? []).some(
+            (item) => item.requestId === requestId,
+          );
+        },
+        { orgId, requestId },
+      );
+      expect(matched).toBe(true);
+    }).toPass({ timeout: 120_000, intervals: [3_000] });
+  });
 });

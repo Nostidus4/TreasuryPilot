@@ -53,6 +53,7 @@ async def _run_twice(url: str, tmp: Path, monkeypatch: pytest.MonkeyPatch) -> li
         seed_local, "rpc", lambda _u, m, _p: "0x7a69" if m == "eth_chainId" else "0x6001"
     )  # Anvil, any code
     monkeypatch.setattr(seed_sync, "verify_asset_decimals", _no_rpc)
+    monkeypatch.setattr(seed_local, "wait_payee_active", lambda *_a: None)  # no chain here
     monkeypatch.setenv("DATABASE_URL", url)
     results = []
     engine = create_async_engine(url)
