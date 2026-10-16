@@ -1,6 +1,6 @@
 # Development Guide
 
-> The development foundation is initialized. Business capabilities are added through the matching tickets in `planning/issues/`.
+> Local setup, commands and deployment for the M1 competition build. Quick overview: [README](README.md#quick-start-local).
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ make smoke                                  # verify the exposed web/API/infra e
 open http://localhost:5173
 ```
 
-The checked-in foundation intentionally does not seed business data or expose signing operations. Those arrive through their feature and security tickets.
+Run `make seed` next to load the TEST demo data (see [Seeding the demo dataset](#seeding-the-demo-dataset)).
 
 ## Everyday commands
 
