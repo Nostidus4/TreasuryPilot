@@ -128,8 +128,10 @@
 | PATCH | `/orgs/{o}/recurring-payment-schedules/{sId}` | Edit future periods or pause/resume | OPR, ADM | `If-Match` + template fields → `{schedule}` | 404, 409 completed, 412 version conflict |
 | POST | `/orgs/{o}/recurring-payment-schedules/{sId}/periods/{date}/skip` | Skip exactly the next active period | OPR, ADM | → `{period: Skipped, schedule}` | 404, 409 `PERIOD_NOT_CURRENT` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | Upload PDF/image → extraction job | OPR | multipart `file` → `202 {requestId, extractionJobId}` | 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_TYPE` |
-| PUT | `/orgs/{o}/invoice-inbound-email` | OrgAdmin configures one forwarded-invoice address and its treasury | ADM | `{treasuryId, enabled}` → `{address, treasuryId, enabled}` | 503 `INBOUND_EMAIL_UNAVAILABLE` |
-| POST | `/inbound/invoices/{localPart}` | Signed provider webhook; each PDF/image attachment becomes a private upload draft | provider HMAC | signed JSON → `202 {drafts[]}` | 401 `INBOUND_EMAIL_SIGNATURE_INVALID`, 422 invalid message/attachment, 429 `RATE_LIMITED` |
+| PUT | `/orgs/{o}/invoice-inbound-email` | OrgAdmin configures one forwarded-invoice address and its treasury | ADM | `{treasuryId, enabled, senderAllowlist?}` → `{address, treasuryId, enabled, senderAllowlist}` | 503 `INBOUND_EMAIL_UNAVAILABLE` |
+| GET | `/orgs/{o}/invoice-inbound-email` | OrgAdmin reads the address, treasury and sender allowlist | ADM | - → `{address, treasuryId, enabled, senderAllowlist}` | 404 `INBOUND_EMAIL_NOT_CONFIGURED` |
+| GET | `/orgs/{o}/invoice-inbound-email/quarantine` | OrgAdmin lists quarantined messages (metadata only, newest 100) | ADM | - → `{items[]}` | |
+| POST | `/inbound/invoices/{localPart}` | Signed provider webhook; each PDF/image attachment becomes a private upload draft | provider HMAC | signed JSON → `202 {drafts[], quarantined, duplicateAttachments}` | 401 `INBOUND_EMAIL_SIGNATURE_INVALID`, 422 invalid message/attachment, 429 `RATE_LIMITED` |
 | POST | `/orgs/{o}/requests/import-csv` 🔁 | CSV import | OPR | multipart → `{created[], errors[]}` | 422 `CSV_HEADER_INVALID` |
 | GET | `/orgs/{o}/requests` | List or filter | ANY | `?status=&dueBefore=&treasuryId=` → `{items}` | |
 | GET | `/orgs/{o}/requests/{rId}` | Detail with revisions, flags, extraction provenance, approvals, timeline | ANY | → `RequestDetail` | |

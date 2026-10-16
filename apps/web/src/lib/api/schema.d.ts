@@ -1013,9 +1013,27 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** Get Inbound Email */
+    get: operations['get_inbound_email_v1_orgs__organization_id__invoice_inbound_email_get'];
     /** Configure Inbound Email */
     put: operations['configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/invoice-inbound-email/quarantine': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Quarantined Emails */
+    get: operations['list_quarantined_emails_v1_orgs__organization_id__invoice_inbound_email_quarantine_get'];
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -3411,6 +3429,8 @@ export interface components {
        * @default true
        */
       enabled: boolean;
+      /** Senderallowlist */
+      senderAllowlist?: string[] | null;
       /** Treasuryid */
       treasuryId?: string | null;
     };
@@ -3420,6 +3440,8 @@ export interface components {
       address: string;
       /** Enabled */
       enabled: boolean;
+      /** Senderallowlist */
+      senderAllowlist: string[];
       /**
        * Treasuryid
        * Format: uuid
@@ -3430,6 +3452,16 @@ export interface components {
     InboundEmailReceipt: {
       /** Drafts */
       drafts: components['schemas']['InboundEmailAttachmentReceipt'][];
+      /**
+       * Duplicateattachments
+       * @default 0
+       */
+      duplicateAttachments: number;
+      /**
+       * Quarantined
+       * @default false
+       */
+      quarantined: boolean;
     };
     /** InviteCreateRequest */
     InviteCreateRequest: {
@@ -4404,6 +4436,36 @@ export interface components {
       safeUsdc: string;
       /** Supplyapybps */
       supplyApyBps: number;
+    };
+    /** QuarantinedEmailList */
+    QuarantinedEmailList: {
+      /** Items */
+      items: components['schemas']['QuarantinedEmailView'][];
+    };
+    /** QuarantinedEmailView */
+    QuarantinedEmailView: {
+      /** Attachmentcount */
+      attachmentCount: number;
+      /** Evidence */
+      evidence: {
+        [key: string]: unknown;
+      };
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Reason */
+      reason: string;
+      /**
+       * Receivedat
+       * Format: date-time
+       */
+      receivedAt: string;
+      /** Sender */
+      sender: string;
+      /** Senderdomain */
+      senderDomain: string | null;
     };
     /** QueuesView */
     QueuesView: {
@@ -7654,6 +7716,37 @@ export interface operations {
       };
     };
   };
+  get_inbound_email_v1_orgs__organization_id__invoice_inbound_email_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InboundEmailConfigurationView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put: {
     parameters: {
       query?: never;
@@ -7676,6 +7769,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['InboundEmailConfigurationView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_quarantined_emails_v1_orgs__organization_id__invoice_inbound_email_quarantine_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['QuarantinedEmailList'];
         };
       };
       /** @description Validation Error */

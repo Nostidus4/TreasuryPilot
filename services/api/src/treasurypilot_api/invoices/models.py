@@ -103,11 +103,43 @@ class InvoiceInboundEmail(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    sender_allowlist: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InvoiceInboundQuarantine(Base):
+    """A signed email held back from draft creation. Only metadata is kept, never content."""
+
+    __tablename__ = "invoice_inbound_quarantine"
+    __table_args__ = (
+        UniqueConstraint("org_id", "message_digest", name="uq_invoice_inbound_quarantine_message"),
+        CheckConstraint(
+            "reason IN ('SENDER_NOT_ALLOWLISTED', 'SENDER_UNAUTHENTICATED')",
+            name="ck_invoice_inbound_quarantine_reason",
+        ),
+        Index("ix_invoice_inbound_quarantine_org_received", "org_id", "received_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    message_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Untrusted, sanitised and length-capped; display only.
+    sender: Mapped[str] = mapped_column(String(320), nullable=False)
+    sender_domain: Mapped[str | None] = mapped_column(String(253))
+    attachment_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    evidence: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

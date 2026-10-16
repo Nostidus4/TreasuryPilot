@@ -97,3 +97,33 @@ def test_email_without_attachments_is_rejected() -> None:
         InboundEmailMessage.model_validate(
             {"messageId": "id", "sender": "billing@example.test", "attachments": []}
         )
+
+
+def test_sender_allowlist_entries_are_normalised_and_validated() -> None:
+    from treasurypilot_api.invoices.inbound_email import InboundEmailConfiguration
+
+    config = InboundEmailConfiguration.model_validate(
+        {"senderAllowlist": [" Billing@Example.TEST ", "VENDOR.test", "vendor.test"]}
+    )
+    assert config.sender_allowlist == ["billing@example.test", "vendor.test"]
+    for bad in ("not a domain", "@example.test", "a@b@c.test", "localhost"):
+        with pytest.raises(ValidationError):
+            InboundEmailConfiguration.model_validate({"senderAllowlist": [bad]})
+
+
+def test_sender_allowlist_matches_exact_address_or_exact_domain() -> None:
+    from treasurypilot_api.invoices.inbound_email import _sender_allowed
+
+    allow = ["billing@example.test", "vendor.test"]
+    assert _sender_allowed(allow, "Billing <billing@example.test>")
+    assert _sender_allowed(allow, "anyone@vendor.test")
+    assert not _sender_allowed(allow, "other@example.test")
+    assert not _sender_allowed(allow, "anyone@sub.vendor.test")
+    assert not _sender_allowed(allow, "garbage")
+
+
+def test_untrusted_text_loses_control_and_bidi_characters_and_is_capped() -> None:
+    from treasurypilot_api.invoices.inbound_email import clean_untrusted_text
+
+    assert clean_untrusted_text("in‮voice\x00​.pdf\n") == "invoice.pdf"
+    assert len(clean_untrusted_text("a" * 1000)) == 320
