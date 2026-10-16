@@ -87,6 +87,7 @@ from treasurypilot_api.integrations.erp.registry import build_providers
 from treasurypilot_api.integrations.erp.routes import router as erp_router
 from treasurypilot_api.integrations.erp.service import ErpService
 from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
+from treasurypilot_api.invoices.chain_reader import RpcApprovalChainReader
 from treasurypilot_api.invoices.documents import (
     ExtractionQueue,
     ObjectStorage,
@@ -434,6 +435,10 @@ def create_app(
         application.state.platform_configuration = configuration
         if application.state.fee_history_provider is None:
             application.state.fee_history_provider = RpcSafeVerifier(configuration)
+        if application.state.approval_chain_reader is None and configuration.chains:
+            application.state.approval_chain_reader = RpcApprovalChainReader(
+                RpcSafeVerifier(configuration)
+            )
         if application.state.treasury_service is None and sessions is not None:
             application.state.treasury_service = TreasuryService(
                 sessions, RpcSafeVerifier(configuration), configuration
@@ -511,6 +516,7 @@ def create_app(
     )
     app.state.treasury_service = treasury_service
     app.state.fee_history_provider = fee_history_provider
+    app.state.approval_chain_reader = None
     app.state.governance_service = governance_service
     app.state.membership_repository = membership_repository
     app.state.evidence_repository = evidence_repository

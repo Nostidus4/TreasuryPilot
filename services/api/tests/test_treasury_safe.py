@@ -18,11 +18,15 @@ import pytest
 from eth_abi import encode as abi_encode
 from eth_utils import keccak, to_checksum_address
 
+from treasurypilot_api.config import Settings
+from treasurypilot_api.invoices.chain_reader import ERC1271_MAGIC, RpcApprovalChainReader
+from treasurypilot_api.main import create_app
 from treasurypilot_api.treasury.config import (
     ChainConfig,
     DeploymentConfig,
     DeploymentManifest,
     PlatformConfiguration,
+    PlatformConfigurationError,
 )
 from treasurypilot_api.treasury.safe import (
     RpcSafeVerifier,
@@ -423,3 +427,84 @@ def test_anvil_safe_verification_end_to_end(anvil_url: str) -> None:
     with pytest.raises(SafeVerificationError) as other:
         verify(urls, [other_singleton])
     assert other.value.code == "SAFE_VERSION_UNSUPPORTED"
+
+
+MODULE = "0x" + "aa" * 20
+APPROVER = "0x" + "bb" * 20
+WALLET = "0x" + "cc" * 20
+DIGEST = b"\x01" * 32
+SIGNATURE = b"\x02" * 65
+
+
+def _reader(url: str) -> RpcApprovalChainReader:
+    return RpcApprovalChainReader(RpcSafeVerifier(configuration((url, url + "/")), {}))
+
+
+def _data(selector: str, types: list[str], values: list[object]) -> str:
+    return selector + abi_encode(types, values).hex()
+
+
+def test_is_approver_reads_the_module_mapping(chain: tuple[FakeChain, str]) -> None:
+    fake, url = chain
+    fake.add_contract(MODULE)
+    fake.accounts[MODULE]["answers"] = {
+        _data(_selector("isApprover(address)"), ["address"], [APPROVER]): abi_encode(
+            ["bool"], [True]
+        )
+    }
+    reader = _reader(url)
+    assert asyncio.run(reader.is_approver(chain_id=CHAIN_ID, module=MODULE, signer=APPROVER))
+    # The unregistered signer reverts in the fake: treated as "not an approver".
+    assert not asyncio.run(reader.is_approver(chain_id=CHAIN_ID, module=MODULE, signer=WALLET))
+
+
+def test_erc1271_accepts_only_the_magic_value(chain: tuple[FakeChain, str]) -> None:
+    fake, url = chain
+    fake.add_contract(WALLET)
+    data = _data(
+        _selector("isValidSignature(bytes32,bytes)"), ["bytes32", "bytes"], [DIGEST, SIGNATURE]
+    )
+    reader = _reader(url)
+    fake.accounts[WALLET]["answers"] = {data: ERC1271_MAGIC + b"\x00" * 28}
+    assert asyncio.run(
+        reader.is_valid_erc1271_signature(
+            chain_id=CHAIN_ID, wallet=WALLET, digest=DIGEST, signature=SIGNATURE
+        )
+    )
+    fake.accounts[WALLET]["answers"] = {data: b"\xff\xff\xff\xff" + b"\x00" * 28}
+    assert not asyncio.run(
+        reader.is_valid_erc1271_signature(
+            chain_id=CHAIN_ID, wallet=WALLET, digest=DIGEST, signature=SIGNATURE
+        )
+    )
+    fake.accounts[WALLET]["answers"] = {}  # revert
+    assert not asyncio.run(
+        reader.is_valid_erc1271_signature(
+            chain_id=CHAIN_ID, wallet=WALLET, digest=DIGEST, signature=SIGNATURE
+        )
+    )
+
+
+def test_rpc_outage_raises_for_the_503_path(chain: tuple[FakeChain, str]) -> None:
+    fake, url = chain
+    fake.fail = True
+    with pytest.raises(RpcUnavailable):
+        asyncio.run(_reader(url).is_approver(chain_id=CHAIN_ID, module=MODULE, signer=APPROVER))
+
+
+def test_app_wires_the_approval_reader_only_when_chains_are_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def start(loaded: PlatformConfiguration) -> Any:
+        monkeypatch.setattr(PlatformConfiguration, "load", lambda *_: loaded)
+        app = create_app(settings=Settings(environment="local"))
+        try:
+            async with app.router.lifespan_context(app):
+                pass
+        except PlatformConfigurationError:
+            pass  # chains without DATABASE_URL abort startup, after the wiring under test
+        return app.state.approval_chain_reader
+
+    wired = asyncio.run(start(configuration(("http://a.test", "http://b.test"))))
+    assert isinstance(wired, RpcApprovalChainReader)
+    assert asyncio.run(start(PlatformConfiguration(chains=(), manifests=()))) is None
