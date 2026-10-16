@@ -1,0 +1,94 @@
+name: Web stack E2E
+
+# Drives the real web app against the real local stack (API, worker, signer,
+# Postgres, Anvil) with a mock wallet; the MSW flow lives in web.yml.
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'contracts/**'
+      - 'infra/**'
+      - 'packages/**'
+      - 'services/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/web-stack-e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'contracts/**'
+      - 'infra/**'
+      - 'packages/**'
+      - 'services/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/web-stack-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stack-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          enable-cache: true
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.svm
+            contracts/cache
+          key: foundry-solc-${{ runner.os }}-v1.8.5-${{ hashFiles('contracts/foundry.toml', 'pnpm-lock.yaml') }}
+      - name: Install workspaces
+        run: |
+          uv sync --frozen
+          pnpm install --frozen-lockfile
+      - name: Start the local stack
+        run: |
+          cp infra/env/.env.example infra/env/.env
+          make dev
+      - name: Deploy contracts and seed the TEST dataset
+        run: make seed | tee /tmp/seed.log
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --dir apps/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browser
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+      - name: Run the stack browser flow
+        env:
+          CI: 'true'
+          E2E_SEED_LOG: /tmp/seed.log
+        run: pnpm --dir apps/web e2e:stack
+      - name: Show stack logs
+        if: failure()
+        run: docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local logs --no-color --tail=200
+      - name: Stop the local stack
+        if: always()
+        run: docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local down --volumes --remove-orphans

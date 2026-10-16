@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test",
+    "e2e:stack": "playwright test -c playwright.stack.config.ts",
     "typecheck": "tsc -b --pretty false",
     "generate:api": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts"
   },
