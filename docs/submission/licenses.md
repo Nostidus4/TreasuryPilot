@@ -10,8 +10,9 @@ submission. This is not legal advice.
 
 ## Repository license
 
-No `LICENSE` file exists yet. The license of this repository's own code is
-**pending**: it is decided separately in #241 and is not set by this note.
+This repository's own code is licensed under [MIT](../../LICENSE) (#241),
+matching the `SPDX-License-Identifier: MIT` headers already in `contracts/`.
+Third-party components below keep their own licenses.
 
 ## Python (`pyproject.toml`, `uv.lock`)
 

@@ -103,4 +103,4 @@ Trust boundaries and the known-risk list are in `docs/SYSTEM_ARCHITECTURE.md` §
 
 ## License
 
-Pending (#241). Third-party licenses: [`docs/submission/licenses.md`](docs/submission/licenses.md).
+[MIT](LICENSE). Third-party licenses: [`docs/submission/licenses.md`](docs/submission/licenses.md).
