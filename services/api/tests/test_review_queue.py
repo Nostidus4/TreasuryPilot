@@ -643,7 +643,7 @@ async def _exercise_review_queue(database_url: str) -> None:
             )
             with pytest.raises(IntegrityError):
                 await session.flush()
-        async with sessions() as session, session.begin():  # 0089 refuses to downgrade over them
+        async with sessions() as session, session.begin():  # 0091 refuses to downgrade over them
             await session.execute(
                 text("DELETE FROM review_items WHERE plan_id = :p"), {"p": liquidity_plan_id}
             )

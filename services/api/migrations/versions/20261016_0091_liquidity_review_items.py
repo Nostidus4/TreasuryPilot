@@ -4,7 +4,7 @@ A liquidity plan serves no request, so its review items (fee approval, stopped p
 transaction) are keyed by plan. ``treasuries.liquidity_idle_*`` records that a cycle found nothing
 to do for a given set of inputs, so the next cycles skip the claim until they change.
 
-Revision ID: 20261016_0089
+Revision ID: 20261016_0091
 Revises: 20261016_0088
 Create Date: 2026-10-16 00:00:00
 """
@@ -14,7 +14,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261016_0089"
+revision: str = "20261016_0091"
 down_revision: str | None = "20261016_0088"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -55,7 +55,7 @@ def downgrade() -> None:
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM review_items WHERE request_id IS NULL
                        AND mandate_version_id IS NULL) THEN
-                RAISE EXCEPTION 'cannot downgrade 20261016_0089: liquidity review items exist';
+                RAISE EXCEPTION 'cannot downgrade 20261016_0091: liquidity review items exist';
             END IF;
         END $$
         """

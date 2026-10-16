@@ -1,7 +1,7 @@
 """Review items of a liquidity plan (EXE-014).
 
 A liquidity plan serves no request, so its items are keyed by plan (``ck_review_items_subject``,
-migration 0089): one open item per (plan, type). The same queue, roles and actions as a request
+migration 0091): one open item per (plan, type). The same queue, roles and actions as a request
 item; the API resolves them like any other.
 """
 
