@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Plus, ShieldCheck } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -61,6 +62,7 @@ function ProposeDialog({
   const vendors = useVendors(scope.orgId);
   const propose = useProposePayee(scope.orgId, scope.treasuryId);
   const createVendor = useCreateVendor(scope.orgId);
+  const queryClient = useQueryClient();
   const [vendorId, setVendorId] = useState<string>();
   const [vendorName, setVendorName] = useState('');
   const [label, setLabel] = useState('');
@@ -123,7 +125,11 @@ function ProposeDialog({
                 onOpenChange(false);
                 reset();
               } catch {
-                // The mutation hooks expose the error to the form.
+                // A screening hit or provider error is an error response, but the
+                // API has stored the payee as ScreeningFailed: show it in the list.
+                void queryClient.invalidateQueries({
+                  queryKey: ['org', scope.orgId],
+                });
               }
             })();
           }}

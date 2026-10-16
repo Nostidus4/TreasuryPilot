@@ -175,3 +175,27 @@ test('changing an address explains the new cooling period and queues the deactiv
     db.governance.some((tx) => tx.title === 'Deactivate payee Acurast Cloud'),
   ).toBe(true);
 });
+
+test('a screening hit is an API error but the blocked payee appears in the list', async () => {
+  const user = userEvent.setup();
+  renderApp(PAYEES);
+  await user.click(
+    await screen.findByRole('button', { name: /^propose payee$/i }),
+  );
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByRole('combobox'));
+  await user.click(
+    await screen.findByRole('option', { name: 'Quanta Freight' }),
+  );
+  await user.type(
+    within(dialog).getByLabelText('Wallet address'),
+    `0x${'1'.repeat(36)}dead`,
+  );
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Propose payee' }),
+  );
+  expect(
+    await within(dialog).findByText(/sanctions screening list/i),
+  ).toBeVisible();
+  expect(await screen.findByText('Screening failed')).toBeVisible();
+});

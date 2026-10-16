@@ -888,12 +888,12 @@ export const treasuryHandlers = [
     ({ params, body }) => {
       requireTreasury(params);
       if (!isAddress(body.address)) {
-        fail(422, 'VALIDATION', 'Enter a valid payee address.', [
-          {
-            field: 'address',
-            message: 'Enter a 0x address with 40 hex characters.',
-          },
-        ]);
+        // The real API reports a bad address as a coded problem, not field errors.
+        fail(
+          422,
+          'ADDRESS_INVALID',
+          'The address must be a valid EVM address.',
+        );
       }
       const address = body.address;
       if (
@@ -926,14 +926,21 @@ export const treasuryHandlers = [
         createdAt: isoNow(),
       };
       db.payees.unshift(payee);
-      // The real API screens inside the POST; the delay keeps the Screening
-      // state observable in the mock.
+      // The real API screens inside the POST and answers a hit with 422 after
+      // persisting the payee as ScreeningFailed.
+      if (address.toLowerCase().endsWith('dead')) {
+        payee.screening = { ...clearScreening(isoNow()), result: 'HIT' };
+        payee.status = 'ScreeningFailed';
+        fail(
+          422,
+          'SCREENING_HIT',
+          'The address matched a sanctions screening list and is blocked.',
+        );
+      }
+      // The delay keeps the Screening state observable in the mock.
       schedule(2000, () => {
-        const hit = address.toLowerCase().endsWith('dead');
-        payee.screening = hit
-          ? { ...clearScreening(isoNow()), result: 'HIT' }
-          : clearScreening(isoNow());
-        payee.status = hit ? 'ScreeningFailed' : 'AwaitingOwner';
+        payee.screening = clearScreening(isoNow());
+        payee.status = 'AwaitingOwner';
         emit('governance', payee.id);
       });
       return { payee };

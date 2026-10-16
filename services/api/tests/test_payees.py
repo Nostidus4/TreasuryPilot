@@ -800,3 +800,13 @@ def test_payee_openapi_contract_is_fully_typed() -> None:
     status = schemas["PayeeStatus"]["enum"]
     assert status == [s.value for s in PayeeStatus]
     assert schemas["ScreeningResult"]["enum"] == ["CLEAR", "HIT", "ERROR"]
+
+
+def test_screening_hit_payee_is_listed_as_failed_for_the_web() -> None:
+    # The web gets 422 SCREENING_HIT from the POST and then relies on the list.
+    client, _ = make_client()
+    with client:
+        vendor_id = new_vendor(client)
+        client.post(PAYEES, json={"vendorId": vendor_id, "label": "Bad", "address": LISTED})
+        items = client.get(PAYEES).json()["items"]
+    assert [(i["status"], i["screening"]["result"]) for i in items] == [("ScreeningFailed", "HIT")]
