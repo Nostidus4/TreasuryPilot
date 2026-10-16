@@ -1,12 +1,12 @@
 import { recoverTypedDataAddress } from 'viem';
 
+import type { GovernanceTxWire } from '@/features/governance/wire';
 import { formatUnits } from '@/lib/money';
 import type {
   DiffEntry,
   Forecast,
   Hex,
   MandateConfig,
-  MandateDraft,
   MandateVersion,
   Payee,
   TreasuryStatus,
@@ -98,54 +98,94 @@ function requireTreasury(params: Record<string, string>): MockTreasuryState {
 
 const money = (value: string) => `${formatUnits(value, 6)} USDC`;
 
-function describe(config: MandateConfig): string[] {
+const walletName = (config: MandateConfig, wallet: string) =>
+  wallet === ADDR.safeT ? 'T' : wallet === ADDR.safeO1 ? 'O1' : wallet;
+
+/** Summary lines in the API's `{field, text}` shape. */
+function describe(
+  config: MandateConfig,
+): Array<{ field: string; text: string }> {
+  const line = (field: string, text: string) => ({ field, text });
   return [
-    `The agent may ${config.actions.includes('PAY') ? 'pay approved requests' : 'not pay'} and ${config.actions.includes('REFILL') ? 'refill operational Safes' : 'not refill'}.`,
-    `A single payment can be at most ${money(config.limits.PAY.perRequest)}; all payments in one UTC day at most ${money(config.limits.PAY.daily)}.`,
-    `A single refill can be at most ${money(config.limits.REFILL.perRequest)}; all refills in one UTC day at most ${money(config.limits.REFILL.daily)}.`,
-    ...config.buffers.map(
-      (buffer) =>
-        `Safe ${buffer.wallet} never drops below ${money(buffer.minimum)} and is refilled toward ${money(buffer.target)}.`,
+    line(
+      'actions',
+      `The agent may ${config.actions.includes('PAY') ? 'pay approved requests' : 'not pay'} and ${config.actions.includes('REFILL') ? 'refill operational Safes' : 'not refill'}.`,
     ),
-    `${config.approvers.length} approver wallet${config.approvers.length === 1 ? '' : 's'} can sign payment approvals.`,
-    `The mandate expires on ${new Date(config.expiresAt).toUTCString().slice(5, 16)}; after that the agent stops.`,
+    line(
+      'limits.PAY',
+      `A single payment can be at most ${money(config.limits.PAY.perRequest)}; all payments in one UTC day at most ${money(config.limits.PAY.daily)}.`,
+    ),
+    line(
+      'limits.REFILL',
+      `A single refill can be at most ${money(config.limits.REFILL.perRequest)}; all refills in one UTC day at most ${money(config.limits.REFILL.daily)}.`,
+    ),
+    ...config.buffers.map((buffer) =>
+      line(
+        `buffers.${buffer.wallet}`,
+        `Safe ${walletName(config, buffer.wallet)} never drops below ${money(buffer.minimum)}${buffer.target === undefined ? '' : ` and is refilled toward ${money(buffer.target)}`}.`,
+      ),
+    ),
+    line(
+      'approvers',
+      `${config.approvers.length} approver wallet${config.approvers.length === 1 ? '' : 's'} can sign payment approvals.`,
+    ),
+    line(
+      'expiresAt',
+      `The mandate expires on ${new Date(config.expiresAt).toUTCString().slice(5, 16)}; after that the agent stops.`,
+    ),
   ];
 }
 
+interface WireDiff {
+  path: string;
+  before: unknown;
+  after: unknown;
+  risk: 'looser' | 'stricter' | 'changed';
+  marker: string;
+  requiresConfirmation: boolean;
+}
+
+/** Diff entries in the API's shape: raw base-unit strings, lower-case risk. */
 function diffMandate(
   before: MandateConfig | undefined,
   after: MandateConfig,
-): DiffEntry[] {
+): WireDiff[] {
   if (!before) return [];
-  const entries: DiffEntry[] = [];
+  const entries: WireDiff[] = [];
+  const add = (
+    path: string,
+    a: unknown,
+    b: unknown,
+    risk: WireDiff['risk'],
+    critical = false,
+  ) =>
+    entries.push({
+      path,
+      before: a,
+      after: b,
+      risk,
+      marker: { looser: '▲', stricter: '▼', changed: '•' }[risk],
+      requiresConfirmation: critical || risk === 'looser',
+    });
   const amount = (
-    field: string,
+    path: string,
     a: string,
     b: string,
     higherIsLooser: boolean,
   ) => {
     if (a === b) return;
     const increased = BigInt(b) > BigInt(a);
-    entries.push({
-      field,
-      before: money(a),
-      after: money(b),
-      direction: increased === higherIsLooser ? 'LOOSER' : 'STRICTER',
-    });
+    add(path, a, b, increased === higherIsLooser ? 'looser' : 'stricter');
   };
   for (const action of ['PAY', 'REFILL'] as const) {
-    amount(
-      `${action} per-request limit`,
-      before.limits[action].perRequest,
-      after.limits[action].perRequest,
-      true,
-    );
-    amount(
-      `${action} daily limit`,
-      before.limits[action].daily,
-      after.limits[action].daily,
-      true,
-    );
+    for (const field of ['perRequest', 'daily'] as const) {
+      amount(
+        `limits.${action}.${field}`,
+        before.limits[action][field],
+        after.limits[action][field],
+        true,
+      );
+    }
   }
   for (const buffer of after.buffers) {
     const previous = before.buffers.find(
@@ -153,51 +193,130 @@ function diffMandate(
     );
     if (!previous) continue;
     amount(
-      `${buffer.wallet} minimum buffer`,
+      `buffers.${buffer.wallet}.minimum`,
       previous.minimum,
       buffer.minimum,
       false,
     );
-    amount(
-      `${buffer.wallet} target balance`,
-      previous.target,
-      buffer.target,
-      false,
-    );
+    if (previous.target !== undefined && buffer.target !== undefined) {
+      amount(
+        `buffers.${buffer.wallet}.target`,
+        previous.target,
+        buffer.target,
+        true,
+      );
+    }
   }
   const approvers = (config: MandateConfig) =>
-    config.approvers
-      .map((item) => item.toLowerCase())
-      .sort()
-      .join(',');
-  if (approvers(before) !== approvers(after)) {
-    entries.push({
-      field: 'Approvers',
-      before: `${before.approvers.length} wallets`,
-      after: `${after.approvers.length} wallets`,
-      direction:
-        after.approvers.length > before.approvers.length
-          ? 'LOOSER'
-          : after.approvers.length < before.approvers.length
-            ? 'STRICTER'
-            : 'NEUTRAL',
-    });
+    config.approvers.map((item) => item.toLowerCase()).sort();
+  if (approvers(before).join() !== approvers(after).join()) {
+    add(
+      'approvers',
+      approvers(before),
+      approvers(after),
+      after.approvers.length >= before.approvers.length ? 'looser' : 'stricter',
+    );
   }
-  if (before.expiresAt.slice(0, 10) !== after.expiresAt.slice(0, 10)) {
-    entries.push({
-      field: 'Expires',
-      before: before.expiresAt.slice(0, 10),
-      after: after.expiresAt.slice(0, 10),
-      direction: after.expiresAt > before.expiresAt ? 'LOOSER' : 'STRICTER',
-    });
+  if (before.expiresAt !== after.expiresAt) {
+    add(
+      'expiresAt',
+      before.expiresAt,
+      after.expiresAt,
+      after.expiresAt > before.expiresAt ? 'looser' : 'stricter',
+    );
+  }
+  for (const field of ['executor', 'guardian'] as const) {
+    if (after[field] && before[field] !== after[field])
+      add(field, before[field], after[field], 'changed', true);
   }
   return entries;
 }
 
-const governanceView = (tx: (typeof db.governance)[number]) => {
-  const { effect: _effect, signaturesHex: _signatures, ...view } = tx;
-  return view;
+const mandateView = (treasuryId: string, version: MandateVersion) => ({
+  ...version,
+  treasuryId,
+  configHash: h32(JSON.stringify(version.config)),
+});
+
+const wireStatuses = {
+  AwaitingSignatures: 'Collecting',
+  ReadyToExecute: 'Ready',
+  Executing: 'Submitted',
+  Executed: 'Executed',
+  Failed: 'Failed',
+  Superseded: 'Superseded',
+  Cancelled: 'Cancelled',
+} as const;
+
+const wirePurposes: Record<string, string> = {
+  DEPLOY_MODULE: 'MODULE_SETUP',
+  CONFIGURE_MANDATE: 'MANDATE',
+  ADD_PAYEE: 'PAYEE_ADD',
+  DEACTIVATE_PAYEE: 'PAYEE_DEACTIVATE',
+  GRANT_EXCEPTION: 'EXCEPTION_GRANT',
 };
+
+/** The real API shape (`GovernanceTxView` in the OpenAPI schema), built from the mock row. */
+export const governanceView = (
+  tx: (typeof db.governance)[number],
+): GovernanceTxWire => {
+  const typedData = safeTxTypedData(tx);
+  const first = tx.calls[0];
+  return {
+    id: tx.id,
+    treasuryId: tx.treasuryId,
+    purpose: (wirePurposes[tx.kind] ?? tx.kind) as GovernanceTxWire['purpose'],
+    safeAddress: tx.safeAddress,
+    to: first.to,
+    value: first.value,
+    data: first.data,
+    operation: first.operation,
+    nonce: tx.nonce,
+    safeTxHash: tx.safeTxHash,
+    decodedCalls: tx.calls.map(({ to, value, data, operation }) => ({
+      to,
+      value,
+      data,
+      operation,
+    })),
+    humanSummary: `${tx.title}: ${tx.summary}`,
+    typedData: { ...typedData },
+    threshold: tx.threshold,
+    owners: tx.owners.map((owner) => owner.address),
+    status: wireStatuses[tx.status],
+    execTxHash: tx.txHash ?? null,
+    createdAt: tx.createdAt,
+    signatures: tx.signatures.map((item, index) => ({
+      owner: item.owner,
+      signature: tx.signaturesHex[index],
+      at: item.at,
+    })),
+  };
+};
+
+/** Mirrors the API: a hit (…dead) or provider error (…fa11) stores the payee ScreeningFailed, then 422/503. */
+function screenOrFail(payee: Payee) {
+  const tail = payee.address.toLowerCase();
+  const result = tail.endsWith('dead')
+    ? 'HIT'
+    : tail.endsWith('fa11')
+      ? 'ERROR'
+      : null;
+  if (!result) return;
+  payee.screening = { ...clearScreening(isoNow()), result };
+  payee.status = 'ScreeningFailed';
+  if (result === 'HIT')
+    fail(
+      422,
+      'SCREENING_HIT',
+      'The address matched a sanctions screening list and is blocked.',
+    );
+  fail(
+    503,
+    'DATA_MISSING',
+    'The screening provider did not answer; the payee is blocked.',
+  );
+}
 
 export const treasuryHandlers = [
   route('get', '/orgs/:orgId/treasuries', ({ params }) => {
@@ -419,10 +538,10 @@ export const treasuryHandlers = [
     }
     return {
       governanceTx: governanceView(
-        txs.find((tx) => tx.safeLabel.endsWith('(T)'))!,
+        txs.find((tx) => tx.safeLabel?.endsWith('(T)'))!,
       ),
       operationalGovernanceTxs: txs
-        .filter((tx) => !tx.safeLabel.endsWith('(T)'))
+        .filter((tx) => !tx.safeLabel?.endsWith('(T)'))
         .map(governanceView),
       predictedModuleAddress: state.treasury.moduleAddress,
       status: 'ModulePending',
@@ -724,87 +843,114 @@ export const treasuryHandlers = [
 
   route('get', `${T}/mandates`, ({ params }) => {
     requireTreasury(params);
-    return { items: db.mandates[params.tId] ?? [] };
+    return {
+      items: (db.mandates[params.tId] ?? []).map((item) =>
+        mandateView(params.tId, item),
+      ),
+    };
   }),
 
+  // Mirrors POST /mandates: the API body is the config; validation names `fields`.
   route<MandateConfig>(
     'post',
     `${T}/mandates`,
-    ({ params, body }): MandateDraft => {
+    ({ params, body }) => {
       requireTreasury(params);
-      const errors: Array<{ field: string; message: string }> = [];
       if (!body.approvers?.length)
-        errors.push({
-          field: 'approvers',
-          message: 'Add at least one approver wallet.',
-        });
+        fail(422, 'NO_APPROVERS', 'At least one approver is required.');
+      if (!/^0x[0-9a-fA-F]{40}$/.test(body.executor ?? ''))
+        fail(
+          422,
+          'MANDATE_INCOMPLETE',
+          'The mandate draft is missing required fields.',
+          undefined,
+          undefined,
+          ['executor'],
+        );
       for (const action of ['PAY', 'REFILL'] as const) {
         if (
           BigInt(body.limits[action].daily) <
           BigInt(body.limits[action].perRequest)
         ) {
-          errors.push({
-            field: `limits.${action}.daily`,
-            message:
-              'The daily limit cannot be lower than the per-request limit.',
-          });
+          fail(
+            422,
+            'PER_REQUEST_ABOVE_DAILY',
+            `The ${action} per-request limit exceeds its daily limit.`,
+          );
         }
       }
-      if (errors.length)
-        fail(422, 'MANDATE_INCOMPLETE', 'The mandate is incomplete.', errors);
       const below = body.buffers.find(
-        (buffer) => BigInt(buffer.target) < BigInt(buffer.minimum),
+        (buffer) =>
+          buffer.target !== undefined &&
+          BigInt(buffer.target) < BigInt(buffer.minimum),
       );
       if (below) {
         fail(
           422,
           'TARGET_BELOW_BUFFER',
-          `The target for Safe ${below.wallet} is below its minimum buffer.`,
-          [
-            {
-              field: `buffers.${below.wallet}.target`,
-              message: 'Target must be at least the minimum buffer.',
-            },
-          ],
+          `Target for ${below.wallet} is below its buffer.`,
         );
       }
       const versions = (db.mandates[params.tId] ??= []);
       const active = versions.find((item) => item.status === 'Active');
       const kept = versions.filter((item) => item.status !== 'Draft');
       const draft: MandateVersion = {
-        version: Math.max(0, ...kept.map((item) => item.version)) + 1,
+        id: `mnd_${Math.random().toString(36).slice(2, 10)}`,
+        version: Math.max(0, ...versions.map((item) => item.version)) + 1,
         status: 'Draft',
         config: body,
         createdAt: isoNow(),
       };
       db.mandates[params.tId] = [draft, ...kept];
+      const diff = diffMandate(active?.config, body);
       return {
-        draft,
+        draft: mandateView(params.tId, draft),
         summary: describe(body),
-        diff: diffMandate(active?.config, body),
+        diff,
+        requiresConfirmation: diff.some((entry) => entry.requiresConfirmation),
+        bundlePreview: { calls: [] },
       };
     },
     { status: 201 },
   ),
 
-  route('post', `${T}/mandates/:version/activation-tx`, ({ params }) => {
+  route('post', `${T}/mandates/:mandateId/governance-tx`, ({ params }) => {
     const state = requireTreasury(params);
     const versions = db.mandates[params.tId] ?? [];
     const draft = find(
       versions,
-      (item) => String(item.version) === params.version,
+      (item) => item.id === params.mandateId,
       'Mandate version',
     );
     if (draft.status !== 'Draft')
-      fail(409, 'NOT_DRAFT', 'Only a draft can be activated.');
+      fail(
+        409,
+        'MANDATE_NOT_DRAFT',
+        'Only a Draft mandate can be submitted for activation.',
+      );
     const active = versions.find((item) => item.status === 'Active');
     draft.status = 'PendingActivation';
     const tx = createGovernanceTx({
       kind: 'CONFIGURE_MANDATE',
       title: `Activate mandate v${draft.version}`,
-      summary: describe(draft.config).slice(1, 3).join(' '),
+      summary: describe(draft.config)
+        .slice(1, 3)
+        .map((item) => item.text)
+        .join(' '),
       treasuryId: params.tId,
-      diff: diffMandate(active?.config, draft.config),
+      diff: diffMandate(active?.config, draft.config).map(
+        (entry): DiffEntry => ({
+          field: entry.path,
+          before: String(entry.before),
+          after: String(entry.after),
+          direction:
+            entry.risk === 'looser'
+              ? 'LOOSER'
+              : entry.risk === 'stricter'
+                ? 'STRICTER'
+                : 'NEUTRAL',
+        }),
+      ),
       calls: [
         {
           to: state.treasury.moduleAddress,
@@ -855,7 +1001,6 @@ export const treasuryHandlers = [
           if (item.status === 'Active') item.status = 'Superseded';
         });
         draft.status = 'Active';
-        draft.activatedAt = isoNow();
         if (!state.budgets.length) {
           state.budgets = [
             { action: 'PAY', usedToday: '0', dailyLimit: '0', perRequest: '0' },
@@ -870,7 +1015,11 @@ export const treasuryHandlers = [
         applyMandate(params.tId, draft.version, draft.config);
       },
     });
-    return { governanceTx: governanceView(tx) };
+    // The API answers with the governance tx itself plus the mandate's new status.
+    return {
+      ...governanceView(tx),
+      mandate: { id: draft.id, version: draft.version, status: draft.status },
+    };
   }),
 
   /* ───────────── Payees ───────────── */
@@ -888,12 +1037,12 @@ export const treasuryHandlers = [
     ({ params, body }) => {
       requireTreasury(params);
       if (!isAddress(body.address)) {
-        fail(422, 'VALIDATION', 'Enter a valid payee address.', [
-          {
-            field: 'address',
-            message: 'Enter a 0x address with 40 hex characters.',
-          },
-        ]);
+        // The real API reports a bad address as a coded problem, not field errors.
+        fail(
+          422,
+          'ADDRESS_INVALID',
+          'The address must be a valid EVM address.',
+        );
       }
       const address = body.address;
       if (
@@ -926,14 +1075,13 @@ export const treasuryHandlers = [
         createdAt: isoNow(),
       };
       db.payees.unshift(payee);
-      // The real API screens inside the POST; the delay keeps the Screening
-      // state observable in the mock.
+      // The real API screens inside the POST and answers a hit with 422 after
+      // persisting the payee as ScreeningFailed.
+      screenOrFail(payee);
+      // The delay keeps the Screening state observable in the mock.
       schedule(2000, () => {
-        const hit = address.toLowerCase().endsWith('dead');
-        payee.screening = hit
-          ? { ...clearScreening(isoNow()), result: 'HIT' }
-          : clearScreening(isoNow());
-        payee.status = hit ? 'ScreeningFailed' : 'AwaitingOwner';
+        payee.screening = clearScreening(isoNow());
+        payee.status = 'AwaitingOwner';
         emit('governance', payee.id);
       });
       return { payee };
@@ -1073,6 +1221,7 @@ export const treasuryHandlers = [
         createdAt: isoNow(),
       };
       db.payees.unshift(payee);
+      screenOrFail(payee);
       return {
         payee,
         deactivationGovernanceTx: governanceView(deactivationTx(state, old)),
@@ -1086,12 +1235,16 @@ export const treasuryHandlers = [
   route('get', '/orgs/:orgId/governance-txs', ({ params, query }) => {
     const org = requireOrg(params.orgId);
     const status = query.get('status');
+    const treasuryId = query.get('treasuryId');
+    const purpose = query.get('purpose');
     return {
       items: db.governance
         .filter((tx) =>
           org.treasuries.some((item) => item.id === tx.treasuryId),
         )
-        .filter((tx) => !status || tx.status === status)
+        .filter((tx) => !status || wireStatuses[tx.status] === status)
+        .filter((tx) => !treasuryId || tx.treasuryId === treasuryId)
+        .filter((tx) => !purpose || wirePurposes[tx.kind] === purpose)
         .map(governanceView),
     };
   }),
@@ -1103,7 +1256,7 @@ export const treasuryHandlers = [
       (item) => item.id === params.id,
       'Governance transaction',
     );
-    return { governanceTx: governanceView(tx), typedData: safeTxTypedData(tx) };
+    return governanceView(tx);
   }),
 
   route<{ signature: Hex }>(
@@ -1165,7 +1318,7 @@ export const treasuryHandlers = [
         `governance/${tx.id}`,
       );
       emit('governance', tx.id);
-      return { signatures: tx.signatures, status: tx.status };
+      return governanceView(tx);
     },
   ),
 
@@ -1185,11 +1338,10 @@ export const treasuryHandlers = [
     return {
       to: tx.safeAddress,
       data: `0x6a761202${h32(tx.id + tx.signaturesHex.join('')).slice(2)}`,
-      value: '0',
     };
   }),
 
-  route<{ txHash: Hex }>(
+  route<{ transactionHash: Hex }>(
     'post',
     '/orgs/:orgId/governance-txs/:id/submitted',
     ({ params, body }) => {
@@ -1201,28 +1353,10 @@ export const treasuryHandlers = [
       );
       if (tx.status !== 'ReadyToExecute')
         fail(409, 'NOT_READY', 'The transaction is not ready to execute.');
-      markGovernanceSubmitted(tx, body.txHash);
-      return { status: tx.status };
+      markGovernanceSubmitted(tx, body.transactionHash);
+      return governanceView(tx);
     },
   ),
-
-  route('post', '/orgs/:orgId/governance-txs/:id/cancel', ({ params }) => {
-    requireOrg(params.orgId);
-    const tx = find(
-      db.governance,
-      (item) => item.id === params.id,
-      'Governance transaction',
-    );
-    if (tx.status === 'Executing' || tx.status === 'Executed')
-      fail(
-        409,
-        'ALREADY_SUBMITTED',
-        'The transaction was already sent to the network.',
-      );
-    tx.status = 'Superseded';
-    refreshQueues();
-    return { status: tx.status };
-  }),
 ];
 
 function deactivationTx(

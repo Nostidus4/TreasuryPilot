@@ -1,0 +1,104 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="05A-frontend" name="Frontend">
+    <mxGraphModel dx="1920" dy="1080" grid="0" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="background" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7FAFD;strokeColor=#F7FAFD;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1920" height="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="top-accent" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#2058BE;strokeColor=#2058BE;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1920" height="11" as="geometry" />
+        </mxCell>
+        <mxCell id="corner-pink" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FBE1EE;strokeColor=#FBE1EE;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="0" width="260" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="corner-blue" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E4F2FC;strokeColor=#E4F2FC;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="930" width="210" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="number" value="05A" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#E43C91;fontSize=65;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="70" y="63" width="160" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="FRONTEND" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#2058BE;fontSize=54;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="205" y="67" width="1615" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="A single workspace for finance operators, approvers and treasury owners" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#496480;fontSize=23;fontStyle=0;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="80" y="151" width="1720" height="43" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-rule" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#B8C9E0;strokeColor=#B8C9E0;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1015" width="1760" height="2" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-left" value="TREASURYPILOT  /  TECHNICAL OVERVIEW" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#496480;fontSize=16;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1031" width="950" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-right" value="05A" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=right;fontColor=#E43C91;fontSize=18;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="1031" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E7E4F8;strokeColor=#E7E4F8;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;gradientColor=#D8ECFB;gradientDirection=south;" vertex="1" parent="1">
+          <mxGeometry x="83" y="248" width="1150" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="actor1" value="Operator" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=26;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="173" y="280" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="actor2" value="Approver" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=26;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="280" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="actor3" value="Owner" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=26;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="807" y="280" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="router" value="ROUTER&#10;URL + access guard" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="111" y="424" width="225" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="view" value="PAGE / VIEW&#10;Requests + treasury" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="386" y="424" width="225" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="client" value="API CLIENT&#10;Typed /v1 requests" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="661" y="424" width="225" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="wallet" value="WALLET&#10;SIWE + EIP-712" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="936" y="424" width="225" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="e-router" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="router" target="view">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-view" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="view" target="client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-client" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="client" target="wallet">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="role-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B8C9E0;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="248" width="545" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="role-title" value="WHAT USERS DO" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#E43C91;fontSize=29;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="277" width="475" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="role-text" value="Operator  ·  intake invoices, review plans&#10;&#10;Approver  ·  check fields and sign payments&#10;&#10;Owner  ·  govern mandate, payees and pause" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#112D56;fontSize=26;fontStyle=0;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="348" width="455" height="255" as="geometry" />
+        </mxCell>
+        <mxCell id="stack-title" value="IMPLEMENTED WEB STACK" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#2058BE;fontSize=28;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="100" y="725" width="750" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="react" value="React 18" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#ECF3FB;strokeWidth=2;fontColor=#112D56;fontSize=20;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="804" width="220" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="vite" value="Vite" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#ECF3FB;strokeWidth=2;fontColor=#112D56;fontSize=20;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="345" y="804" width="190" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="ts" value="TypeScript" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#ECF3FB;strokeWidth=2;fontColor=#112D56;fontSize=20;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="560" y="804" width="240" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="wagmi" value="wagmi / viem" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#ECF3FB;strokeWidth=2;fontColor=#112D56;fontSize=20;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="825" y="804" width="280" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="query" value="TanStack Query" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#ECF3FB;strokeWidth=2;fontColor=#112D56;fontSize=20;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="804" width="290" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="callout" value="Browser signs exact obligations; backend and module still validate before money moves." style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="910" width="1740" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Báo cáo kỹ thuật TreasuryPilot: kiến trúc, luồng tiền, AI, smart contract, bảo mật và bằng chứng.">
+  <title>TreasuryPilot Docs — Technical Report</title>
+  <style>
+    :root { --ink:#172033; --muted:#626d7f; --line:#e2e7f1; --accent:#185db8; --accent-soft:#eef3ff; --surface:#fff; --page:#fbfcff; --nav-width:300px; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:var(--page); font:16px/1.72 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    a:focus-visible, button:focus-visible, input:focus-visible { outline:3px solid #86b3f4; outline-offset:3px; }
+    .layout { display:grid; grid-template-columns:var(--nav-width) minmax(0,1fr); min-height:100vh; }
+    .sidebar { position:sticky; top:0; height:100vh; overflow-y:auto; background:var(--surface); border-right:1px solid var(--line); padding:26px 18px 50px; scrollbar-width:thin; }
+    .brand { display:flex; align-items:center; gap:10px; padding:4px 10px 19px; border-bottom:1px solid var(--line); color:#0c1830; font-weight:780; font-size:19px; line-height:1.25; }
+    .brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:#173e88; color:#fff; font-size:16px; flex:none; }
+    .brand small { display:block; color:#8290a2; font-size:11px; font-weight:650; letter-spacing:.12em; text-transform:uppercase; }
+    .search { width:100%; margin:20px 0 9px; padding:10px 12px; border:1px solid #dce4f2; border-radius:9px; background:#f8faff; color:var(--ink); font:inherit; font-size:14px; }
+    .nav-group { margin:20px 0 27px; }
+    .nav-label { margin:0 10px 10px; color:#9aa3b1; font-size:11px; font-weight:800; letter-spacing:.13em; }
+    .nav-link { display:block; margin:2px 0; padding:7px 11px; border-left:3px solid transparent; border-radius:7px; color:#4c5668; font-size:14px; line-height:1.4; }
+    .nav-link:hover { background:#f5f7fc; text-decoration:none; }
+    .nav-link.active { background:var(--accent-soft); border-left-color:var(--accent); color:#1558ad; font-weight:700; }
+    .nav-link.level-3 { padding-left:23px; font-size:12.5px; color:#687488; }
+    .nav-link.level-3.active { color:#1558ad; }
+    .nav-link.hidden { display:none; }
+    .content-shell { min-width:0; padding:52px clamp(24px,5vw,100px) 100px; }
+    .topline { max-width:1050px; margin:0 auto 21px; display:flex; justify-content:space-between; align-items:center; gap:16px; color:#8791a2; font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+    .topline .date { color:#60718a; white-space:nowrap; }
+    main { max-width:1050px; margin:auto; }
+    h1,h2,h3 { color:#111827; line-height:1.2; letter-spacing:-.035em; }
+    h1 { font-size:clamp(36px,4.4vw,58px); margin:0 0 27px; font-weight:820; }
+    h2 { font-size:29px; margin:76px 0 25px; padding-top:10px; border-top:1px solid var(--line); scroll-margin-top:24px; }
+    h3 { font-size:21px; margin:38px 0 16px; scroll-margin-top:28px; }
+    main > h1 + blockquote { margin-top:0; }
+    blockquote { margin:0 0 28px; padding:22px 27px; background:#f1f4ff; border:1px solid #d9e1fa; border-radius:14px; color:#303c54; }
+    blockquote p { margin:0; }
+    p { margin:0 0 18px; }
+    main > p:nth-of-type(1) { padding:25px 28px; background:#f1f4ff; border:1px solid #d9e1fa; border-radius:14px; font-size:17px; }
+    main > p:nth-of-type(2) { color:var(--muted); font-size:14px; }
+    ul,ol { padding-left:1.45em; margin:0 0 22px; }
+    li { padding-left:.25em; margin:7px 0; }
+    code { padding:.12em .34em; border-radius:4px; background:#eef2f8; color:#253e68; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    pre { overflow-x:auto; padding:22px 25px; margin:19px 0 28px; background:#17233a; border-radius:12px; color:#f0f5ff; font-size:13px; line-height:1.55; }
+    pre code { padding:0; background:none; color:inherit; }
+    table { width:100%; border-collapse:separate; border-spacing:0; margin:22px 0 32px; border:1px solid var(--line); border-radius:11px; overflow:hidden; font-size:14px; line-height:1.55; }
+    th,td { padding:12px 14px; border-bottom:1px solid var(--line); border-right:1px solid var(--line); vertical-align:top; }
+    tr:last-child td { border-bottom:0; }
+    th:last-child,td:last-child { border-right:0; }
+    th { text-align:left; background:#f3f6fc; font-weight:720; }
+    tr:nth-child(even) td { background:#fcfdff; }
+    .mobile-toggle { display:none; }
+    .back-top { position:fixed; right:23px; bottom:22px; padding:9px 14px; border:1px solid #d9e1ee; background:#fff; border-radius:9px; box-shadow:0 8px 24px #263c6018; font-size:13px; }
+    @media (max-width:960px) {
+      .layout { display:block; }
+      .sidebar { position:fixed; left:0; top:0; z-index:20; width:min(84vw,330px); transform:translateX(-105%); box-shadow:10px 0 30px #14294a19; transition:transform .22s ease; }
+      .sidebar.open { transform:translateX(0); }
+      .mobile-toggle { display:block; position:sticky; top:0; z-index:10; width:100%; padding:11px 18px; border:0; border-bottom:1px solid var(--line); background:#fff; text-align:left; color:#173e88; font:700 14px system-ui; }
+      .content-shell { padding:30px 22px 90px; }
+      .topline { font-size:10px; }
+      h2 { margin-top:58px; }
+    }
+    @media print {
+      .layout { display:block; } .sidebar,.mobile-toggle,.back-top { display:none; }
+      .content-shell { padding:0; } body { color:#000; background:#fff; font-size:11pt; }
+      h1 { font-size:28pt; } h2 { font-size:18pt; page-break-after:avoid; } h3 { page-break-after:avoid; }
+      table,pre,blockquote { break-inside:avoid; } a { color:#000; }
+    }
+  </style>
+</head>
+<body>
+  <button class="mobile-toggle" id="menu-toggle" aria-controls="sidebar" aria-expanded="false">☰ &nbsp;Mục lục báo cáo</button>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Mục lục báo cáo">
+      <div class="brand"><span class="brand-mark">T</span><span>TreasuryPilot<small>Documentation hub</small></span></div>
+      <input class="search" id="nav-search" type="search" placeholder="Tìm trong mục lục…" aria-label="Tìm trong mục lục">
+      <div class="nav-group"><p class="nav-label">BẮT ĐẦU</p>
+      <a class="nav-link level-2" href="#01-bat-au">Bắt đầu</a>
+      <a class="nav-link level-3" href="#1-1-bai-toan-va-ranh-gioi-san-pham">1.1 Bài toán và ranh giới sản phẩm</a>
+      <a class="nav-link level-3" href="#1-2-luong-gia-tri-tu-au-en-cuoi">1.2 Luồng giá trị từ đầu đến cuối</a>
+      <a class="nav-link level-3" href="#1-3-phan-biet-cac-loai-vi-va-quyen">1.3 Phân biệt các loại ví và quyền</a>
+      </div>
+      <div class="nav-group"><p class="nav-label">KIẾN TRÚC &amp; DỮ LIỆU</p>
+      <a class="nav-link level-2" href="#02-kien-truc-he-thong">Kiến trúc hệ thống</a>
+      <a class="nav-link level-3" href="#2-1-cac-lop-trien-khai">2.1 Các lớp triển khai</a>
+      <a class="nav-link level-3" href="#2-2-ranh-gioi-tin-cay">2.2 Ranh giới tin cậy</a>
+      <a class="nav-link level-3" href="#2-3-nguyen-tac-nhat-quan">2.3 Nguyên tắc nhất quán</a>
+      <a class="nav-link level-2" href="#08-du-lieu-api-va-giao-dien">Dữ liệu, API và giao diện</a>
+      <a class="nav-link level-3" href="#8-1-mo-hinh-du-lieu">8.1 Mô hình dữ liệu</a>
+      <a class="nav-link level-3" href="#8-2-be-mat-api-hien-co">8.2 Bề mặt API hiện có</a>
+      </div>
+      <div class="nav-group"><p class="nav-label">LUỒNG TIỀN</p>
+      <a class="nav-link level-2" href="#03-nghiep-vu-hoa-on-va-duyet">Nghiệp vụ hóa đơn và duyệt</a>
+      <a class="nav-link level-3" href="#3-1-trang-thai-request">3.1 Trạng thái request</a>
+      <a class="nav-link level-3" href="#3-2-chu-ky-thanh-toan">3.2 Chữ ký thanh toán</a>
+      <a class="nav-link level-3" href="#3-3-maker-checker-va-fraud-flags">3.3 Maker-checker và fraud flags</a>
+      <a class="nav-link level-2" href="#04-financial-engine-va-toi-uu">Financial engine và tối ưu</a>
+      <a class="nav-link level-3" href="#4-1-refill-gan-voi-request">4.1 Refill gắn với request</a>
+      <a class="nav-link level-3" href="#4-2-lap-lich-va-gia-tri-thanh-toan">4.2 Lập lịch và giá trị thanh toán</a>
+      <a class="nav-link level-3" href="#4-3-du-tru-aave-va-e-xuat-vay">4.3 Dự trữ, Aave và đề xuất vay</a>
+      <a class="nav-link level-2" href="#05-policy-mandate-va-smart-contract">Policy, mandate và smart contract</a>
+      <a class="nav-link level-3" href="#5-1-quyet-inh-ba-muc">5.1 Quyết định ba mức</a>
+      <a class="nav-link level-3" href="#5-2-mandate-va-quan-tri">5.2 Mandate và quản trị</a>
+      <a class="nav-link level-3" href="#5-3-cac-entry-point-on-chain">5.3 Các entry point on-chain</a>
+      <a class="nav-link level-2" href="#07-execution-signer-va-phuc-hoi">Execution, signer và phục hồi</a>
+      <a class="nav-link level-3" href="#7-1-chuoi-thuc-thi-an-toan">7.1 Chuỗi thực thi an toàn</a>
+      <a class="nav-link level-3" href="#7-2-xu-ly-trang-thai-khong-chac-chan">7.2 Xử lý trạng thái không chắc chắn</a>
+      <a class="nav-link level-3" href="#7-3-circuit-breaker-va-pause">7.3 Circuit breaker và pause</a>
+      </div>
+      <div class="nav-group"><p class="nav-label">AI, CHỨNG CỨ &amp; AN TOÀN</p>
+      <a class="nav-link level-2" href="#06-ai-agent">AI agent</a>
+      <a class="nav-link level-3" href="#6-1-vi-tri-cua-ai-trong-he-thong">6.1 Vị trí của AI trong hệ thống</a>
+      <a class="nav-link level-3" href="#6-2-hop-ong-au-ra-va-chong-injection">6.2 Hợp đồng đầu ra và chống injection</a>
+      <a class="nav-link level-3" href="#6-3-ket-qua-eval-co-ieu-kien">6.3 Kết quả eval có điều kiện</a>
+      <a class="nav-link level-2" href="#09-chain-bang-chung-va-oi-soat">Chain, bằng chứng và đối soát</a>
+      <a class="nav-link level-2" href="#10-bao-mat-va-tuan-thu">Bảo mật và tuân thủ</a>
+      <a class="nav-link level-3" href="#10-1-cac-kiem-soat-chinh">10.1 Các kiểm soát chính</a>
+      <a class="nav-link level-3" href="#10-2-rui-ro-con-mo-phai-ghi-trong-bao-cao-cong-khai">10.2 Rủi ro còn mở phải ghi trong báo cáo công khai</a>
+      <a class="nav-link level-2" href="#11-kiem-thu-o-luong-va-kha-nang-tai-lap">Kiểm thử, đo lường và khả năng tái lập</a>
+      </div>
+      <div class="nav-group"><p class="nav-label">VẬN HÀNH</p>
+      <a class="nav-link level-2" href="#12-trien-khai-va-van-hanh">Triển khai và vận hành</a>
+      <a class="nav-link level-3" href="#12-1-moi-truong">12.1 Môi trường</a>
+      <a class="nav-link level-3" href="#12-2-observability-va-su-co">12.2 Observability và sự cố</a>
+      <a class="nav-link level-2" href="#13-trang-thai-trien-khai-va-khoang-trong">Trạng thái triển khai và khoảng trống</a>
+      <a class="nav-link level-2" href="#14-ban-o-module-va-phu-thuoc-trien-khai">Bản đồ module và phụ thuộc triển khai</a>
+      <a class="nav-link level-2" href="#15-ban-o-nguon-va-cach-cap-nhat-bao-cao">Bản đồ nguồn và cách cập nhật báo cáo</a>
+      </div>
+    </nav>
+    <div class="content-shell">
+      <div class="topline"><span>TECHNICAL REPORT / TREASURYPILOT</span><span class="date">16.10.2026 · v1</span></div>
+      <main id="report"><h1 id="treasurypilot-technical-report-documentation-hub">TreasuryPilot — Technical Report &amp; Documentation Hub</h1>
+<blockquote>
+<p><strong>Bản rà soát:</strong> 16/10/2026 · <strong>Code:</strong> commit <code>50b1117</code> · <strong>Phạm vi:</strong> repo hiện tại, tài liệu <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit">TreasuryPilot trên Google Docs</a> (đặc biệt các tab 8, 11, 13, 36, 37) và tài liệu chuẩn trong repo. Đây là báo cáo kỹ thuật theo trạng thái quan sát được; các kết quả đo cũ được ghi rõ mốc thời gian và môi trường.</p>
+</blockquote>
+<p><strong>TL;DR — TreasuryPilot làm gì?</strong> Hệ thống nhận hóa đơn, yêu cầu người có thẩm quyền xác nhận nghĩa vụ thanh toán và ký duyệt đúng các trường tiền, sau đó dùng bộ lập kế hoạch để quyết định thời điểm trả, chuẩn bị thanh khoản giữa các Safe của cùng tổ chức, thực hiện qua module có giới hạn trên chain, theo dõi biên nhận và đối soát. AI giúp đọc chứng từ, đề xuất và giải thích; quyền chuyển tiền được kiểm bằng chữ ký người dùng, bộ policy xác định, signer riêng và hợp đồng thông minh.</p>
+<p><strong>Cách đọc trạng thái:</strong> <strong>Có trong code</strong> = đã thấy đường triển khai cụ thể; <strong>có bằng chứng cục bộ</strong> = có test hoặc báo cáo chạy local/fork; <strong>cấu hình trên Sepolia</strong> = có manifest đã khai báo/deploy nhưng không suy ra mọi luồng đã chạy end-to-end; <strong>thiết kế/đang kiểm chứng</strong> = tài liệu mô tả đích hoặc có thành phần rời, chưa đủ bằng chứng cho tuyên bố vận hành hoàn chỉnh. <a href="../README.md">README</a> và một số báo cáo submission được viết ở revision cũ; khi chúng khác code hiện tại, báo cáo này ưu tiên code và artifact có ngày/revision rõ ràng.</p>
+<h2 id="01-bat-au">01 · Bắt đầu</h2>
+<h3 id="1-1-bai-toan-va-ranh-gioi-san-pham">1.1 Bài toán và ranh giới sản phẩm</h3>
+<p>Đối tượng chính là finance/treasury operator, người duyệt và owner của doanh nghiệp chi trả bằng stablecoin. Vấn đề cốt lõi gồm: hóa đơn đã duyệt nhưng ví vận hành thiếu token/gas; việc chia tiền giữa các ví làm thủ công; người dùng muốn tự động hóa mà vẫn khóa người nhận, hạn mức và khoản dự phòng; bằng chứng thanh toán rời rạc, khó đối soát. Tài liệu nguồn phân vai: <strong>con người quyết định có trả hay không; agent đề xuất cách và thời điểm; contract giới hạn hành động được phép</strong>. <a href="vi/01-tong-quan.md">Tổng quan sản phẩm</a> · <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.0">Google Docs, tab tổng quan</a>.</p>
+<p>Mốc M1 dùng tài sản thử nghiệm trên Sepolia; không nên hiểu thành sản phẩm thanh toán mainnet đã được kiểm toán. Bản v0.3 bổ sung supply/withdraw Aave V3 cho tiền dư, hai mức tiền đã duyệt khi trả sớm, và đề xuất vay. Code contract còn có đường borrow/repay với ủy quyền owner một lần; đó là năng lực kỹ thuật/P2, không đồng nghĩa luồng sản phẩm M1 tự vay. <a href="vi/37-cap-nhat-v03.md">Cập nhật v0.3</a> · <a href="submission/technical-documentation.md">technical documentation hiện có</a>.</p>
+<h3 id="1-2-luong-gia-tri-tu-au-en-cuoi">1.2 Luồng giá trị từ đầu đến cuối</h3>
+<ol>
+<li><strong>Thiết lập:</strong> tạo tổ chức và treasury, liên kết Safe T (quỹ) và Safe O1 (ví vận hành), cấu hình chain/asset, triển khai module, owner đặt mandate, payee, trần và floor.</li>
+<li><strong>Nhận hóa đơn:</strong> nhập tay, CSV/API hoặc tài liệu; lưu chứng từ riêng tư; trích trường/điều khoản; kiểm trùng và tín hiệu bất thường.</li>
+<li><strong>Xác nhận và duyệt:</strong> người dùng xác nhận trường quan trọng, maker-checker và cờ HIGH được xử lý ở backend, approver ký EIP-712 cho đúng request/payee/asset/số tiền/điều khoản.</li>
+<li><strong>Lập kế hoạch:</strong> snapshot chain + nghĩa vụ chưa trả; engine tính số thiếu, dự trữ và lịch; AI chỉ đề xuất trong tập lựa chọn hợp lệ; policy trả <code>ALLOW</code>, <code>NEEDS_APPROVAL</code> hoặc <code>BLOCK</code>.</li>
+<li><strong>Thực thi:</strong> ghi outbox, ký policy attestation, signer kiểm calldata và mô phỏng trạng thái mới, gửi các bước theo thứ tự; module trên chain kiểm lại quyền, hạn mức, floor, request/step đã dùng.</li>
+<li><strong>Hậu kiểm:</strong> tracker đọc receipt/state, verifier kiểm postcondition, reconciliation gắn giao dịch với request, audit/evidence xuất chứng cứ. Trường hợp <code>Unknown</code> phải được giải quyết trước retry.</li>
+</ol>
+<p>Luồng trên là <strong>chuỗi mục tiêu của toàn hệ thống</strong>. Các cấu phần có code riêng; mức tích hợp thực tế phải được xác nhận bằng smoke/E2E và bằng chứng giao dịch của đúng môi trường. <a href="SYSTEM_ARCHITECTURE.md">Kiến trúc luồng</a> · <a href="../services/worker/src/treasurypilot_worker/tasks.py">worker tasks</a> · <a href="../services/api/src/treasurypilot_api/execution/routes.py">execution API</a>.</p>
+<h3 id="1-3-phan-biet-cac-loai-vi-va-quyen">1.3 Phân biệt các loại ví và quyền</h3>
+<table>
+<thead>
+<tr>
+<th>Thành phần</th>
+<th>Vai trò</th>
+<th>Quyền quan trọng</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Safe T</td>
+<td>Ví quỹ, chủ mandate và tài sản dự trữ</td>
+<td>Owner/threshold đổi cấu hình, pause/revoke, cấp ngoại lệ; giữ aToken Aave.</td>
+</tr>
+<tr>
+<td>Safe O1/O2</td>
+<td>Ví chi của tổ chức</td>
+<td>Nhận refill và trả payee qua module; M1 demo dùng O1, local có thể thử O2.</td>
+</tr>
+<tr>
+<td>Approver</td>
+<td>Duyệt nghĩa vụ cụ thể</td>
+<td>Ký EIP-712 đúng các trường; không tự sửa mandate bằng chữ ký hóa đơn.</td>
+</tr>
+<tr>
+<td>Executor/signer</td>
+<td>Phát giao dịch đã được kiểm</td>
+<td>Giữ khóa executor trong dịch vụ riêng; không có quyền đổi payee hay policy.</td>
+</tr>
+<tr>
+<td>AI worker</td>
+<td>Đọc, đề xuất, giải thích</td>
+<td>Chỉ dùng tool đọc; không giữ khóa, không tự tạo quyền chi.</td>
+</tr>
+<tr>
+<td>Contract module</td>
+<td>Chốt chặn cuối cho đường đi qua module</td>
+<td>Kiểm quyền, người nhận, hạn mức, floor, replay và thời hạn tại thời điểm giao dịch.</td>
+</tr>
+</tbody>
+</table>
+<p>Một Safe owner hoặc module khác vẫn có thể thực hiện giao dịch ngoài TreasuryPilot. Vì thế “mandate khóa toàn bộ Safe” là diễn giải sai; nó khóa <strong>đường thực thi của TreasuryPilotModule</strong>. <a href="security/known-risks.md">Known risks KR-02</a> · <a href="../contracts/src/TreasuryPilotGovernance.sol">governance contract</a>.</p>
+<h2 id="02-kien-truc-he-thong">02 · Kiến trúc hệ thống</h2>
+<h3 id="2-1-cac-lop-trien-khai">2.1 Các lớp triển khai</h3>
+<pre><code class="language-text">Browser / React / wallet
+       │ HTTPS + SIWE, session, EIP-712
+       ▼
+FastAPI ────────── PostgreSQL (org state, request, plan, outbox, audit)
+  │                    ▲
+  └── Redis/Celery ────┤
+       ├── worker-ai → LLM provider (đề xuất, tool chỉ đọc)
+       ├── worker-core → py-core (engine, policy) → signer nội bộ
+       └── worker-webhooks / beat             │
+                                             ▼
+                                  module + Safe T/O1 + Aave/EAS
+                                             │
+                                   indexer / tracker / verifier
+</code></pre>
+<p>Code chia thành <a href="../apps/web/src/app.tsx">web</a>, <a href="../services/api/src/treasurypilot_api/main.py">API</a>, <a href="../services/worker/src/treasurypilot_worker/tasks.py">worker</a>, <a href="../services/signer/src/treasurypilot_signer/main.py">signer</a>, <a href="../packages/py-core/src/treasurypilot_core/">py-core</a> và <a href="../contracts/src/">contracts</a>. Postgres là nguồn sự thật cho nghiệp vụ; Redis là cơ chế phân phối việc, không phải sổ cái giao dịch. <a href="../infra/compose.yaml">Compose</a> tách <code>worker</code>, <code>worker-ai</code>, <code>worker-webhooks</code>, <code>beat</code>, <code>signer</code>, <code>api</code>, <code>web</code>, Postgres, Redis, MinIO; Anvil là profile local.</p>
+<h3 id="2-2-ranh-gioi-tin-cay">2.2 Ranh giới tin cậy</h3>
+<table>
+<thead>
+<tr>
+<th>Ranh giới</th>
+<th>Dữ liệu đi qua</th>
+<th>Kiểm soát cần có</th>
+<th>Giới hạn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tài liệu hóa đơn → AI</td>
+<td>PDF, text, metadata không đáng tin</td>
+<td>Bọc nguồn untrusted, quét instruction/secret, schema, người xác nhận</td>
+<td>Prompt injection vẫn cần đánh giá bằng bộ tấn công độc lập.</td>
+</tr>
+<tr>
+<td>Browser → API</td>
+<td>session, org ID, chữ ký</td>
+<td>RBAC, maker-checker, CSRF/session, kiểm org scope</td>
+<td>Mỗi endpoint mới vẫn phải được review.</td>
+</tr>
+<tr>
+<td>Worker → signer</td>
+<td>attestation + calldata + plan</td>
+<td>Secret nội bộ, attestation đúng phiên bản, kiểm payload và <code>eth_call</code> mới</td>
+<td>Cùng host/DB role có rủi ro vận hành cần cô lập thêm.</td>
+</tr>
+<tr>
+<td>Signer → module</td>
+<td>giao dịch được ký</td>
+<td>Contract kiểm lại từng hành động</td>
+<td>Mô phỏng không giữ trước state của block tương lai.</td>
+</tr>
+<tr>
+<td>Chain → backend</td>
+<td>balances, events, receipt</td>
+<td>chain ID, RPC health, confirmations, reorg handling</td>
+<td>RPC lỗi/stale có thể làm trễ hoặc sai nhận định tạm thời.</td>
+</tr>
+</tbody>
+</table>
+<p>Nguồn: <a href="AI_AGENT_ARCHITECTURE.md">AI architecture</a>, <a href="../services/signer/src/treasurypilot_signer/service.py">signing service</a>, <a href="security/known-risks.md">known risks</a>.</p>
+<h3 id="2-3-nguyen-tac-nhat-quan">2.3 Nguyên tắc nhất quán</h3>
+<ul>
+<li><strong>Tiền là số nguyên base units:</strong> API/DB tuần tự hóa decimal string/<code>NUMERIC(78,0)</code>; Python <code>int</code>/kiểu chặt; Solidity <code>uint256</code>. Không dùng float để quyết định thanh toán. <a href="../packages/py-core/src/treasurypilot_core/money/base_units.py">money</a>.</li>
+<li><strong>Thời gian UTC:</strong> hạn mức ngày theo block time, hiển thị theo timezone tổ chức; lịch và ngày đến hạn quy về UTC day. <a href="../packages/py-core/src/treasurypilot_core/domain/utc_days.py">utc_days</a>.</li>
+<li><strong>Write before act:</strong> lưu operation/step và danh tính bất biến trước khi phát giao dịch; timeout là trạng thái chưa biết, không phải thất bại. <a href="../services/worker/src/treasurypilot_worker/executor/outbox.py">outbox</a>.</li>
+<li><strong>Evidence by construction:</strong> mỗi quyết định, phiên bản policy, hash, transaction, receipt và postcondition phải có thể truy ngược. <a href="../services/api/src/treasurypilot_api/audit/evidence.py">audit evidence</a>.</li>
+</ul>
+<h2 id="03-nghiep-vu-hoa-on-va-duyet">03 · Nghiệp vụ hóa đơn và duyệt</h2>
+<h3 id="3-1-trang-thai-request">3.1 Trạng thái request</h3>
+<p>Mô hình nghiệp vụ tách bản nháp/trích xuất khỏi nghĩa vụ có thể thi hành. Người tạo có thể nhập hoặc upload; hệ thống kiểm trường, payee, asset, fingerprint, điều khoản, cờ bất thường; người duyệt nhận payload EIP-712 và ký. Các endpoint trong code gồm tạo/bulk, sửa, xác nhận terms, submit, withdraw/request changes, ack cờ, lấy typed data, approve/reject/cancel/renew. <a href="../services/api/src/treasurypilot_api/invoices/requests.py">routes</a> · <a href="../services/api/src/treasurypilot_api/invoices/state_machine.py">state machine</a> · <a href="../services/api/src/treasurypilot_api/invoices/documents.py">documents</a>.</p>
+<p>Đường intake có code cho upload, API key và email inbound; cần phân biệt endpoint tồn tại với cấu hình provider/SMTP thực tế. <a href="../services/api/src/treasurypilot_api/invoices/api_keys.py">API keys</a> · <a href="../services/api/src/treasurypilot_api/invoices/inbound_email.py">email inbound</a>. Fingerprint/near-duplicate giúp phát hiện cùng hóa đơn khác số ID, còn chữ ký duyệt chặn việc dùng một bản ghi “approved” trong DB để chuyển tiền khi thiếu quyền on-chain. <a href="../packages/py-core/src/treasurypilot_core/fingerprint/invoice.py">fingerprint</a> · <a href="../services/api/src/treasurypilot_api/invoices/near_duplicates.py">near duplicates</a>.</p>
+<h3 id="3-2-chu-ky-thanh-toan">3.2 Chữ ký thanh toán</h3>
+<p><code>PaymentApproval</code> ràng buộc request ID, invoice hash, fingerprint, treasury, paying wallet, asset, payee, standard amount, early amount/deadline, terms hash, expiry và cờ fiat. Domain EIP-712 ràng buộc chain/module. Module kiểm người ký hiện là approver (EOA hoặc ERC-1271) và đúng mức tiền theo cửa sổ trả sớm; request chỉ tiêu thụ một lần. Một số trường hợp fiat-quoted dùng cap và logic riêng, vì vậy không nên diễn giải mọi payment thành “luôn đúng một số nguyên cố định”. <a href="../contracts/src/libraries/PaymentApprovalHash.sol">PaymentApprovalHash</a> · <a href="../contracts/src/TreasuryPilotModule.sol">module pay</a> · <a href="../services/api/src/treasurypilot_api/invoices/approval.py">approval API</a>.</p>
+<h3 id="3-3-maker-checker-va-fraud-flags">3.3 Maker-checker và fraud flags</h3>
+<p>RBAC xác định ai tạo, sửa, duyệt; maker-checker cấm tự duyệt theo cấu hình, solo mode có kiểm soát riêng. HIGH flags cần được xử lý/ack trước khi đi tiếp; thay đổi payee hoặc trường ký khiến approval cũ không còn hợp lệ. Đây là <strong>kiểm soát backend</strong>, khác kiểm chữ ký của contract. <a href="../services/api/src/treasurypilot_api/identity/maker_checker.py">maker checker</a> · <a href="../services/api/src/treasurypilot_api/identity/rbac.py">RBAC</a> · <a href="security/known-risks.md">risk KR-24</a>.</p>
+<h2 id="04-financial-engine-va-toi-uu">04 · Financial engine và tối ưu</h2>
+<h3 id="4-1-refill-gan-voi-request">4.1 Refill gắn với request</h3>
+<p>Với <code>B</code> = số dư ví chi, <code>F</code> = hard floor, <code>H</code> = soft target, <code>D</code> = nghĩa vụ cần trả, <code>R</code> = tiền dành cho nghĩa vụ khác:</p>
+<pre><code class="language-text">Shortage  = max(0, R + D + F - B)
+Preferred = max(0, R + D + H - B)
+Bound     = max(0, D + H - B)
+Capacity  = max(0, SourceBalance - SourceProtected - SourceFloor)
+Cap       = min(Capacity, RemainingRefillDaily, PerRefillLimit)
+</code></pre>
+<p>Nếu <code>Shortage = 0</code>, không refill chỉ để đạt soft target. Nếu thiếu vượt bound/cap, dừng thay vì gửi một phần rồi vẫn không thể trả. Counter <code>PAY</code> và <code>REFILL</code> độc lập; module còn ràng buộc đích refill, số lần refill cho request và chênh lệch số dư thực. <a href="../packages/py-core/src/treasurypilot_core/engine/liquidity.py">engine liquidity</a> · <a href="../contracts/src/TreasuryPilotModule.sol">module refill</a> · <a href="submission/technical-documentation.md">report thuật toán</a>.</p>
+<h3 id="4-2-lap-lich-va-gia-tri-thanh-toan">4.2 Lập lịch và giá trị thanh toán</h3>
+<p><code>schedule_edf</code> sắp theo hạn UTC, thứ tự duyệt, request ID; mô phỏng tối đa 30 ngày, làm mới hạn mức theo ngày, chuyển số dư qua ngày, kiểm cooling/cap/refill. Đây là heuristic có nghiệm khả thi, không phải chứng nhận tối ưu toàn cục. <code>schedule_cpsat</code> tồn tại với giới hạn thời gian mặc định 5 giây và EDF fallback; khi báo kết quả phải ghi thuật toán thực chạy, solver status và fallback. <a href="../packages/py-core/src/treasurypilot_core/engine/scheduler.py">scheduler</a> · <a href="../packages/py-core/src/treasurypilot_core/engine/cpsat.py">CP-SAT</a>.</p>
+<p>Giá trị một lựa chọn trả tiền xét chênh lệch standard/early amount, phí giao dịch, lãi supply bị bỏ lỡ và phạt trễ theo điều khoản đã xác nhận. Phần phân tích không được tăng số tiền PAY vượt chữ ký. B0/B1/B2 trong ADR-019 lần lượt là baseline manual/EDF để tiền nhàn rỗi, optimizer xác định, AI + optimizer; phải công bố cả giả định fee/rate và mẫu dữ liệu khi so sánh. <a href="../packages/py-core/src/treasurypilot_core/engine/scoring.py">scoring</a> · <a href="adr/ADR-019-aave-liquidity-and-payment-options.md">ADR-019</a>.</p>
+<h3 id="4-3-du-tru-aave-va-e-xuat-vay">4.3 Dự trữ, Aave và đề xuất vay</h3>
+<pre><code class="language-text">RequiredSafeReserve = PaymentReserve + SafeFloor + DebtServiceReserve + ExecutionHolds
+AvailableForSupply  = max(0, SafeUSDC - RequiredSafeReserve)
+AccessibleLiquidity = SafeUSDC + min(aUSDC, PoolAvailableUSDC)
+Deficit             = max(0, RequiredSafeReserve - SafeUSDC)
+WithdrawTarget      = ceil(Deficit × 105 / 100)
+</code></pre>
+<p><code>PaymentReserve</code> tính các nghĩa vụ đã duyệt/chưa trả trong horizon, dùng mức trả sớm khi biết và đúng cửa sổ. Supply chỉ khi đạt ngưỡng tối thiểu, không vượt cap; withdraw bị chặn bởi aToken và thanh khoản pool. Thiếu hụt sau rút cho ra trạng thái không đủ thanh khoản, không tự biến thành giao dịch vay. Hợp đồng chặn floor tĩnh và supply cap; <strong>dự trữ động là trách nhiệm của engine/policy ngoài chain</strong>. <a href="../packages/py-core/src/treasurypilot_core/engine/liquidity.py">liquidity engine</a> · <a href="../packages/py-core/src/treasurypilot_core/engine/forecast.py">forecast</a> · <a href="../contracts/src/TreasuryPilotModule.sol">contract Aave paths</a>.</p>
+<h2 id="05-policy-mandate-va-smart-contract">05 · Policy, mandate và smart contract</h2>
+<h3 id="5-1-quyet-inh-ba-muc">5.1 Quyết định ba mức</h3>
+<p>Validator đánh giá snapshot chain, request, policy version, số dư, hạn mức, payee và plan/step rồi trả <code>ALLOW</code>, <code>NEEDS_APPROVAL</code> hoặc <code>BLOCK</code> kèm reason code. <code>NEEDS_APPROVAL</code> là chưa thi hành được; owner phải cấp ngoại lệ đúng request/số tiền, không nới vô hạn. Bộ differential dùng cùng manifest cho Python và Foundry để so quyết định và revert selector; báo cáo hiện liệt kê các trường hợp payee lạ, cooling, pause, expired, over cap, duplicate, floor, replay. <a href="../packages/py-core/src/treasurypilot_core/policy/validator.py">validator</a> · <a href="../packages/py-core/src/treasurypilot_core/policy/reason_codes.py">reason codes</a> · <a href="testing/policy-contract-differential-report.md">differential report</a>.</p>
+<h3 id="5-2-mandate-va-quan-tri">5.2 Mandate và quản trị</h3>
+<p>Safe T owner/threshold quản trị allowlist payee, asset, wallet, hạn mức PAY/REFILL, floor, thời gian hiệu lực, pause/revoke, ngoại lệ, Aave pool và các quyền vay/trả. Module instance được tạo qua factory. Owner/guardian pause chỉ ngăn hành động <strong>sau khi giao dịch pause được mined</strong>; không thu hồi giao dịch đã hoàn tất và không cản quyền trực tiếp của Safe owner. <a href="../contracts/src/TreasuryPilotGovernance.sol">governance</a> · <a href="../contracts/src/TreasuryPilotModuleFactory.sol">factory</a> · <a href="../services/api/src/treasurypilot_api/mandate/routes.py">mandate API</a>.</p>
+<h3 id="5-3-cac-entry-point-on-chain">5.3 Các entry point on-chain</h3>
+<table>
+<thead>
+<tr>
+<th>Nhóm</th>
+<th>Entry point / control</th>
+<th>Ý nghĩa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chi trả</td>
+<td><code>pay</code></td>
+<td>Approval hợp lệ, option đúng, payee được phép, per-request/daily limit, floor, anti-replay.</td>
+</tr>
+<tr>
+<td>Chuyển nội bộ</td>
+<td><code>refill</code></td>
+<td>Safe T → ví vận hành đã đăng ký, gắn request, mức cần thiết và daily/refill cap.</td>
+</tr>
+<tr>
+<td>Tiền dư</td>
+<td><code>supply</code>, <code>withdraw</code></td>
+<td>Pool/asset cố định, floor/cap, kiểm chênh lệch tài sản; không có generic arbitrary call.</td>
+</tr>
+<tr>
+<td>Nợ P2</td>
+<td><code>authorizeBorrow</code>, <code>authorizeRepay</code>, <code>borrow</code>, <code>repay</code></td>
+<td>Owner cấp grant một lần, có expiry; borrow còn kiểm rate/health factor tại thời điểm gọi.</td>
+</tr>
+<tr>
+<td>Gas / nâng cao</td>
+<td><code>swapForGas</code>, <code>PlanAttestedExecutor</code>, <code>ReserveHoldExecutor</code>, <code>ThresholdApprovalExecutor</code></td>
+<td>Đường chuyên biệt cần cấu hình và bằng chứng theo đúng môi trường; không suy ra tất cả đều nằm trong demo M1.</td>
+</tr>
+</tbody>
+</table>
+<p>Nguồn: <a href="../contracts/src/TreasuryPilotModule.sol">TreasuryPilotModule</a>, <a href="../contracts/src/PlanAttestedExecutor.sol">PlanAttestedExecutor</a>, <a href="../contracts/src/ReserveHoldExecutor.sol">ReserveHoldExecutor</a>, <a href="../contracts/src/ThresholdApprovalExecutor.sol">ThresholdApprovalExecutor</a>.</p>
+<h2 id="06-ai-agent">06 · AI agent</h2>
+<h3 id="6-1-vi-tri-cua-ai-trong-he-thong">6.1 Vị trí của AI trong hệ thống</h3>
+<p>AI được dùng cho trích xuất hóa đơn/điều khoản, gợi ý kế hoạch, soạn ngoại lệ, Copilot và giải thích bất thường. <code>worker-ai</code> gọi model, có budget/failover và tool đọc; <code>worker-core</code> giữ policy attestation và quyết định tiền qua engine. Code có provider adapter, prompt phiên bản, instruction detector, secret scan, read-only tools và các eval harness. <a href="../services/worker/src/treasurypilot_worker/agent/">agent code</a> · <a href="AI_AGENT_ARCHITECTURE.md">AI architecture</a> · <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.yed8bvlknow6">Google Docs, tab AI</a>.</p>
+<h3 id="6-2-hop-ong-au-ra-va-chong-injection">6.2 Hợp đồng đầu ra và chống injection</h3>
+<p>Nội dung PDF/email là dữ liệu không tin cậy. AI không được lấy câu trong chứng từ làm lệnh đổi policy/payee, không được đưa địa chỉ vào bước chi nếu chưa qua dữ liệu đã xác nhận, không được gọi API ghi hoặc giữ key. Đầu ra đi qua schema, kiểm tham chiếu và so với tính toán xác định. Các lớp chống injection trong code gồm untrusted wrapper, quét bí mật, instruction detector và prompt policy; đây là giảm rủi ro, không phải bằng chứng “miễn nhiễm”. <a href="../services/worker/src/treasurypilot_worker/agent/untrusted.py">untrusted</a> · <a href="../services/worker/src/treasurypilot_worker/agent/instruction_detector.py">detector</a> · <a href="../services/worker/src/treasurypilot_worker/agent/secret_scan.py">secret scan</a>.</p>
+<h3 id="6-3-ket-qua-eval-co-ieu-kien">6.3 Kết quả eval có điều kiện</h3>
+<table>
+<thead>
+<tr>
+<th>Artifact 15/10/2026</th>
+<th>Kết quả ghi nhận</th>
+<th>Giới hạn đọc kết quả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="evidence/extraction-accuracy.md">Extraction accuracy</a></td>
+<td>30 invoice recorded; amount đúng 27/30; terms F1 70,6%, exact terms 60%.</td>
+<td>Nhãn đang chờ người thứ hai review; tập public/recorded, không phải đo production.</td>
+</tr>
+<tr>
+<td><a href="evidence/copilot-fidelity.md">Copilot fidelity</a></td>
+<td>20/20 case giữ đúng số theo quy tắc kiểm.</td>
+<td>Case do AI tạo, chờ review độc lập; không đo toàn bộ câu hỏi thật.</td>
+</tr>
+<tr>
+<td><a href="evidence/redteam-results.md">Red-team</a></td>
+<td>0/20 case đổi field/policy; model flag 20/20.</td>
+<td>Keyword fallback tự flag 2/20; bộ 20 case không chứng minh chống mọi prompt injection.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="07-execution-signer-va-phuc-hoi">07 · Execution, signer và phục hồi</h2>
+<h3 id="7-1-chuoi-thuc-thi-an-toan">7.1 Chuỗi thực thi an toàn</h3>
+<p>Một bước thực thi phải có plan/step ID ổn định, snapshot mới, policy decision, attestation gắn plan hash/nonce/expiry, outbox trong Postgres rồi mới phát giao dịch. Signer nhận typed step, kiểm attestation, target chain/module, calldata với plan, mô phỏng <code>eth_call</code>, giữ nonce/step chống gửi lặp và ký bằng khóa executor. Endpoint nội bộ <code>/sign-and-send</code> đã có code; mô tả cũ “signer chỉ có health” trong submission draft không còn đúng với commit hiện tại. <a href="../services/signer/src/treasurypilot_signer/main.py">signer main</a> · <a href="../services/signer/src/treasurypilot_signer/service.py">signer service</a> · <a href="../services/signer/src/treasurypilot_signer/store.py">signer store</a>.</p>
+<h3 id="7-2-xu-ly-trang-thai-khong-chac-chan">7.2 Xử lý trạng thái không chắc chắn</h3>
+<p>Sau timeout, worker không được tạo request/step mới và thử lại mù. Nó đọc receipt, nonce, module <code>requestPaid</code>/<code>stepUsed</code>, state thực của chain; cho tới khi rõ, treasury bị chặn hoặc chuyển review. Với plan nhiều bước, bước đã confirmed không được phát lại khi bước sau thất bại. Code có outbox, sequencer, tracker, scan/retry/resolve và partial recovery; cần đối chiếu kết quả E2E theo môi trường để khẳng định độ bền đầy đủ. <a href="../services/worker/src/treasurypilot_worker/executor/">executor</a> · <a href="../services/worker/src/treasurypilot_worker/recovery/">recovery</a> · <a href="security/known-risks.md">risk KR-09</a>.</p>
+<h3 id="7-3-circuit-breaker-va-pause">7.3 Circuit breaker và pause</h3>
+<p>Đường phát hiện bất thường có review queue/circuit breaker trong API/worker và đường sentinel pause nội bộ. Cần phân biệt: “pause requested” là yêu cầu; “pause mined” mới là trạng thái contract; Safe owner vẫn có quyền riêng. <a href="../services/api/src/treasurypilot_api/recovery/circuit.py">circuit API</a> · <a href="../services/signer/src/treasurypilot_signer/sentinel.py">sentinel</a>.</p>
+<h2 id="08-du-lieu-api-va-giao-dien">08 · Dữ liệu, API và giao diện</h2>
+<h3 id="8-1-mo-hinh-du-lieu">8.1 Mô hình dữ liệu</h3>
+<p>PostgreSQL lưu các nhóm: identity/org/member/session; treasury/wallet/chain; mandate/payee/exception; invoice/request/approval; plan/step/AI call; operation/event/snapshot; reconciliation/evidence/audit; notification/admin. Các bảng nghiệp vụ có <code>organization_id</code>/<code>org_id</code> cho isolation; amount dùng số nguyên; migration là nguồn thực tế cho schema hiện hành, còn <a href="DATA_MODEL.md">DATA_MODEL</a> là thiết kế đọc nhanh. <a href="../services/api/migrations/versions/">migrations</a> · <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.py8ti27c4ma4">Google Docs, tab data model</a>.</p>
+<p>Chuỗi chứng cứ tối thiểu: request → invoice hash/fingerprint → approval typed data/signature → plan/policy version → operation/step ID → tx hash/receipt/events → verification → reconciliation → audit/evidence bundle. Việc nối bằng khóa định danh và hash quan trọng hơn chỉ hiển thị một tx hash. <a href="../services/api/src/treasurypilot_api/audit/models.py">audit models</a> · <a href="../services/api/src/treasurypilot_api/reconciliation/models.py">reconciliation models</a>.</p>
+<h3 id="8-2-be-mat-api-hien-co">8.2 Bề mặt API hiện có</h3>
+<table>
+<thead>
+<tr>
+<th>Miền</th>
+<th>Ví dụ route / hành vi</th>
+<th>Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identity</td>
+<td>auth, tổ chức, membership, MFA, OIDC/SAML/SCIM</td>
+<td><a href="../services/api/src/treasurypilot_api/main.py">main/router wiring</a>, <a href="../services/api/src/treasurypilot_api/identity/">identity</a></td>
+</tr>
+<tr>
+<td>Treasury</td>
+<td>chain, treasury, Safe, forecast, snapshot</td>
+<td><a href="../services/api/src/treasurypilot_api/treasury/api.py">treasury</a>, <a href="../services/api/src/treasurypilot_api/treasury/forecast.py">forecast</a></td>
+</tr>
+<tr>
+<td>Mandate</td>
+<td>payee, governance tx, pause, exception, fee policy</td>
+<td><a href="../services/api/src/treasurypilot_api/mandate/">mandate</a></td>
+</tr>
+<tr>
+<td>Requests</td>
+<td>intake/upload, terms, approval EIP-712, cancel</td>
+<td><a href="../services/api/src/treasurypilot_api/invoices/requests.py">requests</a></td>
+</tr>
+<tr>
+<td>Execution</td>
+<td>plan/operation, sequencing and status</td>
+<td><a href="../services/api/src/treasurypilot_api/execution/routes.py">execution</a></td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>reconciliation, export, audit log, verification</td>
+<td><a href="../services/api/src/treasurypilot_api/reconciliation/">reconciliation</a>, <a href="../services/api/src/treasurypilot_api/audit/">audit</a></td>
+</tr>
+<tr>
+<td>Support</td>
+<td>notification, webhook, Copilot, ERP adapter</td>
+<td><a href="../services/api/src/treasurypilot_api/notifications/">notifications</a>, <a href="../services/api/src/treasurypilot_api/copilot/api.py">copilot</a>, <a href="../services/api/src/treasurypilot_api/integrations/erp/">ERP</a></td>
+</tr>
+</tbody>
+</table>
+<p>Các API chính ở <code>/v1</code>; org-scoped routes gắn organization ID. Spec <a href="API_SPEC.md">API_SPEC</a> có thể đi trước/đi sau code, vì vậy khi tích hợp client nên kiểm OpenAPI xuất từ app và file <a href="../apps/web/openapi.json">web openapi.json</a>. UI dùng React/Vite, TanStack Query, wagmi/viem và có dashboard, setup, request, approval, plan, review, mandate, payee, reconciliation, metrics, Copilot. <a href="../apps/web/src/app.tsx">web app</a> · <a href="../apps/web/package.json">package</a>.</p>
+<h2 id="09-chain-bang-chung-va-oi-soat">09 · Chain, bằng chứng và đối soát</h2>
+<p>Chain reader/indexer tạo snapshot và theo dõi event/receipt; verifier kiểm hậu điều kiện trước khi đánh dấu kết quả thanh toán. Reconciliation phân biệt refill/swap nội bộ với chi phí vendor và cho phép match/discrepancy/resolve. Audit log, evidence bundle và helper EAS thêm khả năng chứng minh, nhưng hash hóa đơn/approval/plan trong EAS vẫn là assertion từ backend; người kiểm toán phải kiểm trusted attester, schema và tx PAY thật. <a href="../services/worker/src/treasurypilot_worker/chain/">chain worker</a> · <a href="../services/worker/src/treasurypilot_worker/reconcile/verify.py">verify</a> · <a href="../services/api/src/treasurypilot_api/reconciliation/routes.py">reconciliation routes</a> · <a href="../infra/scripts/attest_receipt.py">attestation helper</a>.</p>
+<p>Manifest <a href="../deployments/11155111.json">Sepolia</a> ở commit này ghi <code>deploymentStatus: deployed</code>, module/Safe T/Safe O1 và các code hash/verified block. Điều này chứng minh <strong>artifact cấu hình triển khai có địa chỉ và mốc kiểm</strong>, nhưng riêng manifest không chứng minh tất cả bước demo hoặc đối soát public đã chạy thành công. <a href="evidence/reliability-2026-10-15.md">Báo cáo reliability 15/10</a> ghi 30/30 run local Anvil hoàn tất; Sepolia: 0 run. Một số báo cáo submission cũ còn ghi <code>configured_only</code>; khi trình bày cần nêu ngày/revision của từng artifact.</p>
+<h2 id="10-bao-mat-va-tuan-thu">10 · Bảo mật và tuân thủ</h2>
+<h3 id="10-1-cac-kiem-soat-chinh">10.1 Các kiểm soát chính</h3>
+<ul>
+<li>Contract chặn người nhận không được phép, hạn mức, floor, expiry, pause/revoke, replay và sai option ký. <a href="../contracts/src/TreasuryPilotModule.sol">contract</a>.</li>
+<li>Signer cô lập khóa executor, kiểm attestation/payload/simulation; AI worker không nhận khóa policy/executor theo cấu hình Compose. <a href="../services/signer/src/treasurypilot_signer/">signer</a> · <a href="../infra/compose.yaml">compose</a>.</li>
+<li>Identity/RBAC và org-scoped repository bảo vệ dữ liệu đa tenant; maker-checker là một lớp riêng. <a href="../services/api/src/treasurypilot_api/identity/rbac.py">RBAC</a> · <a href="../services/api/src/treasurypilot_api/common/repository.py">scoped repository</a>.</li>
+<li>Screening/KYB/travel-rule và data region có code/adapter, nhưng fixture screening không đồng nghĩa kết nối provider sống hoặc phê chuẩn pháp lý. <a href="../services/api/src/treasurypilot_api/compliance/">compliance</a> · <a href="security/known-risks.md">risk KR-19</a>.</li>
+<li>Privacy primitives cho classification/redaction/encryption cần được áp dụng ở từng tích hợp, log và export. <a href="../packages/py-core/src/treasurypilot_core/privacy/">privacy</a>.</li>
+</ul>
+<h3 id="10-2-rui-ro-con-mo-phai-ghi-trong-bao-cao-cong-khai">10.2 Rủi ro còn mở phải ghi trong báo cáo công khai</h3>
+<p>Hợp đồng chưa có audit độc lập; owner/module Safe khác có thể giao dịch ngoài mandate; RPC/reorg ảnh hưởng tính cuối cùng; dự trữ động không nằm hoàn toàn on-chain; Aave pool/cap thay đổi; signer với quyền DB cần hardening; dữ liệu hóa đơn và prompt có thể lộ/sai; nhận diện sanctions qua fixture không tương đương kiểm thực tế; một VM/Compose là điểm lỗi tập trung. Danh mục và mức ảnh hưởng chi tiết: <a href="security/known-risks.md">known risks</a> · <a href="submission/security-self-assessment.md">self-assessment</a>.</p>
+<h2 id="11-kiem-thu-o-luong-va-kha-nang-tai-lap">11 · Kiểm thử, đo lường và khả năng tái lập</h2>
+<table>
+<thead>
+<tr>
+<th>Tầng</th>
+<th>Bằng chứng/code</th>
+<th>Điều có thể kết luận</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unit/property</td>
+<td><a href="../packages/py-core/tests/">py-core tests</a>, <a href="../services/api/tests/">API tests</a></td>
+<td>Logic theo case và invariant đã định nghĩa; không thay thế E2E.</td>
+</tr>
+<tr>
+<td>Contract</td>
+<td><a href="../contracts/test/">Foundry tests</a>, <a href="security/test-evidence.md">test evidence</a></td>
+<td>Revert/invariant của module trong môi trường test/fork theo revision báo cáo.</td>
+</tr>
+<tr>
+<td>Policy ↔ contract</td>
+<td><a href="testing/policy-contract-differential-report.md">differential matrix</a></td>
+<td>Python/contract đồng ý trên case manifest; báo cáo nêu cả case chưa phủ.</td>
+</tr>
+<tr>
+<td>Web</td>
+<td><a href="../apps/web/e2e/">Vitest/Playwright</a></td>
+<td>Luồng UI với fixture/mock theo cấu hình test.</td>
+</tr>
+<tr>
+<td>AI</td>
+<td><a href="evidence/extraction-accuracy.md">extraction</a>, <a href="evidence/copilot-fidelity.md">Copilot</a>, <a href="evidence/redteam-results.md">red-team</a></td>
+<td>Kết quả recorded/synthetic, chưa chứng minh chất lượng ngoài tập.</td>
+</tr>
+<tr>
+<td>Reliability</td>
+<td><a href="evidence/reliability-2026-10-15.md">30-run Anvil report</a></td>
+<td>30/30 local scenario; chưa có 10-run Sepolia trong artifact này.</td>
+</tr>
+</tbody>
+</table>
+<p>Để tái lập đánh giá, cần ghi SHA, chain ID/block, asset/decimals, dataset split và lịch sử exposure, model/prompt, algorithm thực dùng (EDF hay CP-SAT/fallback), giả định phí/rate, denominator và số lần fail. Không trộn kết quả fork, Anvil và public Sepolia thành một “success rate”. <a href="submission/technical-documentation.md">technical documentation, §7</a> · <a href="../services/worker/src/treasurypilot_worker/planner_bench/">planner benchmark</a>.</p>
+<h2 id="12-trien-khai-va-van-hanh">12 · Triển khai và vận hành</h2>
+<h3 id="12-1-moi-truong">12.1 Môi trường</h3>
+<p>Local Compose khởi Postgres 16, Redis 7, MinIO, Anvil tùy profile, migrate, API, worker core/AI/webhooks, beat, signer và web. Sepolia có compose override và deployment scripts/manifest riêng. Trước mỗi demo cần kiểm chain ID, RPC, Safe owners/threshold/module enabled, token decimals, hạn mandate, payee, pool/aToken, gas và EAS attester; điều kiện Aave supply có thể thay đổi ngay cả khi fork lịch sử chạy tốt. <a href="../infra/README.md">infra README</a> · <a href="../infra/compose.yaml">compose</a> · <a href="../infra/compose.sepolia.yaml">Sepolia override</a> · <a href="../contracts/docs/DEPLOYMENT.md">deployment guide</a>.</p>
+<h3 id="12-2-observability-va-su-co">12.2 Observability và sự cố</h3>
+<p>Log có correlation ID, metrics/trace, Sentry/OpenTelemetry và notification outbox. Sự cố quan trọng phải cho thấy request/plan/operation ID, policy reason code, chain/block, tx/nonce/receipt và quyết định retry hoặc review; không log khóa, session token, chữ ký nguyên văn hay hóa đơn nhạy cảm. <a href="../packages/py-core/src/treasurypilot_core/observability.py">observability core</a> · <a href="../services/api/src/treasurypilot_api/observability/metrics.py">metrics</a> · <a href="../services/worker/src/treasurypilot_worker/notify/">notifications</a>.</p>
+<h2 id="13-trang-thai-trien-khai-va-khoang-trong">13 · Trạng thái triển khai và khoảng trống</h2>
+<table>
+<thead>
+<tr>
+<th>Hạng mục</th>
+<th>Quan sát ở commit <code>50b1117</code></th>
+<th>Điều cần thêm trước khi khẳng định hoàn tất</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sản phẩm web/API</td>
+<td>Nhiều màn hình, endpoint và migration hiện diện.</td>
+<td>E2E trên cấu hình demo thật, xác nhận client/OpenAPI không lệch.</td>
+</tr>
+<tr>
+<td>Engine/policy</td>
+<td>EDF, CP-SAT, forecast, liquidity và validator có code/test.</td>
+<td>Benchmark B0/B1/B2 đúng nhãn với tập held-out đã review.</td>
+</tr>
+<tr>
+<td>Contract/on-chain</td>
+<td>Module và các entry point, manifest Sepolia <code>deployed</code>.</td>
+<td>Bằng chứng public tx cho từng cảnh D1–D10, review quyền độc lập, audit trước mainnet.</td>
+</tr>
+<tr>
+<td>Signer/worker</td>
+<td><code>/sign-and-send</code>, outbox/sequencer/recovery có code.</td>
+<td>Chaos/restart/reorg và multi-step E2E trên testnet; kiểm quyền DB signer.</td>
+</tr>
+<tr>
+<td>AI</td>
+<td>Extraction/Copilot/eval recorded và guard có code.</td>
+<td>Ground truth độc lập, held-out, thêm tấn công/OCR/locale.</td>
+</tr>
+<tr>
+<td>Reliability</td>
+<td>30/30 Anvil trong báo cáo 15/10.</td>
+<td>Chạy và lưu evidence Sepolia riêng; backup/restore và multi-host khi nâng cấp.</td>
+</tr>
+</tbody>
+</table>
+<p>Các mục trên là <strong>đề nghị xác minh</strong>, không phải khẳng định code thiếu. Điểm có thể kết luận chắc từ repo là ranh giới thiết kế và code triển khai từng module; mức sẵn sàng production cần một review kỹ thuật/bảo mật và chứng cứ hệ thống theo release cụ thể. <a href="submission/README.md">Submission README</a> · <a href="security/known-risks.md">known risks</a>.</p>
+<h2 id="14-ban-o-module-va-phu-thuoc-trien-khai">14 · Bản đồ module và phụ thuộc triển khai</h2>
+<p>Tài liệu Google Docs tổ chức công việc thành 20 module M01–M20. Tab 36 ghi cách chia luồng và phân công <strong>tại 11–12/10/2026</strong>; đó là snapshot quản lý công việc, không phải trạng thái issue hiện tại. Bảng dưới ánh xạ module với code/tài liệu để người mới có thể tìm ngay nơi chịu trách nhiệm. <a href="modules/README.md">Danh mục module</a> · <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.3xlngx2j9mze">Google Docs, hướng dẫn phân công</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Trách nhiệm kỹ thuật</th>
+<th>Điểm vào</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M01 Identity</td>
+<td>Session, SIWE, tổ chức, RBAC, MFA/federation</td>
+<td><a href="../services/api/src/treasurypilot_api/identity/">identity</a></td>
+</tr>
+<tr>
+<td>M02 Treasury</td>
+<td>Safe, wallet, chain, snapshot, forecast</td>
+<td><a href="../services/api/src/treasurypilot_api/treasury/">treasury API</a></td>
+</tr>
+<tr>
+<td>M03 Mandate</td>
+<td>Payee, hạn mức, governance, ngoại lệ, pause</td>
+<td><a href="../services/api/src/treasurypilot_api/mandate/">mandate API</a></td>
+</tr>
+<tr>
+<td>M04 Contracts</td>
+<td>Module/factory, EIP-712, Aave, replay/floor/cap</td>
+<td><a href="../contracts/src/">contracts</a></td>
+</tr>
+<tr>
+<td>M05 Invoices</td>
+<td>Intake, trích xuất, request, approval</td>
+<td><a href="../services/api/src/treasurypilot_api/invoices/">invoices</a></td>
+</tr>
+<tr>
+<td>M06 Chain reader</td>
+<td>RPC, event indexer, tracker, snapshot</td>
+<td><a href="../services/worker/src/treasurypilot_worker/chain/">chain worker</a></td>
+</tr>
+<tr>
+<td>M07 Financial engine</td>
+<td>Refill, EDF/CP-SAT, reserve, forecast</td>
+<td><a href="../packages/py-core/src/treasurypilot_core/engine/">engine</a></td>
+</tr>
+<tr>
+<td>M08 Policy</td>
+<td>Validator, reason codes, attestation</td>
+<td><a href="../packages/py-core/src/treasurypilot_core/policy/">policy</a></td>
+</tr>
+<tr>
+<td>M09 Agent</td>
+<td>Extraction, plan proposal, Copilot, AI eval</td>
+<td><a href="../services/worker/src/treasurypilot_worker/agent/">agent</a></td>
+</tr>
+<tr>
+<td>M10 Execution</td>
+<td>Outbox, sequencing, signer, simulation</td>
+<td><a href="../services/worker/src/treasurypilot_worker/executor/">executor</a>, <a href="../services/signer/src/treasurypilot_signer/">signer</a></td>
+</tr>
+<tr>
+<td>M11 Reconciliation</td>
+<td>Receipt, verification, match/export</td>
+<td><a href="../services/worker/src/treasurypilot_worker/reconcile/">reconcile worker</a>, <a href="../services/api/src/treasurypilot_api/reconciliation/">API</a></td>
+</tr>
+<tr>
+<td>M12 Recovery</td>
+<td>Unknown/partial, retry và review</td>
+<td><a href="../services/worker/src/treasurypilot_worker/recovery/">recovery worker</a>, <a href="../services/api/src/treasurypilot_api/recovery/">API</a></td>
+</tr>
+<tr>
+<td>M13 Notifications</td>
+<td>In-app, webhook, email, Telegram</td>
+<td><a href="../services/worker/src/treasurypilot_worker/notify/">notify worker</a></td>
+</tr>
+<tr>
+<td>M14 Compliance</td>
+<td>Screening, KYB, travel rule, retention</td>
+<td><a href="../services/api/src/treasurypilot_api/compliance/">compliance</a></td>
+</tr>
+<tr>
+<td>M15 Audit</td>
+<td>Audit log, hash chain, evidence bundle</td>
+<td><a href="../services/api/src/treasurypilot_api/audit/">audit</a></td>
+</tr>
+<tr>
+<td>M16 Web</td>
+<td>Giao diện operator/approver/owner</td>
+<td><a href="../apps/web/src/features/">features</a></td>
+</tr>
+<tr>
+<td>M17 Observability</td>
+<td>Metrics, savings, logging, tracing</td>
+<td><a href="../services/api/src/treasurypilot_api/observability/">observability</a></td>
+</tr>
+<tr>
+<td>M18 Platform admin</td>
+<td>Hỗ trợ vận hành đa tổ chức</td>
+<td><a href="../services/api/src/treasurypilot_api/admin/">admin</a></td>
+</tr>
+<tr>
+<td>M19 DevEx</td>
+<td>Build, Compose, CI, test, OpenAPI</td>
+<td><a href="../infra/">infra</a>, <a href="../.github/workflows/">workflows</a></td>
+</tr>
+<tr>
+<td>M20 Domain/evidence</td>
+<td>Kịch bản demo, đo lường, review nghiệp vụ</td>
+<td><a href="evidence/">evidence</a>, <a href="submission/">submission</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Thứ tự phụ thuộc thực tế:</strong> contract ABI/EIP-712 và chain snapshot định hình validator; validator cùng engine định hình plan/attestation; signer và executor chỉ nhận step đã hợp lệ; tracker/verifier mới cho phép Paid/reconciliation; web/AI dựa vào các hợp đồng dữ liệu và trạng thái đó. Chia luồng A (chain/engine/policy/execution/recovery), B (sản phẩm/API/web/AI), C (nghiệp vụ/bằng chứng) trong tab 36 phản ánh phụ thuộc này. Khi điều phối sprint hiện tại, đọc code/PR/Project mới nhất thay vì dùng số ticket còn mở của snapshot 11/10.</p>
+<h2 id="15-ban-o-nguon-va-cach-cap-nhat-bao-cao">15 · Bản đồ nguồn và cách cập nhật báo cáo</h2>
+<table>
+<thead>
+<tr>
+<th>Cần hiểu</th>
+<th>Nguồn chính</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ý tưởng, người dùng, phạm vi</td>
+<td><a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit">Google Docs</a>, <a href="PROJECT_OVERVIEW.md">PROJECT_OVERVIEW</a></td>
+</tr>
+<tr>
+<td>Kiến trúc/trust boundary</td>
+<td><a href="SYSTEM_ARCHITECTURE.md">SYSTEM_ARCHITECTURE</a>, <a href="../ARCHITECTURE.md">ARCHITECTURE entry</a></td>
+</tr>
+<tr>
+<td>Quy tắc tiền và quyền</td>
+<td><a href="BUSINESS_RULES.md">BUSINESS_RULES</a>, <a href="../contracts/src/">contracts</a>, <a href="../packages/py-core/src/treasurypilot_core/policy/">policy</a></td>
+</tr>
+<tr>
+<td>Data/API</td>
+<td><a href="DATA_MODEL.md">DATA_MODEL</a>, <a href="API_SPEC.md">API_SPEC</a>, <a href="../services/api/migrations/versions/">migrations</a></td>
+</tr>
+<tr>
+<td>AI</td>
+<td><a href="AI_AGENT_ARCHITECTURE.md">AI_AGENT_ARCHITECTURE</a>, <a href="../services/worker/src/treasurypilot_worker/agent/">agent code</a></td>
+</tr>
+<tr>
+<td>Quyết định v0.3</td>
+<td><a href="adr/ADR-019-aave-liquidity-and-payment-options.md">ADR-019</a>, <a href="https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.85x0bmmbqru0">tab 37</a></td>
+</tr>
+<tr>
+<td>Vận hành/test/rủi ro</td>
+<td><a href="../infra/">infra</a>, <a href="evidence/">evidence</a>, <a href="security/">security</a>, <a href="submission/">submission</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Quy tắc cập nhật:</strong> ghi commit và ngày mới; đối chiếu route/schema/contract với source; chạy lại test/eval và gắn report theo đúng revision; xác minh manifest với chain tại block ghi nhận; tách “code có”, “test local có”, “public tx có” và “đã được audit”. Bản Markdown này là nguồn biên tập cho site đa trang trong <code>docs/report_site/</code>.</p>
+</main>
+    </div>
+  </div>
+  <a class="back-top" href="#report">↑ Lên đầu</a>
+  <script>
+    const nav = document.getElementById('sidebar');
+    const toggle = document.getElementById('menu-toggle');
+    toggle.addEventListener('click', () => {
+      const open = nav.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
+      nav.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false');
+    }));
+    document.getElementById('nav-search').addEventListener('input', event => {
+      const term = event.target.value.toLocaleLowerCase('vi').trim();
+      document.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.toggle('hidden', !link.textContent.toLocaleLowerCase('vi').includes(term));
+      });
+      document.querySelectorAll('.nav-group').forEach(group => {
+        group.style.display = group.querySelector('.nav-link:not(.hidden)') ? '' : 'none';
+      });
+    });
+    const links = [...document.querySelectorAll('.nav-link')];
+    links[0]?.classList.add('active');
+    const watched = links.map(link => document.getElementById(decodeURIComponent(link.hash.slice(1)))).filter(Boolean);
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(e => e.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (!visible.length) return;
+      links.forEach(link => link.classList.toggle('active', link.hash === '#' + visible[0].target.id));
+    }, { rootMargin: '-8% 0px -75% 0px' });
+    watched.forEach(element => observer.observe(element));
+  </script>
+</body>
+</html>

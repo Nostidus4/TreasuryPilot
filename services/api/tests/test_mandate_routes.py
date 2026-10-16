@@ -121,6 +121,63 @@ class FakeMandateActivationService:
         }
 
 
+def governance_tx_dict() -> dict[str, object]:
+    call = {"to": "0x" + "11" * 20, "value": "0", "data": "0x12345678", "operation": 0}
+    return {
+        "id": uuid.uuid4(),
+        "treasuryId": TREASURY_ID,
+        "purpose": "PAYEE_ADD",
+        "safeAddress": "0x" + "22" * 20,
+        **call,
+        "nonce": 7,
+        "safeTxHash": "0x" + "33" * 32,
+        "decodedCalls": [call],
+        "humanSummary": "Payee Add: call 1",
+        "typedData": {"primaryType": "SafeTx", "message": {"nonce": 7}},
+        "threshold": 2,
+        "owners": ["0x" + "44" * 20],
+        "status": "Collecting",
+        "execTxHash": None,
+        "createdAt": datetime.now(UTC),
+        "signatures": [],
+    }
+
+
+class FakeGovernanceReads:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def list_txs(self, **fields: object) -> list[dict[str, object]]:
+        self.calls.append(fields)
+        return [governance_tx_dict()]
+
+    async def get(self, **fields: object) -> dict[str, object]:
+        return governance_tx_dict()
+
+
+def test_governance_list_and_detail_are_typed_camel_case_responses() -> None:
+    service = FakeGovernanceReads()
+    with make_client(MemoryMandateRepository(), governance_service=service) as client:
+        listed = client.get(
+            f"/v1/orgs/{ORG_ID}/governance-txs?status=Ready&treasuryId={TREASURY_ID}&purpose=MODULE_SETUP"
+        )
+        detail = client.get(f"/v1/orgs/{ORG_ID}/governance-txs/{uuid.uuid4()}")
+        bad = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?status=Nope")
+        bad_purpose = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?purpose=Nope")
+        bad_treasury = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?treasuryId=x")
+
+    assert listed.status_code == detail.status_code == 200
+    assert bad.status_code == bad_purpose.status_code == bad_treasury.status_code == 422
+    assert service.calls[0]["status"] == "Ready"
+    assert service.calls[0]["purpose"] == "MODULE_SETUP"
+    assert str(service.calls[0]["treasury_id"]) == str(TREASURY_ID)
+    item = listed.json()["items"][0]
+    assert item["safeTxHash"] == "0x" + "33" * 32
+    assert item["decodedCalls"][0]["data"] == "0x12345678"
+    assert item["typedData"]["primaryType"] == "SafeTx"
+    assert set(detail.json()) == set(item)
+
+
 def config_payload() -> dict[str, object]:
     return {
         "actions": ["PAY", "REFILL", "SUPPLY"],
@@ -339,3 +396,59 @@ def test_mandate_draft_requires_fresh_second_factor() -> None:
     assert response.status_code == 403
     assert response.json()["code"] == "STEP_UP_REQUIRED"
     assert repository.rows == []
+
+
+def test_web_editor_body_round_trips_summary_diff_and_activation_id() -> None:
+    """The exact body apps/web/src/features/mandate sends: no guardian, Safe T without a target."""
+    repository = MemoryMandateRepository()
+    repository.guardian_safe = "0x" + "66" * 20
+    now = datetime.now(UTC)
+    body = {
+        "actions": ["REFILL", "PAY"],
+        "refillPaths": [{"from": SAFE_T, "to": OPERATIONAL}],
+        "assetPolicies": [],
+        "limits": {
+            "PAY": {"perRequest": "2500500000", "daily": "10000000000"},
+            "REFILL": {"perRequest": "2500000000", "daily": "12000000000"},
+        },
+        "buffers": [
+            {"wallet": SAFE_T, "minimum": "0"},
+            {"wallet": OPERATIONAL, "minimum": "0", "target": "0"},
+        ],
+        "gasFundingCapWei": "50000000000000000",
+        "executor": "0x" + "33" * 20,
+        "approvers": ["0x" + "44" * 20],
+        "validFrom": now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "expiresAt": (now + timedelta(days=30))
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+    }
+    base = f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates"
+    with make_client(repository) as client:
+        first = client.post(base, json=body)
+        repository.active_config = first.json()["draft"]["config"]
+        looser = client.post(
+            base,
+            json={
+                **body,
+                "limits": {
+                    **body["limits"],
+                    "PAY": {"perRequest": "3000000000", "daily": "10000000000"},
+                },
+            },
+        )
+        listing = client.get(base)
+
+    assert first.status_code == 201
+    draft = first.json()["draft"]
+    assert draft["config"]["guardian"] == "0x" + "66" * 20
+    assert any(line.get("perRequestBaseUnits") == "2500500000" for line in first.json()["summary"])
+    assert first.json()["diff"] == []
+    assert first.json()["requiresConfirmation"] is False
+    assert looser.status_code == 201
+    assert looser.json()["requiresConfirmation"] is True
+    entry = looser.json()["diff"][0]
+    assert (entry["path"], entry["risk"]) == ("limits.PAY.perRequest", "looser")
+    assert (entry["before"], entry["after"]) == ("2500500000", "3000000000")
+    assert [item["status"] for item in listing.json()["items"]] == ["Draft", "Draft"]
+    assert uuid.UUID(draft["id"])

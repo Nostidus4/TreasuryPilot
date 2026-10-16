@@ -12,19 +12,16 @@ import {
 } from '@/components/domain/signing';
 import { StatusBadge } from '@/components/domain/status';
 import { ErrorState } from '@/components/feedback';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Alert, Skeleton } from '@/components/ui/misc';
 import {
   fetchExecCall,
-  useCancelGovernanceTx,
   useGovernanceTx,
   useReportGovernanceSubmitted,
   useSubmitGovernanceSignature,
-} from '@/features/controls/api';
+} from '@/features/governance/api';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { errorMessage } from '@/lib/api/http';
-import type { GovernanceTx, TypedData } from '@/lib/api/types';
+import type { GovernanceTxView, TypedData } from '@/lib/api/types';
 import { formatDateTime } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { governanceStatus } from '@/lib/status';
@@ -38,14 +35,13 @@ export function GovernanceActions({
   tx,
   typedData,
 }: {
-  tx: GovernanceTx;
+  tx: GovernanceTxView;
   typedData: TypedData;
 }) {
   const scope = useOrgScope();
   const wallet = useWallet();
   const submitSignature = useSubmitGovernanceSignature(scope.orgId);
   const reportSubmitted = useReportGovernanceSubmitted(scope.orgId);
-  const cancel = useCancelGovernanceTx(scope.orgId);
   const [showTypedData, setShowTypedData] = useState(false);
 
   const owners = tx.owners.map((owner) => owner.address);
@@ -80,6 +76,13 @@ export function GovernanceActions({
         {t(
           'Another transaction with the same Safe nonce replaced this one. It can no longer be signed or executed.',
         )}
+      </Alert>
+    );
+  }
+  if (tx.status === 'Cancelled') {
+    return (
+      <Alert tone="neutral" title={t('Cancelled')}>
+        {t('This transaction was cancelled and can no longer be signed.')}
       </Alert>
     );
   }
@@ -150,7 +153,10 @@ export function GovernanceActions({
           requiredAddresses={ownersOnly}
           action={async () => {
             const call = await fetchExecCall(scope.orgId, tx.id);
-            const txHash = await wallet.sendTransaction(call);
+            const txHash = await wallet.sendTransaction({
+              ...call,
+              chainId: typedData.domain.chainId,
+            });
             await reportSubmitted.mutateAsync({ id: tx.id, txHash });
             toast.success(t('Sent — waiting for the network'));
           }}
@@ -159,20 +165,6 @@ export function GovernanceActions({
           {t('Execute transaction')}
         </WalletActionButton>
       )}
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="justify-self-start"
-        loading={cancel.isPending}
-        onClick={() =>
-          cancel.mutate(tx.id, {
-            onError: (error) => toast.error(errorMessage(error)),
-          })
-        }
-      >
-        {t('Cancel this transaction')}
-      </Button>
     </div>
   );
 }
@@ -223,7 +215,7 @@ export function GovernanceDetail({ id }: { id: string }) {
               },
               {
                 label: t('Proposed'),
-                value: `${tx.createdBy} · ${formatDateTime(tx.createdAt)}`,
+                value: formatDateTime(tx.createdAt),
               },
             ]}
           />

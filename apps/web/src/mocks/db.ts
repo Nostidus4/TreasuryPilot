@@ -16,7 +16,7 @@ import type {
   FeePolicyResponse,
   FeeReviewItem,
   Flag,
-  GovernanceTx,
+  GovernanceTxView,
   Hex,
   MandateConfig,
   MandateVersion,
@@ -131,7 +131,7 @@ export interface Db {
   payees: Payee[];
   vendors: Vendor[];
   governance: Array<
-    GovernanceTx & { effect?: () => void; signaturesHex: Hex[] }
+    GovernanceTxView & { effect?: () => void; signaturesHex: Hex[] }
   >;
   requests: RequestDetail[];
   plans: PlanDetail[];
@@ -338,14 +338,21 @@ const call = (
 function baseMandate(): MandateConfig {
   return {
     actions: ['REFILL', 'PAY'],
+    refillPaths: [
+      { from: ADDR.safeT, to: ADDR.safeO1 },
+      { from: ADDR.safeT, to: ADDR.safeO2 },
+    ],
     limits: {
       PAY: { perRequest: usdc(2000), daily: usdc(10000) },
       REFILL: { perRequest: usdc(2500), daily: usdc(12000) },
     },
+    // Keyed by Safe address like the API; Safe T has a minimum and no target.
     buffers: [
-      { wallet: 'O1', minimum: usdc(2000), target: usdc(6000) },
-      { wallet: 'O2', minimum: usdc(500), target: usdc(1500) },
+      { wallet: ADDR.safeT, minimum: usdc(3000) },
+      { wallet: ADDR.safeO1, minimum: usdc(2000), target: usdc(6000) },
+      { wallet: ADDR.safeO2, minimum: usdc(500), target: usdc(1500) },
     ],
+    gasFundingCapWei: '50000000000000000',
     executor: ADDR.executor,
     approvers: [ADDR.me, ADDR.an],
     guardian: ADDR.guardian,
@@ -1277,13 +1284,14 @@ export function seed(): Db {
     mandates: {
       trs_main: [
         {
+          id: 'mnd_v3',
           version: 3,
           status: 'Active',
           config: baseMandate(),
           createdAt: iso(-21 * DAY),
-          activatedAt: iso(-20 * DAY),
         },
         {
+          id: 'mnd_v2',
           version: 2,
           status: 'Superseded',
           config: {
@@ -1294,7 +1302,6 @@ export function seed(): Db {
             },
           },
           createdAt: iso(-40 * DAY),
-          activatedAt: iso(-39 * DAY),
         },
       ],
     },
@@ -1974,7 +1981,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
 
 const ZERO: Hex = '0x0000000000000000000000000000000000000000';
 
-export function safeTxTypedData(tx: GovernanceTx): TypedData {
+export function safeTxTypedData(tx: GovernanceTxView): TypedData {
   const first = tx.calls[0];
   const state = db.treasuries[tx.treasuryId];
   return {
@@ -1983,6 +1990,10 @@ export function safeTxTypedData(tx: GovernanceTx): TypedData {
       verifyingContract: tx.safeAddress,
     },
     types: {
+      EIP712Domain: [
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
       SafeTx: [
         { name: 'to', type: 'address' },
         { name: 'value', type: 'uint256' },
@@ -2016,7 +2027,7 @@ export function safeTxTypedData(tx: GovernanceTx): TypedData {
 
 export function createGovernanceTx(
   input: Pick<
-    GovernanceTx,
+    GovernanceTxView,
     'kind' | 'title' | 'summary' | 'treasuryId' | 'calls'
   > & {
     diff?: DiffEntry[];
@@ -2104,11 +2115,11 @@ function activateSeedMandate() {
     if (version.status === 'Active') version.status = 'Superseded';
   });
   versions.unshift({
+    id: 'mnd_v4',
     version: 4,
     status: 'Active',
     config,
     createdAt: iso(-90 * MIN),
-    activatedAt: iso(),
   });
   applyMandate('trs_main', 4, config);
 }
@@ -2125,10 +2136,12 @@ export function applyMandate(
     budget.perRequest = config.limits[budget.action].perRequest;
   }
   for (const buffer of config.buffers) {
-    const wallet = state.wallets.find((item) => item.role === buffer.wallet);
+    const wallet = state.wallets.find(
+      (item) => item.safeAddress.toLowerCase() === buffer.wallet.toLowerCase(),
+    );
     if (wallet) {
       wallet.buffer = buffer.minimum;
-      wallet.target = buffer.target;
+      if (buffer.target !== undefined) wallet.target = buffer.target;
     }
   }
 }

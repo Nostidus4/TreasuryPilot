@@ -1,15 +1,17 @@
+import { useQuery } from '@tanstack/react-query';
+
+import {
+  fromDraftResponse,
+  fromMandateView,
+  type MandateDraftWire,
+  type MandateView,
+} from '@/features/mandate/wire';
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
 import type {
-  GovernanceStatus,
   GovernanceTx,
-  Hex,
   MandateConfig,
-  MandateDraft,
-  MandateVersion,
   Payee,
-  TxCall,
-  TypedData,
   Vendor,
 } from '@/lib/api/types';
 import type { components } from '@/lib/api/schema';
@@ -20,25 +22,38 @@ const treasuryBase = (orgId: string, treasuryId: string) =>
 /* ───────────── Mandate ───────────── */
 
 export const useMandates = (orgId: string, treasuryId: string) =>
-  useOrgQuery<{ items: MandateVersion[] }>(
-    orgId,
-    'mandates',
-    [treasuryId],
-    `/treasuries/${treasuryId}/mandates`,
-  );
+  useQuery({
+    queryKey: ['org', orgId, 'mandates', treasuryId, null],
+    queryFn: async ({ signal }) => {
+      const { items } = await api.get<{ items: MandateView[] }>(
+        `/orgs/${orgId}/treasuries/${treasuryId}/mandates`,
+        { signal },
+      );
+      return { items: items.map(fromMandateView) };
+    },
+  });
 
-export const useSaveMandateDraft = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (config: MandateConfig) =>
-    api.post<MandateDraft>(
-      `${treasuryBase(orgId, treasuryId)}/mandates`,
-      config,
+/** Owner-only and step-up gated: a 403 `STEP_UP_REQUIRED` means ask for the code and retry. */
+export const useSaveMandateDraft = (
+  orgId: string,
+  treasuryId: string,
+  asset: { decimals: number; symbol: string },
+) =>
+  useOrgMutation(orgId, async (config: MandateConfig) =>
+    fromDraftResponse(
+      await api.post<MandateDraftWire>(
+        `${treasuryBase(orgId, treasuryId)}/mandates`,
+        config,
+      ),
+      asset,
     ),
   );
 
+/** Creates the Safe transaction for a draft (by id); the response is the governance tx. */
 export const useMandateActivationTx = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (version: number) =>
-    api.post<{ governanceTx: GovernanceTx }>(
-      `${treasuryBase(orgId, treasuryId)}/mandates/${version}/activation-tx`,
+  useOrgMutation(orgId, (mandateId: string) =>
+    api.post<{ id: string }>(
+      `${treasuryBase(orgId, treasuryId)}/mandates/${mandateId}/governance-tx`,
     ),
   );
 
@@ -58,11 +73,15 @@ export const useCreateVendor = (orgId: string) =>
   );
 
 export const useProposePayee = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (input: components['schemas']['PayeeCreate']) =>
-    api.post<components['schemas']['PayeeResponse']>(
-      `${treasuryBase(orgId, treasuryId)}/payees`,
-      input,
-    ),
+  useOrgMutation(
+    orgId,
+    (input: components['schemas']['PayeeCreate']) =>
+      api.post<components['schemas']['PayeeResponse']>(
+        `${treasuryBase(orgId, treasuryId)}/payees`,
+        input,
+      ),
+    // A screening hit is a 422 after the API stored the payee as ScreeningFailed.
+    'payees',
   );
 
 export const useVerifyPayeeOob = (orgId: string, treasuryId: string) =>
@@ -102,51 +121,5 @@ export const useReplacePayeeAddress = (orgId: string, treasuryId: string) =>
         `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/replace-address`,
         { address: input.address, reason: input.reason },
       ),
-  );
-
-/* ───────────── Governance ───────────── */
-
-export const useGovernanceTxs = (orgId: string, status?: GovernanceStatus) =>
-  useOrgQuery<{ items: GovernanceTx[] }>(
-    orgId,
-    'governance',
-    ['list'],
-    '/governance-txs',
-    { query: { status } },
-  );
-
-export const useGovernanceTx = (orgId: string, id: string | undefined) =>
-  useOrgQuery<{ governanceTx: GovernanceTx; typedData: TypedData }>(
-    orgId,
-    'governance',
-    ['detail', id],
-    `/governance-txs/${id}`,
-    { enabled: Boolean(id) },
-  );
-
-export const useSubmitGovernanceSignature = (orgId: string) =>
-  useOrgMutation(orgId, (input: { id: string; signature: Hex }) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${input.id}/signatures`,
-      { signature: input.signature },
-      { idempotent: true },
-    ),
-  );
-
-export const fetchExecCall = (orgId: string, id: string) =>
-  api.get<TxCall>(`/orgs/${orgId}/governance-txs/${id}/exec-call`);
-
-export const useReportGovernanceSubmitted = (orgId: string) =>
-  useOrgMutation(orgId, (input: { id: string; txHash: Hex }) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${input.id}/submitted`,
-      { txHash: input.txHash },
-    ),
-  );
-
-export const useCancelGovernanceTx = (orgId: string) =>
-  useOrgMutation(orgId, (id: string) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${id}/cancel`,
-    ),
+    'payees',
   );

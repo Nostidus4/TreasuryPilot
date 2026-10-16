@@ -20,7 +20,7 @@ import {
 import { Select } from '@/components/ui/controls';
 import { Field, Input, Textarea } from '@/components/ui/input';
 import { Alert, Skeleton } from '@/components/ui/misc';
-import { useGovernanceTx, useGovernanceTxs } from '@/features/controls/api';
+import { useGovernanceTx, useGovernanceTxs } from '@/features/governance/api';
 import { GovernanceActions } from '@/features/governance/governance-detail';
 import { useOrgScope } from '@/features/orgs/org-scope';
 import {
@@ -666,9 +666,12 @@ function ModuleStep({
 }) {
   const scope = useOrgScope();
   const deploy = useDeployModuleTx(scope.orgId);
-  const governance = useGovernanceTxs(scope.orgId);
-  const wallet = useWallet();
   const treasuryId = state.treasury.id;
+  const governance = useGovernanceTxs(scope.orgId, {
+    treasuryId,
+    purpose: 'MODULE_SETUP',
+  });
+  const wallet = useWallet();
   const treasuryWallets = state.wallets.filter((item) =>
     ['T', 'O1', 'O2'].includes(item.role),
   );
@@ -705,7 +708,7 @@ function ModuleStep({
   }, [draft, treasuryId]);
 
   const moduleTxs = (governance.data?.items ?? []).filter(
-    (item) => item.treasuryId === treasuryId && item.kind === 'DEPLOY_MODULE',
+    (item) => item.treasuryId === treasuryId && item.kind === 'MODULE_SETUP',
   );
   const txsBySafe = treasuryWallets.map((safe) =>
     moduleTxs.find(

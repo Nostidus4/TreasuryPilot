@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import Field, field_validator, model_validator
 
 from treasurypilot_api.identity.api import ApiModel
@@ -15,7 +15,7 @@ from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.mandate.governance import GovernanceCall
 from treasurypilot_api.mandate.governance_service import GovernanceFailure, GovernanceService
-from treasurypilot_api.mandate.models import GovernanceTxPurpose
+from treasurypilot_api.mandate.models import GovernanceTxPurpose, GovernanceTxStatus
 from treasurypilot_api.treasury.safe import RpcUnavailable
 
 router = APIRouter(prefix="/v1", tags=["governance"])
@@ -144,6 +144,52 @@ class CreateModuleSetupRequest(ApiModel):
         if len({item.wallet for item in values}) != len(values):
             raise ValueError("buffers must list each wallet once")
         return values
+
+
+class GovernanceCallView(ApiModel):
+    to: str
+    value: str
+    data: str
+    operation: int
+
+
+class GovernanceSignatureView(ApiModel):
+    owner: str
+    signature: str
+    at: datetime
+
+
+class GovernanceTxView(ApiModel):
+    """One Safe governance transaction as returned by every governance read and signing route."""
+
+    id: uuid.UUID
+    treasury_id: uuid.UUID
+    purpose: GovernanceTxPurpose
+    safe_address: str
+    to: str
+    value: str
+    data: str
+    operation: int
+    nonce: int
+    safe_tx_hash: str
+    decoded_calls: list[GovernanceCallView]
+    human_summary: str
+    typed_data: dict[str, Any]
+    threshold: int
+    owners: list[str]
+    status: GovernanceTxStatus
+    exec_tx_hash: str | None
+    created_at: datetime
+    signatures: list[GovernanceSignatureView]
+
+
+class GovernanceTxList(ApiModel):
+    items: list[GovernanceTxView]
+
+
+class ExecCallView(ApiModel):
+    to: str
+    data: str
 
 
 def _service(request: Request) -> GovernanceService:
@@ -277,7 +323,27 @@ async def create_module_setup(
         raise _rpc_failure() from None
 
 
-@router.get("/orgs/{organization_id}/governance-txs/{governance_tx_id}")
+@router.get("/orgs/{organization_id}/governance-txs")
+async def list_governance_txs(
+    request: Request,
+    member: Annotated[MemberAccess, Depends(require_member)],
+    status: Annotated[GovernanceTxStatus | None, Query()] = None,
+    treasury_id: Annotated[uuid.UUID | None, Query(alias="treasuryId")] = None,
+    purpose: Annotated[GovernanceTxPurpose | None, Query()] = None,
+) -> GovernanceTxList:
+    items = await _service(request).list_txs(
+        organization_id=member.organization_id,
+        status=status,
+        treasury_id=treasury_id,
+        purpose=purpose,
+    )
+    return GovernanceTxList.model_validate({"items": items})
+
+
+@router.get(
+    "/orgs/{organization_id}/governance-txs/{governance_tx_id}",
+    response_model=GovernanceTxView,
+)
 async def get_governance_tx(
     governance_tx_id: uuid.UUID,
     request: Request,
@@ -293,7 +359,10 @@ async def get_governance_tx(
         raise _rpc_failure() from None
 
 
-@router.post("/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures")
+@router.post(
+    "/orgs/{organization_id}/governance-txs/{governance_tx_id}/signatures",
+    response_model=GovernanceTxView,
+)
 async def add_governance_signature(
     governance_tx_id: uuid.UUID,
     payload: SignatureRequest,
@@ -316,7 +385,10 @@ async def add_governance_signature(
         raise _rpc_failure() from None
 
 
-@router.get("/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call")
+@router.get(
+    "/orgs/{organization_id}/governance-txs/{governance_tx_id}/exec-call",
+    response_model=ExecCallView,
+)
 async def get_exec_call(
     governance_tx_id: uuid.UUID,
     request: Request,
@@ -335,7 +407,10 @@ async def get_exec_call(
         raise _rpc_failure() from None
 
 
-@router.post("/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted")
+@router.post(
+    "/orgs/{organization_id}/governance-txs/{governance_tx_id}/submitted",
+    response_model=GovernanceTxView,
+)
 async def report_submission(
     governance_tx_id: uuid.UUID,
     payload: SubmittedRequest,

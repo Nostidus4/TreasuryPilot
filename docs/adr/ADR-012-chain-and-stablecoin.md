@@ -16,9 +16,12 @@ Checked on Sepolia on 2026-10-16 with `symbol()`, `name()` and `decimals()` over
 | --- | --- | --- | --- | --- |
 | Treasury asset (ADR-019), D1-D10 on Sepolia | Aave test USDC, labelled TEST | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` | 6 | Aave faucet; `deployments/11155111.json` `asset` |
 | Evidence run, PAY-only | Circle USDC | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` | 6 | Circle faucet (faucet.circle.com / developer console) |
+| Sepolia test token (not the treasury asset) | `tUSDC` (`TEST USD Coin`), labelled TEST | `0xBbc291e8Bfed018b982646D6F80D3c8ffE4d84cd` | 6 | `deployments/11155111.json` `testToken` |
 | Local/CI (Anvil) | `tUSDC`, labelled TEST | CREATE2, recorded as `testToken` in `deployments/31337.json` | 6 | `Deploy.s.sol` |
 
 `tUSDC` deployment parameters (`contracts/src/test-assets/TestUSDC.sol`): name `TEST USD Coin`, symbol `tUSDC`, 6 decimals, open `mint` (anyone can mint, so it has no value). `Deploy.s.sol` also deploys it on Sepolia as a separately labelled test asset; it is never the treasury asset there.
+
+Circle USDC balance of Safe T (`0xfC6d…6a75`) read on 2026-10-16 at Sepolia block 11925938: 0. The evidence run needs at least 120 USDC (`120000000` base units) first; the Circle faucet needs a human login (see `docs/demo-runbook.md`, Circle USDC evidence run).
 
 ## Consequences
 - Confirmations: Paid after 3 blocks (~36 s), configurable (PH-5). Snapshot freshness ≤ 2 blocks (M08).

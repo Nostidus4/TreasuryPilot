@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="execution-recovery" name="Execution Recovery">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1130" pageHeight="580" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="05 / EXECUTION OUTCOME &amp; RECOVERY" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="20" width="780" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="recorded" value="Outbox recorded&#10;Stable step ID" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="35" y="130" width="235" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="submitted" value="Transaction submitted&#10;Hash persisted" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="360" y="130" width="235" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="observed" value="Receipt observed&#10;Confirmations checked" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="685" y="130" width="235" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="unknown" value="Unknown outcome&#10;Timeout / unavailable RPC" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#205C62;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="360" y="350" width="235" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="resolve" value="Reconcile chain state&#10;Receipt · nonce · effects" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="685" y="350" width="235" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="recorded" target="submitted">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="receipt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="submitted" target="observed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="timeout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="submitted" target="unknown">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="unknown" target="resolve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="confirmed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="resolve" target="observed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="guard" value="No blind retry after an unknown outcome. Resolve the prior attempt before any new broadcast." style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="500" width="1000" height="38" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

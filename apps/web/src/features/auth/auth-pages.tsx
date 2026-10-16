@@ -1,4 +1,4 @@
-import { CircleDollarSign, MailCheck } from 'lucide-react';
+import { ArrowUpRight, BookOpen, CircleDollarSign, MailCheck } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Link,
@@ -213,6 +213,14 @@ export function LoginPage() {
           )}
         </Alert>
       )}
+      <a
+        href={`${import.meta.env.BASE_URL}report/`}
+        className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <BookOpen className="size-5 shrink-0 text-primary" aria-hidden="true" />
+        <span className="flex-1 font-medium">{t('Read the technical report')}</span>
+        <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </a>
     </AuthFrame>
   );
 }

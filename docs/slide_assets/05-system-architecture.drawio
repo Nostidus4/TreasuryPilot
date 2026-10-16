@@ -1,0 +1,98 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="05-system-architecture" name="High-Level System Architecture">
+    <mxGraphModel dx="1920" dy="1080" grid="0" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="background" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7FAFD;strokeColor=#F7FAFD;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1920" height="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="top-accent" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#2058BE;strokeColor=#2058BE;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1920" height="11" as="geometry" />
+        </mxCell>
+        <mxCell id="corner-pink" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FBE1EE;strokeColor=#FBE1EE;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="0" width="260" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="corner-blue" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E4F2FC;strokeColor=#E4F2FC;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="0" y="930" width="210" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="number" value="05" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#E43C91;fontSize=65;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="70" y="63" width="160" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="HIGH-LEVEL SYSTEM ARCHITECTURE" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#2058BE;fontSize=54;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="205" y="67" width="1615" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Human approval  →  deterministic planning  →  constrained on-chain execution" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#496480;fontSize=23;fontStyle=0;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="80" y="151" width="1720" height="43" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-rule" value="" style="rounded=0;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#B8C9E0;strokeColor=#B8C9E0;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1015" width="1760" height="2" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-left" value="TREASURYPILOT  /  TECHNICAL OVERVIEW" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#496480;fontSize=16;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1031" width="950" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="footer-right" value="05" style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=right;fontColor=#E43C91;fontSize=18;fontStyle=1;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="1031" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="operator" value="Finance Operator" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=27;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="165" y="227" width="360" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="approver" value="Approver" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=27;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="780" y="227" width="360" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="owner" value="Treasury Owner" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#DDF4FA;strokeWidth=2;fontColor=#112D56;fontSize=27;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1395" y="227" width="360" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="front-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E7E4F8;strokeColor=#E7E4F8;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;gradientColor=#D7EEFB;gradientDirection=south;" vertex="1" parent="1">
+          <mxGeometry x="100" y="375" width="385" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="api-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E7E4F8;strokeColor=#E7E4F8;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;gradientColor=#D7EEFB;gradientDirection=south;" vertex="1" parent="1">
+          <mxGeometry x="545" y="375" width="385" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="core-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E7E4F8;strokeColor=#E7E4F8;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;gradientColor=#D7EEFB;gradientDirection=south;" vertex="1" parent="1">
+          <mxGeometry x="990" y="375" width="385" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="sign-panel" value="" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#E7E4F8;strokeColor=#E7E4F8;strokeWidth=2;fontColor=#112D56;fontSize=24;fontStyle=0;fontFamily=Arial;spacing=12;gradientColor=#D7EEFB;gradientDirection=south;" vertex="1" parent="1">
+          <mxGeometry x="1435" y="375" width="385" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend" value="FRONTEND&#10;React · Vite · TypeScript&#10;wallet signing" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="118" y="411" width="348" height="198" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="API&#10;FastAPI · session / RBAC&#10;invoice &amp; approval" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="563" y="411" width="348" height="198" as="geometry" />
+        </mxCell>
+        <mxCell id="core" value="CORE + AI WORKERS&#10;Celery · py-core policy&#10;AI read-only proposals" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1008" y="411" width="348" height="198" as="geometry" />
+        </mxCell>
+        <mxCell id="signer" value="ISOLATED SIGNER&#10;attestation · simulation&#10;executor key" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#FFFFFF;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="1453" y="411" width="348" height="198" as="geometry" />
+        </mxCell>
+        <mxCell id="e-frontend-api" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="frontend" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-api-core" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="api" target="core">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-core-signer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="core" target="signer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="data" value="POSTGRESQL  +  REDIS&#10;Business state / outbox    •    task dispatch" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#ECF3FB;strokeColor=#B8C9E0;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="743" width="610" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="chain" value="TREASURYPILOT MODULE  +  SAFES&#10;On-chain caps / floor / replay  •  Aave / EAS" style="rounded=1;arcSize=13;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#DDF4FA;strokeColor=#B8C9E0;strokeWidth=2;fontColor=#112D56;fontSize=25;fontStyle=1;fontFamily=Arial;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="805" y="743" width="1015" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="e-data" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#496480;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="api" target="data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-chain" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#2058BE;strokeWidth=3;endArrow=block;endFill=1;dashed=0;" edge="1" parent="1" source="signer" target="chain">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="Control boundary: AI cannot authorize or sign a payment; the approver, policy, signer and module each check a different condition." style="text;html=0;whiteSpace=wrap;overflow=visible;verticalAlign=middle;align=left;fontColor=#496480;fontSize=22;fontStyle=0;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="100" y="932" width="1730" height="53" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

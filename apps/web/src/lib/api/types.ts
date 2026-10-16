@@ -258,28 +258,38 @@ export interface ApprovalBand {
   k: number;
 }
 
+/** The API mandate JSON: buffers are keyed by Safe address and Safe T has no target. */
 export interface MandateConfig {
-  actions: Array<'REFILL' | 'PAY'>;
+  actions: Array<'REFILL' | 'PAY' | 'SUPPLY'>;
+  refillPaths: Array<{ from: Hex; to: Hex }>;
   limits: {
     PAY: { perRequest: string; daily: string };
     REFILL: { perRequest: string; daily: string };
   };
-  buffers: Array<{ wallet: WalletRole; minimum: string; target: string }>;
+  buffers: Array<{ wallet: Hex; minimum: string; target?: string }>;
+  gasFundingCapWei: string;
   assetPolicies?: MandateAssetPolicy[];
   executor: Hex;
   approvers: Hex[];
   approvalBands?: ApprovalBand[];
-  guardian: Hex;
+  guardian?: Hex;
   validFrom: string;
   expiresAt: string;
+  // Set by the API on save; carried through unchanged when editing a stored mandate.
+  payeeCoolingSeconds?: number;
+  approvalMaxAge?: number;
+  supplyLimits?: { perRequest: string; daily: string };
+  minSupply?: string;
+  reserveHorizonDays?: number;
 }
 
 export interface MandateVersion {
+  /** Mandate version id; the activation route takes this, not the number. */
+  id: string;
   version: number;
   status: MandateStatus;
   config: MandateConfig;
   createdAt: string;
-  activatedAt?: string;
 }
 
 export interface DiffEntry {
@@ -293,6 +303,8 @@ export interface MandateDraft {
   draft: MandateVersion;
   summary: string[];
   diff: DiffEntry[];
+  /** Any looser change, or a new executor, guardian or approval bands. */
+  requiresConfirmation: boolean;
 }
 
 export type PayeeStatus = components['schemas']['PayeeStatus'];
@@ -317,24 +329,19 @@ export type GovernanceStatus =
   | 'Executing'
   | 'Executed'
   | 'Failed'
-  | 'Superseded';
+  | 'Superseded'
+  | 'Cancelled';
 
-export interface GovernanceTx {
+/** What the governance pages render; built from the API's `GovernanceTx` by `features/governance/wire.ts`. */
+export interface GovernanceTxView {
   id: string;
-  kind:
-    | 'DEPLOY_MODULE'
-    | 'CONFIGURE_MANDATE'
-    | 'ADD_PAYEE'
-    | 'DEACTIVATE_PAYEE'
-    | 'GRANT_EXCEPTION'
-    | 'RESUME'
-    | 'REVOKE';
+  kind: string;
   title: string;
   summary: string;
   status: GovernanceStatus;
   treasuryId: string;
   safeAddress: Hex;
-  safeLabel: string;
+  safeLabel?: string;
   nonce: number;
   threshold: number;
   owners: Array<{ address: Hex; name: string }>;
@@ -343,11 +350,14 @@ export interface GovernanceTx {
   diff?: DiffEntry[];
   safeTxHash: Hex;
   createdAt: string;
-  createdBy: string;
+  createdBy?: string;
   txHash?: Hex;
   failureReason?: string;
   supersededBy?: string;
 }
+
+/** The API's governance transaction (generated schema); `.id` is all most callers need. */
+export type GovernanceTx = components['schemas']['GovernanceTxView'];
 
 export interface TypedData {
   domain: {

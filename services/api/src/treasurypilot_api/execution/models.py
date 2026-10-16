@@ -23,6 +23,7 @@ from sqlalchemy import (
     UniqueConstraint,
     desc,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -375,5 +376,57 @@ class IndexCursor(Base):
     last_block: Mapped[int] = mapped_column(BigInteger, nullable=False)
     last_block_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BridgeTransfer(Base):
+    """One cross-chain bridge transfer; in-flight funds are the open rows (EXE-L03)."""
+
+    __tablename__ = "bridge_transfers"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PendingSend', 'Sent', 'Completed', 'Failed', 'Unknown')",
+            name="ck_bridge_transfers_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_bridge_transfers_amount_positive"),
+        CheckConstraint("min_amount_out > 0", name="ck_bridge_transfers_min_out_positive"),
+        CheckConstraint(
+            "source_treasury_id <> destination_treasury_id", name="ck_bridge_transfers_distinct"
+        ),
+        CheckConstraint(
+            "length(btrim(idempotency_key)) > 0", name="ck_bridge_transfers_idempotency_key"
+        ),
+        UniqueConstraint(
+            "source_treasury_id", "idempotency_key", name="uq_bridge_transfers_idempotency"
+        ),
+        Index(
+            "ix_bridge_transfers_open",
+            "source_treasury_id",
+            "status",
+            postgresql_where=text("status IN ('PendingSend', 'Sent', 'Unknown')"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    source_treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
+    )
+    destination_treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    min_amount_out: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PendingSend", server_default="PendingSend"
+    )
+    provider_ref: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
