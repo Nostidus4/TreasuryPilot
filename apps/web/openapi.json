@@ -501,6 +501,104 @@
         "title": "AuditVerifyResponse",
         "type": "object"
       },
+      "BillingOverview": {
+        "properties": {
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubscriptionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["subscription"],
+        "title": "BillingOverview",
+        "type": "object"
+      },
+      "BillingPlanRequest": {
+        "properties": {
+          "baseFeeMinor": {
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Basefeeminor",
+            "type": "integer"
+          },
+          "code": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "perRequestFeeMinor": {
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Perrequestfeeminor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "currency",
+          "baseFeeMinor",
+          "perRequestFeeMinor"
+        ],
+        "title": "BillingPlanRequest",
+        "type": "object"
+      },
+      "BillingPlanView": {
+        "properties": {
+          "baseFeeMinor": {
+            "title": "Basefeeminor",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "currency": {
+            "description": "ISO 4217 code; fees are integer minor units of it.",
+            "title": "Currency",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "perRequestFeeMinor": {
+            "title": "Perrequestfeeminor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "currency",
+          "baseFeeMinor",
+          "perRequestFeeMinor"
+        ],
+        "title": "BillingPlanView",
+        "type": "object"
+      },
       "Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post": {
         "properties": {
           "file": {
@@ -2708,6 +2806,131 @@
         },
         "required": ["invites"],
         "title": "InvitesResponse",
+        "type": "object"
+      },
+      "InvoiceLineView": {
+        "properties": {
+          "amountMinor": {
+            "title": "Amountminor",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "unitAmountMinor": {
+            "title": "Unitamountminor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "description",
+          "quantity",
+          "unitAmountMinor",
+          "amountMinor"
+        ],
+        "title": "InvoiceLineView",
+        "type": "object"
+      },
+      "InvoiceRunView": {
+        "properties": {
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceView"
+            },
+            "title": "Created",
+            "type": "array"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": ["month", "created"],
+        "title": "InvoiceRunView",
+        "type": "object"
+      },
+      "InvoiceView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "title": "Dueat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineView"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "periodMonth": {
+            "title": "Periodmonth",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["open", "paid", "payment_failed", "void"],
+            "title": "Status",
+            "type": "string"
+          },
+          "totalMinor": {
+            "title": "Totalminor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "periodMonth",
+          "currency",
+          "totalMinor",
+          "status",
+          "createdAt",
+          "dueAt",
+          "paidAt",
+          "lines"
+        ],
+        "title": "InvoiceView",
         "type": "object"
       },
       "LabelRequest": {
@@ -6809,6 +7032,66 @@
         "title": "SubmittedRequest",
         "type": "object"
       },
+      "SubscribeRequest": {
+        "properties": {
+          "paymentMethod": {
+            "default": "card",
+            "enum": ["card", "bank_transfer"],
+            "title": "Paymentmethod",
+            "type": "string"
+          },
+          "planId": {
+            "format": "uuid",
+            "title": "Planid",
+            "type": "string"
+          }
+        },
+        "required": ["planId"],
+        "title": "SubscribeRequest",
+        "type": "object"
+      },
+      "SubscriptionView": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "paymentMethod": {
+            "enum": ["card", "bank_transfer"],
+            "title": "Paymentmethod",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/BillingPlanView"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "cancelled"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "plan",
+          "status",
+          "paymentMethod",
+          "startedAt"
+        ],
+        "title": "SubscriptionView",
+        "type": "object"
+      },
       "SupportGrantRequest": {
         "properties": {
           "durationHours": {
@@ -8444,6 +8727,108 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/billing/plans": {
+      "get": {
+        "operationId": "list_billing_plans_admin_billing_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BillingPlanView"
+                  },
+                  "title": "Response List Billing Plans Admin Billing Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Billing Plans",
+        "tags": ["platform-admin"]
+      },
+      "post": {
+        "operationId": "create_billing_plan_admin_billing_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Billing Plan",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/billing/{month}/invoices": {
+      "post": {
+        "description": "Invoice a completed UTC month. Idempotent: existing invoices are never changed.",
+        "operationId": "run_invoices_admin_billing__month__invoices_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Invoices",
+        "tags": ["platform-admin"]
+      }
+    },
     "/admin/tenants": {
       "get": {
         "operationId": "tenants_admin_tenants_get",
@@ -8592,6 +8977,57 @@
           }
         },
         "summary": "Tenant Health",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/tenants/{tenant_id}/subscription": {
+      "put": {
+        "operationId": "set_subscription_admin_tenants__tenant_id__subscription_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Subscription",
         "tags": ["platform-admin"]
       }
     },
@@ -10752,6 +11188,211 @@
         },
         "summary": "Verify Audit Log",
         "tags": ["audit"]
+      }
+    },
+    "/v1/orgs/{organization_id}/billing": {
+      "get": {
+        "operationId": "overview_v1_orgs__organization_id__billing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overview",
+        "tags": ["billing"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/billing/invoices": {
+      "get": {
+        "operationId": "list_invoices_v1_orgs__organization_id__billing_invoices_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceView"
+                  },
+                  "title": "Response List Invoices V1 Orgs  Organization Id  Billing Invoices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invoices",
+        "tags": ["billing"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/billing/invoices/{invoice_id}": {
+      "get": {
+        "operationId": "get_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Invoice",
+        "tags": ["billing"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/billing/invoices/{invoice_id}/pay": {
+      "post": {
+        "description": "Collect by card or bank transfer through the provider; never from a treasury.",
+        "operationId": "pay_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__pay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pay Invoice",
+        "tags": ["billing"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/copilot/threads": {

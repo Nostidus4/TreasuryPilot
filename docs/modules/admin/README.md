@@ -29,7 +29,7 @@ F-150 (FR-924), F-151 (FR-925, M1 via TRS-002), F-152 (FR-926).
 
 ## 4. Data model (Later)
 
-`organizations.platform_status` (active/suspended), `platform_admin_events` (staff tenant operations), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, asset_id, paid_count, paid_volume), `billing_*` (plans, subscriptions, invoices — paid by card/bank outside customer treasuries).
+`organizations.platform_status` (active/suspended), `platform_admin_events` (staff tenant operations), `support_grants` (org_id, staff_user, scope=read, expires_at, granted_by), `usage_monthly` (org_id, month, asset_id, paid_count, paid_volume), `billing_plans`, `billing_subscriptions` (one active per org; `payment_method` constrained to card or bank_transfer), `billing_invoices` (unique per org and UTC month) and `billing_invoice_lines`. All amounts are integer minor units of the plan's fiat currency; invoices are paid by card/bank outside customer treasuries.
 
 ## 5. State
 
@@ -43,9 +43,11 @@ Tenant `Active ⇄ Suspended` (suspension stops planning; never touches funds). 
 
 Support access: OrgAdmin or Owner grants a named staff user 24 h read-only access (maximum 72 h) → staff reads the bounded support summary while the grant is active → grant consent is appended to the tenant audit chain and each support read is appended to `platform_admin_events`. Metering: `POST /admin/usage/{YYYY-MM}/recompute` rebuilds `usage_monthly` from `request_status_events` (each request counts once, in the UTC month of its first Paid event, at its approved amount in integer base units), one row per (org, asset) because base units of different assets are never summed; each recompute is serialized per month and writes a `usage.recomputed` platform admin event per affected org; `GET /admin/usage?month=[&org_id=]` reads it. Recompute is idempotent. `reconciliation_lines` (EXTERNAL_EXPENSE) is not metered yet (follow-up).
 
+Billing (ADM-L03): staff create plans (`/admin/billing/plans`) and set a tenant's subscription; `POST /admin/billing/{YYYY-MM}/invoices` recomputes usage for a completed UTC month and creates one invoice per active subscription (base fee plus per-paid-request fee × paid count summed across assets; volume is never priced because assets are not summed). It is idempotent and never alters an issued invoice. Tenant OrgAdmin/Owner/Auditor read `/v1/orgs/{o}/billing`; OrgAdmin/Owner pay with `POST .../invoices/{id}/pay`, which calls a `PaymentProvider` adapter (card or bank transfer) with a stable idempotency key while the invoice row is locked. Config: `TP_BILLING_PROVIDER` = `none` (default; collection returns 503) or `fake` (deterministic, local/test only); real processors are injected via `create_app(payment_provider=...)` with credentials from env. The billing modules may not import treasury, chain, execution or mandate code (enforced by a test), so no fee is ever deducted from a customer treasury (BR-091, M18-D4).
+
 ## 9. Configuration
 
-Pricing model to be decided (Later); suspension policy; support grant max 72 h.
+Pricing: flat base fee plus per-paid-request fee per plan (M18-D6 remains a business decision; plans are data); suspension policy; support grant max 72 h.
 
 ## 10. Security
 
