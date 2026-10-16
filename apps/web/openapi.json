@@ -17772,6 +17772,23 @@
               "title": "Organization Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "treasuryId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Treasuryid"
+            }
           }
         ],
         "responses": {

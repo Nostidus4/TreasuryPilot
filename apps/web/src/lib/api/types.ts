@@ -443,6 +443,7 @@ export interface PaymentRequest {
 }
 
 export interface RequestDetail extends PaymentRequest {
+  issueDate?: string | null;
   version: string;
   document?: { name: string; mime: string; url: string };
   fields: ExtractedField[];

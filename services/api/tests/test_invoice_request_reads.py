@@ -235,5 +235,14 @@ def test_vendor_list_carries_payee(database_url: str) -> None:
         assert by_name["Vendor"].payee_id is not None
         assert by_name["Bare"].payee_address is None
         assert by_name["Bare"].payee_id is None
+        # Scoped to another treasury, the payee is not offered.
+        scoped = await SqlAlchemyVendorRepository(sessions).list_vendors(
+            organization_id=_ORG, treasury_id=uuid.uuid4()
+        )
+        assert all(row.payee_id is None for row in scoped)
+        mine = await SqlAlchemyVendorRepository(sessions).list_vendors(
+            organization_id=_ORG, treasury_id=_TREASURY
+        )
+        assert {row.name: row.payee_id is not None for row in mine}["Vendor"]
 
     _run(database_url, scenario)

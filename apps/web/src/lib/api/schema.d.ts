@@ -11980,7 +11980,9 @@ export interface operations {
   };
   list_vendors_v1_orgs__organization_id__vendors_get: {
     parameters: {
-      query?: never;
+      query?: {
+        treasuryId?: string | null;
+      };
       header?: never;
       path: {
         organization_id: string;

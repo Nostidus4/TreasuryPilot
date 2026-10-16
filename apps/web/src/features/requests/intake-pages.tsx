@@ -12,7 +12,7 @@ import {
   CardFooter,
   CardHeader,
 } from '@/components/ui/card';
-import { Alert } from '@/components/ui/misc';
+import { Alert, Skeleton } from '@/components/ui/misc';
 import {
   Table,
   TableBody,
@@ -22,10 +22,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { useAssetInfo } from '@/lib/api/chains';
 import {
   useCreateRequest,
+  useIdempotencyKey,
   useImportCsv,
+  useTreasuryAsset,
   useUploadInvoice,
   useVendors,
 } from '@/features/requests/api';
@@ -186,10 +187,12 @@ export function UploadInvoicePage() {
 export function NewRequestPage() {
   const scope = useOrgScope();
   const navigate = useNavigate();
-  const vendors = useVendors(scope.orgId);
+  const vendors = useVendors(scope.orgId, scope.treasuryId);
   const create = useCreateRequest(scope.orgId);
-  const info = useAssetInfo();
-  const fieldErrors = isApiError(create.error)
+  const asset = useTreasuryAsset(scope.orgId, scope.treasuryId);
+  const idempotency = useIdempotencyKey();
+  const [noPayee, setNoPayee] = useState(false);
+  const serverErrors = isApiError(create.error)
     ? Object.fromEntries(
         (create.error.problem.errors ?? []).map((item) => [
           item.field,
@@ -197,6 +200,12 @@ export function NewRequestPage() {
         ]),
       )
     : undefined;
+  const fieldErrors = noPayee
+    ? {
+        ...serverErrors,
+        vendorId: t('This vendor has no active payee on this treasury.'),
+      }
+    : serverErrors;
 
   return (
     <Page
@@ -213,46 +222,63 @@ export function NewRequestPage() {
         <Card>
           <CardContent>
             <QueryBoundary query={vendors}>
-              {({ items }) => (
-                <RequestForm
-                  vendors={items}
-                  serverErrors={fieldErrors}
-                  onSubmit={(result) => {
-                    const vendor = items.find((v) => v.id === result.vendorId);
-                    if (!vendor?.payeeId || !info) return;
-                    create.mutate(
-                      {
-                        input: { ...result, treasuryId: scope.treasuryId! },
-                        context: {
-                          payeeId: vendor.payeeId,
-                          assetId: info.asset.id,
-                          decimals: info.asset.decimals,
+              {({ items }) =>
+                !asset ? (
+                  <Skeleton className="h-64" />
+                ) : (
+                  <RequestForm
+                    vendors={items}
+                    decimals={asset.decimals}
+                    serverErrors={fieldErrors}
+                    onSubmit={(result) => {
+                      const vendor = items.find(
+                        (v) => v.id === result.vendorId,
+                      );
+                      setNoPayee(!vendor?.payeeId);
+                      if (!vendor?.payeeId) return;
+                      const input = {
+                        ...result,
+                        treasuryId: scope.treasuryId!,
+                      };
+                      create.mutate(
+                        {
+                          input,
+                          context: {
+                            payeeId: vendor.payeeId,
+                            assetId: asset.id,
+                            decimals: asset.decimals,
+                          },
+                          idempotencyKey: idempotency.keyFor(
+                            JSON.stringify([input, vendor.payeeId]),
+                          ),
                         },
-                      },
-                      {
-                        onSuccess: ({ request }) =>
-                          navigate(`${scope.base}/requests/${request.id}`),
-                      },
-                    );
-                  }}
-                >
-                  {create.isError && !fieldErrors?.vendorId && (
-                    <Alert tone="danger">{errorMessage(create.error)}</Alert>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <Button asChild variant="ghost">
-                      <Link to={`${scope.base}/requests`}>{t('Cancel')}</Link>
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      loading={create.isPending}
-                    >
-                      {t('Save draft')}
-                    </Button>
-                  </div>
-                </RequestForm>
-              )}
+                        {
+                          onSuccess: ({ request }) => {
+                            idempotency.reset();
+                            navigate(`${scope.base}/requests/${request.id}`);
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    {create.isError && !fieldErrors?.vendorId && (
+                      <Alert tone="danger">{errorMessage(create.error)}</Alert>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button asChild variant="ghost">
+                        <Link to={`${scope.base}/requests`}>{t('Cancel')}</Link>
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        loading={create.isPending}
+                      >
+                        {t('Save draft')}
+                      </Button>
+                    </div>
+                  </RequestForm>
+                )
+              }
             </QueryBoundary>
           </CardContent>
         </Card>

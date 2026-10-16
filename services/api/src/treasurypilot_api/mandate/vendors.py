@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol, cast
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -70,7 +70,9 @@ class VendorUpdate:
 
 
 class VendorRepository(Protocol):
-    async def list_vendors(self, *, organization_id: uuid.UUID) -> tuple[VendorRecord, ...]: ...
+    async def list_vendors(
+        self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID | None = None
+    ) -> tuple[VendorRecord, ...]: ...
 
     async def get_vendor(
         self, *, organization_id: uuid.UUID, vendor_id: uuid.UUID
@@ -131,18 +133,21 @@ class SqlAlchemyVendorRepository:
         self._sessions = sessions
         self._audit = audit_writer
 
-    async def list_vendors(self, *, organization_id: uuid.UUID) -> tuple[VendorRecord, ...]:
+    async def list_vendors(
+        self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID | None = None
+    ) -> tuple[VendorRecord, ...]:
         async with self._sessions() as session:
             rows = await session.scalars(
                 select(Vendor).where(Vendor.org_id == organization_id).order_by(Vendor.name)
             )
-            payees = await session.scalars(
-                select(Payee)
-                .where(Payee.org_id == organization_id, Payee.status != PayeeStatus.DEACTIVATED)
-                .order_by(Payee.created_at)
+            payee_query = select(Payee).where(
+                Payee.org_id == organization_id, Payee.status != PayeeStatus.DEACTIVATED
             )
-            # shortcut: one payee per vendor (Active wins, else newest); per-treasury choice
-            # belongs to the payees endpoint.
+            if treasury_id is not None:  # a request may only use its own treasury's payee
+                payee_query = payee_query.where(Payee.treasury_id == treasury_id)
+            payees = await session.scalars(payee_query.order_by(Payee.created_at))
+            # shortcut: one payee per vendor (Active wins, else newest); the full per-treasury
+            # list belongs to the payees endpoint.
             best: dict[uuid.UUID, Payee] = {}
             for payee in payees:
                 current = best.get(payee.vendor_id)
@@ -427,8 +432,11 @@ async def list_vendors(
     organization_id: uuid.UUID,
     request: Request,
     member: MemberAccess = Depends(require_member),  # noqa: B008
+    treasury_id: uuid.UUID | None = Query(default=None, alias="treasuryId"),  # noqa: B008
 ) -> VendorListResponse:
-    rows = await _repository(request).list_vendors(organization_id=member.organization_id)
+    rows = await _repository(request).list_vendors(
+        organization_id=member.organization_id, treasury_id=treasury_id
+    )
     return VendorListResponse(items=[VendorView.from_record(row) for row in rows])
 
 

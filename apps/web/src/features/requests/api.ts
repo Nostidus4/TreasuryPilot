@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+
+import { useTreasury } from '@/features/treasury/api';
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
 import {
@@ -21,8 +24,39 @@ import type {
 
 const base = (orgId: string) => `/orgs/${orgId}/requests`;
 
-export const useVendors = (orgId: string) =>
-  useOrgQuery<{ items: Vendor[] }>(orgId, 'payees', ['vendors'], '/vendors');
+/** Vendors with the payee usable by this treasury (a request must use its own treasury's payee). */
+export const useVendors = (orgId: string, treasuryId?: string) =>
+  useOrgQuery<{ items: Vendor[] }>(
+    orgId,
+    'payees',
+    ['vendors', treasuryId],
+    '/vendors',
+    { query: { treasuryId } },
+  );
+
+/** The treasury's own asset (id and decimals); undefined until it has loaded. */
+export const useTreasuryAsset = (
+  orgId: string,
+  treasuryId: string | undefined,
+) => useTreasury(orgId, treasuryId).data?.treasury.asset;
+
+/**
+ * One Idempotency-Key per distinct submission: a retry of the same body reuses
+ * it, an edited body or a success starts a new one.
+ */
+export function useIdempotencyKey() {
+  const last = useRef<{ fingerprint: string; key: string }>();
+  return {
+    keyFor(fingerprint: string) {
+      if (last.current?.fingerprint !== fingerprint)
+        last.current = { fingerprint, key: crypto.randomUUID() };
+      return last.current.key;
+    },
+    reset() {
+      last.current = undefined;
+    },
+  };
+}
 
 export const useRequests = (orgId: string, status?: string) =>
   useOrgQuery<{ items: PaymentRequest[] }>(
@@ -47,11 +81,15 @@ export const useRequest = (orgId: string, id: string | undefined) =>
 export const useCreateRequest = (orgId: string) =>
   useOrgMutation(
     orgId,
-    (input: { input: RequestInput; context: CreateContext }) =>
+    (input: {
+      input: RequestInput;
+      context: CreateContext;
+      idempotencyKey: string;
+    }) =>
       api.post<{ request: { id: string }; flags: Flag[] }>(
         base(orgId),
         toCreateBody(input.input, input.context),
-        { idempotent: true },
+        { idempotent: input.idempotencyKey },
       ),
   );
 
@@ -73,6 +111,8 @@ export const useImportCsv = (orgId: string) =>
 
 export const useConfirmExtraction = (orgId: string, id: string) =>
   useOrgMutation(orgId, (fields: Record<string, string>) =>
+    // shortcut: the API has no extraction/confirm endpoint yet (pre-existing), so this 404s;
+    // replace with PATCH + terms confirm once uploads are wired to the real API.
     api.post<{ request: RequestDetail }>(
       `${base(orgId)}/${id}/extraction/confirm`,
       { fields },
@@ -104,11 +144,12 @@ export const useEditRequest = (orgId: string, id: string) =>
     (input: {
       version: string;
       decimals: number;
+      issueDate?: string | null;
       fields: Parameters<typeof toPatchBody>[0];
     }) =>
       api.patch<Versioned>(
         `${base(orgId)}/${id}`,
-        toPatchBody(input.fields, input.decimals),
+        toPatchBody(input.fields, input.decimals, input.issueDate),
         { ifMatch: input.version },
       ),
   );

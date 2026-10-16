@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { AmountInput } from '@/components/domain/amount';
 import { Select, Switch } from '@/components/ui/controls';
 import { Field, Input, Label, Textarea } from '@/components/ui/input';
-import { useAssetInfo } from '@/lib/api/chains';
 import type { ExtractedField, Vendor } from '@/lib/api/types';
 import { t } from '@/lib/i18n';
 import { formatUnits, parseUnits } from '@/lib/money';
@@ -136,6 +135,7 @@ function Provenance({
 
 export function RequestForm({
   children,
+  decimals,
   defaults,
   extracted,
   formId,
@@ -146,6 +146,8 @@ export function RequestForm({
 }: {
   /** Buttons, rendered inside the form after the fields. */
   children: ReactNode;
+  /** The treasury asset's decimals; render the form only once they are known. */
+  decimals: number;
   defaults?: Partial<RequestFormValues>;
   /** Extraction output, keyed by field, for provenance markers. */
   extracted?: ExtractedField[];
@@ -155,8 +157,6 @@ export function RequestForm({
   vendorLocked?: boolean;
   vendors: Vendor[];
 }) {
-  const info = useAssetInfo();
-  const decimals = info?.asset.decimals ?? 6;
   const initial: RequestFormValues = {
     vendorId: '',
     invoiceNumber: '',
@@ -175,8 +175,11 @@ export function RequestForm({
   const { errors, dirtyFields } = form.formState;
   const earlyEnabled = form.watch('earlyEnabled');
   const byKey = (key: string) => extracted?.find((field) => field.key === key);
+  // The API names the invoice number `invoiceNo`.
   const error = (name: keyof RequestFormValues) =>
-    errors[name]?.message ?? serverErrors?.[name];
+    errors[name]?.message ??
+    serverErrors?.[name] ??
+    (name === 'invoiceNumber' ? serverErrors?.invoiceNo : undefined);
 
   const submit = form.handleSubmit((values) => {
     const amount = parseUnits(values.amount, decimals);

@@ -99,7 +99,8 @@ test('finance creates a draft request and submits it for approval on the real AP
   await page.getByRole('link', { name: 'Requests' }).click();
   await page.getByRole('link', { name: 'New request' }).click();
   await page.getByLabel('Vendor').click();
-  await page.getByRole('option').first().click();
+  // Seeded vendor with an Active payee (the others are still Cooling).
+  await page.getByRole('option', { name: 'Acme Supplies (TEST)' }).click();
   const invoice = `E2E-STACK-${Date.now()}`;
   await page.getByLabel('Invoice number').fill(invoice);
   await page.getByLabel('Amount').fill('145.25');

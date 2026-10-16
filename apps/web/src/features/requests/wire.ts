@@ -9,6 +9,7 @@ export interface CreateContext {
 }
 
 const day = (iso: string) => iso.slice(0, 10);
+// 86_400_000 ms per day: the API counts days since 1970-01-01 UTC.
 const epochDay = (iso: string) => Math.floor(Date.parse(day(iso)) / 86_400_000);
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -53,11 +54,15 @@ export function toPatchBody(
     'invoiceNumber' | 'amount' | 'dueDate' | 'description'
   >,
   decimals: number,
+  issueDate?: string | null,
 ) {
+  const dueDate = day(fields.dueDate);
   return {
+    // The API requires issueDate <= dueDate; pull it back when the due date moves before it.
+    ...(issueDate && dueDate < day(issueDate) ? { issueDate: dueDate } : {}),
     invoiceNo: fields.invoiceNumber,
     amount: formatUnits(fields.amount, decimals, { group: false }),
-    dueDate: day(fields.dueDate),
+    dueDate,
     note: fields.description,
   };
 }
