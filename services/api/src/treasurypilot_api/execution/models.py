@@ -275,7 +275,7 @@ class ExecutionPlanStep(Base):
         CheckConstraint("octet_length(asset_address) = 20", name="ck_plan_steps_asset_length"),
         CheckConstraint("amount >= 0", name="ck_plan_steps_amount_nonnegative"),
         CheckConstraint(
-            "(action = 3 AND min_out IS NOT NULL AND min_out > 0 AND venue IS NOT NULL AND venue = 'TEST_ROUTER')"
+            "(action = 3 AND min_out IS NOT NULL AND min_out > 0 AND venue IS NOT NULL AND venue IN ('TEST_ROUTER', 'SIGNED_QUOTE'))"
             " OR (action <> 3 AND min_out IS NULL AND venue IS NULL)",
             name="ck_plan_steps_swap_fields",
         ),

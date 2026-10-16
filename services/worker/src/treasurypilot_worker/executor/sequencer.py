@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
@@ -29,6 +29,7 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
 
+from treasurypilot_core.engine.swap_quote import QuoteRejected
 from treasurypilot_core.policy import Decision, PolicyReasonCode
 from treasurypilot_worker.executor.outbox import (
     PAUSED_SQL,
@@ -234,8 +235,13 @@ async def sequence_plan(
     verifier: Verifier,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    before_send: Callable[[StepExecution], Awaitable[None]] | None = None,
 ) -> SequenceResult:
-    """Advance the plan by at most one step; see the module docstring."""
+    """Advance the plan by at most one step; see the module docstring.
+
+    ``before_send`` runs after a step's PRE_STEP gate allowed it and before anything is signed (EXE-L02:
+    fetch, verify and stage a signed swap quote). ``QuoteRejected`` stops the plan with its code.
+    """
 
     if (request_status := await _request_status(pool, run)) not in _ACTIVE:
         return SequenceResult("Inactive", request_status)
@@ -269,6 +275,11 @@ async def sequence_plan(
             decision = await gate.pre_step(seq)
             if decision.decision != "ALLOW":
                 return await _stop(pool, run, _intent(decision), seq)
+            if before_send is not None:
+                try:
+                    await before_send(step)
+                except QuoteRejected as error:  # stale or forged quote: nothing is signed
+                    return await _stop(pool, run, ReviewIntent("INFRA", error.code), seq)
         # shortcut: re-checked, not locked, through the operation insert (execute_step owns its
         # transaction); a cancel in that window is caught by the signer's attestation checks.
         if (request_status := await _request_status(pool, run)) not in _ACTIVE:

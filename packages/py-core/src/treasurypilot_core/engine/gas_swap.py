@@ -16,6 +16,7 @@ from treasurypilot_core.money import BaseUnits
 
 BPS = 10_000
 GAS_SWAP_VENUE: Literal["TEST_ROUTER"] = "TEST_ROUTER"
+GasSwapVenue = Literal["TEST_ROUTER", "SIGNED_QUOTE"]
 
 
 class GasSwapInfeasible(ValueError):
@@ -25,7 +26,8 @@ class GasSwapInfeasible(ValueError):
 class GasQuote(FrozenModel):
     """A quote from the configured test source: out = in * numerator // denominator."""
 
-    source: Literal["TEST_ROUTER"] = GAS_SWAP_VENUE
+    # SIGNED_QUOTE: ``router`` is the production adapter and the rate is only indicative (sizing).
+    source: GasSwapVenue = GAS_SWAP_VENUE
     router: str
     token_out: str
     numerator: int
@@ -33,7 +35,7 @@ class GasQuote(FrozenModel):
 
 
 class GasSwap(FrozenModel):
-    venue: Literal["TEST_ROUTER"] = GAS_SWAP_VENUE
+    venue: GasSwapVenue = GAS_SWAP_VENUE
     router: str
     amount_in: BaseUnits
     min_out: BaseUnits
@@ -69,6 +71,7 @@ def plan_gas_swap(
     if amount_in > max_amount_in:
         raise GasSwapInfeasible(f"swap of {amount_in} exceeds the bound {max_amount_in}")
     return GasSwap(
+        venue=quote.source,
         router=quote.router,
         amount_in=BaseUnits(amount_in),
         min_out=BaseUnits(swap_min_out(amount_in, quote, slippage_bps)),

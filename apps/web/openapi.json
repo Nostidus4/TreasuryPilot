@@ -4929,7 +4929,7 @@
           "venue": {
             "anyOf": [
               {
-                "const": "TEST_ROUTER",
+                "enum": ["TEST_ROUTER", "SIGNED_QUOTE"],
                 "type": "string"
               },
               {
@@ -5065,7 +5065,7 @@
           "venue": {
             "anyOf": [
               {
-                "const": "TEST_ROUTER",
+                "enum": ["TEST_ROUTER", "SIGNED_QUOTE"],
                 "type": "string"
               },
               {

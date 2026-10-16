@@ -101,7 +101,7 @@ class PlanStepView(ApiModel):
     confirmations: int | None
     verification: Literal["VERIFIED", "MISMATCH"] | None = None
     # SWAP only: the labelled router (never a production one) and the engine's output bound.
-    venue: Literal["TEST_ROUTER"] | None = None
+    venue: Literal["TEST_ROUTER", "SIGNED_QUOTE"] | None = None
     min_out: str | None = None
     updated_at: datetime
 

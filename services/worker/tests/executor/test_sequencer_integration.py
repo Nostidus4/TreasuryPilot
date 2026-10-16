@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 
 from treasurypilot_api.recovery.review_queue import ReviewType, route_for
+from treasurypilot_core.engine.swap_quote import QuoteRejected
 from treasurypilot_core.policy import Check, Decision, PolicyReasonCode
 from treasurypilot_worker.executor.outbox import SignerRefused, SignerUnavailable, StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun, _route, sequence_plan
@@ -295,6 +296,152 @@ def test_first_step_block_is_blocked_not_partial(database_url: str) -> None:
         _sql(database_url, "SELECT type FROM review_items WHERE request_id = $1", run.request_id)
     )
     assert [r["type"] for r in types] == ["NEEDS_AUTHORITY"]
+
+
+def test_a_stale_or_forged_swap_quote_stops_the_plan_before_anything_is_signed(
+    database_url: str,
+) -> None:
+    """EXE-L02: ``before_send`` rejects the quote; no operation, no signer call, one INFRA review."""
+    for code in ("SWAP_QUOTE_EXPIRED", "SWAP_QUOTE_FORGED"):
+        run = asyncio.run(_new_run(database_url, kinds=("SWAP", "REFILL", "PAY")))
+        signer, gate = FakeSigner(), FakeGate()
+        seen: list[str] = []
+
+        async def reject(step: StepExecution, code: str = code, seen: list[str] = seen) -> None:
+            seen.append(step.kind)
+            raise QuoteRejected(code)
+
+        result = asyncio.run(_go(database_url, signer, run, gate, before_send=reject))
+        assert result.status == "Blocked" and result.code == code
+        assert signer.calls == 0 and seen == ["SWAP"]
+        reviews = asyncio.run(
+            _sql(
+                database_url,
+                "SELECT type, primary_code FROM review_items WHERE request_id = $1",
+                run.request_id,
+            )
+        )
+        assert [(r["type"], r["primary_code"]) for r in reviews] == [("INFRA", code)]
+        operations = asyncio.run(
+            _sql(database_url, "SELECT 1 FROM operations WHERE request_id = $1", run.request_id)
+        )
+        assert operations == []
+        assert _request_status(database_url, run) == "NeedsReview"
+
+
+class _AdapterRpc:
+    """Answers the adapter's ``tokenOut()`` view for ``build_swap_quote_hook``."""
+
+    async def call(self, method: str, params: list[Any]) -> str:
+        assert method == "eth_call"
+        return "0x" + "00" * 12 + "66" * 20
+
+
+def _quote_world(database_url: str, *, signing_key: str, ttl: int, stager: Any) -> Any:
+    """A SWAP(SIGNED_QUOTE), REFILL, PAY run plus the driver's hook built from settings (EXE-L02)."""
+    from eth_account import Account
+
+    from treasurypilot_core.money import BaseUnits
+    from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
+    from treasurypilot_worker.config import Settings
+    from treasurypilot_worker.executor.swap_quotes import (
+        FakeQuoteSource,
+        build_swap_quote_hook,
+    )
+
+    adapter, venue = "0x" + "88" * 20, "0x" + "77" * 20
+    safe_t, token_in = "0x" + "22" * 20, "0x" + "55" * 20
+    allowed = Account.from_key("0x" + "a1" * 32).address
+    run = asyncio.run(_new_run(database_url, kinds=("SWAP", "REFILL", "PAY")))
+    sid = "0x" + run.steps[0].step_id.hex()
+    swap = run.steps[0]
+    swap.sign_request["plan"] = {
+        "steps": [{"stepId": sid, "amount": 100}],
+        "swaps": {sid: {"minOut": 190, "venue": "SIGNED_QUOTE"}},
+    }
+    plan = ExecutionPlan(
+        request_id=b"\x01" * 32,
+        treasury="0x" + "11" * 20,
+        chain_id=31337,
+        steps=[
+            PlanStep(
+                seq=0,
+                step_id=swap.step_id,
+                action=Action.SWAP,
+                from_wallet=safe_t,
+                to=adapter,
+                asset=token_in,
+                amount=BaseUnits(100),
+                min_out=BaseUnits(190),
+                venue="SIGNED_QUOTE",
+            )
+        ],
+        planner_source="DETERMINISTIC",
+        evidence_ids=[],
+    )
+    settings = Settings(
+        swap_quote_url="https://quotes.example/q",
+        swap_adapter_address=adapter,
+        swap_quote_signers=allowed,
+        swap_quote_venues=venue,
+    )
+    now = 1_800_000_000
+    source = FakeQuoteSource(
+        signing_key,
+        venue,
+        lambda request: b"route",
+        now=lambda: now,
+        ttl_seconds=ttl,
+    )
+    hook = asyncio.run(
+        build_swap_quote_hook(
+            settings, plan, _AdapterRpc(), stager=stager, source=source, now=lambda: now
+        )
+    )
+    return run, hook
+
+
+def test_driver_hook_stops_a_stale_forged_or_unstageable_swap_quote(database_url: str) -> None:
+    """EXE-L02: the hook the Celery driver builds stops the plan; no operation, no signer call."""
+
+    async def stager(to: str, data: bytes) -> None:
+        raise AssertionError("a rejected quote must never be staged")
+
+    async def ok_stager(to: str, data: bytes) -> None:
+        return None
+
+    cases = [
+        ("0x" + "b2" * 32, 300, ok_stager, "SWAP_QUOTE_FORGED"),  # signer not allowlisted
+        ("0x" + "a1" * 32, -1, ok_stager, "SWAP_QUOTE_EXPIRED"),  # stale
+        ("0x" + "a1" * 32, 300, None, "SWAP_QUOTE_STAGER_UNAVAILABLE"),  # fail closed
+    ]
+    for key, ttl, stage, code in cases:
+        run, hook = _quote_world(
+            database_url,
+            signing_key=key,
+            ttl=ttl,
+            stager=stage if code != "SWAP_QUOTE_FORGED" else stager,
+        )
+        assert hook is not None
+        signer, gate = FakeSigner(), FakeGate()
+        result = asyncio.run(_go(database_url, signer, run, gate, before_send=hook))
+        assert result.status == "Blocked" and result.code == code
+        assert signer.calls == 0
+        reviews = asyncio.run(
+            _sql(
+                database_url,
+                "SELECT type, primary_code FROM review_items WHERE request_id = $1",
+                run.request_id,
+            )
+        )
+        assert [(r["type"], r["primary_code"]) for r in reviews] == [("INFRA", code)]
+        assert (
+            asyncio.run(
+                _sql(database_url, "SELECT 1 FROM operations WHERE request_id = $1", run.request_id)
+            )
+            == []
+        )
+        assert _request_status(database_url, run) == "NeedsReview"
 
 
 def test_expired_attestation_is_renewed_or_stops(database_url: str) -> None:

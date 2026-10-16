@@ -29,9 +29,27 @@ from .payment_terms import InvalidTerms, amount_due, pay_amount, request_value, 
 from .scheduler import schedule_edf, schedule_in_order, schedule_oracle
 from .scoring import binding_constraints, compare_plans, exception_values, score
 from .solver import SOLVERS, Solver, SolverName, get_solver
+from .swap_quote import (
+    SIGNED_QUOTE_VENUE,
+    QuotePolicy,
+    QuoteRejected,
+    SwapQuote,
+    quote_digest,
+    route_hash,
+    submit_quote_calldata,
+    verify_swap_quote,
+)
 
 __all__ = [
     "GAS_SWAP_VENUE",
+    "SIGNED_QUOTE_VENUE",
+    "QuotePolicy",
+    "QuoteRejected",
+    "SwapQuote",
+    "quote_digest",
+    "route_hash",
+    "submit_quote_calldata",
+    "verify_swap_quote",
     "GasQuote",
     "GasSwap",
     "GasSwapInfeasible",

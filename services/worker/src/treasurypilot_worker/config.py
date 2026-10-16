@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     # (raw base units) and does not actually fund executor gas.
     gas_swap_max_amount_in: int | None = None
     gas_swap_slippage_bps: int = 100
+    # Production swap adapter (EXE-L02, F-065): the quote service endpoint and its API key come
+    # from the environment only. Unset URL = no production quote source (SIGNED_QUOTE steps stop).
+    swap_quote_url: str | None = None
+    swap_quote_api_key: SecretStr | None = None
+    swap_quote_max_ttl_seconds: int = Field(default=600, ge=1)
+    # The adapter deployed for the treasuries' module (it must equal the module's swapRouter()), the
+    # allowlisted quote signers and venues (comma-separated addresses, mirroring the adapter's
+    # governance lists) and the indicative rate tokenOut/tokenIn (integers, raw base units) that
+    # sizes the swap; the signed quote itself decides the real price. All unset = test router only.
+    swap_adapter_address: str | None = None
+    swap_quote_signers: str = ""
+    swap_quote_venues: str = ""
+    swap_quote_rate_numerator: int | None = Field(default=None, ge=1)
+    swap_quote_rate_denominator: int | None = Field(default=None, ge=1)
     # Executor balance below which a LowGas alert is emitted (EXE-010): 0.005 native token.
     # One global threshold for every role (executor, sentinel, receipt key) and chain.
     low_gas_threshold_wei: int = 5 * 10**15

@@ -57,9 +57,9 @@ class PlanStep(_HexModel):
     to: Address  # payingWallet for REFILL, payee for PAY, Safe T for WITHDRAW
     asset: Address
     amount: BaseUnits  # amountIn for a SWAP
-    # SWAP only: the engine's output bound and the labelled venue (never a production router).
+    # SWAP only: the engine's output bound and the labelled venue (TEST_ROUTER, or SIGNED_QUOTE for the production adapter).
     min_out: BaseUnits | None = None
-    venue: Literal["TEST_ROUTER"] | None = None
+    venue: Literal["TEST_ROUTER", "SIGNED_QUOTE"] | None = None
 
 
 class ExecutionPlan(_HexModel):
