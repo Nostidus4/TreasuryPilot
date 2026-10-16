@@ -433,6 +433,12 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if isinstance(fx_quote_provider, StaticTestFxQuoteProvider) and any(
+            chain.chain_id != 31337 for chain in configuration.chains
+        ):
+            raise PlatformConfigurationError(
+                "the TEST static FX provider is only allowed on the local chain (31337)"
+            )
         if application.state.fee_history_provider is None:
             application.state.fee_history_provider = RpcSafeVerifier(configuration)
         if application.state.approval_chain_reader is None and configuration.chains:

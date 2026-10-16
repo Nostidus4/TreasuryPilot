@@ -358,6 +358,7 @@ jobs:
           services/api/tests/test_scim_postgres.py
           services/api/tests/test_saml_postgres.py
           infra/scripts/tests/test_seed_local.py
+          infra/scripts/tests/test_seed_local_keys.py
 
   scenario-anvil:
     runs-on: ubuntu-latest

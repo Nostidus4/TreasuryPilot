@@ -145,10 +145,11 @@ test.describe
     invoice = `E2E-STACK-${Date.now()}`;
     await page.getByLabel('Invoice number').fill(invoice);
     await page.getByLabel('Amount').fill('145.25');
-    // Due within the planner's 24 h lead time, so the execution cycle picks the request up.
+    // The planner opens a request's window 24 h before its due date at 00:00 UTC, so tomorrow's UTC
+    // date is always inside it, and never before the (browser-local) issue date, in any timezone.
     await page
       .getByLabel('Due date')
-      .fill(new Date(Date.now() + 12 * 3_600_000).toISOString().slice(0, 10));
+      .fill(new Date(Date.now() + 24 * 3_600_000).toISOString().slice(0, 10));
     await page.getByLabel('Description').fill('Stack create flow');
     await page.getByRole('button', { name: 'Save draft' }).click();
     // The detail page reads GET /requests/{id}.

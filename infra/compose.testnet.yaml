@@ -35,6 +35,8 @@ services:
   api:
     image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-api:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
     environment:
+      # The TEST static FX provider must never run on a testnet VM, whatever .env says.
+      TP_FX_TEST_STATIC_PROVIDER: 'false'
       TP_CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
       # Browser-facing MinIO host (Caddy), used only to sign document reads.
       S3_PUBLIC_ENDPOINT_URL: https://files.${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}

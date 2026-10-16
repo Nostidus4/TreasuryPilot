@@ -4,7 +4,7 @@ x-python-build: &python-build
   context: ..
 
 x-app-environment: &app-environment
-  TP_ENVIRONMENT: local
+  TP_ENVIRONMENT: ${TP_ENVIRONMENT:-local}
   TP_REDIS_URL: redis://redis:6379/0
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
   S3_ENDPOINT_URL: http://minio:9000

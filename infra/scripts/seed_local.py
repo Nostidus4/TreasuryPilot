@@ -22,7 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from eth_account import Account
 from eth_utils import keccak
@@ -156,46 +156,94 @@ def install_fallback_handlers(manifest: dict[str, Any], rpc_url: str) -> None:
 
 
 def upsert_env(path: Path, values: dict[str, str]) -> None:
-    lines = path.read_text().splitlines() if path.exists() else []
-    remaining = dict(values)
-    for index, line in enumerate(lines):
-        key = line.split("=", 1)[0]
-        if key in remaining:
-            lines[index] = f"{key}={remaining.pop(key)}"
-    lines += [f"{key}={value}" for key, value in remaining.items()]
-    path.write_text("\n".join(lines) + "\n")
+    """Set KEY=value lines in place (last occurrence wins; `export ` and CRLF are preserved)."""
+    text_in = path.read_bytes().decode() if path.exists() else ""  # bytes: keep CRLF
+    eol = "\r\n" if "\r\n" in text_in else "\n"
+    lines = text_in.splitlines()
+    for key, value in values.items():
+        hits = [
+            i for i, line in enumerate(lines)
+            if not line.lstrip().startswith("#") and "=" in line
+            and line.strip().removeprefix("export ").split("=", 1)[0].strip() == key
+        ]  # fmt: skip
+        if hits:
+            prefix = "export " if lines[hits[-1]].lstrip().startswith("export ") else ""
+            lines[hits[-1]] = f"{prefix}{key}={value}"
+        else:
+            lines.append(f"{key}={value}")
+    path.write_bytes((eol.join(lines) + eol).encode())
+
+
+def _env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in (path.read_text() if path.exists() else "").splitlines():
+        line = raw.strip().removeprefix("export ").lstrip()
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
 
 
 def write_local_keystores(env_file: Path, keys_dir: Path) -> None:
     """Write TEST executor/policy keystores and point the compose env at them (idempotent)."""
+    addresses = {
+        name: Account.from_key(key).address
+        for name, key in (("executor", EXECUTOR_TEST_KEY), ("policy", POLICY_TEST_KEY))
+    }
+    updates = {
+        "TP_EXECUTOR_ADDRESS": addresses["executor"],
+        "TP_TRUSTED_POLICY_SIGNERS": json.dumps([addresses["policy"]], separators=(",", ":")),
+        "TP_EXECUTOR_KEYSTORE_MAP": json.dumps(
+            {str(sid("treasury")): "/run/secrets/executor_keystore"}, separators=(",", ":")
+        ),
+    }
+    paths = {
+        "TP_EXECUTOR_KEYSTORE_FILE": str(keys_dir / "executor.json"),
+        "TP_EXECUTOR_KEYSTORE_PASSWORD_FILE": str(keys_dir / "password"),
+        "TP_POLICY_KEYSTORE_FILE": str(keys_dir / "policy.json"),
+        "TP_POLICY_KEYSTORE_PASSWORD_FILE": str(keys_dir / "password"),
+    }
+    current = _env_values(env_file)
+    # Never replace an operator's own key wiring: only empty, equal or already-local values.
+    for key, value in {**updates, **paths}.items():
+        existing = current.get(key, "")
+        ours = key in paths and existing.startswith(("/run/secrets", str(keys_dir)))
+        if existing and existing != value and not ours:
+            raise SystemExit(
+                f"refusing to overwrite {key}={existing!r} in {env_file}: it is not the local "
+                f"TEST key wiring. Clear it to let make seed manage the local keys."
+            )
     keys_dir.mkdir(parents=True, exist_ok=True)
     password_file = keys_dir / "password"
     password_file.write_text(KEYSTORE_TEST_PASSWORD)
-    addresses = {}
+    password_file.chmod(0o644)  # bind-mounted docker secret, read by uid 65532; public TEST value
     for name, key in (("executor", EXECUTOR_TEST_KEY), ("policy", POLICY_TEST_KEY)):
-        addresses[name] = Account.from_key(key).address
         keystore = Account.encrypt(
             bytes.fromhex(key[2:]), KEYSTORE_TEST_PASSWORD, kdf="pbkdf2", iterations=1000
         )
-        (keys_dir / f"{name}.json").write_text(json.dumps(keystore))
-    current = dict(line.split("=", 1) for line in env_file.read_text().splitlines() if "=" in line)
+        target = keys_dir / f"{name}.json"
+        target.write_text(json.dumps(keystore, separators=(",", ":")))
+        target.chmod(0o644)  # same: container uid 65532 must read the mounted keystore
     upsert_env(
         env_file,
         {
-            "TP_EXECUTOR_ADDRESS": addresses["executor"],
-            "TP_TRUSTED_POLICY_SIGNERS": json.dumps([addresses["policy"]]),
-            "TP_EXECUTOR_KEYSTORE_MAP": json.dumps(
-                {str(sid("treasury")): "/run/secrets/executor_keystore"}
-            ),
-            "TP_EXECUTOR_KEYSTORE_FILE": str(keys_dir / "executor.json"),
-            "TP_EXECUTOR_KEYSTORE_PASSWORD_FILE": str(password_file),
-            "TP_POLICY_KEYSTORE_FILE": str(keys_dir / "policy.json"),
-            "TP_POLICY_KEYSTORE_PASSWORD_FILE": str(password_file),
+            **updates,
+            **paths,
             # The worker and signer authenticate with this; keep an operator-set value.
             "TP_SIGNER_SHARED_SECRET": current.get("TP_SIGNER_SHARED_SECRET")
             or secrets.token_urlsafe(32),
         },
     )
+
+
+def assert_local_targets(rpc_url: str, db_url: str) -> None:
+    """Seeding rewrites keys, storage and rows: only ever against Anvil and a local database."""
+    chain_id = int(rpc(rpc_url, "eth_chainId", []), 16)
+    host = urlsplit(db_url).hostname
+    if chain_id != CHAIN_ID or host not in {"localhost", "127.0.0.1", "::1", "postgres"}:
+        raise SystemExit(
+            f"refusing to seed: RPC chain id {chain_id} (need {CHAIN_ID}), database host {host!r}"
+        )
 
 
 async def _run(c: AsyncConnection, sql: str, **params: object) -> None:
@@ -456,6 +504,7 @@ def database_url() -> str:
 
 
 async def main_async(args: argparse.Namespace) -> None:
+    assert_local_targets(args.rpc_url, database_url())
     manifest = json.loads(Path(args.manifest).read_text())
     config_dir = Path(args.config_dir)
     # The sync below reads decimals() from this host, so it needs host-reachable RPC URLs; the
