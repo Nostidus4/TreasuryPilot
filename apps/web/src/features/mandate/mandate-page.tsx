@@ -23,6 +23,8 @@ import {
   useMandates,
   useSaveMandateDraft,
 } from '@/features/controls/api';
+import { StepUpDialog } from '@/features/auth/mfa';
+import { fieldErrors } from '@/features/mandate/wire';
 import { ApprovalBandsEditor } from '@/features/mandate/approval-bands';
 import {
   bandsDraftFrom,
@@ -79,11 +81,16 @@ const amountFields = (
       value: buffer.minimum,
       decimals: primaryDecimals,
     },
-    {
-      key: `buffers.${buffer.wallet}.target`,
-      value: buffer.target,
-      decimals: primaryDecimals,
-    },
+    // Safe T has a minimum buffer only.
+    ...(buffer.target === undefined
+      ? []
+      : [
+          {
+            key: `buffers.${buffer.wallet}.target`,
+            value: buffer.target,
+            decimals: primaryDecimals,
+          },
+        ]),
   ]),
   ...(config.assetPolicies ?? []).flatMap((policy) => {
     const decimals = assetDecimals.get(policy.assetId);
@@ -123,26 +130,51 @@ const amountFields = (
 
 function blankConfig(state: TreasuryState): MandateConfig {
   const zero = { perRequest: '0', daily: '0' };
-  const expires = new Date(Date.now() + 30 * 86_400_000).toISOString();
+  const source = state.wallets.find((wallet) => wallet.role === 'T');
+  const operational = state.wallets.filter(
+    (wallet) => wallet.role === 'O1' || wallet.role === 'O2',
+  );
   return {
     actions: ['REFILL', 'PAY'],
+    refillPaths: source
+      ? operational.map((wallet) => ({
+          from: source.safeAddress,
+          to: wallet.safeAddress,
+        }))
+      : [],
     assetPolicies: [],
     limits: { PAY: zero, REFILL: zero },
-    buffers: state.wallets
-      .filter((wallet) => wallet.role === 'O1' || wallet.role === 'O2')
-      .map((wallet) => ({ wallet: wallet.role, minimum: '0', target: '0' })),
-    executor: state.treasury.moduleAddress,
+    // The API needs a Safe T minimum and a target for every operational Safe.
+    buffers: [
+      ...(source ? [{ wallet: source.safeAddress, minimum: '0' }] : []),
+      ...operational.map((wallet) => ({
+        wallet: wallet.safeAddress,
+        minimum: '0',
+        target: '0',
+      })),
+    ],
+    // shortcut: 0.05 ETH default gas cap, not editable here; add a field if owners need to tune it.
+    gasFundingCapWei: '50000000000000000',
+    // The API has no executor address to prefill; the owner enters it. The guardian defaults server-side.
+    executor: '0x',
     approvers: [],
-    guardian:
-      state.wallets.find((wallet) => wallet.role === 'GUARDIAN')?.safeAddress ??
-      state.treasury.moduleAddress,
     validFrom: new Date().toISOString(),
-    expiresAt: expires,
+    expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
   };
 }
 
-function Summary({ version }: { version: MandateVersion }) {
+function Summary({
+  version,
+  wallets,
+}: {
+  version: MandateVersion;
+  wallets: TreasuryState['wallets'];
+}) {
   const { config } = version;
+  const walletLabel = (address: string) =>
+    wallets.find(
+      (wallet) => wallet.safeAddress.toLowerCase() === address.toLowerCase(),
+    )?.label ?? address;
   return (
     <KeyValueList
       items={[
@@ -174,12 +206,14 @@ function Summary({ version }: { version: MandateVersion }) {
           ),
         },
         ...config.buffers.map((buffer) => ({
-          label: t('Safe {{role}}', { role: buffer.wallet }),
+          label: t('Safe {{role}}', { role: walletLabel(buffer.wallet) }),
           hint: t('minimum buffer / target'),
           value: (
             <span className="grid justify-items-end">
               <Amount value={buffer.minimum} context="column" />
-              <Amount value={buffer.target} context="column" muted />
+              {buffer.target !== undefined && (
+                <Amount value={buffer.target} context="column" muted />
+              )}
             </span>
           ),
         })),
@@ -217,7 +251,14 @@ function Summary({ version }: { version: MandateVersion }) {
             ]
           : []),
         { label: t('Executor'), value: <Address address={config.executor} /> },
-        { label: t('Guardian'), value: <Address address={config.guardian} /> },
+        ...(config.guardian
+          ? [
+              {
+                label: t('Guardian'),
+                value: <Address address={config.guardian} />,
+              },
+            ]
+          : []),
         { label: t('Expires'), value: formatDate(config.expiresAt) },
       ]}
     />
@@ -249,7 +290,11 @@ function Editor({
     availableAssets.map((asset) => [asset.id, asset.decimals]),
   );
   const members = useMembers(scope.orgId);
-  const saveDraft = useSaveMandateDraft(scope.orgId, scope.treasuryId);
+  const saveDraft = useSaveMandateDraft(
+    scope.orgId,
+    scope.treasuryId,
+    state.treasury.asset,
+  );
   const activation = useMandateActivationTx(scope.orgId, scope.treasuryId);
 
   const [amounts, setAmounts] = useState<Amounts>(() =>
@@ -277,14 +322,14 @@ function Editor({
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<MandateDraft>();
   const [confirmLooser, setConfirmLooser] = useState(false);
+  const [executor, setExecutor] = useState<string>(
+    base.executor === '0x' ? '' : base.executor,
+  );
+  // The action to retry once the owner has entered a fresh authenticator code.
+  const [afterStepUp, setAfterStepUp] = useState<(() => void) | null>(null);
 
   const serverErrors = isApiError(saveDraft.error)
-    ? Object.fromEntries(
-        (saveDraft.error.problem.errors ?? []).map((item) => [
-          item.field,
-          item.message,
-        ]),
-      )
+    ? fieldErrors(saveDraft.error.problem)
     : {};
   const errorFor = (key: string) => localErrors[key] ?? serverErrors[key];
   const touch = () => {
@@ -292,7 +337,7 @@ function Editor({
     setConfirmLooser(false);
   };
   // Mixed diffs (some looser, some stricter) are gated on purpose: any looser entry needs confirmation.
-  const looser = preview?.diff.some((entry) => entry.direction === 'LOOSER');
+  const looser = preview?.requiresConfirmation;
 
   const build = (): MandateConfig | null => {
     const errors: Record<string, string> = {};
@@ -323,7 +368,9 @@ function Editor({
       buffers: base.buffers.map((buffer) => ({
         wallet: buffer.wallet,
         minimum: read(`buffers.${buffer.wallet}.minimum`),
-        target: read(`buffers.${buffer.wallet}.target`),
+        ...(buffer.target === undefined
+          ? {}
+          : { target: read(`buffers.${buffer.wallet}.target`) }),
       })),
       assetPolicies: enabledAssets.map((assetId) => {
         const precision = decimalsByAsset.get(assetId);
@@ -365,8 +412,11 @@ function Editor({
         };
       }),
       approvers,
+      executor: executor as Hex,
       expiresAt: `${expiresAt}T00:00:00.000Z`,
     };
+    if (!/^0x[0-9a-fA-F]{40}$/.test(executor))
+      errors.executor = t('Enter a 0x address with 40 hex characters.');
     const banded = buildApprovalBands(bandsDraft, decimals, approvers.length);
     if (banded.error) errors.approvalBands = banded.error;
     if (banded.bands) config.approvalBands = banded.bands;
@@ -463,6 +513,27 @@ function Editor({
     ) ?? [];
   const pending = versions.find((item) => item.status === 'PendingActivation');
 
+  // Owner actions need a fresh second factor (STEP_UP_REQUIRED): ask once, then retry.
+  const save = (config: MandateConfig) =>
+    saveDraft.mutate(config, {
+      onSuccess: (draft) => {
+        setConfirmLooser(false);
+        setPreview(draft);
+      },
+      onError: (error) => {
+        if (isApiError(error, 'STEP_UP_REQUIRED'))
+          setAfterStepUp(() => () => save(config));
+      },
+    });
+  const activate = (mandateId: string) =>
+    activation.mutate(mandateId, {
+      onSuccess: ({ id }) => navigate(`${scope.base}/governance/${id}`),
+      onError: (error) => {
+        if (isApiError(error, 'STEP_UP_REQUIRED'))
+          setAfterStepUp(() => () => activate(mandateId));
+      },
+    });
+
   return (
     <div className="grid items-start gap-4 lg:grid-cols-5">
       <form
@@ -471,13 +542,7 @@ function Editor({
         onSubmit={(event) => {
           event.preventDefault();
           const config = build();
-          if (config)
-            saveDraft.mutate(config, {
-              onSuccess: (draft) => {
-                setConfirmLooser(false);
-                setPreview(draft);
-              },
-            });
+          if (config) save(config);
         }}
       >
         <Card>
@@ -608,22 +673,54 @@ function Editor({
                 className="grid gap-4 sm:grid-cols-2"
               >
                 <legend className="mb-2 text-sm font-medium">
-                  {state.wallets.find((wallet) => wallet.role === buffer.wallet)
-                    ?.label ?? buffer.wallet}{' '}
+                  {state.wallets.find(
+                    (wallet) =>
+                      wallet.safeAddress.toLowerCase() ===
+                      buffer.wallet.toLowerCase(),
+                  )?.label ?? 'Safe'}{' '}
                   <span className="font-normal text-muted-foreground">
-                    ({buffer.wallet})
+                    <Address address={buffer.wallet} />
                   </span>
                 </legend>
                 {amountField(
                   `buffers.${buffer.wallet}.minimum`,
                   t('Minimum buffer'),
                 )}
-                {amountField(
-                  `buffers.${buffer.wallet}.target`,
-                  t('Target balance'),
-                )}
+                {buffer.target !== undefined &&
+                  amountField(
+                    `buffers.${buffer.wallet}.target`,
+                    t('Target balance'),
+                  )}
               </fieldset>
             ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title={t('Executor')}
+            description={t(
+              'The contract that submits approved payments to the module.',
+            )}
+          />
+          <CardContent>
+            <Field
+              htmlFor="executor"
+              label={t('Executor address')}
+              error={errorFor('executor')}
+            >
+              <Input
+                id="executor"
+                className="num"
+                placeholder="0x…"
+                value={executor}
+                aria-invalid={Boolean(errorFor('executor'))}
+                onChange={(event) => {
+                  touch();
+                  setExecutor(event.target.value.trim());
+                }}
+              />
+            </Field>
           </CardContent>
         </Card>
 
@@ -840,12 +937,7 @@ function Editor({
                   variant="primary"
                   loading={activation.isPending}
                   disabled={looser && !confirmLooser}
-                  onClick={() =>
-                    activation.mutate(preview.draft.version, {
-                      onSuccess: ({ governanceTx }) =>
-                        navigate(`${scope.base}/governance/${governanceTx.id}`),
-                    })
-                  }
+                  onClick={() => activate(preview.draft.id)}
                 >
                   {t('Create governance transaction')}
                 </Button>
@@ -859,6 +951,15 @@ function Editor({
           )}
         </Card>
       </aside>
+      <StepUpDialog
+        open={afterStepUp !== null}
+        onOpenChange={(open) => !open && setAfterStepUp(null)}
+        onDone={() => {
+          const retry = afterStepUp;
+          setAfterStepUp(null);
+          retry?.();
+        }}
+      />
     </div>
   );
 }
@@ -939,7 +1040,7 @@ export function MandatePage() {
                       })}
                     />
                     <CardContent>
-                      <Summary version={active} />
+                      <Summary version={active} wallets={state.wallets} />
                     </CardContent>
                   </Card>
                 ) : (
@@ -967,17 +1068,16 @@ export function MandatePage() {
                                 meta={mandateStatus(version.status)}
                               />
                               <span className="ml-auto text-sm text-muted-foreground">
-                                {version.activatedAt
-                                  ? t('Activated {{date}}', {
-                                      date: formatDateTime(version.activatedAt),
-                                    })
-                                  : t('Created {{date}}', {
-                                      date: formatDateTime(version.createdAt),
-                                    })}
+                                {t('Created {{date}}', {
+                                  date: formatDateTime(version.createdAt),
+                                })}
                               </span>
                             </summary>
                             <div className="max-w-2xl px-4 pb-4">
-                              <Summary version={version} />
+                              <Summary
+                                version={version}
+                                wallets={state.wallets}
+                              />
                             </div>
                           </details>
                         </li>

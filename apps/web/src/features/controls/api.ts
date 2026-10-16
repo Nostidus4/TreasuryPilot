@@ -1,3 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
+
+import {
+  fromDraftResponse,
+  fromMandateView,
+  type MandateDraftWire,
+  type MandateView,
+} from '@/features/mandate/wire';
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
 import type {
@@ -5,8 +13,6 @@ import type {
   GovernanceTx,
   Hex,
   MandateConfig,
-  MandateDraft,
-  MandateVersion,
   Payee,
   TxCall,
   TypedData,
@@ -20,25 +26,38 @@ const treasuryBase = (orgId: string, treasuryId: string) =>
 /* ───────────── Mandate ───────────── */
 
 export const useMandates = (orgId: string, treasuryId: string) =>
-  useOrgQuery<{ items: MandateVersion[] }>(
-    orgId,
-    'mandates',
-    [treasuryId],
-    `/treasuries/${treasuryId}/mandates`,
-  );
+  useQuery({
+    queryKey: ['org', orgId, 'mandates', treasuryId, null],
+    queryFn: async ({ signal }) => {
+      const { items } = await api.get<{ items: MandateView[] }>(
+        `/orgs/${orgId}/treasuries/${treasuryId}/mandates`,
+        { signal },
+      );
+      return { items: items.map(fromMandateView) };
+    },
+  });
 
-export const useSaveMandateDraft = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (config: MandateConfig) =>
-    api.post<MandateDraft>(
-      `${treasuryBase(orgId, treasuryId)}/mandates`,
-      config,
+/** Owner-only and step-up gated: a 403 `STEP_UP_REQUIRED` means ask for the code and retry. */
+export const useSaveMandateDraft = (
+  orgId: string,
+  treasuryId: string,
+  asset: { decimals: number; symbol: string },
+) =>
+  useOrgMutation(orgId, async (config: MandateConfig) =>
+    fromDraftResponse(
+      await api.post<MandateDraftWire>(
+        `${treasuryBase(orgId, treasuryId)}/mandates`,
+        config,
+      ),
+      asset,
     ),
   );
 
+/** Creates the Safe transaction for a draft (by id); the response is the governance tx. */
 export const useMandateActivationTx = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (version: number) =>
-    api.post<{ governanceTx: GovernanceTx }>(
-      `${treasuryBase(orgId, treasuryId)}/mandates/${version}/activation-tx`,
+  useOrgMutation(orgId, (mandateId: string) =>
+    api.post<{ id: string }>(
+      `${treasuryBase(orgId, treasuryId)}/mandates/${mandateId}/governance-tx`,
     ),
   );
 
