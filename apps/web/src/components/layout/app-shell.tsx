@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   BarChart3,
+  BookOpen,
   Building2,
   Check,
   ChevronsUpDown,
@@ -329,6 +330,18 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           );
         })}
       </nav>
+      {import.meta.env.PROD && (
+        <div className="border-t p-2.5">
+          <a
+            href={`${import.meta.env.BASE_URL}report/`}
+            onClick={onNavigate}
+            className="flex h-8 items-center gap-2.5 rounded-md px-2 text-base text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            <BookOpen className="size-4 shrink-0" aria-hidden="true" />
+            <span>{t('Technical report')}</span>
+          </a>
+        </div>
+      )}
     </div>
   );
 }

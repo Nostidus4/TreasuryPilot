@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="liquidity-decision" name="Liquidity Decision ZH">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1130" pageHeight="570" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="04 / 流动性决策" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="20" width="750" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="inputs" value="可用输入&#10;Safe 余额 · 已批准未付请求&#10;floor · 债务准备金 · 占用 · Aave 现金" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=15;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="35" y="100" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="reserve" value="必需 Safe 准备金&#10;付款 + floor + 债务 + 占用" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="470" y="100" width="310" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="decision" value="比较 Safe 余额&#10;与必需准备金" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=16;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="470" y="290" width="310" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="supply" value="资金有余&#10;在上限和最小额内 supply" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="35" y="445" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="withdraw" value="资金不足&#10;按 aToken / pool 现金 withdraw" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="405" y="445" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="block" value="仍有缺口&#10;流动性不足，停止执行" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#205C62;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="775" y="445" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="inputs" target="reserve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="reserve" target="decision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="余额有余" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="decision" target="supply">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="缺口" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="decision" target="withdraw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="未补足" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="withdraw" target="block">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="动态准备金在链下计算；模块在链上执行静态 floor 与 supply 上限。" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#566970;fontSize=13;fontStyle=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="540" width="1060" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

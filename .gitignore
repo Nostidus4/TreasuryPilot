@@ -41,3 +41,4 @@ test-results/
 playwright-report/
 deployments/local/
 docs/evidence/scenarios/
+/docs/report-site/
