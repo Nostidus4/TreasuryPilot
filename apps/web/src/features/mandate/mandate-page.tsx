@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { getAddress, isAddress, isAddressEqual, zeroAddress } from 'viem';
 import { useNavigate } from 'react-router-dom';
 
 import { Amount, AmountInput } from '@/components/domain/amount';
@@ -415,8 +416,12 @@ function Editor({
       executor: executor as Hex,
       expiresAt: `${expiresAt}T00:00:00.000Z`,
     };
-    if (!/^0x[0-9a-fA-F]{40}$/.test(executor))
-      errors.executor = t('Enter a 0x address with 40 hex characters.');
+    if (
+      !isAddress(executor, { strict: true }) ||
+      isAddressEqual(executor, zeroAddress)
+    )
+      errors.executor = t('Enter a valid, non-zero executor address.');
+    else config.executor = getAddress(executor);
     const banded = buildApprovalBands(bandsDraft, decimals, approvers.length);
     if (banded.error) errors.approvalBands = banded.error;
     if (banded.bands) config.approvalBands = banded.bands;
@@ -842,14 +847,15 @@ function Editor({
             </Field>
           </CardContent>
           <CardFooter>
-            {saveDraft.isError && Object.keys(serverErrors).length === 0 && (
-              <p
-                role="alert"
-                className="mr-auto text-sm text-danger-foreground"
-              >
-                {errorMessage(saveDraft.error)}
-              </p>
-            )}
+            {saveDraft.isError &&
+              !isApiError(saveDraft.error, 'STEP_UP_REQUIRED') && (
+                <p
+                  role="alert"
+                  className="mr-auto text-sm text-danger-foreground"
+                >
+                  {errorMessage(saveDraft.error)}
+                </p>
+              )}
             <Button
               type="submit"
               variant="primary"
@@ -928,9 +934,12 @@ function Editor({
                     </label>
                   </Alert>
                 )}
-                {activation.isError && (
-                  <Alert tone="danger">{errorMessage(activation.error)}</Alert>
-                )}
+                {activation.isError &&
+                  !isApiError(activation.error, 'STEP_UP_REQUIRED') && (
+                    <Alert tone="danger">
+                      {errorMessage(activation.error)}
+                    </Alert>
+                  )}
               </CardContent>
               <CardFooter>
                 <Button
