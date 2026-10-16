@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from eth_abi import decode
 from eth_abi.exceptions import DecodingError
 from eth_hash.auto import keccak
+from eth_utils import to_checksum_address
 
 from treasurypilot_core.eip712 import (
     PAY,
@@ -418,7 +419,8 @@ class SigningService:
             transaction = {
                 "chainId": chain_id,
                 "nonce": reserved.transaction_nonce,
-                "to": request.payload.to,
+                # eth-account rejects a non-checksummed `to`; the worker sends lowercase hex.
+                "to": to_checksum_address(request.payload.to),
                 "value": 0,
                 "data": request.payload.data,
                 "gas": gas_limit,

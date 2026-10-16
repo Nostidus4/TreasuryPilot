@@ -593,6 +593,17 @@ def test_same_step_payload_can_be_resigned_with_its_original_transaction_nonce()
     assert len(node.sent) == 2
 
 
+def test_a_lowercase_payload_address_is_signed() -> None:
+    service, node, _ = _service()
+    request = _make_request()
+    lowercase = request.model_copy(
+        update={"payload": request.payload.model_copy(update={"to": request.payload.to.lower()})}
+    )
+
+    assert asyncio.run(service.sign_and_send(lowercase)).nonce == 0
+    assert len(node.sent) == 1
+
+
 def test_replay_returns_the_original_hash_and_rebroadcasts_the_stored_transaction() -> None:
     service, node, _ = _service()
     first = asyncio.run(service.sign_and_send(_make_request()))
