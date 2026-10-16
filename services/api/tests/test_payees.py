@@ -803,10 +803,31 @@ def test_payee_openapi_contract_is_fully_typed() -> None:
 
 
 def test_screening_hit_payee_is_listed_as_failed_for_the_web() -> None:
-    # The web gets 422 SCREENING_HIT from the POST and then relies on the list.
+    # The web gets 422 SCREENING_HIT from the POST, then relies on the extensions and list.
     client, _ = make_client()
     with client:
         vendor_id = new_vendor(client)
-        client.post(PAYEES, json={"vendorId": vendor_id, "label": "Bad", "address": LISTED})
+        response = client.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Bad", "address": LISTED}
+        )
         items = client.get(PAYEES).json()["items"]
+    body = response.json()
+    assert response.status_code == 422 and body["code"] == "SCREENING_HIT"
+    assert body["payeeId"] == items[0]["id"]
     assert [(i["status"], i["screening"]["result"]) for i in items] == [("ScreeningFailed", "HIT")]
+
+
+def test_provider_error_payee_is_listed_as_failed_for_the_web() -> None:
+    client, _ = make_client(provider=DownProvider())
+    with client:
+        vendor_id = new_vendor(client)
+        response = client.post(
+            PAYEES, json={"vendorId": vendor_id, "label": "Main", "address": CLEAN}
+        )
+        items = client.get(PAYEES).json()["items"]
+    body = response.json()
+    assert response.status_code == 503 and body["code"] == "DATA_MISSING"
+    assert body["payeeId"] == items[0]["id"]
+    assert [(i["status"], i["screening"]["result"]) for i in items] == [
+        ("ScreeningFailed", "ERROR")
+    ]

@@ -199,6 +199,30 @@ const governanceView = (tx: (typeof db.governance)[number]) => {
   return view;
 };
 
+/** Mirrors the API: a hit (…dead) or provider error (…fa11) stores the payee ScreeningFailed, then 422/503. */
+function screenOrFail(payee: Payee) {
+  const tail = payee.address.toLowerCase();
+  const result = tail.endsWith('dead')
+    ? 'HIT'
+    : tail.endsWith('fa11')
+      ? 'ERROR'
+      : null;
+  if (!result) return;
+  payee.screening = { ...clearScreening(isoNow()), result };
+  payee.status = 'ScreeningFailed';
+  if (result === 'HIT')
+    fail(
+      422,
+      'SCREENING_HIT',
+      'The address matched a sanctions screening list and is blocked.',
+    );
+  fail(
+    503,
+    'DATA_MISSING',
+    'The screening provider did not answer; the payee is blocked.',
+  );
+}
+
 export const treasuryHandlers = [
   route('get', '/orgs/:orgId/treasuries', ({ params }) => {
     const org = requireOrg(params.orgId);
@@ -928,15 +952,7 @@ export const treasuryHandlers = [
       db.payees.unshift(payee);
       // The real API screens inside the POST and answers a hit with 422 after
       // persisting the payee as ScreeningFailed.
-      if (address.toLowerCase().endsWith('dead')) {
-        payee.screening = { ...clearScreening(isoNow()), result: 'HIT' };
-        payee.status = 'ScreeningFailed';
-        fail(
-          422,
-          'SCREENING_HIT',
-          'The address matched a sanctions screening list and is blocked.',
-        );
-      }
+      screenOrFail(payee);
       // The delay keeps the Screening state observable in the mock.
       schedule(2000, () => {
         payee.screening = clearScreening(isoNow());
@@ -1080,6 +1096,7 @@ export const treasuryHandlers = [
         createdAt: isoNow(),
       };
       db.payees.unshift(payee);
+      screenOrFail(payee);
       return {
         payee,
         deactivationGovernanceTx: governanceView(deactivationTx(state, old)),

@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { api } from '@/lib/api/http';
@@ -10,7 +11,10 @@ import { renderApp } from '@/test/render';
 const PAYEES = '/o/org_northwind/t/trs_main/payees';
 const TREASURY = '/orgs/org_northwind/treasuries/trs_main';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const quanta = (patch: Partial<Payee>): Payee => ({
   id: 'pay_quanta',
@@ -176,26 +180,74 @@ test('changing an address explains the new cooling period and queues the deactiv
   ).toBe(true);
 });
 
-test('a screening hit is an API error but the blocked payee appears in the list', async () => {
+const blocked = async (
+  tail: string,
+  openDialog: () => Promise<HTMLElement>,
+) => {
+  const error = vi.spyOn(toast, 'error');
+  const success = vi.spyOn(toast, 'success');
+  const dialog = await openDialog();
+  const field = within(dialog).getByLabelText(/wallet address/i);
+  await userEvent.type(field, `0x${'1'.repeat(36)}${tail}`);
+  return { dialog, error, success };
+};
+
+test.each([
+  ['dead', /sanctions list/i],
+  ['fa11', /could not complete/i],
+])(
+  'a failed screening (%s) closes the propose dialog and lists the blocked payee',
+  async (tail, message) => {
+    const user = userEvent.setup();
+    renderApp(PAYEES);
+    const { dialog, error, success } = await blocked(tail, async () => {
+      await user.click(
+        await screen.findByRole('button', { name: /^propose payee$/i }),
+      );
+      const open = await screen.findByRole('dialog');
+      await user.click(within(open).getByRole('combobox'));
+      await user.click(
+        await screen.findByRole('option', { name: 'Quanta Freight' }),
+      );
+      return open;
+    });
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Propose payee' }),
+    );
+    expect(await screen.findByText('Screening failed')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringMatching(message),
+      expect.anything(),
+    );
+    expect(success).not.toHaveBeenCalled();
+  },
+);
+
+test('a replacement address that hits screening closes the dialog and lists it as failed', async () => {
   const user = userEvent.setup();
   renderApp(PAYEES);
+  const { dialog, error, success } = await blocked('dead', async () => {
+    const row = (await screen.findByText('Acurast Cloud')).closest('tr')!;
+    await user.click(
+      within(row).getByRole('button', { name: /actions for acurast cloud/i }),
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: /change address/i }),
+    );
+    return screen.findByRole('dialog');
+  });
+  await user.type(within(dialog).getByLabelText('Reason'), 'Bank changed');
   await user.click(
-    await screen.findByRole('button', { name: /^propose payee$/i }),
+    within(dialog).getByRole('button', {
+      name: 'Create deactivation transaction',
+    }),
   );
-  const dialog = await screen.findByRole('dialog');
-  await user.click(within(dialog).getByRole('combobox'));
-  await user.click(
-    await screen.findByRole('option', { name: 'Quanta Freight' }),
-  );
-  await user.type(
-    within(dialog).getByLabelText('Wallet address'),
-    `0x${'1'.repeat(36)}dead`,
-  );
-  await user.click(
-    within(dialog).getByRole('button', { name: 'Propose payee' }),
-  );
-  expect(
-    await within(dialog).findByText(/sanctions screening list/i),
-  ).toBeVisible();
   expect(await screen.findByText('Screening failed')).toBeVisible();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(error).toHaveBeenCalledWith(
+    expect.stringMatching(/sanctions list/i),
+    expect.anything(),
+  );
+  expect(success).not.toHaveBeenCalled();
 });
