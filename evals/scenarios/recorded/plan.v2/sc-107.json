@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-107",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "aac99201357306df71c53b835a34f5fc3856b4802724b82fde12b1f152be32b3",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 11497,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01VTZhMAK8THn1iUuuoJfG7c",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-107"
+              }
+            },
+            {
+              "id": "toolu_01US6QgqK8iUWW2WfHpvLn9G",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-107"
+              }
+            },
+            {
+              "id": "toolu_01VowMZxrXYNQ59P8ZK3kF3a",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-107"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT_LATE_FEE_CAPPED\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"Both requests are already overdue. r2's net due day is before r1's, and both due days are before the snapshot day.\",\"evidence_ids\":[\"request:r1\",\"request:r2\",\"snapshot:sc-107\"]},{\"claim\":\"Paying both requests together would go over the daily pay limit, though each one is under the per-request limit. Only one of them can be paid today.\",\"evidence_ids\":[\"policy:sc-107\",\"request:r1\",\"request:r2\",\"snapshot:sc-107\"]},{\"claim\":\"r1's late fee is a daily percentage with no cap, so every extra day of delay adds to the cost. It should be paid first.\",\"evidence_ids\":[\"request:r1\"]},{\"claim\":\"r2's late fee is capped. Because it has been overdue for several days, the fee has probably hit the cap already, so waiting one more day adds little or no cost. It is deferred to the next day, when the daily limit resets.\",\"evidence_ids\":[\"request:r2\",\"snapshot:sc-107\",\"policy:sc-107\"]},{\"claim\":\"The paying wallet O1 holds less than either request needs, and the snapshot shows no refill paths. The engine has to confirm that O1 can be funded before r1 is executed.\",\"evidence_ids\":[\"snapshot:sc-107\",\"request:r1\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1269,
+          "output_tokens": 891,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

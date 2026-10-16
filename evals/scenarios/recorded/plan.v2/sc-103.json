@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-103",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "194b2aec822cf6cd0878120c743846cceef941473cc585aa527e630c631fbcdb",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 10495,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01XUwfrLkXxTNCqqgLtPvxAq",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-103"
+              }
+            },
+            {
+              "id": "toolu_01CNQSiu2VAV56QdnmsZ8Cig",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-103"
+              }
+            },
+            {
+              "id": "toolu_015R7LULuKiYg3txafAHz3ac",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-103"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-17\",\"reason_code\":\"PAYEE_NOT_ACTIVE\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 pays vendor-a, which has been active since day 20730, before the snapshot day of 20740. r1 is due on day 20742, so it is placed first in the order.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-103\"]},{\"claim\":\"r2 pays vendor-b, which does not become active until day 20743 (2026-10-17), three days after the snapshot day. r2 is therefore deferred until that day, even though this is one day past its net due day of 20742. Its terms show no late fee.\",\"evidence_ids\":[\"request:r2\",\"snapshot:sc-103\"]},{\"claim\":\"r1 is within the per-request and daily pay limits, and nothing has been paid or refilled today.\",\"evidence_ids\":[\"policy:sc-103\",\"request:r1\",\"snapshot:sc-103\"]},{\"claim\":\"Wallet O1's balance is below r1's amount, so O1 needs a refill from the source treasury before r1 can be paid. The source balance is well above its buffer, but the snapshot lists no refill paths, so the engine must confirm that a refill is possible within the refill limits.\",\"evidence_ids\":[\"snapshot:sc-103\",\"policy:sc-103\",\"request:r1\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1189,
+          "output_tokens": 744,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

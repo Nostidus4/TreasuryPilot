@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-010",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "5e2870d5911a3ad14800de947c91b4e66e351a37760ea2420ab9d677bc48e1db",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 12338,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01NcPtqgUef2xZ3EAmWXHbtG",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-010"
+              }
+            },
+            {
+              "id": "toolu_019pLS44TbuYof5fojtZ7fo3",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-010"
+              }
+            },
+            {
+              "id": "toolu_01KeU9zDoXT29xagFbB7v8Cm",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-010"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT\"}],\"exception_requests\":[\"r1\"],\"rationale\":[{\"claim\":\"Most of today's daily pay limit has already been used. The headroom left is smaller than either r1 or r2, so neither can be paid today without breaching policy.\",\"evidence_ids\":[\"policy:sc-010\",\"snapshot:sc-010\"]},{\"claim\":\"r1 is due today (2026-10-14). The daily pay limit blocks payment today, and deferring it would make it late, so it is escalated for a human exception instead of being deferred.\",\"evidence_ids\":[\"request:r1\",\"policy:sc-010\",\"snapshot:sc-010\"]},{\"claim\":\"r2 is not due until 2026-10-15, when the daily pay limit resets. Deferring it to that day keeps it on time and within the per-request limit.\",\"evidence_ids\":[\"request:r2\",\"policy:sc-010\"]},{\"claim\":\"The paying wallet O1 has a balance well below either request amount, and the snapshot lists no refill paths. O1 needs funding before either payment can settle, so this should be reviewed alongside the exception.\",\"evidence_ids\":[\"snapshot:sc-010\",\"request:r1\",\"request:r2\"]},{\"claim\":\"Neither request has an early-payment discount or a late fee. Due dates are the only timing factor in this plan.\",\"evidence_ids\":[\"request:r1\",\"request:r2\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1189,
+          "output_tokens": 954,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}
