@@ -394,6 +394,7 @@ class RpcSafeVerifier:
                 url = resolve_rpc_url(template, self._environ)
                 return await asyncio.to_thread(_rpc, url, method, params)
             except _Reverted:
+                # Deliberate fail-closed: a lagging node's revert reads as false, not a retry.
                 if on_revert is not None:
                     return on_revert
             except (_ProviderError, PlatformConfigurationError, OSError, ValueError):

@@ -9,6 +9,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -444,6 +445,64 @@ def _data(selector: str, types: list[str], values: list[object]) -> str:
     return selector + abi_encode(types, values).hex()
 
 
+def test_selectors_are_the_literal_abi_values() -> None:
+    assert _selector("isValidSignature(bytes32,bytes)") == "0x1626ba7e"
+    assert ERC1271_MAGIC.hex() == "1626ba7e"
+    assert _selector("isApprover(address)") == "0x6d218e48"
+
+
+def _call_with_responses(
+    monkeypatch: pytest.MonkeyPatch, responses: list[Any]
+) -> tuple[list[str], Any]:
+    seen: list[str] = []
+
+    def urlopen(request: Any, *a: Any, **k: Any) -> io.BytesIO:
+        seen.append(request.full_url)
+        response = responses[len(seen) - 1]
+        if isinstance(response, Exception):
+            raise response
+        return io.BytesIO(response)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    verifier = RpcSafeVerifier(configuration(("http://a.test", "http://b.test")), {})
+    run = lambda: asyncio.run(  # noqa: E731
+        verifier.call(CHAIN_ID, "eth_call", [], on_revert="0x")
+    )
+    return seen, run
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        b'{"error": {"code": -32005, "message": "rate limited"}}',
+        b'{"error": {"code": -32000, "message": "header not found"}}',
+        urllib.error.HTTPError("http://a.test", 429, "Too Many Requests", None, None),  # type: ignore[arg-type]
+    ],
+)
+def test_on_revert_does_not_swallow_non_revert_failures(
+    monkeypatch: pytest.MonkeyPatch, failure: Any
+) -> None:
+    seen, run = _call_with_responses(monkeypatch, [failure, failure])
+    with pytest.raises(RpcUnavailable):
+        run()
+    assert len(seen) == 2  # failed over through every provider
+
+
+@pytest.mark.parametrize(
+    "revert",
+    [
+        b'{"error": {"code": 3, "message": "boom"}}',
+        b'{"error": {"code": -32000, "message": "execution reverted"}}',
+    ],
+)
+def test_on_revert_short_circuits_on_a_revert(
+    monkeypatch: pytest.MonkeyPatch, revert: bytes
+) -> None:
+    seen, run = _call_with_responses(monkeypatch, [revert, b'{"result": "0x01"}'])
+    assert run() == "0x"
+    assert len(seen) == 1
+
+
 def test_is_approver_reads_the_module_mapping(chain: tuple[FakeChain, str]) -> None:
     fake, url = chain
     fake.add_contract(MODULE)
@@ -495,9 +554,10 @@ def test_rpc_outage_raises_for_the_503_path(chain: tuple[FakeChain, str]) -> Non
 def test_app_wires_the_approval_reader_only_when_chains_are_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def start(loaded: PlatformConfiguration) -> Any:
+    async def start(loaded: PlatformConfiguration, injected: object = None) -> Any:
         monkeypatch.setattr(PlatformConfiguration, "load", lambda *_: loaded)
         app = create_app(settings=Settings(environment="local"))
+        app.state.approval_chain_reader = injected
         try:
             async with app.router.lifespan_context(app):
                 pass
@@ -508,3 +568,7 @@ def test_app_wires_the_approval_reader_only_when_chains_are_configured(
     wired = asyncio.run(start(configuration(("http://a.test", "http://b.test"))))
     assert isinstance(wired, RpcApprovalChainReader)
     assert asyncio.run(start(PlatformConfiguration(chains=(), manifests=()))) is None
+    sentinel = object()
+    assert (
+        asyncio.run(start(configuration(("http://a.test", "http://b.test")), sentinel)) is sentinel
+    )
