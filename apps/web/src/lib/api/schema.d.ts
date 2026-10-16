@@ -21,6 +21,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/admin/tenants/{tenant_id}/data-region': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tenant Data Region */
+    get: operations['tenant_data_region_admin_tenants__tenant_id__data_region_get'];
+    /**
+     * Pin Tenant Data Region
+     * @description Pin a tenant's stored data to one region. A pin is permanent (409 to change).
+     */
+    put: operations['pin_tenant_data_region_admin_tenants__tenant_id__data_region_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/tenants/{tenant_id}/health': {
     parameters: {
       query?: never;
@@ -877,6 +898,23 @@ export interface paths {
     put?: never;
     /** Ask */
     post: operations['ask_v1_orgs__organization_id__copilot_threads__thread_id__messages_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/data-region': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Data Region */
+    get: operations['get_data_region_v1_orgs__organization_id__data_region_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -3309,6 +3347,30 @@ export interface components {
       row: number;
       /** Value */
       value: string;
+    };
+    /** DataRegionRequest */
+    DataRegionRequest: {
+      /** Region */
+      region: string;
+    };
+    /** DataRegionView */
+    DataRegionView: {
+      /** Availableregions */
+      availableRegions: string[];
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Pinnedat */
+      pinnedAt?: string | null;
+      /** Pinnedby */
+      pinnedBy?: string | null;
+      /**
+       * Region
+       * @description Pinned data region; null when the org is unpinned.
+       */
+      region: string | null;
     };
     /** DeactivationRequest */
     DeactivationRequest: {
@@ -6034,6 +6096,72 @@ export interface operations {
       };
     };
   };
+  tenant_data_region_admin_tenants__tenant_id__data_region_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DataRegionView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pin_tenant_data_region_admin_tenants__tenant_id__data_region_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DataRegionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DataRegionView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   tenant_health_admin_tenants__tenant_id__health_get: {
     parameters: {
       query?: never;
@@ -7741,6 +7869,37 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_data_region_v1_orgs__organization_id__data_region_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DataRegionView'];
+        };
       };
       /** @description Validation Error */
       422: {

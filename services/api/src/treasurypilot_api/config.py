@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from treasurypilot_api.compliance.regions import parse_regions
 from treasurypilot_api.identity.role_grants import OIDC_ASSIGNABLE_ROLES
 from treasurypilot_core.observability import LogFormat
 
@@ -108,6 +109,10 @@ class Settings(BaseSettings):
     fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
     # JSON jurisdiction -> currency -> integer minor-unit threshold. No legal default is assumed.
     travel_rule_thresholds: str = "{}"
+    # JSON region id -> {s3_endpoint_url, s3_bucket, s3_access_key, s3_secret_key, ...} (CMP-L04).
+    data_regions: str = "{}"
+    # The region this deployment's database serves; unset disables the cross-region DB guard.
+    data_region: str | None = None
     # Optional vendor-neutral Travel Rule gateway. Credentials are secrets and are never logged.
     travel_rule_provider_url: str | None = Field(default=None, min_length=1)
     travel_rule_provider_api_key: SecretStr | None = None
@@ -299,6 +304,25 @@ class Settings(BaseSettings):
             if item.strip():
                 ipaddress.ip_network(item.strip(), strict=False)
         return value
+
+    @field_validator("data_regions")
+    @classmethod
+    def _validate_data_regions(cls, value: str) -> str:
+        parse_regions(value)
+        return value
+
+    @field_validator("data_region", mode="before")
+    @classmethod
+    def _blank_data_region_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _validate_data_region(self) -> "Settings":
+        if self.data_region is not None and self.data_region not in parse_regions(
+            self.data_regions
+        ):
+            raise ValueError("TP_DATA_REGION must be one of the configured TP_DATA_REGIONS")
+        return self
 
     @field_validator("travel_rule_thresholds")
     @classmethod

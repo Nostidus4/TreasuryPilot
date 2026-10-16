@@ -23,8 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from treasurypilot_api.agent.models import Extraction
+from treasurypilot_api.compliance.regions import RegionEndpoint, RegionError
+from treasurypilot_api.compliance.residency import ResidencyService
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
+from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
 from treasurypilot_api.invoices.fingerprints import (
@@ -187,6 +190,50 @@ def _storage(request: Request) -> ObjectStorage:
     return cast(ObjectStorage, storage)
 
 
+def build_region_storage(settings: Settings, endpoint: RegionEndpoint) -> ObjectStorage | None:
+    """Storage client for one configured data region (config-driven; no cloud lookup)."""
+    return build_document_storage(
+        settings.model_copy(
+            update={
+                "s3_endpoint_url": endpoint.s3_endpoint_url,
+                "s3_public_endpoint_url": endpoint.s3_public_endpoint_url,
+                "s3_bucket": endpoint.s3_bucket,
+                "s3_access_key": endpoint.s3_access_key,
+                "s3_secret_key": endpoint.s3_secret_key,
+            }
+        )
+    )
+
+
+def _residency(request: Request) -> ResidencyService | None:
+    return cast("ResidencyService | None", getattr(request.app.state, "residency", None))
+
+
+def _region_failure(error: RegionError) -> AuthFailure:
+    return _fail(error.status, error.code, "Data region constraint", str(error))
+
+
+async def _org_storage(
+    request: Request, organization_id: uuid.UUID
+) -> tuple[ObjectStorage, str | None]:
+    """Storage for writes of one organization: its pinned region, never another one."""
+    residency = _residency(request)
+    if residency is None:
+        return _storage(request), None
+    try:
+        storage, region = await residency.storage_for_org(_sessions(request), organization_id)
+    except RegionError as error:
+        raise _region_failure(error) from error
+    if storage is None:
+        raise _fail(
+            503,
+            "DOCUMENT_STORAGE_UNAVAILABLE",
+            "Document storage unavailable",
+            "Private invoice document storage is not configured.",
+        )
+    return storage, region
+
+
 def _queue(request: Request) -> ExtractionQueue:
     queue = getattr(request.app.state, "extraction_queue", None)
     if queue is None:
@@ -331,9 +378,9 @@ async def create_invoice_document_draft(
     """Store an already-inspected document and enqueue the existing extraction path."""
     body, mime, pages = document
     digest = hashlib.sha256(body).digest()
-    storage = _storage(request)
     queue = _queue(request)
     factory = _sessions(request)
+    storage, storage_region = await _org_storage(request, organization_id)
 
     async with factory() as session:
         treasury = await session.scalar(
@@ -416,6 +463,7 @@ async def create_invoice_document_draft(
             size=len(body),
             pages=pages,
             uploaded_by=uploaded_by,
+            storage_region=storage_region,
         )
         try:
             async with factory() as write_session, write_session.begin():
@@ -685,5 +733,21 @@ async def document_read_url(
     if document is None:
         raise _fail(404, "DOCUMENT_NOT_FOUND", "Document not found", "Document not found.")
     signed_at = datetime.now(UTC)
-    url = await run_in_threadpool(_storage(request).sign_read, document.storage_key)
+    residency = _residency(request)
+    try:
+        read_storage = (
+            residency.storage_for_document(member.organization_id, document.storage_region)
+            if residency is not None
+            else _storage(request)
+        )
+    except RegionError as error:
+        raise _region_failure(error) from error
+    if read_storage is None:
+        raise _fail(
+            503,
+            "DOCUMENT_STORAGE_UNAVAILABLE",
+            "Document storage unavailable",
+            "Private invoice document storage is not configured.",
+        )
+    url = await run_in_threadpool(read_storage.sign_read, document.storage_key)
     return DocumentUrlResponse(url=url, expires_at=signed_at + PRESIGNED_URL_LIFETIME)

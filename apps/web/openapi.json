@@ -1290,6 +1290,73 @@
         "title": "CsvImportRowError",
         "type": "object"
       },
+      "DataRegionRequest": {
+        "properties": {
+          "region": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": ["region"],
+        "title": "DataRegionRequest",
+        "type": "object"
+      },
+      "DataRegionView": {
+        "properties": {
+          "availableRegions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Availableregions",
+            "type": "array"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "pinnedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinnedat"
+          },
+          "pinnedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinnedby"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned data region; null when the org is unpinned.",
+            "title": "Region"
+          }
+        },
+        "required": ["orgId", "region", "availableRegions"],
+        "title": "DataRegionView",
+        "type": "object"
+      },
       "DeactivationRequest": {
         "properties": {
           "reason": {
@@ -8142,6 +8209,97 @@
         "tags": ["platform-admin"]
       }
     },
+    "/admin/tenants/{tenant_id}/data-region": {
+      "get": {
+        "operationId": "tenant_data_region_admin_tenants__tenant_id__data_region_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tenant Data Region",
+        "tags": ["platform-admin"]
+      },
+      "put": {
+        "description": "Pin a tenant's stored data to one region. A pin is permanent (409 to change).",
+        "operationId": "pin_tenant_data_region_admin_tenants__tenant_id__data_region_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataRegionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pin Tenant Data Region",
+        "tags": ["platform-admin"]
+      }
+    },
     "/admin/tenants/{tenant_id}/health": {
       "get": {
         "operationId": "tenant_health_admin_tenants__tenant_id__health_get",
@@ -10488,6 +10646,48 @@
         },
         "summary": "Ask",
         "tags": ["copilot"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/data-region": {
+      "get": {
+        "operationId": "get_data_region_v1_orgs__organization_id__data_region_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Region",
+        "tags": ["compliance"],
         "x-organization-scoped": true
       }
     },

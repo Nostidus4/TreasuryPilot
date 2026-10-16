@@ -16,7 +16,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
-from treasurypilot_api.admin.api import create_admin_router, create_support_grant_router
+from treasurypilot_api.admin.api import (
+    create_admin_router,
+    create_data_region_router,
+    create_support_grant_router,
+)
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
@@ -24,6 +28,8 @@ from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceReposi
 from treasurypilot_api.chain.routes import TokenMovementRepository
 from treasurypilot_api.chain.routes import router as chain_router
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
+from treasurypilot_api.compliance.regions import RegionRegistry, parse_regions
+from treasurypilot_api.compliance.residency import ResidencyService
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
@@ -86,6 +92,7 @@ from treasurypilot_api.invoices.documents import (
     ObjectStorage,
     build_document_storage,
     build_extraction_queue,
+    build_region_storage,
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
 from treasurypilot_api.invoices.fx import FxQuoteProvider
@@ -527,6 +534,13 @@ def create_app(
     # Default: the worker's tool loop over Celery; no Redis means 503 AI_UNAVAILABLE.
     app.state.copilot_answerer = copilot_answerer or build_copilot_answerer(settings)
     app.state.document_storage = document_storage or build_document_storage(settings)
+    region_registry = RegionRegistry(
+        parse_regions(settings.data_regions),
+        settings.data_region,
+        lambda endpoint: build_region_storage(settings, endpoint),
+    )
+    app.state.region_registry = region_registry
+    app.state.residency = ResidencyService(region_registry, app.state.document_storage)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.state.partial_recovery_queue = partial_recovery_queue or build_partial_recovery_queue(
         settings
@@ -596,8 +610,9 @@ def create_app(
     app.include_router(fee_router)
     app.include_router(reconciliation_router)
     app.include_router(erp_router)
-    app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(create_admin_router(settings, admin_sessions, app.state.residency))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
+    app.include_router(create_data_region_router(sessions or admin_sessions, app.state.residency))
     app.include_router(mandate_router)
     app.include_router(vendors_router)
     app.include_router(payees_router)

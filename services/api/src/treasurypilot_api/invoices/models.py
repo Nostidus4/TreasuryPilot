@@ -593,6 +593,8 @@ class RequestDocument(Base):
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     pages: Mapped[int | None] = mapped_column(SmallInteger)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Region of the object store holding the file; NULL = default store (unpinned org).
+    storage_region: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
