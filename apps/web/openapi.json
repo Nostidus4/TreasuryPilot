@@ -1975,6 +1975,21 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Senderallowlist"
+          },
           "treasuryId": {
             "anyOf": [
               {
@@ -2001,13 +2016,20 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Senderallowlist",
+            "type": "array"
+          },
           "treasuryId": {
             "format": "uuid",
             "title": "Treasuryid",
             "type": "string"
           }
         },
-        "required": ["enabled", "treasuryId", "address"],
+        "required": ["enabled", "treasuryId", "address", "senderAllowlist"],
         "title": "InboundEmailConfigurationView",
         "type": "object"
       },
@@ -2019,6 +2041,16 @@
             },
             "title": "Drafts",
             "type": "array"
+          },
+          "duplicateAttachments": {
+            "default": 0,
+            "title": "Duplicateattachments",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": false,
+            "title": "Quarantined",
+            "type": "boolean"
           }
         },
         "required": ["drafts"],
@@ -4435,6 +4467,73 @@
           "lastAction"
         ],
         "title": "PositionView",
+        "type": "object"
+      },
+      "QuarantinedEmailList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuarantinedEmailView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "QuarantinedEmailList",
+        "type": "object"
+      },
+      "QuarantinedEmailView": {
+        "properties": {
+          "attachmentCount": {
+            "title": "Attachmentcount",
+            "type": "integer"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "title": "Receivedat",
+            "type": "string"
+          },
+          "sender": {
+            "title": "Sender",
+            "type": "string"
+          },
+          "senderDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Senderdomain"
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "sender",
+          "senderDomain",
+          "attachmentCount",
+          "evidence",
+          "receivedAt"
+        ],
+        "title": "QuarantinedEmailView",
         "type": "object"
       },
       "QueuesView": {
@@ -10549,6 +10648,46 @@
       }
     },
     "/v1/orgs/{organization_id}/invoice-inbound-email": {
+      "get": {
+        "operationId": "get_inbound_email_v1_orgs__organization_id__invoice_inbound_email_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboundEmailConfigurationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Inbound Email",
+        "tags": ["invoice email intake"],
+        "x-organization-scoped": true
+      },
       "put": {
         "operationId": "configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put",
         "parameters": [
@@ -10596,6 +10735,48 @@
           }
         },
         "summary": "Configure Inbound Email",
+        "tags": ["invoice email intake"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invoice-inbound-email/quarantine": {
+      "get": {
+        "operationId": "list_quarantined_emails_v1_orgs__organization_id__invoice_inbound_email_quarantine_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuarantinedEmailList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Quarantined Emails",
         "tags": ["invoice email intake"],
         "x-organization-scoped": true
       }

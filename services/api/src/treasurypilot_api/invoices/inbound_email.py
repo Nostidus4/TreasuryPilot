@@ -10,18 +10,22 @@ import json
 import re
 import secrets
 import time
+import unicodedata
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from email.utils import parseaddr
 from io import BytesIO
 from typing import cast
 
 from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.audit.models import AuditActorType
+from treasurypilot_api.audit.writer import AuditActor, AuditEntity
+from treasurypilot_api.audit.writer import write as write_audit
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole
@@ -29,6 +33,9 @@ from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices import documents
 from treasurypilot_api.invoices.models import (
     InvoiceInboundEmail,
+    InvoiceInboundQuarantine,
+    PaymentRequest,
+    RequestDocument,
     RequestFlagSeverity,
     RequestFlagSource,
 )
@@ -41,6 +48,24 @@ SIGNATURE_TOLERANCE_SECONDS = 5 * 60
 MAX_WEBHOOK_BODY_BYTES = 15 * 1024 * 1024
 MAX_EMAIL_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_EMAIL_ATTACHMENTS = 5
+MAX_SENDER_ALLOWLIST = 100
+MAX_UNTRUSTED_DISPLAY_CHARS = 320
+# Dedupe ignores requests that can no longer be paid.
+_DEAD_STATUSES = ("Rejected", "Cancelled", "Expired")
+QUARANTINE_NOT_ALLOWLISTED = "SENDER_NOT_ALLOWLISTED"
+QUARANTINE_UNAUTHENTICATED = "SENDER_UNAUTHENTICATED"
+
+
+def clean_untrusted_text(value: str, limit: int = MAX_UNTRUSTED_DISPLAY_CHARS) -> str:
+    """Strip control, zero-width and bidi characters and cap length.
+
+    Everything in an email except its signed envelope is attacker-controlled. We only keep
+    sender/filename for display and audit, never interpolate them into model prompts. Attachment
+    bytes reach a model solely through the extraction worker, which wraps them with
+    `wrap_untrusted` (the F-091 boundary); the email body is never read.
+    """
+    kept = "".join(ch for ch in value if unicodedata.category(ch) not in ("Cc", "Cf"))
+    return kept.strip()[:limit]
 
 
 def _fail(status: int, code: str, title: str, detail: str) -> AuthFailure:
@@ -144,15 +169,53 @@ def verify_webhook_signature(
     return hmac.compare_digest(expected, supplied_bytes)
 
 
+def _normalize_allowlist_entry(value: str) -> str:
+    entry = value.strip().casefold()
+    if "@" in entry:
+        domain = _sender_domain(entry)
+        local = entry.rpartition("@")[0]
+        if domain is None or not local or "@" in local or len(entry) > 320:
+            raise ValueError("invalid sender address")
+        return f"{local}@{domain}"
+    domain = _canonical_domain(entry)
+    if domain is None:
+        raise ValueError("invalid sender domain")
+    return domain
+
+
 class InboundEmailConfiguration(ApiModel):
     treasury_id: uuid.UUID | None = None
     enabled: bool = True
+    # Exact addresses or bare domains. Empty means no allowlist; None leaves it unchanged.
+    sender_allowlist: list[str] | None = Field(default=None, max_length=MAX_SENDER_ALLOWLIST)
+
+    @field_validator("sender_allowlist")
+    @classmethod
+    def normalize_allowlist(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return sorted({_normalize_allowlist_entry(item) for item in value})
 
 
 class InboundEmailConfigurationView(ApiModel):
     enabled: bool
     treasury_id: uuid.UUID
     address: str
+    sender_allowlist: list[str]
+
+
+class QuarantinedEmailView(ApiModel):
+    id: uuid.UUID
+    reason: str
+    sender: str
+    sender_domain: str | None
+    attachment_count: int
+    evidence: dict[str, object]
+    received_at: datetime
+
+
+class QuarantinedEmailList(ApiModel):
+    items: list[QuarantinedEmailView]
 
 
 def _canonical_domain(value: str) -> str | None:
@@ -223,6 +286,8 @@ class InboundEmailAttachmentReceipt(ApiModel):
 
 class InboundEmailReceipt(ApiModel):
     drafts: list[InboundEmailAttachmentReceipt]
+    quarantined: bool = False
+    duplicate_attachments: int = 0
 
 
 def _sender_domain(sender: str) -> str | None:
@@ -250,6 +315,14 @@ def _sender_is_authenticated(message: InboundEmailMessage) -> bool:
     return (results.spf == "pass" and _aligned(results.spf_domain, sender_domain)) or (
         results.dkim == "pass" and _aligned(results.dkim_domain, sender_domain)
     )
+
+
+def _sender_allowed(allowlist: list[str], sender: str) -> bool:
+    _, address = parseaddr(sender)
+    domain = _sender_domain(sender)
+    if domain is None:
+        return False
+    return address.casefold() in allowlist or domain in allowlist
 
 
 def _read_json(body: bytes) -> InboundEmailMessage:
@@ -296,6 +369,7 @@ async def configure_inbound_email(
             )
             if treasury is None:
                 raise _fail(404, "TREASURY_NOT_FOUND", "Treasury not found", "Treasury not found.")
+        previous_allowlist = list(row.sender_allowlist) if row else []
         if row is None:
             if not payload.enabled:
                 raise _fail(
@@ -312,6 +386,7 @@ async def configure_inbound_email(
                     treasury_id=cast(uuid.UUID, treasury_id),
                     local_part=secrets.token_hex(24),
                     enabled=True,
+                    sender_allowlist=[],
                     created_by=member.user_id,
                 )
                 .on_conflict_do_nothing(index_elements=[InvoiceInboundEmail.org_id])
@@ -326,16 +401,92 @@ async def configure_inbound_email(
         if treasury_id is not None:
             row.treasury_id = treasury_id
         row.enabled = payload.enabled
+        if payload.sender_allowlist is not None:
+            row.sender_allowlist = payload.sender_allowlist
 
         await session.flush()
-        local_part = row.local_part
-        configured_treasury_id = row.treasury_id
-        enabled = row.enabled
+        await write_audit(
+            session,
+            org_id=organization_id,
+            actor=AuditActor(AuditActorType.USER, member.user_id),
+            action="invoice_inbound_email.configured",
+            entity=AuditEntity("invoice_inbound_email", organization_id),
+            data={
+                "enabled": row.enabled,
+                "treasuryId": str(row.treasury_id),
+                "allowlistBefore": len(previous_allowlist),
+                "allowlistAfter": len(row.sender_allowlist),
+            },
+        )
+        view = _view(row, domain)
 
+    return view
+
+
+def _view(row: InvoiceInboundEmail, domain: str) -> InboundEmailConfigurationView:
     return InboundEmailConfigurationView(
-        enabled=enabled,
-        treasury_id=configured_treasury_id,
-        address=f"invoices+{local_part}@{domain}",
+        enabled=row.enabled,
+        treasury_id=row.treasury_id,
+        address=f"invoices+{row.local_part}@{domain}",
+        sender_allowlist=list(row.sender_allowlist),
+    )
+
+
+@router.get(
+    "/v1/orgs/{organization_id}/invoice-inbound-email",
+    response_model=InboundEmailConfigurationView,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def get_inbound_email(
+    organization_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(_require_org_admin),  # noqa: B008
+) -> InboundEmailConfigurationView:
+    domain, _ = _email_settings(request)
+    async with _sessions(request)() as session:
+        row = await session.get(InvoiceInboundEmail, organization_id)
+    if row is None:
+        raise _fail(
+            404,
+            "INBOUND_EMAIL_NOT_CONFIGURED",
+            "Email intake not configured",
+            "No inbound invoice address is configured.",
+        )
+    return _view(row, domain)
+
+
+@router.get(
+    "/v1/orgs/{organization_id}/invoice-inbound-email/quarantine",
+    response_model=QuarantinedEmailList,
+    openapi_extra={"x-organization-scoped": True},
+)
+async def list_quarantined_emails(
+    organization_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(_require_org_admin),  # noqa: B008
+) -> QuarantinedEmailList:
+    async with _sessions(request)() as session:
+        rows = (
+            await session.scalars(
+                select(InvoiceInboundQuarantine)
+                .where(InvoiceInboundQuarantine.org_id == organization_id)
+                .order_by(InvoiceInboundQuarantine.received_at.desc())
+                .limit(100)
+            )
+        ).all()
+    return QuarantinedEmailList(
+        items=[
+            QuarantinedEmailView(
+                id=row.id,
+                reason=row.reason,
+                sender=row.sender,
+                sender_domain=row.sender_domain,
+                attachment_count=row.attachment_count,
+                evidence=row.evidence,
+                received_at=row.received_at,
+            )
+            for row in rows
+        ]
     )
 
 
@@ -409,7 +560,9 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
     decoded: list[tuple[str, bytes]] = []
     total_bytes = 0
     for attachment in message.attachments:
-        filename = attachment.filename.replace("\\", "/").rsplit("/", 1)[-1]
+        filename = clean_untrusted_text(
+            attachment.filename.replace("\\", "/").rsplit("/", 1)[-1], 255
+        )
         try:
             content = base64.b64decode(attachment.content_base64, validate=True)
         except (binascii.Error, ValueError) as error:
@@ -439,13 +592,96 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
     sender_verified = _sender_is_authenticated(message)
     sender_domain = _sender_domain(message.sender)
     message_digest = hashlib.sha256(message.message_id.encode()).hexdigest()
+    auth_evidence: dict[str, object] = {
+        "spf": message.authentication_results.spf or "missing",
+        "spfDomain": message.authentication_results.spf_domain,
+        "dkim": message.authentication_results.dkim or "missing",
+        "dkimDomain": message.authentication_results.dkim_domain,
+        "senderDomain": sender_domain,
+    }
+    allowlist = list(inbound.sender_allowlist)
+    quarantine_reason: str | None = None
+    if allowlist:
+        if not _sender_allowed(allowlist, message.sender):
+            quarantine_reason = QUARANTINE_NOT_ALLOWLISTED
+        elif not sender_verified:
+            quarantine_reason = QUARANTINE_UNAUTHENTICATED
+    if quarantine_reason is not None:
+        async with factory() as session, session.begin():
+            inserted = await session.scalar(
+                pg_insert(InvoiceInboundQuarantine)
+                .values(
+                    id=uuid.uuid4(),
+                    org_id=inbound.org_id,
+                    message_digest=message_digest,
+                    reason=quarantine_reason,
+                    sender=clean_untrusted_text(parseaddr(message.sender)[1] or message.sender),
+                    sender_domain=sender_domain,
+                    attachment_count=len(decoded),
+                    evidence=auth_evidence,
+                )
+                .on_conflict_do_nothing(constraint="uq_invoice_inbound_quarantine_message")
+                .returning(InvoiceInboundQuarantine.id)
+            )
+            if inserted is not None:  # a redelivery of the same message audits only once
+                await write_audit(
+                    session,
+                    org_id=inbound.org_id,
+                    actor=AuditActor(AuditActorType.SYSTEM),
+                    action="invoice_inbound_email.quarantined",
+                    entity=AuditEntity("invoice_inbound_email", inbound.org_id),
+                    data={
+                        "quarantineId": str(inserted),
+                        "reason": quarantine_reason,
+                        "senderDomain": sender_domain,
+                        "attachmentCount": len(decoded),
+                    },
+                )
+        return InboundEmailReceipt(drafts=[], quarantined=True)
+
+    # Skip content already uploaded to this org (other messages or manual uploads) and repeats
+    # inside this message. Same-message retries are excluded so they keep replaying.
+    key_prefix = f"email:{inbound.org_id}:{message_digest}:"
+    shas = {hashlib.sha256(content).digest() for _, content in decoded}
+    async with factory() as session:
+        known = set(
+            (
+                await session.scalars(
+                    select(RequestDocument.sha256)
+                    .join(
+                        PaymentRequest,
+                        and_(
+                            PaymentRequest.id == RequestDocument.request_id,
+                            PaymentRequest.org_id == inbound.org_id,
+                        ),
+                    )
+                    .where(
+                        RequestDocument.sha256.in_(shas),
+                        PaymentRequest.status.notin_(_DEAD_STATUSES),
+                        or_(
+                            PaymentRequest.idempotency_key.is_(None),
+                            PaymentRequest.idempotency_key.notlike(key_prefix + "%"),
+                        ),
+                    )
+                )
+            ).all()
+        )
+    seen = set(known)
+    unique: list[tuple[int, str, bytes]] = []
+    for index, (filename, content) in enumerate(decoded):
+        digest = hashlib.sha256(content).digest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+        unique.append((index, filename, content))
+    duplicates = len(decoded) - len(unique)
     # Inspect every attachment before persisting any, so a bad one cannot leave partial drafts.
     inspected_documents = [
-        await documents.read_document(UploadFile(file=BytesIO(content), filename=filename))
-        for filename, content in decoded
+        (index, await documents.read_document(UploadFile(file=BytesIO(content), filename=filename)))
+        for index, filename, content in unique
     ]
     receipts: list[InboundEmailAttachmentReceipt] = []
-    for index, inspected in enumerate(inspected_documents):
+    for index, inspected in inspected_documents:
         result = await documents.create_invoice_document_draft(
             request=request,
             organization_id=inbound.org_id,
@@ -458,13 +694,7 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
                 documents.InitialRequestFlag(
                     code="INBOUND_EMAIL_SENDER_UNVERIFIED",
                     severity=RequestFlagSeverity.HIGH,
-                    evidence={
-                        "spf": message.authentication_results.spf or "missing",
-                        "spfDomain": message.authentication_results.spf_domain,
-                        "dkim": message.authentication_results.dkim or "missing",
-                        "dkimDomain": message.authentication_results.dkim_domain,
-                        "senderDomain": sender_domain,
-                    },
+                    evidence=auth_evidence,
                     source=RequestFlagSource.DETERMINISTIC,
                 ),
             )
@@ -479,6 +709,21 @@ async def receive_inbound_email(local_part: str, request: Request) -> InboundEma
             )
         )
 
+    async with factory() as session, session.begin():
+        await write_audit(
+            session,
+            org_id=inbound.org_id,
+            actor=AuditActor(AuditActorType.SYSTEM),
+            action="invoice_inbound_email.received",
+            entity=AuditEntity("invoice_inbound_email", inbound.org_id),
+            data={
+                "messageDigest": message_digest,
+                "senderDomain": sender_domain,
+                "senderVerified": sender_verified,
+                "draftRequestIds": [str(item.request_id) for item in receipts],
+                "duplicateAttachments": duplicates,
+            },
+        )
     # No approval record or state transition is created by this integration. Every result is a
     # normal upload draft and remains subject to the existing human extraction/review workflow.
-    return InboundEmailReceipt(drafts=receipts)
+    return InboundEmailReceipt(drafts=receipts, duplicate_attachments=duplicates)
