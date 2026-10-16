@@ -91,7 +91,7 @@ def create_app(
         key_store = ExecutorKeys(settings)
         # Keys are optional (unconfigured signer answers NOT_CONFIGURED), but once a keystore map
         # is set it must be valid. The password file path alone is always set in compose.
-        if signer_override is None and settings.executor_keystore_map:
+        if signer_override is None and key_store.configured:
             # refuse to start on a missing keystore or wrong password
             application.state.executor_addresses = key_store.validate()
         if settings.chain_rpc_url:
