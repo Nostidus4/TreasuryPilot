@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol, cast
 
@@ -17,7 +17,7 @@ from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
 from treasurypilot_api.identity.models import OrganizationRole, uuid7
 from treasurypilot_api.identity.rbac import MemberAccess, require_member, require_role
-from treasurypilot_api.mandate.models import Payee, Vendor
+from treasurypilot_api.mandate.models import Payee, PayeeStatus, Vendor
 
 
 class VendorRefExists(Exception):
@@ -53,6 +53,8 @@ class VendorRecord:
     notes: str | None
     created_at: datetime
     country: str | None = None
+    payee_address: str | None = None
+    payee_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +135,30 @@ class SqlAlchemyVendorRepository:
             rows = await session.scalars(
                 select(Vendor).where(Vendor.org_id == organization_id).order_by(Vendor.name)
             )
-            return tuple(_record(row) for row in rows)
+            payees = await session.scalars(
+                select(Payee)
+                .where(Payee.org_id == organization_id, Payee.status != PayeeStatus.DEACTIVATED)
+                .order_by(Payee.created_at)
+            )
+            # shortcut: one payee per vendor (Active wins, else newest); per-treasury choice
+            # belongs to the payees endpoint.
+            best: dict[uuid.UUID, Payee] = {}
+            for payee in payees:
+                current = best.get(payee.vendor_id)
+                if (
+                    current is None
+                    or current.status != PayeeStatus.ACTIVE
+                    or (payee.status == PayeeStatus.ACTIVE)
+                ):
+                    best[payee.vendor_id] = payee
+            return tuple(
+                replace(
+                    _record(row),
+                    payee_address="0x" + best[row.id].address.hex() if row.id in best else None,
+                    payee_status=best[row.id].status.value if row.id in best else None,
+                )
+                for row in rows
+            )
 
     async def get_vendor(
         self, *, organization_id: uuid.UUID, vendor_id: uuid.UUID
@@ -323,6 +348,8 @@ class VendorView(ApiModel):
     has_contact: bool
     notes: str | None
     created_at: datetime
+    payee_address: str | None = None
+    payee_status: PayeeStatus | None = None
 
     @classmethod
     def from_record(cls, row: VendorRecord) -> VendorView:
@@ -335,6 +362,8 @@ class VendorView(ApiModel):
             has_contact=row.has_contact,
             notes=row.notes,
             created_at=row.created_at,
+            payee_address=row.payee_address,
+            payee_status=PayeeStatus(row.payee_status) if row.payee_status else None,
         )
 
 

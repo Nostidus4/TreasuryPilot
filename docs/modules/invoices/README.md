@@ -177,7 +177,9 @@ stateDiagram-v2
 
 | Method | Endpoint | Perm | Request → Response | Errors |
 |---|---|---|---|---|
-| GET/POST/PATCH | `/orgs/{o}/vendors[/{vId}]` | ANY / OPR, ADM | `{name, taxId?, contact?}` → `{vendor}` | 409 `VENDOR_REF_EXISTS` |
+| GET/POST/PATCH | `/orgs/{o}/vendors[/{vId}]` | ANY / OPR, ADM | `{name, taxId?, contact?}` → `{vendor}`; list/detail views add `payeeAddress`, `payeeStatus` (the vendor's Active payee, else its newest non-deactivated one; `null` if none) | 409 `VENDOR_REF_EXISTS` |
+| GET | `/orgs/{o}/requests` | ANY | `?status=A,B&treasuryId=&limit=` (default 200, max 500, newest first) → `{items: [{id, invoiceNumber, vendorId, vendorName, payeeAddress, amount, treasuryId, dueDate, status, source, description, createdBy{id,name}, createdAt, revision, openFlags, highFlagsUnacked}]}`; `amount` is a base-unit integer string (ADR-014) | 422 `STATUS_INVALID` |
+| GET | `/orgs/{o}/requests/{r}` | ANY | → the list item plus `version, fields, terms, options, flags, injectionWarnings, revisions, approvals, timeline, vendorHistory, cancelOnchain` | 404 `REQUEST_NOT_FOUND` (also for another org's request) |
 | POST | `/orgs/{o}/requests` 🔁 | OPR, ADM | `{treasuryId, vendorId, payeeId, invoiceNo, issueDate, dueDate, amount: "1000.00", payingWalletId?, terms?, note?, tags?, costCenter?}` → `201 {request, flags[]}` | 422 `ASSET_NOT_PAYMENT_STABLECOIN`, `PAYEE_UNKNOWN`, `PAYEE_NOT_OF_VENDOR`, `AMOUNT_PRECISION`, `AMOUNT_NOT_POSITIVE`, `DATE_INVALID` |
 | POST | `/orgs/{o}/requests/upload` 🔁 | OPR | multipart `file`, `treasuryId` → `202 {requestId, extractionJobId}` | 413, 415, 422 `MULTI_INVOICE_DOCUMENT` |
 | POST | `/orgs/{o}/requests/{r}/extraction/confirm` | OPR | `{fields}` (final values) → `{request, flags[]}` | 409 `EXTRACTION_PENDING` |
