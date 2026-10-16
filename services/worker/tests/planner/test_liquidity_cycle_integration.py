@@ -704,3 +704,138 @@ async def test_a_request_plan_waits_for_an_open_liquidity_plan(
         assert await DbPlanStarter(lambda *_: None).start(
             connection, world.treasury, ScheduledRequest(request, now, 0), now=now
         )
+
+
+async def _claim(pool: Any, world: World) -> uuid.UUID | None:
+    async with pool.acquire() as connection:
+        return await DbLiquidityStarter(lambda *_: None).start(
+            connection, world.treasury, now=datetime.now(UTC)
+        )
+
+
+async def _open_items(pool: Any, treasury: uuid.UUID) -> list[Any]:
+    return await pool.fetch(
+        "SELECT type, primary_code, plan_id, request_id, assigned_roles, fee_estimate_wei "
+        "FROM review_items WHERE treasury_id = $1 AND status = 'Open' ORDER BY type",
+        treasury,
+    )
+
+
+@pooled
+async def test_a_fee_above_the_policy_holds_the_plan_and_accept_fee_releases_it(
+    pool: Any, database_url: str
+) -> None:
+    # an overdue obligation the Safe cannot cover: a WITHDRAW that cannot wait for a cheaper fee
+    world = await _seed(pool, [(2_500, -1)])
+    chain = _chain(world, safe=1_000)
+    await pool.execute(
+        "UPDATE treasury_fee_policies SET per_plan_threshold_wei = 1 WHERE treasury_id = $1",
+        world.treasury,
+    )
+    deps = _deps(pool, database_url, world, chain)
+    held = await _claim(pool, world)
+    outcome = await plan_liquidity(pool, held, deps)
+
+    assert outcome is not None and outcome.status == "AwaitingFeeAcceptance"
+    (item,) = await _open_items(pool, world.treasury)
+    assert (item["type"], item["plan_id"], item["request_id"]) == ("FEE_APPROVAL", held, None)
+    assert item["fee_estimate_wei"] == 1_000 and "Owner" in item["assigned_roles"]
+    # the held plan is the one open liquidity plan: no second one is claimed meanwhile
+    assert await _claim(pool, world) is None
+
+    # ACCEPT_FEE (what the API writes): the cap, and the item resolved
+    await pool.execute(
+        "INSERT INTO fee_acceptances (id, org_id, plan_id, estimated_fee_wei, accepted_cap_wei, "
+        "accepted_by, at) SELECT gen_random_uuid(), org_id, id, 1000, 1000, "
+        "(SELECT id FROM users LIMIT 1), now() FROM plans WHERE id = $1",
+        held,
+    )
+    await pool.execute(
+        "UPDATE review_items SET status = 'Resolved', resolution = 'ACCEPT_FEE' WHERE plan_id = $1",
+        held,
+    )
+    replan = await _claim(pool, world)
+    assert replan is not None
+    assert await pool.fetchval("SELECT status FROM plans WHERE id = $1", held) == "Expired"
+    again = await plan_liquidity(
+        pool, replan, _deps(pool, database_url, world, _chain(world, safe=1_000))
+    )
+    assert again is not None and again.status == "Attested"
+    assert await _open_items(pool, world.treasury) == []
+
+
+@pooled
+async def test_a_stopped_liquidity_plan_opens_an_infra_item(pool: Any, database_url: str) -> None:
+    world = await _seed(pool, [(1_000, 20)])
+    chain = _chain(world, safe=100_000)
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+    run, step = await _run_of(pool, plan_id)
+    signer = _Signer()
+    await sequence_plan(pool, signer, run, _Gate(_ALLOW), _Passed())
+    await pool.execute("UPDATE operations SET status = 'Reverted' WHERE step_id = $1", step.step_id)
+    await sequence_plan(pool, signer, run, _Gate(_ALLOW), _Passed())
+    await sequence_plan(pool, signer, run, _Gate(_ALLOW), _Passed())  # a redelivery adds no second
+
+    (item,) = await _open_items(pool, world.treasury)
+    assert (item["type"], item["primary_code"], item["plan_id"]) == (
+        "INFRA", "STEP_REVERTED", plan_id,
+    )  # fmt: skip
+    assert item["request_id"] is None
+
+
+@pooled
+async def test_an_unresolved_liquidity_operation_opens_an_uncertain_tx_item(
+    pool: Any, database_url: str
+) -> None:
+    from treasurypilot_worker.recovery.resolve import _escalate
+
+    world = await _seed(pool, [(1_000, 20)])
+    chain = _chain(world, safe=100_000)
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+    run, _ = await _run_of(pool, plan_id)
+    await sequence_plan(pool, _Signer(), run, _Gate(_ALLOW), _Passed())
+    op = await pool.fetchrow(
+        "SELECT id, request_id, plan_step_id FROM operations WHERE treasury_id = $1", world.treasury
+    )
+
+    await _escalate(pool, op, datetime.now(UTC))
+    await _escalate(pool, op, datetime.now(UTC))
+
+    (item,) = await _open_items(pool, world.treasury)
+    assert (item["type"], item["primary_code"], item["plan_id"]) == (
+        "UNCERTAIN_TX", "TX_UNKNOWN", plan_id,
+    )  # fmt: skip
+    assert await pool.fetchval("SELECT status FROM operations WHERE id = $1", op["id"]) == "Unknown"
+
+
+@pooled
+async def test_an_idle_cycle_is_not_repeated_until_the_inputs_change(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, [(1_000, 20)])
+    chain = _chain(world, safe=1_000)  # exactly the reserve: nothing to do
+    deps = _deps(pool, database_url, world, chain)
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, deps)
+
+    # idle and unchanged: no Draft is claimed (and so none deleted) on the next cycles
+    result, _, claimed = await _cycle(pool, world)
+    assert result.liquidity_plan_id is None and claimed == []
+
+    # a request changes (a new approval or edit): the very next cycle looks again
+    await pool.execute(
+        "UPDATE payment_requests SET version = version + 1 WHERE treasury_id = $1", world.treasury
+    )
+    _, _, (again,) = await _cycle(pool, world)
+    assert again != plan_id
+    await plan_liquidity(pool, again, _deps(pool, database_url, world, _chain(world, safe=1_000)))
+
+    # the marker expires: a chain-side change (an inflow) is seen after the cooldown
+    await pool.execute(
+        "UPDATE treasuries SET liquidity_idle_at = now() - interval '6 minutes' WHERE id = $1",
+        world.treasury,
+    )
+    _, _, claimed = await _cycle(pool, world)
+    assert len(claimed) == 1

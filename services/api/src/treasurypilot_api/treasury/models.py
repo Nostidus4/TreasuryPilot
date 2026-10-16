@@ -213,6 +213,9 @@ class Treasury(VersionedMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="NO ACTION")
     )
     coverage_ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Worker-owned: the last liquidity cycle that found nothing to do, and for which inputs.
+    liquidity_idle_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    liquidity_idle_key: Mapped[str | None] = mapped_column(Text)
     coverage_ack_reason: Mapped[str | None] = mapped_column(Text)
     coverage_details: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")

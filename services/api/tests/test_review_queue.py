@@ -594,6 +594,60 @@ async def _exercise_review_queue(database_url: str) -> None:
         with pytest.raises(AuthFailure, match="FEE_REVIEW_NOT_FOUND"):
             await accept_plan_fee(ORG_ID, second_plan_id, PlanFeeActionRequest(), request, operator)
 
+        # A liquidity plan serves no request: its fee review is keyed by plan and acts the same.
+        liquidity_plan_id = uuid.uuid4()
+        async with sessions() as session, session.begin():
+            session.add(
+                ReviewItem(
+                    org_id=ORG_ID,
+                    treasury_id=treasury_id,
+                    request_id=None,
+                    request_version=None,
+                    plan_id=liquidity_plan_id,
+                    fee_estimate_wei=11,
+                    type=ReviewType.FEE_APPROVAL.value,
+                    primary_code="FEE_ABOVE_THRESHOLD",
+                    reason_codes=["FEE_ABOVE_THRESHOLD"],
+                    completed_steps=[],
+                    assigned_roles=["Finance", "Operator", "Owner"],
+                    sla_due_at=now + timedelta(hours=24),
+                )
+            )
+        await defer_plan_fee(
+            ORG_ID, liquidity_plan_id, PlanFeeActionRequest(reason="wait"), request, operator
+        )
+        accepted_liquidity = await accept_plan_fee(
+            ORG_ID, liquidity_plan_id, PlanFeeActionRequest(), request, operator
+        )
+        assert accepted_liquidity["acceptedCapWei"] == "11"
+        async with sessions() as session:
+            liquidity_item = await session.scalar(
+                select(ReviewItem).where(ReviewItem.plan_id == liquidity_plan_id)
+            )
+            assert liquidity_item is not None
+            assert (liquidity_item.status, liquidity_item.resolution) == ("Resolved", "ACCEPT_FEE")
+            assert liquidity_item.request_id is None
+        async with sessions() as session, session.begin():
+            session.add(
+                ReviewItem(
+                    org_id=ORG_ID,
+                    treasury_id=treasury_id,
+                    plan_id=liquidity_plan_id,
+                    type=ReviewType.POLICY_BLOCK.value,  # not a type a plan-keyed item may have
+                    primary_code="X",
+                    reason_codes=["X"],
+                    completed_steps=[],
+                    assigned_roles=["Owner"],
+                    sla_due_at=now,
+                )
+            )
+            with pytest.raises(IntegrityError):
+                await session.flush()
+        async with sessions() as session, session.begin():  # 0091 refuses to downgrade over them
+            await session.execute(
+                text("DELETE FROM review_items WHERE plan_id = :p"), {"p": liquidity_plan_id}
+            )
+
         async with sessions() as session, session.begin():
             mandate_version = await session.scalar(
                 select(MandateVersion).where(MandateVersion.id == MANDATE_VERSION_ID)

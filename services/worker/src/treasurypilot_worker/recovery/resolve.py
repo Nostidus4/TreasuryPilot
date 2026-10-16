@@ -35,6 +35,7 @@ from eth_abi.exceptions import DecodingError
 from web3 import Web3
 
 from treasurypilot_worker.chain.rpc import RpcClient, RpcError
+from treasurypilot_worker.liquidity_review import open_liquidity_review
 from treasurypilot_worker.tracker.track import CONFIRMATIONS, TRACKED, UNKNOWN_AFTER
 
 ESCALATE_AFTER: Final = timedelta(minutes=30)
@@ -67,7 +68,7 @@ async def resolve_operation(
 ) -> Resolution:
     now = now or datetime.now(UTC)
     op = await pool.fetchrow(
-        "SELECT o.id, o.step_id, o.kind, o.status, o.request_id, t.module_address, "
+        "SELECT o.id, o.step_id, o.kind, o.status, o.request_id, o.plan_step_id, t.module_address, "
         "r.onchain_request_id FROM operations o JOIN treasuries t ON t.id = o.treasury_id "
         "LEFT JOIN payment_requests r ON r.id = o.request_id WHERE o.id = $1",
         operation_id,
@@ -253,9 +254,11 @@ async def _close(
                 TRACKED,
             )
         await connection.execute(
-            "UPDATE review_items SET evidence_resolved = true WHERE request_id = $1 "
-            "AND type = 'UNCERTAIN_TX' AND status = 'Open'",
+            "UPDATE review_items SET evidence_resolved = true WHERE type = 'UNCERTAIN_TX' "
+            "AND status = 'Open' AND (request_id = $1 OR (request_id IS NULL AND plan_id = "
+            "(SELECT plan_id FROM plan_steps WHERE id = $2)))",
             op["request_id"],
+            op["plan_step_id"],
         )
         await connection.execute(
             "INSERT INTO domain_events (id, org_id, treasury_id, type, entity_type, entity_id, "
@@ -269,24 +272,33 @@ async def _close(
 
 
 async def _escalate(pool: asyncpg.Pool, op: asyncpg.Record, now: datetime) -> None:
-    if op["request_id"] is None:
-        # shortcut: review items are keyed by request (ck_review_items_subject), so a liquidity
-        # operation gets no item, only this error log; Unknown still blocks the cycles.
-        logger.error("liquidity operation %s unresolved: UNCERTAIN_TX", op["id"])
     async with pool.acquire() as connection, connection.transaction():
         await connection.execute(
             "UPDATE operations SET status = 'Unknown' WHERE id = $1 "
             "AND status IN ('Submitted', 'Pending')",
             op["id"],
         )
-        await connection.execute(
-            "INSERT INTO review_items (id, org_id, treasury_id, request_id, request_version, "
-            "type, primary_code, reason_codes, completed_steps, assigned_roles, status, "
-            "sla_due_at, evidence_resolved) SELECT gen_random_uuid(), r.org_id, r.treasury_id, "
-            "r.id, r.version, 'UNCERTAIN_TX', 'TX_UNKNOWN', ARRAY['TX_UNKNOWN'], '[]'::jsonb, "
-            "ARRAY['Operator', 'Owner'], 'Open', $2, false FROM payment_requests r WHERE r.id = $1 "
-            "ON CONFLICT (request_id, type) WHERE status = 'Open' DO NOTHING",
-            op["request_id"],
-            now + UNCERTAIN_SLA,
-        )
+        if op["request_id"] is None:  # a liquidity operation: the item is keyed by its plan
+            plan_id = await connection.fetchval(
+                "SELECT plan_id FROM plan_steps WHERE id = $1", op["plan_step_id"]
+            )
+            if plan_id is not None:
+                await open_liquidity_review(
+                    connection,
+                    plan_id=plan_id,
+                    kind="UNCERTAIN_TX",
+                    primary_code="TX_UNKNOWN",
+                    now=now,
+                )
+        else:
+            await connection.execute(
+                "INSERT INTO review_items (id, org_id, treasury_id, request_id, request_version, "
+                "type, primary_code, reason_codes, completed_steps, assigned_roles, status, "
+                "sla_due_at, evidence_resolved) SELECT gen_random_uuid(), r.org_id, r.treasury_id, "
+                "r.id, r.version, 'UNCERTAIN_TX', 'TX_UNKNOWN', ARRAY['TX_UNKNOWN'], '[]'::jsonb, "
+                "ARRAY['Operator', 'Owner'], 'Open', $2, false FROM payment_requests r "
+                "WHERE r.id = $1 ON CONFLICT (request_id, type) WHERE status = 'Open' DO NOTHING",
+                op["request_id"],
+                now + UNCERTAIN_SLA,
+            )
     logger.warning("operation %s unresolved after %s: UNCERTAIN_TX", op["id"], ESCALATE_AFTER)
