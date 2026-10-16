@@ -10,7 +10,12 @@ import asyncpg  # type: ignore[import-untyped]
 from treasurypilot_core.policy import Decision, validate_plan
 from treasurypilot_worker.chain.rpc import RpcClient
 from treasurypilot_worker.chain.snapshot import SnapshotPurpose, take_snapshot
-from treasurypilot_worker.executor.plan_loader import LoadedPlan, load_plan, plan_run
+from treasurypilot_worker.executor.plan_loader import (
+    LoadedPlan,
+    load_plan,
+    plan_run,
+    snapshot_executor,
+)
 from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.planner.context import ContextInputs, build_context, scope_for
 from treasurypilot_worker.planner.pipeline import evidence_digest
@@ -56,6 +61,6 @@ def reattest_fn(
         )
         renewed = await load_plan(pool, loaded.plan_id)  # the newest attestation, with its steps
         assert renewed is not None
-        return plan_run(renewed, inputs, fees)
+        return plan_run(renewed, inputs, fees, snapshot_executor(snapshot))
 
     return reattest

@@ -134,7 +134,7 @@ deploy-local:
 
 # Skips the (Foundry-only) deploy while the manifest's module still has code on Anvil.
 seed: check-env
-	uv run python infra/scripts/seed_local.py --check-deployed || $(MAKE) deploy-local
+	uv run python infra/scripts/seed_local.py --check-deployed || DEMO_PLAN_EXECUTOR=true $(MAKE) deploy-local
 	set -a; . ./$(ENV_FILE); set +a; uv run python infra/scripts/seed_local.py --env-file $(ENV_FILE)
 	grep -q '^TP_PLATFORM_CHAIN_CONFIG_PATH=' $(ENV_FILE) || printf '\nTP_PLATFORM_CHAIN_CONFIG_PATH=/app/deployments/local/chains.json\nTP_DEPLOYMENTS_DIR=/app/deployments/local\n' >> $(ENV_FILE)
 	@# The worker and signer pick up the seeded chain RPC URL and the generated TEST keystores.

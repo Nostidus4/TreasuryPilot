@@ -465,6 +465,15 @@ async def read_snapshot(
     _, found = await _aggregate(rpc, pin, discovery)
     aave: dict[str, Any] = {}
     _fill(aave, missing, discovery, found)
+    # A PlanAttestedExecutor mandate executor names the key it accepts; an EOA has no operator().
+    executor = data.get("module", {}).get("mandate", {}).get("executor")
+    if executor:
+        operator = [
+            _read("module/executor_operator", executor, "operator()", "address"),
+            _read("module/executor_module", executor, "module()", "address"),
+        ]
+        _, found_operator = await _aggregate(rpc, pin, operator)
+        _fill(data, [], operator, found_operator)  # a failed read is no gap: it is just an EOA
     pool, a_token = aave.get("aave", {}).get("pool"), aave.get("aave", {}).get("a_token")
     if pool and pool != _ZERO and a_token:
         aave_reads = _aave_reads(target, pool, a_token)

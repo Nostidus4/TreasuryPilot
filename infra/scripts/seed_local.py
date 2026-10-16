@@ -76,7 +76,12 @@ def rpc(url: str, method: str, params: list[object]) -> Any:
 def is_deployed(manifest_path: Path, rpc_url: str) -> bool:
     """True when the manifest exists and its module still has code (Anvil not restarted)."""
     try:
-        module = json.loads(manifest_path.read_text())["module"]
+        manifest = json.loads(manifest_path.read_text())
+        module = manifest["module"]
+        if not manifest.get(
+            "planExecutor"
+        ):  # `make seed` needs PlanAttestedExecutor as the executor
+            return False
         return rpc(rpc_url, "eth_getCode", [module, "latest"]) not in ("0x", "")
     except (OSError, KeyError, ValueError, RuntimeError):
         return False
@@ -353,9 +358,9 @@ async def seed_database(
         c,
         "INSERT INTO mandate_versions (id, org_id, treasury_id, version, onchain_version, status, "
         "config, config_hash, valid_from, expires_at, created_by, activated_at) "
-        "VALUES (:id, :org, :t, 1, 1, 'Active', CAST(:config AS jsonb), :hash, :vf, :exp, :u, :vf) "
+        "VALUES (:id, :org, :t, 1, :onchain, 'Active', CAST(:config AS jsonb), :hash, :vf, :exp, :u, :vf) "
         "ON CONFLICT DO NOTHING",  # a DB trigger makes mandate config immutable, so no refresh
-        id=sid("mandate:1"), org=org, t=treasury, config=json.dumps(config),
+        id=sid("mandate:1"), onchain=2 if manifest.get("planExecutor") else 1, org=org, t=treasury, config=json.dumps(config),
         hash=hashlib.sha256(canonical.encode()).digest(), vf=valid_from, exp=expires, u=owner_user,
     )  # fmt: skip
     # shortcut: Deploy.s.sol makes the module guardian an EOA (Anvil #3), not a Guardian Safe, so
