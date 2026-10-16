@@ -229,10 +229,11 @@ export function RequestForm({
               placeholder={t('Choose a vendor')}
               options={vendors.map((vendor) => ({
                 value: vendor.id,
-                label: vendor.payeeAddress
-                  ? vendor.name
-                  : `${vendor.name} — ${t('no registered payee')}`,
-                disabled: !vendor.payeeAddress,
+                label:
+                  vendor.payeeAddress && vendor.payeeStatus === 'Active'
+                    ? vendor.name
+                    : `${vendor.name} — ${t('no registered payee')}`,
+                disabled: vendor.payeeStatus !== 'Active',
               }))}
             />
           )}
@@ -367,7 +368,7 @@ export function formDefaults(
     vendorId: string;
     invoiceNumber: string;
     amount: string;
-    dueDate: string;
+    dueDate: string | null;
     description: string;
     terms: { earlyPayDate?: string; earlyDiscountBps?: number };
   },
@@ -378,7 +379,7 @@ export function formDefaults(
     vendorId: request.vendorId,
     invoiceNumber: request.invoiceNumber,
     amount: formatUnits(request.amount, decimals, { group: false }),
-    dueDate: toDateInput(request.dueDate),
+    dueDate: toDateInput(request.dueDate ?? undefined),
     description: request.description,
     earlyEnabled: Boolean(earlyDiscountBps),
     earlyPayDate: toDateInput(earlyPayDate),

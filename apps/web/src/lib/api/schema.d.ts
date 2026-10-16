@@ -1575,7 +1575,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** List Requests */
+    get: operations['list_requests_v1_orgs__organization_id__requests_get'];
     put?: never;
     /** Create Request */
     post: operations['create_request_v1_orgs__organization_id__requests_post'];
@@ -1660,7 +1661,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** Get Request */
+    get: operations['get_request_v1_orgs__organization_id__requests__request_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -5891,6 +5893,9 @@ export interface components {
       normalizedRef: string;
       /** Notes */
       notes: string | null;
+      /** Payeeaddress */
+      payeeAddress?: string | null;
+      payeeStatus?: components['schemas']['PayeeStatus'] | null;
     };
     /** VerificationEvidence */
     VerificationEvidence: {
@@ -9371,6 +9376,44 @@ export interface operations {
       };
     };
   };
+  list_requests_v1_orgs__organization_id__requests_get: {
+    parameters: {
+      query?: {
+        /** @description Comma-separated request statuses */
+        status?: string | null;
+        treasuryId?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   create_request_v1_orgs__organization_id__requests_post: {
     parameters: {
       query?: never;
@@ -9556,6 +9599,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UploadResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_request_v1_orgs__organization_id__requests__request_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

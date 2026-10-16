@@ -44,7 +44,11 @@ export function RequestFacts({ request }: { request: RequestDetail }) {
         },
         {
           label: t('Pay to'),
-          value: <Address address={request.payeeAddress} />,
+          value: request.payeeAddress ? (
+            <Address address={request.payeeAddress} />
+          ) : (
+            '—'
+          ),
         },
         ...(request.description
           ? [{ label: t('Description'), value: request.description }]
@@ -94,13 +98,21 @@ export function VendorHistory({ request }: { request: RequestDetail }) {
           },
           {
             label: t('Usual payee'),
-            value: <Address address={history.usualPayee} />,
+            value: history.usualPayee ? (
+              <Address address={history.usualPayee} />
+            ) : (
+              '—'
+            ),
           },
           {
             label: t('Payee on this request'),
             value: (
               <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                <Address address={request.payeeAddress} />
+                {request.payeeAddress ? (
+                  <Address address={request.payeeAddress} />
+                ) : (
+                  '—'
+                )}
                 {history.payeeChanged ? (
                   <Badge tone="danger">{t('Changed')}</Badge>
                 ) : (

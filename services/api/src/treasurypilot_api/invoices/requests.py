@@ -8,6 +8,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from email import policy
 from email.parser import BytesParser
 from typing import cast
@@ -33,8 +34,19 @@ from treasurypilot_api.compliance.travel_rule import (
 from treasurypilot_api.events.writer import append_execution_cycle_requested
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.auth import AuthFailure
-from treasurypilot_api.identity.models import Organization, OrganizationRole, WalletLink, uuid7
-from treasurypilot_api.identity.rbac import MemberAccess, maker_checker_conflict, require_role
+from treasurypilot_api.identity.models import (
+    Organization,
+    OrganizationRole,
+    User,
+    WalletLink,
+    uuid7,
+)
+from treasurypilot_api.identity.rbac import (
+    MemberAccess,
+    maker_checker_conflict,
+    require_member,
+    require_role,
+)
 from treasurypilot_api.invoices.anomalies import (
     InvoiceRevisionSignals,
     PaidInvoice,
@@ -654,12 +666,14 @@ def _serialize(row: PaymentRequest) -> dict[str, object]:
         "invoiceNo": row.invoice_no,
         "issueDate": row.issue_date.isoformat() if row.issue_date else None,
         "dueDate": row.due_at.isoformat() if row.due_at else None,
-        "amount": str(row.amount) if row.amount is not None else None,
+        "amount": str(int(row.amount)) if row.amount is not None else None,
         # For fiat requests amount/maxStablecoinAmount is the cap signed by approvers.
-        "maxStablecoinAmount": str(row.amount) if row.amount is not None else None,
+        "maxStablecoinAmount": str(int(row.amount)) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "fiatAmountMinorUnits": (
-            str(row.fiat_amount_minor_units) if row.fiat_amount_minor_units is not None else None
+            str(int(row.fiat_amount_minor_units))
+            if row.fiat_amount_minor_units is not None
+            else None
         ),
         "fiatCurrency": row.fiat_currency,
         "fxReferenceQuote": row.fx_reference_quote,
@@ -696,11 +710,13 @@ def _snapshot(row: PaymentRequest) -> dict[str, object]:
         "invoiceNo": row.invoice_no,
         "issueDate": row.issue_date.isoformat() if row.issue_date else None,
         "dueDate": row.due_at.isoformat() if row.due_at else None,
-        "amount": str(row.amount) if row.amount is not None else None,
-        "maxStablecoinAmount": str(row.amount) if row.amount is not None else None,
+        "amount": str(int(row.amount)) if row.amount is not None else None,
+        "maxStablecoinAmount": str(int(row.amount)) if row.amount is not None else None,
         "assetId": str(row.asset_id),
         "fiatAmountMinorUnits": (
-            str(row.fiat_amount_minor_units) if row.fiat_amount_minor_units is not None else None
+            str(int(row.fiat_amount_minor_units))
+            if row.fiat_amount_minor_units is not None
+            else None
         ),
         "fiatCurrency": row.fiat_currency,
         "fxReferenceQuote": row.fx_reference_quote,
@@ -3436,3 +3452,306 @@ async def get_cancel_transaction(
             "Safe state could not be read because no RPC provider answered.",
         ) from None
     return {"safeTx": safe_tx}
+
+
+# ---- Reads (web contract: apps/web/src/lib/api/types.ts PaymentRequest / RequestDetail) ----
+
+_REQUEST_LIST_MAX = 500  # shortcut: newest-first cap, no cursor; add one when a page needs more
+# Backend statuses the web vocabulary has no name for; list/detail report the web name.
+_WEB_STATUS = {
+    "Planning": "InFlight",
+    "AwaitingAuthority": "InFlight",
+    "Preparing": "InFlight",
+    "Paying": "InFlight",
+    "Expired": "Cancelled",
+}
+_WEB_FILTER_EXTRA = {"Extracting", "ChangesRequested", "InFlight"}  # no/aggregated backend rows
+
+
+def _backend_statuses(web: str) -> list[str]:
+    return [raw for raw, mapped in _WEB_STATUS.items() if mapped == web] + [web]
+
+
+_CANCEL_ONCHAIN = {"NotNeeded": "NOT_NEEDED", "Pending": "PENDING", "Confirmed": "CONFIRMED"}
+
+
+async def _names(session: AsyncSession, ids: set[uuid.UUID | None]) -> dict[uuid.UUID, str]:
+    wanted = {item for item in ids if item is not None}
+    if not wanted:
+        return {}
+    rows = await session.execute(
+        select(User.id, User.display_name, User.email).where(User.id.in_(wanted))
+    )
+    return {user_id: name or str(email) for user_id, name, email in rows}
+
+
+async def _request_summaries(
+    session: AsyncSession, rows: list[PaymentRequest]
+) -> list[dict[str, object]]:
+    vendors = dict(
+        (
+            await session.execute(
+                select(Vendor.id, Vendor.name).where(
+                    Vendor.id.in_({r.vendor_id for r in rows if r.vendor_id})
+                )
+            )
+        ).all()
+    )
+    payees = dict(
+        (
+            await session.execute(
+                select(Payee.id, Payee.address).where(
+                    Payee.id.in_({r.payee_id for r in rows if r.payee_id})
+                )
+            )
+        ).all()
+    )
+    names = await _names(session, {r.created_by for r in rows})
+    revisions = {r.id: r.current_revision for r in rows}
+    open_flags: dict[uuid.UUID, int] = {}
+    high_flags: dict[uuid.UUID, int] = {}
+    for request_id, revision, severity, count in await session.execute(
+        select(RequestFlag.request_id, RequestFlag.revision, RequestFlag.severity, func.count())
+        .where(
+            RequestFlag.request_id.in_(revisions),
+            RequestFlag.status == RequestFlagStatus.OPEN.value,
+        )
+        .group_by(RequestFlag.request_id, RequestFlag.revision, RequestFlag.severity)
+    ):
+        if revision != revisions[request_id]:
+            continue
+        open_flags[request_id] = open_flags.get(request_id, 0) + count
+        if severity == RequestFlagSeverity.HIGH.value:
+            high_flags[request_id] = count
+    return [
+        {
+            "id": str(row.id),
+            "invoiceNumber": row.invoice_no or "",
+            "vendorId": str(row.vendor_id) if row.vendor_id else None,
+            "vendorName": vendors.get(row.vendor_id, "") if row.vendor_id else "",
+            "payeeAddress": "0x" + payees[row.payee_id].hex() if row.payee_id in payees else None,
+            "amount": str(int(row.amount)) if row.amount is not None else "0",
+            "treasuryId": str(row.treasury_id),
+            "dueDate": row.due_at.isoformat() if row.due_at else None,
+            "status": _WEB_STATUS.get(row.status, row.status),
+            "source": row.source,
+            "description": row.note or "",
+            "createdBy": {
+                "id": str(row.created_by) if row.created_by else None,
+                "name": names.get(row.created_by, "") if row.created_by else "",
+            },
+            "createdAt": row.created_at.isoformat(),
+            "revision": row.current_revision,
+            "openFlags": open_flags.get(row.id, 0),
+            "highFlagsUnacked": high_flags.get(row.id, 0),
+        }
+        for row in rows
+    ]
+
+
+@router.get("", openapi_extra={"x-organization-scoped": True})
+async def list_requests(
+    organization_id: uuid.UUID,
+    request: Request,
+    status: str | None = Query(default=None, description="Comma-separated request statuses"),  # noqa: B008
+    treasury_id: uuid.UUID | None = Query(default=None, alias="treasuryId"),  # noqa: B008
+    limit: int = Query(default=200, ge=1, le=_REQUEST_LIST_MAX),  # noqa: B008
+    member: MemberAccess = Depends(require_member),  # noqa: B008
+) -> dict[str, object]:
+    statuses = [item for item in (status or "").split(",") if item]
+    valid = {item.value for item in RequestStatus} | _WEB_FILTER_EXTRA
+    if any(item not in valid for item in statuses):
+        raise _fail(422, "STATUS_INVALID", "Status invalid", "Unknown request status filter.")
+    query = select(PaymentRequest).where(PaymentRequest.org_id == member.organization_id)
+    if statuses:
+        query = query.where(
+            PaymentRequest.status.in_([raw for item in statuses for raw in _backend_statuses(item)])
+        )
+    if treasury_id is not None:
+        query = query.where(PaymentRequest.treasury_id == treasury_id)
+    async with _sessions(request)() as session:
+        rows = list(
+            await session.scalars(
+                query.order_by(PaymentRequest.created_at.desc(), PaymentRequest.id.desc()).limit(
+                    limit
+                )
+            )
+        )
+        return {"items": await _request_summaries(session, rows) if rows else []}
+
+
+@router.get("/{request_id}", openapi_extra={"x-organization-scoped": True})
+async def get_request(
+    organization_id: uuid.UUID,
+    request_id: uuid.UUID,
+    request: Request,
+    member: MemberAccess = Depends(require_member),  # noqa: B008
+) -> dict[str, object]:
+    async with _sessions(request)() as session:
+        row = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.org_id == member.organization_id
+            )
+        )
+        if row is None:
+            raise _not_found()
+        summary = (await _request_summaries(session, [row]))[0]
+        try:
+            terms = confirmed_payment_terms(row)
+        except ValidationError:
+            terms = None
+        amount = int(row.amount) if row.amount is not None else 0
+        early = _early_option(terms, amount) if terms is not None and amount else None
+        due = row.due_at.isoformat() if row.due_at else None
+        early_date = (
+            datetime.fromtimestamp(early[1], UTC).date().isoformat() if early is not None else None
+        )
+        options: list[dict[str, object]] = []
+        if early is not None:
+            options.append(
+                {
+                    "kind": "EARLY",
+                    "payBy": early_date,
+                    "amount": str(early[0]),
+                    "saving": str(amount - early[0]),
+                }
+            )
+        options.append({"kind": "STANDARD", "payBy": due, "amount": str(amount), "saving": "0"})
+        flags = list(
+            await session.scalars(
+                select(RequestFlag).where(
+                    RequestFlag.request_id == row.id,
+                    RequestFlag.revision == row.current_revision,
+                    RequestFlag.status != RequestFlagStatus.SUPERSEDED.value,
+                )
+            )
+        )
+        revisions = list(
+            await session.scalars(
+                select(RequestRevision)
+                .where(RequestRevision.request_id == row.id)
+                .order_by(RequestRevision.revision.desc())
+            )
+        )
+        approvals = list(
+            await session.scalars(
+                select(PaymentApproval)
+                .where(
+                    PaymentApproval.request_id == row.id,
+                    PaymentApproval.revision == row.current_revision,
+                    PaymentApproval.status == ApprovalStatus.VALID.value,
+                )
+                .order_by(PaymentApproval.created_at)
+            )
+        )
+        events = list(
+            await session.scalars(
+                select(RequestStatusEvent)
+                .where(RequestStatusEvent.request_id == row.id)
+                .order_by(RequestStatusEvent.at)
+            )
+        )
+        names = await _names(
+            session,
+            {f.acknowledged_by for f in flags}
+            | {r.edited_by for r in revisions}
+            | {a.approver_user_id for a in approvals},
+        )
+        history_where = (
+            PaymentRequest.org_id == row.org_id,
+            PaymentRequest.vendor_id == row.vendor_id,
+            PaymentRequest.status == RequestStatus.PAID.value,
+            PaymentRequest.id != row.id,
+        )
+        paid_count = last_amount = 0
+        avg_amount: Decimal | int = 0
+        last_payee = row.payee_id
+        if row.vendor_id is not None:
+            agg = (
+                await session.execute(
+                    select(
+                        func.count(PaymentRequest.amount), func.avg(PaymentRequest.amount)
+                    ).where(*history_where)
+                )
+            ).one()
+            paid_count, avg_amount = int(agg[0]), agg[1] or 0
+            last = (
+                await session.execute(
+                    select(PaymentRequest.amount, PaymentRequest.payee_id)
+                    .where(*history_where)
+                    .order_by(PaymentRequest.updated_at.desc())
+                    .limit(1)
+                )
+            ).first()
+            if last is not None:
+                last_amount, last_payee = int(last[0] or 0), last[1]
+        usual = (
+            await session.scalar(select(Payee.address).where(Payee.id == last_payee))
+            if last_payee is not None
+            else None
+        )
+    return {
+        **summary,
+        "version": str(row.version),
+        "fields": [],  # shortcut: extraction field provenance is not stored per field yet
+        "terms": {
+            "standardDueDate": due,
+            "earlyPayDate": early_date,
+            "earlyDiscountBps": terms.discount_bps if early is not None and terms else None,
+            "confirmed": row.terms_confirmed_by is not None,
+        },
+        "options": options,
+        "flags": [
+            {
+                "id": str(flag.id),
+                "code": flag.code,
+                "severity": flag.severity,
+                "title": flag.code,
+                "detail": "",
+                "evidence": [
+                    {"label": k, "value": v if isinstance(v, str) else json.dumps(v)}
+                    for k, v in flag.evidence.items()
+                ],
+                "acknowledged": (
+                    {
+                        "by": names.get(flag.acknowledged_by, "") if flag.acknowledged_by else "",
+                        "note": flag.ack_note or "",
+                        "at": flag.acknowledged_at.isoformat() if flag.acknowledged_at else "",
+                    }
+                    if flag.status == RequestFlagStatus.ACKNOWLEDGED.value
+                    else None
+                ),
+            }
+            for flag in flags
+        ],
+        "injectionWarnings": [],
+        "revisions": [
+            {
+                "revision": rev.revision,
+                "at": rev.at.isoformat(),
+                "by": names.get(rev.edited_by, "") if rev.edited_by else "",
+                "summary": rev.reason or f"Revision {rev.revision}",
+            }
+            for rev in revisions
+        ],
+        "approvals": [
+            {
+                "approver": "0x" + item.approver_address.hex(),
+                "name": names.get(item.approver_user_id, "") if item.approver_user_id else "",
+                "at": item.created_at.isoformat(),
+                "option": "STANDARD",  # shortcut: the signed option is not recorded
+            }
+            for item in approvals
+        ],
+        "timeline": [
+            {"at": event.at.isoformat(), "label": f"Moved to {event.to_status}"} for event in events
+        ],
+        "vendorHistory": {
+            "paidCount": paid_count,
+            "averageAmount": str(int(avg_amount or 0)),
+            "lastAmount": str(last_amount),
+            "usualPayee": "0x" + usual.hex() if usual is not None else None,
+            "payeeChanged": row.payee_id != last_payee,
+        },
+        "cancelOnchain": _CANCEL_ONCHAIN[row.cancel_onchain],
+    }

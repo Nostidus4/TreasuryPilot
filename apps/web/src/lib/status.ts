@@ -85,6 +85,7 @@ export const requestStatuses: Record<RequestStatus, StatusMeta> = {
     tone: 'info',
     live: true,
   },
+  NeedsReview: { label: 'Needs review', tone: 'warning' },
   Paid: { label: 'Paid', tone: 'success' },
   Rejected: { label: 'Rejected', tone: 'danger' },
   Cancelled: { label: 'Cancelled', tone: 'neutral' },

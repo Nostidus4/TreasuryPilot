@@ -110,7 +110,7 @@ def _view(row: RecurringPaymentSchedule) -> dict[str, object]:
         "assetId": str(row.asset_id),
         "payingWalletId": str(row.paying_wallet_id) if row.paying_wallet_id else None,
         "invoiceNoTemplate": row.invoice_no_template,
-        "amount": str(row.amount),
+        "amount": str(int(row.amount)),
         "terms": row.terms,
         "note": row.note,
         "tags": row.tags,

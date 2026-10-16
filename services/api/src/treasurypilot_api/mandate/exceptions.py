@@ -335,7 +335,7 @@ async def get_exception(
     return {
         "exception": _exception_json(exception) if exception is not None else None,
         "numbers": {
-            "amount": str(payment.amount),
+            "amount": str(int(payment.amount)),
             "cap": str(cap),
             "dailyUsed": str(daily_used),
             "dailyRemainingAfter": str(daily - daily_used - int(payment.amount)),
@@ -350,7 +350,7 @@ def _exception_json(row: MandateException) -> dict[str, Any]:
         "id": str(row.id),
         "requestId": str(row.request_id),
         "mandateVersion": row.mandate_onchain_version,
-        "amount": str(row.amount),
+        "amount": str(int(row.amount)),
         "payee": "0x" + bytes(row.payee).hex(),
         "expiry": row.expiry.isoformat(),
         "status": row.status.value,
