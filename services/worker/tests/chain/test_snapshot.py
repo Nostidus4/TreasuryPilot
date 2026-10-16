@@ -297,12 +297,14 @@ async def test_snapshot_records_the_operator_of_a_contract_mandate_executor() ->
     answers = _answers()
     operator = "0x" + "f1" * 20
     answers[(OWNER, "operator()")] = (["address"], lambda _args: [operator])
+    answers[(OWNER, "module()")] = (["address"], lambda _args: [MODULE])
 
     snapshot = await read_snapshot(
         _client(MulticallProvider(answers)), TARGET, SnapshotPurpose.PLAN
     )
 
     assert snapshot.data["module"]["executor_operator"] == operator
+    assert snapshot.data["module"]["executor_module"] == MODULE
     assert snapshot.missing == ()
 
 

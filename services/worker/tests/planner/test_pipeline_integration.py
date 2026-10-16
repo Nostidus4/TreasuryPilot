@@ -881,6 +881,7 @@ async def test_reattest_renews_the_attestation_for_the_same_plan(
     assert not isinstance(run, PolicyDecision)
     assert run.plan_id == outcome.plan_id and len(run.steps) == len(loaded.plan.steps)
     assert run.valid_until >= loaded.valid_until
+    assert {step.sign_request["payload"]["to"] for step in run.steps} == {EXECUTOR}
     assert (
         await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", outcome.plan_id)
         == 2

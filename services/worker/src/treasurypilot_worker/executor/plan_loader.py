@@ -9,19 +9,17 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
-from web3 import Web3
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
 from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 from treasurypilot_worker.chain.rpc import RpcClient
+from treasurypilot_worker.chain.snapshot import Snapshot
 from treasurypilot_worker.executor.outbox import StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.executor.simulation import SimulationContext, build_calldata
 from treasurypilot_worker.planner.context import ContextInputs
-
-_MANDATE_SELECTOR = "0x" + bytes(Web3.keccak(text="mandate()")[:4]).hex()
 
 _ACTIONS = {
     PAY: Action.PAY,
@@ -114,12 +112,15 @@ async def load_plan(pool: asyncpg.Pool, plan_id: UUID) -> LoadedPlan | None:
     )
 
 
-async def mandate_executor(rpc: RpcClient, module: str) -> str:
-    """``module.mandate().executor``: the PlanAttestedExecutor every step is sent to (not the module)."""
+def snapshot_executor(snapshot: Snapshot) -> str:
+    """The PlanAttestedExecutor every step is sent to: ``mandate.executor`` of the validated snapshot."""
 
-    raw = str(await rpc.call("eth_call", [{"to": module, "data": _MANDATE_SELECTOR}, "latest"]))
-    # mandate() is a static tuple; the executor is its fifth word.
-    return "0x" + raw.removeprefix("0x")[4 * 64 + 24 : 5 * 64]
+    executor = snapshot.data.get("module", {}).get("mandate", {}).get("executor")
+    if not executor or int(executor, 16) == 0:
+        raise ValueError(
+            "snapshot has no mandate executor"
+        )  # fail closed: never send to the zero address
+    return str(executor)
 
 
 def simulation_context(loaded: LoadedPlan, inputs: ContextInputs, target: str) -> SimulationContext:

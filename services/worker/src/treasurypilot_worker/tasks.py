@@ -27,7 +27,12 @@ from treasurypilot_worker.chain.event_handlers import (
 from treasurypilot_worker.chain.indexer import index_events_sync
 from treasurypilot_worker.chain.rpc import build_rpc_client, decode_rpc_urls
 from treasurypilot_worker.chain.safe_config import refresh_safe_config_snapshots_sync
-from treasurypilot_worker.chain.snapshot import snapshot_daily_sync, snapshot_dashboards_sync
+from treasurypilot_worker.chain.snapshot import (
+    SnapshotPurpose,
+    snapshot_daily_sync,
+    snapshot_dashboards_sync,
+    take_snapshot,
+)
 from treasurypilot_worker.config import get_settings
 from treasurypilot_worker.executor.gate import PlanGate
 from treasurypilot_worker.executor.outbox import (
@@ -40,10 +45,10 @@ from treasurypilot_worker.executor.outbox import (
 )
 from treasurypilot_worker.executor.plan_loader import (
     load_plan,
-    mandate_executor,
     plan_fees,
     plan_run,
     simulation_context,
+    snapshot_executor,
 )
 from treasurypilot_worker.executor.sequencer import PlanRun, sequence_plan
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
@@ -64,7 +69,7 @@ from treasurypilot_worker.notify.telegram import HttpTelegramClient
 from treasurypilot_worker.notify.telegram_sender import deliver_pending
 from treasurypilot_worker.notify.webhooks import deliver_pending_webhooks
 from treasurypilot_worker.planner.ai import PROPOSE_TASK, run_proposal
-from treasurypilot_worker.planner.context import load_inputs, load_liquidity_context
+from treasurypilot_worker.planner.context import load_inputs, load_liquidity_context, scope_for
 from treasurypilot_worker.planner.liquidity import DbLiquidityStarter, plan_liquidity
 from treasurypilot_worker.planner.pipeline import plan_request
 from treasurypilot_worker.planner.reattest import reattest_fn
@@ -890,7 +895,15 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
             )
             rpc = build_rpc_client(decode_rpc_urls(urls))
             fees = await plan_fees(pool, rpc, loaded.treasury_id, plan_id)
-            target = await mandate_executor(rpc, loaded.plan.treasury)
+            # The target comes from a PRE_STEP snapshot like the gate's validation, never a bare "latest" read.
+            target = snapshot_executor(
+                await take_snapshot(
+                    pool,
+                    loaded.treasury_id,
+                    SnapshotPurpose.PRE_STEP,
+                    scope_for(loaded.plan, inputs),
+                )
+            )
             run: PlanRun = plan_run(loaded, inputs, fees, target)
             gate = PlanGate.for_treasury(
                 pool,
