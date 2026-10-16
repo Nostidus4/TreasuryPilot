@@ -14,6 +14,10 @@ The primary users are finance and treasury operators, payment approvers and comp
 
 M1 is a synthetic-asset Sepolia evaluation, not an audited mainnet payment service. Version 0.3 adds Aave V3 supply/withdraw for genuinely idle funds, an approved early-payment amount alongside the standard amount, and borrowing proposals. Contract code also implements owner-granted borrow/repay paths as a P2 capability; their existence does not mean the M1 product autonomously borrows. [Version 0.3 decisions](vi/37-cap-nhat-v03.md) · [existing technical draft](submission/technical-documentation.md).
 
+This boundary matters when interpreting the rest of the report: a feature can be implemented and still be unsuitable for a production claim because its provider, deployment configuration, operating procedure, or independent review is missing. The synthetic-asset evaluation does not establish custody, payment-rail, legal, or mainnet readiness.
+
+**Follow-up questions:** Which Sepolia scenarios use synthetic assets, and which controls would change before a real-token deployment? Has the owner-granted debt path been explicitly excluded from M1 operations?
+
 ### 1.2 End-to-end value flow
 
 [![Payment request to verified transaction](report_site/diagrams/payment-flow.svg)](report_site/diagrams/payment-flow.svg)
@@ -29,6 +33,10 @@ M1 is a synthetic-asset Sepolia evaluation, not an audited mainnet payment servi
 
 This is the **target system-wide sequence**. Individual components have code, while completion of the entire sequence depends on environment-specific smoke and end-to-end evidence. [System flow](SYSTEM_ARCHITECTURE.md) · [worker tasks](../services/worker/src/treasurypilot_worker/tasks.py) · [execution API](../services/api/src/treasurypilot_api/execution/routes.py).
 
+The sequence crosses durable database state, asynchronous queues, an external model, a signer, and an independently changing chain. A successful intake or plan API response says nothing by itself about payment completion. The strongest completion record joins the approved request and plan to the mined receipt and verified balance/event postconditions; retries must preserve that identity.
+
+**Follow-up questions:** Is there a release-pinned smoke run that exercises every step in this sequence? Who handles escalation when a receipt remains unknown beyond the normal confirmation window?
+
 ### 1.3 Wallets and authority
 
 | Actor or component | Purpose | Relevant authority |
@@ -42,6 +50,10 @@ This is the **target system-wide sequence**. Individual components have code, wh
 
 Safe owners or other enabled Safe modules can still make transactions outside TreasuryPilot. The mandate constrains the **TreasuryPilotModule path**, not every possible Safe action. [Known risk KR-02](security/known-risks.md) · [governance contract](../contracts/src/TreasuryPilotGovernance.sol).
 
+The authority model separates business approval of an invoice, Safe-owner governance of the standing mandate, and transaction submission by the executor. A signed payment does not authorize a policy change; an owner-approved mandate does not approve a particular invoice. This separation narrows the signer’s role but still depends on protecting the owner threshold and operational access.
+
+**Follow-up questions:** Has the deployed Safe configuration been checked for every enabled module and owner threshold? Who reviews and rotates the executor key and signer credentials?
+
 ## 02 · System architecture
 
 ### 2.1 Deployment layers
@@ -51,6 +63,10 @@ Safe owners or other enabled Safe modules can still make transactions outside Tr
 *Figure 02.1 — Deployment layers · [Edit in draw.io](report_site/diagrams/system-architecture.drawio).*
 
 The implementation is divided into [web](../apps/web/src/app.tsx), [API](../services/api/src/treasurypilot_api/main.py), [worker](../services/worker/src/treasurypilot_worker/tasks.py), [signer](../services/signer/src/treasurypilot_signer/main.py), pure [py-core](../packages/py-core/src/treasurypilot_core/) and [contracts](../contracts/src/). PostgreSQL is the business source of truth. Redis dispatches work; it is not a payment ledger. [Compose](../infra/compose.yaml) separates core, AI and webhook workers, beat, signer, API, web, PostgreSQL, Redis and MinIO. Anvil is a local profile.
+
+The deterministic core is reusable by API and worker paths, while signer and contracts form distinct execution gates. Queue messages should be treated as prompts to inspect durable operation state, not as payment records. Compose describes a runnable topology; it does not establish high availability, production secret management, or that optional integrations are enabled in a deployment.
+
+**Follow-up questions:** Which Compose services and secret sources are active in the target demo environment? Has recovery been exercised after a worker restart with an operation in flight?
 
 ### 2.2 Trust boundaries
 
@@ -64,12 +80,20 @@ The implementation is divided into [web](../apps/web/src/app.tsx), [API](../serv
 
 See [AI architecture](AI_AGENT_ARCHITECTURE.md), [signing service](../services/signer/src/treasurypilot_signer/service.py) and [known risks](security/known-risks.md).
 
+Controls are layered because no single boundary guarantees the full outcome: API checks protect business operations, signer checks reduce malformed or stale submissions, and contract checks protect module-originated transfers at execution. Simulation is point-in-time; chain state, RPC responses, database privileges and host isolation remain part of the trusted computing base. This table describes controls in code, not an independent penetration test result.
+
+**Follow-up questions:** Which trust boundary has an owner and incident procedure? Are database and host compromise scenarios included in the threat model?
+
 ### 2.3 Consistency rules
 
 - **Money uses integer base units.** API and database serialize decimal integers; Python uses strict integer types; Solidity uses `uint256`. Floating point is excluded from payment decisions. [BaseUnits](../packages/py-core/src/treasurypilot_core/money/base_units.py).
 - **Time is UTC.** Daily limits use chain block time; user-facing dates may use the organization's timezone. Due-date calculations normalize to UTC days. [UTC day helpers](../packages/py-core/src/treasurypilot_core/domain/utc_days.py).
 - **Write before action.** Persist the operation and stable step identity before broadcast. A timeout is unknown, not failure. [Outbox](../services/worker/src/treasurypilot_worker/executor/outbox.py).
 - **Evidence is built into the flow.** A decision must be traceable to policy version, hashes, transaction, receipt and verified postcondition. [Audit evidence](../services/api/src/treasurypilot_api/audit/evidence.py).
+
+These conventions prevent display formatting from becoming a financial input, but require validation at serialization boundaries: decimals, UTC dates and identifiers must survive API, database, queue and contract encoding without reinterpretation. Historical snapshots should retain chain/block context so later reconciliation can distinguish changed balances from the inputs to an earlier decision.
+
+**Follow-up questions:** Are integer and time-zone invariants checked across external import/export paths? Can an operator reproduce a decision from its stored snapshot and policy version?
 
 ## 03 · Invoice and approval workflow
 
@@ -79,13 +103,25 @@ The draft/extraction state is separate from an executable obligation. Intake che
 
 Upload, API-key and inbound-email paths have implementation. The existence of an endpoint does not establish that a provider or mail integration is configured in a particular deployment. Fingerprints and near-duplicate checks address renamed/re-entered invoices, while the on-chain approval signature prevents a database `approved` flag alone from authorizing payment. [API keys](../services/api/src/treasurypilot_api/invoices/api_keys.py) · [email intake](../services/api/src/treasurypilot_api/invoices/inbound_email.py) · [fingerprint](../packages/py-core/src/treasurypilot_core/fingerprint/invoice.py).
 
+Extraction should produce a reviewable draft, not an executable obligation. Fingerprinting helps identify likely repeats but cannot establish that semantically similar invoices are duplicates or that a unique fingerprint is legitimate. The recorded 30-invoice extraction set has labels pending independent review; it is not a production accuracy estimate.
+
+**Follow-up questions:** Which upload and email providers are configured for the demo? How are fingerprint collisions and near-duplicate false positives surfaced to reviewers?
+
 ### 3.2 Payment signature
 
 `PaymentApproval` binds request ID, invoice hash, fingerprint, treasury, paying wallet, asset, payee, standard amount, early amount and early deadline, terms hash, expiry, and a fiat flag. Its EIP-712 domain binds chain and module. The module checks that the current approver signed (EOA or ERC-1271), selects the correct early or standard amount for the time window and consumes the request once. Fiat-quoted requests have separate cap semantics; therefore “every payment equals one fixed integer” would be too broad. [Approval hash](../contracts/src/libraries/PaymentApprovalHash.sol) · [module pay](../contracts/src/TreasuryPilotModule.sol) · [approval API](../services/api/src/treasurypilot_api/invoices/approval.py).
 
+Typed data gives the signer a structured obligation to inspect; its domain prevents free replay across another chain or module. It does not prove that the human saw an accurate invoice, which depends on the review interface and source document. Expiry, one-time consumption and field binding protect execution semantics, with local contract tests covering specified cases.
+
+**Follow-up questions:** Does the approval UI render every signed field, including early-payment terms and fiat mode, in human-readable units? Are deployed approver addresses and ERC-1271 behavior covered by testnet evidence?
+
 ### 3.3 Maker-checker and fraud flags
 
 Backend RBAC determines who creates, edits and approves a request. Maker-checker may prevent self-approval, with a distinct controlled solo mode. HIGH flags require acknowledgment or review before progression. A changed payee or signed field invalidates a stale approval. These backend controls are separate from the contract's signature verification. [Maker-checker](../services/api/src/treasurypilot_api/identity/maker_checker.py) · [RBAC](../services/api/src/treasurypilot_api/identity/rbac.py) · [risk KR-24](security/known-risks.md).
+
+These controls reduce single-user error and make suspicious intake visible, but rely on correct role assignment, session security and flagging quality. Acknowledgment records that a reviewer handled a warning; it does not prove the underlying data is correct. Solo mode is a deliberate exception and should remain visible in audit records.
+
+**Follow-up questions:** Is solo mode disabled or explicitly governed in the target organization? Do audit records identify the maker, checker and HIGH-flag disposition for each approved request?
 
 ## 04 · Financial engine and optimization
 
@@ -103,11 +139,19 @@ Cap       = min(Capacity, RemainingRefillDaily, PerRefillLimit)
 
 If `Shortage` is zero, the engine does not refill solely to reach the soft target. If the required amount exceeds the bound or cap, it blocks rather than funding an incomplete payment. PAY and REFILL have separate daily counters. The module additionally checks the approved request/destination, per-request refill count and exact balance deltas. [Liquidity engine](../packages/py-core/src/treasurypilot_core/engine/liquidity.py) · [module refill](../contracts/src/TreasuryPilotModule.sol) · [algorithm report](submission/technical-documentation.md).
 
+The hard floor protects essential liquidity while the soft target avoids topping every wallet up unnecessarily. `SourceProtected` and `SourceFloor` limit what can leave the treasury; destination bounds prevent refill from becoming general-purpose funding. The recommendation is off-chain, while contract checks are the execution backstop. Divergence between calculations should fail closed and be covered by shared vectors.
+
+**Follow-up questions:** Are floors, protected funds and daily counters consistent across UI, API, planner and deployed module? Which tests cover fee-on-transfer or rebasing tokens against the exact-delta assumption?
+
 ### 4.2 Scheduling and payment value
 
 `schedule_edf` orders requests by UTC due day, approval sequence and request ID. It simulates up to 30 days, resets daily caps at UTC boundaries, carries balances forward and rechecks cooling, limits and refill. It returns a feasible heuristic result, **not a global optimum certificate**. `schedule_cpsat` exists with a default five-second limit and EDF fallback. Reports should state the actual algorithm, solver status and fallback mode. [EDF scheduler](../packages/py-core/src/treasurypilot_core/engine/scheduler.py) · [CP-SAT](../packages/py-core/src/treasurypilot_core/engine/cpsat.py).
 
 The value model can account for the signed early-payment discount, transaction fee, foregone simple supply interest and late fees from confirmed terms. Valuation cannot increase PAY beyond the signed options. ADR-019 defines B0 as manual/EDF with idle cash, B1 as a deterministic optimizer and B2 as AI plus optimizer. Any comparison needs explicit fee/rate assumptions, inputs and actual algorithms. [Scoring](../packages/py-core/src/treasurypilot_core/engine/scoring.py) · [ADR-019](adr/ADR-019-aave-liquidity-and-payment-options.md).
+
+EDF provides a deterministic, understandable baseline; optional CP-SAT can explore a constrained objective but may time out and fall back. A fair comparison holds invoice set, balances, policy limits and market assumptions fixed, and reports solver status rather than labeling every output “optimized.” The value score is a planning aid, not a guarantee of realized savings.
+
+**Follow-up questions:** Are B0/B1/B2 results generated from the same held-out scenarios and assumptions? Does each benchmark record CP-SAT success, timeout or EDF fallback?
 
 ### 4.3 Reserves, Aave and borrowing proposals
 
@@ -125,6 +169,10 @@ WithdrawTarget      = ceil(Deficit × 105 / 100)
 
 `PaymentReserve` includes approved unpaid obligations within the reserve horizon and chooses the known early amount when applicable. Supply requires a minimum amount and stays within caps. Withdraw is bounded by aToken balance and available pool cash. A remaining deficit becomes an insufficient-liquidity decision, not an automatic borrow. The module enforces a static floor and supply caps; the **dynamic reserve is computed and checked off-chain**. [Liquidity engine](../packages/py-core/src/treasurypilot_core/engine/liquidity.py) · [forecast](../packages/py-core/src/treasurypilot_core/engine/forecast.py) · [Aave contract paths](../contracts/src/TreasuryPilotModule.sol).
 
+The 105% withdrawal target is a planning buffer, not a promise that the pool can provide that amount or that the reserve remains sufficient through execution. Aave use depends on configured pool and token addresses, aToken balances, pool cash and current protocol behavior. Local fixtures and fork tests cover specified paths; they do not establish current Sepolia liquidity. Borrow proposals remain a separate owner decision.
+
+**Follow-up questions:** What evidence confirms pool, asset and aToken configuration at the recorded block? How are recalculation and withdrawal failure handled if liquidity changes between planning and submission?
+
 ## 05 · Policy, mandate and smart contracts
 
 ### 5.1 Three-way policy decision
@@ -135,9 +183,17 @@ WithdrawTarget      = ceil(Deficit × 105 / 100)
 
 The validator evaluates a chain snapshot, request, policy version, balances, limits, payee and plan/step, then returns `ALLOW`, `NEEDS_APPROVAL` or `BLOCK` with stable reason codes. `NEEDS_APPROVAL` is not executable until an owner grants a precisely scoped exception. Shared Python/Foundry differential vectors compare validator outcomes with contract success or revert selectors for unknown payee, cooling, pause, expiry, caps, duplicate, floor and replay cases. [Validator](../packages/py-core/src/treasurypilot_core/policy/validator.py) · [reason codes](../packages/py-core/src/treasurypilot_core/policy/reason_codes.py) · [differential report](testing/policy-contract-differential-report.md).
 
+The validator is the explanatory off-chain decision point; the contract remains authoritative for its encoded checks when a transaction executes. Differential vectors show agreement for named cases, not exhaustive equivalence. `ALLOW` means execution may proceed to later checks, not that mining or postcondition verification is guaranteed.
+
+**Follow-up questions:** Which policy checks are intentionally off-chain only, and what reviews them? Are differential vectors rerun and archived for the exact release candidate?
+
 ### 5.2 Mandate and governance
 
 Safe T owner/threshold governs payees, assets, operational wallets, PAY/REFILL limits, floors, validity, pause/revoke, exceptions, Aave settings and one-time borrow/repay grants. The factory creates one module instance per treasury. Owner or guardian pause affects subsequent module actions only after the pause transaction is mined. It does not undo settled transfers or restrict direct Safe owner actions. [Governance](../contracts/src/TreasuryPilotGovernance.sol) · [factory](../contracts/src/TreasuryPilotModuleFactory.sol) · [mandate API](../services/api/src/treasurypilot_api/mandate/routes.py).
+
+Governance changes are on-chain operations and should reconcile to the database’s mandate view. The module enforces only configuration it has received, so a UI’s intended policy is not evidence of deployed state. One-time debt grants are a separate capability and require review of asset, amount, rate and expiry.
+
+**Follow-up questions:** Is the current UI mandate compared with on-chain storage for the target treasury? Who verifies the owner threshold and grant revocation procedure?
 
 ### 5.3 On-chain entry points
 
@@ -151,15 +207,27 @@ Safe T owner/threshold governs payees, assets, operational wallets, PAY/REFILL l
 
 See [TreasuryPilotModule](../contracts/src/TreasuryPilotModule.sol), [PlanAttestedExecutor](../contracts/src/PlanAttestedExecutor.sol), [ReserveHoldExecutor](../contracts/src/ReserveHoldExecutor.sol) and [ThresholdApprovalExecutor](../contracts/src/ThresholdApprovalExecutor.sol).
 
+This is a capability inventory, not a statement that every path is enabled or demonstrated in one environment. Restrictions are strongest when calls are limited to known selectors, configured assets and explicit Safe/module relationships. Specialized wrappers have distinct assumptions and test fixtures, so each needs separate evidence before inclusion in a demo or security claim.
+
+**Follow-up questions:** Which entry points are enabled in the deployed M1 module, and which are only covered locally? Are wrapper authorization and target-address assumptions included in contract review?
+
 ## 06 · AI agent
 
 ### 6.1 AI's role
 
 AI assists with invoice and terms extraction, plan proposals, exception drafts, Copilot answers and anomaly explanations. `worker-ai` calls the model with read-only tools and budget/failover controls. `worker-core` uses the deterministic engine and holds the policy-attestation boundary. The repository includes provider adapters, versioned prompts, an instruction detector, secret scan, read-only tools and evaluation harnesses. [Agent code](../services/worker/src/treasurypilot_worker/agent/) · [AI architecture](AI_AGENT_ARCHITECTURE.md) · [Google Doc AI tab](https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.yed8bvlknow6).
 
+Model output is advisory content that must be grounded in application data and checked by deterministic code. Provider failover and budget controls help availability and cost management, but do not make different models equivalent. Explanations should retain citations or source records so operators can distinguish observed facts from a model summary.
+
+**Follow-up questions:** Which model and prompt versions are active in the target deployment? Are provider outage, malformed output and unsupported-answer behavior visible to operators?
+
 ### 6.2 Output contract and injection defenses
 
 PDF/email content is untrusted data. Text in a document must not become a mandate or payee change, and a proposed address cannot become executable without confirmation and deterministic validation. The AI receives neither signing keys nor write tools. Its output passes schemas, reference checks and calculations outside the model. Untrusted-content wrappers, secret scans, instruction detection and prompt policy reduce risk; they are not proof of immunity to prompt injection. [Untrusted wrapper](../services/worker/src/treasurypilot_worker/agent/untrusted.py) · [detector](../services/worker/src/treasurypilot_worker/agent/instruction_detector.py) · [secret scan](../services/worker/src/treasurypilot_worker/agent/secret_scan.py).
+
+The red-team artifact is bounded local evidence: 0/20 cases changed a field or policy, but the keyword fallback alone flagged only 2/20. Those cases do not establish general resistance. Safety depends on preventing extracted text from bypassing human confirmation and signed-field checks even when the model misses an instruction.
+
+**Follow-up questions:** Can evaluation add OCR artifacts, multiple languages, unusual encodings and newly authored attacks? Is there an alert path when the model detects an instruction but fallback scanning does not?
 
 ### 6.3 Bounded evaluation results
 
@@ -169,11 +237,19 @@ PDF/email content is untrusted data. Text in a document must not become a mandat
 | [Copilot fidelity](evidence/copilot-fidelity.md) | 20/20 cases meet numeric-fidelity checks. | AI-authored cases await independent review; not a measure of all real questions. |
 | [Red-team](evidence/redteam-results.md) | 0/20 cases changed a field/policy; model flagged 20/20. | Keyword fallback alone flagged 2/20; 20 cases do not establish general injection resistance. |
 
+All three artifacts are dated recorded evaluations. Extraction labels await second-person review, Copilot questions are AI-authored, and the red-team set is finite. They establish results only for those inputs, prompts and configurations, not live-provider behavior or quality on unrepresented documents and attacks.
+
+**Follow-up questions:** Who will independently adjudicate labels and cases, and record disagreements? What held-out set and acceptance criteria will gate a prompt or model change?
+
 ## 07 · Execution, signer and recovery
 
 ### 7.1 Safe execution sequence
 
 Each step needs a stable plan/step ID, fresh state, a policy decision, an attestation bound to plan hash/nonce/expiry, and a PostgreSQL outbox row before broadcast. The signer checks the typed step, attestation, target chain/module and calldata against the plan, simulates with `eth_call`, reserves nonce/step state against duplicates and signs using the executor key. An internal `/sign-and-send` endpoint exists. Older submission text saying the signer has only a health endpoint is stale for this commit. [Signer API](../services/signer/src/treasurypilot_signer/main.py) · [signing service](../services/signer/src/treasurypilot_signer/service.py) · [store](../services/signer/src/treasurypilot_signer/store.py).
+
+The outbox makes intent durable before an external network action and gives retries a stable identity. Simulation can catch stale-state and calldata errors but cannot reserve a nonce or guarantee the same result after a new block. Practical signer isolation depends on deployment credentials, network policy, database access and host administration.
+
+**Follow-up questions:** Is signer access restricted to the intended worker and chain/module in deployment? Has a crash between signing, broadcast and outbox update been exercised?
 
 ### 7.2 Unknown outcomes and partial plans
 
@@ -183,9 +259,17 @@ Each step needs a stable plan/step ID, fresh state, a policy decision, an attest
 
 After a timeout, the worker must not invent a fresh request/step identity and retry blindly. It checks receipt, nonce, module `requestPaid`/`stepUsed` and actual chain state, blocking or routing the treasury to review until the outcome is known. Confirmed steps in a multi-step plan must not be replayed after a later step fails. Outbox, sequencer, tracker and partial-recovery code exist; full durability must still be demonstrated by environment-specific end-to-end evidence. [Executor](../services/worker/src/treasurypilot_worker/executor/) · [recovery](../services/worker/src/treasurypilot_worker/recovery/) · [risk KR-09](security/known-risks.md).
 
+“Unknown” is an intentional safety state: a timeout may mean a transaction was accepted even when the caller did not receive its hash or receipt. Recovery correlates the persisted step, signer nonce and chain evidence before resuming, completing or requiring review. The 30/30 result covers a local Anvil scenario, not process termination, reorgs or Sepolia RPC behavior.
+
+**Follow-up questions:** Are restart, dropped/replaced transaction and reorg cases represented in evidence? What operator action clears an unresolved unknown without risking duplicate payment?
+
 ### 7.3 Circuit breaker and pause
 
 The API and worker include review/circuit-breaker paths, and the internal sentinel service can request pause. “Pause requested” is different from “pause mined”; only mined contract state blocks future module calls, and Safe owners retain their separate authority. [Circuit API](../services/api/src/treasurypilot_api/recovery/circuit.py) · [sentinel](../services/signer/src/treasurypilot_signer/sentinel.py).
+
+The breaker should report request, submission and mined confirmation as distinct states so operators do not assume protection before chain state reflects it. RPC outages can prevent confirmation. A pause limits the module path; it cannot reverse a finalized transfer or prevent an owner using a separate Safe route.
+
+**Follow-up questions:** Which roles may request and confirm a pause, and how is it surfaced during RPC outage? Has resume governance been reviewed alongside emergency pause?
 
 ## 08 · Data, API and web interface
 
@@ -194,6 +278,10 @@ The API and worker include review/circuit-breaker paths, and the internal sentin
 PostgreSQL groups identity/org/session, treasury/wallet/chain, mandate/payee/exception, invoice/request/approval, plan/step/AI call, operation/event/snapshot, reconciliation/evidence/audit, notification and administration data. Business tables carry an organization scope; amounts are integer base units. Migrations are the source for the current schema; [DATA_MODEL](DATA_MODEL.md) is the design overview. [Migrations](../services/api/migrations/versions/) · [Google Doc data-model tab](https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.py8ti27c4ma4).
 
 The minimum evidence chain is request → invoice hash/fingerprint → typed approval/signature → plan/policy version → operation/step ID → transaction hash/receipt/events → verification → reconciliation → audit/evidence bundle. A transaction hash alone is not a complete payment explanation. [Audit models](../services/api/src/treasurypilot_api/audit/models.py) · [reconciliation models](../services/api/src/treasurypilot_api/reconciliation/models.py).
+
+Organization scope and integer amounts support tenant separation and exact accounting, but do not by themselves guarantee correct authorization or immutable audit history. Retention, document access, encryption and export redaction remain lifecycle responsibilities. Evidence should preserve source revision and block context, distinguishing what the system knew when planning from later chain state.
+
+**Follow-up questions:** Do migrations and repository scopes cover every business table and background task? Can an evidence export be tied to the original invoice object and chain block?
 
 ### 8.2 API surface
 
@@ -209,11 +297,19 @@ The minimum evidence chain is request → invoice hash/fingerprint → typed app
 
 Major routes use `/v1` and organization-scoped routes include the organization ID. [API_SPEC](API_SPEC.md) can lag or lead code, so integrations should compare generated OpenAPI with the [web client schema](../apps/web/openapi.json). The React/Vite UI includes setup, dashboard, requests, approval, plans, review, mandate, payees, reconciliation, metrics and Copilot. [Web app](../apps/web/src/app.tsx) · [package](../apps/web/package.json).
 
+The route inventory describes breadth, not equal maturity or full integration coverage. External clients also need stable error, idempotency and pagination semantics. UI screens require environment-backed walkthroughs to establish that state transitions, access checks and transaction status remain understandable under chain latency.
+
+**Follow-up questions:** Is OpenAPI generated and checked against the committed web schema in CI? Which operator journeys have been walked end to end against demo configuration?
+
 ## 09 · Chain evidence and reconciliation
 
 The chain reader/indexer creates snapshots and follows events and receipts. Verification checks postconditions before declaring a payment result. Reconciliation distinguishes internal refill/swap from vendor expense and supports match, discrepancy and resolve flows. Audit logs, evidence bundles and EAS helpers add traceability, but invoice/approval/plan hashes inside EAS are backend assertions. An auditor must check the trusted attester, schema and actual PAY transaction. [Chain worker](../services/worker/src/treasurypilot_worker/chain/) · [verifier](../services/worker/src/treasurypilot_worker/reconcile/verify.py) · [reconciliation routes](../services/api/src/treasurypilot_api/reconciliation/routes.py) · [receipt helper](../infra/scripts/attest_receipt.py).
 
 The current [Sepolia manifest](../deployments/11155111.json) says `deploymentStatus: deployed` and contains the module, Safe T/O1, code hashes and verification block. This is a deployment artifact with addresses and checks; it does **not alone prove** that all public demo/reconciliation scenarios succeeded. The [15 October reliability report](evidence/reliability-2026-10-15.md) records 30/30 completed local Anvil runs and zero Sepolia runs. Some older submission drafts still say `configured_only`; each claim needs its own revision/date.
+
+Local Anvil evidence demonstrates repeatability within that scenario and revision. Sepolia evidence here establishes a manifest and deployment metadata, not successful public transactions for payment, Aave, attestation or reconciliation. EAS records are pointers: an auditor should inspect the trusted attester, schema and underlying PAY transaction before treating an assertion as proof.
+
+**Follow-up questions:** Which public transaction hashes support each scene currently described as demonstrated? Has postcondition verification been exercised against a mined Sepolia receipt and documented block?
 
 ## 10 · Security and compliance
 
@@ -225,9 +321,17 @@ The current [Sepolia manifest](../deployments/11155111.json) says `deploymentSta
 - Screening, KYB, travel-rule and data-region code exist, but fixture screening is not evidence of live provider coverage or legal approval. [Compliance](../services/api/src/treasurypilot_api/compliance/) · [risk KR-19](security/known-risks.md).
 - Privacy classification, redaction and encryption primitives must be applied by each integration, log path and export. [Privacy package](../packages/py-core/src/treasurypilot_core/privacy/).
 
+These are layered controls and open engineering risks, not a certification claim. Contract checks protect only their own execution path; compromised owner access, signer host or external service can undermine the broader model. Privacy primitives also require consistent use in logs, support tools and evidence exports.
+
+**Follow-up questions:** Which risks have named owners, target dates and release-blocking criteria? Has an independent reviewer assessed deployed bytecode and the off-chain signer/API model together?
+
 ### 10.2 Open risks for public claims
 
 The contracts lack an independent audit. Other Safe owners/modules can move funds outside the mandate. RPC failures and reorgs affect finality. Dynamic reserves are not fully enforced on-chain. Aave pool caps and liquidity change. Signer database privilege needs hardening. Invoice data can be exposed or misread. Fixture sanctions checks are not live coverage. A single Compose VM is a concentrated failure point. The full register and severity context are in [known risks](security/known-risks.md) and the [security self-assessment](submission/security-self-assessment.md).
+
+These risks affect distinct claims: contract review concerns code safety; a public transaction demonstrates a particular path; operational resilience concerns recovery and availability; compliance coverage depends on providers and jurisdiction. Closing one category does not imply the others are resolved.
+
+**Follow-up questions:** Which are blockers for the next testnet milestone versus mainnet? What evidence will demonstrate signer privilege and backup/restore work is complete?
 
 ## 11 · Testing, metrics and reproducibility
 
@@ -242,15 +346,27 @@ The contracts lack an independent audit. Other Safe owners/modules can move fund
 
 A reproducible benchmark must record SHA, chain ID/block, asset/decimals, dataset split and exposure, model/prompt, actual EDF/CP-SAT/fallback path, fee/rate assumptions, denominators and failures. Anvil, historical fork and public Sepolia results must be reported separately. [Submission evaluation protocol](submission/technical-documentation.md) · [planner benchmark](../services/worker/src/treasurypilot_worker/planner_bench/).
 
+The dated reliability artifact reports 30/30 completed `demo-main` runs on local Anvil and no Sepolia runs requested. This supports a bounded local completion claim; latency and fee figures must retain the artifact’s environment and units. Unit, contract, differential, browser and AI evaluations answer narrower questions and should not be collapsed into one readiness score.
+
+**Follow-up questions:** Can CI publish immutable, revision-bound outputs for local and testnet scenarios? Which failure classes must be covered before recovery is called reliable?
+
 ## 12 · Deployment and operations
 
 ### 12.1 Environments
 
 Local Compose starts PostgreSQL 16, Redis 7, MinIO, optional Anvil, migrations, API, core/AI/webhook workers, beat, signer and web. Sepolia has a separate override and deployment manifest/scripts. Before a demo, check chain ID, RPC, Safe owners/threshold/module enablement, token decimals, mandate expiry, payees, pool/aToken, gas and EAS attester. Aave supply headroom can differ from a historical fork. [Infra README](../infra/README.md) · [Compose](../infra/compose.yaml) · [Sepolia override](../infra/compose.sepolia.yaml) · [deployment guide](../contracts/docs/DEPLOYMENT.md).
 
+The local stack provides repeatable dependencies and an Anvil profile; the Sepolia override and manifest describe public-testnet setup. Configuration artifacts should be compared with live state before a run because addresses, balances, owner configuration and pool liquidity can change. “Deployed” should be verified against code and configuration at the stated block.
+
+**Follow-up questions:** Is there a preflight record for the current demo deployment, including code hashes and module enablement? Which secrets and service credentials differ between local Compose and Sepolia?
+
 ### 12.2 Observability and incidents
 
 The stack includes correlation IDs, metrics/tracing, Sentry/OpenTelemetry and notification outboxes. An incident record should identify request/plan/operation IDs, policy reason code, chain/block, tx/nonce/receipt and the retry or review decision. Logs and exports should omit raw keys, session tokens, signatures and sensitive invoice content. [Core observability](../packages/py-core/src/treasurypilot_core/observability.py) · [metrics](../services/api/src/treasurypilot_api/observability/metrics.py) · [notifications](../services/worker/src/treasurypilot_worker/notify/).
+
+Monitoring should distinguish attempted, submitted, mined, verified and reconciled operations; otherwise a healthy API can conceal a stalled payment. Telemetry should connect business and chain identifiers without copying sensitive invoice content. Incident handling needs an owner for unknown outcomes and a clear criterion for when retry is safe.
+
+**Follow-up questions:** Are alerts tied to stuck outbox steps and delayed reconciliation, with runbooks? Has redaction been reviewed across traces, notification payloads and evidence exports?
 
 ## 13 · Implementation status and gaps
 
@@ -265,9 +381,17 @@ The stack includes correlation IDs, metrics/tracing, Sentry/OpenTelemetry and no
 
 These are **verification requests**, not claims that the implementation is absent. Source code supports statements about individual components and boundaries; production readiness needs a release-specific system and security review. [Submission README](submission/README.md) · [known risks](security/known-risks.md).
 
+The table distinguishes code inspection from evidence needed for stronger completion claims. Current materials include implementation paths, local test artifacts and a Sepolia deployment manifest, while the reliability report records zero Sepolia runs. Claims should name evidence class and date rather than treat configuration, local execution and public operation as interchangeable.
+
+**Follow-up questions:** Which gaps are release gates for the next evaluation milestone? Who will assemble a revision-bound evidence bundle linking code, tests, chain state and review sign-offs?
+
 ## 14 · Module map and implementation dependencies
 
 The Google Doc organizes the project into M01–M20. Its assignment tab reflects the team plan **as of 11–12 October 2026**, not the current issue state. This map points readers to the technical ownership area for each module. [Module catalog](modules/README.md) · [assignment tab](https://docs.google.com/document/d/1nkSIU5c-zouBkKooWjEFshxw61pH0CRwugYDy5AFJBo/edit?tab=t.3xlngx2j9mze).
+
+This map is a navigation aid, not a claim that modules are independent or complete. Contract ABI, database schema and API schemas are shared seams where changes affect several streams. Pairing module progress with upstream dependencies, downstream consumers and evidence artifacts helps reviewers validate integration.
+
+**Follow-up questions:** Which shared interfaces lack explicit versioning or compatibility rules? Are module owners and integration reviewers current relative to the historical assignment tab?
 
 | Module | Responsibility | Entry point |
 |---|---|---|
@@ -307,3 +431,7 @@ The Google Doc organizes the project into M01–M20. Its assignment tab reflects
 | Operations, tests and risks | [infra](../infra/), [evidence](evidence/), [security](security/), [submission](submission/) |
 
 **Update rule:** record a new commit and date; compare routes, schema and contracts with source; rerun evaluations with revision-bound artifacts; verify the manifest against chain state at the recorded block; separately label “code present,” “local test,” “public transaction” and “independent audit.” This Markdown is the editable source for the English documentation pages.
+
+English, Vietnamese and Chinese reports share a structural contract: section and subsection headings must remain aligned for the site builder. Retain source links and distinguish code inspection, local Anvil/fork evidence, Sepolia configuration/transaction evidence, and independent review. Historical results should carry their date, revision, environment and denominator.
+
+**Follow-up questions:** Is there an automated check for translated heading order before publishing? Who refreshes evidence when code, prompts, deployments or evaluation data change?
