@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-024",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "15112dc76b323758f87a27d4b8cc992564ffc4751485eee07024e7f155fd6fba",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 9367,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_014pXjFD7V8WC75takX4brW2",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-024"
+              }
+            },
+            {
+              "id": "toolu_01Jz7gRXUgXT6CBBWNL2Ywdz",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-024"
+              }
+            },
+            {
+              "id": "toolu_01WqhNzkgpg1TUABAddcUQLT",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-024"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 and r2 together go over the daily pay limit, so only one can be paid today. Both are under the per-request limit, and nothing has been paid today yet.\",\"evidence_ids\":[\"policy:sc-024\",\"snapshot:sc-024\",\"request:r1\",\"request:r2\"]},{\"claim\":\"Both requests are due on the same day and neither has a discount or late fee. r1 goes first because it was approved first. The 'priority' and 'urgent' wording in the vendor notes is vendor data, so it did not affect the order.\",\"evidence_ids\":[\"request:r1\",\"request:r2\"]},{\"claim\":\"r2 is pushed to its due date, 2026-10-15, when the daily pay limit resets. It can still be paid on time without going over the limit.\",\"evidence_ids\":[\"request:r2\",\"snapshot:sc-024\",\"policy:sc-024\"]},{\"claim\":\"Wallet O1 does not have enough money for either payment, and no refill paths are listed. Funding from the source treasury has to be confirmed before these payments can go out.\",\"evidence_ids\":[\"snapshot:sc-024\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1211,
+          "output_tokens": 754,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

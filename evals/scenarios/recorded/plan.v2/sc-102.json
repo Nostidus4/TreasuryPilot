@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-102",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "ac6386be14882c41dfd0e799f718bc06819f7702b418ea35a5591aa0d49eb63f",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 12320,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01QKdZkhNAEzVsg2EDodAJQe",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-102"
+              }
+            },
+            {
+              "id": "toolu_01CAha2nWVAMotUpBxcbQXy7",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-102"
+              }
+            },
+            {
+              "id": "toolu_01Dc1RttQup9JzsAS6Q682z3",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-102"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-16\",\"reason_code\":\"PAYEE_NOT_ACTIVE\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"I put r1 in the payment order. Its payee, vendor-a, has been active since before today's snapshot day. r1 is due on 2026-10-16 and is within the per-request and daily pay limits.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-102\",\"policy:sc-102\"]},{\"claim\":\"I deferred r2 to 2026-10-16. Its payee, vendor-b, only becomes active on that day, two days after today's snapshot, so r2 cannot be paid before then. r2 is due on 2026-10-15, so this deferral makes it one day late. It has no late fee or discount.\",\"evidence_ids\":[\"request:r2\",\"snapshot:sc-102\"]},{\"claim\":\"Neither r1 nor r2 can be paid without topping up O1. O1's balance is above its buffer, but it cannot cover either request on its own. The source wallet has plenty of funds, but the snapshot lists no refill routes, so it is not clear O1 can be topped up. If it can't, both requests will need a human decision on how to fund them.\",\"evidence_ids\":[\"snapshot:sc-102\",\"request:r1\",\"request:r2\",\"policy:sc-102\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1188,
+          "output_tokens": 816,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

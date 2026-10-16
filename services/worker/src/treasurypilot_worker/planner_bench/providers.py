@@ -230,7 +230,7 @@ class EdfStandInProvider:
             "rationale": [
                 {
                     "claim": "Earliest due day first.",
-                    "evidence_ids": [by_call["t-get_snapshot"]["snapshot_id"]],
+                    "evidence_ids": [by_call["t-get_snapshot"]["evidence_id"]],
                 }
             ],
         }

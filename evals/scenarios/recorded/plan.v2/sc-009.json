@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-009",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "81c0a54dfb35d5efa5611b179985c82679073dfa534fc866ba74953a3507f750",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 9139,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_0134Tmh8Fwo3GacibLiPQDGn",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-009"
+              }
+            },
+            {
+              "id": "toolu_015GcWW9mCZ334ctBaTzjoPq",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-009"
+              }
+            },
+            {
+              "id": "toolu_01HTyzkJ3aQjaqtA1vVbrNKm",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-009"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 is due today, the snapshot day, and was approved first, so it should be paid first.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-009\"]},{\"claim\":\"Most of today's daily pay limit is already used. The room left covers r1 but not r2 as well.\",\"evidence_ids\":[\"policy:sc-009\",\"snapshot:sc-009\",\"request:r1\",\"request:r2\"]},{\"claim\":\"r2 is not due until tomorrow and has no early-payment discount or late fee. Moving it to tomorrow, when the daily pay limit resets, keeps it on time.\",\"evidence_ids\":[\"request:r2\",\"policy:sc-009\"]},{\"claim\":\"The paying wallet O1 has little money above its buffer and the snapshot lists no refill paths, so the engine must confirm funding before paying r1.\",\"evidence_ids\":[\"snapshot:sc-009\",\"policy:sc-009\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1191,
+          "output_tokens": 580,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

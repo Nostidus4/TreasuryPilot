@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-005",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "e8694515bcfb85987456126f0059b66e0dded1663631681b6959cf078bfff57a",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 13115,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01P9iUzrMkGMbaKaC3Pc8kG1",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-005"
+              }
+            },
+            {
+              "id": "toolu_016k4g9XSnKeCyv4VNmuUcLq",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-005"
+              }
+            },
+            {
+              "id": "toolu_01WBsLtKMnFH4e7yXCU9Rypx",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-005"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 2006,
+          "cache_read_tokens": 0
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 is due today, the snapshot day (2026-10-14), so it goes first to avoid paying late.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-005\"]},{\"claim\":\"r2 has an early-payment discount that ends today, but paying r2 early on top of r1 would go over the daily pay limit. Paying r2 early instead would make r1 late, so the due date comes before the discount.\",\"evidence_ids\":[\"request:r2\",\"request:r1\",\"policy:sc-005\",\"snapshot:sc-005\"]},{\"claim\":\"r2 is not due until 2026-10-17 (day 20743). Moving it to 2026-10-15, when the daily pay limit resets, still gets it paid on time.\",\"evidence_ids\":[\"request:r2\",\"policy:sc-005\"]},{\"claim\":\"O1 is the paying wallet for both requests. Its balance is low compared with its buffer and target, and the snapshot shows no refill paths. The engine needs to check that O1 can be refilled from the source before it pays anything.\",\"evidence_ids\":[\"snapshot:sc-005\",\"policy:sc-005\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1196,
+          "output_tokens": 966,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

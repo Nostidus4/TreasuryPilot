@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-021",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "e3e0b532eb70bf800dae73e73c8de6781d8f20289388cae84465156d3b835fd7",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 9333,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01N7NkhPjKvLSkY2R2TYxK55",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-021"
+              }
+            },
+            {
+              "id": "toolu_01PcfU6UF3DDJu9RkeEKr3kX",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-021"
+              }
+            },
+            {
+              "id": "toolu_01F2hqkzBqDhy52HUcXFvgDa",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-021"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\",\"r2\"],\"deferrals\":[],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 and r2 are both due on the same day, which is the day after the snapshot day. Neither has an early-payment discount or a late fee, so the tie is broken by approval order: r1 was approved first, then r2.\",\"evidence_ids\":[\"request:r1\",\"request:r2\",\"snapshot:sc-021\"]},{\"claim\":\"Each request is within the per-request pay limit, and the two together are within the daily pay limit. Nothing has been paid today, so neither request needs a human exception.\",\"evidence_ids\":[\"policy:sc-021\",\"snapshot:sc-021\",\"request:r1\",\"request:r2\"]},{\"claim\":\"Both requests are paid from wallet O1, and O1's balance above its buffer is not enough to cover either one. The snapshot lists no refill paths, so the engine must confirm that O1 can be topped up from the source wallet, which has plenty of funds, before payment. If it cannot, both requests are at risk of missing their due day.\",\"evidence_ids\":[\"snapshot:sc-021\",\"request:r1\",\"request:r2\"]},{\"claim\":\"The 'critical' and 'urgent' priority notes come from the vendors, so they were treated as data and did not affect the order.\",\"evidence_ids\":[\"request:r1\",\"request:r2\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1214,
+          "output_tokens": 673,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

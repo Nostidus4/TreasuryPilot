@@ -22,11 +22,18 @@ from treasurypilot_worker.agent.plan_proposer import (
     PlanProposal,
     PlanProposalRejected,
     check_references,
+    evidence_from_tool_calls,
     explain_plan,
     needs_full_proposal,
     propose_plan,
 )
-from treasurypilot_worker.agent.types import AiResult, ProviderResponse, Tool, ToolCall
+from treasurypilot_worker.agent.types import (
+    AiResult,
+    ProviderResponse,
+    Tool,
+    ToolCall,
+    ToolCallRecord,
+)
 
 A, B = "req-a", "req-b"
 
@@ -59,14 +66,18 @@ def _tools(known: set[str]) -> tuple[Tool[Any], ...]:
     def evidence(args: _EvIn) -> dict[str, object]:
         if args.evidence_id not in known:
             raise ToolError("REFUSED: evidence not found in this organisation")
-        return {"id": args.evidence_id}
+        return {"id": args.evidence_id, "evidence_id": f"snapshot:{args.evidence_id}"}
 
     def snapshot(args: _SnapIn) -> dict[str, object]:
-        return {"snapshot_id": "snap-1"}
+        return {"snapshot_id": "snap-1", "evidence_id": "snapshot:snap-1"}
+
+    def requests(args: _SnapIn) -> dict[str, object]:
+        return {"requests": [{"id": r, "evidence_id": f"request:{r}"} for r in (A, B)]}
 
     return (
         Tool("get_evidence", "Read.", _EvIn, evidence),
         Tool("get_snapshot", "Read.", _SnapIn, snapshot),
+        Tool("list_requests", "Read.", _SnapIn, requests),
     )
 
 
@@ -90,7 +101,9 @@ def _propose(
     )
 
 
-def _proposal(order: str = f'["{A}", "{B}"]', evidence: str = '["ev-1"]', extra: str = "") -> str:
+def _proposal(
+    order: str = f'["{A}", "{B}"]', evidence: str = '["snapshot:ev-1"]', extra: str = ""
+) -> str:
     return (
         f'{{"request_order": {order}, "deferrals": [], "exception_requests": [], '
         f'"rationale": [{{"claim": "A is due first", "evidence_ids": {evidence}}}]{extra}}}'
@@ -119,9 +132,75 @@ def test_unknown_request_is_rejected(
 def test_unresolved_evidence_is_rejected(
     repo_config: AiConfig, clock: FakeClock, october: datetime
 ) -> None:
-    provider = FakeProvider([*_reads("ev-1"), fake_text(_proposal(evidence='["ev-1", "ev-9"]'))])
+    provider = FakeProvider(
+        [*_reads("ev-1"), fake_text(_proposal(evidence='["snapshot:ev-1", "ev-9"]'))]
+    )
     with pytest.raises(PlanProposalRejected, match="ev-9"):
         _propose(provider, repo_config, clock, october)
+
+
+def _list_and_snapshot() -> list[ProviderResponse]:
+    return [
+        fake_tool_use(
+            ToolCall("t1", "get_snapshot", {"treasury_id": "t-1"}),
+            ToolCall("t2", "list_requests", {"treasury_id": "t-1"}),
+        )
+    ]
+
+
+def test_ids_the_run_listed_are_accepted_as_evidence(
+    repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    ids = f'["snapshot:snap-1", "request:{A}", "{B}"]'
+    provider = FakeProvider([*_list_and_snapshot(), fake_text(_proposal(evidence=ids))])
+    assert _propose(provider, repo_config, clock, october).output.request_order == (A, B)
+
+
+@pytest.mark.parametrize(
+    "cited", ["policy", "policy.pay.daily", "list_requests:req-a", "get_snapshot"]
+)
+def test_model_made_up_ids_are_rejected(
+    cited: str, repo_config: AiConfig, clock: FakeClock, october: datetime
+) -> None:
+    provider = FakeProvider([*_list_and_snapshot(), fake_text(_proposal(evidence=f'["{cited}"]'))])
+    with pytest.raises(PlanProposalRejected, match="do not resolve"):
+        _propose(provider, repo_config, clock, october)
+
+
+def _record(name: str, result: str, *, is_error: bool = False, truncated: bool = False):
+    return ToolCallRecord("c", name, {}, result, is_error, truncated)
+
+
+def test_evidence_collected_only_from_successful_org_bound_results() -> None:
+    calls = [
+        _record("get_snapshot", '{"snapshot_id": "s", "evidence_id": "snapshot:s"}'),
+        _record("get_policy_summary", '{"evidence_id": "policy:v3"}'),
+        _record("get_evidence", '{"evidence_id": "validation:v1"}'),
+        _record(
+            "list_requests",
+            '{"requests": [{"id": "r1", "evidence_id": "request:r1"}, {"id": "r2"}]}',
+        ),
+    ]
+    assert evidence_from_tool_calls(calls) == {
+        "snapshot:s",
+        "policy:v3",
+        "validation:v1",
+        "request:r1",
+        "r1",
+        "r2",
+    }
+
+
+def test_failed_truncated_garbled_or_foreign_results_count_for_nothing() -> None:
+    calls = [
+        _record("get_snapshot", "REFUSED: treasury not found", is_error=True),
+        _record("get_policy_summary", '{"evidence_id": "policy:v3"', truncated=True),
+        _record("list_requests", "not json"),
+        _record("list_requests", '["r1"]'),
+        _record("simulate_schedule", '{"evidence_id": "snapshot:x", "requests": []}'),
+        _record("get_evidence", '{"evidence_id": 7}'),
+    ]
+    assert evidence_from_tool_calls(calls) == set()
 
 
 def test_amounts_are_not_accepted_from_the_model() -> None:
@@ -183,7 +262,7 @@ def test_snapshot_id_is_citable(repo_config: AiConfig, clock: FakeClock, october
     provider = FakeProvider(
         [
             fake_tool_use(ToolCall("t1", "get_snapshot", {"treasury_id": "t-1"})),
-            fake_text(_proposal(evidence='["snap-1"]')),
+            fake_text(_proposal(evidence='["snapshot:snap-1"]')),
         ]
     )
     assert _propose(provider, repo_config, clock, october).output.request_order == (A, B)
