@@ -1,7 +1,7 @@
 """Pin organizations to a data region and tag stored documents with it (CMP-L04)
 
-Revision ID: 20261016_0088
-Revises: 20261016_0087
+Revision ID: 20261016_0090
+Revises: 20261016_0088
 Create Date: 2026-10-16 00:00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261016_0088"
-down_revision: str | None = "20261016_0087"
+revision: str = "20261016_0090"
+down_revision: str | None = "20261016_0088"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

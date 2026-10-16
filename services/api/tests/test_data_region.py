@@ -150,7 +150,7 @@ def test_migration_sql_offline() -> None:
     config.set_main_option("sqlalchemy.url", "postgresql+asyncpg://offline/offline")
     config.output_buffer = output
     command.upgrade(config, "head", sql=True)
-    command.downgrade(config, "head:20261016_0087", sql=True)
+    command.downgrade(config, "head:20261016_0088", sql=True)
     sql = output.getvalue()
     assert "CREATE TABLE org_data_regions" in sql
     assert "ADD COLUMN storage_region" in sql
