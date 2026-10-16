@@ -87,6 +87,7 @@ const ReviewPage = page(
   () => import('@/features/review/review-page'),
   'ReviewPage',
 );
+const DemoRoutes = page(() => import('@/features/demo/demo-app'), 'DemoRoutes');
 const ComponentsPage = page(
   () => import('@/features/dev/components-page'),
   'ComponentsPage',
@@ -135,6 +136,15 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/verify" element={<VerifyPage />} />
+      {/* Recording-only simulation for the 7m30 demo video; no API calls. */}
+      <Route
+        path="/demo/*"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <DemoRoutes />
+          </Suspense>
+        }
+      />
       <Route element={<AuthGuard />}>
         <Route
           element={
