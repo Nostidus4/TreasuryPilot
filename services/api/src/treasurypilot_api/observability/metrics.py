@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from treasurypilot_api.execution.models import GasLedger, Operation, OperationStatus, Transaction
@@ -22,6 +22,7 @@ from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
 from treasurypilot_api.invoices.models import PaymentRequest, RequestStatusEvent
 from treasurypilot_api.recovery.models import ReviewItem
+from treasurypilot_api.treasury.models import Treasury
 
 _HUMAN_END = {"Rejected", "Cancelled"}
 _BLOCK_REVIEW_TYPES = ("POLICY_BLOCK", "AI_REJECTED")
@@ -244,6 +245,12 @@ async def load_inputs(
     scope = [PaymentRequest.org_id == org_id]
     if treasury_id is not None:
         scope.append(PaymentRequest.treasury_id == treasury_id)
+    # Operations are scoped through their treasury, not their request: a liquidity operation
+    # (SUPPLY / WITHDRAW) has no request, and its gas belongs to the same treasury (EXE-014).
+    org_treasuries = select(Treasury.id).where(Treasury.org_id == org_id)
+    op_scope: list[ColumnElement[bool]] = [Operation.treasury_id.in_(org_treasuries)]
+    if treasury_id is not None:
+        op_scope.append(Operation.treasury_id == treasury_id)
     touched = (
         select(RequestStatusEvent.request_id)
         .where(RequestStatusEvent.at.between(start, end))
@@ -295,10 +302,9 @@ async def load_inputs(
     ops = (
         await session.execute(
             select(Operation.kind, Transaction, GasLedger.fee_wei)
-            .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
             .join(Transaction, Transaction.operation_id == Operation.id)
             .outerjoin(GasLedger, GasLedger.transaction_id == Transaction.id)
-            .where(*scope, Transaction.submitted_at.between(start, end))
+            .where(*op_scope, Transaction.submitted_at.between(start, end))
         )
     ).all()
     txs = [
@@ -314,8 +320,7 @@ async def load_inputs(
     unknown = await session.scalar(
         select(func.count())
         .select_from(Operation)
-        .join(PaymentRequest, PaymentRequest.id == Operation.request_id)
-        .where(*scope, Operation.status == OperationStatus.UNKNOWN)
+        .where(*op_scope, Operation.status == OperationStatus.UNKNOWN)
     )
     return MetricInputs(
         start=start,

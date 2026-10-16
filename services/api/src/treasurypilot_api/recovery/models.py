@@ -43,7 +43,9 @@ class ReviewItem(Base):
             "(request_id IS NOT NULL AND request_version IS NOT NULL "
             "AND mandate_version_id IS NULL) OR "
             "(request_id IS NULL AND request_version IS NULL "
-            "AND mandate_version_id IS NOT NULL AND type = 'DISCREPANCY')",
+            "AND mandate_version_id IS NOT NULL AND type = 'DISCREPANCY') OR "
+            "(request_id IS NULL AND request_version IS NULL AND mandate_version_id IS NULL "
+            "AND plan_id IS NOT NULL AND type IN ('FEE_APPROVAL', 'INFRA', 'UNCERTAIN_TX'))",
             name="ck_review_items_subject",
         ),
         ForeignKeyConstraint(
@@ -74,6 +76,15 @@ class ReviewItem(Base):
             "type",
             unique=True,
             postgresql_where=text("status = 'Open' AND mandate_version_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_review_items_open_plan_type",
+            "plan_id",
+            "type",
+            unique=True,
+            postgresql_where=text(
+                "status = 'Open' AND request_id IS NULL AND mandate_version_id IS NULL"
+            ),
         ),
         Index("ix_review_items_org_status_due", "org_id", "status", "sla_due_at"),
     )

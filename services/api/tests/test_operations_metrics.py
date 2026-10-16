@@ -208,13 +208,16 @@ async def _seed(c: object) -> None:
             )
 
     # (n, request, treasury, kind, status, tx: (submitted, confirmed, selector, fee) | None)
-    ops: list[tuple[int, uuid.UUID, uuid.UUID, str, str, tuple[object, ...] | None]] = [
+    ops: list[tuple[int, uuid.UUID | None, uuid.UUID, str, str, tuple[object, ...] | None]] = [
         (1, _REQ, _TREASURY, "PAY", "Confirmed", (_at(2, 19), _at(2, 19, 2), None, 100)),
         (2, _REQ, _TREASURY, "REFILL", "Reverted", (_at(3, 5), None, "08c379a0", None)),
         (3, _REQ, _TREASURY, "PAY", "Unknown", None),
         (4, _REQ_2, _TREASURY_2, "PAY", "Confirmed", (_at(2, 20), None, None, 7)),
         (5, _REQ_B, _TREASURY_B, "PAY", "Confirmed", (_at(2, 21), _at(2, 22), None, 999)),
         (6, _REQ_B, _TREASURY_B, "PAY", "Unknown", None),
+        # a liquidity operation has no request: its gas still counts for the treasury (EXE-014)
+        (7, None, _TREASURY, "SUPPLY", "Confirmed", (_at(2, 21), None, None, 40)),
+        (8, None, _TREASURY, "WITHDRAW", "Unknown", None),
     ]
     for n, req, treasury, kind, status, tx in ops:
         op_id = uuid.UUID(int=0xA000 + n)
@@ -307,20 +310,20 @@ async def _exercise_loader(database_url: str) -> None:
         assert m.interventions_per_request == 2.0
         assert m.rejections_by_reason == {"OVER_PER_REQUEST_LIMIT": 1}
         assert m.series[1].volume == "1000"
-        assert m.tx_count == 2
-        assert m.fees.total_wei == "100"
-        assert m.fees.by_step_type == {"PAY": "100", "REFILL": "0"}
+        assert m.tx_count == 3
+        assert m.fees.total_wei == "140"
+        assert m.fees.by_step_type == {"PAY": "100", "REFILL": "0", "SUPPLY": "40"}
         assert m.reverts_by_selector == {"08c379a0": 1}
-        assert m.unknown_operations == 1
+        assert m.unknown_operations == 2  # the PAY and the liquidity WITHDRAW
         confirmed = m.latency_by_phase["submitToConfirmed"]
         assert confirmed is not None
         assert (confirmed.median_seconds, confirmed.count) == (120.0, 1)
 
         # Whole org: both treasuries, none of org B's rows (fee 999, its Unknown op).
         whole = await metrics(_ORG, None)
-        assert whole.tx_count == 3
-        assert whole.fees.by_step_type == {"PAY": "107", "REFILL": "0"}
-        assert whole.unknown_operations == 1
+        assert whole.tx_count == 4
+        assert whole.fees.by_step_type == {"PAY": "107", "REFILL": "0", "SUPPLY": "40"}
+        assert whole.unknown_operations == 2
         assert whole.payments_count == 1
 
         second = await metrics(_ORG, _TREASURY_2)

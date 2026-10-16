@@ -635,14 +635,15 @@ async def _act_on_fee_review(
     )
     if item is None or roles.isdisjoint(item.assigned_roles):
         raise _failure(404, "FEE_REVIEW_NOT_FOUND", "The held plan is unavailable.")
-    payment = await session.scalar(
-        select(PaymentRequest).where(
-            PaymentRequest.id == item.request_id,
-            PaymentRequest.org_id == organization_id,
+    if item.request_id is not None:  # a liquidity plan serves no request: nothing to be stale
+        payment = await session.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == item.request_id,
+                PaymentRequest.org_id == organization_id,
+            )
         )
-    )
-    if payment is None or payment.version != item.request_version:
-        raise _failure(409, "FEE_REVIEW_STALE", "Reload the held plan before acting.")
+        if payment is None or payment.version != item.request_version:
+            raise _failure(409, "FEE_REVIEW_STALE", "Reload the held plan before acting.")
     if action == "ACCEPT_FEE":
         await accept_held_plan_fee(
             session, item=item, user_id=user_id, reason=reason, now=datetime.now(UTC)

@@ -38,6 +38,7 @@ from treasurypilot_worker.executor.outbox import (
     TreasuryPaused,
     execute_step,
 )
+from treasurypilot_worker.liquidity_review import open_liquidity_review
 from treasurypilot_worker.reconcile.build import build_reconciliation
 from treasurypilot_worker.recovery.retry import ReviewIntent, classify
 
@@ -53,7 +54,7 @@ class PlanRun:
     """An attested plan: ``steps`` in seq order, valid until ``valid_until`` (attestation expiry)."""
 
     plan_id: UUID
-    request_id: UUID | None  # None for a liquidity plan: no request moves, a stop opens no review
+    request_id: UUID | None  # None for a liquidity plan: no request moves, the review is by plan
     steps: tuple[StepExecution, ...]
     valid_until: datetime
 
@@ -152,17 +153,32 @@ async def _stop(
 ) -> SequenceResult:
     """Open one review item and move the request to NeedsReview; completed steps stay (BR-054)."""
 
-    if run.request_id is None:  # a liquidity plan serves no request: free the cycle, no review
+    if (
+        run.request_id is None
+    ):  # a liquidity plan serves no request: free the cycle, review keyed by plan
         # a reverted/abandoned step spent its step id: PartiallyCompleted moves the cycle counter
         spent = completed or intent.primary_code in ("STEP_REVERTED", "STEP_ABANDONED")
-        await pool.execute(
-            "UPDATE plans SET status = $2, chosen_reason = left(coalesce(chosen_reason, '') || "
-            "' | stopped: ' || $3, 500), updated_at = now() "
-            "WHERE id = $1 AND status IN ('Attested', 'Executing')",
-            run.plan_id,
-            "PartiallyCompleted" if spent else "Superseded",
-            intent.primary_code,
-        )
+        async with pool.acquire() as connection, connection.transaction():
+            moved = await connection.execute(
+                "UPDATE plans SET status = $2, chosen_reason = left(coalesce(chosen_reason, '') "
+                "|| ' | stopped: ' || $3, 500), updated_at = now() "
+                "WHERE id = $1 AND status IN ('Attested', 'Executing')",
+                run.plan_id,
+                "PartiallyCompleted" if spent else "Superseded",
+                intent.primary_code,
+            )
+            if moved.endswith(" 1"):  # a redelivered stop finds the plan already ended
+                await open_liquidity_review(
+                    connection,
+                    plan_id=run.plan_id,
+                    kind=intent.kind,
+                    primary_code=intent.primary_code,
+                    reason_codes=tuple(intent.reason_codes),
+                    completed_steps=[
+                        {"seq": seq, "stepId": "0x" + step.step_id.hex()}
+                        for seq, step in enumerate(run.steps[:completed])
+                    ],
+                )
         logger.error("liquidity plan %s stopped: %s", run.plan_id, intent.primary_code)
         return SequenceResult(
             "PartiallyCompleted" if spent else "Blocked", intent.primary_code, completed

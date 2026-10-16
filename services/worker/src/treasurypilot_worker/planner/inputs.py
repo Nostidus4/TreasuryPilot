@@ -253,7 +253,9 @@ NO_SCHEDULE = Schedule(
 def liquidity_policy(data: dict[str, Any], config: dict[str, Any]) -> LiquidityPolicy:
     """Supply limits from the chain mandate, min supply and horizon from the mandate config.
 
-    shortcut: debt-service reserve and execution holds are 0 until borrowing and holds exist.
+    Debt-service reserve and execution holds are 0 on purpose: the spec has no formula or data
+    source for them (borrowing is P2, holds are on-chain and Later, F-028), and a request plan in
+    flight, the only M1 hold, blocks the liquidity cycle (execution README, #261 follow-ups).
     """
 
     per_request, daily = _limits(_mandate(data)["supply"])

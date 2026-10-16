@@ -142,7 +142,7 @@ class DbScheduleProvider:
         # stay open and block planning forever). The replan inherits the cap via its request.
         await connection.execute(
             "UPDATE plans SET status = 'Expired', updated_at = now() "
-            "WHERE treasury_id = $1 AND status = 'AwaitingFeeAcceptance' AND ("
+            "WHERE treasury_id = $1 AND request_id IS NOT NULL AND status = 'AwaitingFeeAcceptance' AND ("
             "EXISTS (SELECT 1 FROM fee_acceptances a WHERE a.plan_id = plans.id) OR EXISTS ("
             "SELECT 1 FROM treasury_fee_policies f WHERE f.treasury_id = plans.treasury_id "
             "AND f.accepted_at IS NOT NULL AND f.superseded_at IS NULL "

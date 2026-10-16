@@ -257,7 +257,11 @@ async def _fee_assessment(
     # the plan proceeds past the threshold and the budget; above it the hold repeats.
     cap = await connection.fetchval(
         "SELECT f.accepted_cap_wei FROM fee_acceptances f JOIN plans p ON p.id = f.plan_id "
-        "WHERE p.request_id = (SELECT request_id FROM plans WHERE id = $1) "
+        "JOIN plans cur ON cur.id = $1 WHERE "
+        "(p.request_id IS NOT NULL AND p.request_id = cur.request_id) "
+        # a liquidity plan has no request: a cap holds for its cycle (same module, day and count)
+        "OR (p.request_id IS NULL AND cur.request_id IS NULL AND p.treasury_id = cur.treasury_id "
+        "AND p.liquidity_cycle_id = cur.liquidity_cycle_id) "
         "ORDER BY f.at DESC LIMIT 1",
         plan_id,
     )
