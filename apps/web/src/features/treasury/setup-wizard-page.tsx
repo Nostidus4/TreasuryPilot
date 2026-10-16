@@ -666,9 +666,12 @@ function ModuleStep({
 }) {
   const scope = useOrgScope();
   const deploy = useDeployModuleTx(scope.orgId);
-  const governance = useGovernanceTxs(scope.orgId);
-  const wallet = useWallet();
   const treasuryId = state.treasury.id;
+  const governance = useGovernanceTxs(scope.orgId, {
+    treasuryId,
+    purpose: 'MODULE_SETUP',
+  });
+  const wallet = useWallet();
   const treasuryWallets = state.wallets.filter((item) =>
     ['T', 'O1', 'O2'].includes(item.role),
   );

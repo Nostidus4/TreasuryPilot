@@ -1682,15 +1682,28 @@ class GovernanceService:
         return result
 
     async def list_txs(
-        self, *, organization_id: uuid.UUID, status: GovernanceTxStatus | None = None
+        self,
+        *,
+        organization_id: uuid.UUID,
+        status: GovernanceTxStatus | None = None,
+        treasury_id: uuid.UUID | None = None,
+        purpose: GovernanceTxPurpose | None = None,
     ) -> list[dict[str, Any]]:
         statement = select(GovernanceTx.id).where(GovernanceTx.org_id == organization_id)
         if status is not None:
             statement = statement.where(GovernanceTx.status == status)
+        if treasury_id is not None:
+            statement = statement.where(GovernanceTx.treasury_id == treasury_id)
+        if purpose is not None:
+            statement = statement.where(GovernanceTx.purpose == purpose)
         async with self._sessions() as session:
             # shortcut: one query per row and no chain refresh, fine for the newest 100.
             ids = list(
-                await session.scalars(statement.order_by(GovernanceTx.created_at.desc()).limit(100))
+                await session.scalars(
+                    statement.order_by(
+                        GovernanceTx.created_at.desc(), GovernanceTx.id.desc()
+                    ).limit(100)
+                )
             )
         return [
             await self.get(

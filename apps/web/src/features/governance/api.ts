@@ -6,11 +6,15 @@ import type { Hex, TxCall } from '@/lib/api/types';
 
 import { toGovernanceTx, toTypedData, type GovernanceTxWire } from './wire';
 
-export const useGovernanceTxs = (orgId: string) =>
+export const useGovernanceTxs = (
+  orgId: string,
+  filter: { treasuryId?: string; purpose?: GovernanceTxWire['purpose'] } = {},
+) =>
   useQuery({
-    queryKey: ['org', orgId, 'governance', 'list'],
+    queryKey: ['org', orgId, 'governance', 'list', filter],
     queryFn: ({ signal }) =>
       api.get<{ items: GovernanceTxWire[] }>(`/orgs/${orgId}/governance-txs`, {
+        query: filter,
         signal,
       }),
     select: ({ items }) => ({ items: items.map(toGovernanceTx) }),

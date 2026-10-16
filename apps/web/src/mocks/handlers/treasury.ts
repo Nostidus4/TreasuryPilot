@@ -1138,12 +1138,16 @@ export const treasuryHandlers = [
   route('get', '/orgs/:orgId/governance-txs', ({ params, query }) => {
     const org = requireOrg(params.orgId);
     const status = query.get('status');
+    const treasuryId = query.get('treasuryId');
+    const purpose = query.get('purpose');
     return {
       items: db.governance
         .filter((tx) =>
           org.treasuries.some((item) => item.id === tx.treasuryId),
         )
-        .filter((tx) => !status || tx.status === status)
+        .filter((tx) => !status || wireStatuses[tx.status] === status)
+        .filter((tx) => !treasuryId || tx.treasuryId === treasuryId)
+        .filter((tx) => !purpose || wirePurposes[tx.kind] === purpose)
         .map(governanceView),
     };
   }),

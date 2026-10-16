@@ -8071,6 +8071,8 @@ export interface operations {
     parameters: {
       query?: {
         status?: components['schemas']['GovernanceTxStatus'] | null;
+        treasuryId?: string | null;
+        purpose?: components['schemas']['GovernanceTxPurpose'] | null;
       };
       header?: never;
       path: {

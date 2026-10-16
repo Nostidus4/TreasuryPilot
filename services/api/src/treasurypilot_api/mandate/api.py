@@ -328,8 +328,15 @@ async def list_governance_txs(
     request: Request,
     member: Annotated[MemberAccess, Depends(require_member)],
     status: Annotated[GovernanceTxStatus | None, Query()] = None,
+    treasury_id: Annotated[uuid.UUID | None, Query(alias="treasuryId")] = None,
+    purpose: Annotated[GovernanceTxPurpose | None, Query()] = None,
 ) -> GovernanceTxList:
-    items = await _service(request).list_txs(organization_id=member.organization_id, status=status)
+    items = await _service(request).list_txs(
+        organization_id=member.organization_id,
+        status=status,
+        treasury_id=treasury_id,
+        purpose=purpose,
+    )
     return GovernanceTxList.model_validate({"items": items})
 
 

@@ -158,13 +158,19 @@ class FakeGovernanceReads:
 def test_governance_list_and_detail_are_typed_camel_case_responses() -> None:
     service = FakeGovernanceReads()
     with make_client(MemoryMandateRepository(), governance_service=service) as client:
-        listed = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?status=Ready")
+        listed = client.get(
+            f"/v1/orgs/{ORG_ID}/governance-txs?status=Ready&treasuryId={TREASURY_ID}&purpose=MODULE_SETUP"
+        )
         detail = client.get(f"/v1/orgs/{ORG_ID}/governance-txs/{uuid.uuid4()}")
         bad = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?status=Nope")
+        bad_purpose = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?purpose=Nope")
+        bad_treasury = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?treasuryId=x")
 
     assert listed.status_code == detail.status_code == 200
-    assert bad.status_code == 422
+    assert bad.status_code == bad_purpose.status_code == bad_treasury.status_code == 422
     assert service.calls[0]["status"] == "Ready"
+    assert service.calls[0]["purpose"] == "MODULE_SETUP"
+    assert str(service.calls[0]["treasury_id"]) == str(TREASURY_ID)
     item = listed.json()["items"][0]
     assert item["safeTxHash"] == "0x" + "33" * 32
     assert item["decodedCalls"][0]["data"] == "0x12345678"
