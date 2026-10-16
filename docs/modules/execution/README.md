@@ -33,7 +33,7 @@ M10 is the **engine room**: it decides *when* to act, runs the planning pipeline
 | Step sequencing with PRE_STEP + SIMULATION + post-condition gate | Post-condition rules and reconciliation (M11) |
 | Signer service (executor key, attestation check, nonce lane, replacement) and sentinel endpoint | Recovery of Unknown/partial (M12) |
 | Gas ledger and fee policy enforcement (EXE-012) | Contracts (M04) |
-| Run-now; swap step (P2) | KMS, production swaps, bridging, worker partitioning (Later) |
+| Run-now; swap step (P2) | KMS, production swaps, worker partitioning, bridge plan step/signer path (Later; §16) |
 
 ## 2. Features, requirements and rules
 
@@ -336,3 +336,13 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 Flow after ACCEPT_FEE: the API records `fee_acceptances(plan_id, accepted_cap_wei = held estimate)` and emits `ExecutionCycleRequested`. The next cycle expires the held plan and plans the request again; `_fee_assessment` returns PROCEED when the new estimate is at most the accepted cap (a higher estimate holds again and needs a new acceptance). `plan_fees` then sends that cap to the signer. `execution/fee_assessment.py::assess_plan_fee` in the API is a reference helper used by tests only.
 
 Shortcuts: per-step gas is the fixed `STEP_GAS` (150k), not `eth_estimateGas` (the signer re-estimates and fails closed); the priority fee is `eth_maxPriorityFeePerGas` capped at maxFeePerGas rather than the preset's `eth_feeHistory` percentile.
+
+## 16. Cross-chain bridging (EXE-L03, F-067, FR-516) — partial
+
+Implemented (worker `bridge/`, migration 0093 `bridge_transfers`): a `BridgeAdapter` interface (`send`, `status`) with a deterministic `FakeBridgeAdapter` for tests, a fail-closed `BridgePolicy` (allowlisted `provider:srcChain:dstChain` routes, per-transfer and in-flight limits, timeout; settings `TP_BRIDGE_ALLOWED_ROUTES`, `TP_BRIDGE_MAX_TRANSFER_AMOUNT`, `TP_BRIDGE_MAX_IN_FLIGHT_AMOUNT`, `TP_BRIDGE_TIMEOUT_SECONDS`; both limits default to 0 = bridging off) and `BridgeService`. Amounts are integer base units (`NUMERIC(78,0)`). Source and destination must be treasuries of the same organization on different chains (#115).
+
+**No second send on timeout.** A transfer row is claimed first (`UNIQUE(source_treasury_id, idempotency_key)`, under a per-treasury advisory lock that also enforces the in-flight limit). Only the call that inserted the row calls `adapter.send`; a retry, a concurrent call or a crash between claim and send returns the existing row. An ambiguous send failure (timeout), a deadline passing with no arrival, a crash before the send was recorded, or an arrival below `min_amount_out` makes the transfer `Unknown`. `Unknown` is resolved only by `settle` observing the provider (arrival with enough output -> `Completed`; definitive provider failure -> `Failed`); nothing ever re-sends.
+
+**In-flight accounting.** `PendingSend`, `Sent` and `Unknown` transfers are in flight (`BridgeService.in_flight`). Balances come from chain reads, so in-flight funds are in neither treasury's balance until the arrival is verified; they count against the in-flight limit.
+
+**Not implemented (blocked).** There is no plan step type, attestation, signer or contract-side path for the on-chain deposit into a bridge: the module/contracts have no bridge allowlist or mandate permission ("the mandate must allow it"), and no real provider adapter exists (`adapter_for` fails closed with `BridgeNotConfigured`). The service therefore is not yet called by the planner or sequencer. Adding the step requires an ADR-002/ADR-016 extension (module `bridge` action, signer payload check, mandate flag, validator rule), a production adapter, and tracker verification of the destination arrival; until then bridge movement is a service-level building block only. Tests: `services/worker/tests/bridge/` (unit with fake provider; Postgres integration gated by `TP_TEST_DATABASE_URL`).
