@@ -121,6 +121,57 @@ class FakeMandateActivationService:
         }
 
 
+def governance_tx_dict() -> dict[str, object]:
+    call = {"to": "0x" + "11" * 20, "value": "0", "data": "0x12345678", "operation": 0}
+    return {
+        "id": uuid.uuid4(),
+        "treasuryId": TREASURY_ID,
+        "purpose": "PAYEE_ADD",
+        "safeAddress": "0x" + "22" * 20,
+        **call,
+        "nonce": 7,
+        "safeTxHash": "0x" + "33" * 32,
+        "decodedCalls": [call],
+        "humanSummary": "Payee Add: call 1",
+        "typedData": {"primaryType": "SafeTx", "message": {"nonce": 7}},
+        "threshold": 2,
+        "owners": ["0x" + "44" * 20],
+        "status": "Collecting",
+        "execTxHash": None,
+        "createdAt": datetime.now(UTC),
+        "signatures": [],
+    }
+
+
+class FakeGovernanceReads:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def list_txs(self, **fields: object) -> list[dict[str, object]]:
+        self.calls.append(fields)
+        return [governance_tx_dict()]
+
+    async def get(self, **fields: object) -> dict[str, object]:
+        return governance_tx_dict()
+
+
+def test_governance_list_and_detail_are_typed_camel_case_responses() -> None:
+    service = FakeGovernanceReads()
+    with make_client(MemoryMandateRepository(), governance_service=service) as client:
+        listed = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?status=Ready")
+        detail = client.get(f"/v1/orgs/{ORG_ID}/governance-txs/{uuid.uuid4()}")
+        bad = client.get(f"/v1/orgs/{ORG_ID}/governance-txs?status=Nope")
+
+    assert listed.status_code == detail.status_code == 200
+    assert bad.status_code == 422
+    assert service.calls[0]["status"] == "Ready"
+    item = listed.json()["items"][0]
+    assert item["safeTxHash"] == "0x" + "33" * 32
+    assert item["decodedCalls"][0]["data"] == "0x12345678"
+    assert item["typedData"]["primaryType"] == "SafeTx"
+    assert set(detail.json()) == set(item)
+
+
 def config_payload() -> dict[str, object]:
     return {
         "actions": ["PAY", "REFILL", "SUPPLY"],

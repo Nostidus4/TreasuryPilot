@@ -941,6 +941,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/governance-txs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Governance Txs */
+    get: operations['list_governance_txs_v1_orgs__organization_id__governance_txs_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}': {
     parameters: {
       query?: never;
@@ -3466,6 +3483,13 @@ export interface components {
       /** Verifications */
       verifications?: components['schemas']['VerificationEvidence'][];
     };
+    /** ExecCallView */
+    ExecCallView: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+    };
     /** ExtractionConfirmation */
     ExtractionConfirmation: {
       /** Amount */
@@ -3622,6 +3646,34 @@ export interface components {
       /** Date */
       date: string;
     };
+    /** GovernanceCallView */
+    GovernanceCallView: {
+      /** Data */
+      data: string;
+      /** Operation */
+      operation: number;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
+    };
+    /** GovernanceSignatureView */
+    GovernanceSignatureView: {
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Owner */
+      owner: string;
+      /** Signature */
+      signature: string;
+    };
+    /** GovernanceTxList */
+    GovernanceTxList: {
+      /** Items */
+      items: components['schemas']['GovernanceTxView'][];
+    };
     /**
      * GovernanceTxPurpose
      * @enum {string}
@@ -3645,6 +3697,71 @@ export interface components {
       governanceTx: {
         [key: string]: unknown;
       };
+    };
+    /**
+     * GovernanceTxStatus
+     * @enum {string}
+     */
+    GovernanceTxStatus:
+      | 'Collecting'
+      | 'Ready'
+      | 'Submitted'
+      | 'Executed'
+      | 'Failed'
+      | 'Superseded'
+      | 'Cancelled';
+    /**
+     * GovernanceTxView
+     * @description One Safe governance transaction as returned by every governance read and signing route.
+     */
+    GovernanceTxView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Data */
+      data: string;
+      /** Decodedcalls */
+      decodedCalls: components['schemas']['GovernanceCallView'][];
+      /** Exectxhash */
+      execTxHash: string | null;
+      /** Humansummary */
+      humanSummary: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Nonce */
+      nonce: number;
+      /** Operation */
+      operation: number;
+      /** Owners */
+      owners: string[];
+      purpose: components['schemas']['GovernanceTxPurpose'];
+      /** Safeaddress */
+      safeAddress: string;
+      /** Safetxhash */
+      safeTxHash: string;
+      /** Signatures */
+      signatures: components['schemas']['GovernanceSignatureView'][];
+      status: components['schemas']['GovernanceTxStatus'];
+      /** Threshold */
+      threshold: number;
+      /** To */
+      to: string;
+      /**
+       * Treasuryid
+       * Format: uuid
+       */
+      treasuryId: string;
+      /** Typeddata */
+      typedData: {
+        [key: string]: unknown;
+      };
+      /** Value */
+      value: string;
     };
     /** GrantExceptionRequest */
     GrantExceptionRequest: {
@@ -7950,6 +8067,39 @@ export interface operations {
       };
     };
   };
+  list_governance_txs_v1_orgs__organization_id__governance_txs_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['GovernanceTxStatus'] | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GovernanceTxList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get: {
     parameters: {
       query?: never;
@@ -7968,9 +8118,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['GovernanceTxView'];
         };
       };
       /** @description Validation Error */
@@ -8002,9 +8150,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: string;
-          };
+          'application/json': components['schemas']['ExecCallView'];
         };
       };
       /** @description Validation Error */
@@ -8040,9 +8186,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['GovernanceTxView'];
         };
       };
       /** @description Validation Error */
@@ -8078,9 +8222,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          };
+          'application/json': components['schemas']['GovernanceTxView'];
         };
       };
       /** @description Validation Error */

@@ -1600,6 +1600,21 @@
         "title": "EvidenceBundle",
         "type": "object"
       },
+      "ExecCallView": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data"],
+        "title": "ExecCallView",
+        "type": "object"
+      },
       "ExtractionConfirmation": {
         "properties": {
           "amount": {
@@ -1944,6 +1959,63 @@
         "title": "ForecastWalletDay",
         "type": "object"
       },
+      "GovernanceCallView": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "integer"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "value", "data", "operation"],
+        "title": "GovernanceCallView",
+        "type": "object"
+      },
+      "GovernanceSignatureView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": ["owner", "signature", "at"],
+        "title": "GovernanceSignatureView",
+        "type": "object"
+      },
+      "GovernanceTxList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GovernanceTxView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "GovernanceTxList",
+        "type": "object"
+      },
       "GovernanceTxPurpose": {
         "enum": [
           "MODULE_SETUP",
@@ -1972,6 +2044,141 @@
         },
         "required": ["governanceTx"],
         "title": "GovernanceTxResponse",
+        "type": "object"
+      },
+      "GovernanceTxStatus": {
+        "enum": [
+          "Collecting",
+          "Ready",
+          "Submitted",
+          "Executed",
+          "Failed",
+          "Superseded",
+          "Cancelled"
+        ],
+        "title": "GovernanceTxStatus",
+        "type": "string"
+      },
+      "GovernanceTxView": {
+        "description": "One Safe governance transaction as returned by every governance read and signing route.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "decodedCalls": {
+            "items": {
+              "$ref": "#/components/schemas/GovernanceCallView"
+            },
+            "title": "Decodedcalls",
+            "type": "array"
+          },
+          "execTxHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exectxhash"
+          },
+          "humanSummary": {
+            "title": "Humansummary",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "integer"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "integer"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owners",
+            "type": "array"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/GovernanceTxPurpose"
+          },
+          "safeAddress": {
+            "title": "Safeaddress",
+            "type": "string"
+          },
+          "safeTxHash": {
+            "title": "Safetxhash",
+            "type": "string"
+          },
+          "signatures": {
+            "items": {
+              "$ref": "#/components/schemas/GovernanceSignatureView"
+            },
+            "title": "Signatures",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GovernanceTxStatus"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "treasuryId": {
+            "format": "uuid",
+            "title": "Treasuryid",
+            "type": "string"
+          },
+          "typedData": {
+            "additionalProperties": true,
+            "title": "Typeddata",
+            "type": "object"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "treasuryId",
+          "purpose",
+          "safeAddress",
+          "to",
+          "value",
+          "data",
+          "operation",
+          "nonce",
+          "safeTxHash",
+          "decodedCalls",
+          "humanSummary",
+          "typedData",
+          "threshold",
+          "owners",
+          "status",
+          "execTxHash",
+          "createdAt",
+          "signatures"
+        ],
+        "title": "GovernanceTxView",
         "type": "object"
       },
       "GrantExceptionRequest": {
@@ -10776,6 +10983,63 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/governance-txs": {
+      "get": {
+        "operationId": "list_governance_txs_v1_orgs__organization_id__governance_txs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GovernanceTxStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceTxList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Governance Txs",
+        "tags": ["governance"]
+      }
+    },
     "/v1/orgs/{organization_id}/governance-txs/{governance_tx_id}": {
       "get": {
         "operationId": "get_governance_tx_v1_orgs__organization_id__governance_txs__governance_tx_id__get",
@@ -10806,9 +11070,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Governance Tx V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GovernanceTxView"
                 }
               }
             },
@@ -10859,11 +11121,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Get Exec Call V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Exec Call Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ExecCallView"
                 }
               }
             },
@@ -10924,9 +11182,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Add Governance Signature V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Signatures Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GovernanceTxView"
                 }
               }
             },
@@ -10987,9 +11243,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Report Submission V1 Orgs  Organization Id  Governance Txs  Governance Tx Id  Submitted Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GovernanceTxView"
                 }
               }
             },

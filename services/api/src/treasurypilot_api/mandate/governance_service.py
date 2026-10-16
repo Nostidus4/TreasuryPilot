@@ -1669,6 +1669,7 @@ class GovernanceService:
                 "owners": [_address(address) for address in row.owners_snapshot],
                 "status": row.status.value,
                 "execTxHash": _hex(row.exec_tx_hash) if row.exec_tx_hash else None,
+                "createdAt": row.created_at,
                 "signatures": [
                     {
                         "owner": _address(item.owner_address),
@@ -1679,6 +1680,24 @@ class GovernanceService:
                 ],
             }
         return result
+
+    async def list_txs(
+        self, *, organization_id: uuid.UUID, status: GovernanceTxStatus | None = None
+    ) -> list[dict[str, Any]]:
+        statement = select(GovernanceTx.id).where(GovernanceTx.org_id == organization_id)
+        if status is not None:
+            statement = statement.where(GovernanceTx.status == status)
+        async with self._sessions() as session:
+            # shortcut: one query per row and no chain refresh, fine for the newest 100.
+            ids = list(
+                await session.scalars(statement.order_by(GovernanceTx.created_at.desc()).limit(100))
+            )
+        return [
+            await self.get(
+                organization_id=organization_id, governance_tx_id=item, refresh_chain=False
+            )
+            for item in ids
+        ]
 
     @staticmethod
     def _summary(row: GovernanceTx) -> str:
