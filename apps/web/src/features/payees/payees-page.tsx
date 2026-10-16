@@ -122,8 +122,11 @@ function ProposeDialog({
                 toast.success(t('Payee proposed — screening started'));
                 onOpenChange(false);
                 reset();
-              } catch {
-                // The mutation hooks expose the error to the form.
+              } catch (error) {
+                if (screeningBlocked(error)) {
+                  onOpenChange(false);
+                  reset();
+                }
               }
             })();
           }}
@@ -298,6 +301,19 @@ function VerifyDialog({
   );
 }
 
+/** The API stores a blocked payee as ScreeningFailed, then answers 422/503. */
+function screeningBlocked(error: unknown) {
+  const hit = isApiError(error, 'SCREENING_HIT');
+  if (!hit && !isApiError(error, 'DATA_MISSING')) return false;
+  toast.error(
+    hit
+      ? t('The address matched a sanctions list, so the payee is blocked.')
+      : t('Screening could not complete, so the payee is blocked.'),
+    { description: t('See the “Screening failed” row in the list.') },
+  );
+  return true;
+}
+
 type Change = { kind: 'deactivate' | 'replace'; payee: Payee };
 
 /** Owner-only: deactivation, or an address change that restarts cooling. */
@@ -330,7 +346,15 @@ function ChangeDialog({
     if (replacing)
       replacement.mutate(
         { id: change.payee.id, address: address.trim(), reason },
-        { onSuccess: (r) => done(r.deactivationGovernanceTx.id) },
+        {
+          onSuccess: (r) => done(r.deactivationGovernanceTx.id),
+          onError: (error) => {
+            if (screeningBlocked(error)) {
+              setAddress('');
+              onClose();
+            }
+          },
+        },
       );
     else
       deactivate.mutate(

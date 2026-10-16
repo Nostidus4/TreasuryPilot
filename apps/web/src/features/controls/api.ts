@@ -58,11 +58,15 @@ export const useCreateVendor = (orgId: string) =>
   );
 
 export const useProposePayee = (orgId: string, treasuryId: string) =>
-  useOrgMutation(orgId, (input: components['schemas']['PayeeCreate']) =>
-    api.post<components['schemas']['PayeeResponse']>(
-      `${treasuryBase(orgId, treasuryId)}/payees`,
-      input,
-    ),
+  useOrgMutation(
+    orgId,
+    (input: components['schemas']['PayeeCreate']) =>
+      api.post<components['schemas']['PayeeResponse']>(
+        `${treasuryBase(orgId, treasuryId)}/payees`,
+        input,
+      ),
+    // A screening hit is a 422 after the API stored the payee as ScreeningFailed.
+    'payees',
   );
 
 export const useVerifyPayeeOob = (orgId: string, treasuryId: string) =>
@@ -102,6 +106,7 @@ export const useReplacePayeeAddress = (orgId: string, treasuryId: string) =>
         `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/replace-address`,
         { address: input.address, reason: input.reason },
       ),
+    'payees',
   );
 
 /* ───────────── Governance ───────────── */
