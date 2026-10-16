@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     # Executor balance below which a LowGas alert is emitted (EXE-010): 0.005 native token.
     # One global threshold for every role (executor, sentinel, receipt key) and chain.
     low_gas_threshold_wei: int = 5 * 10**15
+    # Cross-chain bridging (EXE-L03): off unless both limits are set (fail closed). Routes are
+    # "provider:srcChainId:dstChainId" entries, comma separated. Provider endpoints and
+    # credentials are deployment config for the adapter, never code.
+    bridge_allowed_routes: str = ""
+    bridge_max_transfer_amount: int = 0
+    bridge_max_in_flight_amount: int = 0
+    bridge_timeout_seconds: int = 3600
     # Optional extra addresses swept for low gas (role "sentinel" / "receipt"), on every treasury's chain.
     sentinel_address: str | None = None
     eas_receipt_address: str | None = None
