@@ -15,13 +15,16 @@ configured endpoint (URL and API key come from settings, never from code).
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import aiohttp
+from eth_abi import decode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from eth_hash.auto import keccak
 
 from treasurypilot_core.engine.swap_quote import (
     SIGNED_QUOTE_VENUE,
@@ -33,6 +36,7 @@ from treasurypilot_core.engine.swap_quote import (
     submit_quote_calldata,
     verify_swap_quote,
 )
+from treasurypilot_core.policy import Action, ExecutionPlan
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +190,7 @@ class SwapQuoteGuard:
         self,
         source: QuoteSource,
         policy: QuotePolicy,
-        stager: Stager,
+        stager: Stager | None,
         *,
         now: Callable[[], int],
     ) -> None:
@@ -203,6 +207,8 @@ class SwapQuoteGuard:
         swap = request["plan"].get("swaps", {}).get(step_hex)
         if step.kind != "SWAP" or swap is None or swap.get("venue") != SIGNED_QUOTE_VENUE:
             return
+        if self._stager is None:  # fail closed before a quote (and its nonce) is requested
+            raise QuoteRejected("SWAP_QUOTE_STAGER_UNAVAILABLE", "no staging sender is configured")
         plan_step = request["plan"]["steps"][request["stepSeq"]]
         amount_in, min_out = int(plan_step["amount"]), int(swap["minOut"])
         try:
@@ -241,7 +247,65 @@ class SwapQuoteGuard:
         )
 
 
+def _addresses(csv: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in csv.split(",") if item.strip())
+
+
+async def build_swap_quote_hook(
+    settings: Any,
+    plan: ExecutionPlan,
+    rpc: Any,
+    *,
+    stager: Stager | None = None,
+    source: QuoteSource | None = None,
+    now: Callable[[], int] | None = None,
+) -> Callable[[Any], Awaitable[None]] | None:
+    """The sequencer ``before_send`` hook for ``plan``, or None when it has no SIGNED_QUOTE step.
+
+    Fails closed: with a SIGNED_QUOTE step but no usable configuration (adapter address, signers,
+    quote source, readable pair) the hook rejects that step, so the plan stops with a review item
+    instead of reaching the signer. ``stager`` sends ``submitQuote``; without one the guard also
+    rejects. ``rpc`` needs ``call(method, params)``.
+    """
+
+    step = next(
+        (s for s in plan.steps if s.action is Action.SWAP and s.venue == SIGNED_QUOTE_VENUE), None
+    )
+    if step is None:
+        return None
+
+    async def closed(_step: Any) -> None:
+        raise QuoteRejected("SWAP_QUOTE_UNAVAILABLE", "production swap is not configured")
+
+    adapter = settings.swap_adapter_address
+    signers = _addresses(settings.swap_quote_signers)
+    venues = _addresses(settings.swap_quote_venues)
+    source = source or quote_source_from_settings(settings)
+    if not adapter or step.to.lower() != adapter.lower() or not signers or not venues or not source:
+        return closed
+    try:
+        raw = await rpc.call(
+            "eth_call", [{"to": adapter, "data": "0x" + keccak(b"tokenOut()")[:4].hex()}, "latest"]
+        )
+        token_out = str(decode(["address"], bytes.fromhex(raw.removeprefix("0x")))[0])
+    except Exception:
+        logger.exception("swap adapter pair unreadable")
+        return closed
+    policy = QuotePolicy(
+        chain_id=plan.chain_id,
+        adapter=adapter,
+        safe_t=step.from_wallet,
+        token_in=step.asset,
+        token_out=token_out,
+        signers=signers,
+        venues=venues,
+        max_ttl_seconds=settings.swap_quote_max_ttl_seconds,
+    )
+    return SwapQuoteGuard(source, policy, stager, now=now or (lambda: int(time.time())))
+
+
 __all__ = [
+    "build_swap_quote_hook",
     "FakeQuoteSource",
     "HttpQuoteSource",
     "QuoteRequest",

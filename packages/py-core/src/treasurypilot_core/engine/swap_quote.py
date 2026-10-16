@@ -8,7 +8,7 @@ rule. Pure and deterministic: no I/O, no clock (``now`` is passed in), money in 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 from eth_abi import encode
 from eth_hash.auto import keccak
@@ -16,7 +16,7 @@ from eth_hash.auto import keccak
 from treasurypilot_core.domain.models import FrozenModel
 from treasurypilot_core.eip712 import _typed_data, digest, verify_signature
 
-SIGNED_QUOTE_VENUE = "SIGNED_QUOTE"
+SIGNED_QUOTE_VENUE: Literal["SIGNED_QUOTE"] = "SIGNED_QUOTE"
 SWAP_QUOTE_DOMAIN = "TreasuryPilot Swap Quote"
 
 SWAP_QUOTE_TYPE = [

@@ -1,7 +1,7 @@
 """plan_steps: allow the SIGNED_QUOTE venue of the production swap adapter (EXE-L02, #152)
 
-Revision ID: 20261016_0093
-Revises: 20261016_0092
+Revision ID: 20261016_0095
+Revises: 20261016_0094
 Create Date: 2026-10-16 00:00:00
 """
 
@@ -9,8 +9,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "20261016_0093"
-down_revision: str | None = "20261016_0092"
+revision: str = "20261016_0095"
+down_revision: str | None = "20261016_0094"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

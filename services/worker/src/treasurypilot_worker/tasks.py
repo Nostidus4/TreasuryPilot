@@ -51,6 +51,7 @@ from treasurypilot_worker.executor.plan_loader import (
     snapshot_executor,
 )
 from treasurypilot_worker.executor.sequencer import PlanRun, sequence_plan
+from treasurypilot_worker.executor.swap_quotes import build_swap_quote_hook
 from treasurypilot_worker.invoices.documents import MinioDocumentReader
 from treasurypilot_worker.invoices.extraction import extract_invoice_document
 from treasurypilot_worker.invoices.recurring import generate_due_recurring_drafts
@@ -924,7 +925,13 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
                 loaded.plan.request_id,
                 loaded.plan.treasury,
             )
-            result = await sequence_plan(pool, signer, run, gate, verifier=verifier)
+            # EXE-L02: a SIGNED_QUOTE swap needs a verified, staged quote before it is signed. No
+            # staging sender exists in the worker yet (the signer holds the only key), so such a
+            # step fails closed; plans without one are unchanged.
+            before_send = await build_swap_quote_hook(settings, loaded.plan, rpc, stager=None)
+            result = await sequence_plan(
+                pool, signer, run, gate, verifier=verifier, before_send=before_send
+            )
             # The sequencer only moves the request; the plan row follows its outcome.
             if plan_status := _PLAN_STATUS.get(result.status):
                 await pool.execute(

@@ -13,7 +13,7 @@ from eth_abi import decode
 from eth_hash.auto import keccak
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset, estimate_plan_fee_wei
-from treasurypilot_core.engine import GAS_SWAP_VENUE, GasQuote
+from treasurypilot_core.engine import GAS_SWAP_VENUE, SIGNED_QUOTE_VENUE, GasQuote
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.attestation import attest, load_policy_key
 from treasurypilot_worker.celery_app import app
@@ -70,12 +70,33 @@ async def _view(rpc: RpcClient, to: str, signature: str, output: str) -> Any:
     return decode([output], bytes.fromhex(raw.removeprefix("0x")))[0]
 
 
-async def read_test_router_quote(rpc: RpcClient, module: str) -> GasQuote | None:
-    """The module's configured test router and its fixed rate; None when none is configured."""
+async def read_test_router_quote(
+    rpc: RpcClient, module: str, settings: Settings | None = None
+) -> GasQuote | None:
+    """The module's configured swap router and its rate; None when none is configured.
+
+    When the router is the production adapter named by ``TP_SWAP_ADAPTER_ADDRESS`` the quote is a
+    SIGNED_QUOTE one: only the pair is read from chain and the rate is the configured indicative
+    one (EXE-L02); an adapter without that rate is not used (None: the shortage stays uncovered).
+    Any other router is the fixed-rate test router.
+    """
 
     router = str(await _view(rpc, module, "swapRouter()", "address"))
     if int(router, 16) == 0:
         return None
+    if settings is not None and settings.swap_adapter_address:
+        if router.lower() == settings.swap_adapter_address.lower():
+            numerator = settings.swap_quote_rate_numerator
+            denominator = settings.swap_quote_rate_denominator
+            if numerator is None or denominator is None:
+                return None
+            return GasQuote(
+                source=SIGNED_QUOTE_VENUE,
+                router=router,
+                token_out=str(await _view(rpc, router, "tokenOut()", "address")),
+                numerator=numerator,
+                denominator=denominator,
+            )
     return GasQuote(
         source=GAS_SWAP_VENUE,
         router=router,
@@ -134,7 +155,7 @@ def build_deps(pool: asyncpg.Pool, settings: Settings) -> PlannerDeps:
         return int(await rpc.call("eth_getBalance", [executor, "latest"]), 16)
 
     async def quote(treasury_id: uuid.UUID, module: str) -> GasQuote | None:
-        return await read_test_router_quote(await treasury_rpc(treasury_id), module)
+        return await read_test_router_quote(await treasury_rpc(treasury_id), module, settings)
 
     # Always wired so a shortage with swapping disabled (max_amount_in None) is logged.
     gas_swap = GasSwapDeps(

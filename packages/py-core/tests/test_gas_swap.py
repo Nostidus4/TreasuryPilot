@@ -129,3 +129,14 @@ def test_swap_step_maps_to_swap_in_and_keeps_min_out_outside_the_plan_hash() -> 
         "0x" + "0c" * 32: {"minOut": 1_000, "venue": "TEST_ROUTER"},
     }
     plan_hash(message["requestId"], message["treasury"], message["chainId"], message["steps"])
+
+
+def test_a_signed_quote_source_labels_the_swap_with_its_venue() -> None:
+    quote = GasQuote(
+        source="SIGNED_QUOTE", router=ROUTER, token_out="0x" + "88" * 20, numerator=2, denominator=1
+    )
+    swap = plan_gas_swap(
+        required_wei=1_000, native_balance_wei=0, quote=quote, slippage_bps=100, max_amount_in=10**9
+    )
+    assert swap is not None and swap.venue == "SIGNED_QUOTE"
+    assert swap.min_out >= 1_000 and swap.amount_in == 506  # ceil(1000 * 10000 / (2 * 9900))
