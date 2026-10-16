@@ -1,10 +1,16 @@
 import { useQueries } from '@tanstack/react-query';
 
+import {
+  toExceptionDetail,
+  toGrantBody,
+  toRejectBody,
+} from '@/features/review/wire';
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api, apiUrl } from '@/lib/api/http';
 import type {
   CopilotMessage,
   ExceptionDetail,
+  ExceptionWire,
   GovernanceTx,
   Notification,
   OperationsMetrics,
@@ -80,19 +86,22 @@ export const useReviewAction = (orgId: string) =>
   );
 
 export const useException = (orgId: string, requestId: string | undefined) =>
-  useOrgQuery<ExceptionDetail>(
+  useOrgQuery<ExceptionWire, ExceptionDetail>(
     orgId,
     'review',
     ['exception', requestId],
     `/requests/${requestId}/exception`,
-    { enabled: Boolean(requestId) },
+    {
+      enabled: Boolean(requestId),
+      select: (wire) => toExceptionDetail(wire, requestId ?? ''),
+    },
   );
 
 export const useGrantExceptionTx = (orgId: string) =>
   useOrgMutation(orgId, (input: { requestId: string; expiryHours: number }) =>
     api.post<{ governanceTx: GovernanceTx }>(
       `/orgs/${orgId}/requests/${input.requestId}/exception/grant-tx`,
-      { expiryHours: input.expiryHours },
+      toGrantBody(input.expiryHours),
     ),
   );
 
@@ -100,7 +109,7 @@ export const useRejectException = (orgId: string) =>
   useOrgMutation(orgId, (input: { requestId: string; reason: string }) =>
     api.post<unknown>(
       `/orgs/${orgId}/requests/${input.requestId}/exception/reject`,
-      { reason: input.reason },
+      toRejectBody(input.reason),
     ),
   );
 

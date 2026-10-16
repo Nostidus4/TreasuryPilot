@@ -11,17 +11,17 @@ import { api } from '@/lib/api/http';
  * Query keys are `['org', orgId, entity, ...rest]`. Live events and mutations
  * invalidate by that prefix, so a hook only has to name its entity.
  */
-export function useOrgQuery<T>(
+export function useOrgQuery<T, S = T>(
   orgId: string,
   entity: string,
   rest: ReadonlyArray<string | undefined>,
   path: string,
-  options?: Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'> & {
+  options?: Omit<UseQueryOptions<T, Error, S>, 'queryKey' | 'queryFn'> & {
     query?: Record<string, string | undefined>;
   },
 ) {
   const { query, ...queryOptions } = options ?? {};
-  return useQuery<T>({
+  return useQuery<T, Error, S>({
     queryKey: ['org', orgId, entity, ...rest, query ?? null],
     queryFn: ({ signal }) =>
       api.get<T>(`/orgs/${orgId}${path}`, { query, signal }),

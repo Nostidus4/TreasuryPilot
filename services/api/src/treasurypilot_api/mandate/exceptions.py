@@ -330,10 +330,20 @@ async def get_exception(
             .limit(1)
         )
         approvals = await _valid_approvals(session, payment, now=datetime.now(UTC))
+        tx_status = (
+            await session.scalar(
+                select(GovernanceTx.status).where(GovernanceTx.id == exception.governance_tx_id)
+            )
+            if exception is not None and exception.governance_tx_id is not None
+            else None
+        )
 
     value = _value_if_granted(payment, payee, approvals[0] if approvals else None)
+    view = _exception_json(exception) if exception is not None else None
+    if view is not None:
+        view["governanceTxStatus"] = tx_status.value if tx_status is not None else None
     return {
-        "exception": _exception_json(exception) if exception is not None else None,
+        "exception": view,
         "numbers": {
             "amount": str(int(payment.amount)),
             "cap": str(cap),

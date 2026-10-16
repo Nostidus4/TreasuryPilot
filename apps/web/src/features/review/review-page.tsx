@@ -27,8 +27,9 @@ import {
   useReviewItems,
 } from '@/features/operations/api';
 import { ExceptionDraftView } from '@/features/review/exception-draft';
+import { grantedTxId, isStaleError } from '@/features/review/wire';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { errorMessage, isApiError } from '@/lib/api/http';
+import { errorMessage } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -82,7 +83,7 @@ const stepLabel = (step: ReviewItem['completedSteps'][number]) =>
   typeof step.label === 'string' ? step.label : JSON.stringify(step);
 
 /** Shown when the item changed under the user: acting again needs fresh data. */
-function StalePrompt({
+export function StalePrompt({
   orgId,
   onRefresh,
 }: {
@@ -200,8 +201,28 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
           {exception.status === 'Rejected' && (
             <Alert tone="neutral" title={t('Exception rejected')} />
           )}
+          {exception.grantTxFailed && exception.governanceTxId && (
+            <Alert
+              tone="danger"
+              title={t('The grant transaction failed')}
+              action={
+                <Button asChild size="sm" variant="primary">
+                  <Link
+                    to={`${scope.base}/governance/${exception.governanceTxId}`}
+                  >
+                    {t('Open transaction')}
+                  </Link>
+                </Button>
+              }
+            >
+              {t('You can create a new governance transaction to grant.')}
+            </Alert>
+          )}
+          {exception.status === 'Closed' && (
+            <Alert tone="neutral" title={t('Exception no longer active')} />
+          )}
 
-          {exception.status === 'Open' &&
+          {(exception.status === 'Open' || exception.status === 'Rejected') &&
             (isOwner ? (
               <Card>
                 <CardHeader
@@ -227,7 +248,7 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                       ]}
                     />
                   </Field>
-                  {isApiError(grant.error, 'STALE_ITEM') ? (
+                  {isStaleError(grant.error) ? (
                     <StalePrompt orgId={scope.orgId} onRefresh={grant.reset} />
                   ) : (
                     grant.isError && (
@@ -245,58 +266,67 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                           expiryHours: Number(expiryHours),
                         },
                         {
-                          onSuccess: ({ governanceTx }) =>
-                            navigate(
-                              `${scope.base}/governance/${governanceTx.id}`,
-                            ),
+                          onSuccess: (response) => {
+                            const txId = grantedTxId(response);
+                            if (txId)
+                              navigate(`${scope.base}/governance/${txId}`);
+                            else
+                              toast.error(
+                                t(
+                                  'The transaction was created but its id is missing. Refresh to find it.',
+                                ),
+                              );
+                          },
                         },
                       )
                     }
                   >
                     {t('Create governance transaction to grant')}
                   </Button>
-                  <form
-                    className="grid gap-3 border-t pt-4"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      reject.mutate(
-                        { requestId: exception.requestId, reason },
-                        {
-                          onSuccess: () =>
-                            toast.success(t('Exception rejected')),
-                          onError: (error) =>
-                            isApiError(error, 'STALE_ITEM') ||
-                            toast.error(errorMessage(error)),
-                        },
-                      );
-                    }}
-                  >
-                    {isApiError(reject.error, 'STALE_ITEM') && (
-                      <StalePrompt
-                        orgId={scope.orgId}
-                        onRefresh={reject.reset}
-                      />
-                    )}
-                    <Field
-                      htmlFor="exception-reject"
-                      label={t('Or reject, with a reason')}
+                  {exception.status === 'Open' && (
+                    <form
+                      className="grid gap-3 border-t pt-4"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        reject.mutate(
+                          { requestId: exception.requestId, reason },
+                          {
+                            onSuccess: () =>
+                              toast.success(t('Exception rejected')),
+                            onError: (error) =>
+                              isStaleError(error) ||
+                              toast.error(errorMessage(error)),
+                          },
+                        );
+                      }}
                     >
-                      <Textarea
-                        id="exception-reject"
-                        value={reason}
-                        onChange={(event) => setReason(event.target.value)}
-                      />
-                    </Field>
-                    <Button
-                      type="submit"
-                      variant="danger-outline"
-                      className="justify-self-start"
-                      loading={reject.isPending}
-                      disabled={!reason.trim()}
-                    >
-                      {t('Reject exception')}
-                    </Button>
-                  </form>
+                      {isStaleError(reject.error) && (
+                        <StalePrompt
+                          orgId={scope.orgId}
+                          onRefresh={reject.reset}
+                        />
+                      )}
+                      <Field
+                        htmlFor="exception-reject"
+                        label={t('Or reject, with a reason')}
+                      >
+                        <Textarea
+                          id="exception-reject"
+                          value={reason}
+                          onChange={(event) => setReason(event.target.value)}
+                        />
+                      </Field>
+                      <Button
+                        type="submit"
+                        variant="danger-outline"
+                        className="justify-self-start"
+                        loading={reject.isPending}
+                        disabled={!reason.trim()}
+                      >
+                        {t('Reject exception')}
+                      </Button>
+                    </form>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -319,7 +349,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
   );
   const [action, setAction] = useState<string>(actions[0]);
   const [note, setNote] = useState('');
-  const stale = isApiError(act.error, 'STALE_ITEM');
+  const stale = isStaleError(act.error);
 
   // The API decides per user and item; no allowed action means nothing to offer.
   if (actions.length === 0) return null;

@@ -13,6 +13,7 @@ import {
   db,
   h32,
   refreshQueues,
+  exceptionRow,
   reviewRoles,
   reviewView,
   roleNames,
@@ -228,21 +229,19 @@ export const operationHandlers: RequestHandler[] = [
         'Request',
       );
       const { numbers } = detail;
-      if (
-        BigInt(numbers.dailyUsed) + BigInt(numbers.requested) >
-        BigInt(numbers.dailyLimit)
-      ) {
+      const overBy = BigInt(numbers.amount) - BigInt(numbers.cap);
+      if (overBy <= 0n) {
         fail(
           409,
-          'DAILY_LIMIT_WOULD_EXCEED',
-          'Even with an exception, this payment would exceed today’s daily limit.',
+          'NOT_OVER_CAP',
+          'This request is within the per-request limit; no exception is needed.',
         );
       }
       const state = db.treasuries[request.treasuryId];
       const tx = createGovernanceTx({
         kind: 'GRANT_EXCEPTION',
         title: `Grant one-time exception for ${request.invoiceNumber}`,
-        summary: `Allows a single payment of ${money(request.amount)} to ${request.vendorName}, ${money(numbers.overBy)} above the per-request limit. The exception applies to this request only and expires in ${body.expiryHours ?? 24} hours.`,
+        summary: `Allows a single payment of ${money(request.amount)} to ${request.vendorName}, ${money(overBy.toString())} above the per-request limit. The exception applies to this request only and expires in ${body.expiryHours ?? 24} hours.`,
         treasuryId: request.treasuryId,
         calls: [
           {
@@ -267,7 +266,7 @@ export const operationHandlers: RequestHandler[] = [
           },
         ],
         effect: () => {
-          detail.exception.status = 'Granted';
+          detail.exception = exceptionRow(request.id, 'Granted');
           const item = db.reviewItems.find(
             (entry) =>
               entry.requestId === request.id &&
@@ -282,11 +281,10 @@ export const operationHandlers: RequestHandler[] = [
           request.status = 'Scheduled';
         },
       });
-      detail.exception = {
-        requestId: request.id,
-        status: 'GovernancePending',
+      detail.exception = exceptionRow(request.id, 'Proposed', {
         governanceTxId: tx.id,
-      };
+        amount: request.amount,
+      });
       const { effect: _effect, signaturesHex: _hex, ...view } = tx;
       return { governanceTx: view };
     },
@@ -306,7 +304,9 @@ export const operationHandlers: RequestHandler[] = [
         );
       if (!body.reason?.trim())
         fail(422, 'VALIDATION', 'Give a reason for the rejection.');
-      detail.exception.status = 'Rejected';
+      detail.exception = exceptionRow(params.rId, 'Rejected', {
+        reason: body.reason,
+      });
       const item = db.reviewItems.find(
         (entry) =>
           entry.requestId === params.rId && entry.type === 'NEEDS_AUTHORITY',
