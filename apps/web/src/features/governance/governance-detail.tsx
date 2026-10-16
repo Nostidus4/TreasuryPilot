@@ -91,6 +91,20 @@ export function GovernanceActions({
     );
   }
 
+  // Signing and execution are Owner-only (the API enforces it too); others only watch.
+  if (!scope.can('OWN')) {
+    return (
+      <div className="grid gap-4">
+        <SignatureProgress tx={tx} />
+        <Alert tone="neutral" title={t('Only an Owner can sign this')}>
+          {t(
+            'The Safe owners sign and execute this transaction. You can follow its progress here.',
+          )}
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4">
       <SignatureProgress tx={tx} />
@@ -223,7 +237,9 @@ export function GovernanceDetail({ id }: { id: string }) {
               },
               {
                 label: t('Proposed'),
-                value: `${tx.createdBy} · ${formatDateTime(tx.createdAt)}`,
+                value: tx.createdAt
+                  ? `${tx.createdBy ?? ''} · ${formatDateTime(tx.createdAt)}`
+                  : '—',
               },
             ]}
           />

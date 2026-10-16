@@ -36,7 +36,7 @@ function Row({
             signed: tx.signatures.length,
             threshold: tx.threshold,
           })}{' '}
-          · {formatRelative(tx.createdAt)}
+          {tx.createdAt ? ` · ${formatRelative(tx.createdAt)}` : ''}
         </span>
         <StatusBadge meta={governanceStatus(tx.status)} />
       </p>
@@ -61,6 +61,10 @@ export function GovernancePage() {
     >
       <QueryBoundary query={query}>
         {({ items }) => {
+          if (items.length === 0 && selectedId) {
+            // The API has no governance list yet; a transaction is still reachable by id.
+            return <GovernanceDetail key={selectedId} id={selectedId} />;
+          }
           if (items.length === 0) {
             return (
               <Card>

@@ -223,6 +223,8 @@ function siweMessage(input: {
  * and chain id the API rejects (see the PR notes), so this goes straight to the API.
  */
 export async function linkOwnerWallet(page: Page) {
+  const me = await apiCall<{ wallets: Array<{ address: string }> }>(page, 'GET', '/me');
+  if (me.body.wallets.some((w) => w.address.toLowerCase() === ownerAccount.address.toLowerCase())) return;
   const nonce = await apiCall<{
     nonce: string;
     domain: string;
@@ -305,4 +307,13 @@ export async function ownerSession(page: Page) {
   await loginAs(page, users.owner);
   await linkOwnerWallet(page);
   await stepUp(page);
+}
+
+/** Connect the injected dev-key wallet through the app's own connect dialog. */
+export async function connectWallet(page: Page) {
+  await page
+    .getByRole('button', { name: 'Connect wallet to continue' })
+    .first()
+    .click();
+  await page.getByRole('button', { name: 'Browser wallet' }).click();
 }

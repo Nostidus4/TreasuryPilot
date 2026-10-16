@@ -340,8 +340,9 @@ export interface GovernanceTx {
   calls: DecodedCall[];
   diff?: DiffEntry[];
   safeTxHash: Hex;
-  createdAt: string;
-  createdBy: string;
+  /** Absent when the API does not return them. */
+  createdAt?: string;
+  createdBy?: string;
   txHash?: Hex;
   failureReason?: string;
   supersededBy?: string;
