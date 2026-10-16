@@ -8,6 +8,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from email import policy
 from email.parser import BytesParser
 from typing import cast
@@ -3456,6 +3457,21 @@ async def get_cancel_transaction(
 # ---- Reads (web contract: apps/web/src/lib/api/types.ts PaymentRequest / RequestDetail) ----
 
 _REQUEST_LIST_MAX = 500  # shortcut: newest-first cap, no cursor; add one when a page needs more
+# Backend statuses the web vocabulary has no name for; list/detail report the web name.
+_WEB_STATUS = {
+    "Planning": "InFlight",
+    "AwaitingAuthority": "InFlight",
+    "Preparing": "InFlight",
+    "Paying": "InFlight",
+    "Expired": "Cancelled",
+}
+_WEB_FILTER_EXTRA = {"Extracting", "ChangesRequested", "InFlight"}  # no/aggregated backend rows
+
+
+def _backend_statuses(web: str) -> list[str]:
+    return [raw for raw, mapped in _WEB_STATUS.items() if mapped == web] + [web]
+
+
 _CANCEL_ONCHAIN = {"NotNeeded": "NOT_NEEDED", "Pending": "PENDING", "Confirmed": "CONFIRMED"}
 
 
@@ -3517,7 +3533,7 @@ async def _request_summaries(
             "amount": str(int(row.amount)) if row.amount is not None else "0",
             "treasuryId": str(row.treasury_id),
             "dueDate": row.due_at.isoformat() if row.due_at else None,
-            "status": row.status,
+            "status": _WEB_STATUS.get(row.status, row.status),
             "source": row.source,
             "description": row.note or "",
             "createdBy": {
@@ -3543,12 +3559,14 @@ async def list_requests(
     member: MemberAccess = Depends(require_member),  # noqa: B008
 ) -> dict[str, object]:
     statuses = [item for item in (status or "").split(",") if item]
-    valid = {item.value for item in RequestStatus}
+    valid = {item.value for item in RequestStatus} | _WEB_FILTER_EXTRA
     if any(item not in valid for item in statuses):
         raise _fail(422, "STATUS_INVALID", "Status invalid", "Unknown request status filter.")
     query = select(PaymentRequest).where(PaymentRequest.org_id == member.organization_id)
     if statuses:
-        query = query.where(PaymentRequest.status.in_(statuses))
+        query = query.where(
+            PaymentRequest.status.in_([raw for item in statuses for raw in _backend_statuses(item)])
+        )
     if treasury_id is not None:
         query = query.where(PaymentRequest.treasury_id == treasury_id)
     async with _sessions(request)() as session:
@@ -3639,21 +3657,39 @@ async def get_request(
             | {r.edited_by for r in revisions}
             | {a.approver_user_id for a in approvals},
         )
-        history = (
-            await session.execute(
-                select(PaymentRequest.amount, PaymentRequest.payee_id)
-                .where(
-                    PaymentRequest.org_id == row.org_id,
-                    PaymentRequest.vendor_id == row.vendor_id,
-                    PaymentRequest.status == RequestStatus.PAID.value,
-                    PaymentRequest.id != row.id,
+        history_where = (
+            PaymentRequest.org_id == row.org_id,
+            PaymentRequest.vendor_id == row.vendor_id,
+            PaymentRequest.status == RequestStatus.PAID.value,
+            PaymentRequest.id != row.id,
+        )
+        paid_count = last_amount = 0
+        avg_amount: Decimal | int = 0
+        last_payee = row.payee_id
+        if row.vendor_id is not None:
+            agg = (
+                await session.execute(
+                    select(
+                        func.count(PaymentRequest.amount), func.avg(PaymentRequest.amount)
+                    ).where(*history_where)
                 )
-                .order_by(PaymentRequest.updated_at.desc())
-            )
-        ).all()
-        last_payee = history[0][1] if history else row.payee_id
-        usual = await session.scalar(select(Payee.address).where(Payee.id == last_payee))
-    paid = [int(amount) for amount, _payee in history if amount is not None]
+            ).one()
+            paid_count, avg_amount = int(agg[0]), agg[1] or 0
+            last = (
+                await session.execute(
+                    select(PaymentRequest.amount, PaymentRequest.payee_id)
+                    .where(*history_where)
+                    .order_by(PaymentRequest.updated_at.desc())
+                    .limit(1)
+                )
+            ).first()
+            if last is not None:
+                last_amount, last_payee = int(last[0] or 0), last[1]
+        usual = (
+            await session.scalar(select(Payee.address).where(Payee.id == last_payee))
+            if last_payee is not None
+            else None
+        )
     return {
         **summary,
         "version": str(row.version),
@@ -3672,7 +3708,10 @@ async def get_request(
                 "severity": flag.severity,
                 "title": flag.code,
                 "detail": "",
-                "evidence": [{"label": k, "value": str(v)} for k, v in flag.evidence.items()],
+                "evidence": [
+                    {"label": k, "value": v if isinstance(v, str) else json.dumps(v)}
+                    for k, v in flag.evidence.items()
+                ],
                 "acknowledged": (
                     {
                         "by": names.get(flag.acknowledged_by, "") if flag.acknowledged_by else "",
@@ -3708,9 +3747,9 @@ async def get_request(
             {"at": event.at.isoformat(), "label": f"Moved to {event.to_status}"} for event in events
         ],
         "vendorHistory": {
-            "paidCount": len(paid),
-            "averageAmount": str(sum(paid) // len(paid)) if paid else "0",
-            "lastAmount": str(paid[0]) if paid else "0",
+            "paidCount": paid_count,
+            "averageAmount": str(int(avg_amount or 0)),
+            "lastAmount": str(last_amount),
             "usualPayee": "0x" + usual.hex() if usual is not None else None,
             "payeeChanged": row.payee_id != last_payee,
         },

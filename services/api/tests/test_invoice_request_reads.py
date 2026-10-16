@@ -128,32 +128,32 @@ async def _create(sessions: async_sessionmaker[AsyncSession], invoice_no: str, a
 def test_list_and_detail(database_url: str) -> None:
     async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
         http = _http(sessions)
-        first = await _create(sessions, "INV-1", "145.25")  # 145250000: Decimal prints 1.4525E+8
-        await _create(sessions, "INV-2", "7")
+        first = await _create(sessions, "L-1", "145.25")  # 145250000: Decimal prints 1.4525E+8
+        await _create(sessions, "L-2", "7")
         async with sessions() as session, session.begin():
             await session.execute(
-                text("UPDATE payment_requests SET status = 'Rejected' WHERE invoice_no = 'INV-2'")
+                text("UPDATE payment_requests SET status = 'Rejected' WHERE invoice_no = 'L-2'")
             )
 
-        everything = await list_requests(_ORG, http, None, None, 200, _member(_ORG))
-        items = everything["items"]
-        assert [item["invoiceNumber"] for item in items] == ["INV-2", "INV-1"]  # type: ignore[index]
-        by_no = {item["invoiceNumber"]: item for item in items}  # type: ignore[attr-defined]
-        assert by_no["INV-1"]["amount"] == "145250000"
-        assert by_no["INV-1"]["vendorName"] == "Vendor"
-        assert by_no["INV-1"]["payeeAddress"] == "0x" + "22" * 20
-        assert by_no["INV-1"]["createdBy"] == {"id": str(_USER), "name": "Rita"}
+        def mine(result: dict[str, object]) -> list[Any]:
+            return [i for i in result["items"] if i["invoiceNumber"].startswith("L-")]  # type: ignore[attr-defined]
 
-        drafts = await list_requests(_ORG, http, "Draft", None, 200, _member(_ORG))
-        assert [i["invoiceNumber"] for i in drafts["items"]] == ["INV-1"]  # type: ignore[attr-defined]
-        both = await list_requests(_ORG, http, "Draft,Rejected", _TREASURY, 200, _member(_ORG))
-        assert len(both["items"]) == 2  # type: ignore[arg-type]
+        items = mine(await list_requests(_ORG, http, None, None, 200, _member(_ORG)))
+        assert [item["invoiceNumber"] for item in items] == ["L-2", "L-1"]
+        by_no = {item["invoiceNumber"]: item for item in items}
+        assert by_no["L-1"]["amount"] == "145250000"
+        assert by_no["L-1"]["vendorName"] == "Vendor"
+        assert by_no["L-1"]["payeeAddress"] == "0x" + "22" * 20
+        assert by_no["L-1"]["createdBy"] == {"id": str(_USER), "name": "Rita"}
+
+        drafts = mine(await list_requests(_ORG, http, "Draft", None, 200, _member(_ORG)))
+        assert [i["invoiceNumber"] for i in drafts] == ["L-1"]
+        both = mine(
+            await list_requests(_ORG, http, "Draft,Rejected", _TREASURY, 200, _member(_ORG))
+        )
+        assert len(both) == 2
         other_treasury = await list_requests(_ORG, http, None, uuid.uuid4(), 200, _member(_ORG))
         assert other_treasury["items"] == []
-
-        with pytest.raises(AuthFailure) as bad:
-            await list_requests(_ORG, http, "Nope", None, 200, _member(_ORG))
-        assert bad.value.status == 422
 
         detail = await get_request(_ORG, uuid.UUID(first), http, _member(_ORG))
         assert detail["amount"] == "145250000"
@@ -166,6 +166,46 @@ def test_list_and_detail(database_url: str) -> None:
             "saving": "0",
         }
         assert len(detail["revisions"]) == 1  # type: ignore[arg-type]
+
+    _run(database_url, scenario)
+
+
+def test_status_mapping_and_filter(database_url: str) -> None:
+    async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
+        http = _http(sessions)
+        await _create(sessions, "M-PAY", "1")
+        await _create(sessions, "M-EXP", "2")
+        async with sessions() as session, session.begin():
+            for no, status in (("M-PAY", "Paying"), ("M-EXP", "Expired")):
+                await session.execute(
+                    text(
+                        f"UPDATE payment_requests SET status = '{status}' WHERE invoice_no = '{no}'"
+                    )
+                )
+
+        async def statuses(filter_: str | None) -> dict[str, str]:
+            result = await list_requests(_ORG, http, filter_, None, 200, _member(_ORG))
+            return {
+                i["invoiceNumber"]: i["status"]  # type: ignore[index]
+                for i in result["items"]  # type: ignore[attr-defined]
+                if i["invoiceNumber"].startswith("M-")  # type: ignore[index]
+            }
+
+        assert await statuses(None) == {"M-PAY": "InFlight", "M-EXP": "Cancelled"}
+        assert await statuses("InFlight") == {"M-PAY": "InFlight"}
+        assert await statuses("Cancelled") == {"M-EXP": "Cancelled"}
+        assert await statuses("Paying") == {"M-PAY": "InFlight"}  # backend names still accepted
+        assert await statuses("Paid") == {}
+
+    _run(database_url, scenario)
+
+
+def test_invalid_status_is_422(database_url: str) -> None:
+    async def scenario(sessions: async_sessionmaker[AsyncSession]) -> None:
+        with pytest.raises(AuthFailure) as bad:
+            await list_requests(_ORG, _http(sessions), "Nope", None, 200, _member(_ORG))
+        assert bad.value.status == 422
+        assert bad.value.code == "STATUS_INVALID"
 
     _run(database_url, scenario)
 

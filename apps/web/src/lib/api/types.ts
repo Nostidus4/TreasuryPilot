@@ -377,6 +377,7 @@ export type RequestStatus =
   | 'Approved'
   | 'Scheduled'
   | 'InFlight'
+  | 'NeedsReview'
   | 'Paid'
   | 'Rejected'
   | 'Cancelled';
@@ -427,10 +428,10 @@ export interface PaymentRequest {
   invoiceNumber: string;
   vendorId: string;
   vendorName: string;
-  payeeAddress: Hex;
+  payeeAddress: Hex | null;
   amount: string;
   treasuryId: string;
-  dueDate: string;
+  dueDate: string | null;
   status: RequestStatus;
   source: 'MANUAL' | 'UPLOAD' | 'CSV';
   description: string;
@@ -466,7 +467,7 @@ export interface RequestDetail extends PaymentRequest {
     paidCount: number;
     averageAmount: string;
     lastAmount: string;
-    usualPayee: Hex;
+    usualPayee: Hex | null;
     payeeChanged: boolean;
   };
   cancelOnchain: 'NOT_NEEDED' | 'REQUIRED' | 'PENDING' | 'CONFIRMED';

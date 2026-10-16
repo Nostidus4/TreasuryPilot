@@ -18,7 +18,8 @@ function utcDayNumber(date: Date): number {
  * product: the mandate's daily limits and the engine's horizon reset at
  * 00:00 UTC, so the browser's time zone must not shift them by a day.
  */
-export function formatDate(iso: string): string {
+export function formatDate(iso: string | null): string {
+  if (iso === null) return '—';
   return utcDate.format(new Date(iso));
 }
 
@@ -36,13 +37,14 @@ export function formatRelative(iso: string): string {
 
 /** "Due in 3 days", "Due today", "Overdue by 2 days". */
 export function dueLabel(
-  iso: string,
+  iso: string | null,
   now = new Date(),
 ): {
   text: string;
   overdue: boolean;
   soon: boolean;
 } {
+  if (iso === null) return { text: 'No due date', overdue: false, soon: false };
   const days = utcDayNumber(new Date(iso)) - utcDayNumber(now);
   if (days < 0) {
     return {

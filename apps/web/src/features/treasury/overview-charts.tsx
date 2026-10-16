@@ -815,7 +815,7 @@ export function RunwayChart({
     requests
       .filter(
         (request) =>
-          request.dueDate.slice(0, 10) === day.date &&
+          request.dueDate?.slice(0, 10) === day.date &&
           (['Approved', 'Scheduled', 'AwaitingApproval'].includes(
             request.status,
           ) ||

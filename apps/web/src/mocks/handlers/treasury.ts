@@ -502,7 +502,7 @@ export const treasuryHandlers = [
         .toISOString()
         .slice(0, 10);
       const outflow = open
-        .filter((item) => item.dueDate.slice(0, 10) === date)
+        .filter((item) => item.dueDate?.slice(0, 10) === date)
         .reduce((total, item) => total + BigInt(item.amount), 0n);
       balance -= outflow;
       return {
@@ -515,7 +515,7 @@ export const treasuryHandlers = [
     const breach = days.find((day) => BigInt(day.balance) < BigInt(day.buffer));
     const source = state.wallets.find((wallet) => wallet.role === 'T');
     const cause =
-      open.find((item) => item.dueDate.slice(0, 10) === breach?.date) ??
+      open.find((item) => item.dueDate?.slice(0, 10) === breach?.date) ??
       open[0];
     const wallets = state.wallets
       .filter((wallet) => wallet.role === 'O1' || wallet.role === 'O2')
