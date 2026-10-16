@@ -9,6 +9,17 @@
 ## Revision (ADR-019, 2026-10-11)
 Aave V3 on Sepolia lists only its own test USDC (`0x94a9…E4C8`, Aave faucet). The **treasury asset on Sepolia becomes Aave's test USDC** (label TEST); `tUSDC` remains for local/CI with a mock Pool; the Circle USDC run stays PAY-only. The demo uses one operational wallet (T + O1).
 
+## Token addresses (DOM-002, #230)
+Checked on Sepolia on 2026-10-16 with `symbol()`, `name()` and `decimals()` over RPC.
+
+| Use | Token | Sepolia address | Decimals | Source |
+| --- | --- | --- | --- | --- |
+| Treasury asset (ADR-019), D1-D10 on Sepolia | Aave test USDC, labelled TEST | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` | 6 | Aave faucet; `deployments/11155111.json` `asset` |
+| Evidence run, PAY-only | Circle USDC | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` | 6 | Circle faucet (faucet.circle.com / developer console) |
+| Local/CI (Anvil) | `tUSDC`, labelled TEST | CREATE2, recorded as `testToken` in `deployments/31337.json` | 6 | `Deploy.s.sol` |
+
+`tUSDC` deployment parameters (`contracts/src/test-assets/TestUSDC.sol`): name `TEST USD Coin`, symbol `tUSDC`, 6 decimals, open `mint` (anyone can mint, so it has no value). `Deploy.s.sol` also deploys it on Sepolia as a separately labelled test asset; it is never the treasury asset there.
+
 ## Consequences
 - Confirmations: Paid after 3 blocks (~36 s), configurable (PH-5). Snapshot freshness ≤ 2 blocks (M08).
 - RPC: Alchemy primary + public Sepolia RPC fallback (PH-8).
