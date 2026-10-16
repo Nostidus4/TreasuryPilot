@@ -6,6 +6,7 @@ const rpcUrl = process.env.E2E_ANVIL_RPC_URL ?? 'http://127.0.0.1:8545';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'demo-*.spec.ts',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,

@@ -6,7 +6,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from '@/app';
-import { mockApiEnabled } from '@/lib/env';
+import { mockApiEnabled, rememberDemoFromUrl } from '@/lib/env';
 import '@/lib/i18n';
 import { scrubBreadcrumb, scrubEvent } from '@/lib/sentry';
 import { initTheme } from '@/lib/theme';
@@ -14,6 +14,7 @@ import { AppProviders } from '@/providers/app-providers';
 import '@/styles.css';
 
 async function start() {
+  rememberDemoFromUrl(window.location.search);
   initTheme();
   if (import.meta.env.VITE_SENTRY_DSN) {
     // Loaded only when configured, so builds without a DSN ship no Sentry code.

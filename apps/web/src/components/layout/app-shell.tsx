@@ -53,7 +53,9 @@ import { useOrgScope } from '@/features/orgs/org-scope';
 import { useTreasury } from '@/features/treasury/api';
 import { StatusBanners } from '@/features/treasury/status-banner';
 import type { Role } from '@/lib/api/types';
-import { mockApiEnabled } from '@/lib/env';
+import { DemoBanner, DEMO_BANNER_HEIGHT } from '@/features/demo/banner';
+import { DemoOverlays } from '@/features/demo/overlays';
+import { demoScenarioEnabled, mockApiEnabled } from '@/lib/env';
 import { shortAddress } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { roleLabels } from '@/lib/status';
@@ -76,6 +78,24 @@ function useNavigation(): Array<{ label?: string; items: NavItem[] }> {
   const treasury = useTreasury(scope.orgId, scope.treasuryId);
   const queues = treasury.data?.queues;
   const { base, tBase } = scope;
+  if (demoScenarioEnabled()) {
+    return [
+      {
+        items: [
+          {
+            label: t('Overview'),
+            to: base,
+            icon: LayoutDashboard,
+            end: true,
+          },
+          { label: t('Invoices'), to: `${base}/requests`, icon: FileText },
+          { label: t('Liquidity'), to: `${base}/liquidity`, icon: Workflow },
+          { label: t('Controls'), to: `${base}/controls`, icon: Scale },
+          { label: t('Audit'), to: `${base}/audit`, icon: ClipboardCheck },
+        ],
+      },
+    ];
+  }
   return [
     {
       items: [
@@ -457,6 +477,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileNav, setMobileNav] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const demoOn = demoScenarioEnabled();
+  const chromeTop = demoOn ? { top: DEMO_BANNER_HEIGHT } : undefined;
 
   useEffect(() => setMobileNav(false), [location.pathname]);
 
@@ -472,7 +494,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div
+      className="min-h-dvh bg-background"
+      style={demoOn ? { paddingTop: DEMO_BANNER_HEIGHT } : undefined}
+    >
+      {demoOn && <DemoBanner />}
+      {demoOn && <DemoOverlays />}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:shadow-float"
@@ -480,7 +507,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         {t('Skip to content')}
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r bg-surface lg:block">
+      <aside
+        style={chromeTop}
+        className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r bg-surface lg:block"
+      >
         <Sidebar />
       </aside>
 
@@ -492,7 +522,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </Dialog>
 
       <div className="lg:pl-60">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-surface/95 px-3 backdrop-blur sm:px-6">
+        <header
+          style={chromeTop}
+          className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-surface/95 px-3 backdrop-blur sm:px-6"
+        >
           <Button
             variant="ghost"
             size="icon"
@@ -543,7 +576,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
               />
             </Tooltip>
-            <WalletChip />
+            {!demoOn && <WalletChip />}
             <Tooltip content={t('Treasury Copilot')}>
               <Button
                 variant="ghost"

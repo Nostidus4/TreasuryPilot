@@ -9,11 +9,13 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:demo": "VITE_DEMO_SCENARIO=TP-DEMO-7M30-01 vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test",
+    "e2e:demo": "playwright test -c playwright.demo.config.ts",
     "e2e:stack": "playwright test -c playwright.stack.config.ts",
     "typecheck": "tsc -b --pretty false",
     "generate:api": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts"

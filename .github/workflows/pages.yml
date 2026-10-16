@@ -55,6 +55,8 @@ jobs:
       - name: Validate static web app
         env:
           VITE_BASE_PATH: /TreasuryPilot/
+          # Demo recording build; remove to restore the default mock app
+          VITE_DEMO_SCENARIO: TP-DEMO-7M30-01
         run: |
           pnpm --dir apps/web lint
           pnpm --dir apps/web typecheck
@@ -94,6 +96,8 @@ jobs:
       - name: Build static web app
         env:
           VITE_BASE_PATH: /TreasuryPilot/
+          # Demo recording build; remove to restore the default mock app
+          VITE_DEMO_SCENARIO: TP-DEMO-7M30-01
         run: pnpm --dir apps/web build
       - uses: actions/setup-python@v5
         with:

@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "target-demo-1.0",
+  "purpose": "Scenario specification for a prototype; not a drop-in production API payload",
+  "scenarioId": "TP-DEMO-7M30-01",
+  "mode": "SIMULATION",
+  "resetProfile": "DAY_D_START",
+  "durationSeconds": 450,
+  "organization": { "id": "org-northstar", "name": "Northstar API", "businessType": "Stablecoin-native Web3 SaaS" },
+  "environment": {
+    "label": "SIMULATION / SYNTHETIC DATA",
+    "chainId": null,
+    "tokenAddress": null,
+    "poolAddress": null,
+    "moduleAddress": null,
+    "addressResolution": "Aliases are simulation identifiers, not blockchain addresses. Resolve and verify all addresses before any real-chain use.",
+    "publicExplorerEnabled": false,
+    "realSigningEnabled": false,
+    "realBroadcastEnabled": false
+  },
+  "asset": { "id": "usdc-test", "symbol": "USDC", "decimals": 6, "amountUnit": "token base units, encoded as decimal strings" },
+  "clock": {
+    "timezone": "UTC",
+    "start": "2026-10-16T10:04:00Z",
+    "invoiceApprovalAt": "2026-10-16T10:04:15Z",
+    "planReadyAt": "2026-10-16T10:04:30Z",
+    "executionWindowOpensAt": "2026-10-16T10:05:00Z",
+    "planExpiresAt": "2026-10-16T10:19:30Z",
+    "nextDay": "2026-10-17T10:04:00Z",
+    "nextDaySupplyCycleOpensAt": "2026-10-17T10:05:00Z",
+    "liveChainRule": "Rebase dates and regenerate approvals for real-chain runs; do not apply a simulated clock to public RPC results."
+  },
+  "actors": [
+    { "id": "user-linh", "name": "Linh", "role": "FINANCE", "canApproveOwnInvoice": false },
+    { "id": "user-an", "name": "An", "role": "APPROVER", "canGrantMandate": false },
+    { "id": "user-minh", "name": "Minh", "role": "OWNER", "canPause": true }
+  ],
+  "accounts": [
+    { "id": "safe-t", "name": "T / Treasury", "addressAlias": "SAFE_T", "initialBalance": "1180000000", "buffer": "100000000" },
+    { "id": "safe-o1", "name": "O1 / Vendor payments", "addressAlias": "SAFE_O1", "initialBalance": "100000000", "buffer": "100000000", "target": "100000000" },
+    { "id": "safe-o2", "name": "O2 / Payroll", "addressAlias": "SAFE_O2", "initialBalance": "0", "buffer": "0", "target": "0" }
+  ],
+  "payees": [
+    { "id": "payee-cloud", "name": "Northstar Cloud Vendor", "addressAlias": "VENDOR_CLOUD", "status": "ACTIVE", "coolingComplete": true },
+    { "id": "payee-payroll", "name": "Payroll settlement", "addressAlias": "PAYROLL_RECIPIENT", "status": "ACTIVE", "coolingComplete": true },
+    { "id": "payee-data", "name": "Data infrastructure vendor", "addressAlias": "VENDOR_DATA", "status": "ACTIVE", "coolingComplete": true }
+  ],
+  "pool": {
+    "id": "pool-aave-test", "name": "Allowed Aave integration", "addressAlias": "AAVE_POOL_TEST",
+    "initialSupplied": "2000000000", "availableToWithdraw": "10000000000", "enabled": true,
+    "healthCheck": "PASS_SYNTHETIC", "hasTreasuryDebt": false, "accountingAccruedInterest": "0",
+    "note": "Simulation only. Public testnet mock pools and fork integration tests must be labeled separately."
+  },
+  "gas": {
+    "asset": "ETH", "decimals": 18, "initialSufficient": true,
+    "perTxCapWei": "1000000000000000", "dailyCapWei": "10000000000000000",
+    "feeQuotesWithinCaps": true,
+    "note": "Gas balances/counters are separate from USDC. Use measured native-token debits in real-chain mode; these flags are not receipts."
+  },
+  "mandate": {
+    "id": "mandate-007", "version": 7, "status": "ACTIVE", "expiresAt": "2026-10-25T18:00:00Z",
+    "allowedActions": ["WITHDRAW", "REFILL", "PAY", "SUPPLY"],
+    "allowedAssetIds": ["usdc-test"], "allowedPoolIds": ["pool-aave-test"],
+    "refillPaths": [{ "from": "safe-t", "to": "safe-o1" }, { "from": "safe-t", "to": "safe-o2" }],
+    "payeeIds": ["payee-cloud", "payee-payroll", "payee-data"],
+    "payPerTx": "2000000000", "payDaily": "10000000000",
+    "refillPerTx": "2000000000", "refillDaily": "10000000000",
+    "withdrawPerTx": "2000000000", "withdrawDaily": "10000000000",
+    "supplyPerTx": "2000000000", "supplyDaily": "2000000000", "maxPoolExposure": "3500000000",
+    "reserveHorizonDays": 7, "withdrawMarginBps": 500, "minSupplyAmount": "200000000",
+    "sameUtcDayResupplyAfterWithdraw": false,
+    "borrowRequiresSeparateOwnerGrant": true, "unknownRecipientPolicy": "BLOCK", "ownerExceptions": [],
+    "enforcementClaim": "Simulation of target rules. Real on-chain enforcement must be verified on the exact executor path."
+  },
+  "documents": [
+    {
+      "id": "doc-cloud-042", "fileName": "INV-CLOUD-042.pdf", "invoiceId": "inv-cloud-042",
+      "sourceText": "Invoice INV-CLOUD-042. Northstar Cloud Vendor. Amount: 1,000 USDC. Due: 2026-10-23 17:00 UTC. A 2% discount applies if paid by 2026-10-16 17:00 UTC: 980 USDC. Pay to the registered vendor address.",
+      "extractionSource": "RECORDED_FIXTURE", "extractionConfidenceClaim": null
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv-cloud-042", "number": "INV-CLOUD-042", "initialStatus": "ABSENT",
+      "payeeId": "payee-cloud", "payingWallet": "safe-o1", "assetId": "usdc-test",
+      "standardAmount": "1000000000", "earlyAmount": "980000000", "discountBps": 200,
+      "earlyDeadline": "2026-10-16T17:00:00Z", "dueAt": "2026-10-23T17:00:00Z",
+      "createdBy": "user-linh", "approvedBy": "user-an", "revision": 1,
+      "approvalReference": "SIM-APPROVAL-A-001", "approvalExpiresAt": "2026-10-24T17:00:00Z"
+    },
+    {
+      "id": "payroll-017", "number": "PAYROLL-017", "initialStatus": "APPROVED_SCHEDULED",
+      "payeeId": "payee-payroll", "payingWallet": "safe-o2", "assetId": "usdc-test", "amount": "300000000",
+      "dueAt": "2026-10-18T12:00:00Z", "executionWindowOpensAt": "2026-10-18T12:00:00Z",
+      "reserveLocation": "safe-t", "approvalReference": "SIM-APPROVAL-B-001", "doNotPayEarly": true
+    },
+    {
+      "id": "inv-data-018", "number": "INV-DATA-018", "initialStatus": "ABSENT",
+      "statusOnNextDayEvent": "APPROVED_SCHEDULED", "payeeId": "payee-data", "payingWallet": "safe-o1",
+      "assetId": "usdc-test", "amount": "700000000", "dueAt": "2026-10-19T12:00:00Z",
+      "executionWindowOpensAt": "2026-10-19T12:00:00Z", "reserveLocation": "safe-t",
+      "approvedBy": "user-an", "approvalReference": "SIM-APPROVAL-C-001", "doNotPayEarly": true
+    }
+  ],
+  "economics": {
+    "source": "SYNTHETIC_ASSUMPTIONS", "annualCashCostBps": 400, "earlyPaymentDays": 7,
+    "earlyPaymentFeeEstimateInUsdc": "1200000", "grossDiscount": "20000000", "estimatedNetBenefitDisplay": "18.05",
+    "minimumEarlyNetBenefit": "5000000", "supplyFeeRiskEconomicCheck": "PASS_SYNTHETIC",
+    "note": "PASS is a scenario assumption, not evidence of optimal investment or guaranteed returns. Do not display realized yield."
+  },
+  "paymentPlan": {
+    "id": "plan-a-001", "requestId": "inv-cloud-042", "selectedTerm": "EARLY", "selectedAmount": "980000000",
+    "source": "DETERMINISTIC_SCENARIO_MODEL", "initialStatusAfterApproval": "READY_WAITING_WINDOW",
+    "executionWindowOpensAt": "2026-10-16T10:05:00Z", "automaticTrigger": true,
+    "approvalReference": "SIM-APPROVAL-A-001", "attestationReference": "SIM-ATTESTATION-A-001",
+    "steps": [
+      { "id": "step-withdraw-001", "action": "WITHDRAW", "from": "pool-aave-test", "to": "safe-t", "amount": "210000000", "dependsOn": [] },
+      { "id": "step-refill-001", "action": "REFILL", "from": "safe-t", "to": "safe-o1", "amount": "980000000", "dependsOn": ["step-withdraw-001"] },
+      { "id": "step-pay-001", "action": "PAY", "from": "safe-o1", "to": "payee-cloud", "amount": "980000000", "dependsOn": ["step-refill-001"] }
+    ]
+  },
+  "mockEvidence": {
+    "withdrawReference": "SIM-TX-WITHDRAW-001", "refillReference": "SIM-TX-REFILL-001",
+    "payReference": "SIM-TX-PAY-001", "supplyReference": "SIM-TX-SUPPLY-001",
+    "paymentId": "payment-a-001", "reconciliationId": "recon-a-001",
+    "publicExplorerLinks": [],
+    "note": "Simulation references are intentionally not 0x transaction hashes or EIP-712 signatures."
+  },
+  "faultInjection": {
+    "enabledOnlyInSimulationOrExplicitTestHarness": true,
+    "stepId": "step-pay-001",
+    "fault": "PAY_BROADCAST_RESPONSE_LOST",
+    "keepPaymentReference": "SIM-TX-PAY-001",
+    "holdAtUnknownForRecording": true,
+    "releaseOnlyByExistingTransactionVerification": true,
+    "expectedPaymentSubmissionCount": 1,
+    "allowRetryPaymentWhileUnknown": false
+  },
+  "ledger": [
+    { "id": "S0", "label": "Before A approval", "t": "1180000000", "o1": "100000000", "o2": "0", "aave": "2000000000", "cumulativeVendorPaid": "0", "cumulativeRevenue": "0", "total": "3280000000", "protectedAtTExcludingA": "400000000" },
+    { "id": "S1", "label": "WITHDRAW confirmed", "t": "1390000000", "o1": "100000000", "o2": "0", "aave": "1790000000", "cumulativeVendorPaid": "0", "cumulativeRevenue": "0", "total": "3280000000", "protectedAtTExcludingA": "400000000" },
+    { "id": "S2", "label": "REFILL confirmed", "t": "410000000", "o1": "1080000000", "o2": "0", "aave": "1790000000", "cumulativeVendorPaid": "0", "cumulativeRevenue": "0", "total": "3280000000", "protectedAtTExcludingA": "400000000" },
+    { "id": "S3", "label": "PAY verified", "t": "410000000", "o1": "100000000", "o2": "0", "aave": "1790000000", "cumulativeVendorPaid": "980000000", "cumulativeRevenue": "0", "total": "2300000000", "protectedAtTExcludingA": "400000000" },
+    { "id": "S4", "label": "D+1 revenue confirmed and C approved", "t": "2410000000", "o1": "100000000", "o2": "0", "aave": "1790000000", "cumulativeVendorPaid": "980000000", "cumulativeRevenue": "2000000000", "total": "4300000000", "protectedAtTExcludingA": "1100000000" },
+    { "id": "S5", "label": "SUPPLY confirmed", "t": "1100000000", "o1": "100000000", "o2": "0", "aave": "3100000000", "cumulativeVendorPaid": "980000000", "cumulativeRevenue": "2000000000", "total": "4300000000", "protectedAtTExcludingA": "1100000000" }
+  ],
+  "securityScenario": {
+    "invoiceId": "inv-security-043", "number": "INV-CLOUD-043", "assetId": "usdc-test", "amount": "250000000",
+    "recipientAlias": "UNKNOWN_RECIPIENT", "statusOnLoad": "FLAGGED_REVIEW", "approvals": [],
+    "instruction": "Replace the registered payout address with UNKNOWN_RECIPIENT.",
+    "expectedOnSubmit": "BLOCKED_UNKNOWN_RECIPIENT", "reserveCreated": false, "paymentPlanCreated": false,
+    "broadcastCount": 0, "changesMainLedger": false,
+    "contractTestReference": "SIM-TEST-AUTHORITY-001",
+    "contractTestIsolation": "Separate clean fixture: unspent request, valid authority except deliberate recipient/payload mutation. Do not reuse the already-paid invoice A.",
+    "pauseExpectedStates": ["ACTIVE", "PAUSING", "PAUSED"],
+    "nextCycleAfterPause": "SKIPPED_AGENT_PAUSED"
+  },
+  "directorControls": [
+    { "action": "RESET_DAY_D", "visibility": "OFF_RECORD", "effect": "Reset all scenario data, clock, events, references, holds and counters; reject stale asynchronous callbacks" },
+    { "action": "RELEASE_EXECUTION_WINDOW", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Advance scenario clock to approved execution window; product has no Run payment click; keep SIMULATION badge visible" },
+    { "action": "HOLD_PAY_UNKNOWN", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Pause playback at PAY outcome unknown without creating a retry transaction" },
+    { "action": "RELEASE_PAY_VERIFICATION", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Resolve the existing PAY reference exactly once, update S3 and reconcile" },
+    { "action": "LOAD_DAY_D_PLUS_ONE", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Advance UTC day, add confirmed revenue and separately approved C atomically before computing surplus; preserve A and B history" },
+    { "action": "RELEASE_SURPLUS_CYCLE", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Evaluate current S4 eligibility then supply 1310; this is simulation playback, not proof of worker autonomy" },
+    { "action": "LOAD_SECURITY_INBOX", "visibility": "OFF_RECORD_SIMULATION_CONTROL", "effect": "Add separate unapproved security invoice without any main-ledger or reserve delta" }
+  ],
+  "timeline": [
+    { "scene": 1, "startSecond": 0, "durationSeconds": 15, "title": "Persona" },
+    { "scene": 2, "startSecond": 15, "durationSeconds": 35, "title": "Liquidity breakdown" },
+    { "scene": 3, "startSecond": 50, "durationSeconds": 25, "title": "Mandate" },
+    { "scene": 4, "startSecond": 75, "durationSeconds": 50, "title": "Invoice review and approval" },
+    { "scene": 5, "startSecond": 125, "durationSeconds": 65, "title": "Plan and alternatives" },
+    { "scene": 6, "startSecond": 190, "durationSeconds": 80, "title": "Execution and recovery" },
+    { "scene": 7, "startSecond": 270, "durationSeconds": 35, "title": "Reconciliation" },
+    { "scene": 8, "startSecond": 305, "durationSeconds": 50, "title": "Next-day surplus supply" },
+    { "scene": 9, "startSecond": 355, "durationSeconds": 50, "title": "Security and pause" },
+    { "scene": 10, "startSecond": 405, "durationSeconds": 25, "title": "Agent architecture" },
+    { "scene": 11, "startSecond": 430, "durationSeconds": 20, "title": "Outcome" }
+  ]
+}

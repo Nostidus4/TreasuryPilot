@@ -2,7 +2,7 @@ import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 import { Skeleton } from '@/components/ui/misc';
-import { mockApiEnabled } from '@/lib/env';
+import { demoScenarioEnabled, mockApiEnabled } from '@/lib/env';
 
 import {
   AuthGuard,
@@ -117,6 +117,35 @@ const WalletsPage = page(
 );
 const SecurityPage = page(() => import('@/features/auth/mfa'), 'SecurityPage');
 
+const DemoOverviewPage = page(
+  () => import('@/features/demo/overview-page'),
+  'DemoOverviewPage',
+);
+const DemoControlsPage = page(
+  () => import('@/features/demo/controls-page'),
+  'DemoControlsPage',
+);
+const DemoInvoicesPage = page(
+  () => import('@/features/demo/invoices-page'),
+  'DemoInvoicesPage',
+);
+const DemoInvoiceDetailPage = page(
+  () => import('@/features/demo/invoice-detail-page'),
+  'DemoInvoiceDetailPage',
+);
+const DemoLiquidityPage = page(
+  () => import('@/features/demo/liquidity-page'),
+  'DemoLiquidityPage',
+);
+const DemoAuditPage = page(
+  () => import('@/features/demo/audit-page'),
+  'DemoAuditPage',
+);
+const DirectorPage = page(
+  () => import('@/features/demo/director-page'),
+  'DirectorPage',
+);
+
 function PageFallback() {
   return (
     <div
@@ -131,8 +160,21 @@ function PageFallback() {
 
 /** Route map: docs/modules/web §3. */
 export function App() {
+  // The recordable scenario (docs/demo) replaces the main product screens; everything else
+  // keeps working as in the default mock app.
+  const demoOn = demoScenarioEnabled();
   return (
     <Routes>
+      {demoOn && (
+        <Route
+          path="/demo/director"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <DirectorPage />
+            </Suspense>
+          }
+        />
+      )}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/verify" element={<VerifyPage />} />
       <Route element={<AuthGuard />}>
@@ -151,6 +193,17 @@ export function App() {
             <Route path="/dev/components" element={<ComponentsPage />} />
           )}
           <Route path="/o/:org" element={<OrgLayout />}>
+            {demoOn && (
+              <>
+                <Route index element={<DemoOverviewPage />} />
+                <Route path="t/:t" element={<DemoOverviewPage />} />
+                <Route path="controls" element={<DemoControlsPage />} />
+                <Route path="requests" element={<DemoInvoicesPage />} />
+                <Route path="requests/:r" element={<DemoInvoiceDetailPage />} />
+                <Route path="liquidity" element={<DemoLiquidityPage />} />
+                <Route path="audit" element={<DemoAuditPage />} />
+              </>
+            )}
             <Route
               index
               element={
