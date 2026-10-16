@@ -75,15 +75,26 @@ def test_partial_s3_config_disables_uploads_instead_of_failing_startup() -> None
     assert build_document_storage(settings) is None
 
 
-def test_presigned_urls_use_the_public_endpoint() -> None:
+@pytest.mark.parametrize(
+    ("public_url", "prefix"),
+    [
+        ("http://localhost:9000", "http://localhost:9000/bucket/k?"),
+        ("https://files.demo.example.com", "https://files.demo.example.com/bucket/k?"),
+    ],
+)
+def test_presigned_urls_use_the_public_endpoint(public_url: str, prefix: str) -> None:
     settings = Settings(  # type: ignore[call-arg]
         _env_file=None,
         s3_endpoint_url="http://minio:9000",
-        s3_public_endpoint_url="http://localhost:9000",
+        s3_public_endpoint_url=public_url,
         s3_bucket="bucket",
         s3_access_key="key",
         s3_secret_key="secret",
     )
     storage = build_document_storage(settings)
     assert storage is not None
-    assert storage.sign_read("k").startswith("http://localhost:9000/bucket/k?")
+    url = storage.sign_read("k")
+    assert url.startswith(prefix)
+    assert "X-Amz-SignedHeaders=host" in url
+    if public_url.startswith("https"):
+        assert ":" not in url.split("/")[2]
