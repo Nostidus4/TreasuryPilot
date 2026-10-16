@@ -418,6 +418,25 @@ def _last_action_and_staleness(url: str) -> None:
         assert body["position"]["aUsdc"] == "0" and body["position"]["supplyApyBps"] == 0
 
 
+def _borrow_proposal(url: str) -> None:
+    proposed, old = uuid.uuid4(), uuid.uuid4()
+    insert = (
+        "INSERT INTO borrow_proposals (id, org_id, treasury_id, status, shortfall, amount, "
+        "cost_to_repayment, withdraw_cost, reason, due_day) VALUES (:i, :o, :t, :s, 1300, 1300, "
+        "4, 3, 'cheaper', 20000)"
+    )
+    with TestClient(_app({"Owner"})) as client:
+        assert "borrowProposalId" not in client.get(PATH).json()
+        # a superseded proposal is not the current one
+        asyncio.run(_sql(url, insert, i=old, o=ORG, t=TREASURY, s="Superseded"))
+        assert "borrowProposalId" not in client.get(PATH).json()
+        asyncio.run(_sql(url, insert, i=proposed, o=ORG, t=TREASURY, s="Proposed"))
+        assert client.get(PATH).json()["borrowProposalId"] == str(proposed)
+        # one open proposal per treasury
+        with pytest.raises(Exception, match="uq_borrow_proposals_open"):
+            asyncio.run(_sql(url, insert, i=uuid.uuid4(), o=ORG, t=TREASURY, s="Proposed"))
+
+
 def test_treasury_state_serves_the_dashboard() -> None:
     if "TP_TEST_DATABASE_URL" not in os.environ:
         pytest.skip("TP_TEST_DATABASE_URL is required for treasury state integration tests")
@@ -430,6 +449,7 @@ def test_treasury_state_serves_the_dashboard() -> None:
         _full_state(url)
         _roles(url)
         _last_action_and_staleness(url)
+        _borrow_proposal(url)
     finally:
         # Liquidity plans are evidence: the 0085 downgrade refuses while any exists.
         for table in ("transactions", "operations", "plan_steps", "plans"):

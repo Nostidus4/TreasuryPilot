@@ -29,6 +29,7 @@ from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep, validate_plan
 from treasurypilot_worker.audit import append_audit
 from treasurypilot_worker.chain.snapshot import Snapshot as ChainRead
+from treasurypilot_worker.planner.borrow import clear_borrow_proposal, record_borrow_proposal
 from treasurypilot_worker.planner.context import build_context, load_liquidity_context, scope_for
 from treasurypilot_worker.planner.inputs import (
     NO_SCHEDULE,
@@ -177,10 +178,11 @@ async def plan_liquidity(
     chain, head = await deps.take_snapshot(treasury_id, scope_for(empty, inputs))
     try:
         data = chain.data
+        engine = engine_snapshot(
+            data, inputs.safe_t, list(inputs.liquidity.operational), day=utc_day_number(current)
+        )
         decision = decide_liquidity(
-            engine_snapshot(
-                data, inputs.safe_t, list(inputs.liquidity.operational), day=utc_day_number(current)
-            ),
+            engine,
             inputs.liquidity.requests,
             NO_SCHEDULE,
             liquidity_policy(data, inputs.liquidity.config),
@@ -189,6 +191,14 @@ async def plan_liquidity(
     except (InputsUnavailable, KeyError, TypeError, ValueError) as error:
         logger.warning("liquidity_inputs_unavailable", extra={"plan_id": str(plan_id)})
         return await _end(pool, plan_id, "Expired", f"inputs unavailable: {error!r}")
+    async with pool.acquire() as connection:
+        if decision.kind == "INSUFFICIENT_LIQUIDITY":
+            # What withdrawing cannot cover is a borrow proposal for the owner (F-069).
+            await record_borrow_proposal(
+                connection, org_id, treasury_id, engine, decision.shortfall, snapshot_id=chain.id
+            )
+        else:
+            await clear_borrow_proposal(connection, treasury_id)
     amount = int(decision.amount)
     if decision.kind == "NONE" or amount == 0:
         return await _end(pool, plan_id, "Superseded", decision.reason, delete=True)

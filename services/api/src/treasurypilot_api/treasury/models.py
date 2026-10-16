@@ -16,6 +16,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -339,5 +340,52 @@ class SafeConfigSnapshot(Base):
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
     observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BorrowProposalRow(Base):
+    """The borrow estimate for a liquidity shortfall (ENG-014, F-069); written by the worker.
+
+    At most one is ``Proposed`` per treasury: a newer estimate supersedes it. It is advisory and
+    never a transaction (BR-044). Amounts are base-unit integers (ADR-014).
+    """
+
+    __tablename__ = "borrow_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('Proposed', 'Authorized', 'Dismissed', 'Superseded')",
+            name="ck_borrow_proposals_status",
+        ),
+        CheckConstraint("amount > 0 AND shortfall > 0", name="ck_borrow_proposals_amounts"),
+        Index(
+            "uq_borrow_proposals_open",
+            "treasury_id",
+            unique=True,
+            postgresql_where=text("status = 'Proposed'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    treasury_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("treasuries.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="Proposed")
+    shortfall: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    amount: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    cost_to_repayment: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    withdraw_cost: Mapped[int] = mapped_column(Numeric(78, 0), nullable=False)
+    health_factor_before: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    health_factor_after: Mapped[int | None] = mapped_column(Numeric(78, 0))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    due_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
