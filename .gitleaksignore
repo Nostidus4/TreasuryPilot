@@ -9,3 +9,6 @@ b133afc466925b69a8be394cf8cf3010977903c9:services/signer/tests/test_keys.py:gene
 # Published Anvil account 0 in the crash-suite commits later replaced by a mnemonic derivation (#169).
 0fc38f4fa5ec78090297d9b1225bdcdaaba595e4:services/worker/tests/test_recovery_crash_suite.py:generic-api-key:53
 f04e6931f7588496daa8c7ddf843874473b2c73a:services/worker/tests/crash_support.py:generic-api-key:30
+# Published Anvil accounts 1 and 8 as the local stack's TEST executor/policy keys (#229).
+b081138337f55bc6e9aa99acd33d872a6724070b:infra/scripts/seed_local.py:generic-api-key:146
+b081138337f55bc6e9aa99acd33d872a6724070b:infra/scripts/seed_local.py:generic-api-key:147
