@@ -75,6 +75,11 @@ jobs:
           make dev
       - name: Deploy contracts and seed the TEST dataset
         shell: bash
+        env:
+          # The on-chain payee cools after the deploy and the planner blocks (PAYEE_UNKNOWN) until
+          # it is Active; the browser flow approves about a minute after the deploy, so 15 s is safe
+          # while the 5 minute default is not.
+          DEMO_PAYEE_COOLING_SECONDS: '15'
         run: |
           set -o pipefail
           make seed | tee /tmp/seed.log
