@@ -11,6 +11,8 @@ export class MockProblem extends Error {
     detail: string,
     readonly errors?: Problem['errors'],
     readonly headers?: Record<string, string>,
+    /** API problems for mandate validation name the failing fields instead of `errors`. */
+    readonly fields?: string[],
   ) {
     super(detail);
   }
@@ -23,8 +25,9 @@ export function fail(
   detail: string,
   errors?: Problem['errors'],
   headers?: Record<string, string>,
+  fields?: string[],
 ): never {
-  throw new MockProblem(status, code, detail, errors, headers);
+  throw new MockProblem(status, code, detail, errors, headers, fields);
 }
 
 interface Context<Body> {
@@ -83,6 +86,7 @@ export function route<Body = undefined>(
           code: error.code,
           detail: error.message,
           errors: error.errors,
+          fields: error.fields,
         };
         return HttpResponse.json(problem, {
           status: error.status,
