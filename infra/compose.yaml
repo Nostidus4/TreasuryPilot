@@ -136,6 +136,9 @@ services:
       TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
       TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
       TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # TEST policy for this local stack only (GB to GB, 3000.00 USD): the Travel Rule check
+      # blocks approval of any route without a threshold. Real thresholds come from counsel.
+      TP_TRAVEL_RULE_THRESHOLDS: '{"GB":{"USD":300000}}'
       # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
       TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
       # `make seed` points these at /app/deployments/local (mounted below).
