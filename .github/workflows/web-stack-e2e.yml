@@ -110,7 +110,7 @@ jobs:
           sql "SELECT r.invoice_no, r.status, r.current_revision, r.paying_wallet_id IS NOT NULL AS wallet, r.terms_confirmed_by IS NOT NULL AS terms_ok, r.onchain_request_id IS NOT NULL AS onchain_id FROM payment_requests r ORDER BY r.created_at DESC LIMIT 3"
           sql "SELECT e.\"from\", e.\"to\", e.actor_type, e.reason, e.at FROM request_status_events e WHERE e.request_id = (SELECT id FROM payment_requests ORDER BY created_at DESC LIMIT 1) ORDER BY e.at"
           sql "SELECT status, planner_source, chosen_reason, created_at FROM plans ORDER BY created_at DESC LIMIT 5"
-          sql "SELECT stage, step_seq, decision, primary_code, reason_codes FROM validations ORDER BY id DESC LIMIT 10"
+          sql "SELECT stage, step_seq, decision, primary_code, reason_codes, checks::text FROM validations ORDER BY id DESC LIMIT 10"
           sql "SELECT type, primary_code, reason_codes, status FROM review_items ORDER BY created_at DESC LIMIT 5"
           sql "SELECT status, attempts, created_at FROM operations ORDER BY created_at DESC LIMIT 5"
           sql "SELECT status, confirmations, crosscheck FROM transactions ORDER BY submitted_at DESC LIMIT 5"
