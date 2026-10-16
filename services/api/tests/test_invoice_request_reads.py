@@ -232,6 +232,8 @@ def test_vendor_list_carries_payee(database_url: str) -> None:
         by_name = {row.name: row for row in rows}
         assert by_name["Vendor"].payee_address == "0x" + "22" * 20
         assert by_name["Vendor"].payee_status == "Active"
+        assert by_name["Vendor"].payee_id is not None
         assert by_name["Bare"].payee_address is None
+        assert by_name["Bare"].payee_id is None
 
     _run(database_url, scenario)

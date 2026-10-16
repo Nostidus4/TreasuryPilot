@@ -53,6 +53,7 @@ class VendorRecord:
     notes: str | None
     created_at: datetime
     country: str | None = None
+    payee_id: uuid.UUID | None = None
     payee_address: str | None = None
     payee_status: str | None = None
 
@@ -154,6 +155,7 @@ class SqlAlchemyVendorRepository:
             return tuple(
                 replace(
                     _record(row),
+                    payee_id=best[row.id].id if row.id in best else None,
                     payee_address="0x" + best[row.id].address.hex() if row.id in best else None,
                     payee_status=best[row.id].status.value if row.id in best else None,
                 )
@@ -348,6 +350,7 @@ class VendorView(ApiModel):
     has_contact: bool
     notes: str | None
     created_at: datetime
+    payee_id: uuid.UUID | None = None
     payee_address: str | None = None
     payee_status: PayeeStatus | None = None
 
@@ -362,6 +365,7 @@ class VendorView(ApiModel):
             has_contact=row.has_contact,
             notes=row.notes,
             created_at=row.created_at,
+            payee_id=row.payee_id,
             payee_address=row.payee_address,
             payee_status=PayeeStatus(row.payee_status) if row.payee_status else None,
         )

@@ -5895,6 +5895,8 @@ export interface components {
       notes: string | null;
       /** Payeeaddress */
       payeeAddress?: string | null;
+      /** Payeeid */
+      payeeId?: string | null;
       payeeStatus?: components['schemas']['PayeeStatus'] | null;
     };
     /** VerificationEvidence */
