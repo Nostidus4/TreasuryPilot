@@ -11,7 +11,7 @@ M14 keeps TreasuryPilot from **paying the wrong party** (sanctions/blocklist scr
 
 | In scope (M1) | Out of scope |
 |---|---|
-| Screening adapter + fixture provider (TEST DATA) | Real KYB vendor, Travel Rule, retention/deletion, region pinning (Later) |
+| Screening adapter + fixture provider (TEST DATA) | Real KYB vendor, Travel Rule, retention/deletion (Later) |
 | Screening at payee registration and before each PAY (TTL) | Legal opinions (DOM tickets) |
 | Data classification, field encryption, log redaction | |
 
@@ -283,3 +283,44 @@ fall below every threshold. The applicable threshold is the lower of the origin 
 jurisdictions' limits, so it cannot be determined (and "no rule applies" cannot be recorded)
 without the beneficiary country; the system fails closed rather than guess. Set the vendor
 country to release the hold.
+
+## 17. Region pinning (CMP-L04)
+
+An organization can be pinned to one named data region. Regions are operator
+configuration, not cloud lookups: `TP_DATA_REGIONS` is a JSON object of region id
+(`^[a-z][a-z0-9-]{1,31}$`) to `{s3_endpoint_url, s3_bucket, s3_access_key,
+s3_secret_key, s3_public_endpoint_url?, database_url?}`. Two regions may not share an
+object-storage endpoint+bucket or a `database_url`, and startup fails on malformed
+config. `TP_DATA_REGION` names the region this deployment's Postgres serves (it must be
+one of the configured regions; unset disables the database guard).
+
+- **Pin.** `PUT /admin/tenants/{id}/data-region {"region": "eu"}` (platform staff,
+  same auth as the other `/admin` routes) writes `org_data_regions` and an audit entry
+  `compliance.data_region.pinned` in one transaction. Repeating the same pin is a no-op.
+  A pin is permanent: the migration installs a trigger that rejects changing or
+  deleting the row, and the API answers `409 REGION_PINNED` for a different region.
+  Moving an organization requires an explicit data migration (out of scope).
+  `GET /admin/tenants/{id}/data-region` and `GET /v1/orgs/{org}/data-region`
+  (Owner, OrgAdmin, Auditor) show the pin and the configured regions.
+- **Pin preconditions.** The region must exist (`422 REGION_UNKNOWN`), be served by this
+  deployment (`409 CROSS_REGION_WRITE`), have a usable object store, and the
+  organization must hold no stored document outside it (`409 REGION_HAS_DATA_ELSEWHERE`).
+  Unpinned organizations keep using the default `TP_S3_*` store; `documents.storage_region`
+  is NULL for those files. Pinning is done under a row lock on the organization, but an
+  upload racing a pin is not serialized with it; pin before onboarding uploads.
+- **Routing.** Invoice-document writes and reads for a pinned organization go to its
+  region's bucket through `RegionBoundStorage`, which refuses any key outside
+  `organizations/{org_id}/`. There is no fallback to the default store: an unreachable
+  region is `503 REGION_UNAVAILABLE`. Reads use the region recorded on the document row.
+- **Cross-region writes.** A deployment whose `TP_DATA_REGION` differs from the
+  organization's pin refuses the write (`409 CROSS_REGION_WRITE`) before touching any store,
+  so a request routed to the wrong regional API cannot land data in the wrong database
+  or bucket.
+- **Scope.** Postgres isolation is by deployment: each region runs its own API and
+  database (`RegionRegistry.database()` builds a session factory from a region's
+  `database_url` for tooling). The application does not shard one API process across
+  databases. Object storage is routed per organization inside one process. Only invoice
+  documents are object-stored today; any future object-stored data must use the same
+  routing. Redis, logs and backups are not region-pinned.
+- **Verification.** CI tests use local Postgres and MinIO. Verification against real
+  multi-region infrastructure is pending.

@@ -19,6 +19,9 @@ from treasurypilot_api.admin.usage import parse_month, recompute_month
 from treasurypilot_api.audit.models import AuditActorType
 from treasurypilot_api.audit.writer import AuditActor, AuditEntity
 from treasurypilot_api.audit.writer import write as write_audit
+from treasurypilot_api.compliance.models import OrgDataRegion
+from treasurypilot_api.compliance.regions import RegionError
+from treasurypilot_api.compliance.residency import ResidencyService
 from treasurypilot_api.config import Settings
 from treasurypilot_api.identity.api import ApiModel
 from treasurypilot_api.identity.models import Membership, Organization, OrganizationRole
@@ -173,8 +176,41 @@ def _view(org: Organization, members: int, treasuries: int) -> TenantView:
     )
 
 
+class DataRegionRequest(ApiModel):
+    region: str = Field(min_length=2, max_length=32)
+
+
+class DataRegionView(ApiModel):
+    org_id: uuid.UUID
+    region: str | None = Field(description="Pinned data region; null when the org is unpinned.")
+    pinned_by: str | None = None
+    pinned_at: AwareDatetime | None = None
+    available_regions: list[str]
+
+
+def _region_http_error(error: RegionError) -> HTTPException:
+    return HTTPException(
+        status_code=error.status, detail={"code": error.code, "detail": str(error)}
+    )
+
+
+async def _data_region_view(
+    session: AsyncSession, residency: ResidencyService, org_id: uuid.UUID
+) -> DataRegionView:
+    pin = await session.get(OrgDataRegion, org_id)
+    return DataRegionView(
+        org_id=org_id,
+        region=pin.region if pin else None,
+        pinned_by=pin.pinned_by if pin else None,
+        pinned_at=pin.pinned_at if pin else None,
+        available_regions=list(residency.registry.names),
+    )
+
+
 def create_admin_router(
-    settings: Settings, sessions: async_sessionmaker[AsyncSession] | None
+    settings: Settings,
+    sessions: async_sessionmaker[AsyncSession] | None,
+    residency: ResidencyService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["platform-admin"])
     staff = _staff_auth(settings)
@@ -253,6 +289,39 @@ def create_admin_router(
                 )
             response = _view(org, *await _counts(session, tenant_id))
         return response
+
+    @router.get("/tenants/{tenant_id}/data-region", response_model=DataRegionView)
+    async def tenant_data_region(
+        tenant_id: uuid.UUID,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> DataRegionView:
+        if residency is None:
+            raise HTTPException(status_code=503, detail="Data residency is not configured")
+        async with db_sessions() as session:
+            if await session.get(Organization, tenant_id) is None:
+                raise HTTPException(status_code=404, detail="Tenant not found")
+            return await _data_region_view(session, residency, tenant_id)
+
+    @router.put("/tenants/{tenant_id}/data-region", response_model=DataRegionView)
+    async def pin_tenant_data_region(
+        tenant_id: uuid.UUID,
+        payload: DataRegionRequest,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> DataRegionView:
+        """Pin a tenant's stored data to one region. A pin is permanent (409 to change)."""
+        if residency is None:
+            raise HTTPException(status_code=503, detail="Data residency is not configured")
+        try:
+            async with db_sessions() as session, session.begin():
+                try:
+                    await residency.pin(session, tenant_id, payload.region, actor)
+                except LookupError:
+                    raise HTTPException(status_code=404, detail="Tenant not found") from None
+                return await _data_region_view(session, residency, tenant_id)
+        except RegionError as error:
+            raise _region_http_error(error) from error
 
     @router.get("/usage", response_model=UsageList)
     async def usage(
@@ -351,6 +420,26 @@ def create_admin_router(
             extra={"actor": actor, "tenant_id": str(tenant_id), "grant_id": str(grant.id)},
         )
         return result
+
+    return router
+
+
+def create_data_region_router(
+    sessions: async_sessionmaker[AsyncSession] | None, residency: ResidencyService | None
+) -> APIRouter:
+    """Let tenant administrators see where their data is pinned (read-only)."""
+
+    router = APIRouter(prefix="/v1/orgs/{organization_id}/data-region", tags=["compliance"])
+    reader = Depends(
+        require_role(OrganizationRole.ORG_ADMIN, OrganizationRole.OWNER, OrganizationRole.AUDITOR)
+    )
+
+    @router.get("", response_model=DataRegionView, openapi_extra={"x-organization-scoped": True})
+    async def get_data_region(member: MemberAccess = reader) -> DataRegionView:
+        if sessions is None or residency is None:
+            raise HTTPException(status_code=503, detail="Data residency is not configured")
+        async with sessions() as session:
+            return await _data_region_view(session, residency, member.organization_id)
 
     return router
 
