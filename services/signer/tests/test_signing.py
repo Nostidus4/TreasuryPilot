@@ -43,7 +43,7 @@ from treasurypilot_signer.store import NonceAlreadyBound, ReservedNonce, StepAlr
 POLICY = Account.from_key(bytes(31) + b"\x08")
 EXECUTOR = Account.from_key(bytes(31) + b"\x09")
 MODULE = "0x" + "11" * 20
-EXECUTOR_CONTRACT = "0x" + "22" * 20
+EXECUTOR_CONTRACT = "0x" + "ab" * 20  # lowercase hex with letters, as the worker sends it
 WALLET = "0x" + "33" * 20
 ASSET = "0x" + "44" * 20
 SAFE_T = "0x" + "66" * 20
@@ -591,17 +591,6 @@ def test_same_step_payload_can_be_resigned_with_its_original_transaction_nonce()
 
     assert first.nonce == replacement.nonce == 0
     assert len(node.sent) == 2
-
-
-def test_a_lowercase_payload_address_is_signed() -> None:
-    service, node, _ = _service()
-    request = _make_request()
-    lowercase = request.model_copy(
-        update={"payload": request.payload.model_copy(update={"to": request.payload.to.lower()})}
-    )
-
-    assert asyncio.run(service.sign_and_send(lowercase)).nonce == 0
-    assert len(node.sent) == 1
 
 
 def test_replay_returns_the_original_hash_and_rebroadcasts_the_stored_transaction() -> None:
