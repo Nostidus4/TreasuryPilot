@@ -215,7 +215,8 @@ class EdfStandInProvider:
                 for name in ("get_snapshot", "list_requests")
             )
             return ProviderResponse(StopReason.TOOL_USE, tool_calls=calls, usage=usage)
-        by_call = {r.tool_call_id: json.loads(r.content) for r in results}
+        # The adapter labels each result as {"tool_call_id": ..., "result": ...} (copilot.v2 fix).
+        by_call = {r.tool_call_id: json.loads(r.content)["result"] for r in results}
         requests = by_call["t-list_requests"]["requests"]
         order = [
             r["id"]
