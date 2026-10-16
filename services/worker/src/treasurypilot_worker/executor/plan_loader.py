@@ -9,10 +9,16 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
-from eth_abi import encode
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
-from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW
+from treasurypilot_core.eip712 import (
+    PAY,
+    REFILL,
+    SUPPLY,
+    SWAP_IN,
+    WITHDRAW,
+    encode_approver_sig,
+)
 from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Action, ExecutionPlan, PlanStep
 from treasurypilot_worker.chain.rpc import RpcClient
@@ -137,7 +143,7 @@ def simulation_context(loaded: LoadedPlan, inputs: ContextInputs, target: str) -
         snapshot_block=0,
         approval=approval.typed if approval else None,
         # The module wants abi.encode(approver, signature) (the framing that also carries ERC-1271).
-        approver_signature=encode(["address", "bytes"], [approval.signer, approval.signature])
+        approver_signature=encode_approver_sig(approval.signer, approval.signature)
         if approval
         else b"",
         travel_rule_clear=inputs.travel_rule_clear,

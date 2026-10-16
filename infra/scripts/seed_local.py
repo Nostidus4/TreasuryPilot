@@ -151,6 +151,8 @@ FALLBACK_HANDLER_SLOT = "0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c6
 # funds on a local chain. The keystore password is a fixed TEST string.
 EXECUTOR_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"  # gitleaks:allow -- published Anvil fixture
 POLICY_TEST_KEY = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97"  # gitleaks:allow -- published Anvil fixture
+# Must equal DEMO_PAYEE_COOLING in deploy-local.sh (the on-chain cooling `make seed` deploys with).
+PAYEE_COOLING_SECONDS = 5
 KEYSTORE_TEST_PASSWORD = "TEST-local-keystore-password"  # noqa: S105
 
 
@@ -168,7 +170,8 @@ def wait_payee_active(manifest: dict[str, Any], rpc_url: str, payee: str) -> Non
     data = "0x" + keccak(text="payeeStatus(address)")[:4].hex() + payee[2:].lower().rjust(64, "0")
     result = rpc(rpc_url, "eth_call", [{"to": manifest["module"], "data": data}, "latest"])
     active_from = int(result[66:130], 16)
-    if active_from and (wait := active_from + 1 - time.time()) > 0:
+    latest = int(rpc(rpc_url, "eth_getBlockByNumber", ["latest", False])["timestamp"], 16)
+    if active_from and (wait := active_from + 1 - latest) > 0:
         print(f"Waiting {wait:.0f}s for the demo payee to leave its on-chain cooling...")
         time.sleep(wait)
         rpc(rpc_url, "evm_mine", [])
@@ -349,7 +352,7 @@ async def seed_database(
     config = {
         "validFrom": int(valid_from.timestamp()),
         "expiresAt": int(expires.timestamp()),
-        "payeeCoolingSeconds": 300,
+        "payeeCoolingSeconds": PAYEE_COOLING_SECONDS,
         "executor": executor,
         "guardian": guardian,
         "limits": {

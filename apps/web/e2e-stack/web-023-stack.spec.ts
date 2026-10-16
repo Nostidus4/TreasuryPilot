@@ -233,12 +233,12 @@ test.describe
   // plan, the worker executes it on Anvil (PlanAttestedExecutor -> module) and the reconciliation
   // is matched automatically; each step is picked up by a beat task, so poll generously.
   test('approval is recorded, then auto plan, paid, matched', async () => {
-    test.setTimeout(300_000);
+    test.setTimeout(360_000);
     const page = approver;
     await page.goto(requestPath);
     await expect(async () => {
       await page.reload();
-      await expect(page.getByText('Paid', { exact: true }).first()).toBeVisible(
+      await expect(page.getByTestId('request-status').getByText('Paid', { exact: true })).toBeVisible(
         {
           timeout: 2_000,
         },

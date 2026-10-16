@@ -35,7 +35,7 @@ from treasurypilot_core.eip712 import (
 from treasurypilot_signer.config import Settings
 from treasurypilot_signer.keys import ExecutorKeyNotConfigured
 from treasurypilot_signer.main import create_app
-from treasurypilot_signer.models import Fees, SignRequest
+from treasurypilot_signer.models import Fees, Payload, SignRequest
 from treasurypilot_signer.rpc import JsonRpc, RpcFailure
 from treasurypilot_signer.service import SignerFault, SigningService
 from treasurypilot_signer.store import NonceAlreadyBound, ReservedNonce, StepAlreadyUsed
@@ -502,6 +502,12 @@ def test_step_payload_must_match_the_attested_plan() -> None:
     with pytest.raises(SignerFault, match="PAYLOAD_MISMATCH"):
         asyncio.run(service.sign_and_send(request))
     assert node.sent == []
+
+
+def test_lowercase_payload_target_is_accepted_and_checksummed() -> None:
+    payload = Payload(to=MODULE.lower(), data="0x12345678")
+
+    assert payload.to == MODULE
 
 
 def test_withdraw_payload_is_supported() -> None:

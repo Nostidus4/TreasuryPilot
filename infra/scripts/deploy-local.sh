@@ -54,6 +54,8 @@ export DEMO_EXECUTOR="${DEMO_EXECUTOR:-0x70997970C51812dc3A010C7d01b50e0d17dc79C
 # is Anvil account 8, the TEST policy key `seed_local.py` writes.
 if [[ "${DEMO_PLAN_EXECUTOR:-}" == "true" ]]; then
   export DEMO_POLICY_SIGNER="${DEMO_POLICY_SIGNER:-0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f}"
+  # The stack seed does not sit out the 300 s default payee cooling (seed_local.py mirrors this value).
+  export DEMO_PAYEE_COOLING="${DEMO_PAYEE_COOLING:-5}"
 fi
 export DEMO_APPROVER="${DEMO_APPROVER:-0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC}"
 export DEMO_GUARDIAN="${DEMO_GUARDIAN:-0x90F79bf6EB2c4f870365E785982E1f101E93b906}"
