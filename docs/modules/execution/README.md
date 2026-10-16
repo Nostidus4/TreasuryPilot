@@ -223,8 +223,8 @@ keystore. Missing signer configuration fails closed.
 `TP_EXECUTOR_KEY_BACKEND` selects where the executor key lives: `keystore` (default, the encrypted
 JSON keystore above) or `kms` (AWS KMS). With `kms`, map every treasury UUID to a KMS key id, ARN or
 alias in `TP_EXECUTOR_KMS_KEY_MAP` (JSON object). Each key must be an asymmetric `ECC_SECG_P256K1`
-key with `KeyUsage=SIGN_VERIFY`; the private key never leaves KMS. The signer image needs `boto3`
-(not a default dependency) and AWS credentials from the instance or task role; no credentials are
+key with `KeyUsage=SIGN_VERIFY`; the private key never leaves KMS. The signer depends on `boto3` (locked, so
+it is in the image; if it is missing the signer refuses to start) and needs AWS credentials from the instance or task role; no credentials are
 configured through `TP_*` variables. Optional settings: `TP_KMS_REGION`, `TP_KMS_ENDPOINT_URL`,
 `TP_KMS_TIMEOUT_SECONDS` (connect and read, default 5) and `TP_KMS_MAX_ATTEMPTS` (default 3).
 

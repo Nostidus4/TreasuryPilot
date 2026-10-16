@@ -228,3 +228,25 @@ def test_kms_key_map_parses_json_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings()
     assert settings.executor_key_backend == "kms"
     assert settings.executor_kms_key_map == {"t1": "alias/x"}
+
+
+def test_missing_boto3_is_a_clear_startup_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    real = importlib.import_module
+
+    def fake(name: str, *args: Any) -> Any:
+        if name.startswith("boto"):
+            raise ImportError(name)
+        return real(name, *args)
+
+    monkeypatch.setattr("treasurypilot_signer.kms.importlib.import_module", fake)
+    with pytest.raises(ExecutorKeyUnavailable, match="requires boto3"):
+        ExecutorKeys(_settings()).validate()
+
+
+def test_default_client_builds_without_network() -> None:
+    from treasurypilot_signer.kms import build_kms_client
+
+    client = build_kms_client(region="us-east-1", endpoint_url=None, timeout_seconds=1)
+    assert hasattr(client, "sign")

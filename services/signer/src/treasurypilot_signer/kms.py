@@ -279,7 +279,7 @@ class KmsAccount:
 def build_kms_client(
     *, region: str | None, endpoint_url: str | None, timeout_seconds: float
 ) -> KmsClient:
-    """Create a boto3 KMS client (boto3 is installed only in KMS deployments, not a default dependency).
+    """Create a boto3 KMS client (boto3 is a regular dependency of the signer, imported lazily).
 
     Credentials come from the standard AWS chain (instance/task role); none are configured here.
     Retries are handled by ``KmsAccount`` so boto's own are disabled to avoid multiplying them.
@@ -289,7 +289,7 @@ def build_kms_client(
         botocore_config = importlib.import_module("botocore.config")
     except ImportError as error:
         raise KmsSigningError(
-            "the KMS backend needs boto3; install boto3 in the signer image"
+            "TP_EXECUTOR_KEY_BACKEND=kms requires boto3, which is not installed in this image"
         ) from error
     config = botocore_config.Config(
         connect_timeout=timeout_seconds,
