@@ -48,6 +48,11 @@ write the published manifest. After a successful Sepolia deployment, run the
 publisher with prediction `deployments/predictions/11155111.json` and manifest
 `deployments/11155111.json`, using the same RPC.
 
+Broadcast to Sepolia with `--gas-estimate-multiplier 800 --slow`. Forge sets gas
+limits from its local EVM, but live Sepolia charges far more for state creation:
+a Safe `createProxyWithNonce` needs about 1.17M gas there against forge's 326k
+limit, and reverts out of gas with the default multiplier.
+
 After publication, verify the project-owned Sepolia implementation, factory and
 tUSDC source on Etherscan with `make verify-sepolia`. Set `SEPOLIA_RPC_URL` (or
 `ETH_RPC_URL`) and `ETHERSCAN_API_KEY` first. The command requires a `deployed`
