@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     fx_max_quote_age_seconds: int = Field(default=60, ge=0)
     fx_depeg_threshold_bps: int = Field(default=100, ge=0, le=10_000)
     fx_tolerance_bps: int | None = Field(default=None, ge=0, le=10_000)
+    # TEST only: quotes a USD-pegged stablecoin 1:1 so the local stack can value requests. Needs
+    # fx_source_id and a local/test environment; never enable it on a real deployment.
+    fx_test_static_provider: bool = False
     # JSON jurisdiction -> currency -> integer minor-unit threshold. No legal default is assumed.
     travel_rule_thresholds: str = "{}"
     # JSON region id -> {s3_endpoint_url, s3_bucket, s3_access_key, s3_secret_key, ...} (CMP-L04).
@@ -171,9 +174,11 @@ class Settings(BaseSettings):
                 raise ValueError("OIDC groups may map only to Operator, Finance or Auditor roles")
         return self
 
-    @field_validator("signer_url", "signer_shared_secret", mode="before")
+    @field_validator(
+        "signer_url", "signer_shared_secret", "fx_source_id", "fx_tolerance_bps", mode="before"
+    )
     @classmethod
-    def _blank_signer_is_unset(cls, value: object) -> object:
+    def _blank_is_unset(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("signer_url")
@@ -322,6 +327,16 @@ class Settings(BaseSettings):
             self.data_regions
         ):
             raise ValueError("TP_DATA_REGION must be one of the configured TP_DATA_REGIONS")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_fx_test_static_provider(self) -> "Settings":
+        if self.fx_test_static_provider and (
+            self.environment.casefold() not in {"local", "test"} or not self.fx_source_id
+        ):
+            raise ValueError(
+                "TP_FX_TEST_STATIC_PROVIDER needs TP_ENVIRONMENT local or test and TP_FX_SOURCE_ID"
+            )
         return self
 
     @field_validator("travel_rule_thresholds")

@@ -22,8 +22,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
+from eth_account import Account
 from eth_utils import keccak
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
@@ -128,13 +129,123 @@ def write_platform_config(
             "SAFE_MULTISEND_CALL_ONLY": deployment("multiSend", "1.4.1"),
             "TREASURY_MODULE_IMPLEMENTATION": deployment("implementation", "1.0.0"),
             "TREASURY_MODULE_FACTORY": deployment("factory", "1.0.0"),
-            # shortcut: Deploy.s.sol sets no fallback handler; the Safe singleton stands in so the
-            # seeded snapshots can be COMPLETE. A live coverage refresh will report PARTIAL.
+            # shortcut: Deploy.s.sol sets no fallback handler; the Safe singleton stands in, and
+            # install_fallback_handlers() writes it into each demo Safe's storage so live coverage
+            # refreshes stay COMPLETE. Upgrade when the deploy script installs a real handler.
             "SAFE_FALLBACK_HANDLER": deployment("safeSingleton", "1.4.1"),
         },
     }
     (out_dir / "chains.json").write_text(json.dumps(chains, indent=2) + "\n")
     (out_dir / f"{CHAIN_ID}.json").write_text(json.dumps(deployments, indent=2) + "\n")
+
+
+# keccak256("fallback_manager.handler.address"), the slot the worker reads (chain/rpc.py).
+FALLBACK_HANDLER_SLOT = "0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5"
+# TEST keys: public Anvil dev accounts 1 (module executor) and 8 (policy signer). They only hold
+# funds on a local chain. The keystore password is a fixed TEST string.
+EXECUTOR_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"  # gitleaks:allow -- published Anvil fixture
+POLICY_TEST_KEY = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97"  # gitleaks:allow -- published Anvil fixture
+KEYSTORE_TEST_PASSWORD = "TEST-local-keystore-password"  # noqa: S105
+
+
+def install_fallback_handlers(manifest: dict[str, Any], rpc_url: str) -> None:
+    """Point each demo Safe's fallback-handler slot at the stand-in the platform config expects."""
+    value = "0x" + manifest["safeSingleton"][2:].lower().rjust(64, "0")
+    for field in ("safeT", "safeO1", "safeO2"):
+        rpc(rpc_url, "anvil_setStorageAt", [manifest[field], FALLBACK_HANDLER_SLOT, value])
+
+
+def upsert_env(path: Path, values: dict[str, str]) -> None:
+    """Set KEY=value lines in place (last occurrence wins; `export ` and CRLF are preserved)."""
+    text_in = path.read_bytes().decode() if path.exists() else ""  # bytes: keep CRLF
+    eol = "\r\n" if "\r\n" in text_in else "\n"
+    lines = text_in.splitlines()
+    for key, value in values.items():
+        hits = [
+            i for i, line in enumerate(lines)
+            if not line.lstrip().startswith("#") and "=" in line
+            and line.strip().removeprefix("export ").split("=", 1)[0].strip() == key
+        ]  # fmt: skip
+        if hits:
+            prefix = "export " if lines[hits[-1]].lstrip().startswith("export ") else ""
+            lines[hits[-1]] = f"{prefix}{key}={value}"
+        else:
+            lines.append(f"{key}={value}")
+    path.write_bytes((eol.join(lines) + eol).encode())
+
+
+def _env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in (path.read_text() if path.exists() else "").splitlines():
+        line = raw.strip().removeprefix("export ").lstrip()
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
+
+
+def write_local_keystores(env_file: Path, keys_dir: Path) -> None:
+    """Write TEST executor/policy keystores and point the compose env at them (idempotent)."""
+    addresses = {
+        name: Account.from_key(key).address
+        for name, key in (("executor", EXECUTOR_TEST_KEY), ("policy", POLICY_TEST_KEY))
+    }
+    updates = {
+        "TP_EXECUTOR_ADDRESS": addresses["executor"],
+        "TP_TRUSTED_POLICY_SIGNERS": json.dumps([addresses["policy"]], separators=(",", ":")),
+        "TP_EXECUTOR_KEYSTORE_MAP": json.dumps(
+            {str(sid("treasury")): "/run/secrets/executor_keystore"}, separators=(",", ":")
+        ),
+    }
+    paths = {
+        "TP_EXECUTOR_KEYSTORE_FILE": str(keys_dir / "executor.json"),
+        "TP_EXECUTOR_KEYSTORE_PASSWORD_FILE": str(keys_dir / "password"),
+        "TP_POLICY_KEYSTORE_FILE": str(keys_dir / "policy.json"),
+        "TP_POLICY_KEYSTORE_PASSWORD_FILE": str(keys_dir / "password"),
+    }
+    current = _env_values(env_file)
+    # Never replace an operator's own key wiring: only empty, equal or already-local values.
+    for key, value in {**updates, **paths}.items():
+        existing = current.get(key, "")
+        if existing in ("[]", "{}", '""', "''"):  # .env.example placeholders count as unset
+            existing = ""
+        ours = key in paths and existing.startswith(("/run/secrets", str(keys_dir)))
+        if existing and existing != value and not ours:
+            raise SystemExit(
+                f"refusing to overwrite {key}={existing!r} in {env_file}: it is not the local "
+                f"TEST key wiring. Clear it to let make seed manage the local keys."
+            )
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    password_file = keys_dir / "password"
+    password_file.write_text(KEYSTORE_TEST_PASSWORD)
+    password_file.chmod(0o644)  # bind-mounted docker secret, read by uid 65532; public TEST value
+    for name, key in (("executor", EXECUTOR_TEST_KEY), ("policy", POLICY_TEST_KEY)):
+        keystore = Account.encrypt(
+            bytes.fromhex(key[2:]), KEYSTORE_TEST_PASSWORD, kdf="pbkdf2", iterations=1000
+        )
+        target = keys_dir / f"{name}.json"
+        target.write_text(json.dumps(keystore, separators=(",", ":")))
+        target.chmod(0o644)  # same: container uid 65532 must read the mounted keystore
+    upsert_env(
+        env_file,
+        {
+            **updates,
+            **paths,
+            # The worker and signer authenticate with this; keep an operator-set value.
+            "TP_SIGNER_SHARED_SECRET": current.get("TP_SIGNER_SHARED_SECRET")
+            or secrets.token_urlsafe(32),
+        },
+    )
+
+
+def assert_local_targets(rpc_url: str, db_url: str) -> None:
+    """Seeding rewrites keys, storage and rows: only ever against Anvil and a local database."""
+    chain_id = int(rpc(rpc_url, "eth_chainId", []), 16)
+    host = urlsplit(db_url).hostname
+    if chain_id != CHAIN_ID or host not in {"localhost", "127.0.0.1", "::1", "postgres"}:
+        raise SystemExit(
+            f"refusing to seed: RPC chain id {chain_id} (need {CHAIN_ID}), database host {host!r}"
+        )
 
 
 async def _run(c: AsyncConnection, sql: str, **params: object) -> None:
@@ -310,6 +421,19 @@ async def seed_database(
             id=payee, org=org, t=treasury, v=vendor, label=f"{vendor_name} main", addr=b(address),
             status=status, af=active_from, u=owner_user, ova=now - timedelta(days=1),
         )  # fmt: skip
+        if status == "Active":
+            # The planner needs an unexpired CLEAR screening of every PAY destination; the API
+            # only records one when a payee is created through it (refreshed on each seed run).
+            await _run(
+                c,
+                "INSERT INTO screenings (id, org_id, payee_id, address, provider, result, "
+                "source_ref, checked_at, ttl_until, chain_id) VALUES (:id, :org, :p, :addr, "
+                "'fixture-test', 'CLEAR', 'seeded TEST', :now, :ttl, :chain) "
+                "ON CONFLICT (id) DO UPDATE SET checked_at = EXCLUDED.checked_at, "
+                "ttl_until = EXCLUDED.ttl_until",
+                id=sid(f"screening:{key}"), org=org, p=payee, addr=b(address), now=now,
+                ttl=now + timedelta(hours=24), chain=CHAIN_ID,
+            )  # fmt: skip
 
     invoices = (  # (no, payee, status, amount tUSDC, wallet)
         ("INV-TEST-001", "acme", "Draft", 120, "safeO1"),
@@ -382,11 +506,15 @@ def database_url() -> str:
 
 
 async def main_async(args: argparse.Namespace) -> None:
+    assert_local_targets(args.rpc_url, database_url())
     manifest = json.loads(Path(args.manifest).read_text())
     config_dir = Path(args.config_dir)
     # The sync below reads decimals() from this host, so it needs host-reachable RPC URLs; the
     # file is rewritten afterwards with the container-reachable ones the API will load.
     write_platform_config(manifest, args.rpc_url, config_dir, args.rpc_url)
+    install_fallback_handlers(manifest, args.rpc_url)
+    if args.env_file:
+        write_local_keystores(Path(args.env_file), config_dir / "keys")
     configuration = PlatformConfiguration.load(config_dir / "chains.json", config_dir)
     now = datetime.now(UTC)
     engine = create_async_engine(database_url())
@@ -422,6 +550,9 @@ def main() -> None:
         "--check-deployed", action="store_true", help="exit 0 if the manifest is live on the RPC"
     )
     parser.add_argument("--config-dir", default=str(REPO_ROOT / "deployments" / "local"))
+    parser.add_argument(
+        "--env-file", help="compose env file to point at generated TEST executor/policy keystores"
+    )
     parser.add_argument("--web-url", default="http://localhost:5173/verify")
     args = parser.parse_args()
     if args.check_deployed:

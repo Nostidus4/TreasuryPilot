@@ -145,12 +145,51 @@ test.describe
     invoice = `E2E-STACK-${Date.now()}`;
     await page.getByLabel('Invoice number').fill(invoice);
     await page.getByLabel('Amount').fill('145.25');
-    await page.getByLabel('Due date').fill('2099-01-15');
+    // The planner opens a request's window 24 h before its due date at 00:00 UTC, so tomorrow's UTC
+    // date is always inside it, and never before the (browser-local) issue date, in any timezone.
+    await page
+      .getByLabel('Due date')
+      .fill(new Date(Date.now() + 24 * 3_600_000).toISOString().slice(0, 10));
     await page.getByLabel('Description').fill('Stack create flow');
     await page.getByRole('button', { name: 'Save draft' }).click();
     // The detail page reads GET /requests/{id}.
     await expect(page).toHaveURL(/\/requests\/[0-9a-f-]{36}$/);
     await expect(page.getByText(invoice).first()).toBeVisible();
+    // The form has no fiat valuation field yet and the Travel Rule gate at approval needs one:
+    // set it through the API the web calls (the stack's TEST static FX provider quotes USD 1:1).
+    const [, orgId, requestId] =
+      /\/o\/([^/]+)\/.*requests\/([0-9a-f-]{36})$/.exec(
+        new URL(page.url()).pathname,
+      ) ?? [];
+    const patched = await page.evaluate(
+      async ({ orgId, requestId }) => {
+        const url = `http://localhost:8000/v1/orgs/${orgId}/requests/${requestId}`;
+        // Cross-origin, so the cookie is unreadable: the web keeps the CSRF token in sessionStorage.
+        const csrf = window.sessionStorage.getItem('treasurypilot.csrf') ?? '';
+        const current = (await (
+          await fetch(url, { credentials: 'include' })
+        ).json()) as { version?: string };
+        if (current.version === undefined)
+          return { status: 0, body: JSON.stringify(current) };
+        const response = await fetch(url, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'if-match': current.version,
+            'x-csrf-token': csrf,
+          },
+          body: JSON.stringify({
+            fiatAmountMinorUnits: '14525',
+            fiatCurrency: 'USD',
+          }),
+        });
+        return { status: response.status, body: await response.text() };
+      },
+      { orgId, requestId },
+    );
+    expect(patched.status, patched.body).toBe(200);
+    await page.reload();
     await page
       .getByRole('button', { name: 'Confirm and submit for approval' })
       .click();
@@ -174,11 +213,7 @@ test.describe
   });
 
   // Reruns need `make seed` first: it resets the approver's MFA, which this file enrols.
-  test('the approver signs the typed data and the API verifies it up to the Travel Rule gate', async () => {
-    test.info().annotations.push({
-      type: 'issue',
-      description: '#229 TRAVEL_RULE_HOLD: no FX provider wired',
-    });
+  test('the approver signs the typed data and the API records the approval', async () => {
     const page = approver;
     await page.goto(requestPath.replace('/requests/', '/approvals/'));
     await expect(page.getByText(invoice).first()).toBeVisible();
@@ -191,29 +226,21 @@ test.describe
     // Enrolment just stepped this session up, so no code is asked for here (the dialog is
     // covered by a unit test).
     const response = await approve;
-    // The API checks step-up, the body, the EIP-712 signature and the on-chain approver set
-    // before the Travel Rule gate, so reaching it proves the web sent a valid approval.
-    expect(response.status()).toBe(409);
-    expect(((await response.json()) as { code: string }).code).toBe(
-      'TRAVEL_RULE_HOLD',
-    );
+    expect(response.status(), await response.text()).toBe(200);
   });
 
-  // WEB-023's remaining stages. Each blocker below was found by driving the stack by hand
-  // (with the Travel Rule fiat valuation set by SQL to get past the first one):
-  //  1. API: the Travel Rule preflight in POST /requests/{id}/approve holds any request without a
-  //     fiat valuation (409 TRAVEL_RULE_HOLD), but fiat valuations need an FxQuoteProvider that
-  //     create_app never wires outside tests (POST /requests with fiatAmountMinorUnits answers
-  //     503 FX_UNAVAILABLE), so no request made through the real API can be approved. Also needs
-  //     a Travel Rule threshold policy for the route (infra/compose.yaml now sets a TEST one).
-  //  2. Stack: `make seed` leaves treasury coverage PARTIAL after the first live refresh (the
-  //     Safe fallback handler stand-in), and the execution cycle skips with COVERAGE_INCOMPLETE
-  //     until the Owner acknowledges it (POST /treasuries/{t}/coverage/acknowledge).
-  //  3. Stack: the worker has no TP_EXECUTOR_ADDRESS and the policy/executor keystores are
-  //     /dev/null, so plan_request raises "TP_EXECUTOR_ADDRESS and DATABASE_URL are required for
-  //     planning" and attestation, signing and execution cannot run. Needs generated local
-  //     keystores for Anvil's executor and a policy key, TP_TRUSTED_POLICY_SIGNERS and
-  //     TP_EXECUTOR_KEYSTORE_MAP.
-  //  4. Unverified: Paid and the Matched reconciliation, which sit behind 1 to 3.
+  // The stack now gets through approve, the execution cycle, planning (rule-based fallback, no AI
+  // key) and the policy attestation: the plan reaches `Attested`. It stops at the first on-chain
+  // step, `SIMULATION_REVERTED` (request -> NeedsReview), because the worker -> signer -> chain
+  // wiring is inconsistent (#229):
+  //  1. The worker builds attested calldata (`refill(approval, sig, stepId, from, to, amount,
+  //     attestation, attSig)`, i.e. PlanAttestedExecutor's ABI) but sends it to `plan.treasury`,
+  //     the module (plan_loader.py simulation_context / sign request `to`), where that selector
+  //     does not exist.
+  //  2. The signer requires `payload.to == module.mandate().executor`, and local Deploy.s.sol sets
+  //     the mandate executor to the demo EOA. Using PlanAttestedExecutor instead (deploy it, call
+  //     configureMandate) trips the policy validator's EXECUTOR_MISMATCH (the worker executor key
+  //     must equal mandate.executor) and still leaves the worker `to` of point 1.
+  //  A design decision on the call target is needed before Paid and Matched can run.
   test.fixme('approval is recorded, then auto plan, paid, matched', () => {});
 });

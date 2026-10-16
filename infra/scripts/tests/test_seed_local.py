@@ -49,7 +49,9 @@ def _manifest(offset: int) -> dict[str, Any]:
 
 async def _run_twice(url: str, tmp: Path, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Run main_async (sync commit + seed) twice, the second time after a 'redeploy'."""
-    monkeypatch.setattr(seed_local, "rpc", lambda *_a: "0x6001")  # any non-empty code
+    monkeypatch.setattr(
+        seed_local, "rpc", lambda _u, m, _p: "0x7a69" if m == "eth_chainId" else "0x6001"
+    )  # Anvil, any code
     monkeypatch.setattr(seed_sync, "verify_asset_decimals", _no_rpc)
     monkeypatch.setenv("DATABASE_URL", url)
     results = []
@@ -61,7 +63,7 @@ async def _run_twice(url: str, tmp: Path, monkeypatch: pytest.MonkeyPatch) -> li
             await seed_local.main_async(
                 argparse.Namespace(
                     manifest=str(manifest), config_dir=str(tmp / "local"),
-                    rpc_url="http://rpc", api_rpc_url="http://anvil:8545", web_url="http://w",
+                    rpc_url="http://rpc", api_rpc_url="http://anvil:8545", web_url="http://w", env_file=None,
                 )
             )  # fmt: skip
             async with engine.connect() as c:

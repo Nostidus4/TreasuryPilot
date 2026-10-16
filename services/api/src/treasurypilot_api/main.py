@@ -96,7 +96,7 @@ from treasurypilot_api.invoices.documents import (
     build_region_storage,
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
-from treasurypilot_api.invoices.fx import FxQuoteProvider
+from treasurypilot_api.invoices.fx import FxQuoteProvider, StaticTestFxQuoteProvider
 from treasurypilot_api.invoices.inbound_email import router as invoice_inbound_email_router
 from treasurypilot_api.invoices.recurring import router as recurring_schedules_router
 from treasurypilot_api.invoices.requests import router as requests_router
@@ -433,6 +433,12 @@ def create_app(
             settings.deployments_dir,
         )
         application.state.platform_configuration = configuration
+        if isinstance(fx_quote_provider, StaticTestFxQuoteProvider) and any(
+            chain.chain_id != 31337 for chain in configuration.chains
+        ):
+            raise PlatformConfigurationError(
+                "the TEST static FX provider is only allowed on the local chain (31337)"
+            )
         if application.state.fee_history_provider is None:
             application.state.fee_history_provider = RpcSafeVerifier(configuration)
         if application.state.approval_chain_reader is None and configuration.chains:
@@ -555,6 +561,8 @@ def create_app(
         logger.warning("partial recovery queue not configured; RETRY/CANCEL return 503")
     # Fiat requests need a provider plus an owner-configured policy and tolerance; without all
     # three they respond 503 FX_UNAVAILABLE.
+    if fx_quote_provider is None and settings.fx_test_static_provider and settings.fx_source_id:
+        fx_quote_provider = StaticTestFxQuoteProvider(settings.fx_source_id)
     app.state.fx_quote_provider = fx_quote_provider
     app.state.fx_tolerance_bps = settings.fx_tolerance_bps
     app.state.fx_policy = (

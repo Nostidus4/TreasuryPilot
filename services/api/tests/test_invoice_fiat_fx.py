@@ -5,7 +5,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from treasurypilot_api.invoices.fx import propose_request_payment
+from treasurypilot_api.config import Settings
+from treasurypilot_api.invoices.fx import (
+    FxProviderUnavailable,
+    StaticTestFxQuoteProvider,
+    propose_request_payment,
+)
 from treasurypilot_core.domain import FiatApproval, FxPolicy, FxQuote, FxRate
 from treasurypilot_core.engine import FiatPaymentBlocked
 from treasurypilot_core.money import BaseUnits
@@ -92,3 +97,38 @@ def test_approval_model_records_fiat_and_maximum_in_one_bound_object() -> None:
     )
     assert approval.fiat_amount == 100
     assert approval.max_stablecoin_amount == 120
+
+
+def test_static_test_provider_quotes_usd_one_to_one_and_rejects_other_currencies() -> None:
+    provider = StaticTestFxQuoteProvider("test-static-usd")
+    quote = asyncio.run(
+        provider.quote(fiat_currency="USD", fiat_amount_minor_units=14525, stablecoin_asset="a")
+    )
+    assert quote.source_id == "test-static-usd"
+    assert quote.rate.stablecoin_units * 100 == 10**6 * quote.rate.fiat_minor_units
+    with pytest.raises(FxProviderUnavailable):
+        asyncio.run(
+            provider.quote(fiat_currency="EUR", fiat_amount_minor_units=1, stablecoin_asset="a")
+        )
+
+
+@pytest.mark.parametrize(
+    ("env", "source", "ok"),
+    [
+        ("local", "s", True),
+        ("test", "s", True),
+        ("testnet", "s", False),
+        ("production", "s", False),
+        ("local", None, False),
+        ("local", "  ", False),
+    ],
+)
+def test_static_test_provider_setting_is_local_only_and_needs_a_source(
+    env: str, source: str | None, ok: bool
+) -> None:
+    kwargs = {"environment": env, "fx_test_static_provider": True, "fx_source_id": source}
+    if ok:
+        Settings(**kwargs)  # type: ignore[arg-type]
+    else:
+        with pytest.raises(ValueError, match="TP_FX_TEST_STATIC_PROVIDER"):
+            Settings(**kwargs)  # type: ignore[arg-type]
