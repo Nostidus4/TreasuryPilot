@@ -3102,6 +3102,8 @@ export interface components {
     CallbackRequest: {
       /** Code */
       code: string;
+      /** Realmid */
+      realmId?: string | null;
       /** State */
       state: string;
     };

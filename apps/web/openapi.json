@@ -636,6 +636,20 @@
             "title": "Code",
             "type": "string"
           },
+          "realmId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realmid"
+          },
           "state": {
             "maxLength": 4096,
             "minLength": 1,

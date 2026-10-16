@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # Xero OAuth app (developer.xero.com). Unset leaves the Xero connector off.
     xero_client_id: str | None = None
     xero_client_secret: SecretStr | None = None
+    # QuickBooks Online OAuth app (developer.intuit.com). Unset leaves the connector off.
+    quickbooks_client_id: str | None = None
+    quickbooks_client_secret: SecretStr | None = None
+    quickbooks_sandbox: bool = False
     # NetSuite OAuth 2.0 integration (account id like 1234567 or 1234567_SB1). Unset = off.
     netsuite_account_id: str | None = None
     netsuite_client_id: str | None = None

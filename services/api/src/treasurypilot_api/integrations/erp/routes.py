@@ -27,6 +27,8 @@ _SCOPED = {"x-organization-scoped": True}
 class CallbackRequest(ApiModel):
     code: str = Field(min_length=1, max_length=2048)
     state: str = Field(min_length=1, max_length=4096)
+    # QuickBooks names the company only in the OAuth redirect (``realmId``); other ERPs omit it.
+    realm_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[0-9]+$")
 
 
 class SettingsRequest(ApiModel):
@@ -121,8 +123,9 @@ async def callback(
     member: Annotated[MemberAccess, Depends(_connect)],
 ) -> dict[str, object]:
     try:
+        code = f"{body.code}#{body.realm_id}" if body.realm_id else body.code
         row = await _service(request).connect(
-            provider, member.organization_id, member.user_id, body.code, body.state
+            provider, member.organization_id, member.user_id, code, body.state
         )
     except ErpServiceError as error:
         raise _fail(error) from None
