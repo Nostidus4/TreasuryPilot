@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     telegram_webhook_secret: SecretStr | None = None
     # Keys the chat-uniqueness hash; must stay fixed for the life of the data.
     telegram_chat_hash_key: SecretStr | None = None
+    # Xero OAuth app (developer.xero.com). Unset leaves the Xero connector off.
+    xero_client_id: str | None = None
+    xero_client_secret: SecretStr | None = None
+    erp_oauth_redirect_uri: str = "http://localhost:5173/settings/integrations/erp/callback"
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"
     admin_staff_token: SecretStr | None = None

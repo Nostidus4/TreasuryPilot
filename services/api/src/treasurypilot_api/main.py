@@ -77,6 +77,9 @@ from treasurypilot_api.identity.scim import (
 )
 from treasurypilot_api.identity.scim import router as scim_router
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.integrations.erp.registry import build_providers
+from treasurypilot_api.integrations.erp.routes import router as erp_router
+from treasurypilot_api.integrations.erp.service import ErpService
 from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.invoices.documents import (
     ExtractionQueue,
@@ -506,6 +509,18 @@ def create_app(
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    # ERP connectors need the field key (tokens are encrypted) and at least one configured app.
+    erp_providers = build_providers(settings)
+    app.state.erp_service = (
+        ErpService(
+            sessions,
+            core_cipher,
+            erp_providers,
+            redirect_uri=settings.erp_oauth_redirect_uri,
+        )
+        if sessions is not None and core_cipher is not None and erp_providers
+        else None
+    )
     app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.copilot_repository = copilot_repository
@@ -580,6 +595,7 @@ def create_app(
     app.include_router(circuit_router)
     app.include_router(fee_router)
     app.include_router(reconciliation_router)
+    app.include_router(erp_router)
     app.include_router(create_admin_router(settings, admin_sessions))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
     app.include_router(mandate_router)

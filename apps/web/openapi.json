@@ -628,6 +628,25 @@
         "title": "CallInput",
         "type": "object"
       },
+      "CallbackRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": ["code", "state"],
+        "title": "CallbackRequest",
+        "type": "object"
+      },
       "ChainView": {
         "properties": {
           "assets": {
@@ -6376,6 +6395,20 @@
         "title": "SeriesPoint",
         "type": "object"
       },
+      "SettingsRequest": {
+        "properties": {
+          "paymentAccountCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Paymentaccountcode",
+            "type": "string"
+          }
+        },
+        "required": ["paymentAccountCode"],
+        "title": "SettingsRequest",
+        "type": "object"
+      },
       "SignatureRequest": {
         "properties": {
           "signature": {
@@ -6590,6 +6623,18 @@
         },
         "required": ["tenant", "grantId"],
         "title": "SupportSummary",
+        "type": "object"
+      },
+      "SyncRequest": {
+        "properties": {
+          "reconciliationId": {
+            "format": "uuid",
+            "title": "Reconciliationid",
+            "type": "string"
+          }
+        },
+        "required": ["reconciliationId"],
+        "title": "SyncRequest",
         "type": "object"
       },
       "TenantHealth": {
@@ -10730,6 +10775,444 @@
         },
         "summary": "Report Submission",
         "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/providers": {
+      "get": {
+        "operationId": "list_providers_v1_orgs__organization_id__integrations_erp_providers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Providers V1 Orgs  Organization Id  Integrations Erp Providers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Providers",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}": {
+      "delete": {
+        "operationId": "disconnect_v1_orgs__organization_id__integrations_erp__provider__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disconnect",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/authorize": {
+      "post": {
+        "operationId": "authorize_v1_orgs__organization_id__integrations_erp__provider__authorize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Authorize V1 Orgs  Organization Id  Integrations Erp  Provider  Authorize Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/callback": {
+      "post": {
+        "operationId": "callback_v1_orgs__organization_id__integrations_erp__provider__callback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Callback V1 Orgs  Organization Id  Integrations Erp  Provider  Callback Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Callback",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/records": {
+      "get": {
+        "operationId": "list_records_v1_orgs__organization_id__integrations_erp__provider__records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Records V1 Orgs  Organization Id  Integrations Erp  Provider  Records Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Records",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/retry": {
+      "post": {
+        "operationId": "retry_v1_orgs__organization_id__integrations_erp__provider__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry V1 Orgs  Organization Id  Integrations Erp  Provider  Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/settings": {
+      "put": {
+        "operationId": "put_settings_v1_orgs__organization_id__integrations_erp__provider__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Settings V1 Orgs  Organization Id  Integrations Erp  Provider  Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Settings",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/sync": {
+      "post": {
+        "operationId": "sync_v1_orgs__organization_id__integrations_erp__provider__sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sync V1 Orgs  Organization Id  Integrations Erp  Provider  Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync",
+        "tags": ["erp"],
+        "x-organization-scoped": true
       }
     },
     "/v1/orgs/{organization_id}/invites": {
