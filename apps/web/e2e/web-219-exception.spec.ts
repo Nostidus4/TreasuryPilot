@@ -18,5 +18,5 @@ test('WEB-219 an Owner grants an over-cap exception and the review item closes',
   await page
     .getByRole('button', { name: 'Create governance transaction to grant' })
     .click();
-  await expect(page.getByText(/grantException/)).toBeVisible();
+  await expect(page.getByText(/grant exception/i).first()).toBeVisible();
 });

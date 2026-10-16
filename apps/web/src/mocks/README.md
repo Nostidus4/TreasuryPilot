@@ -30,7 +30,7 @@ These were needed by the UI and should be confirmed with the backend owners:
 - `GET /orgs/{o}/treasuries/{t}/borrow-proposals/{id}` — borrow proposal read model (ADR-019 D6).
 - `POST /orgs/{o}/requests/{r}/cancel-tx/submitted` — report the `cancelRequest` tx hash (M16-D12).
 - `POST /orgs/{o}/notifications/all/read` — mark everything read.
-- `module/deploy-tx`, `activation-tx`, `registration-tx`, `resume-tx` return `{governanceTx}`
+- `module/deploy-tx`, `activation-tx`, `registration-tx`, `resume-tx` return `{governanceTx}` (the API `GovernanceTxView` shape; detail, signatures and submitted return it flat)
   (signed in-app, M03-D1) instead of the older `{safeTx}` shape.
 - `POST …/approve` accepts an optional `option` (`EARLY` | `STANDARD`) for display only; the
   signed typed data always carries both amounts.

@@ -24,6 +24,7 @@ import {
 
 import { fail, find, isoNow, route } from './core';
 import { requireOrg } from './identity';
+import { governanceView } from './treasury';
 
 const northwind = (orgId: string) => orgId === 'org_northwind';
 const money = (value: string) => `${formatUnits(value, 6)} USDC`;
@@ -285,8 +286,7 @@ export const operationHandlers: RequestHandler[] = [
         governanceTxId: tx.id,
         amount: request.amount,
       });
-      const { effect: _effect, signaturesHex: _hex, ...view } = tx;
-      return { governanceTx: view };
+      return { governanceTx: governanceView(tx) };
     },
   ),
 

@@ -102,6 +102,7 @@ export const governanceStatuses: Record<GovernanceStatus, StatusMeta> = {
   Executed: { label: 'Executed on-chain', tone: 'success' },
   Failed: { label: 'Reverted on-chain', tone: 'danger' },
   Superseded: { label: 'Superseded', tone: 'neutral' },
+  Cancelled: { label: 'Cancelled', tone: 'neutral' },
 };
 
 export const planStatuses: Record<PlanStatus, StatusMeta> = {

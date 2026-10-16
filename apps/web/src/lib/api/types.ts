@@ -329,24 +329,19 @@ export type GovernanceStatus =
   | 'Executing'
   | 'Executed'
   | 'Failed'
-  | 'Superseded';
+  | 'Superseded'
+  | 'Cancelled';
 
-export interface GovernanceTx {
+/** What the governance pages render; built from the API's `GovernanceTx` by `features/governance/wire.ts`. */
+export interface GovernanceTxView {
   id: string;
-  kind:
-    | 'DEPLOY_MODULE'
-    | 'CONFIGURE_MANDATE'
-    | 'ADD_PAYEE'
-    | 'DEACTIVATE_PAYEE'
-    | 'GRANT_EXCEPTION'
-    | 'RESUME'
-    | 'REVOKE';
+  kind: string;
   title: string;
   summary: string;
   status: GovernanceStatus;
   treasuryId: string;
   safeAddress: Hex;
-  safeLabel: string;
+  safeLabel?: string;
   nonce: number;
   threshold: number;
   owners: Array<{ address: Hex; name: string }>;
@@ -355,11 +350,14 @@ export interface GovernanceTx {
   diff?: DiffEntry[];
   safeTxHash: Hex;
   createdAt: string;
-  createdBy: string;
+  createdBy?: string;
   txHash?: Hex;
   failureReason?: string;
   supersededBy?: string;
 }
+
+/** The API's governance transaction (generated schema); `.id` is all most callers need. */
+export type GovernanceTx = components['schemas']['GovernanceTxView'];
 
 export interface TypedData {
   domain: {
