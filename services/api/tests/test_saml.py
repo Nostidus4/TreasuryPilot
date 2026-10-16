@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import shutil
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, quote, urlparse
@@ -33,9 +33,18 @@ ACS_URL = "https://api.example/v1/auth/saml/acs"
 IDP_ENTITY_ID = "https://id.example/saml"
 REQUEST_ID = "_request-123"
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+
 SIGNED_REQUEST_ID = "_signed-request-123"
 PROTOCOL_NS = "urn:oasis:names:tc:SAML:2.0:protocol"
 ASSERTION_NS = "urn:oasis:names:tc:SAML:2.0:assertion"
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> datetime:  # type: ignore[override]
+        return NOW.astimezone(tz)
+
+
 DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
 
 
@@ -177,6 +186,8 @@ def test_real_saml_signed_response_is_accepted_and_tampered_or_unsigned_messages
     # The signed fixture uses the deterministic NOW timestamp. Make PySAML2's own
     # timestamp validation use that same clock instead of the wall clock.
     monkeypatch.setattr(time_util, "utc_now", lambda: int(NOW.timestamp()))
+    # IssueInstant is checked against datetime.now() within a one-day window.
+    monkeypatch.setattr(time_util, "datetime", _FrozenDatetime)
     fixture_path = Path(__file__).parent / "fixtures" / "saml_signed_response.xml"
     response_xml = fixture_path.read_bytes()
     response_root = ET.fromstring(response_xml)
