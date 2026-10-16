@@ -4,6 +4,7 @@ import re
 import uuid
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
@@ -101,6 +102,10 @@ class Settings(BaseSettings):
     admin_staff_token: SecretStr | None = None
     admin_staff_id: str | None = None
     admin_ip_allowlist: str = ""
+    # Payment collection for platform invoices (ADM-L03). "none" leaves collection off (503);
+    # "fake" is a deterministic in-memory provider for local/test only. Real processors plug in
+    # through the PaymentProvider adapter passed to create_app and keep credentials in env.
+    billing_provider: Literal["none", "fake"] = "none"
     # Fiat-denominated requests are enabled only when both fx_source_id and fx_tolerance_bps are
     # set (and an FxQuoteProvider is passed to create_app); otherwise they return 503.
     fx_source_id: str | None = Field(default=None, min_length=1)
@@ -327,6 +332,12 @@ class Settings(BaseSettings):
             self.data_regions
         ):
             raise ValueError("TP_DATA_REGION must be one of the configured TP_DATA_REGIONS")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_billing_provider(self) -> "Settings":
+        if self.billing_provider == "fake" and self.environment.casefold() not in {"local", "test"}:
+            raise ValueError("TP_BILLING_PROVIDER=fake needs TP_ENVIRONMENT local or test")
         return self
 
     @model_validator(mode="after")

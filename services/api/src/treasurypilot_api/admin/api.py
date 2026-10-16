@@ -14,6 +14,21 @@ from pydantic import AwareDatetime, Field, computed_field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from treasurypilot_api.admin.billing import (
+    BillingError,
+    create_plan,
+    generate_invoices,
+    subscribe,
+)
+from treasurypilot_api.admin.billing_api import (
+    InvoiceView,
+    PlanView,
+    SubscriptionView,
+    invoice_view,
+    plan_view,
+    subscription_view,
+)
+from treasurypilot_api.admin.billing_models import BillingInvoiceLine, BillingPlan
 from treasurypilot_api.admin.models import PlatformAdminEvent, SupportGrant, UsageMonthly
 from treasurypilot_api.admin.usage import parse_month, recompute_month
 from treasurypilot_api.audit.models import AuditActorType
@@ -80,6 +95,32 @@ def _usage_view(row: UsageMonthly) -> UsageView:
         paid_count=row.paid_count,
         paid_volume=str(int(row.paid_volume)),
     )
+
+
+_MAX_FEE_MINOR = 10**12
+
+
+class PlanRequest(ApiModel):
+    code: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    name: str = Field(min_length=1, max_length=200)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    base_fee_minor: int = Field(ge=0, le=_MAX_FEE_MINOR)
+    per_request_fee_minor: int = Field(ge=0, le=_MAX_FEE_MINOR)
+
+
+class SubscribeRequest(ApiModel):
+    plan_id: uuid.UUID
+    payment_method: Literal["card", "bank_transfer"] = "card"
+
+
+class InvoiceRunView(ApiModel):
+    month: str
+    created: list[InvoiceView]
+
+
+def _billing_http_error(error: BillingError) -> HTTPException:
+    status = 404 if error.code.endswith("NOT_FOUND") else 409
+    return HTTPException(status_code=status, detail=error.detail)
 
 
 class SupportGrantRequest(ApiModel):
@@ -365,6 +406,113 @@ def create_admin_router(
                     )
                 )
         logger.info("admin.usage_recomputed", extra={"actor": actor, "month": month})
+        return result
+
+    @router.post("/billing/plans", response_model=PlanView, status_code=201)
+    async def create_billing_plan(
+        payload: PlanRequest,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> PlanView:
+        try:
+            async with db_sessions() as session, session.begin():
+                plan = await create_plan(session, **payload.model_dump())
+                view = plan_view(plan)
+        except BillingError as error:
+            raise _billing_http_error(error) from error
+        logger.info("admin.billing_plan_created", extra={"actor": actor, "plan": payload.code})
+        return view
+
+    @router.get("/billing/plans", response_model=list[PlanView])
+    async def list_billing_plans(
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> list[PlanView]:
+        async with db_sessions() as session:
+            plans = await session.scalars(select(BillingPlan).order_by(BillingPlan.code))
+            return [plan_view(plan) for plan in plans]
+
+    @router.put("/tenants/{tenant_id}/subscription", response_model=SubscriptionView)
+    async def set_subscription(
+        request: Request,
+        tenant_id: uuid.UUID,
+        payload: SubscribeRequest,
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> SubscriptionView:
+        try:
+            async with db_sessions() as session, session.begin():
+                if await session.get(Organization, tenant_id) is None:
+                    raise HTTPException(status_code=404, detail="Tenant not found")
+                subscription = await subscribe(
+                    session,
+                    org_id=tenant_id,
+                    plan_id=payload.plan_id,
+                    payment_method=payload.payment_method,
+                    now=datetime.now(UTC),
+                )
+                plan = await session.get(BillingPlan, payload.plan_id)
+                assert plan is not None
+                session.add(
+                    PlatformAdminEvent(
+                        org_id=tenant_id,
+                        actor_id=actor,
+                        action="billing.subscription_set",
+                        data={
+                            "plan_id": str(plan.id),
+                            "payment_method": payload.payment_method,
+                            "source_ip": request.client.host if request.client else None,
+                        },
+                    )
+                )
+                view = subscription_view(subscription, plan)
+        except BillingError as error:
+            raise _billing_http_error(error) from error
+        return view
+
+    @router.post("/billing/{month}/invoices", response_model=InvoiceRunView)
+    async def run_invoices(
+        request: Request,
+        month: str = Path(pattern=_MONTH_PATTERN),
+        actor: str = staff_dependency,
+        db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
+    ) -> InvoiceRunView:
+        """Invoice a completed UTC month. Idempotent: existing invoices are never changed."""
+        try:
+            async with db_sessions() as session, session.begin():
+                invoices = await generate_invoices(
+                    session, parse_month(month), now=datetime.now(UTC)
+                )
+                lines = {
+                    invoice.id: list(
+                        await session.scalars(
+                            select(BillingInvoiceLine)
+                            .where(BillingInvoiceLine.invoice_id == invoice.id)
+                            .order_by(BillingInvoiceLine.kind)
+                        )
+                    )
+                    for invoice in invoices
+                }
+                for invoice in invoices:
+                    session.add(
+                        PlatformAdminEvent(
+                            org_id=invoice.org_id,
+                            actor_id=actor,
+                            action="billing.invoice_issued",
+                            data={
+                                "month": month,
+                                "invoice_id": str(invoice.id),
+                                "total_minor": invoice.total_minor,
+                                "currency": invoice.currency,
+                                "source_ip": request.client.host if request.client else None,
+                            },
+                        )
+                    )
+                result = InvoiceRunView(
+                    month=month, created=[invoice_view(i, lines[i.id]) for i in invoices]
+                )
+        except BillingError as error:
+            raise _billing_http_error(error) from error
         return result
 
     @router.get("/tenants/{tenant_id}/support", response_model=SupportSummary)

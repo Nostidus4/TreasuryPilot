@@ -231,6 +231,12 @@ Requests included: Approved, Scheduled and AwaitingApproval (plus Draft with `in
 | GET | `/admin/tenants/{tenantId}/health` | Tenant status and basic health counts | staff bearer + source IP allowlist | Metadata only |
 | POST | `/admin/tenants/{tenantId}/suspend` | Suspend a tenant for platform operations | staff bearer + source IP allowlist | Persists status and records a platform admin event; cannot sign or move funds |
 
+| GET · POST | `/admin/billing/plans` | List or create a plan (`{code, name, currency, baseFeeMinor, perRequestFeeMinor}`, integer minor units of a fiat currency) | staff bearer + source IP allowlist | 409 duplicate code |
+| PUT | `/admin/tenants/{tenantId}/subscription` | Set the tenant's plan (`{planId, paymentMethod: card or bank_transfer}`); replaces the active subscription | staff bearer + source IP allowlist | Platform admin event recorded |
+| POST | `/admin/billing/{YYYY-MM}/invoices` | Invoice a completed UTC month: base fee + fee per paid request from `usage_monthly` | staff bearer + source IP allowlist | Idempotent; 409 `MONTH_NOT_CLOSED` for an open month |
+| GET | `/orgs/{o}/billing` · `/orgs/{o}/billing/invoices` · `/orgs/{o}/billing/invoices/{id}` | Subscription and invoices with lines | OWN, ADM, AUD | Under `/v1`; 404 for another org's invoice |
+| POST | `/orgs/{o}/billing/invoices/{id}/pay` | Collect an invoice by card or bank transfer through the payment provider | OWN, ADM | 503 until `TP_BILLING_PROVIDER` is set; never debits a treasury (BR-091) |
+
 ### Internal (not public): signer service
 
 | Method | Endpoint | Caller | Request → Response | Errors |

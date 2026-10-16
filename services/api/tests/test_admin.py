@@ -399,8 +399,15 @@ def test_admin_route_surface_cannot_sign_or_move_funds() -> None:
         ("/admin/tenants/{tenant_id}/data-region", "PUT"),
         ("/admin/usage", "GET"),
         ("/admin/usage/{month}/recompute", "POST"),
+        ("/admin/billing/plans", "GET"),
+        ("/admin/billing/plans", "POST"),
+        ("/admin/billing/{month}/invoices", "POST"),
+        ("/admin/tenants/{tenant_id}/subscription", "PUT"),
     }
     assert all(
-        method == "GET" or path.endswith(("/suspend", "/recompute", "/data-region"))
+        method == "GET"
+        or path.endswith(
+            ("/suspend", "/recompute", "/data-region", "/plans", "/invoices", "/subscription")
+        )
         for path, method in admin_routes
     )

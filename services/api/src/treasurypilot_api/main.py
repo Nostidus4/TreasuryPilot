@@ -21,6 +21,8 @@ from treasurypilot_api.admin.api import (
     create_data_region_router,
     create_support_grant_router,
 )
+from treasurypilot_api.admin.billing import FakePaymentProvider, PaymentProvider
+from treasurypilot_api.admin.billing_api import create_billing_router
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
@@ -305,6 +307,7 @@ def create_app(
     mfa_service: MfaService | None = None,
     token_movement_repository: TokenMovementRepository | None = None,
     scim_repository: ScimIdentityRepository | None = None,
+    payment_provider: PaymentProvider | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging("api", settings.log_level, settings.log_format)
@@ -626,6 +629,9 @@ def create_app(
     app.include_router(erp_router)
     app.include_router(create_admin_router(settings, admin_sessions, app.state.residency))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
+    if payment_provider is None and settings.billing_provider == "fake":
+        payment_provider = FakePaymentProvider()
+    app.include_router(create_billing_router(sessions or admin_sessions, payment_provider))
     app.include_router(create_data_region_router(sessions or admin_sessions, app.state.residency))
     app.include_router(mandate_router)
     app.include_router(vendors_router)
