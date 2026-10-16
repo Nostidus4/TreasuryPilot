@@ -7,7 +7,6 @@ from typing import Any, Protocol, cast
 
 from eth_abi import decode
 from eth_abi.exceptions import DecodingError
-from eth_account.signers.local import LocalAccount
 from eth_hash.auto import keccak
 
 from treasurypilot_core.eip712 import (
@@ -23,6 +22,7 @@ from treasurypilot_core.policy.attestation import (
 )
 from treasurypilot_signer.config import Settings
 from treasurypilot_signer.keys import ExecutorKeyNotConfigured
+from treasurypilot_signer.kms import ExecutorSigner
 from treasurypilot_signer.models import SignRequest, SignResponse
 from treasurypilot_signer.rpc import RpcFailure
 from treasurypilot_signer.store import NonceAlreadyBound, StepAlreadyUsed
@@ -260,7 +260,7 @@ class SigningService:
         settings: Settings,
         store: Store,
         rpc: Rpc,
-        resolve_account: Callable[[str], LocalAccount],
+        resolve_account: Callable[[str], ExecutorSigner],
     ) -> None:
         self._settings = settings
         self._store = store
