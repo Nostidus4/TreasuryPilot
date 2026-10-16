@@ -31,6 +31,7 @@ class MemoryMandateRepository:
     def __init__(self) -> None:
         self.rows: list[MandateVersionRecord] = []
         self.active_config: dict[str, object] | None = None
+        self.guardian_safe: str | None = None
 
     async def get_context(
         self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID
@@ -42,6 +43,7 @@ class MemoryMandateRepository:
             asset_symbol="tUSDC",
             wallets={SAFE_T: "SOURCE", OPERATIONAL: "OPERATIONAL"},
             active_config=self.active_config,
+            guardian_safe=self.guardian_safe,
         )
 
     async def list_versions(
@@ -194,6 +196,25 @@ def test_create_mandate_draft_persists_supply_settings_and_summary() -> None:
         "setBuffer",
     }
     assert response.headers["location"].endswith(body["draft"]["id"])
+
+
+def test_mandate_guardian_defaults_to_the_active_guardian_safe() -> None:
+    repository = MemoryMandateRepository()
+    repository.guardian_safe = "0x" + "66" * 20
+    payload = config_payload()
+    del payload["guardian"]
+    with make_client(repository) as client:
+        base = f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates"
+        defaulted = client.post(base, json=payload)
+        explicit = client.post(base, json=config_payload())
+        repository.guardian_safe = None
+        missing = client.post(base, json=payload)
+
+    assert defaulted.status_code == 201
+    assert defaulted.json()["draft"]["config"]["guardian"] == "0x" + "66" * 20
+    assert explicit.json()["draft"]["config"]["guardian"] == "0x" + "55" * 20
+    assert missing.status_code == 422
+    assert "guardian" in missing.json()["fields"]
 
 
 def test_incomplete_mandate_returns_problem_fields() -> None:

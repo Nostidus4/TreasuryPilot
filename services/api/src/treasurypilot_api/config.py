@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Signer service for the pause-only sentinel; pause falls back to a Guardian Safe tx without it.
     signer_url: str | None = None
     signer_shared_secret: SecretStr | None = None
+    # Below this ETH balance (wei) the sentinel cannot be relied on to pause; the guardian health
+    # check warns (MDT-010).
+    sentinel_min_gas_wei: int = Field(default=5 * 10**15, ge=0)
     s3_endpoint_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TP_S3_ENDPOINT_URL", "S3_ENDPOINT_URL"),
@@ -89,6 +92,10 @@ class Settings(BaseSettings):
     telegram_webhook_secret: SecretStr | None = None
     # Keys the chat-uniqueness hash; must stay fixed for the life of the data.
     telegram_chat_hash_key: SecretStr | None = None
+    # Xero OAuth app (developer.xero.com). Unset leaves the Xero connector off.
+    xero_client_id: str | None = None
+    xero_client_secret: SecretStr | None = None
+    erp_oauth_redirect_uri: str = "http://localhost:5173/settings/integrations/erp/callback"
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"
     admin_staff_token: SecretStr | None = None

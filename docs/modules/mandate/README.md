@@ -265,6 +265,14 @@ Example (NORMAL): avgPlanFee 0.0004 ETH → threshold 0.0012 ETH, 10 plans/day �
 
 During treasury setup (after the module exists): deploy a Safe with owners `[humanGuardian…, sentinel]`, threshold 1, via SafeProxyFactory (from any owner's wallet); then the mandate's `guardian` = that Safe. The sentinel address comes from `signer GET /sentinel/address`. Sentinel needs a small ETH balance (low-gas alert like the executor).
 
+Implemented in `mandate/guardian.py` (MDT-010):
+
+- `POST /v1/orgs/{o}/treasuries/{t}/guardian/setup-tx` (OWN) reads the sentinel address from the signer and returns the SafeProxyFactory deployment for owners `[humanGuardian…, sentinel]`, threshold 1. The owner sends it from their wallet.
+- `POST /…/guardian/confirm` (OWN, step-up) takes the deployed `guardianSafe`, verifies on-chain that it is a v1.4.1 Safe with threshold 1, the sentinel as an owner and at least one human owner, then writes the `guardian_setups` row (`Active`, any earlier row `Superseded`).
+- The active Guardian Safe is the default `guardian` for module setup and mandate drafts that omit it.
+- `GET /…/guardian/health` (any member) re-reads the Safe and the sentinel balance: `SENTINEL_NOT_OWNER` (automatic on-chain pause disabled, a human must pause from their wallet), `SENTINEL_LOW_GAS` (below `TP_SENTINEL_MIN_GAS_WEI`, default 0.005 ETH), `GUARDIAN_THRESHOLD_CHANGED`, `GUARDIAN_SAFE_INVALID`, `GUARDIAN_NOT_SET_UP`.
+
+
 ## 9. Configuration and defaults
 
 | Parameter | Demo | Production |
