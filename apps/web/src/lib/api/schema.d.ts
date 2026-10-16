@@ -5019,7 +5019,7 @@ export interface components {
       /** Toaddress */
       toAddress: string;
       /** Venue */
-      venue?: 'TEST_ROUTER' | null;
+      venue?: ('TEST_ROUTER' | 'SIGNED_QUOTE') | null;
     };
     /** PlanStepView */
     PlanStepView: {
@@ -5075,7 +5075,7 @@ export interface components {
        */
       updatedAt: string;
       /** Venue */
-      venue?: 'TEST_ROUTER' | null;
+      venue?: ('TEST_ROUTER' | 'SIGNED_QUOTE') | null;
       /** Verification */
       verification?: ('VERIFIED' | 'MISMATCH') | null;
     };
