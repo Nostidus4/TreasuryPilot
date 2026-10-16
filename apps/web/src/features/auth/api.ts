@@ -114,6 +114,42 @@ export function useUnlinkWallet() {
   });
 }
 
+export interface MfaStatus {
+  factors: Array<{ id: string; kind: string; label: string }>;
+  recoveryCodesRemaining: number;
+}
+
+const mfaKey = ['me', 'mfa'] as const;
+
+export const useMfaStatus = () =>
+  useQuery({ queryKey: mfaKey, queryFn: () => api.get<MfaStatus>('/me/mfa') });
+
+export const useStartTotp = () =>
+  useMutation({
+    mutationFn: () =>
+      api.post<{ factorId: string; otpauthUri: string }>('/me/mfa/totp', {
+        label: 'Authenticator app',
+      }),
+  });
+
+export function useConfirmTotp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { factorId: string; code: string }) =>
+      api.post<{ recoveryCodes: string[] }>(
+        `/me/mfa/totp/${input.factorId}/confirm`,
+        { code: input.code },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: mfaKey }),
+  });
+}
+
+/** A fresh second-factor check; the API accepts it for 10 minutes. */
+export const useStepUp = () =>
+  useMutation({
+    mutationFn: (code: string) => api.post<void>('/me/mfa/step-up', { code }),
+  });
+
 /** EIP-4361 message. The server checks the nonce, domain and address. */
 export function siweMessage(
   address: Hex,

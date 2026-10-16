@@ -184,10 +184,11 @@ test('negative savings are rendered with their negative sign', async () => {
     await screen.findByText('Savings against baseline B1'),
   ).toBeInTheDocument();
   const savedTile = screen.getByText('Saved', { selector: 'p' }).parentElement!;
-  expect(within(savedTile).getByText('-0.10')).toBeInTheDocument();
+  // Amounts format once the treasury's asset has loaded.
+  expect(await within(savedTile).findByText('-0.10')).toBeInTheDocument();
   const row = screen.getByText('NEG-2026-001').closest('tr')!;
-  expect(within(row).getByText('1.00')).toBeInTheDocument();
-  expect(within(row).getByText('1.10')).toBeInTheDocument();
+  expect(await within(row).findByText('1.00')).toBeInTheDocument();
+  expect(await within(row).findByText('1.10')).toBeInTheDocument();
   expect(within(row).getByText('-0.10')).toBeInTheDocument();
   expect(screen.getByText('Not compared: 3')).toBeInTheDocument();
   expect(

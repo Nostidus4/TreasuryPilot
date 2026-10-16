@@ -116,9 +116,16 @@ test('savings totals render, including a negative saved value', async () => {
 
   const total = async (label: string) =>
     (await screen.findByText(label, { selector: 'p' })).parentElement!;
+  // The label renders while the totals load, so wait for the values.
   expect(
-    within(await total('Baseline B1 would have paid')).getByText('10.00'),
+    await within(await total('Baseline B1 would have paid')).findByText(
+      '10.00',
+    ),
   ).toBeVisible();
-  expect(within(await total('Actually paid')).getByText('10.50')).toBeVisible();
-  expect(within(await total('Saved')).getByText('-0.50')).toBeVisible();
+  expect(
+    await within(await total('Actually paid')).findByText('10.50'),
+  ).toBeVisible();
+  expect(
+    await within(await total('Saved')).findByText('-0.50'),
+  ).toBeVisible();
 });

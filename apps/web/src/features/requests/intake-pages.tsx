@@ -27,6 +27,7 @@ import {
   useIdempotencyKey,
   useImportCsv,
   useTreasuryAsset,
+  useTreasuryPayingWalletId,
   useUploadInvoice,
   useVendors,
 } from '@/features/requests/api';
@@ -190,6 +191,10 @@ export function NewRequestPage() {
   const vendors = useVendors(scope.orgId, scope.treasuryId);
   const create = useCreateRequest(scope.orgId);
   const asset = useTreasuryAsset(scope.orgId, scope.treasuryId);
+  const payingWalletId = useTreasuryPayingWalletId(
+    scope.orgId,
+    scope.treasuryId,
+  );
   const idempotency = useIdempotencyKey();
   const [noPayee, setNoPayee] = useState(false);
   const serverErrors = isApiError(create.error)
@@ -246,6 +251,7 @@ export function NewRequestPage() {
                           context: {
                             payeeId: vendor.payeeId,
                             assetId: asset.id,
+                            payingWalletId,
                             decimals: asset.decimals,
                           },
                           idempotencyKey: idempotency.keyFor(

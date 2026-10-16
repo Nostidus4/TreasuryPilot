@@ -88,6 +88,7 @@ export function toTreasuryState(
             ? 'O1'
             : 'O2';
     return {
+      id: item.id,
       role,
       label: item.label,
       safeAddress: item.safeAddress as Hex,
