@@ -818,7 +818,10 @@ async def test_a_fee_spike_hold_then_accept_replans_and_signs_under_the_accepted
     inputs = await load_inputs(pool, loaded.plan, loaded.treasury_id, executor=loaded.executor)
     fees = await plan_fees(pool, _FeeRpc(), loaded.treasury_id, claimed[0])  # type: ignore[arg-type]
     # The signer client receives each step's sign_request verbatim.
-    sent = [step.sign_request["fees"] for step in plan_run(loaded, inputs, fees).steps]
+    sent = [
+        step.sign_request["fees"]
+        for step in plan_run(loaded, inputs, fees, loaded.plan.treasury).steps
+    ]
     assert sent and all(
         f == {"maxFeePerGas": 2_000, "maxPriorityFeePerGas": 50, "feeCapWei": 2_000} for f in sent
     )  # multiplier 20000 bps on gas price 1_000
@@ -878,6 +881,7 @@ async def test_reattest_renews_the_attestation_for_the_same_plan(
     assert not isinstance(run, PolicyDecision)
     assert run.plan_id == outcome.plan_id and len(run.steps) == len(loaded.plan.steps)
     assert run.valid_until >= loaded.valid_until
+    assert {step.sign_request["payload"]["to"] for step in run.steps} == {EXECUTOR}
     assert (
         await pool.fetchval("SELECT count(*) FROM attestations WHERE plan_id = $1", outcome.plan_id)
         == 2
@@ -929,7 +933,7 @@ async def test_a_gas_shortage_adds_a_test_router_swap_that_is_persisted_and_enco
     loaded = await load_plan(pool, plan_id)
     assert loaded is not None and loaded.plan.steps[0].venue == "TEST_ROUTER"
     inputs = await load_inputs(pool, loaded.plan, world.treasury, executor=EXECUTOR)
-    run = plan_run(loaded, inputs, {"feeCapWei": 1})
+    run = plan_run(loaded, inputs, {"feeCapWei": 1}, loaded.plan.treasury)
     request = run.steps[0].sign_request
     data = bytes.fromhex(request["payload"]["data"][2:])
     assert run.steps[0].kind == "SWAP"

@@ -12,6 +12,7 @@ import {Enum} from "@safe-global/safe-contracts/contracts/common/Enum.sol";
 import {TestUSDC} from "../src/test-assets/TestUSDC.sol";
 import {MockAavePool} from "../src/test-assets/MockAavePool.sol";
 import {MockReceiptSchemaRegistry, MockReceiptEAS} from "../src/test-assets/MockReceiptEAS.sol";
+import {PlanAttestedExecutor} from "../src/PlanAttestedExecutor.sol";
 import {ReceiptSchema} from "./ReceiptSchema.sol";
 
 /// @notice Test-network deploy, using versioned CREATE2 salts for core bytecode.
@@ -41,6 +42,7 @@ contract Deploy is SafeTestHelper {
     address internal registry;
     address internal attester;
     bytes32 internal schemaUid;
+    address internal planExecutor;
 
     function run() external {
         require(block.chainid == 31337 || block.chainid == 11155111, "Anvil/Sepolia only");
@@ -112,6 +114,10 @@ contract Deploy is SafeTestHelper {
         if (block.chainid == 31337) op2 = _newSafe(safeSingleton, proxyFactory, owner, 3);
 
         _setup(executor, approver, guardian, vendor);
+        // Opt-in with DEMO_POLICY_SIGNER (local stack only): the worker's ABI is PlanAttestedExecutor's, so the real-stack E2E
+        // needs it as mandate.executor. Off by default because the scenario runner calls the module as the EOA.
+        address policySigner = vm.envOr("DEMO_POLICY_SIGNER", address(0));
+        if (block.chainid == 31337 && policySigner != address(0)) _planExecutor(executor, policySigner);
         if (block.chainid == 31337) {
             testToken.mint(address(treasury), 30000e6);
             testToken.mint(address(op1), 100e6);
@@ -217,6 +223,29 @@ contract Deploy is SafeTestHelper {
         _verifyEnablement();
     }
 
+    /// @dev Makes `operator` + `policySigner` the module's only executor, through Safe T's `configureMandate`.
+    function _planExecutor(address operator, address policySigner) internal {
+        I.Mandate memory c = module.mandate();
+        if (c.executor.code.length != 0) {
+            planExecutor = c.executor; // repeat run: already switched
+            return;
+        }
+        planExecutor = address(new PlanAttestedExecutor(module, operator, policySigner));
+        I.MandateInit memory m = I.MandateInit(
+            c.validFrom,
+            c.expiresAt,
+            c.payeeCoolingSeconds,
+            planExecutor,
+            c.guardian,
+            c.pay,
+            c.refill,
+            c.approvalMaxAge,
+            c.supply
+        );
+        _batch(treasury, _call(address(module), abi.encodeCall(module.configureMandate, (m))));
+        require(module.mandate().executor == planExecutor, "plan executor not configured");
+    }
+
     function _verifyEnablement() internal view {
         require(
             treasury.isModuleEnabled(address(module)) && op1.isModuleEnabled(address(module))
@@ -278,6 +307,7 @@ contract Deploy is SafeTestHelper {
                 key, "supplyAvailability", "USDC cap full at evidence block 11890000; recheck live headroom before D2"
             );
         }
+        vm.serializeAddress(key, "planExecutor", planExecutor);
         vm.serializeAddress(key, "module", address(module));
         vm.serializeBytes32(key, "moduleCodeHash", address(module).codehash);
         vm.serializeAddress(key, "safeT", address(treasury));

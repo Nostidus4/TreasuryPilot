@@ -10,6 +10,8 @@ export interface Problem {
   code: string;
   detail?: string;
   errors?: Array<{ field: string; message: string }>;
+  /** Names of the fields behind a 422 (mandate validation). */
+  fields?: string[];
 }
 
 export class ApiError extends Error {
@@ -144,6 +146,7 @@ async function request<T>(
       code: problem.code ?? `HTTP_${response.status}`,
       detail: problem.detail,
       errors: problem.errors,
+      fields: problem.fields,
     });
   }
   return payload as T;

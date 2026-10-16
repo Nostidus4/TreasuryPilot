@@ -396,3 +396,59 @@ def test_mandate_draft_requires_fresh_second_factor() -> None:
     assert response.status_code == 403
     assert response.json()["code"] == "STEP_UP_REQUIRED"
     assert repository.rows == []
+
+
+def test_web_editor_body_round_trips_summary_diff_and_activation_id() -> None:
+    """The exact body apps/web/src/features/mandate sends: no guardian, Safe T without a target."""
+    repository = MemoryMandateRepository()
+    repository.guardian_safe = "0x" + "66" * 20
+    now = datetime.now(UTC)
+    body = {
+        "actions": ["REFILL", "PAY"],
+        "refillPaths": [{"from": SAFE_T, "to": OPERATIONAL}],
+        "assetPolicies": [],
+        "limits": {
+            "PAY": {"perRequest": "2500500000", "daily": "10000000000"},
+            "REFILL": {"perRequest": "2500000000", "daily": "12000000000"},
+        },
+        "buffers": [
+            {"wallet": SAFE_T, "minimum": "0"},
+            {"wallet": OPERATIONAL, "minimum": "0", "target": "0"},
+        ],
+        "gasFundingCapWei": "50000000000000000",
+        "executor": "0x" + "33" * 20,
+        "approvers": ["0x" + "44" * 20],
+        "validFrom": now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "expiresAt": (now + timedelta(days=30))
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+    }
+    base = f"/v1/orgs/{ORG_ID}/treasuries/{TREASURY_ID}/mandates"
+    with make_client(repository) as client:
+        first = client.post(base, json=body)
+        repository.active_config = first.json()["draft"]["config"]
+        looser = client.post(
+            base,
+            json={
+                **body,
+                "limits": {
+                    **body["limits"],
+                    "PAY": {"perRequest": "3000000000", "daily": "10000000000"},
+                },
+            },
+        )
+        listing = client.get(base)
+
+    assert first.status_code == 201
+    draft = first.json()["draft"]
+    assert draft["config"]["guardian"] == "0x" + "66" * 20
+    assert any(line.get("perRequestBaseUnits") == "2500500000" for line in first.json()["summary"])
+    assert first.json()["diff"] == []
+    assert first.json()["requiresConfirmation"] is False
+    assert looser.status_code == 201
+    assert looser.json()["requiresConfirmation"] is True
+    entry = looser.json()["diff"][0]
+    assert (entry["path"], entry["risk"]) == ("limits.PAY.perRequest", "looser")
+    assert (entry["before"], entry["after"]) == ("2500500000", "3000000000")
+    assert [item["status"] for item in listing.json()["items"]] == ["Draft", "Draft"]
+    assert uuid.UUID(draft["id"])

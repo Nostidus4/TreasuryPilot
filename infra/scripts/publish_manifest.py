@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 
-from cast_helpers import read_scalar, run_cast, verify_schema
+from cast_helpers import read_call, read_scalar, run_cast, verify_schema
 
 RUNTIME_CONTRACTS = (
     "implementation",
@@ -93,6 +93,21 @@ def verify_deployment(prediction: dict[str, object], rpc_url: str, block: str) -
     require_address_call(module, "asset()(address)", asset, rpc_url, block)
     require_address_call(module, "aavePool()(address)", pool, rpc_url, block)
     require_address_call(module, "aToken()(address)", a_token, rpc_url, block)
+    plan_executor = address(
+        prediction.get("planExecutor") or "0x" + "0" * 40, "planExecutor", allow_zero=True
+    )
+    if int(plan_executor[2:], 16):
+        require_address_call(plan_executor, "module()(address)", module, rpc_url, block)
+        # mandate() is a static tuple, so its flattened ABI is identical; the executor is field 4.
+        mandate = read_call(
+            module,
+            "mandate()(uint64,uint64,uint64,uint32,address,address,uint128,uint128,uint128,uint128,uint32,uint128,uint128)",
+            [],
+            rpc_url,
+            block,
+        )
+        if str(mandate[4]).lower() != plan_executor:
+            raise ValueError("The module's mandate executor is not the planExecutor")
     require_address_call(
         address(prediction.get("factory"), "factory"),
         "implementation()(address)",

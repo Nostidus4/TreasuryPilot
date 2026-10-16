@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import importlib.util
 import sys
 import time
@@ -11,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
@@ -299,6 +301,36 @@ def test_lagging_snapshot_is_stale() -> None:
     context = build_context(old, plan, _inputs(b"\xab" * 32), now=int(time.time()), head_block=105)
     decision = validate_step(plan, 0, context)
     assert decision.decision == "BLOCK" and "SNAPSHOT_STALE" in map(str, decision.codes)
+
+
+KEY = "0x" + "77" * 20
+
+
+@pytest.mark.parametrize(
+    ("operator", "module", "relaxed"),
+    [
+        (KEY, TREASURY.upper().replace("0X", "0x"), True),  # the contract's operator is the key
+        ("0x" + "88" * 20, TREASURY, False),  # another operator
+        (None, None, False),  # an EOA executor has no operator()
+        (KEY, "0x" + "99" * 20, False),  # bound to another module
+    ],
+)
+def test_build_context_relaxes_the_executor_only_for_an_attested_executor(
+    operator: str | None, module: str | None, relaxed: bool
+) -> None:
+    snapshot = _snapshot(100, wallet_balance=1050, refilled=False)
+    if operator:
+        snapshot.data["module"]["executor_operator"] = operator
+        snapshot.data["module"]["executor_module"] = module
+    plan = ExecutionPlan(
+        request_id=b"\xab" * 32, treasury=TREASURY, chain_id=CHAIN, steps=[],
+        planner_source="DETERMINISTIC", evidence_ids=[],
+    )  # fmt: skip
+    inputs = dataclasses.replace(_inputs(b"\xab" * 32), executor=KEY)
+
+    context = build_context(snapshot, plan, inputs, now=int(time.time()), head_block=100)
+
+    assert context.executor == (EXECUTOR if relaxed else KEY)
 
 
 async def _signal_outflow(pool: Any) -> uuid.UUID:

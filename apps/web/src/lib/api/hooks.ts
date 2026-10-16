@@ -29,15 +29,26 @@ export function useOrgQuery<T, S = T>(
   });
 }
 
-/** A mutation that refreshes everything cached for the org when it succeeds. */
+/**
+ * A mutation that refreshes everything cached for the org when it succeeds.
+ * `refreshOnError` also refreshes one entity when it fails, for calls that
+ * persist state before answering with an error.
+ */
 export function useOrgMutation<Input, Output>(
   orgId: string,
   mutationFn: (input: Input) => Promise<Output>,
+  refreshOnError?: string,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['org', orgId] }),
+    onError: () =>
+      refreshOnError
+        ? queryClient.invalidateQueries({
+            queryKey: ['org', orgId, refreshOnError],
+          })
+        : undefined,
   });
 }

@@ -20,6 +20,7 @@ Install the Python workspace with `uv sync --frozen`. On Windows, install Foundr
 and run `./infra/scripts/deploy-local.ps1`. Its fixed
 Anvil keys are public development identities and must never be funded or reused
 on a public network. On other hosts, `make deploy-local` starts its own Anvil.
+`DEMO_PLAN_EXECUTOR=true make deploy-local` (what `make seed` runs) also deploys `PlanAttestedExecutor` (operator `DEMO_EXECUTOR`, policy signer Anvil account 8) and sets it as the mandate executor; the manifest records it as `planExecutor`. Without it the executor is the `DEMO_EXECUTOR` EOA, which the scenario runner needs. `ANVIL_PORT` picks another port.
 For an existing Anvil on port 8545, set `DEMO_OWNER`, `DEMO_EXECUTOR`,
 `DEMO_APPROVER`, `DEMO_GUARDIAN`, `DEMO_PAYEE` and `DEMO_RECEIPT_ATTESTER` to
 development accounts and run:

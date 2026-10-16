@@ -147,7 +147,7 @@ async def _plan_and_run(
     loaded = await load_plan(pool, plan_id)
     assert loaded is not None and loaded.request_id is None
     inputs = await load_liquidity_context(pool, loaded.treasury_id, executor=_liq.EXECUTOR)
-    run = plan_run(loaded, inputs, {"feeCapWei": 1})
+    run = plan_run(loaded, inputs, {"feeCapWei": 1}, loaded.plan.treasury)
 
     signer, gate, client = ModuleSigner(c), _seq.FakeGate(), _trk._client(anvil)
     final = None
