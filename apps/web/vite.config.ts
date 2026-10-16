@@ -16,5 +16,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Full-stack E2E (playwright.stack.config.ts): same-origin /api so session cookies work.
+    proxy: process.env.E2E_API_PROXY_TARGET
+      ? {
+          '/api': {
+            target: process.env.E2E_API_PROXY_TARGET,
+            rewrite: (requestPath) => requestPath.replace(/^\/api/, ''),
+          },
+        }
+      : undefined,
   },
 });
