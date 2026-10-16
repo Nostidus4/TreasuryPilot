@@ -210,11 +210,17 @@ def build_context(
     head_block: int,
 ) -> ValidationContext:
     coverage = snapshot.coverage if snapshot.coverage in _COVERAGE else "NONE"
+    # With a PlanAttestedExecutor as mandate.executor, the worker key is its operator() and the
+    # module sees the contract as caller; any other operator keeps the key and fails EXECUTOR_MISMATCH.
+    module = snapshot.data.get("module", {})
+    executor = inputs.executor
+    if str(module.get("executor_operator", "")).lower() == executor.lower():
+        executor = module.get("mandate", {}).get("executor", executor)
     return ValidationContext.model_validate(
         {
             "now": now,
             "head_block": head_block,
-            "executor": inputs.executor,
+            "executor": executor,
             "snapshot": _chain_snapshot(snapshot, plan, inputs),
             "request": inputs.request,
             "approval": inputs.approval,

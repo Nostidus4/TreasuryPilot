@@ -40,6 +40,7 @@ from treasurypilot_worker.executor.outbox import (
 )
 from treasurypilot_worker.executor.plan_loader import (
     load_plan,
+    mandate_executor,
     plan_fees,
     plan_run,
     simulation_context,
@@ -889,7 +890,8 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
             )
             rpc = build_rpc_client(decode_rpc_urls(urls))
             fees = await plan_fees(pool, rpc, loaded.treasury_id, plan_id)
-            run: PlanRun = plan_run(loaded, inputs, fees)
+            target = await mandate_executor(rpc, loaded.plan.treasury)
+            run: PlanRun = plan_run(loaded, inputs, fees, target)
             gate = PlanGate.for_treasury(
                 pool,
                 loaded.treasury_id,
@@ -897,7 +899,7 @@ async def _sequence_plan(plan_id: uuid.UUID) -> dict[str, Any]:
                 plan_id=plan_id,
                 plan=loaded.plan,
                 inputs=inputs,
-                simulation=simulation_context(loaded, inputs),
+                simulation=simulation_context(loaded, inputs, target),
                 reattest_fn=reattest_fn(
                     pool, loaded, inputs, rpc=rpc, attest=build_attest(settings), fees=fees
                 ),

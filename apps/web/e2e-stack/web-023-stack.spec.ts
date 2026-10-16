@@ -229,18 +229,11 @@ test.describe
     expect(response.status(), await response.text()).toBe(200);
   });
 
-  // The stack now gets through approve, the execution cycle, planning (rule-based fallback, no AI
-  // key) and the policy attestation: the plan reaches `Attested`. It stops at the first on-chain
-  // step, `SIMULATION_REVERTED` (request -> NeedsReview), because the worker -> signer -> chain
-  // wiring is inconsistent (#229):
-  //  1. The worker builds attested calldata (`refill(approval, sig, stepId, from, to, amount,
-  //     attestation, attSig)`, i.e. PlanAttestedExecutor's ABI) but sends it to `plan.treasury`,
-  //     the module (plan_loader.py simulation_context / sign request `to`), where that selector
-  //     does not exist.
-  //  2. The signer requires `payload.to == module.mandate().executor`, and local Deploy.s.sol sets
-  //     the mandate executor to the demo EOA. Using PlanAttestedExecutor instead (deploy it, call
-  //     configureMandate) trips the policy validator's EXECUTOR_MISMATCH (the worker executor key
-  //     must equal mandate.executor) and still leaves the worker `to` of point 1.
-  //  A design decision on the call target is needed before Paid and Matched can run.
+  // The stack gets through approve, the execution cycle, planning (rule-based fallback, no AI key)
+  // and the policy attestation. The worker -> signer -> chain wiring is now consistent (#229):
+  // `make seed` deploys PlanAttestedExecutor as mandate.executor (operator = the worker key, policy
+  // signer = the TEST policy key), the worker sends attested calldata to it and the validator
+  // compares the worker key with its operator(). Turn this into a real test once CI (`stack-e2e`)
+  // shows the plan reaching Paid and Matched; it was not run against the Docker stack locally.
   test.fixme('approval is recorded, then auto plan, paid, matched', () => {});
 });

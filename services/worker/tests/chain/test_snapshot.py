@@ -290,3 +290,27 @@ def test_is_fresh_needs_both_30_seconds_and_2_blocks() -> None:
     assert is_fresh(_snapshot(100, 30, now), now, head=102)
     assert not is_fresh(_snapshot(100, 0, now), now, head=103)  # 3 blocks behind
     assert not is_fresh(_snapshot(100, 31, now), now, head=100)  # 31 s old
+
+
+@sync
+async def test_snapshot_records_the_operator_of_a_contract_mandate_executor() -> None:
+    answers = _answers()
+    operator = "0x" + "f1" * 20
+    answers[(OWNER, "operator()")] = (["address"], lambda _args: [operator])
+
+    snapshot = await read_snapshot(
+        _client(MulticallProvider(answers)), TARGET, SnapshotPurpose.PLAN
+    )
+
+    assert snapshot.data["module"]["executor_operator"] == operator
+    assert snapshot.missing == ()
+
+
+@sync
+async def test_snapshot_of_an_eoa_executor_has_no_operator_and_no_gap() -> None:
+    snapshot = await read_snapshot(
+        _client(MulticallProvider(_answers())), TARGET, SnapshotPurpose.PLAN
+    )
+
+    assert "executor_operator" not in snapshot.data["module"]
+    assert "module.executor_operator" not in snapshot.missing

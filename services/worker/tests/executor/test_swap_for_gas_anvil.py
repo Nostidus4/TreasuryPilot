@@ -215,7 +215,7 @@ async def _scenario(pool: Any, database_url: str, anvil: str, c: steps.Chain) ->
     loaded = await load_plan(pool, plan_id)
     assert loaded is not None
     inputs = await load_inputs(pool, loaded.plan, world.treasury, executor=_pipe.EXECUTOR)
-    run = plan_run(loaded, inputs, {"feeCapWei": 1})
+    run = plan_run(loaded, inputs, {"feeCapWei": 1}, loaded.plan.treasury)
     assert [s.kind for s in run.steps] == ["SWAP", "REFILL", "PAY"]
 
     steps.rpc(anvil, "anvil_setBalance", [EXECUTOR, hex(10**20)])  # TestRouter pays no native gas

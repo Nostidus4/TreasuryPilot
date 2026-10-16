@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
+from web3 import Web3
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
 from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW
@@ -19,6 +20,8 @@ from treasurypilot_worker.executor.outbox import StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun
 from treasurypilot_worker.executor.simulation import SimulationContext, build_calldata
 from treasurypilot_worker.planner.context import ContextInputs
+
+_MANDATE_SELECTOR = "0x" + bytes(Web3.keccak(text="mandate()")[:4]).hex()
 
 _ACTIONS = {
     PAY: Action.PAY,
@@ -111,13 +114,21 @@ async def load_plan(pool: asyncpg.Pool, plan_id: UUID) -> LoadedPlan | None:
     )
 
 
-def simulation_context(loaded: LoadedPlan, inputs: ContextInputs) -> SimulationContext:
-    """What the signer will send; ``snapshot_block`` and ``policy_version`` are set per step."""
+async def mandate_executor(rpc: RpcClient, module: str) -> str:
+    """``module.mandate().executor``: the PlanAttestedExecutor every step is sent to (not the module)."""
+
+    raw = str(await rpc.call("eth_call", [{"to": module, "data": _MANDATE_SELECTOR}, "latest"]))
+    # mandate() is a static tuple; the executor is its fifth word.
+    return "0x" + raw.removeprefix("0x")[4 * 64 + 24 : 5 * 64]
+
+
+def simulation_context(loaded: LoadedPlan, inputs: ContextInputs, target: str) -> SimulationContext:
+    """What the signer will send to ``target``; ``snapshot_block`` and ``policy_version`` are set per step."""
 
     approval = inputs.approval
     return SimulationContext(
         executor=loaded.executor,
-        target=loaded.plan.treasury,
+        target=target,
         attestation=loaded.typed_data["message"],
         attestation_signature=loaded.signature,
         policy_version=b"\x00" * 32,
@@ -160,10 +171,12 @@ async def plan_fees(
     }
 
 
-def plan_run(loaded: LoadedPlan, inputs: ContextInputs, fees: dict[str, int]) -> PlanRun:
+def plan_run(
+    loaded: LoadedPlan, inputs: ContextInputs, fees: dict[str, int], target: str
+) -> PlanRun:
     """Signer requests for every step; ``fees`` comes from `plan_fees`."""
 
-    sim = simulation_context(loaded, inputs)
+    sim = simulation_context(loaded, inputs, target)
     body = loaded.plan.message()
     steps = []
     for step, row_id in zip(loaded.plan.steps, loaded.plan_step_ids, strict=True):
@@ -182,7 +195,7 @@ def plan_run(loaded: LoadedPlan, inputs: ContextInputs, fees: dict[str, int]) ->
                     "signature": "0x" + loaded.signature.hex(),
                     "stepSeq": step.seq,
                     "payload": {
-                        "to": loaded.plan.treasury,
+                        "to": target,
                         "data": "0x" + build_calldata(step, sim).hex(),
                     },
                     "fees": fees,
