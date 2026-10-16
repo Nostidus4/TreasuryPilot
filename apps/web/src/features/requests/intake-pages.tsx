@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useOrgScope } from '@/features/orgs/org-scope';
+import { useAssetInfo } from '@/lib/api/chains';
 import {
   useCreateRequest,
   useImportCsv,
@@ -187,6 +188,7 @@ export function NewRequestPage() {
   const navigate = useNavigate();
   const vendors = useVendors(scope.orgId);
   const create = useCreateRequest(scope.orgId);
+  const info = useAssetInfo();
   const fieldErrors = isApiError(create.error)
     ? Object.fromEntries(
         (create.error.problem.errors ?? []).map((item) => [
@@ -215,15 +217,24 @@ export function NewRequestPage() {
                 <RequestForm
                   vendors={items}
                   serverErrors={fieldErrors}
-                  onSubmit={(result) =>
+                  onSubmit={(result) => {
+                    const vendor = items.find((v) => v.id === result.vendorId);
+                    if (!vendor?.payeeId || !info) return;
                     create.mutate(
-                      { ...result, treasuryId: scope.treasuryId! },
+                      {
+                        input: { ...result, treasuryId: scope.treasuryId! },
+                        context: {
+                          payeeId: vendor.payeeId,
+                          assetId: info.asset.id,
+                          decimals: info.asset.decimals,
+                        },
+                      },
                       {
                         onSuccess: ({ request }) =>
                           navigate(`${scope.base}/requests/${request.id}`),
                       },
-                    )
-                  }
+                    );
+                  }}
                 >
                   {create.isError && !fieldErrors?.vendorId && (
                     <Alert tone="danger">{errorMessage(create.error)}</Alert>
@@ -251,7 +262,7 @@ export function NewRequestPage() {
 }
 
 const csvTemplate =
-  'vendor,invoice_number,amount,due_date,description\nAcurast Cloud,AC-2026-120,1450.00,2026-11-05,Compute\n';
+  'vendor_ref,payee_address,invoice_no,issue_date,due_date,amount,note\nAcurast Cloud,0x0000000000000000000000000000000000000001,AC-2026-120,2026-10-20,2026-11-05,1450.00,Compute\n';
 
 /** CSV import (WEB-020): upload, then a row-by-row result. */
 export function ImportCsvPage() {
@@ -276,7 +287,7 @@ export function ImportCsvPage() {
             <CardHeader
               title={t('File format')}
               description={t(
-                'First row: vendor, invoice_number, amount, due_date, description',
+                'First row: vendor_ref, payee_address, invoice_no, issue_date, due_date, amount, note (optional)',
               )}
               action={
                 <Button asChild size="sm">
@@ -293,7 +304,7 @@ export function ImportCsvPage() {
               <ul className="list-disc space-y-1 pl-5">
                 <li>
                   {t(
-                    'vendor must match an existing vendor that has a registered payee.',
+                    'vendor_ref must match an existing vendor, and payee_address its registered payee.',
                   )}
                 </li>
                 <li>
@@ -301,7 +312,7 @@ export function ImportCsvPage() {
                     'amount is in USDC with up to 6 decimals, for example 1450.00.',
                   )}
                 </li>
-                <li>{t('due_date is YYYY-MM-DD.')}</li>
+                <li>{t('issue_date and due_date are YYYY-MM-DD.')}</li>
               </ul>
             </CardContent>
           </Card>
@@ -312,7 +323,9 @@ export function ImportCsvPage() {
             hint={t('One .csv file.')}
             accept={{ 'text/csv': ['.csv'] }}
             busy={importCsv.isPending}
-            onFile={(file) => importCsv.mutate(file)}
+            onFile={(file) =>
+              importCsv.mutate({ file, treasuryId: scope.treasuryId! })
+            }
           />
 
           {importCsv.isError && (

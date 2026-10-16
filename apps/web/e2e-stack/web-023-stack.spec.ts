@@ -91,6 +91,30 @@ test('the approver signs in and links the mock wallet on the real API', async ({
   ).toBeVisible();
 });
 
+test('finance creates a draft request and submits it for approval on the real API', async ({
+  page,
+}) => {
+  await page.goto(seedLoginLink('finance'));
+  await expect(page).toHaveURL(/\/o\/[^/]+\/t\/[^/]+$/);
+  await page.getByRole('link', { name: 'Requests' }).click();
+  await page.getByRole('link', { name: 'New request' }).click();
+  await page.getByLabel('Vendor').click();
+  await page.getByRole('option').first().click();
+  const invoice = `E2E-STACK-${Date.now()}`;
+  await page.getByLabel('Invoice number').fill(invoice);
+  await page.getByLabel('Amount').fill('145.25');
+  await page.getByLabel('Due date').fill('2099-01-15');
+  await page.getByLabel('Description').fill('Stack create flow');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  // The detail page reads GET /requests/{id}.
+  await expect(page).toHaveURL(/\/requests\/[0-9a-f-]{36}$/);
+  await expect(page.getByText(invoice).first()).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Confirm and submit for approval' })
+    .click();
+  await expect(page.getByText('Waiting for an approver')).toBeVisible();
+});
+
 // WEB-023's full flow. It cannot run on the local stack yet; each blocker was
 // found by driving the API by hand. Remove `fixme` as they are closed.
 //  - API: no GET /requests list or detail, so the request, approvals, plans

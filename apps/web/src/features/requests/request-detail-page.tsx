@@ -159,7 +159,12 @@ function DraftEditor({ request }: { request: RequestDetail }) {
   const confirmExtraction = useConfirmExtraction(scope.orgId, request.id);
   const confirmTerms = useConfirmTerms(scope.orgId, request.id);
   const edit = useEditRequest(scope.orgId, request.id);
-  const transition = useRequestTransition(scope.orgId, request.id);
+  const decimals = info?.asset.decimals ?? 6;
+  const transition = useRequestTransition(
+    scope.orgId,
+    request.id,
+    request.version,
+  );
   const [error, setError] = useState<unknown>();
   const [pending, setPending] = useState(false);
   const fromUpload = request.source === 'UPLOAD';
@@ -168,6 +173,7 @@ function DraftEditor({ request }: { request: RequestDetail }) {
     setError(undefined);
     setPending(true);
     try {
+      let version = request.version;
       if (fromUpload) {
         await confirmExtraction.mutateAsync({
           vendor: result.vendorId,
@@ -177,8 +183,9 @@ function DraftEditor({ request }: { request: RequestDetail }) {
           description: result.description,
         });
       } else {
-        await edit.mutateAsync({
-          version: request.version,
+        const edited = await edit.mutateAsync({
+          version,
+          decimals,
           fields: {
             invoiceNumber: result.invoiceNumber,
             amount: result.amount,
@@ -186,12 +193,18 @@ function DraftEditor({ request }: { request: RequestDetail }) {
             description: result.description,
           },
         });
+        version = String(edited.request.version);
       }
-      await confirmTerms.mutateAsync({
+      const confirmed = await confirmTerms.mutateAsync({
+        version,
+        dueDate: result.dueDate,
         earlyPayDate: result.earlyPayDate,
         earlyDiscountBps: result.earlyDiscountBps,
       });
-      await transition.mutateAsync({ action: 'submit' });
+      await transition.mutateAsync({
+        action: 'submit',
+        version: String(confirmed.request.version),
+      });
       toast.success(t('Submitted for approval'));
     } catch (cause) {
       setError(cause);
@@ -350,7 +363,11 @@ function CancelOnchainBanner({ request }: { request: RequestDetail }) {
 
 function ReadOnly({ request }: { request: RequestDetail }) {
   const scope = useOrgScope();
-  const transition = useRequestTransition(scope.orgId, request.id);
+  const transition = useRequestTransition(
+    scope.orgId,
+    request.id,
+    request.version,
+  );
   const [cancelOpen, setCancelOpen] = useState(false);
   const act = (action: 'withdraw' | 'cancel', reason?: string) =>
     transition.mutate(

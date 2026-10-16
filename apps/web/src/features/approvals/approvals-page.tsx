@@ -55,7 +55,11 @@ function SignPanel({ request }: { request: RequestDetail }) {
   const me = useMe();
   const mandates = useMandates(scope.orgId, request.treasuryId);
   const approve = useApproveRequest(scope.orgId, request.id);
-  const transition = useRequestTransition(scope.orgId, request.id);
+  const transition = useRequestTransition(
+    scope.orgId,
+    request.id,
+    request.version,
+  );
   const [option, setOption] = useState<PaymentOption['kind']>(
     request.options[0]?.kind ?? 'STANDARD',
   );

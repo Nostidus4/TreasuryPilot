@@ -490,6 +490,7 @@ export interface RequestInput {
 export interface Vendor {
   id: string;
   name: string;
+  payeeId: string | null;
   payeeAddress: Hex | null;
   payeeStatus: PayeeStatus | null;
 }
