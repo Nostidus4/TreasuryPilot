@@ -10,10 +10,10 @@ import {
   SplitInbox,
 } from '@/components/layout/split-inbox';
 import { Card } from '@/components/ui/card';
-import { useGovernanceTxs } from '@/features/controls/api';
+import { useGovernanceTxs } from '@/features/governance/api';
 import { GovernanceDetail } from '@/features/governance/governance-detail';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import type { GovernanceTx } from '@/lib/api/types';
+import type { GovernanceTxView } from '@/lib/api/types';
 import { formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { governanceStatus } from '@/lib/status';
@@ -25,7 +25,7 @@ function Row({
 }: {
   selected: boolean;
   to: string;
-  tx: GovernanceTx;
+  tx: GovernanceTxView;
 }) {
   return (
     <InboxItem to={to} selected={selected}>
@@ -74,7 +74,7 @@ export function GovernancePage() {
               </Card>
             );
           }
-          const groups: Array<[string, GovernanceTx[]]> = [
+          const groups: Array<[string, GovernanceTxView[]]> = [
             [
               t('Needs signatures'),
               items.filter((tx) => tx.status === 'AwaitingSignatures'),
@@ -89,7 +89,9 @@ export function GovernancePage() {
             [
               t('History'),
               items.filter((tx) =>
-                ['Executed', 'Failed', 'Superseded'].includes(tx.status),
+                ['Executed', 'Failed', 'Superseded', 'Cancelled'].includes(
+                  tx.status,
+                ),
               ),
             ],
           ];

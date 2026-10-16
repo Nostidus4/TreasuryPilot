@@ -1,5 +1,6 @@
 import { recoverTypedDataAddress } from 'viem';
 
+import type { GovernanceTxWire } from '@/features/governance/wire';
 import { formatUnits } from '@/lib/money';
 import type {
   DiffEntry,
@@ -194,9 +195,60 @@ function diffMandate(
   return entries;
 }
 
-const governanceView = (tx: (typeof db.governance)[number]) => {
-  const { effect: _effect, signaturesHex: _signatures, ...view } = tx;
-  return view;
+const wireStatuses = {
+  AwaitingSignatures: 'Collecting',
+  ReadyToExecute: 'Ready',
+  Executing: 'Submitted',
+  Executed: 'Executed',
+  Failed: 'Failed',
+  Superseded: 'Superseded',
+  Cancelled: 'Cancelled',
+} as const;
+
+const wirePurposes: Record<string, string> = {
+  DEPLOY_MODULE: 'MODULE_SETUP',
+  CONFIGURE_MANDATE: 'MANDATE',
+  ADD_PAYEE: 'PAYEE_ADD',
+  DEACTIVATE_PAYEE: 'PAYEE_DEACTIVATE',
+  GRANT_EXCEPTION: 'EXCEPTION_GRANT',
+};
+
+/** The real API shape (`GovernanceTxView` in the OpenAPI schema), built from the mock row. */
+export const governanceView = (
+  tx: (typeof db.governance)[number],
+): GovernanceTxWire => {
+  const typedData = safeTxTypedData(tx);
+  const first = tx.calls[0];
+  return {
+    id: tx.id,
+    treasuryId: tx.treasuryId,
+    purpose: (wirePurposes[tx.kind] ?? tx.kind) as GovernanceTxWire['purpose'],
+    safeAddress: tx.safeAddress,
+    to: first.to,
+    value: first.value,
+    data: first.data,
+    operation: first.operation,
+    nonce: tx.nonce,
+    safeTxHash: tx.safeTxHash,
+    decodedCalls: tx.calls.map(({ to, value, data, operation }) => ({
+      to,
+      value,
+      data,
+      operation,
+    })),
+    humanSummary: `${tx.title}: ${tx.summary}`,
+    typedData: { ...typedData },
+    threshold: tx.threshold,
+    owners: tx.owners.map((owner) => owner.address),
+    status: wireStatuses[tx.status],
+    execTxHash: tx.txHash ?? null,
+    createdAt: tx.createdAt,
+    signatures: tx.signatures.map((item, index) => ({
+      owner: item.owner,
+      signature: tx.signaturesHex[index],
+      at: item.at,
+    })),
+  };
 };
 
 export const treasuryHandlers = [
@@ -419,10 +471,10 @@ export const treasuryHandlers = [
     }
     return {
       governanceTx: governanceView(
-        txs.find((tx) => tx.safeLabel.endsWith('(T)'))!,
+        txs.find((tx) => tx.safeLabel?.endsWith('(T)'))!,
       ),
       operationalGovernanceTxs: txs
-        .filter((tx) => !tx.safeLabel.endsWith('(T)'))
+        .filter((tx) => !tx.safeLabel?.endsWith('(T)'))
         .map(governanceView),
       predictedModuleAddress: state.treasury.moduleAddress,
       status: 'ModulePending',
@@ -1103,7 +1155,7 @@ export const treasuryHandlers = [
       (item) => item.id === params.id,
       'Governance transaction',
     );
-    return { governanceTx: governanceView(tx), typedData: safeTxTypedData(tx) };
+    return governanceView(tx);
   }),
 
   route<{ signature: Hex }>(
@@ -1165,7 +1217,7 @@ export const treasuryHandlers = [
         `governance/${tx.id}`,
       );
       emit('governance', tx.id);
-      return { signatures: tx.signatures, status: tx.status };
+      return governanceView(tx);
     },
   ),
 
@@ -1185,11 +1237,10 @@ export const treasuryHandlers = [
     return {
       to: tx.safeAddress,
       data: `0x6a761202${h32(tx.id + tx.signaturesHex.join('')).slice(2)}`,
-      value: '0',
     };
   }),
 
-  route<{ txHash: Hex }>(
+  route<{ transactionHash: Hex }>(
     'post',
     '/orgs/:orgId/governance-txs/:id/submitted',
     ({ params, body }) => {
@@ -1201,28 +1252,10 @@ export const treasuryHandlers = [
       );
       if (tx.status !== 'ReadyToExecute')
         fail(409, 'NOT_READY', 'The transaction is not ready to execute.');
-      markGovernanceSubmitted(tx, body.txHash);
-      return { status: tx.status };
+      markGovernanceSubmitted(tx, body.transactionHash);
+      return governanceView(tx);
     },
   ),
-
-  route('post', '/orgs/:orgId/governance-txs/:id/cancel', ({ params }) => {
-    requireOrg(params.orgId);
-    const tx = find(
-      db.governance,
-      (item) => item.id === params.id,
-      'Governance transaction',
-    );
-    if (tx.status === 'Executing' || tx.status === 'Executed')
-      fail(
-        409,
-        'ALREADY_SUBMITTED',
-        'The transaction was already sent to the network.',
-      );
-    tx.status = 'Superseded';
-    refreshQueues();
-    return { status: tx.status };
-  }),
 ];
 
 function deactivationTx(

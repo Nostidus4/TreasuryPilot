@@ -16,7 +16,7 @@ import type {
   FeePolicyResponse,
   FeeReviewItem,
   Flag,
-  GovernanceTx,
+  GovernanceTxView,
   Hex,
   MandateConfig,
   MandateVersion,
@@ -131,7 +131,7 @@ export interface Db {
   payees: Payee[];
   vendors: Vendor[];
   governance: Array<
-    GovernanceTx & { effect?: () => void; signaturesHex: Hex[] }
+    GovernanceTxView & { effect?: () => void; signaturesHex: Hex[] }
   >;
   requests: RequestDetail[];
   plans: PlanDetail[];
@@ -1953,7 +1953,7 @@ export function approvalTypedData(request: RequestDetail): TypedData {
 
 const ZERO: Hex = '0x0000000000000000000000000000000000000000';
 
-export function safeTxTypedData(tx: GovernanceTx): TypedData {
+export function safeTxTypedData(tx: GovernanceTxView): TypedData {
   const first = tx.calls[0];
   const state = db.treasuries[tx.treasuryId];
   return {
@@ -1962,6 +1962,10 @@ export function safeTxTypedData(tx: GovernanceTx): TypedData {
       verifyingContract: tx.safeAddress,
     },
     types: {
+      EIP712Domain: [
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
       SafeTx: [
         { name: 'to', type: 'address' },
         { name: 'value', type: 'uint256' },
@@ -1995,7 +1999,7 @@ export function safeTxTypedData(tx: GovernanceTx): TypedData {
 
 export function createGovernanceTx(
   input: Pick<
-    GovernanceTx,
+    GovernanceTxView,
     'kind' | 'title' | 'summary' | 'treasuryId' | 'calls'
   > & {
     diff?: DiffEntry[];

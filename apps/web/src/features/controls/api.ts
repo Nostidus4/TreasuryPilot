@@ -1,15 +1,11 @@
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
 import type {
-  GovernanceStatus,
   GovernanceTx,
-  Hex,
   MandateConfig,
   MandateDraft,
   MandateVersion,
   Payee,
-  TxCall,
-  TypedData,
   Vendor,
 } from '@/lib/api/types';
 import type { components } from '@/lib/api/schema';
@@ -102,51 +98,4 @@ export const useReplacePayeeAddress = (orgId: string, treasuryId: string) =>
         `${treasuryBase(orgId, treasuryId)}/payees/${input.id}/replace-address`,
         { address: input.address, reason: input.reason },
       ),
-  );
-
-/* ───────────── Governance ───────────── */
-
-export const useGovernanceTxs = (orgId: string, status?: GovernanceStatus) =>
-  useOrgQuery<{ items: GovernanceTx[] }>(
-    orgId,
-    'governance',
-    ['list'],
-    '/governance-txs',
-    { query: { status } },
-  );
-
-export const useGovernanceTx = (orgId: string, id: string | undefined) =>
-  useOrgQuery<{ governanceTx: GovernanceTx; typedData: TypedData }>(
-    orgId,
-    'governance',
-    ['detail', id],
-    `/governance-txs/${id}`,
-    { enabled: Boolean(id) },
-  );
-
-export const useSubmitGovernanceSignature = (orgId: string) =>
-  useOrgMutation(orgId, (input: { id: string; signature: Hex }) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${input.id}/signatures`,
-      { signature: input.signature },
-      { idempotent: true },
-    ),
-  );
-
-export const fetchExecCall = (orgId: string, id: string) =>
-  api.get<TxCall>(`/orgs/${orgId}/governance-txs/${id}/exec-call`);
-
-export const useReportGovernanceSubmitted = (orgId: string) =>
-  useOrgMutation(orgId, (input: { id: string; txHash: Hex }) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${input.id}/submitted`,
-      { txHash: input.txHash },
-    ),
-  );
-
-export const useCancelGovernanceTx = (orgId: string) =>
-  useOrgMutation(orgId, (id: string) =>
-    api.post<{ status: GovernanceStatus }>(
-      `/orgs/${orgId}/governance-txs/${id}/cancel`,
-    ),
   );

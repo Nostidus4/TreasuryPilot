@@ -22,7 +22,7 @@ import { useChain } from '@/lib/api/chains';
 import { errorMessage } from '@/lib/api/http';
 import type {
   DecodedCall,
-  GovernanceTx,
+  GovernanceTxView,
   Hex,
   TypedData,
 } from '@/lib/api/types';
@@ -271,7 +271,7 @@ export function WalletActionButton({
 export function SignatureProgress({
   tx,
 }: {
-  tx: Pick<GovernanceTx, 'owners' | 'signatures' | 'threshold'>;
+  tx: Pick<GovernanceTxView, 'owners' | 'signatures' | 'threshold'>;
 }) {
   const signedCount = tx.signatures.length;
   return (

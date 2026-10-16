@@ -87,12 +87,13 @@ export function useLinkWallet() {
       signMessage: (message: string) => Promise<Hex>;
     }) => {
       // The API pins the SIWE chain id and nonce lifetime, whatever chain the wallet is on.
-      const challenge = await api.get<
-        Pick<
-          components['schemas']['SiweNonceResponse'],
-          'nonce' | 'expiresAt' | 'chainId'
-        >
-      >('/auth/siwe/nonce');
+      const challenge =
+        await api.get<
+          Pick<
+            components['schemas']['SiweNonceResponse'],
+            'nonce' | 'expiresAt' | 'chainId'
+          >
+        >('/auth/siwe/nonce');
       const message = siweMessage(
         input.address,
         challenge.chainId,

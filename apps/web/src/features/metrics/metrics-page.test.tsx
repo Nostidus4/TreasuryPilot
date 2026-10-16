@@ -125,7 +125,5 @@ test('savings totals render, including a negative saved value', async () => {
   expect(
     await within(await total('Actually paid')).findByText('10.50'),
   ).toBeVisible();
-  expect(
-    await within(await total('Saved')).findByText('-0.50'),
-  ).toBeVisible();
+  expect(await within(await total('Saved')).findByText('-0.50')).toBeVisible();
 });
