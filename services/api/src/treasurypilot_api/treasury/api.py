@@ -297,6 +297,8 @@ class TreasuryResponse(ApiModel):
     position: PositionView | None = None
     queues: QueuesView | None = None
     activity: list[ActivityView] | None = None
+    # The open borrow proposal, left out when there is none.
+    borrow_proposal_id: uuid.UUID | None = None
 
     @classmethod
     def from_record(
@@ -312,6 +314,8 @@ class TreasuryResponse(ApiModel):
             for name in ("budgets", "staleness", "position"):
                 if (value := getattr(extras, name)) is not None:
                     parts[name] = value
+            if extras.borrow_proposal_id is not None:
+                parts["borrow_proposal_id"] = extras.borrow_proposal_id
         figures = extras.wallets if extras is not None else {}
         return cls(
             treasury=TreasuryView(

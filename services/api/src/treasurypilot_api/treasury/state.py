@@ -28,7 +28,7 @@ from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.invoices.models import PaymentRequest, RequestStatus
 from treasurypilot_api.invoices.requests import confirmed_payment_terms
 from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus
-from treasurypilot_api.treasury.models import WalletRole
+from treasurypilot_api.treasury.models import BorrowProposalRow, WalletRole
 from treasurypilot_api.treasury.service import TreasuryRecord
 from treasurypilot_core.domain import (
     ApprovedRequest,
@@ -187,6 +187,7 @@ class TreasuryExtras:
     position: PositionView | None
     queues: QueuesView
     activity: list[ActivityView]
+    borrow_proposal_id: uuid.UUID | None = None
 
 
 def _node(data: Mapping[str, Any], *path: str) -> Any:
@@ -405,6 +406,20 @@ async def _reserve_requests(
     return tuple(requests)
 
 
+async def open_borrow_proposal_id(
+    session: AsyncSession, org_id: uuid.UUID, treasury_id: uuid.UUID
+) -> uuid.UUID | None:
+    """The treasury's open borrow proposal (ENG-014): the one with status ``Proposed``, if any."""
+
+    return await session.scalar(
+        select(BorrowProposalRow.id).where(
+            BorrowProposalRow.org_id == org_id,
+            BorrowProposalRow.treasury_id == treasury_id,
+            BorrowProposalRow.status == "Proposed",
+        )
+    )
+
+
 async def _last_action(
     session: AsyncSession, org_id: uuid.UUID, treasury_id: uuid.UUID
 ) -> LastActionView:
@@ -537,4 +552,5 @@ async def load_extras(
         position=position,
         queues=await _queues(session, org_id, treasury_id, roles),
         activity=await _activity(session, org_id, treasury_id, symbol=symbol, decimals=decimals),
+        borrow_proposal_id=await open_borrow_proposal_id(session, org_id, treasury_id),
     )
