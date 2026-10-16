@@ -7770,6 +7770,18 @@
             ],
             "title": "Payeeaddress"
           },
+          "payeeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payeeid"
+          },
           "payeeStatus": {
             "anyOf": [
               {
@@ -17759,6 +17771,23 @@
               "format": "uuid",
               "title": "Organization Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "treasuryId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Treasuryid"
             }
           }
         ],

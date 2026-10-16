@@ -1,5 +1,14 @@
+import { useRef } from 'react';
+
+import { useTreasury } from '@/features/treasury/api';
 import { useOrgMutation, useOrgQuery } from '@/lib/api/hooks';
 import { api } from '@/lib/api/http';
+import {
+  toApiTerms,
+  toCreateBody,
+  toPatchBody,
+  type CreateContext,
+} from '@/features/requests/wire';
 import type {
   CsvImportResult,
   Flag,
@@ -15,8 +24,39 @@ import type {
 
 const base = (orgId: string) => `/orgs/${orgId}/requests`;
 
-export const useVendors = (orgId: string) =>
-  useOrgQuery<{ items: Vendor[] }>(orgId, 'payees', ['vendors'], '/vendors');
+/** Vendors with the payee usable by this treasury (a request must use its own treasury's payee). */
+export const useVendors = (orgId: string, treasuryId?: string) =>
+  useOrgQuery<{ items: Vendor[] }>(
+    orgId,
+    'payees',
+    ['vendors', treasuryId],
+    '/vendors',
+    { query: { treasuryId } },
+  );
+
+/** The treasury's own asset (id and decimals); undefined until it has loaded. */
+export const useTreasuryAsset = (
+  orgId: string,
+  treasuryId: string | undefined,
+) => useTreasury(orgId, treasuryId).data?.treasury.asset;
+
+/**
+ * One Idempotency-Key per distinct submission: a retry of the same body reuses
+ * it, an edited body or a success starts a new one.
+ */
+export function useIdempotencyKey() {
+  const last = useRef<{ fingerprint: string; key: string }>();
+  return {
+    keyFor(fingerprint: string) {
+      if (last.current?.fingerprint !== fingerprint)
+        last.current = { fingerprint, key: crypto.randomUUID() };
+      return last.current.key;
+    },
+    reset() {
+      last.current = undefined;
+    },
+  };
+}
 
 export const useRequests = (orgId: string, status?: string) =>
   useOrgQuery<{ items: PaymentRequest[] }>(
@@ -39,10 +79,18 @@ export const useRequest = (orgId: string, id: string | undefined) =>
   );
 
 export const useCreateRequest = (orgId: string) =>
-  useOrgMutation(orgId, (input: RequestInput) =>
-    api.post<{ request: PaymentRequest; flags: Flag[] }>(base(orgId), input, {
-      idempotent: true,
-    }),
+  useOrgMutation(
+    orgId,
+    (input: {
+      input: RequestInput;
+      context: CreateContext;
+      idempotencyKey: string;
+    }) =>
+      api.post<{ request: { id: string }; flags: Flag[] }>(
+        base(orgId),
+        toCreateBody(input.input, input.context),
+        { idempotent: input.idempotencyKey },
+      ),
   );
 
 export const useUploadInvoice = (orgId: string) =>
@@ -54,37 +102,54 @@ export const useUploadInvoice = (orgId: string) =>
   });
 
 export const useImportCsv = (orgId: string) =>
-  useOrgMutation(orgId, (file: File) => {
+  useOrgMutation(orgId, (input: { file: File; treasuryId: string }) => {
     const form = new FormData();
-    form.set('file', file);
+    form.set('file', input.file);
+    form.set('treasuryId', input.treasuryId);
     return api.upload<CsvImportResult>(`${base(orgId)}/import-csv`, form);
   });
 
 export const useConfirmExtraction = (orgId: string, id: string) =>
   useOrgMutation(orgId, (fields: Record<string, string>) =>
+    // shortcut: the API has no extraction/confirm endpoint yet (pre-existing), so this 404s;
+    // replace with PATCH + terms confirm once uploads are wired to the real API.
     api.post<{ request: RequestDetail }>(
       `${base(orgId)}/${id}/extraction/confirm`,
       { fields },
     ),
   );
 
+/** Edits, term confirmation and transitions answer with the new `request.version`. */
+type Versioned = { request: { version: number | string } };
+
 export const useConfirmTerms = (orgId: string, id: string) =>
   useOrgMutation(
     orgId,
-    (terms: { earlyPayDate?: string; earlyDiscountBps?: number }) =>
-      api.post<{ request: RequestDetail }>(
+    (input: {
+      version: string;
+      dueDate: string;
+      earlyPayDate?: string;
+      earlyDiscountBps?: number;
+    }) =>
+      api.post<Versioned>(
         `${base(orgId)}/${id}/terms/confirm`,
-        { terms },
+        { terms: toApiTerms(input) },
+        { ifMatch: input.version },
       ),
   );
 
 export const useEditRequest = (orgId: string, id: string) =>
   useOrgMutation(
     orgId,
-    (input: { version: string; fields: Partial<RequestInput> }) =>
-      api.patch<{ request: RequestDetail }>(
+    (input: {
+      version: string;
+      decimals: number;
+      issueDate?: string | null;
+      fields: Parameters<typeof toPatchBody>[0];
+    }) =>
+      api.patch<Versioned>(
         `${base(orgId)}/${id}`,
-        input.fields,
+        toPatchBody(input.fields, input.decimals, input.issueDate),
         { ifMatch: input.version },
       ),
   );
@@ -96,12 +161,19 @@ type Transition =
   | 'request-changes'
   | 'cancel';
 
-export const useRequestTransition = (orgId: string, id: string) =>
-  useOrgMutation(orgId, (input: { action: Transition; reason?: string }) =>
-    api.post<{ request: RequestDetail }>(
-      `${base(orgId)}/${id}/${input.action}`,
-      input.reason !== undefined ? { reason: input.reason } : undefined,
-    ),
+export const useRequestTransition = (
+  orgId: string,
+  id: string,
+  version: string,
+) =>
+  useOrgMutation(
+    orgId,
+    (input: { action: Transition; reason?: string; version?: string }) =>
+      api.post<Versioned>(
+        `${base(orgId)}/${id}/${input.action}`,
+        input.reason !== undefined ? { reason: input.reason } : undefined,
+        { ifMatch: input.version ?? version },
+      ),
   );
 
 export const useAcknowledgeFlag = (orgId: string, id: string) =>

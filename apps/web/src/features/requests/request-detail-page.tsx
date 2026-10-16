@@ -1,4 +1,5 @@
 import { Ban, Download, ScanText, Send, Undo2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Group, Panel, Separator } from 'react-resizable-panels';
@@ -31,6 +32,7 @@ import {
   useReportCancelTx,
   useRequest,
   useRequestTransition,
+  useTreasuryAsset,
   useVendors,
 } from '@/features/requests/api';
 import {
@@ -46,7 +48,6 @@ import {
   VendorHistory,
 } from '@/features/requests/request-parts';
 import { useTreasury } from '@/features/treasury/api';
-import { useAssetInfo } from '@/lib/api/chains';
 import { errorMessage, isApiError } from '@/lib/api/http';
 import type { RequestDetail } from '@/lib/api/types';
 import { formatDateTime } from '@/lib/format';
@@ -153,21 +154,29 @@ function Extracting({ request }: { request: RequestDetail }) {
  */
 function DraftEditor({ request }: { request: RequestDetail }) {
   const scope = useOrgScope();
-  const info = useAssetInfo();
+  const asset = useTreasuryAsset(scope.orgId, request.treasuryId);
+  const queryClient = useQueryClient();
   const wide = useMediaQuery('(min-width: 1024px)');
-  const vendors = useVendors(scope.orgId);
+  const vendors = useVendors(scope.orgId, request.treasuryId);
   const confirmExtraction = useConfirmExtraction(scope.orgId, request.id);
   const confirmTerms = useConfirmTerms(scope.orgId, request.id);
   const edit = useEditRequest(scope.orgId, request.id);
-  const transition = useRequestTransition(scope.orgId, request.id);
+  const transition = useRequestTransition(
+    scope.orgId,
+    request.id,
+    request.version,
+  );
   const [error, setError] = useState<unknown>();
   const [pending, setPending] = useState(false);
+  const stale = isApiError(error) && error.status === 412;
   const fromUpload = request.source === 'UPLOAD';
 
   const saveAndSubmit = async (result: RequestFormResult) => {
+    if (!asset) return;
     setError(undefined);
     setPending(true);
     try {
+      let version = request.version;
       if (fromUpload) {
         await confirmExtraction.mutateAsync({
           vendor: result.vendorId,
@@ -177,8 +186,10 @@ function DraftEditor({ request }: { request: RequestDetail }) {
           description: result.description,
         });
       } else {
-        await edit.mutateAsync({
-          version: request.version,
+        const edited = await edit.mutateAsync({
+          version,
+          decimals: asset.decimals,
+          issueDate: request.issueDate,
           fields: {
             invoiceNumber: result.invoiceNumber,
             amount: result.amount,
@@ -186,15 +197,26 @@ function DraftEditor({ request }: { request: RequestDetail }) {
             description: result.description,
           },
         });
+        version = String(edited.request.version);
       }
-      await confirmTerms.mutateAsync({
+      const confirmed = await confirmTerms.mutateAsync({
+        version,
+        dueDate: result.dueDate,
         earlyPayDate: result.earlyPayDate,
         earlyDiscountBps: result.earlyDiscountBps,
       });
-      await transition.mutateAsync({ action: 'submit' });
+      await transition.mutateAsync({
+        action: 'submit',
+        version: String(confirmed.request.version),
+      });
       toast.success(t('Submitted for approval'));
     } catch (cause) {
       setError(cause);
+      // A stale version: reload so the form shows the latest one.
+      if (isApiError(cause) && cause.status === 412)
+        void queryClient.invalidateQueries({
+          queryKey: ['org', scope.orgId, 'requests'],
+        });
     } finally {
       setPending(false);
     }
@@ -229,25 +251,30 @@ function DraftEditor({ request }: { request: RequestDetail }) {
         ))}
         <QueryBoundary query={vendors}>
           {({ items }) =>
-            info ? (
+            asset ? (
               <RequestForm
                 key={request.version}
+                decimals={asset.decimals}
                 vendors={items}
                 vendorLocked={!fromUpload}
                 extracted={request.fields}
-                defaults={formDefaults(request, info.asset.decimals)}
+                defaults={formDefaults(request, asset.decimals)}
                 onSubmit={(result) => void saveAndSubmit(result)}
               >
                 {error !== undefined && (
                   <Alert
                     tone="danger"
                     title={
-                      isApiError(error, 'PRECONDITION_FAILED')
+                      stale
                         ? t('Someone changed this request')
                         : t('The request was not submitted')
                     }
                   >
-                    {errorMessage(error)}
+                    {stale
+                      ? t(
+                          'This request changed, so the latest version was reloaded. Check it and submit again.',
+                        )
+                      : errorMessage(error)}
                   </Alert>
                 )}
                 <div className="flex flex-wrap justify-end gap-2">
@@ -350,7 +377,11 @@ function CancelOnchainBanner({ request }: { request: RequestDetail }) {
 
 function ReadOnly({ request }: { request: RequestDetail }) {
   const scope = useOrgScope();
-  const transition = useRequestTransition(scope.orgId, request.id);
+  const transition = useRequestTransition(
+    scope.orgId,
+    request.id,
+    request.version,
+  );
   const [cancelOpen, setCancelOpen] = useState(false);
   const act = (action: 'withdraw' | 'cancel', reason?: string) =>
     transition.mutate(

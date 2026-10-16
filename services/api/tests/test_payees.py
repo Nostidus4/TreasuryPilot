@@ -116,7 +116,9 @@ class MemoryStore:
         self.audit.append(AuditEvent(ORG_ID, USER_ID, action, entity_type, entity_id, data))
 
     # vendors
-    async def list_vendors(self, *, organization_id: uuid.UUID) -> tuple[VendorRecord, ...]:
+    async def list_vendors(
+        self, *, organization_id: uuid.UUID, treasury_id: uuid.UUID | None = None
+    ) -> tuple[VendorRecord, ...]:
         return tuple(v for v in self.vendors.values() if v.org_id == organization_id)
 
     async def get_vendor(

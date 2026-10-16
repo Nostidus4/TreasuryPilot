@@ -125,6 +125,51 @@ function buildOptions(request: RequestDetail): PaymentOption[] {
   return options;
 }
 
+/** The real API's request body, as sent by the web (see features/requests/wire.ts). */
+interface ApiRequestBody {
+  treasuryId?: string;
+  vendorId?: string;
+  invoiceNo?: string;
+  amount?: string;
+  dueDate?: string;
+  note?: string | null;
+  terms?: ApiTerms;
+}
+interface ApiTerms {
+  netDueDay?: number;
+  discountBps?: number;
+  discountDeadlineDay?: number;
+}
+
+const endOfDay = (date: string) => `${date}T23:59:59.000Z`;
+const fromEpochDay = (day: number) =>
+  endOfDay(new Date(day * 86_400_000).toISOString().slice(0, 10));
+
+function fromApiTerms(terms: ApiTerms = {}) {
+  return terms.discountBps && terms.discountDeadlineDay !== undefined
+    ? {
+        earlyDiscountBps: terms.discountBps,
+        earlyPayDate: fromEpochDay(terms.discountDeadlineDay),
+      }
+    : {};
+}
+
+/** Translate an API body into the mock's own field names; unset fields stay unset. */
+function fromApiBody(body: ApiRequestBody) {
+  const amount =
+    body.amount === undefined ? undefined : parseUnits(body.amount, 6);
+  return {
+    ...(body.vendorId !== undefined && { vendorId: body.vendorId }),
+    ...(body.treasuryId !== undefined && { treasuryId: body.treasuryId }),
+    ...(body.invoiceNo !== undefined && { invoiceNumber: body.invoiceNo }),
+    ...(amount !== undefined && {
+      amount: amount.ok ? amount.value.toString() : '',
+    }),
+    ...(body.dueDate !== undefined && { dueDate: endOfDay(body.dueDate) }),
+    ...(body.note !== undefined && { description: body.note ?? '' }),
+  };
+}
+
 function createDraft(
   input: RequestInput,
   source: PaymentRequest['source'],
@@ -232,6 +277,7 @@ export const requestHandlers = [
       const vendor = {
         id: `vnd_${db.vendors.length}`,
         name,
+        payeeId: null,
         payeeAddress: null,
         payeeStatus: null,
       };
@@ -261,16 +307,22 @@ export const requestHandlers = [
     return { items };
   }),
 
-  route<RequestInput>(
+  route<ApiRequestBody>(
     'post',
     R,
     ({ params, body }) => {
       requireOrg(params.orgId);
-      if (!body.invoiceNumber?.trim())
+      if (!body.invoiceNo?.trim())
         fail(422, 'VALIDATION', 'Invoice number is required.', [
-          { field: 'invoiceNumber', message: 'Enter the invoice number.' },
+          { field: 'invoiceNo', message: 'Enter the invoice number.' },
         ]);
-      const request = createDraft(body, 'MANUAL');
+      const request = createDraft(
+        {
+          ...(fromApiBody(body) as RequestInput),
+          ...fromApiTerms(body.terms),
+        },
+        'MANUAL',
+      );
       return { request: summary(request), flags: request.flags };
     },
     { status: 201 },
@@ -428,12 +480,19 @@ export const requestHandlers = [
       const header = (lines.shift() ?? '')
         .split(',')
         .map((cell) => cell.trim().toLowerCase());
-      const expected = ['vendor', 'invoice_number', 'amount', 'due_date'];
+      const expected = [
+        'vendor_ref',
+        'payee_address',
+        'invoice_no',
+        'issue_date',
+        'due_date',
+        'amount',
+      ];
       if (expected.some((column, index) => header[index] !== column)) {
         fail(
           422,
           'CSV_HEADER_INVALID',
-          `The first row must be: ${expected.join(', ')}, description.`,
+          `The first row must be: ${expected.join(', ')}, note.`,
         );
       }
       const result: CsvImportResult = { created: [], errors: [] };
@@ -441,9 +500,11 @@ export const requestHandlers = [
         const row = index + 2;
         const [
           vendorName = '',
+          ,
           invoiceNumber = '',
-          amountText = '',
+          ,
           dueDate = '',
+          amountText = '',
           description = '',
         ] = line.split(',').map((cell) => cell.trim());
         const vendor = db.vendors.find(
@@ -512,38 +573,39 @@ export const requestHandlers = [
 
   route('get', `${R}/:rId`, ({ params }) => detail(getRequest(params))),
 
-  route<
-    Partial<
-      Pick<RequestInput, 'amount' | 'dueDate' | 'description' | 'invoiceNumber'>
-    >
-  >('patch', `${R}/:rId`, ({ params, body, request: raw }) => {
-    const request = getRequest(params);
-    if (!['Draft', 'ChangesRequested'].includes(request.status))
-      fail(
-        409,
-        'NOT_EDITABLE',
-        'Only drafts can be edited. Withdraw the request first.',
-      );
-    if (raw.headers.get('If-Match') !== request.version)
-      fail(
-        412,
-        'PRECONDITION_FAILED',
-        'Someone changed this request. Reload to see the latest version.',
-      );
-    Object.assign(request, body);
-    if (body.dueDate) request.terms.standardDueDate = body.dueDate;
-    request.revision += 1;
-    request.version = `v${request.revision}`;
-    request.approvals = [];
-    request.options = buildOptions(request);
-    request.revisions.unshift({
-      revision: request.revision,
-      at: isoNow(),
-      by: db.session!.name,
-      summary: `Edited ${Object.keys(body).join(', ')}`,
-    });
-    return { request: detail(request) };
-  }),
+  route<ApiRequestBody>(
+    'patch',
+    `${R}/:rId`,
+    ({ params, body: api, request: raw }) => {
+      const request = getRequest(params);
+      const body = fromApiBody(api);
+      if (!['Draft', 'ChangesRequested'].includes(request.status))
+        fail(
+          409,
+          'NOT_EDITABLE',
+          'Only drafts can be edited. Withdraw the request first.',
+        );
+      if (raw.headers.get('If-Match') !== request.version)
+        fail(
+          412,
+          'PRECONDITION_FAILED',
+          'Someone changed this request. Reload to see the latest version.',
+        );
+      Object.assign(request, body);
+      if (body.dueDate) request.terms.standardDueDate = body.dueDate;
+      request.revision += 1;
+      request.version = `v${request.revision}`;
+      request.approvals = [];
+      request.options = buildOptions(request);
+      request.revisions.unshift({
+        revision: request.revision,
+        at: isoNow(),
+        by: db.session!.name,
+        summary: `Edited ${Object.keys(body).join(', ')}`,
+      });
+      return { request: detail(request) };
+    },
+  ),
 
   route<{ fields: Record<string, string> }>(
     'post',
@@ -589,12 +651,12 @@ export const requestHandlers = [
     },
   ),
 
-  route<{ terms: { earlyPayDate?: string; earlyDiscountBps?: number } }>(
+  route<{ terms: ApiTerms }>(
     'post',
     `${R}/:rId/terms/confirm`,
     ({ params, body }) => {
       const request = getRequest(params);
-      const { earlyPayDate, earlyDiscountBps } = body.terms;
+      const { earlyPayDate, earlyDiscountBps } = fromApiTerms(body.terms);
       if (
         earlyDiscountBps !== undefined &&
         (earlyDiscountBps < 0 || earlyDiscountBps > 2000)

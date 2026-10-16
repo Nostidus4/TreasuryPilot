@@ -443,6 +443,7 @@ export interface PaymentRequest {
 }
 
 export interface RequestDetail extends PaymentRequest {
+  issueDate?: string | null;
   version: string;
   document?: { name: string; mime: string; url: string };
   fields: ExtractedField[];
@@ -490,6 +491,7 @@ export interface RequestInput {
 export interface Vendor {
   id: string;
   name: string;
+  payeeId: string | null;
   payeeAddress: Hex | null;
   payeeStatus: PayeeStatus | null;
 }

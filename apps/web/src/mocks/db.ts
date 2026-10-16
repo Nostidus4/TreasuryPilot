@@ -393,12 +393,14 @@ export function seed(): Db {
   ].map(([id, name]) => ({
     id,
     name,
+    payeeId: `pay_${id.slice(4)}`,
     payeeAddress: addr(`payee-${id}`),
     payeeStatus: 'Active',
   }));
   vendors.push({
     id: 'vnd_quanta',
     name: 'Quanta Freight',
+    payeeId: null,
     payeeAddress: null,
     payeeStatus: null,
   });
@@ -2119,6 +2121,7 @@ export function startCooling(payeeId: string) {
     payee.status = 'Active';
     const vendor = db.vendors.find((item) => item.id === payee.vendorId);
     if (vendor) {
+      vendor.payeeId = payee.id;
       vendor.payeeAddress = payee.address as Hex;
       vendor.payeeStatus = 'Active';
     }

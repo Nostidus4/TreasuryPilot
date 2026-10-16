@@ -42,7 +42,8 @@ const apiRoot = `${import.meta.env.VITE_API_URL ?? ''}/v1`;
 interface RequestOptions {
   body?: unknown;
   form?: FormData;
-  idempotent?: boolean;
+  /** `true` mints a key per call; a string reuses the caller's key across retries. */
+  idempotent?: boolean | string;
   ifMatch?: string;
   query?: Record<string, string | number | boolean | undefined>;
   signal?: AbortSignal;
@@ -94,7 +95,13 @@ async function request<T>(
     headers.set('Content-Type', 'application/json');
   const csrf = method !== 'GET' ? csrfToken() : undefined;
   if (csrf) headers.set('X-CSRF-Token', csrf);
-  if (options.idempotent) headers.set('Idempotency-Key', crypto.randomUUID());
+  if (options.idempotent)
+    headers.set(
+      'Idempotency-Key',
+      typeof options.idempotent === 'string'
+        ? options.idempotent
+        : crypto.randomUUID(),
+    );
   if (options.ifMatch) headers.set('If-Match', options.ifMatch);
 
   let response: Response;
