@@ -34,6 +34,7 @@ def build_tools(scenario: Scenario, position: Position) -> tuple[Tool[Any], ...]
         check(args)
         return {
             "snapshot_id": f"snapshot:{scenario.id}",
+            "evidence_id": f"snapshot:{scenario.id}",
             "as_of": scenario.as_of.isoformat(),
             "horizon_days": scenario.horizon_days,
             "day_numbers": "UTC days since 1970-01-01; amounts are integer base units",
@@ -43,13 +44,19 @@ def build_tools(scenario: Scenario, position: Position) -> tuple[Tool[Any], ...]
     def list_requests(args: _TreasuryIn) -> dict[str, Any]:
         check(args)
         return {
-            "requests": [r.model_dump(mode="json") for r in scenario.requests],
+            "requests": [
+                {**r.model_dump(mode="json"), "evidence_id": f"request:{r.id}"}
+                for r in scenario.requests
+            ],
             "truncated": False,
         }
 
     def get_policy_summary(args: _TreasuryIn) -> dict[str, Any]:
         check(args)
-        return {"policy": scenario.policy.model_dump(mode="json")}
+        return {
+            "evidence_id": f"policy:{scenario.id}",
+            "policy": scenario.policy.model_dump(mode="json"),
+        }
 
     return (
         Tool(

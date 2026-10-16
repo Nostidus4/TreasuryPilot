@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-101",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "a79393b66744b0bf217372516450950a8d97b818b449e6c5e4d82040d3595ddd",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 13053,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_012CGytY5GmWLX1XcKdWdz74",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-101"
+              }
+            },
+            {
+              "id": "toolu_013Eskkjgsxw6Z3Ej7wzQAj1",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-101"
+              }
+            },
+            {
+              "id": "toolu_01SF5vHzxESxoKL3Rgue5cNj",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-101"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\"],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"PAYEE_NOT_YET_ACTIVE\"}],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r2's payee, vendor-b, does not become active until the day after the snapshot day. r2 can't be paid today, so it is deferred to the activation day (2026-10-15). That is one day past its net due day, but the terms list no late fee.\",\"evidence_ids\":[\"snapshot:sc-101\",\"request:r2\"]},{\"claim\":\"r1's payee, vendor-a, is already active. r1 is due on net terms within the horizon and has no early-payment discount, and it is within the per-request and daily pay limits. That makes r1 the only request that can go into the order now.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-101\",\"policy:sc-101\"]},{\"claim\":\"Funding warning: wallet O1's balance above its buffer is below what r1 needs, and the snapshot lists no refill paths from the source wallet. r1 may not execute until O1 gets more funds or a refill path. The engine should check this before paying.\",\"evidence_ids\":[\"snapshot:sc-101\",\"request:r1\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1190,
+          "output_tokens": 902,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

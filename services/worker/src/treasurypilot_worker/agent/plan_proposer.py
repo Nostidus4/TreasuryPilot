@@ -14,6 +14,7 @@ from treasurypilot_worker.agent.errors import AiError
 from treasurypilot_worker.agent.prompts.plan import EXPLAIN_TEMPLATE, PLAN_TEMPLATE
 from treasurypilot_worker.agent.types import AiResult, Tool, ToolCallRecord
 
+_EVIDENCE_TOOLS = frozenset({"get_snapshot", "list_requests", "get_policy_summary", "get_evidence"})
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
@@ -70,20 +71,36 @@ def needs_full_proposal(*, eligible_requests: int, terms_or_deferrals_matter: bo
 
 
 def evidence_from_tool_calls(tool_calls: Sequence[ToolCallRecord]) -> set[str]:
-    """Evidence ids this run actually read: org-bound tools succeeded on them, nothing else counts."""
+    """Evidence ids this run actually read: org-bound tools succeeded on them, nothing else counts.
+
+    Citable: the `evidence_id` of a successful get_snapshot, get_policy_summary or get_evidence
+    result and of each request row of a successful list_requests (`request:<id>`), plus the bare
+    id of such a row. Failed, truncated or unparseable results contribute nothing.
+    """
 
     seen: set[str] = set()
     for call in tool_calls:
-        if call.is_error:
+        if call.is_error or call.truncated or call.name not in _EVIDENCE_TOOLS:
             continue
-        if call.name == "get_evidence" and "evidence_id" in call.input:
-            seen.add(str(call.input["evidence_id"]))
-        elif call.name == "get_snapshot":
-            try:
-                seen.add(str(json.loads(call.result)["snapshot_id"]))
-            except (ValueError, KeyError, TypeError):
-                pass  # truncated or odd output: its id is simply not citable
+        try:
+            body = json.loads(call.result)
+        except ValueError:
+            continue  # odd output: its ids are simply not citable
+        if not isinstance(body, dict):
+            continue
+        _add(seen, body.get("evidence_id"))
+        if call.name == "list_requests":
+            rows = body.get("requests")
+            for row in rows if isinstance(rows, list) else ():
+                if isinstance(row, dict):
+                    _add(seen, row.get("evidence_id"))
+                    _add(seen, row.get("id"))
     return seen
+
+
+def _add(seen: set[str], value: object) -> None:
+    if isinstance(value, str) and value:
+        seen.add(value)
 
 
 def check_references(

@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-022",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "9fb92e3fd320cb3a47f00a3c7204de9630626ee8b4fda3f8cb21b9eb730470ff",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 9115,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01VY9n7LcMVVosDBZxJTdi6r",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-022"
+              }
+            },
+            {
+              "id": "toolu_01Gj63jjZDyXS8e7S3skuDsg",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-022"
+              }
+            },
+            {
+              "id": "toolu_01Ez48CGV4LF8NC8fihAZPEJ",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-022"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[\"r1\",\"r2\"],\"deferrals\":[],\"exception_requests\":[],\"rationale\":[{\"claim\":\"r1 and r2 are both due on the same day, the day after the snapshot day. Neither has an early-payment discount or a late fee, so their terms give no reason to pay one first.\",\"evidence_ids\":[\"request:r1\",\"request:r2\",\"snapshot:sc-022\"]},{\"claim\":\"With identical terms, the tie is broken by approval order: r1 was approved first, then r2. The vendor priority notes are data supplied by the vendors and were not used to decide the order.\",\"evidence_ids\":[\"request:r1\",\"request:r2\"]},{\"claim\":\"Together the two requests stay within the per-request and daily pay limits, and no pay limit has been used today, so neither needs a human exception.\",\"evidence_ids\":[\"policy:sc-022\",\"snapshot:sc-022\"]},{\"claim\":\"Funding risk: the paying wallet O1 holds less than either request needs above its buffer, and the snapshot lists no refill paths. The source wallet does have funds and the refill limits allow transfers, but a refill must be possible before either payment can go out.\",\"evidence_ids\":[\"snapshot:sc-022\",\"policy:sc-022\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1214,
+          "output_tokens": 646,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

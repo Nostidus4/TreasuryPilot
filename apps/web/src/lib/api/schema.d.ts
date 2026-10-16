@@ -5357,6 +5357,8 @@ export interface components {
     TreasuryResponse: {
       /** Activity */
       activity?: components['schemas']['ActivityView'][] | null;
+      /** Borrowproposalid */
+      borrowProposalId?: string | null;
       /** Budgets */
       budgets?: components['schemas']['BudgetView'][] | null;
       mandate?: components['schemas']['MandateSummaryView'] | null;

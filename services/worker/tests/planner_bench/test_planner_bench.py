@@ -147,7 +147,7 @@ def test_violation_fails_the_run(scenarios: list[Scenario]) -> None:
 
 def test_report_has_three_arms_csv_and_lists_worse_cases(scenarios: list[Scenario]) -> None:
     results = _run(scenarios)
-    info = RunInfo("stand-in", "none", "plan.v1", REPS, stand_in=True)
+    info = RunInfo("stand-in", "none", "plan.v2", REPS, stand_in=True)
     report = render_markdown(results, info)
     assert "B0 manual/EDF, idle cash | B1 deterministic | B2 AI + checks" in report
     assert "## Scenarios where B2 is worse" in report

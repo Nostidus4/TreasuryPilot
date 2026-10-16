@@ -24,6 +24,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 
 from treasurypilot_core.eip712 import payment_approval_typed_data
+from treasurypilot_core.money import BaseUnits
 from treasurypilot_core.policy import Decision, ExecutionPlan
 from treasurypilot_worker.attestation import attest
 from treasurypilot_worker.chain.snapshot import (
@@ -35,6 +36,8 @@ from treasurypilot_worker.chain.snapshot import (
 from treasurypilot_worker.executor.plan_loader import load_plan
 from treasurypilot_worker.executor.sequencer import PlanRun, sequence_plan
 from treasurypilot_worker.locks import create_worker_pool, treasury_advisory_xact_lock
+from treasurypilot_worker.planner.borrow import clear_borrow_proposal, record_borrow_proposal
+from treasurypilot_worker.planner.inputs import engine_snapshot
 from treasurypilot_worker.planner.liquidity import DbLiquidityStarter, plan_liquidity
 from treasurypilot_worker.planner.pipeline import PlannerDeps, plan_request
 from treasurypilot_worker.planner.start import DbPlanStarter, DbScheduleProvider
@@ -511,6 +514,62 @@ async def test_nothing_to_do_leaves_no_plan_behind(pool: Any, database_url: str)
 
     assert outcome is not None and outcome.status == "Superseded"
     assert await pool.fetchval("SELECT count(*) FROM plans WHERE id = $1", plan_id) == 0
+
+
+async def _proposals(pool: Any, world: World) -> list[tuple[uuid.UUID, str, int]]:
+    rows = await pool.fetch(
+        "SELECT id, status, shortfall FROM borrow_proposals WHERE treasury_id = $1 "
+        "ORDER BY created_at, id",
+        world.treasury,
+    )
+    return [(r["id"], r["status"], int(r["shortfall"])) for r in rows]
+
+
+@pooled
+async def test_an_uncovered_shortfall_stores_a_borrow_proposal(
+    pool: Any, database_url: str
+) -> None:
+    # Owed 2500, Safe T holds 1000, but the pool only has 200 to give: 1300 stays uncovered.
+    world = await _seed(pool, [(2_500, 20)])
+    chain = _chain(world, safe=1_000, a_token=5_000)
+    chain.data["aave"]["available_liquidity"] = "200"
+    chain.data["aave"]["reserve"] = {
+        "liquidity_rate": str(4 * 10**25),
+        "variable_borrow_rate": str(6 * 10**25),
+    }
+
+    _, _, (plan_id,) = await _cycle(pool, world)
+    await plan_liquidity(pool, plan_id, _deps(pool, database_url, world, chain))
+
+    ((proposal_id, status, shortfall),) = await _proposals(pool, world)
+    assert (status, shortfall) == ("Proposed", 1_300)
+    row = await pool.fetchrow("SELECT * FROM borrow_proposals WHERE id = $1", proposal_id)
+    assert int(row["amount"]) == 1_300 and row["reason"] and row["snapshot_id"] == chain.id
+    # the partial withdrawal is still planned: it narrows the gap
+    assert await _steps(pool, plan_id) == [(0, WITHDRAW, 200)]
+
+
+@pooled
+async def test_a_new_proposal_supersedes_the_open_one_and_no_shortfall_clears_it(
+    pool: Any, database_url: str
+) -> None:
+    world = await _seed(pool, [(2_500, 20)])
+    snapshot = engine_snapshot(_chain(world, safe=1_000).data, world.safe_t, [world.op], day=20_000)
+    async with pool.acquire() as connection:
+        args = (connection, world.org, world.treasury, snapshot)
+        first = await record_borrow_proposal(*args, BaseUnits(1_300))
+        # the same shortfall refreshes it in place: the id a reader holds stays valid
+        assert await record_borrow_proposal(*args, BaseUnits(1_300)) == first
+        second = await record_borrow_proposal(*args, BaseUnits(900))
+        assert second != first
+        assert await _proposals(pool, world) == [
+            (first, "Superseded", 1_300),
+            (second, "Proposed", 900),
+        ]
+        await clear_borrow_proposal(connection, world.treasury)
+        assert [p[1] for p in await _proposals(pool, world)] == ["Superseded", "Superseded"]
+        third = await record_borrow_proposal(*args, BaseUnits(900))
+        assert third not in (first, second)
 
 
 class _Signer:

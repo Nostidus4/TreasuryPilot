@@ -1,0 +1,55 @@
+{
+  "scenario_id": "sc-011",
+  "prompt_version": "plan.v2",
+  "model": "claude-opus-5-5",
+  "inputs_sha256": "f56b8a826d5d6e4d6d4434396063cf4a21ff3348bee9d33fbdc39e0d6fe13d72",
+  "recorded_at": "2026-10-16",
+  "runs": [
+    {
+      "repetition": 0,
+      "latency_ms": 13223,
+      "steps": [
+        {
+          "stop_reason": "tool_use",
+          "text": null,
+          "tool_calls": [
+            {
+              "id": "toolu_01QYCa3cbD57GR2vN9jfYQyt",
+              "name": "get_snapshot",
+              "input": {
+                "treasury_id": "sc-011"
+              }
+            },
+            {
+              "id": "toolu_01KjdjTtxf24jsQyLz2Axctg",
+              "name": "list_requests",
+              "input": {
+                "treasury_id": "sc-011"
+              }
+            },
+            {
+              "id": "toolu_01F5VeQM62DGmPsXSmFpHyKc",
+              "name": "get_policy_summary",
+              "input": {
+                "treasury_id": "sc-011"
+              }
+            }
+          ],
+          "input_tokens": 136,
+          "output_tokens": 164,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        },
+        {
+          "stop_reason": "end_turn",
+          "text": "{\"request_order\":[],\"deferrals\":[{\"request_id\":\"r2\",\"until_day\":\"2026-10-15\",\"reason_code\":\"DAILY_PAY_LIMIT\"}],\"exception_requests\":[\"r1\"],\"rationale\":[{\"claim\":\"Today's daily pay limit has very little headroom left after today's payments. It cannot cover r1 or r2 today without breaching the cap.\",\"evidence_ids\":[\"policy:sc-011\",\"snapshot:sc-011\"]},{\"claim\":\"r1 is due today, the snapshot day, and the daily pay cap blocks it. It needs a human exception to be paid on time; deferring it would make it late.\",\"evidence_ids\":[\"request:r1\",\"snapshot:sc-011\",\"policy:sc-011\"]},{\"claim\":\"r2 is not due until tomorrow. Deferring it to 2026-10-15, when the daily pay limit resets, still pays it on time.\",\"evidence_ids\":[\"request:r2\",\"policy:sc-011\"]},{\"claim\":\"Even after the reset, r1 and r2 together exceed one day's pay limit. If r1 is not granted an exception today, both cannot be paid on 2026-10-15.\",\"evidence_ids\":[\"request:r1\",\"request:r2\",\"policy:sc-011\"]},{\"claim\":\"Paying wallet O1 holds far less than either request and the snapshot lists no refill paths. Funding O1 must be confirmed before either payment can go out.\",\"evidence_ids\":[\"snapshot:sc-011\",\"request:r1\",\"request:r2\"]}]}",
+          "tool_calls": [],
+          "input_tokens": 1189,
+          "output_tokens": 1015,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 2006
+        }
+      ]
+    }
+  ]
+}

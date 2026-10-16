@@ -6852,6 +6852,18 @@
             ],
             "title": "Activity"
           },
+          "borrowProposalId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Borrowproposalid"
+          },
           "budgets": {
             "anyOf": [
               {

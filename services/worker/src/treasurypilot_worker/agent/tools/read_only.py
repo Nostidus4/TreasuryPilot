@@ -117,6 +117,7 @@ class ExplainIn(_In):
 
 class SnapshotOut(_Out):
     snapshot_id: str
+    evidence_id: str  # the id to cite: `snapshot:<snapshot_id>`
     block_number: int
     block_timestamp: str
     coverage: str
@@ -125,6 +126,7 @@ class SnapshotOut(_Out):
 
 class RequestOut(_Out):
     id: str
+    evidence_id: str  # the id to cite: `request:<id>`
     invoice_no: str | None
     vendor: str | None
     amount: str | None
@@ -146,6 +148,7 @@ class PayeeOut(_Out):
 
 
 class PolicyOut(_Out):
+    evidence_id: str  # the id to cite: `policy:v<mandate_version>`
     mandate_version: int
     mandate: dict[str, Any]
     payees: list[PayeeOut]
@@ -183,6 +186,7 @@ class SimulationOut(_Out):
 class EvidenceOut(_Out):
     kind: Literal["snapshot", "validation"]
     id: str
+    evidence_id: str  # `snapshot:<id>` or `validation:<id>`
     summary: dict[str, Any]
 
 
@@ -237,6 +241,7 @@ def build_tools(
         data = {key: value for key, value in row.data.items() if key != "safes"}
         return SnapshotOut(
             snapshot_id=str(row.id),
+            evidence_id=f"snapshot:{row.id}",
             block_number=row.block_number,
             block_timestamp=row.block_timestamp.isoformat(),
             coverage=row.coverage,
@@ -257,6 +262,7 @@ def build_tools(
         if row is None:
             raise ToolError("NO_ACTIVE_MANDATE: the treasury has no active mandate")
         return PolicyOut(
+            evidence_id=f"policy:v{row.mandate_version}",
             mandate_version=row.mandate_version,
             mandate={key: row.config[key] for key in _MANDATE_KEYS if key in row.config},
             payees=[
@@ -320,6 +326,7 @@ def build_tools(
         return EvidenceOut(
             kind="validation",
             id=str(args.evidence_id),
+            evidence_id=f"validation:{args.evidence_id}",
             summary={
                 "decision": decision.decision,
                 "primary": decision.primary,
@@ -418,6 +425,7 @@ def _request(row: RequestRow) -> RequestOut:
         )
     return RequestOut(
         id=str(row.id),
+        evidence_id=f"request:{row.id}",
         invoice_no=(
             None
             if row.invoice_no is None
@@ -440,6 +448,7 @@ def _snapshot_evidence(row: SnapshotRow) -> EvidenceOut:
     return EvidenceOut(
         kind="snapshot",
         id=str(row.id),
+        evidence_id=f"snapshot:{row.id}",
         summary={
             "treasury_id": str(row.treasury_id),
             "purpose": row.purpose,
