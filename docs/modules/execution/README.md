@@ -335,4 +335,4 @@ EXE-001 schema → EXE-002 Celery → EXE-003 trigger/cycles → EXE-012 fee pol
 
 Flow after ACCEPT_FEE: the API records `fee_acceptances(plan_id, accepted_cap_wei = held estimate)` and emits `ExecutionCycleRequested`. The next cycle expires the held plan and plans the request again; `_fee_assessment` returns PROCEED when the new estimate is at most the accepted cap (a higher estimate holds again and needs a new acceptance). `plan_fees` then sends that cap to the signer. `execution/fee_assessment.py::assess_plan_fee` in the API is a reference helper used by tests only.
 
-Shortcuts: per-step gas is the fixed `STEP_GAS` (150k), not `eth_estimateGas` (the signer re-estimates and fails closed); the priority fee is `eth_maxPriorityFeePerGas` capped at maxFeePerGas rather than the preset's `eth_feeHistory` percentile.
+Shortcuts: per-step gas is the fixed `STEP_GAS` (400k, enough for the executor, module and Safe call chain plus the signer's 20 % margin), not `eth_estimateGas` (the signer re-estimates and fails closed); the priority fee is `eth_maxPriorityFeePerGas` capped at maxFeePerGas rather than the preset's `eth_feeHistory` percentile.

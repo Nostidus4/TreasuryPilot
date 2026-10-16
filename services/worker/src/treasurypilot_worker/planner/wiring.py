@@ -26,10 +26,15 @@ from treasurypilot_worker.planner.pipeline import PlannerDeps
 from treasurypilot_worker.planner.reattest import AttestFn
 
 # shortcut: a fixed per-step gas budget instead of eth_estimateGas (the planner has no calldata or
-# simulation context yet); the signer re-estimates with a 20 % margin and refuses any step whose
-# gas_limit * maxFeePerGas exceeds the cap, so an under-estimate fails closed (FEE_CAP_EXCEEDED).
+# simulation context yet). The signer re-estimates each step, adds a 20 % margin and refuses any
+# step whose gas_limit * maxFeePerGas exceeds the plan's fee cap, which is this estimate, so a
+# budget below the real cost fails closed (FEE_CAP_EXCEEDED) on every step. A PAY or REFILL goes
+# executor -> PlanAttestedExecutor (signature checks, nonce write) -> module (approval check,
+# counters, ERC-1271/ECDSA recovery) -> Safe execTransactionFromModule -> ERC-20 transfer, which
+# is well above a plain transfer: 400k covers about 330k of real gas plus the signer's margin.
 # Upgrade when the executor's calldata builder is usable at plan time.
-STEP_GAS = 150_000
+STEP_GAS = 400_000
+SIGNER_GAS_MARGIN_PERCENT = 120  # mirrors services/signer service.py: gas_limit = estimate * 1.2
 
 
 def build_attest(settings: Settings) -> AttestFn:
