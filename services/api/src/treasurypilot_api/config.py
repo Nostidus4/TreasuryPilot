@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # Xero OAuth app (developer.xero.com). Unset leaves the Xero connector off.
     xero_client_id: str | None = None
     xero_client_secret: SecretStr | None = None
+    # QuickBooks Online OAuth app (developer.intuit.com). Unset leaves the connector off.
+    quickbooks_client_id: str | None = None
+    quickbooks_client_secret: SecretStr | None = None
+    quickbooks_sandbox: bool = False
     erp_oauth_redirect_uri: str = "http://localhost:5173/settings/integrations/erp/callback"
     platform_chain_config_path: Path = REPOSITORY_ROOT / "deployments" / "chains.json"
     deployments_dir: Path = REPOSITORY_ROOT / "deployments"

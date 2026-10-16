@@ -114,7 +114,7 @@ Period by UTC day of execution. CSV columns: date, request id, vendor, invoice n
 | EAS receipt | as soon as the request is Paid and the PAY block is finalized (independent of matching); beat sweep every 30 s (`treasurypilot.reconciliation.publish_receipts`), off unless `TP_EAS_RPC_URL`, `TP_EAS_CONTRACT_ADDRESS` and `TP_EAS_RECEIPT_PRIVATE_KEY` are set (`TP_EAS_RECEIPT_ADDRESS` must be that key's address so the low-gas sweep watches it) |
 | EAS retry | exponential backoff 30 s doubling to 1 h, unbounded; a broadcast not mined after 15 min is retried |
 | Export formats | CSV, journal CSV |
-| ERP connectors | off unless the provider's OAuth app is configured (`TP_XERO_CLIENT_ID`, `TP_XERO_CLIENT_SECRET`, `TP_ERP_OAUTH_REDIRECT_URI`) and `TP_FIELD_ENCRYPTION_KEY` is set; ERP retry backoff 30 s doubling to 1 h, 8 attempts, then Failed; payment poll for bill approval 15 min |
+| ERP connectors | off unless the provider's OAuth app is configured (`TP_XERO_CLIENT_ID`, `TP_XERO_CLIENT_SECRET`, `TP_QUICKBOOKS_CLIENT_ID`, `TP_QUICKBOOKS_CLIENT_SECRET`, `TP_QUICKBOOKS_SANDBOX`, `TP_ERP_OAUTH_REDIRECT_URI`) and `TP_FIELD_ENCRYPTION_KEY` is set; ERP retry backoff 30 s doubling to 1 h, 8 attempts, then Failed; payment poll for bill approval 15 min |
 
 ## 10. Security
 
@@ -222,3 +222,13 @@ Code: `services/api/.../integrations/erp`. Migration `20261016_0089` adds `erp_c
 **OAuth.** The `state` is an encrypted, 10 minute token bound to org, user and provider. The web app calls `.../authorize`, sends the user to the ERP, and posts the returned `code` and `state` to `.../callback`. Tokens never appear in responses, logs or audit data; rotated refresh tokens are persisted before use. Audit actions: `erp.connected`, `erp.disconnected`, `erp.settings_changed`, `erp.reauth_required`, `erp.bill_drafted`, `erp.payment_recorded`, `erp.sync_failed`.
 
 Not verified against a live Xero account (tests use scripted HTTP shaped like Xero's documented responses). Xero-specific limits: one organisation per connection, contacts are matched by exact name.
+
+### 16.1 QuickBooks Online connector (REC-L02)
+
+`integrations/erp/quickbooks.py`, registered in `registry.py` when `TP_QUICKBOOKS_CLIENT_ID` and `TP_QUICKBOOKS_CLIENT_SECRET` are set; it passes the same adapter contract tests as Xero (`tests/test_erp_quickbooks.py`). Differences from Xero:
+
+- **No draft state.** QuickBooks posts a bill on creation, so the adapter writes it with `PrivateNote` = `[TP-PENDING-APPROVAL]`; `bill_status` is DRAFT while that marker is present, APPROVED once a human removes it in QuickBooks, PAID at zero balance, VOIDED when voided. No adapter call removes the marker, so it still never approves.
+- **Company id.** QuickBooks returns the `realmId` in the OAuth redirect, not from an API. The web app posts the callback `code` as `<code>#<realmId>`; `exchange_code` returns it as `TokenSet.tenant_hint` and the framework then skips `resolve_tenant` (the only shared-framework change, in `provider.py` and `service.py`).
+- Account codes (expense account, payment bank account) are QuickBooks account Ids. Payments are `BillPayment` (Check) linked to the bill, `PrivateNote` = tx hash. Idempotency uses the `requestid` parameter plus lookups by `DocNumber` and tx hash. Invoice numbers over 21 characters are refused, not truncated.
+
+Not verified against a live QuickBooks company (tests use scripted HTTP shaped like Intuit's documented responses).
