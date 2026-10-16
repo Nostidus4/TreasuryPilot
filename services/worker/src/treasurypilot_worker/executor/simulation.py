@@ -90,7 +90,8 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
             # Fiat payment plans use the fresh-quote amount while the approval carries its cap.
             types, args = [*types, "uint256"], [*args, int(step.amount)]
         elif step.action is Action.REFILL:
-            types, args = [*types, "address", "uint256"], [*args, step.to, int(step.amount)]
+            types = [*types, "address", "address", "uint256"]
+            args = [*args, step.from_wallet, step.to, int(step.amount)]
         else:
             raise ValueError(f"{step.action} steps cannot be simulated")
     elif step.action in (Action.SUPPLY, Action.WITHDRAW):

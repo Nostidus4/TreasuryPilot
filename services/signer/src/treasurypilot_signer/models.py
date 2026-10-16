@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from eth_utils import to_checksum_address
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -21,7 +22,7 @@ class Payload(BaseModel):
             bytes.fromhex(value[2:])
         except ValueError as error:
             raise ValueError("to must be a 20-byte hex address") from error
-        return value
+        return to_checksum_address(value)  # eth_account rejects a lowercase `to`
 
     @field_validator("data")
     @classmethod

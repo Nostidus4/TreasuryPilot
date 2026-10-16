@@ -589,7 +589,11 @@ export function RequestDetailPage() {
           : t('Request')
       }
       titleSlot={
-        request && <StatusBadge meta={requestStatus(request.status)} />
+        request && (
+          <span data-testid="request-status">
+            <StatusBadge meta={requestStatus(request.status)} />
+          </span>
+        )
       }
     >
       <QueryBoundary query={query}>
