@@ -173,7 +173,12 @@ test.describe
     await expect(page.getByText('Authenticator enabled').first()).toBeVisible();
   });
 
+  // Reruns need `make seed` first: it resets the approver's MFA, which this file enrols.
   test('the approver signs the typed data and the API verifies it up to the Travel Rule gate', async () => {
+    test.info().annotations.push({
+      type: 'issue',
+      description: '#229 TRAVEL_RULE_HOLD: no FX provider wired',
+    });
     const page = approver;
     await page.goto(requestPath.replace('/requests/', '/approvals/'));
     await expect(page.getByText(invoice).first()).toBeVisible();

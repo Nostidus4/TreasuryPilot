@@ -81,8 +81,9 @@ bootstrap:
 check-env:
 	@test -f "$(ENV_FILE)" || { echo "Missing $(ENV_FILE). Copy infra/env/.env.example and fill required values."; exit 1; }
 	@# MFA (approval step-up) is off without a field key: generate a per-machine one, never committed.
-	@if grep -q '^TP_FIELD_ENCRYPTION_KEY=$$' "$(ENV_FILE)"; then \
-		key=$$(openssl rand -base64 32) && sed "s|^TP_FIELD_ENCRYPTION_KEY=$$|TP_FIELD_ENCRYPTION_KEY=$$key|" "$(ENV_FILE)" > "$(ENV_FILE).tmp" && mv "$(ENV_FILE).tmp" "$(ENV_FILE)" \
+	@if grep -q '^TP_FIELD_ENCRYPTION_KEY=[[:cntrl:]]\{0,1\}$$' "$(ENV_FILE)"; then \
+		key=$$(openssl rand -base64 32) && sed "s|^TP_FIELD_ENCRYPTION_KEY=\([[:cntrl:]]\{0,1\}\)$$|TP_FIELD_ENCRYPTION_KEY=$$key\1|" "$(ENV_FILE)" > "$(ENV_FILE).tmp" \
+		&& cat "$(ENV_FILE).tmp" > "$(ENV_FILE)" && rm "$(ENV_FILE).tmp" \
 		&& echo "Generated TP_FIELD_ENCRYPTION_KEY in $(ENV_FILE)"; \
 	fi
 

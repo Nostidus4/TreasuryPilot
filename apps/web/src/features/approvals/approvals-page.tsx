@@ -41,7 +41,7 @@ import {
   VendorHistory,
 } from '@/features/requests/request-parts';
 import { errorMessage, isApiError } from '@/lib/api/http';
-import type { Hex, PaymentOption, RequestDetail } from '@/lib/api/types';
+import type { Hex, RequestDetail } from '@/lib/api/types';
 import { dueLabel } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { requestStatus } from '@/lib/status';
@@ -62,9 +62,6 @@ function SignPanel({ request }: { request: RequestDetail }) {
     request.id,
     request.version,
   );
-  const [option, setOption] = useState<PaymentOption['kind']>(
-    request.options[0]?.kind ?? 'STANDARD',
-  );
   const [dialog, setDialog] = useState<'reject' | 'request-changes' | null>(
     null,
   );
@@ -73,12 +70,16 @@ function SignPanel({ request }: { request: RequestDetail }) {
   const [signed, setSigned] = useState<{
     signature: Hex;
     expiry: number;
+    revision: number;
   } | null>(null);
 
-  const send = async (approval: { signature: Hex; expiry: number }) => {
+  const send = async (approval: {
+    signature: Hex;
+    expiry: number;
+    revision: number;
+  }) => {
     await approve.mutateAsync({
       ...approval,
-      revision: request.revision,
       idempotencyKey: idempotency.keyFor(approval.signature),
     });
     toast.success(t('Approved'), {
@@ -124,11 +125,10 @@ function SignPanel({ request }: { request: RequestDetail }) {
               <h3 className="mb-2 text-sm font-medium">
                 {t('Payment option')}
               </h3>
-              <PaymentOptions
-                request={request}
-                value={option}
-                onChange={setOption}
-              />
+              <PaymentOptions request={request} />
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t('Your signature covers both options.')}
+              </p>
             </div>
 
             <div>
@@ -181,7 +181,9 @@ function SignPanel({ request }: { request: RequestDetail }) {
               }
               action={async () => {
                 if (!typedData.data) return;
+                // The revision the signed data was fetched for, kept for a retry after step-up.
                 const approval = {
+                  revision: request.revision,
                   signature: await wallet.signTypedData(typedData.data),
                   expiry: Number(typedData.data.message.expiry),
                 };

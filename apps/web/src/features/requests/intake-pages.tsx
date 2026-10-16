@@ -278,6 +278,7 @@ export function NewRequestPage() {
                         type="submit"
                         variant="primary"
                         loading={create.isPending}
+                        disabled={!payingWalletId}
                       >
                         {t('Save draft')}
                       </Button>

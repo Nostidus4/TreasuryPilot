@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { StepUpDialog } from '@/features/auth/mfa';
@@ -13,7 +14,9 @@ test('the step-up dialog posts the code, then continues', async () => {
   const onDone = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <StepUpDialog open onOpenChange={() => undefined} onDone={onDone} />
+      <MemoryRouter>
+        <StepUpDialog open onOpenChange={() => undefined} onDone={onDone} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 

@@ -1,5 +1,6 @@
 import { ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { QueryBoundary } from '@/components/feedback';
 import { Page } from '@/components/layout/page';
@@ -40,7 +41,16 @@ export function StepUpDialog({
   const stepUp = useStepUp();
   const [code, setCode] = useState('');
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          stepUp.reset();
+          setCode('');
+        }
+        onOpenChange(next);
+      }}
+    >
       <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t('Confirm it is you')}</DialogTitle>
@@ -80,6 +90,9 @@ export function StepUpDialog({
           </Field>
         </form>
         <DialogFooter>
+          <Button asChild variant="ghost">
+            <Link to="/me/security">{t('Set up an authenticator')}</Link>
+          </Button>
           <Button onClick={() => onOpenChange(false)}>{t('Back')}</Button>
           <Button
             type="submit"
@@ -103,9 +116,13 @@ export function SecurityPage() {
   const confirm = useConfirmTotp();
   const [code, setCode] = useState('');
   // shortcut: the otpauth URI is shown as text (no QR library is installed); add a QR code if one lands.
-  const secret = start.data
-    ? new URL(start.data.otpauthUri).searchParams.get('secret')
-    : null;
+  let secret: string | null = null;
+  try {
+    if (start.data)
+      secret = new URL(start.data.otpauthUri).searchParams.get('secret');
+  } catch {
+    // The full URI is still shown below.
+  }
 
   return (
     <AccountLayout>
@@ -138,7 +155,10 @@ export function SecurityPage() {
                     className="grid gap-3"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      confirm.mutate({ factorId: start.data.factorId, code });
+                      confirm.mutate(
+                        { factorId: start.data.factorId, code },
+                        { onSuccess: () => setCode('') },
+                      );
                     }}
                   >
                     <p className="text-sm text-muted-foreground">
