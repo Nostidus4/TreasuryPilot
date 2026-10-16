@@ -7,16 +7,25 @@ const APPROVER_WALLET = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
 // localhost, not 127.0.0.1: the web CSP only allows http://localhost:* for connect-src.
 const anvilRpcUrl = process.env.E2E_ANVIL_RPC_URL ?? 'http://localhost:8545';
 
-/** The one-time sign-in link `make seed` printed for a seeded user. */
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The one-time sign-in link `make seed` printed for a seeded user. Links are
+ * single-use: run `make seed | tee <log>` (E2E_SEED_LOG) before every run.
+ */
 function seedLoginLink(name: string): string {
   const log = process.env.E2E_SEED_LOG;
   if (!log)
     throw new Error('E2E_SEED_LOG must point at the `make seed` output');
   const match = new RegExp(
-    `^\\s*${name}@seed\\.treasurypilot\\.test: (\\S+)$`,
+    `^\\s*${escapeRegExp(name)}@seed\\.treasurypilot\\.test: (\\S+)$`,
     'm',
   ).exec(readFileSync(log, 'utf8'));
-  if (!match) throw new Error(`no seeded login link for ${name} in ${log}`);
+  if (!match)
+    throw new Error(
+      `no seeded login link for ${name} in ${log}; run \`make seed\` (piped to the log) before each run`,
+    );
   return match[1];
 }
 

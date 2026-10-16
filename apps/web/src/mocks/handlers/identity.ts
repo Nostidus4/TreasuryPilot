@@ -164,6 +164,7 @@ export const identityHandlers = [
   route('get', '/auth/siwe/nonce', () => ({
     nonce: Math.random().toString(36).slice(2, 12),
     expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    chainId: 11155111,
   })),
 
   route<{ message: string; signature: Hex }>(

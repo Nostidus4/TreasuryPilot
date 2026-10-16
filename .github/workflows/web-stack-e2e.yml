@@ -34,6 +34,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   stack-e2e:
     runs-on: ubuntu-latest
@@ -70,7 +74,12 @@ jobs:
           cp infra/env/.env.example infra/env/.env
           make dev
       - name: Deploy contracts and seed the TEST dataset
-        run: make seed | tee /tmp/seed.log
+        shell: bash
+        run: |
+          set -o pipefail
+          make seed | tee /tmp/seed.log
+      - name: Wait for the web container
+        run: curl --fail --silent --retry 30 --retry-delay 2 --retry-connrefused http://localhost:5173/healthz
       - name: Resolve Playwright version
         id: playwright
         run: echo "version=$(pnpm --dir apps/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
