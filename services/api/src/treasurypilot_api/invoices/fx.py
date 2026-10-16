@@ -7,9 +7,10 @@ base units; this module never rounds or clips a payment itself.
 
 from __future__ import annotations
 
+import time
 from typing import Protocol
 
-from treasurypilot_core.domain import FiatApproval, FxPolicy, FxQuote
+from treasurypilot_core.domain import FiatApproval, FxPolicy, FxQuote, FxRate
 from treasurypilot_core.engine import propose_fiat_payment
 from treasurypilot_core.money import BaseUnits
 
@@ -34,6 +35,39 @@ class FiatInvoiceLike(Protocol):
     fiat_currency: str | None
     fx_reference_quote: dict[str, object] | None
     fx_tolerance_bps: int | None
+
+
+class StaticTestFxQuoteProvider:
+    """TEST ONLY: values a USD-pegged 6-decimal stablecoin 1:1 against USD, never a market rate.
+
+    Lets the local stack attach a fiat valuation (needed by the Travel Rule gate) without an
+    external feed. create_app enables it only from TP_FX_TEST_STATIC_PROVIDER in local/test.
+    """
+
+    def __init__(self, source_id: str, *, decimals: int = 6) -> None:
+        self._source_id = source_id
+        self._decimals = decimals
+
+    async def quote(
+        self,
+        *,
+        fiat_currency: str,
+        fiat_amount_minor_units: int,
+        stablecoin_asset: str,
+    ) -> FxQuote:
+        if fiat_currency != "USD":
+            raise FxProviderUnavailable("the TEST static FX provider only quotes USD")
+        return FxQuote(
+            source_id=self._source_id,
+            rate=FxRate(
+                fiat_currency=fiat_currency,
+                stablecoin_asset=stablecoin_asset,
+                stablecoin_units=10 ** (self._decimals - 2),  # one cent in base units
+                fiat_minor_units=1,
+            ),
+            observed_at=int(time.time()),
+            stablecoin_usd_price_micros=1_000_000,
+        )
 
 
 def asset_key(address: bytes) -> str:

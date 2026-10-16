@@ -138,6 +138,10 @@ services:
       TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
       # Travel Rule thresholds (JSON); an empty map blocks any route without a rule.
       TP_TRAVEL_RULE_THRESHOLDS: ${TP_TRAVEL_RULE_THRESHOLDS:-{}}
+      # Fiat valuation of requests. The static provider is TEST only (USD 1:1) and off by default.
+      TP_FX_SOURCE_ID: ${TP_FX_SOURCE_ID:-}
+      TP_FX_TOLERANCE_BPS: ${TP_FX_TOLERANCE_BPS:-}
+      TP_FX_TEST_STATIC_PROVIDER: ${TP_FX_TEST_STATIC_PROVIDER:-false}
       # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
       TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
       # `make seed` points these at /app/deployments/local (mounted below).
@@ -199,6 +203,7 @@ services:
       TP_POLICY_KEYSTORE_PASSWORD_FILE: /run/secrets/policy_keystore_password
       TP_SIGNER_URL: ${TP_SIGNER_URL:-http://signer:8080}
       TP_SIGNER_SHARED_SECRET: ${TP_SIGNER_SHARED_SECRET:-}
+      TP_EXECUTOR_ADDRESS: ${TP_EXECUTOR_ADDRESS:-}
     # Encrypted policy key (M08 §10); only the core worker mounts it.
     secrets: [policy_keystore, policy_keystore_password]
     tmpfs: [/tmp/prometheus]

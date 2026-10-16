@@ -61,7 +61,7 @@ async def _run_twice(url: str, tmp: Path, monkeypatch: pytest.MonkeyPatch) -> li
             await seed_local.main_async(
                 argparse.Namespace(
                     manifest=str(manifest), config_dir=str(tmp / "local"),
-                    rpc_url="http://rpc", api_rpc_url="http://anvil:8545", web_url="http://w",
+                    rpc_url="http://rpc", api_rpc_url="http://anvil:8545", web_url="http://w", env_file=None,
                 )
             )  # fmt: skip
             async with engine.connect() as c:
