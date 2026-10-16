@@ -13,9 +13,11 @@
     "postcss.config.js",
     "tailwind.config.ts",
     "playwright.config.ts",
+    "playwright.stack.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "e2e/**/*.ts",
+    "e2e-stack/**/*.ts",
     "src/mocks/seeded.ts"
   ]
 }

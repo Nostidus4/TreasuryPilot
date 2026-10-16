@@ -82,6 +82,8 @@ check-env:
 	@test -f "$(ENV_FILE)" || { echo "Missing $(ENV_FILE). Copy infra/env/.env.example and fill required values."; exit 1; }
 
 dev: check-env
+	@# Docker would create the bind-mounted dir as root on Linux; seed must write to it.
+	mkdir -p deployments/local
 	$(COMPOSE) --profile local up --build -d
 
 infra: check-env

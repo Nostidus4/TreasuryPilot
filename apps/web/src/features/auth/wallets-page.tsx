@@ -38,7 +38,6 @@ export function WalletsPage() {
     link.mutate(
       {
         address: wallet.address,
-        chainId: wallet.chainId ?? 11155111,
         signMessage: wallet.signMessage,
       },
       {
