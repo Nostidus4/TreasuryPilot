@@ -395,3 +395,20 @@ def test_a_swap_step_without_min_out_cannot_be_encoded() -> None:
 
     with pytest.raises(ValueError, match="minOut"):
         build_calldata(step, CTX)
+
+
+def test_the_approver_signature_is_framed_as_the_module_reads_it() -> None:
+    """`verifyApproval` takes identity, offset 64, length, then the signature (padded to 32)."""
+    from treasurypilot_worker.executor.plan_loader import wire_approver_signature
+
+    signer = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+    raw = bytes(range(65))
+
+    wire = wire_approver_signature(signer, raw)
+
+    assert len(wire) >= 96
+    assert int.from_bytes(wire[:32]) == int(signer, 16)
+    assert int.from_bytes(wire[32:64]) == 64
+    length = int.from_bytes(wire[64:96])
+    assert length == 65 and wire[96 : 96 + length] == raw
+    assert len(wire) - 96 - length < 32

@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped]
+from eth_abi import encode
 
 from treasurypilot_core.domain.fee_policy import PRESETS, FeePreset
 from treasurypilot_core.eip712 import PAY, REFILL, SUPPLY, SWAP_IN, WITHDRAW
@@ -123,6 +124,17 @@ def snapshot_executor(snapshot: Snapshot) -> str:
     return str(executor)
 
 
+def wire_approver_signature(signer: str, signature: bytes) -> bytes:
+    """The module's ``approverSig``: ``abi.encode(address signer, bytes signature)``.
+
+    The approvals table keeps the raw wallet signature (65 bytes for an EOA, whatever the Safe
+    returns for ERC-1271); ``verifyApproval`` reads the signer from the first word and rejects a
+    bare signature as ApprovalInvalid.
+    """
+
+    return encode(["address", "bytes"], [signer, signature])
+
+
 def simulation_context(loaded: LoadedPlan, inputs: ContextInputs, target: str) -> SimulationContext:
     """What the signer will send to ``target``; ``snapshot_block`` and ``policy_version`` are set per step."""
 
@@ -135,7 +147,9 @@ def simulation_context(loaded: LoadedPlan, inputs: ContextInputs, target: str) -
         policy_version=b"\x00" * 32,
         snapshot_block=0,
         approval=approval.typed if approval else None,
-        approver_signature=approval.signature if approval else b"",
+        approver_signature=(
+            wire_approver_signature(approval.signer, approval.signature) if approval else b""
+        ),
         travel_rule_clear=inputs.travel_rule_clear,
     )
 
