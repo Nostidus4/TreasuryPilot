@@ -5,7 +5,7 @@ transaction) are keyed by plan. ``treasuries.liquidity_idle_*`` records that a c
 to do for a given set of inputs, so the next cycles skip the claim until they change.
 
 Revision ID: 20261016_0092
-Revises: 20261016_0088
+Revises: 20261016_0091
 Create Date: 2026-10-16 00:00:00
 """
 
