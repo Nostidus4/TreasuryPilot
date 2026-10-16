@@ -87,3 +87,17 @@ def test_presigned_urls_use_the_public_endpoint() -> None:
     storage = build_document_storage(settings)
     assert storage is not None
     assert storage.sign_read("k").startswith("http://localhost:9000/bucket/k?")
+
+
+def test_presigned_urls_sign_for_a_public_https_host() -> None:
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        s3_endpoint_url="http://minio:9000",
+        s3_public_endpoint_url="https://files.demo.example.com",
+        s3_bucket="bucket",
+        s3_access_key="key",
+        s3_secret_key="secret",
+    )
+    storage = build_document_storage(settings)
+    assert storage is not None
+    assert storage.sign_read("k").startswith("https://files.demo.example.com/bucket/k?")

@@ -3,6 +3,7 @@
 #   docker compose --env-file infra/env/.env -f infra/compose.yaml -f infra/compose.supabase.yaml \
 #     -f infra/compose.sepolia.yaml -f infra/compose.testnet.yaml --profile testnet up -d --no-build
 # Never enable the local/ci profiles here: no Anvil on a testnet VM.
+# DNS needs A records for APP_DOMAIN and files.APP_DOMAIN (MinIO presigned reads, proxied by Caddy).
 # Only caddy publishes host ports (80/443). The base file binds web/api/minio/redis to 127.0.0.1 only, and
 # the signer publishes nothing (internal network only).
 
@@ -34,6 +35,8 @@ services:
     image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-api:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}
     environment:
       TP_CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
+      # Browser-facing MinIO host (Caddy), used only to sign document reads.
+      S3_PUBLIC_ENDPOINT_URL: https://files.${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
 
   worker:
     image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/treasurypilot-worker:${IMAGE_TAG:?set IMAGE_TAG to a git SHA}

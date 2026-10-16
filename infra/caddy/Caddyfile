@@ -9,3 +9,9 @@
     reverse_proxy web:80
   }
 }
+
+# MinIO for browser presigned reads only. The host must match S3_PUBLIC_ENDPOINT_URL because it is
+# part of the signature; Caddy forwards Host unchanged. Needs its own DNS A record.
+files.{$APP_DOMAIN:localhost} {
+  reverse_proxy minio:9000
+}
