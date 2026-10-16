@@ -75,6 +75,11 @@ jobs:
           make dev
       - name: Deploy contracts and seed the TEST dataset
         shell: bash
+        env:
+          # The on-chain payee cools after the deploy and the planner blocks (PAYEE_UNKNOWN) until
+          # it is Active; the browser flow approves about a minute after the deploy, so 15 s is safe
+          # while the 5 minute default is not.
+          DEMO_PAYEE_COOLING_SECONDS: '15'
         run: |
           set -o pipefail
           make seed | tee /tmp/seed.log
@@ -95,9 +100,45 @@ jobs:
           CI: 'true'
           E2E_SEED_LOG: /tmp/seed.log
         run: pnpm --dir apps/web e2e:stack
-      - name: Show stack logs
+      - name: Show stack state and logs
         if: failure()
-        run: docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local logs --no-color --tail=200
+        shell: bash
+        run: |
+          compose="docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local"
+          sql() { $compose exec -T postgres psql -U treasurypilot -d treasurypilot -c "$1" || true; }
+          echo "::group::Database state of the newest requests"
+          sql "SELECT r.invoice_no, r.status, r.current_revision, r.paying_wallet_id IS NOT NULL AS wallet, r.terms_confirmed_by IS NOT NULL AS terms_ok, r.onchain_request_id IS NOT NULL AS onchain_id FROM payment_requests r ORDER BY r.created_at DESC LIMIT 3"
+          sql "SELECT e.\"from\", e.\"to\", e.actor_type, e.reason, e.at FROM request_status_events e WHERE e.request_id = (SELECT id FROM payment_requests ORDER BY created_at DESC LIMIT 1) ORDER BY e.at"
+          sql "SELECT status, planner_source, chosen_reason, created_at FROM plans ORDER BY created_at DESC LIMIT 5"
+          sql "SELECT stage, step_seq, decision, primary_code, reason_codes, checks::text FROM validations ORDER BY id DESC LIMIT 10"
+          sql "SELECT type, primary_code, reason_codes, status FROM review_items ORDER BY created_at DESC LIMIT 5"
+          sql "SELECT status, attempts, created_at FROM operations ORDER BY created_at DESC LIMIT 5"
+          sql "SELECT status, confirmations, crosscheck FROM transactions ORDER BY submitted_at DESC LIMIT 5"
+          sql "SELECT status, coverage FROM treasuries"
+          echo "::endgroup::"
+          mkdir -p /tmp/stack-logs
+          for svc in worker signer api beat; do
+            $compose logs --no-color "$svc" > "/tmp/stack-logs/$svc.log" 2>&1 || true
+          done
+          # The periodic beat tasks drown everything else; show the rest of the worker, then the others.
+          echo "::group::worker (periodic tasks filtered)"
+          grep -v -E 'activate_due_payees|publish-domain-events|track-transactions|index-events|deliver-|Unclosed client|sequence_plans_sweep.*plans.: 0' /tmp/stack-logs/worker.log | tail -300 || true
+          echo "::endgroup::"
+          for svc in signer api; do
+            echo "::group::$svc"
+            grep -v -E '/health|/healthz' "/tmp/stack-logs/$svc.log" | tail -150 || true
+            echo "::endgroup::"
+          done
+      - name: Upload stack logs and Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-e2e-diagnostics
+          path: |
+            /tmp/stack-logs
+            apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Stop the local stack
         if: always()
         run: docker compose --env-file infra/env/.env -f infra/compose.yaml --profile local down --volumes --remove-orphans

@@ -334,7 +334,7 @@ async def seed_database(
     config = {
         "validFrom": int(valid_from.timestamp()),
         "expiresAt": int(expires.timestamp()),
-        "payeeCoolingSeconds": 300,
+        "payeeCoolingSeconds": int(os.environ.get("DEMO_PAYEE_COOLING_SECONDS", "300")),
         "executor": executor,
         "guardian": guardian,
         "limits": {

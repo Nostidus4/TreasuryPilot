@@ -190,7 +190,8 @@ contract Deploy is SafeTestHelper {
         I.MandateInit memory m = I.MandateInit(
             uint64(block.timestamp),
             uint64(block.timestamp + 30 days),
-            300,
+            // The demo payee cools for this long after the deploy; the stack e2e shortens it.
+            uint32(vm.envOr("DEMO_PAYEE_COOLING_SECONDS", uint256(300))),
             executor,
             guardian,
             I.Limits(2000e6, 10000e6),

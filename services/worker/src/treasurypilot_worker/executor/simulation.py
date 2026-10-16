@@ -7,6 +7,7 @@ caller must not retry a blocked step into ALLOW within the same cycle.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +29,8 @@ from treasurypilot_core.policy import (
     error_selector,
 )
 from treasurypilot_worker.chain.rpc import RpcClient, RpcError, RpcResponseError
+
+logger = logging.getLogger(__name__)
 
 _APPROVAL = "(" + ",".join(f["type"] for f in PAYMENT_APPROVAL_TYPE) + ")"
 _ATTESTATION = "(" + ",".join(f["type"] for f in PLAN_ATTESTATION_TYPE) + ")"
@@ -90,7 +93,10 @@ def build_calldata(step: PlanStep, ctx: SimulationContext) -> bytes:
             # Fiat payment plans use the fresh-quote amount while the approval carries its cap.
             types, args = [*types, "uint256"], [*args, int(step.amount)]
         elif step.action is Action.REFILL:
-            types, args = [*types, "address", "uint256"], [*args, step.to, int(step.amount)]
+            # refill(ap, sig, stepId, fromWallet, toWallet, amount, ...): the executor and the
+            # module take both wallets, and the signer rejects any other layout.
+            types = [*types, "address", "address", "uint256"]
+            args = [*args, step.from_wallet, step.to, int(step.amount)]
         else:
             raise ValueError(f"{step.action} steps cannot be simulated")
     elif step.action in (Action.SUPPLY, Action.WITHDRAW):
@@ -116,6 +122,19 @@ def _revert_data(error: RpcResponseError) -> bytes | None:
         except ValueError:
             return b""  # a revert whose data the node mangled is still a revert
     return b"" if "revert" in str(error).lower() else None
+
+
+def _error_string(data: bytes) -> str | None:
+    """The text of a plain `Error(string)` revert (0x08c379a0), else None."""
+
+    if data[:4] != bytes.fromhex("08c379a0"):
+        return None
+    try:
+        from eth_abi import decode
+
+        return str(decode(["string"], data[4:])[0])
+    except Exception:  # noqa: BLE001 - diagnostics only
+        return None
 
 
 async def simulate(rpc: RpcClient, step: PlanStep, ctx: SimulationContext) -> Decision:
@@ -171,6 +190,25 @@ async def _simulate_call(
             codes, observed = (PolicyReasonCode.SIMULATION_UNAVAILABLE,), f"JSON-RPC {error.code}"
         else:
             codes, observed = decode_revert(revert), "0x" + revert[:4].hex()
+            logger.warning(
+                "simulation_reverted %s step %d to %s selector %s data %s text %s",
+                step.action,
+                step.seq,
+                ctx.target,
+                observed,
+                "0x" + revert.hex(),
+                _error_string(revert),
+                extra={
+                    "step_kind": str(step.action),
+                    "step_seq": step.seq,
+                    "target": ctx.target,
+                    "sender": ctx.executor,
+                    "selector": observed,
+                    "reason_codes": [str(code) for code in codes],
+                    "revert_data": "0x" + revert.hex(),
+                    "revert_text": _error_string(revert),
+                },
+            )
     except RpcError as error:
         codes, observed = (PolicyReasonCode.SIMULATION_UNAVAILABLE,), type(error).__name__
     checks = (

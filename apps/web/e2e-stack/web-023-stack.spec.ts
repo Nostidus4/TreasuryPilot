@@ -229,11 +229,39 @@ test.describe
     expect(response.status(), await response.text()).toBe(200);
   });
 
-  // The stack gets through approve, the execution cycle, planning (rule-based fallback, no AI key)
-  // and the policy attestation. The worker -> signer -> chain wiring is now consistent (#229):
-  // `make seed` deploys PlanAttestedExecutor as mandate.executor (operator = the worker key, policy
-  // signer = the TEST policy key), the worker sends attested calldata to it and the validator
-  // compares the worker key with its operator(). Turn this into a real test once CI (`stack-e2e`)
-  // shows the plan reaching Paid and Matched; it was not run against the Docker stack locally.
-  test.fixme('approval is recorded, then auto plan, paid, matched', () => {});
+  // The worker (planner -> signer -> PlanAttestedExecutor on Anvil) pays the approved request on its
+  // own; the request detail page reflects it once the plan settles.
+  test('the approved request is planned automatically and reaches Paid', async () => {
+    const page = finance;
+    await page.goto(requestPath);
+    await expect
+      .poll(
+        async () => {
+          await page.reload();
+          return page.getByText('Paid', { exact: true }).first().isVisible();
+        },
+        { timeout: 150_000, intervals: [5_000] },
+      )
+      .toBe(true);
+  });
+
+  test('the paid request shows up in reconciliation and is marked matched', async () => {
+    const page = finance;
+    await page.getByRole('link', { name: 'Reconciliation' }).click();
+    // The list opens on "Unmatched"; show every status so an auto-matched row is still listed.
+    await page
+      .getByRole('group', { name: 'Filter' })
+      .getByRole('button', { name: /^All/ })
+      .click();
+    await page.getByRole('row', { name: `Open payment ${invoice}` }).click();
+    const detail = page.getByRole('dialog');
+    // The worker may already have matched it; otherwise record the match.
+    const markMatched = detail.getByRole('button', { name: 'Mark as matched' });
+    if (await markMatched.isVisible()) {
+      await markMatched.click();
+      await expect(page.getByText('Marked as matched')).toBeVisible();
+    }
+    // Scope to the payment's detail: the filter bar always has a "Matched" button.
+    await expect(detail.getByText('Matched', { exact: true })).toBeVisible();
+  });
 });
