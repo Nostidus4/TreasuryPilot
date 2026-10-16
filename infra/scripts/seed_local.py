@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -160,6 +161,19 @@ def install_fallback_handlers(manifest: dict[str, Any], rpc_url: str) -> None:
         rpc(rpc_url, "anvil_setStorageAt", [manifest[field], FALLBACK_HANDLER_SLOT, value])
 
 
+def wait_payee_active(manifest: dict[str, Any], rpc_url: str, payee: str) -> None:
+    """Sit out the on-chain payee cooling of a fresh deploy: the planner reads the payee as Cooling
+    (PAYEE_UNKNOWN, request NeedsReview) until then. A block is mined so Anvil's latest timestamp
+    is wall-clock again; time is not warped because the validator rejects snapshots from the future."""
+    data = "0x" + keccak(text="payeeStatus(address)")[:4].hex() + payee[2:].lower().rjust(64, "0")
+    result = rpc(rpc_url, "eth_call", [{"to": manifest["module"], "data": data}, "latest"])
+    active_from = int(result[66:130], 16)
+    if active_from and (wait := active_from + 1 - time.time()) > 0:
+        print(f"Waiting {wait:.0f}s for the demo payee to leave its on-chain cooling...")
+        time.sleep(wait)
+        rpc(rpc_url, "evm_mine", [])
+
+
 def upsert_env(path: Path, values: dict[str, str]) -> None:
     """Set KEY=value lines in place (last occurrence wins; `export ` and CRLF are preserved)."""
     text_in = path.read_bytes().decode() if path.exists() else ""  # bytes: keep CRLF
@@ -282,9 +296,10 @@ async def seed_database(
             await _run(c, f"DELETE FROM {table} WHERE user_id = :id", id=uid)
     await _run(
         c,
-        "INSERT INTO organizations (id, name, legal_name, country, created_by) "
-        "VALUES (:id, 'TreasuryPilot Demo (TEST)', 'Demo Treasury Ltd (TEST)', 'GB', :u) "
-        "ON CONFLICT DO NOTHING",
+        # auto_match: the stack E2E waits for the worker to match the paid request (REC-003).
+        "INSERT INTO organizations (id, name, legal_name, country, created_by, auto_match) "
+        "VALUES (:id, 'TreasuryPilot Demo (TEST)', 'Demo Treasury Ltd (TEST)', 'GB', :u, true) "
+        "ON CONFLICT (id) DO UPDATE SET auto_match = true",
         id=org, u=owner_user,
     )  # fmt: skip
     for email, (_, roles) in USERS.items():
@@ -518,6 +533,7 @@ async def main_async(args: argparse.Namespace) -> None:
     # file is rewritten afterwards with the container-reachable ones the API will load.
     write_platform_config(manifest, args.rpc_url, config_dir, args.rpc_url)
     install_fallback_handlers(manifest, args.rpc_url)
+    wait_payee_active(manifest, args.rpc_url, ANVIL[4])
     if args.env_file:
         write_local_keystores(Path(args.env_file), config_dir / "keys")
     configuration = PlatformConfiguration.load(config_dir / "chains.json", config_dir)
