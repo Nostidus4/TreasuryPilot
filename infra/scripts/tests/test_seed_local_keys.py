@@ -55,6 +55,13 @@ def test_local_keystores_refuse_to_overwrite_foreign_wiring(tmp_path: Path) -> N
     seed_local.write_local_keystores(tmp_path / ".env2", tmp_path / "keys")  # and idempotent
 
 
+def test_local_keystores_accept_the_env_example_placeholders(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text((Path(__file__).parents[2] / "env" / ".env.example").read_text())
+    seed_local.write_local_keystores(env, tmp_path / "keys")  # CI copies .env.example, then seeds
+    assert seed_local._env_values(env)["TP_TRUSTED_POLICY_SIGNERS"].startswith('["0x')
+
+
 @pytest.mark.parametrize(
     ("chain", "db"),
     [("0x1", "postgresql://x@localhost/db"), ("0x7a69", "postgresql://x@db.prod.example/db")],

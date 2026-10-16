@@ -143,8 +143,8 @@ def write_platform_config(
 FALLBACK_HANDLER_SLOT = "0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5"
 # TEST keys: public Anvil dev accounts 1 (module executor) and 8 (policy signer). They only hold
 # funds on a local chain. The keystore password is a fixed TEST string.
-EXECUTOR_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
-POLICY_TEST_KEY = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97"
+EXECUTOR_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"  # gitleaks:allow -- published Anvil fixture
+POLICY_TEST_KEY = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97"  # gitleaks:allow -- published Anvil fixture
 KEYSTORE_TEST_PASSWORD = "TEST-local-keystore-password"  # noqa: S105
 
 
@@ -207,6 +207,8 @@ def write_local_keystores(env_file: Path, keys_dir: Path) -> None:
     # Never replace an operator's own key wiring: only empty, equal or already-local values.
     for key, value in {**updates, **paths}.items():
         existing = current.get(key, "")
+        if existing in ("[]", "{}", '""', "''"):  # .env.example placeholders count as unset
+            existing = ""
         ours = key in paths and existing.startswith(("/run/secrets", str(keys_dir)))
         if existing and existing != value and not ours:
             raise SystemExit(
