@@ -12,6 +12,19 @@
 
 # MinIO for browser presigned reads only. The host must match S3_PUBLIC_ENDPOINT_URL because it is
 # part of the signature; Caddy forwards Host unchanged. Needs its own DNS A record.
+# Only signed GET/HEAD under the documents bucket reach MinIO; the rest of the S3/admin API is 403.
 files.{$APP_DOMAIN:localhost} {
-  reverse_proxy minio:9000
+  @presigned_read {
+    method GET HEAD
+    path /{$MINIO_BUCKET}/*
+    query X-Amz-Signature=*
+  }
+
+  handle @presigned_read {
+    reverse_proxy minio:9000
+  }
+
+  handle {
+    respond 403
+  }
 }

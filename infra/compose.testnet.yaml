@@ -13,6 +13,7 @@ services:
     profiles: [testnet]
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN to the public DNS name}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
     ports:
       - '80:80'
       - '443:443'
