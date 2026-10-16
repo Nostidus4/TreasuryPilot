@@ -201,11 +201,28 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
           {exception.status === 'Rejected' && (
             <Alert tone="neutral" title={t('Exception rejected')} />
           )}
+          {exception.grantTxFailed && exception.governanceTxId && (
+            <Alert
+              tone="danger"
+              title={t('The grant transaction failed')}
+              action={
+                <Button asChild size="sm" variant="primary">
+                  <Link
+                    to={`${scope.base}/governance/${exception.governanceTxId}`}
+                  >
+                    {t('Open transaction')}
+                  </Link>
+                </Button>
+              }
+            >
+              {t('You can create a new governance transaction to grant.')}
+            </Alert>
+          )}
           {exception.status === 'Closed' && (
             <Alert tone="neutral" title={t('Exception no longer active')} />
           )}
 
-          {exception.status === 'Open' &&
+          {(exception.status === 'Open' || exception.status === 'Rejected') &&
             (isOwner ? (
               <Card>
                 <CardHeader
@@ -249,58 +266,67 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                           expiryHours: Number(expiryHours),
                         },
                         {
-                          onSuccess: (response) =>
-                            navigate(
-                              `${scope.base}/governance/${grantedTxId(response)}`,
-                            ),
+                          onSuccess: (response) => {
+                            const txId = grantedTxId(response);
+                            if (txId)
+                              navigate(`${scope.base}/governance/${txId}`);
+                            else
+                              toast.error(
+                                t(
+                                  'The transaction was created but its id is missing. Refresh to find it.',
+                                ),
+                              );
+                          },
                         },
                       )
                     }
                   >
                     {t('Create governance transaction to grant')}
                   </Button>
-                  <form
-                    className="grid gap-3 border-t pt-4"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      reject.mutate(
-                        { requestId: exception.requestId, reason },
-                        {
-                          onSuccess: () =>
-                            toast.success(t('Exception rejected')),
-                          onError: (error) =>
-                            isStaleError(error) ||
-                            toast.error(errorMessage(error)),
-                        },
-                      );
-                    }}
-                  >
-                    {isStaleError(reject.error) && (
-                      <StalePrompt
-                        orgId={scope.orgId}
-                        onRefresh={reject.reset}
-                      />
-                    )}
-                    <Field
-                      htmlFor="exception-reject"
-                      label={t('Or reject, with a reason')}
+                  {exception.status === 'Open' && (
+                    <form
+                      className="grid gap-3 border-t pt-4"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        reject.mutate(
+                          { requestId: exception.requestId, reason },
+                          {
+                            onSuccess: () =>
+                              toast.success(t('Exception rejected')),
+                            onError: (error) =>
+                              isStaleError(error) ||
+                              toast.error(errorMessage(error)),
+                          },
+                        );
+                      }}
                     >
-                      <Textarea
-                        id="exception-reject"
-                        value={reason}
-                        onChange={(event) => setReason(event.target.value)}
-                      />
-                    </Field>
-                    <Button
-                      type="submit"
-                      variant="danger-outline"
-                      className="justify-self-start"
-                      loading={reject.isPending}
-                      disabled={!reason.trim()}
-                    >
-                      {t('Reject exception')}
-                    </Button>
-                  </form>
+                      {isStaleError(reject.error) && (
+                        <StalePrompt
+                          orgId={scope.orgId}
+                          onRefresh={reject.reset}
+                        />
+                      )}
+                      <Field
+                        htmlFor="exception-reject"
+                        label={t('Or reject, with a reason')}
+                      >
+                        <Textarea
+                          id="exception-reject"
+                          value={reason}
+                          onChange={(event) => setReason(event.target.value)}
+                        />
+                      </Field>
+                      <Button
+                        type="submit"
+                        variant="danger-outline"
+                        className="justify-self-start"
+                        loading={reject.isPending}
+                        disabled={!reason.trim()}
+                      >
+                        {t('Reject exception')}
+                      </Button>
+                    </form>
+                  )}
                 </CardContent>
               </Card>
             ) : (

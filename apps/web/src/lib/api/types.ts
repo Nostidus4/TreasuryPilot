@@ -582,6 +582,8 @@ export interface ExceptionDetail {
     requestId: string;
     status: 'Open' | 'GovernancePending' | 'Granted' | 'Rejected' | 'Closed';
     governanceTxId?: string;
+    /** The previous grant transaction died; the Owner may grant again. */
+    grantTxFailed?: boolean;
   };
   numbers: {
     requested: string;
@@ -608,6 +610,8 @@ export interface ExceptionWire {
       | 'Rejected'
       | 'Revoked';
     governanceTxId: string | null;
+    /** Status of the grant transaction; Failed/Superseded/Cancelled free a retry. */
+    governanceTxStatus?: string | null;
     reason: string | null;
     expiry: string;
     amount: string;

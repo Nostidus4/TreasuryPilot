@@ -230,11 +230,11 @@ export const operationHandlers: RequestHandler[] = [
       );
       const { numbers } = detail;
       const overBy = BigInt(numbers.amount) - BigInt(numbers.cap);
-      if (BigInt(numbers.dailyRemainingAfter) < 0n) {
+      if (overBy <= 0n) {
         fail(
           409,
-          'DAILY_LIMIT_WOULD_EXCEED',
-          'Even with an exception, this payment would exceed today’s daily limit.',
+          'NOT_OVER_CAP',
+          'This request is within the per-request limit; no exception is needed.',
         );
       }
       const state = db.treasuries[request.treasuryId];

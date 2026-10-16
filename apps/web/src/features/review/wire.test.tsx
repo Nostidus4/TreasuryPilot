@@ -1,6 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import type { PropsWithChildren } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+
+import { useException } from '@/features/operations/api';
 
 import { StalePrompt } from '@/features/review/review-page';
 import {
@@ -13,6 +23,7 @@ import {
 import { ApiError } from '@/lib/api/http';
 import type { ExceptionWire } from '@/lib/api/types';
 import { newReviewItem, reviewView } from '@/mocks/db';
+import { server } from '@/mocks/server';
 
 const wire: ExceptionWire = {
   exception: null,
@@ -32,6 +43,7 @@ describe('exception wire mapping', () => {
       requestId: 'req_1',
       status: 'Open',
       governanceTxId: undefined,
+      grantTxFailed: false,
     });
     expect(view.numbers).toEqual({
       requested: '3200000000',
@@ -42,32 +54,88 @@ describe('exception wire mapping', () => {
     });
   });
 
-  it('maps exception statuses', () => {
-    const row = (status: NonNullable<ExceptionWire['exception']>['status']) =>
-      toExceptionDetail(
-        {
-          ...wire,
-          exception: {
-            id: 'e',
-            requestId: 'req_1',
-            status,
-            governanceTxId: 'tx_1',
-            reason: null,
-            expiry: '',
-            amount: '1',
-            payee: '0x',
-            mandateVersion: 1,
-          },
+  const row = (
+    status: NonNullable<ExceptionWire['exception']>['status'],
+    governanceTxStatus?: string,
+  ) =>
+    toExceptionDetail(
+      {
+        ...wire,
+        exception: {
+          id: 'e',
+          requestId: 'req_1',
+          status,
+          governanceTxId: 'tx_1',
+          governanceTxStatus,
+          reason: null,
+          expiry: '',
+          amount: '1',
+          payee: '0x',
+          mandateVersion: 1,
         },
-        'req_1',
-      ).exception;
-    expect(row('Proposed')).toMatchObject({
+      },
+      'req_1',
+    ).exception;
+
+  it('maps exception statuses', () => {
+    expect(row('Requested').status).toBe('Open');
+    expect(row('Proposed', 'Collecting')).toMatchObject({
       status: 'GovernancePending',
       governanceTxId: 'tx_1',
     });
     expect(row('Granted').status).toBe('Granted');
     expect(row('Rejected').status).toBe('Rejected');
-    expect(row('Expired').status).toBe('Closed');
+    for (const status of ['Consumed', 'Revoked', 'Expired'] as const) {
+      expect(row(status).status).toBe('Closed');
+    }
+  });
+
+  it('makes a Proposed exception grantable again once its tx is dead', () => {
+    for (const dead of ['Failed', 'Superseded', 'Cancelled']) {
+      expect(row('Proposed', dead)).toMatchObject({
+        status: 'Open',
+        grantTxFailed: true,
+        governanceTxId: 'tx_1',
+      });
+    }
+  });
+
+  it('keeps a negative daily remainder and clamps over-by at zero', () => {
+    const view = toExceptionDetail(
+      {
+        ...wire,
+        numbers: {
+          ...wire.numbers,
+          amount: '100',
+          cap: '200',
+          dailyRemainingAfter: '-50',
+        },
+      },
+      'req_1',
+    );
+    expect(view.numbers.overBy).toBe('0');
+    expect(view.numbers.dailyLimit).toBe((2600000000n + 100n - 50n).toString());
+  });
+
+  it('applies the wire mapping in useException', async () => {
+    server.use(
+      http.get('*/v1/orgs/o1/requests/r1/exception', () =>
+        HttpResponse.json(wire),
+      ),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(() => useException('o1', 'r1'), {
+      wrapper: ({ children }: PropsWithChildren) => (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.numbers.overBy).toBe('1200000000');
+    expect(result.current.data?.exception.requestId).toBe('r1');
   });
 
   it('builds the request bodies', () => {
@@ -77,6 +145,7 @@ describe('exception wire mapping', () => {
     expect(grantedTxId({ governanceTx: { governanceTx: { id: 'g2' } } })).toBe(
       'g2',
     );
+    expect(grantedTxId({ governanceTx: {} })).toBeUndefined();
   });
 });
 
@@ -108,6 +177,8 @@ describe('stale items', () => {
     expect(isStaleError(error('STALE_ITEM'))).toBe(true);
     expect(isStaleError(error('EXCEPTION_TX_PENDING'))).toBe(true);
     expect(isStaleError(error('ACTION_NOT_ALLOWED'))).toBe(false);
+    expect(isStaleError(error('REQUEST_NOT_ACTIVE'))).toBe(false);
+    expect(isStaleError(error('EXCEPTION_ACTIVE'))).toBe(false);
     expect(isStaleError(new Error('x'))).toBe(false);
   });
 
