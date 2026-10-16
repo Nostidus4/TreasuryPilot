@@ -211,3 +211,26 @@ class TravelRuleExchange(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class OrgDataRegion(Base):
+    """Immutable region pin for an organization's stored data (CMP-L04).
+
+    No row means the organization is unpinned and uses the default storage. A trigger
+    forbids changing ``region`` or deleting the row, so a pin is moved only by an
+    explicit data migration, never by an update.
+    """
+
+    __tablename__ = "org_data_regions"
+    __table_args__ = (
+        CheckConstraint("region ~ '^[a-z][a-z0-9-]{1,31}$'", name="ck_org_data_regions_region"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    region: Mapped[str] = mapped_column(String(32), nullable=False)
+    pinned_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    pinned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

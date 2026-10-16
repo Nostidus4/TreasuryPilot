@@ -628,6 +628,25 @@
         "title": "CallInput",
         "type": "object"
       },
+      "CallbackRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": ["code", "state"],
+        "title": "CallbackRequest",
+        "type": "object"
+      },
       "ChainView": {
         "properties": {
           "assets": {
@@ -1271,6 +1290,73 @@
         "title": "CsvImportRowError",
         "type": "object"
       },
+      "DataRegionRequest": {
+        "properties": {
+          "region": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": ["region"],
+        "title": "DataRegionRequest",
+        "type": "object"
+      },
+      "DataRegionView": {
+        "properties": {
+          "availableRegions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Availableregions",
+            "type": "array"
+          },
+          "orgId": {
+            "format": "uuid",
+            "title": "Orgid",
+            "type": "string"
+          },
+          "pinnedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinnedat"
+          },
+          "pinnedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinnedby"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned data region; null when the org is unpinned.",
+            "title": "Region"
+          }
+        },
+        "required": ["orgId", "region", "availableRegions"],
+        "title": "DataRegionView",
+        "type": "object"
+      },
       "DeactivationRequest": {
         "properties": {
           "reason": {
@@ -1901,6 +1987,213 @@
         "title": "GrantExceptionRequest",
         "type": "object"
       },
+      "GuardianConfirmRequest": {
+        "properties": {
+          "guardianSafe": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "Guardiansafe",
+            "type": "string"
+          }
+        },
+        "required": ["guardianSafe"],
+        "title": "GuardianConfirmRequest",
+        "type": "object"
+      },
+      "GuardianConfirmResponse": {
+        "properties": {
+          "guardianSetup": {
+            "$ref": "#/components/schemas/GuardianSetupView"
+          },
+          "mandateGuardian": {
+            "title": "Mandateguardian",
+            "type": "string"
+          }
+        },
+        "required": ["guardianSetup", "mandateGuardian"],
+        "title": "GuardianConfirmResponse",
+        "type": "object"
+      },
+      "GuardianDeployTransaction": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": ["to", "data", "value"],
+        "title": "GuardianDeployTransaction",
+        "type": "object"
+      },
+      "GuardianHealthResponse": {
+        "properties": {
+          "automaticPauseAvailable": {
+            "default": false,
+            "title": "Automaticpauseavailable",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "guardianSetup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuardianSetupView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasGas": {
+            "default": false,
+            "title": "Hasgas",
+            "type": "boolean"
+          },
+          "minGasWei": {
+            "title": "Mingaswei",
+            "type": "string"
+          },
+          "onchainOwners": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Onchainowners",
+            "type": "array"
+          },
+          "sentinelBalanceWei": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentinelbalancewei"
+          },
+          "sentinelIsOwner": {
+            "default": false,
+            "title": "Sentinelisowner",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/GuardianWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": ["configured", "minGasWei", "warnings"],
+        "title": "GuardianHealthResponse",
+        "type": "object"
+      },
+      "GuardianSetupRequest": {
+        "properties": {
+          "humanOwners": {
+            "items": {
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "type": "string"
+            },
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Humanowners",
+            "type": "array"
+          }
+        },
+        "required": ["humanOwners"],
+        "title": "GuardianSetupRequest",
+        "type": "object"
+      },
+      "GuardianSetupStatus": {
+        "enum": ["Pending", "Active", "Superseded"],
+        "title": "GuardianSetupStatus",
+        "type": "string"
+      },
+      "GuardianSetupTxResponse": {
+        "properties": {
+          "chainId": {
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owners",
+            "type": "array"
+          },
+          "sentinelAddress": {
+            "title": "Sentineladdress",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/GuardianDeployTransaction"
+          }
+        },
+        "required": [
+          "chainId",
+          "sentinelAddress",
+          "owners",
+          "threshold",
+          "transaction"
+        ],
+        "title": "GuardianSetupTxResponse",
+        "type": "object"
+      },
+      "GuardianSetupView": {
+        "properties": {
+          "guardianSafe": {
+            "title": "Guardiansafe",
+            "type": "string"
+          },
+          "humanOwners": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Humanowners",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sentinelAddress": {
+            "title": "Sentineladdress",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuardianSetupStatus"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "guardianSafe",
+          "humanOwners",
+          "sentinelAddress",
+          "threshold",
+          "status"
+        ],
+        "title": "GuardianSetupView",
+        "type": "object"
+      },
       "GuardianTx": {
         "properties": {
           "call": {
@@ -1913,6 +2206,21 @@
         },
         "required": ["safeAddress", "call"],
         "title": "GuardianTx",
+        "type": "object"
+      },
+      "GuardianWarning": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["code", "message"],
+        "title": "GuardianWarning",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1975,6 +2283,21 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Senderallowlist"
+          },
           "treasuryId": {
             "anyOf": [
               {
@@ -2001,13 +2324,20 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Senderallowlist",
+            "type": "array"
+          },
           "treasuryId": {
             "format": "uuid",
             "title": "Treasuryid",
             "type": "string"
           }
         },
-        "required": ["enabled", "treasuryId", "address"],
+        "required": ["enabled", "treasuryId", "address", "senderAllowlist"],
         "title": "InboundEmailConfigurationView",
         "type": "object"
       },
@@ -2019,6 +2349,16 @@
             },
             "title": "Drafts",
             "type": "array"
+          },
+          "duplicateAttachments": {
+            "default": 0,
+            "title": "Duplicateattachments",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": false,
+            "title": "Quarantined",
+            "type": "boolean"
           }
         },
         "required": ["drafts"],
@@ -4437,6 +4777,73 @@
         "title": "PositionView",
         "type": "object"
       },
+      "QuarantinedEmailList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuarantinedEmailView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "QuarantinedEmailList",
+        "type": "object"
+      },
+      "QuarantinedEmailView": {
+        "properties": {
+          "attachmentCount": {
+            "title": "Attachmentcount",
+            "type": "integer"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "title": "Receivedat",
+            "type": "string"
+          },
+          "sender": {
+            "title": "Sender",
+            "type": "string"
+          },
+          "senderDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Senderdomain"
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "sender",
+          "senderDomain",
+          "attachmentCount",
+          "evidence",
+          "receivedAt"
+        ],
+        "title": "QuarantinedEmailView",
+        "type": "object"
+      },
       "QueuesView": {
         "properties": {
           "approvals": {
@@ -6055,6 +6462,20 @@
         "title": "SeriesPoint",
         "type": "object"
       },
+      "SettingsRequest": {
+        "properties": {
+          "paymentAccountCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Paymentaccountcode",
+            "type": "string"
+          }
+        },
+        "required": ["paymentAccountCode"],
+        "title": "SettingsRequest",
+        "type": "object"
+      },
       "SignatureRequest": {
         "properties": {
           "signature": {
@@ -6269,6 +6690,18 @@
         },
         "required": ["tenant", "grantId"],
         "title": "SupportSummary",
+        "type": "object"
+      },
+      "SyncRequest": {
+        "properties": {
+          "reconciliationId": {
+            "format": "uuid",
+            "title": "Reconciliationid",
+            "type": "string"
+          }
+        },
+        "required": ["reconciliationId"],
+        "title": "SyncRequest",
         "type": "object"
       },
       "TenantHealth": {
@@ -7773,6 +8206,97 @@
           }
         },
         "summary": "Tenants",
+        "tags": ["platform-admin"]
+      }
+    },
+    "/admin/tenants/{tenant_id}/data-region": {
+      "get": {
+        "operationId": "tenant_data_region_admin_tenants__tenant_id__data_region_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tenant Data Region",
+        "tags": ["platform-admin"]
+      },
+      "put": {
+        "description": "Pin a tenant's stored data to one region. A pin is permanent (409 to change).",
+        "operationId": "pin_tenant_data_region_admin_tenants__tenant_id__data_region_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataRegionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pin Tenant Data Region",
         "tags": ["platform-admin"]
       }
     },
@@ -10125,6 +10649,48 @@
         "x-organization-scoped": true
       }
     },
+    "/v1/orgs/{organization_id}/data-region": {
+      "get": {
+        "operationId": "get_data_region_v1_orgs__organization_id__data_region_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataRegionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Region",
+        "tags": ["compliance"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/events": {
       "get": {
         "description": "Server-sent events for this organization; resume with ``Last-Event-ID``.",
@@ -10411,6 +10977,444 @@
         "tags": ["governance"]
       }
     },
+    "/v1/orgs/{organization_id}/integrations/erp/providers": {
+      "get": {
+        "operationId": "list_providers_v1_orgs__organization_id__integrations_erp_providers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Providers V1 Orgs  Organization Id  Integrations Erp Providers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Providers",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}": {
+      "delete": {
+        "operationId": "disconnect_v1_orgs__organization_id__integrations_erp__provider__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disconnect",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/authorize": {
+      "post": {
+        "operationId": "authorize_v1_orgs__organization_id__integrations_erp__provider__authorize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Authorize V1 Orgs  Organization Id  Integrations Erp  Provider  Authorize Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/callback": {
+      "post": {
+        "operationId": "callback_v1_orgs__organization_id__integrations_erp__provider__callback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Callback V1 Orgs  Organization Id  Integrations Erp  Provider  Callback Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Callback",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/records": {
+      "get": {
+        "operationId": "list_records_v1_orgs__organization_id__integrations_erp__provider__records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Records V1 Orgs  Organization Id  Integrations Erp  Provider  Records Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Records",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/retry": {
+      "post": {
+        "operationId": "retry_v1_orgs__organization_id__integrations_erp__provider__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry V1 Orgs  Organization Id  Integrations Erp  Provider  Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/settings": {
+      "put": {
+        "operationId": "put_settings_v1_orgs__organization_id__integrations_erp__provider__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Settings V1 Orgs  Organization Id  Integrations Erp  Provider  Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Settings",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/integrations/erp/{provider}/sync": {
+      "post": {
+        "operationId": "sync_v1_orgs__organization_id__integrations_erp__provider__sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sync V1 Orgs  Organization Id  Integrations Erp  Provider  Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync",
+        "tags": ["erp"],
+        "x-organization-scoped": true
+      }
+    },
     "/v1/orgs/{organization_id}/invites": {
       "get": {
         "operationId": "list_invites_v1_orgs__organization_id__invites_get",
@@ -10549,6 +11553,46 @@
       }
     },
     "/v1/orgs/{organization_id}/invoice-inbound-email": {
+      "get": {
+        "operationId": "get_inbound_email_v1_orgs__organization_id__invoice_inbound_email_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboundEmailConfigurationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Inbound Email",
+        "tags": ["invoice email intake"],
+        "x-organization-scoped": true
+      },
       "put": {
         "operationId": "configure_inbound_email_v1_orgs__organization_id__invoice_inbound_email_put",
         "parameters": [
@@ -10596,6 +11640,48 @@
           }
         },
         "summary": "Configure Inbound Email",
+        "tags": ["invoice email intake"],
+        "x-organization-scoped": true
+      }
+    },
+    "/v1/orgs/{organization_id}/invoice-inbound-email/quarantine": {
+      "get": {
+        "operationId": "list_quarantined_emails_v1_orgs__organization_id__invoice_inbound_email_quarantine_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuarantinedEmailList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Quarantined Emails",
         "tags": ["invoice email intake"],
         "x-organization-scoped": true
       }
@@ -14980,6 +16066,182 @@
         },
         "summary": "Create Governance Tx",
         "tags": ["governance"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/confirm": {
+      "post": {
+        "description": "Record a deployed Guardian Safe after checking its owners and threshold on-chain.",
+        "operationId": "confirm_guardian_safe_v1_orgs__organization_id__treasuries__treasury_id__guardian_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianConfirmResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Guardian Safe",
+        "tags": ["guardian"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/health": {
+      "get": {
+        "description": "Is the sentinel still an owner of the Guardian Safe, and does it have gas?",
+        "operationId": "guardian_health_v1_orgs__organization_id__treasuries__treasury_id__guardian_health_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guardian Health",
+        "tags": ["guardian"]
+      }
+    },
+    "/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/setup-tx": {
+      "post": {
+        "description": "Build the Safe Proxy Factory call that deploys the 1-of-N Guardian Safe.",
+        "operationId": "guardian_setup_transaction_v1_orgs__organization_id__treasuries__treasury_id__guardian_setup_tx_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "treasury_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Treasury Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianSetupTxResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guardian Setup Transaction",
+        "tags": ["guardian"]
       }
     },
     "/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates": {

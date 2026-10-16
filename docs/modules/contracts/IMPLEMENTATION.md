@@ -26,7 +26,7 @@ SUPPLY/WITHDRAW only use the initialized pool, asset, aToken and Safe T. Supply 
 
 P2 BORROW/REPAY each consume an owner grant once. `planId` must be the hash of the full immutable owner-reviewed plan, including snapshot, fixed pool/asset, maximum cost and repayment plan (BR-044). New parameters require a new plan hash. Borrow validates the variable rate and health factor immediately before and after execution; it cannot guarantee future rates. Repay cannot consume more than its approved amount and clears the residual allowance after a partial debt repayment.
 
-P2 `swapForGas` is a test-only fixed ERC20 pair. Output stays in Safe T, budgets and floor apply, and no native gas token is transferred. Executor gas remains manually funded. The optional router is disabled until explicitly configured by Safe T.
+P2 `swapForGas` is a test-only fixed ERC20 pair. Output stays in Safe T, budgets and floor apply, and no native gas token is transferred. Executor gas remains manually funded. The optional router is disabled until explicitly configured by Safe T. For production, `SignedQuoteSwapAdapter` (SC-L03) can be configured as that router: it verifies EIP-712 quotes from governance-allowlisted signers (expiry, nonce replay, pair, recipient, venue, route hash) and enforces the signed `minOut`; see the contracts README.
 
 `approvalMaxAge` is off-chain approval-building configuration: the signed schema has no `signedAt`, so the contract can enforce `expiry` but cannot independently infer signature age.
 

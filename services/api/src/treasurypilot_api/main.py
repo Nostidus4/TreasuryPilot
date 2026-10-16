@@ -16,7 +16,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from treasurypilot_api import __version__
-from treasurypilot_api.admin.api import create_admin_router, create_support_grant_router
+from treasurypilot_api.admin.api import (
+    create_admin_router,
+    create_data_region_router,
+    create_support_grant_router,
+)
 from treasurypilot_api.audit.api import AuditRepository, SqlAlchemyAuditRepository
 from treasurypilot_api.audit.api import router as audit_router
 from treasurypilot_api.audit.evidence import EvidenceRepository
@@ -24,6 +28,8 @@ from treasurypilot_api.audit.evidence_repository import SqlAlchemyEvidenceReposi
 from treasurypilot_api.chain.routes import TokenMovementRepository
 from treasurypilot_api.chain.routes import router as chain_router
 from treasurypilot_api.compliance.kyb import KybService, build_kyb_service
+from treasurypilot_api.compliance.regions import RegionRegistry, parse_regions
+from treasurypilot_api.compliance.residency import ResidencyService
 from treasurypilot_api.compliance.screening import ScreeningService, build_screening_service
 from treasurypilot_api.compliance.travel_rule import TravelRuleService, build_travel_rule_service
 from treasurypilot_api.config import Settings, get_settings
@@ -77,12 +83,16 @@ from treasurypilot_api.identity.scim import (
 )
 from treasurypilot_api.identity.scim import router as scim_router
 from treasurypilot_api.identity.wallets import WalletRepository
+from treasurypilot_api.integrations.erp.registry import build_providers
+from treasurypilot_api.integrations.erp.routes import router as erp_router
+from treasurypilot_api.integrations.erp.service import ErpService
 from treasurypilot_api.invoices.api_keys import router as invoice_api_keys_router
 from treasurypilot_api.invoices.documents import (
     ExtractionQueue,
     ObjectStorage,
     build_document_storage,
     build_extraction_queue,
+    build_region_storage,
 )
 from treasurypilot_api.invoices.documents import router as invoice_documents_router
 from treasurypilot_api.invoices.fx import FxQuoteProvider
@@ -94,6 +104,7 @@ from treasurypilot_api.mandate.exceptions import router as mandate_exceptions_ro
 from treasurypilot_api.mandate.fees import FeeHistoryProvider
 from treasurypilot_api.mandate.fees import router as fee_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
+from treasurypilot_api.mandate.guardian import router as guardian_router
 from treasurypilot_api.mandate.pause import router as pause_router
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -505,12 +516,31 @@ def create_app(
     app.state.evidence_repository = evidence_repository
     app.state.notification_repository = notification_repository
     app.state.request_sessions = sessions
+    # ERP connectors need the field key (tokens are encrypted) and at least one configured app.
+    erp_providers = build_providers(settings)
+    app.state.erp_service = (
+        ErpService(
+            sessions,
+            core_cipher,
+            erp_providers,
+            redirect_uri=settings.erp_oauth_redirect_uri,
+        )
+        if sessions is not None and core_cipher is not None and erp_providers
+        else None
+    )
     app.state.token_movement_repository = token_movement_repository
     app.state.notification_preferences_repository = notification_preferences_repository
     app.state.copilot_repository = copilot_repository
     # Default: the worker's tool loop over Celery; no Redis means 503 AI_UNAVAILABLE.
     app.state.copilot_answerer = copilot_answerer or build_copilot_answerer(settings)
     app.state.document_storage = document_storage or build_document_storage(settings)
+    region_registry = RegionRegistry(
+        parse_regions(settings.data_regions),
+        settings.data_region,
+        lambda endpoint: build_region_storage(settings, endpoint),
+    )
+    app.state.region_registry = region_registry
+    app.state.residency = ResidencyService(region_registry, app.state.document_storage)
     app.state.extraction_queue = extraction_queue or build_extraction_queue(settings)
     app.state.partial_recovery_queue = partial_recovery_queue or build_partial_recovery_queue(
         settings
@@ -575,11 +605,14 @@ def create_app(
     app.include_router(governance_router)
     app.include_router(mandate_exceptions_router)
     app.include_router(pause_router)
+    app.include_router(guardian_router)
     app.include_router(circuit_router)
     app.include_router(fee_router)
     app.include_router(reconciliation_router)
-    app.include_router(create_admin_router(settings, admin_sessions))
+    app.include_router(erp_router)
+    app.include_router(create_admin_router(settings, admin_sessions, app.state.residency))
     app.include_router(create_support_grant_router(sessions or admin_sessions))
+    app.include_router(create_data_region_router(sessions or admin_sessions, app.state.residency))
     app.include_router(mandate_router)
     app.include_router(vendors_router)
     app.include_router(payees_router)

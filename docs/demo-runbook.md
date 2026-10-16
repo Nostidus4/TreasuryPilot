@@ -179,6 +179,22 @@ Needs: Anvil and `make deploy-local`. The run reverts to its snapshot, so the mo
 ### Not in D1-D10
 `fee-spike` (YAML M19-D5) is RUNNABLE: the runner spikes the Anvil base fee and applies the fee policy math. UI fallback: show `/o/:org/t/:t/settings/fees` and explain the pause rule.
 
+## Circle USDC evidence run (ADR-012, #230)
+A single PAY-only run on Sepolia with Circle USDC (`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`). The Circle faucet gives 10 to 20 USDC per request, so every demo limit is divided by 100:
+
+| Limit | Demo (Aave test USDC) | Evidence run (Circle USDC, ÷ 100) |
+| --- | --- | --- |
+| PAY per transaction / per day | 2,000 / 10,000 | 20 / 100 |
+| REFILL per transaction / per day | 2,500 / 12,000 | 25 / 120 |
+| SUPPLY | 5,000 / 20,000 | not used (PAY-only) |
+| O1 buffer / target | as seeded | ÷ 100 of the seeded values |
+
+Before the run:
+1. The Sepolia deployment exists (`deployments/11155111.json` is `deployed`).
+2. At least **120 Circle USDC** are on Safe T. That is one full REFILL day. Request it from the Circle developer-console faucet to the Safe T address in the manifest, in several requests if needed. Check it with `cast call 0x1c7D…7238 "balanceOf(address)(uint256)" <safeT> --rpc-url $SEPOLIA_RPC_URL`; the result must be ≥ `120000000`.
+3. Configure a mandate version with the scaled limits above for the Circle asset (Owner, mandate editor). Do not change the main demo mandate.
+4. Run D1 (refill then pay) with one invoice of at most 20 USDC. Record the PAY transaction hash and the evidence bundle under `docs/evidence/`.
+
 ## Dry run
 The acceptance criterion "a teammate who did not write this completes a dry run" is manual.
 

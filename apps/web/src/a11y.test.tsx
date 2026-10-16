@@ -19,7 +19,8 @@ for (const [name, path, ready] of flows) {
   test(`the ${name} flow has no critical or serious axe violations`, async () => {
     renderApp(path, { demoWallet: true });
     // Wait for content that only exists once the data has loaded.
-    await screen.findAllByText(ready);
+    // The dashboard loads the full treasury state; CI runners can take over the 1 s default.
+    await screen.findAllByText(ready, {}, { timeout: 5000 });
     await waitFor(() =>
       expect(document.querySelector('[aria-busy="true"]')).toBeNull(),
     );
@@ -99,7 +100,7 @@ test('at 390 px the approval screen shows one pane with a way back to the list',
 test('keyboard: the skip link is the first stop and jumps to the main region', async () => {
   const user = userEvent.setup();
   renderApp(T);
-  await screen.findByRole('heading', { name: 'Liquidity' });
+  await screen.findByRole('heading', { name: 'Liquidity' }, { timeout: 5000 });
   await user.tab();
   const skip = screen.getByRole('link', { name: /skip to content/i });
   expect(skip).toHaveFocus();
@@ -128,7 +129,7 @@ test('keyboard: the notification popover opens with Enter and closes with Escape
 test('keyboard: Ctrl+K opens the command menu and Escape closes it', async () => {
   const user = userEvent.setup();
   renderApp(T);
-  await screen.findByRole('heading', { name: 'Liquidity' });
+  await screen.findByRole('heading', { name: 'Liquidity' }, { timeout: 5000 });
   await user.keyboard('{Control>}k{/Control}');
   expect(
     await screen.findByRole('dialog', { name: 'Command menu' }),

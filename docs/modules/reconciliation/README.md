@@ -1,7 +1,7 @@
 # M11 · Verification & Reconciliation (`worker` + `api`)
 
 **Status:** Detailed and reviewed with the project lead (2026-10-11) · **Path:** `docs/modules/reconciliation/` · **Code:** `services/worker/.../verify`, `services/api/.../reconciliation` · **Epic:** `[EPIC] M11 · Verification & Reconciliation`
-**ADRs:** ADR-018 (EAS receipts) · **Decisions:** M11-D1 … M11-D10 (§14)
+**ADRs:** ADR-018 (EAS receipts) · **Decisions:** M11-D1 … M11-D11 (§14)
 
 ---
 
@@ -13,7 +13,7 @@ M11 answers two questions after money moves: **did the chain end up exactly as p
 |---|---|
 | Post-condition verification per confirmed step (PASSED / DISCREPANCY / UNKNOWN) | Tracking receipts (M06) |
 | Reconciliation records with classified lines (BR-096) | Executing or retrying (M10, M12) |
-| Match / discrepancy / auto-match (org setting, default off) | Accounting system sync (Later, REC-L01…L03) |
+| Match / discrepancy / auto-match (org setting, default off) | QuickBooks and NetSuite adapters (Later, REC-L02, REC-L03) |
 | CSV + journal export with generic and per-org account mapping | |
 | EAS payment receipts (REC-005, ADR-018) | |
 | Finality check before a reconciliation can be Matched | |
@@ -114,6 +114,7 @@ Period by UTC day of execution. CSV columns: date, request id, vendor, invoice n
 | EAS receipt | as soon as the request is Paid and the PAY block is finalized (independent of matching); beat sweep every 30 s (`treasurypilot.reconciliation.publish_receipts`), off unless `TP_EAS_RPC_URL`, `TP_EAS_CONTRACT_ADDRESS` and `TP_EAS_RECEIPT_PRIVATE_KEY` are set (`TP_EAS_RECEIPT_ADDRESS` must be that key's address so the low-gas sweep watches it) |
 | EAS retry | exponential backoff 30 s doubling to 1 h, unbounded; a broadcast not mined after 15 min is retried |
 | Export formats | CSV, journal CSV |
+| ERP connectors | off unless the provider's OAuth app is configured (`TP_XERO_CLIENT_ID`, `TP_XERO_CLIENT_SECRET`, `TP_ERP_OAUTH_REDIRECT_URI`) and `TP_FIELD_ENCRYPTION_KEY` is set; ERP retry backoff 30 s doubling to 1 h, 8 attempts, then Failed; payment poll for bill approval 15 min |
 
 ## 10. Security
 
@@ -156,6 +157,7 @@ REC-001 verification → REC-002 reconciliation records → REC-003 match/auto-m
 | M11-D8 | EAS receipt published as soon as the request is Paid and the PAY block is finalized; it does not wait for Finance matching. (reviewed, changed) |
 | M11-D9 | Resolving a Discrepancy needs a Finance note and Owner acknowledgment. (reviewed) |
 | M11-D10 | Verification UNKNOWN after 3 read failures. |
+| M11-D11 | ERP sync creates bills as drafts only and applies a payment only after a human approves the bill in the ERP (§16). |
 
 ## 15. v0.3 changes (ADR-019)
 
@@ -204,3 +206,19 @@ SUPPLY and WITHDRAW are reconciled as `LENDING_TRANSFER` lines (treasury ↔ len
 - **Per-org account mappings (migration 0084):** `account_mappings` stores one row per (org, class, side DEBIT|CREDIT) because a journal line pair needs two accounts (the spec's single `account_code` column is split by `side`). Finance/OrgAdmin read the effective mapping with `GET .../reconciliation/account-mappings` and replace the org's overrides with `PUT` (audited, 422 `ACCOUNT_MAPPING_INVALID` for unknown classes). Unlisted sides use the generic defaults in code; mapping cells are formula-neutralized in the export.
 - **Supply interest:** classification `SUPPLY_INTEREST` (generic 1300 Lending Position / 4100 Interest Income), one `Computed` line per treasury dated the period end: aToken balance in the last snapshot before the period end minus the last snapshot before the period start minus net SUPPLY-WITHDRAW confirmed between those two snapshots. No line when either snapshot is missing or the result is not positive. It is appended after the totals check (it is derived from snapshots, not reconciled lines). Snapshots must be `COMPLETE` and lie within one day before the period start and before the end plus one day (the worker stores a retained `DAILY` snapshot per treasury at 00:00 UTC); otherwise, or when the result is not positive, the line is omitted, a warning is logged and the reason is returned in the `X-Export-Notes` response header. `SUPPLY_INTEREST` is excluded from the on-chain totals check.
 - Follow-up: async export (`POST /exports`, `exports` table, stored sha256) is not built; the synchronous export meets the acceptance criteria.
+
+## 16. ERP integration framework (REC-L01, F-075)
+
+Code: `services/api/.../integrations/erp`. Migration `20261016_0089` adds `erp_connections` (per org and provider: tenant id, AES-GCM `FieldCipher` envelopes for the access and refresh token bound to their column, expiry, `status` Connected | ReauthRequired, `payment_account_code`) and `erp_sync_records` (one row per reconciliation, connection and kind BILL | PAYMENT; status Pending | AwaitingApproval | Synced | Failed; deterministic `idempotency_key`; attempts, `next_attempt_at`, `last_error` without bodies). The per-org journal `account_mappings` (REC-004) is reused: the EXTERNAL_EXPENSE debit account is the bill's expense account.
+
+**Provider protocol** (`provider.py`, `ErpProvider`): `authorize_url`, `exchange_code`, `refresh`, `resolve_tenant`, `create_draft_bill`, `bill_status`, `create_payment`. Adapters are stateless and HTTP goes through the `HttpClient` protocol (`http.py`); a new ERP is one adapter module plus one line in `registry.py`. Errors: `ErpTransientError` (network, 429 with Retry-After, 5xx: retried with backoff), `ErpAuthError` (connection flagged ReauthRequired), `ErpPermanentError` (record Failed until an explicit re-sync).
+
+**Flow.** `POST .../integrations/erp/{provider}/sync {reconciliationId}` (Finance, Owner, Org admin) queues and runs the BILL, and the PAYMENT too once the reconciliation is Matched. Records are committed before any network call; adapters look the object up by invoice number or tx-hash reference and send the idempotency key, so a retry after a crash reuses the object. `POST .../{provider}/retry` runs due records (the same `ErpService.retry_due` is what a scheduler would call).
+
+**Mapping** (`mapping.py`, pure): bill = vendor, invoice no, issue and due dates, request fiat amount and currency, else a USD stablecoin booked as USD cents; sub-cent precision or an asset without a fiat value is refused, never rounded. Payment = EXTERNAL_EXPENSE line, `Reference` = tx hash, date = execution day, bank account from the connection setting.
+
+**Never approves.** Bills are created as drafts (Xero `ACCPAY`, `Status: DRAFT`) and no protocol method can authorise one. A payment is applied only after `bill_status` reports the bill approved by a human in the ERP; until then it stays AwaitingApproval and is polled.
+
+**OAuth.** The `state` is an encrypted, 10 minute token bound to org, user and provider. The web app calls `.../authorize`, sends the user to the ERP, and posts the returned `code` and `state` to `.../callback`. Tokens never appear in responses, logs or audit data; rotated refresh tokens are persisted before use. Audit actions: `erp.connected`, `erp.disconnected`, `erp.settings_changed`, `erp.reauth_required`, `erp.bill_drafted`, `erp.payment_recorded`, `erp.sync_failed`.
+
+Not verified against a live Xero account (tests use scripted HTTP shaped like Xero's documented responses). Xero-specific limits: one organisation per connection, contacts are matched by exact name.
