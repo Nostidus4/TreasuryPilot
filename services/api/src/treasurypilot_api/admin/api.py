@@ -21,8 +21,8 @@ from treasurypilot_api.admin.billing import (
     subscribe,
 )
 from treasurypilot_api.admin.billing_api import (
+    BillingPlanView,
     InvoiceView,
-    PlanView,
     SubscriptionView,
     invoice_view,
     plan_view,
@@ -100,7 +100,7 @@ def _usage_view(row: UsageMonthly) -> UsageView:
 _MAX_FEE_MINOR = 10**12
 
 
-class PlanRequest(ApiModel):
+class BillingPlanRequest(ApiModel):
     code: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
     name: str = Field(min_length=1, max_length=200)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
@@ -408,12 +408,12 @@ def create_admin_router(
         logger.info("admin.usage_recomputed", extra={"actor": actor, "month": month})
         return result
 
-    @router.post("/billing/plans", response_model=PlanView, status_code=201)
+    @router.post("/billing/plans", response_model=BillingPlanView, status_code=201)
     async def create_billing_plan(
-        payload: PlanRequest,
+        payload: BillingPlanRequest,
         actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
-    ) -> PlanView:
+    ) -> BillingPlanView:
         try:
             async with db_sessions() as session, session.begin():
                 plan = await create_plan(session, **payload.model_dump())
@@ -423,11 +423,11 @@ def create_admin_router(
         logger.info("admin.billing_plan_created", extra={"actor": actor, "plan": payload.code})
         return view
 
-    @router.get("/billing/plans", response_model=list[PlanView])
+    @router.get("/billing/plans", response_model=list[BillingPlanView])
     async def list_billing_plans(
         actor: str = staff_dependency,
         db_sessions: async_sessionmaker[AsyncSession] = sessions_dependency,
-    ) -> list[PlanView]:
+    ) -> list[BillingPlanView]:
         async with db_sessions() as session:
             plans = await session.scalars(select(BillingPlan).order_by(BillingPlan.code))
             return [plan_view(plan) for plan in plans]

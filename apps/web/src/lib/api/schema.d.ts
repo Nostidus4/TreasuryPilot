@@ -4,6 +4,44 @@
  */
 
 export interface paths {
+  '/admin/billing/plans': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Billing Plans */
+    get: operations['list_billing_plans_admin_billing_plans_get'];
+    put?: never;
+    /** Create Billing Plan */
+    post: operations['create_billing_plan_admin_billing_plans_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/billing/{month}/invoices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run Invoices
+     * @description Invoice a completed UTC month. Idempotent: existing invoices are never changed.
+     */
+    post: operations['run_invoices_admin_billing__month__invoices_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/tenants': {
     parameters: {
       query?: never;
@@ -52,6 +90,23 @@ export interface paths {
     /** Tenant Health */
     get: operations['tenant_health_admin_tenants__tenant_id__health_get'];
     put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/tenants/{tenant_id}/subscription': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set Subscription */
+    put: operations['set_subscription_admin_tenants__tenant_id__subscription_put'];
     post?: never;
     delete?: never;
     options?: never;
@@ -847,6 +902,77 @@ export interface paths {
     get: operations['verify_audit_log_v1_orgs__organization_id__audit_log_verify_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/billing': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Overview */
+    get: operations['overview_v1_orgs__organization_id__billing_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/billing/invoices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Invoices */
+    get: operations['list_invoices_v1_orgs__organization_id__billing_invoices_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/billing/invoices/{invoice_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Invoice */
+    get: operations['get_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/billing/invoices/{invoice_id}/pay': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pay Invoice
+     * @description Collect by card or bank transfer through the provider; never from a treasury.
+     */
+    post: operations['pay_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__pay_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3039,6 +3165,44 @@ export interface components {
        */
       status: 'INTACT' | 'BROKEN';
     };
+    /** BillingOverview */
+    BillingOverview: {
+      subscription: components['schemas']['SubscriptionView'] | null;
+    };
+    /** BillingPlanRequest */
+    BillingPlanRequest: {
+      /** Basefeeminor */
+      baseFeeMinor: number;
+      /** Code */
+      code: string;
+      /** Currency */
+      currency: string;
+      /** Name */
+      name: string;
+      /** Perrequestfeeminor */
+      perRequestFeeMinor: number;
+    };
+    /** BillingPlanView */
+    BillingPlanView: {
+      /** Basefeeminor */
+      baseFeeMinor: number;
+      /** Code */
+      code: string;
+      /**
+       * Currency
+       * @description ISO 4217 code; fees are integer minor units of it.
+       */
+      currency: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Perrequestfeeminor */
+      perRequestFeeMinor: number;
+    };
     /** Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post */
     Body_upload_invoice_document_v1_orgs__organization_id__requests_upload_post: {
       /** File */
@@ -4006,6 +4170,64 @@ export interface components {
     InvitesResponse: {
       /** Invites */
       invites: components['schemas']['InviteView'][];
+    };
+    /** InvoiceLineView */
+    InvoiceLineView: {
+      /** Amountminor */
+      amountMinor: number;
+      /** Description */
+      description: string;
+      /** Kind */
+      kind: string;
+      /** Quantity */
+      quantity: number;
+      /** Unitamountminor */
+      unitAmountMinor: number;
+    };
+    /** InvoiceRunView */
+    InvoiceRunView: {
+      /** Created */
+      created: components['schemas']['InvoiceView'][];
+      /** Month */
+      month: string;
+    };
+    /** InvoiceView */
+    InvoiceView: {
+      /**
+       * Createdat
+       * Format: date-time
+       */
+      createdAt: string;
+      /** Currency */
+      currency: string;
+      /**
+       * Dueat
+       * Format: date-time
+       */
+      dueAt: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Lines */
+      lines: components['schemas']['InvoiceLineView'][];
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /** Paidat */
+      paidAt: string | null;
+      /** Periodmonth */
+      periodMonth: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'open' | 'paid' | 'payment_failed' | 'void';
+      /** Totalminor */
+      totalMinor: number;
     };
     /** LabelRequest */
     LabelRequest: {
@@ -5540,6 +5762,49 @@ export interface components {
       /** Transactionhash */
       transactionHash: string;
     };
+    /** SubscribeRequest */
+    SubscribeRequest: {
+      /**
+       * Paymentmethod
+       * @default card
+       * @enum {string}
+       */
+      paymentMethod: 'card' | 'bank_transfer';
+      /**
+       * Planid
+       * Format: uuid
+       */
+      planId: string;
+    };
+    /** SubscriptionView */
+    SubscriptionView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Orgid
+       * Format: uuid
+       */
+      orgId: string;
+      /**
+       * Paymentmethod
+       * @enum {string}
+       */
+      paymentMethod: 'card' | 'bank_transfer';
+      plan: components['schemas']['BillingPlanView'];
+      /**
+       * Startedat
+       * Format: date-time
+       */
+      startedAt: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'active' | 'cancelled';
+    };
     /** SupportGrantRequest */
     SupportGrantRequest: {
       /**
@@ -6200,6 +6465,90 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  list_billing_plans_admin_billing_plans_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BillingPlanView'][];
+        };
+      };
+    };
+  };
+  create_billing_plan_admin_billing_plans_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BillingPlanRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BillingPlanView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  run_invoices_admin_billing__month__invoices_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        month: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvoiceRunView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   tenants_admin_tenants_get: {
     parameters: {
       query?: never;
@@ -6304,6 +6653,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TenantHealth'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  set_subscription_admin_tenants__tenant_id__subscription_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tenant_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubscribeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SubscriptionView'];
         };
       };
       /** @description Validation Error */
@@ -7895,6 +8279,134 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['AuditVerifyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  overview_v1_orgs__organization_id__billing_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BillingOverview'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_invoices_v1_orgs__organization_id__billing_invoices_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvoiceView'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        invoice_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvoiceView'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pay_invoice_v1_orgs__organization_id__billing_invoices__invoice_id__pay_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        invoice_id: string;
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InvoiceView'];
         };
       };
       /** @description Validation Error */

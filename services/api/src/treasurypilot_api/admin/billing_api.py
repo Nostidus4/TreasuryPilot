@@ -26,7 +26,7 @@ from treasurypilot_api.identity.models import OrganizationRole
 from treasurypilot_api.identity.rbac import MemberAccess, require_role
 
 
-class PlanView(ApiModel):
+class BillingPlanView(ApiModel):
     id: uuid.UUID
     code: str
     name: str
@@ -38,7 +38,7 @@ class PlanView(ApiModel):
 class SubscriptionView(ApiModel):
     id: uuid.UUID
     org_id: uuid.UUID
-    plan: PlanView
+    plan: BillingPlanView
     status: Literal["active", "cancelled"]
     payment_method: Literal["card", "bank_transfer"]
     started_at: AwareDatetime
@@ -69,8 +69,8 @@ class BillingOverview(ApiModel):
     subscription: SubscriptionView | None
 
 
-def plan_view(plan: BillingPlan) -> PlanView:
-    return PlanView.model_validate(plan, from_attributes=True)
+def plan_view(plan: BillingPlan) -> BillingPlanView:
+    return BillingPlanView.model_validate(plan, from_attributes=True)
 
 
 def subscription_view(subscription: BillingSubscription, plan: BillingPlan) -> SubscriptionView:
