@@ -419,7 +419,7 @@ def main() -> None:
         "--check-deployed", action="store_true", help="exit 0 if the manifest is live on the RPC"
     )
     parser.add_argument("--config-dir", default=str(REPO_ROOT / "deployments" / "local"))
-    parser.add_argument("--web-url", default="http://localhost:5173/auth/verify")
+    parser.add_argument("--web-url", default="http://localhost:5173/verify")
     args = parser.parse_args()
     if args.check_deployed:
         raise SystemExit(0 if is_deployed(Path(args.manifest), args.rpc_url) else 1)
