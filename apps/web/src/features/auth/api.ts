@@ -87,8 +87,18 @@ export function useLinkWallet() {
       chainId: number;
       signMessage: (message: string) => Promise<Hex>;
     }) => {
-      const { nonce } = await api.get<{ nonce: string }>('/auth/siwe/nonce');
-      const message = siweMessage(input.address, input.chainId, nonce);
+      // The API pins the SIWE chain id and nonce lifetime, whatever chain the wallet is on.
+      const challenge = await api.get<{
+        nonce: string;
+        expiresAt: string;
+        chainId?: number;
+      }>('/auth/siwe/nonce');
+      const message = siweMessage(
+        input.address,
+        challenge.chainId ?? input.chainId,
+        challenge.nonce,
+        challenge.expiresAt,
+      );
       const signature = await input.signMessage(message);
       return api.post<{ address: Hex }>('/me/wallets', { message, signature });
     },
@@ -105,18 +115,25 @@ export function useUnlinkWallet() {
 }
 
 /** EIP-4361 message. The server checks the nonce, domain and address. */
-export function siweMessage(address: Hex, chainId: number, nonce: string) {
-  const { host, origin } = window.location;
+export function siweMessage(
+  address: Hex,
+  chainId: number,
+  nonce: string,
+  expiresAt: string,
+) {
+  const { host, origin, protocol } = window.location;
+  // The scheme prefix is required: the API rejects a message without it on http origins.
   return [
-    `${host} wants you to sign in with your Ethereum account:`,
+    `${protocol}//${host} wants you to sign in with your Ethereum account:`,
     address,
     '',
-    'Link this wallet to your TreasuryPilot account. This does not move funds.',
+    'Link this wallet to TreasuryPilot',
     '',
     `URI: ${origin}`,
     'Version: 1',
     `Chain ID: ${chainId}`,
     `Nonce: ${nonce}`,
     `Issued At: ${new Date().toISOString()}`,
+    `Expiration Time: ${expiresAt}`,
   ].join('\n');
 }
