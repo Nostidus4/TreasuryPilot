@@ -94,6 +94,7 @@ from treasurypilot_api.mandate.exceptions import router as mandate_exceptions_ro
 from treasurypilot_api.mandate.fees import FeeHistoryProvider
 from treasurypilot_api.mandate.fees import router as fee_router
 from treasurypilot_api.mandate.governance_service import GovernanceService
+from treasurypilot_api.mandate.guardian import router as guardian_router
 from treasurypilot_api.mandate.pause import router as pause_router
 from treasurypilot_api.mandate.payees import PayeeRepository, SqlAlchemyPayeeRepository
 from treasurypilot_api.mandate.payees import router as payees_router
@@ -575,6 +576,7 @@ def create_app(
     app.include_router(governance_router)
     app.include_router(mandate_exceptions_router)
     app.include_router(pause_router)
+    app.include_router(guardian_router)
     app.include_router(circuit_router)
     app.include_router(fee_router)
     app.include_router(reconciliation_router)

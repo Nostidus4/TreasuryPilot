@@ -276,6 +276,10 @@ jobs:
         env:
           TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
         run: uv run pytest -q services/api/tests/test_treasury_setup_anvil.py
+      - name: Guardian Safe setup with the sentinel on Anvil
+        env:
+          TP_TEST_DATABASE_URL: postgresql+asyncpg://tp:tp@localhost:5432/tp_test
+        run: uv run pytest -q services/api/tests/test_guardian_setup_anvil.py
 
   scim-postgres:
     runs-on: ubuntu-latest

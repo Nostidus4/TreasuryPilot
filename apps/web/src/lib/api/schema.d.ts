@@ -2147,6 +2147,66 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Guardian Safe
+     * @description Record a deployed Guardian Safe after checking its owners and threshold on-chain.
+     */
+    post: operations['confirm_guardian_safe_v1_orgs__organization_id__treasuries__treasury_id__guardian_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Guardian Health
+     * @description Is the sentinel still an owner of the Guardian Safe, and does it have gas?
+     */
+    get: operations['guardian_health_v1_orgs__organization_id__treasuries__treasury_id__guardian_health_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/orgs/{organization_id}/treasuries/{treasury_id}/guardian/setup-tx': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Guardian Setup Transaction
+     * @description Build the Safe Proxy Factory call that deploys the 1-of-N Guardian Safe.
+     */
+    post: operations['guardian_setup_transaction_v1_orgs__organization_id__treasuries__treasury_id__guardian_setup_tx_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/orgs/{organization_id}/treasuries/{treasury_id}/mandates': {
     parameters: {
       query?: never;
@@ -3387,11 +3447,103 @@ export interface components {
        */
       expiryHours: number;
     };
+    /** GuardianConfirmRequest */
+    GuardianConfirmRequest: {
+      /** Guardiansafe */
+      guardianSafe: string;
+    };
+    /** GuardianConfirmResponse */
+    GuardianConfirmResponse: {
+      guardianSetup: components['schemas']['GuardianSetupView'];
+      /** Mandateguardian */
+      mandateGuardian: string;
+    };
+    /** GuardianDeployTransaction */
+    GuardianDeployTransaction: {
+      /** Data */
+      data: string;
+      /** To */
+      to: string;
+      /** Value */
+      value: string;
+    };
+    /** GuardianHealthResponse */
+    GuardianHealthResponse: {
+      /**
+       * Automaticpauseavailable
+       * @default false
+       */
+      automaticPauseAvailable: boolean;
+      /** Configured */
+      configured: boolean;
+      guardianSetup?: components['schemas']['GuardianSetupView'] | null;
+      /**
+       * Hasgas
+       * @default false
+       */
+      hasGas: boolean;
+      /** Mingaswei */
+      minGasWei: string;
+      /** Onchainowners */
+      onchainOwners?: string[];
+      /** Sentinelbalancewei */
+      sentinelBalanceWei?: string | null;
+      /**
+       * Sentinelisowner
+       * @default false
+       */
+      sentinelIsOwner: boolean;
+      /** Warnings */
+      warnings: components['schemas']['GuardianWarning'][];
+    };
+    /** GuardianSetupRequest */
+    GuardianSetupRequest: {
+      /** Humanowners */
+      humanOwners: string[];
+    };
+    /**
+     * GuardianSetupStatus
+     * @enum {string}
+     */
+    GuardianSetupStatus: 'Pending' | 'Active' | 'Superseded';
+    /** GuardianSetupTxResponse */
+    GuardianSetupTxResponse: {
+      /** Chainid */
+      chainId: number;
+      /** Owners */
+      owners: string[];
+      /** Sentineladdress */
+      sentinelAddress: string;
+      /** Threshold */
+      threshold: number;
+      transaction: components['schemas']['GuardianDeployTransaction'];
+    };
+    /** GuardianSetupView */
+    GuardianSetupView: {
+      /** Guardiansafe */
+      guardianSafe: string;
+      /** Humanowners */
+      humanOwners: string[];
+      /** Id */
+      id: string;
+      /** Sentineladdress */
+      sentinelAddress: string;
+      status: components['schemas']['GuardianSetupStatus'];
+      /** Threshold */
+      threshold: number;
+    };
     /** GuardianTx */
     GuardianTx: {
       call: components['schemas']['SafeCall'];
       /** Safeaddress */
       safeAddress: string;
+    };
+    /** GuardianWarning */
+    GuardianWarning: {
+      /** Code */
+      code: string;
+      /** Message */
+      message: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -10281,6 +10433,110 @@ export interface operations {
           'application/json': {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  confirm_guardian_safe_v1_orgs__organization_id__treasuries__treasury_id__guardian_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GuardianConfirmRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GuardianConfirmResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  guardian_health_v1_orgs__organization_id__treasuries__treasury_id__guardian_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GuardianHealthResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  guardian_setup_transaction_v1_orgs__organization_id__treasuries__treasury_id__guardian_setup_tx_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        treasury_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GuardianSetupRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GuardianSetupTxResponse'];
         };
       };
       /** @description Validation Error */

@@ -41,6 +41,8 @@ from treasurypilot_api.mandate.models import (
     GovernanceTx,
     GovernanceTxPurpose,
     GovernanceTxStatus,
+    GuardianSetup,
+    GuardianSetupStatus,
     MandateException,
     MandateStatusEvent,
     MandateVersion,
@@ -501,7 +503,18 @@ class GovernanceService:
                 exc.code, 422, "A treasury Safe could not be verified."
             ) from None
 
-        mandate = setup["mandate"]
+        mandate = dict(setup["mandate"])
+        if not mandate.get("guardian"):
+            # The mandate guardian defaults to the treasury's active Guardian Safe (MDT-010).
+            async with self._sessions() as session:
+                active_guardian = await session.scalar(
+                    select(GuardianSetup.guardian_safe).where(
+                        GuardianSetup.treasury_id == treasury_id,
+                        GuardianSetup.status == GuardianSetupStatus.ACTIVE,
+                    )
+                )
+            if active_guardian is not None:
+                mandate["guardian"] = "0x" + bytes(active_guardian).hex()
 
         def limit(name: str) -> tuple[int, int]:
             return int(mandate[name]["perRequest"]), int(mandate[name]["daily"])

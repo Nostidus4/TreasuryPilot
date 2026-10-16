@@ -24,7 +24,12 @@ from treasurypilot_api.mandate.configuration import (
     build_summary,
     validate_mandate_config,
 )
-from treasurypilot_api.mandate.models import MandateVersion, MandateVersionStatus
+from treasurypilot_api.mandate.models import (
+    GuardianSetup,
+    GuardianSetupStatus,
+    MandateVersion,
+    MandateVersionStatus,
+)
 from treasurypilot_api.treasury.models import Asset, Treasury, TreasuryWallet
 
 
@@ -36,6 +41,8 @@ class MandateContext:
     active_config: dict[str, object] | None
     primary_asset_id: uuid.UUID | None = None
     asset_metadata: dict[str, dict[str, object]] | None = None
+    # Active Guardian Safe (0x lowercase); the default for a draft without a guardian (MDT-010).
+    guardian_safe: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +149,14 @@ async def _load_context(
         .order_by(MandateVersion.version.desc())
         .limit(1)
     )
+    guardian_safe = await session.scalar(
+        select(GuardianSetup.guardian_safe).where(
+            GuardianSetup.treasury_id == treasury_id,
+            GuardianSetup.status == GuardianSetupStatus.ACTIVE,
+        )
+    )
     return MandateContext(
+        guardian_safe="0x" + bytes(guardian_safe).hex() if guardian_safe is not None else None,
         asset_decimals=treasury.decimals,
         asset_symbol=treasury.symbol,
         wallets=wallet_roles,
@@ -397,8 +411,11 @@ async def _create_draft(
     environment = request.app.state.settings.environment
 
     def build_config(context: MandateContext) -> dict[str, object]:
+        config = payload
+        if config.guardian is None and context.guardian_safe is not None:
+            config = config.model_copy(update={"guardian": context.guardian_safe})
         validate_mandate_config(
-            payload,
+            config,
             known_wallets=context.wallets,
             environment=environment,
             asset_decimals=context.asset_decimals,
@@ -407,7 +424,7 @@ async def _create_draft(
             primary_asset_id=context.primary_asset_id,
             asset_metadata=context.asset_metadata,
         )
-        return payload.json_config(environment=environment, asset_decimals=context.asset_decimals)
+        return config.json_config(environment=environment, asset_decimals=context.asset_decimals)
 
     try:
         created = await _repository(request).create_draft(
