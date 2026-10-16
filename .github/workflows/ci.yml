@@ -150,9 +150,10 @@ jobs:
         run: uv sync --frozen
       - name: Start local MinIO
         run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=test-access -e MINIO_ROOT_PASSWORD=test-only-secret \
-            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o minio
+          chmod +x minio
+          MINIO_ROOT_USER=test-access MINIO_ROOT_PASSWORD=test-only-secret \
+            nohup ./minio server "$RUNNER_TEMP/minio-data" --address :9000 >minio.log 2>&1 &
           for _ in $(seq 1 30); do
             curl -fs http://localhost:9000/minio/health/live && exit 0
             sleep 1
