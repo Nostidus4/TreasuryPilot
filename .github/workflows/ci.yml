@@ -150,7 +150,12 @@ jobs:
         run: uv sync --frozen
       - name: Start local MinIO
         run: |
-          curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o minio
+          minio_release=RELEASE.2025-10-15T17-29-55Z
+          minio_archive="https://dl.min.io/server/minio/release/linux-amd64/archive"
+          curl -fsSL "$minio_archive/minio.$minio_release" -o "minio.$minio_release"
+          curl -fsSL "$minio_archive/minio.$minio_release.sha256sum" -o "minio.$minio_release.sha256sum"
+          sha256sum --check "minio.$minio_release.sha256sum"
+          mv "minio.$minio_release" minio
           chmod +x minio
           MINIO_ROOT_USER=test-access MINIO_ROOT_PASSWORD=test-only-secret \
             nohup ./minio server "$RUNNER_TEMP/minio-data" --address :9000 >minio.log 2>&1 &
