@@ -27,8 +27,9 @@ import {
   useReviewItems,
 } from '@/features/operations/api';
 import { ExceptionDraftView } from '@/features/review/exception-draft';
+import { grantedTxId, isStaleError } from '@/features/review/wire';
 import { useOrgScope } from '@/features/orgs/org-scope';
-import { errorMessage, isApiError } from '@/lib/api/http';
+import { errorMessage } from '@/lib/api/http';
 import type { ReviewItem } from '@/lib/api/types';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -82,7 +83,7 @@ const stepLabel = (step: ReviewItem['completedSteps'][number]) =>
   typeof step.label === 'string' ? step.label : JSON.stringify(step);
 
 /** Shown when the item changed under the user: acting again needs fresh data. */
-function StalePrompt({
+export function StalePrompt({
   orgId,
   onRefresh,
 }: {
@@ -200,6 +201,9 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
           {exception.status === 'Rejected' && (
             <Alert tone="neutral" title={t('Exception rejected')} />
           )}
+          {exception.status === 'Closed' && (
+            <Alert tone="neutral" title={t('Exception no longer active')} />
+          )}
 
           {exception.status === 'Open' &&
             (isOwner ? (
@@ -227,7 +231,7 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                       ]}
                     />
                   </Field>
-                  {isApiError(grant.error, 'STALE_ITEM') ? (
+                  {isStaleError(grant.error) ? (
                     <StalePrompt orgId={scope.orgId} onRefresh={grant.reset} />
                   ) : (
                     grant.isError && (
@@ -245,9 +249,9 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                           expiryHours: Number(expiryHours),
                         },
                         {
-                          onSuccess: ({ governanceTx }) =>
+                          onSuccess: (response) =>
                             navigate(
-                              `${scope.base}/governance/${governanceTx.id}`,
+                              `${scope.base}/governance/${grantedTxId(response)}`,
                             ),
                         },
                       )
@@ -265,13 +269,13 @@ function ExceptionPanel({ item }: { item: ReviewItem }) {
                           onSuccess: () =>
                             toast.success(t('Exception rejected')),
                           onError: (error) =>
-                            isApiError(error, 'STALE_ITEM') ||
+                            isStaleError(error) ||
                             toast.error(errorMessage(error)),
                         },
                       );
                     }}
                   >
-                    {isApiError(reject.error, 'STALE_ITEM') && (
+                    {isStaleError(reject.error) && (
                       <StalePrompt
                         orgId={scope.orgId}
                         onRefresh={reject.reset}
@@ -319,7 +323,7 @@ function ActionPanel({ item }: { item: ReviewItem }) {
   );
   const [action, setAction] = useState<string>(actions[0]);
   const [note, setNote] = useState('');
-  const stale = isApiError(act.error, 'STALE_ITEM');
+  const stale = isStaleError(act.error);
 
   // The API decides per user and item; no allowed action means nothing to offer.
   if (actions.length === 0) return null;

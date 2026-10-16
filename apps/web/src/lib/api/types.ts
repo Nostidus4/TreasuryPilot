@@ -580,7 +580,7 @@ export type ReviewItem = components['schemas']['ReviewItemView'];
 export interface ExceptionDetail {
   exception: {
     requestId: string;
-    status: 'Open' | 'GovernancePending' | 'Granted' | 'Rejected';
+    status: 'Open' | 'GovernancePending' | 'Granted' | 'Rejected' | 'Closed';
     governanceTxId?: string;
   };
   numbers: {
@@ -589,6 +589,37 @@ export interface ExceptionDetail {
     overBy: string;
     dailyUsed: string;
     dailyLimit: string;
+  };
+  aiDraft?: ExceptionAiDraft | null;
+}
+
+/** Wire shape of GET .../exception (the schema types it as a free-form object). */
+export interface ExceptionWire {
+  exception: {
+    id: string;
+    requestId: string;
+    status:
+      | 'Requested'
+      | 'Proposed'
+      | 'Granted'
+      | 'Consumed'
+      | 'Expired'
+      | 'Invalidated'
+      | 'Rejected'
+      | 'Revoked';
+    governanceTxId: string | null;
+    reason: string | null;
+    expiry: string;
+    amount: string;
+    payee: Hex;
+    mandateVersion: number | null;
+  } | null;
+  numbers: {
+    amount: string;
+    cap: string;
+    dailyUsed: string;
+    dailyRemainingAfter: string;
+    valueIfGranted: string | null;
   };
   aiDraft?: ExceptionAiDraft | null;
 }

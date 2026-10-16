@@ -842,13 +842,17 @@ export const requestHandlers = [
           }),
         );
         db.exceptions[request.id] = {
-          exception: { requestId: request.id, status: 'Open' },
+          exception: null,
           numbers: {
-            requested: request.amount,
-            perRequestCap: cap,
-            overBy: (BigInt(request.amount) - BigInt(cap)).toString(),
+            amount: request.amount,
+            cap,
             dailyUsed: db.treasuries[request.treasuryId].budgets[0].usedToday,
-            dailyLimit: db.treasuries[request.treasuryId].budgets[0].dailyLimit,
+            dailyRemainingAfter: (
+              BigInt(db.treasuries[request.treasuryId].budgets[0].dailyLimit) -
+              BigInt(db.treasuries[request.treasuryId].budgets[0].usedToday) -
+              BigInt(request.amount)
+            ).toString(),
+            valueIfGranted: null,
           },
         };
       } else {
