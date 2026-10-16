@@ -44,7 +44,7 @@ export type MockTreasuryState = Required<
   Omit<TreasuryState, 'borrowProposalId' | 'mandate' | 'wallets'>
 > &
   Pick<TreasuryState, 'borrowProposalId' | 'mandate'> & {
-    wallets: Array<Required<TreasuryWallet>>;
+    wallets: Array<Required<Omit<TreasuryWallet, 'id'>>>;
   };
 
 import { APPROVER, SEEDED_PAYMENT_INVOICE, SEEDED_PLAN_ID } from './seeded';

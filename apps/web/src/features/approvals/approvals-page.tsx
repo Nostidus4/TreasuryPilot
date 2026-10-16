@@ -22,11 +22,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Alert, Skeleton } from '@/components/ui/misc';
 import { useMe } from '@/features/auth/api';
+import { StepUpDialog } from '@/features/auth/mfa';
 import { useMandates } from '@/features/controls/api';
 import { useOrgScope } from '@/features/orgs/org-scope';
 import {
   useApprovalTypedData,
   useApproveRequest,
+  useIdempotencyKey,
   useRequest,
   useRequests,
   useRequestTransition,
@@ -38,8 +40,8 @@ import {
   RequestFacts,
   VendorHistory,
 } from '@/features/requests/request-parts';
-import { errorMessage } from '@/lib/api/http';
-import type { PaymentOption, RequestDetail } from '@/lib/api/types';
+import { errorMessage, isApiError } from '@/lib/api/http';
+import type { Hex, RequestDetail } from '@/lib/api/types';
 import { dueLabel } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { requestStatus } from '@/lib/status';
@@ -60,12 +62,30 @@ function SignPanel({ request }: { request: RequestDetail }) {
     request.id,
     request.version,
   );
-  const [option, setOption] = useState<PaymentOption['kind']>(
-    request.options[0]?.kind ?? 'STANDARD',
-  );
   const [dialog, setDialog] = useState<'reject' | 'request-changes' | null>(
     null,
   );
+  const idempotency = useIdempotencyKey();
+  // A signed approval waiting for the second factor; it is sent unchanged afterwards.
+  const [signed, setSigned] = useState<{
+    signature: Hex;
+    expiry: number;
+    revision: number;
+  } | null>(null);
+
+  const send = async (approval: {
+    signature: Hex;
+    expiry: number;
+    revision: number;
+  }) => {
+    await approve.mutateAsync({
+      ...approval,
+      idempotencyKey: idempotency.keyFor(approval.signature),
+    });
+    toast.success(t('Approved'), {
+      description: t('The signature was verified and recorded.'),
+    });
+  };
 
   const blocked = request.approvalBlocked;
   const flagsOpen = request.highFlagsUnacked > 0;
@@ -105,11 +125,10 @@ function SignPanel({ request }: { request: RequestDetail }) {
               <h3 className="mb-2 text-sm font-medium">
                 {t('Payment option')}
               </h3>
-              <PaymentOptions
-                request={request}
-                value={option}
-                onChange={setOption}
-              />
+              <PaymentOptions request={request} />
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t('Your signature covers both options.')}
+              </p>
             </div>
 
             <div>
@@ -162,11 +181,18 @@ function SignPanel({ request }: { request: RequestDetail }) {
               }
               action={async () => {
                 if (!typedData.data) return;
-                const signature = await wallet.signTypedData(typedData.data);
-                await approve.mutateAsync({ signature, option });
-                toast.success(t('Approved'), {
-                  description: t('The signature was verified and recorded.'),
-                });
+                // The revision the signed data was fetched for, kept for a retry after step-up.
+                const approval = {
+                  revision: request.revision,
+                  signature: await wallet.signTypedData(typedData.data),
+                  expiry: Number(typedData.data.message.expiry),
+                };
+                try {
+                  await send(approval);
+                } catch (error) {
+                  if (!isApiError(error, 'STEP_UP_REQUIRED')) throw error;
+                  setSigned(approval);
+                }
               }}
             >
               <PenLine aria-hidden="true" />
@@ -184,6 +210,19 @@ function SignPanel({ request }: { request: RequestDetail }) {
           </Button>
         </div>
       </CardContent>
+
+      <StepUpDialog
+        open={signed !== null}
+        onOpenChange={(open) => !open && setSigned(null)}
+        onDone={() => {
+          const approval = signed;
+          setSigned(null);
+          if (approval)
+            send(approval).catch((error: unknown) =>
+              toast.error(errorMessage(error)),
+            );
+        }}
+      />
 
       <ReasonDialog
         open={dialog !== null}

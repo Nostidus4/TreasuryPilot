@@ -161,6 +161,9 @@ async def seed_database(
             "ON CONFLICT DO NOTHING",
             id=uid, email=email, name=name,
         )  # fmt: skip
+        # A re-seed starts from "no second factor" so the enrolment flow can run again.
+        for table in ("mfa_recovery_codes", "mfa_factors"):
+            await _run(c, f"DELETE FROM {table} WHERE user_id = :id", id=uid)
     await _run(
         c,
         "INSERT INTO organizations (id, name, legal_name, country, created_by) "

@@ -136,6 +136,8 @@ services:
       TP_TELEGRAM_WEBHOOK_SECRET: ${TP_TELEGRAM_WEBHOOK_SECRET:-}
       TP_TELEGRAM_CHAT_HASH_KEY: ${TP_TELEGRAM_CHAT_HASH_KEY:-}
       TP_FIELD_ENCRYPTION_KEY: ${TP_FIELD_ENCRYPTION_KEY:-}
+      # Travel Rule thresholds (JSON); an empty map blocks any route without a rule.
+      TP_TRAVEL_RULE_THRESHOLDS: ${TP_TRAVEL_RULE_THRESHOLDS:-{}}
       # Notification email unsubscribe links (at least 32 bytes); without it the endpoint is 503.
       TP_EMAIL_UNSUBSCRIBE_KEY: ${TP_EMAIL_UNSUBSCRIBE_KEY:-}
       # `make seed` points these at /app/deployments/local (mounted below).

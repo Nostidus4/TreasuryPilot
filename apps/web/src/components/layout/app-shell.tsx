@@ -168,6 +168,7 @@ function useNavigation(): Array<{ label?: string; items: NavItem[] }> {
       items: [
         { label: t('Members'), to: `${base}/members`, icon: Users },
         { label: t('Wallets'), to: '/me/wallets', icon: WalletIcon },
+        { label: t('Security'), to: '/me/security', icon: ShieldCheck },
         {
           label: t('Setup checklist'),
           to: `${base}/onboarding`,

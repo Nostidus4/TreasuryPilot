@@ -96,6 +96,8 @@ export interface Chain {
 export type WalletRole = 'T' | 'O1' | 'O2' | 'GUARDIAN';
 
 export interface TreasuryWallet {
+  /** Absent in the mock data. */
+  id?: string;
   role: WalletRole;
   label: string;
   safeAddress: Hex;

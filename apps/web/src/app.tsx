@@ -115,6 +115,7 @@ const WalletsPage = page(
   () => import('@/features/auth/wallets-page'),
   'WalletsPage',
 );
+const SecurityPage = page(() => import('@/features/auth/mfa'), 'SecurityPage');
 
 function PageFallback() {
   return (
@@ -145,6 +146,7 @@ export function App() {
           <Route index element={<HomeRedirect />} />
           <Route path="/orgs" element={<OrgsPage />} />
           <Route path="/me/wallets" element={<WalletsPage />} />
+          <Route path="/me/security" element={<SecurityPage />} />
           {mockApiEnabled && (
             <Route path="/dev/components" element={<ComponentsPage />} />
           )}

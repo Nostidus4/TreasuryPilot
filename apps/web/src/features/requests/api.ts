@@ -13,7 +13,6 @@ import type {
   CsvImportResult,
   Flag,
   Hex,
-  PaymentOption,
   PaymentRequest,
   RequestDetail,
   RequestInput,
@@ -39,6 +38,18 @@ export const useTreasuryAsset = (
   orgId: string,
   treasuryId: string | undefined,
 ) => useTreasury(orgId, treasuryId).data?.treasury.asset;
+
+/**
+ * The wallet a request pays from.
+ * shortcut: the treasury's first operational wallet, no picker; add one when a treasury has several.
+ */
+export const useTreasuryPayingWalletId = (
+  orgId: string,
+  treasuryId: string | undefined,
+) =>
+  useTreasury(orgId, treasuryId).data?.wallets.find(
+    (wallet) => wallet.role === 'O1',
+  )?.id;
 
 /**
  * One Idempotency-Key per distinct submission: a retry of the same body reuses
@@ -196,14 +207,24 @@ export const useApprovalTypedData = (
     { enabled, staleTime: 0 },
   );
 
+/** The body the API verifies: the signed revision and message.expiry are echoed back. */
 export const useApproveRequest = (orgId: string, id: string) =>
   useOrgMutation(
     orgId,
-    (input: { signature: Hex; option: PaymentOption['kind'] }) =>
+    (input: {
+      signature: Hex;
+      revision: number;
+      expiry: number;
+      idempotencyKey: string;
+    }) =>
       api.post<{ request: RequestDetail }>(
         `${base(orgId)}/${id}/approve`,
-        input,
-        { idempotent: true },
+        {
+          signature: input.signature,
+          revision: input.revision,
+          expiry: input.expiry,
+        },
+        { idempotent: input.idempotencyKey },
       ),
   );
 

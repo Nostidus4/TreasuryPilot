@@ -6,6 +6,8 @@ export interface CreateContext {
   assetId: string;
   decimals: number;
   payeeId: string;
+  /** The operational wallet the approver signs as the payer. */
+  payingWalletId?: string;
 }
 
 const day = (iso: string) => iso.slice(0, 10);
@@ -38,6 +40,7 @@ export function toCreateBody(input: RequestInput, ctx: CreateContext) {
     vendorId: input.vendorId,
     payeeId: ctx.payeeId,
     assetId: ctx.assetId,
+    payingWalletId: ctx.payingWalletId,
     invoiceNo: input.invoiceNumber,
     issueDate: today() < dueDate ? today() : dueDate,
     dueDate,

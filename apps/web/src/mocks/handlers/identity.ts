@@ -37,6 +37,8 @@ const inviteView = (orgId: string, member: Member): Schemas['InviteView'] => ({
   expiresAt: isoNow(),
 });
 
+const mockMfa = { enrolled: false };
+
 const SIGNER_ROLES: Role[] = ['OWN', 'APR', 'GRD'];
 
 function orgsOf(userId: string): Org[] {
@@ -160,6 +162,27 @@ export const identityHandlers = [
       })),
     };
   }),
+
+  // Mock MFA: any 6 digits confirm or step up; the mock approve does not demand a step-up.
+  route('get', '/me/mfa', () => ({
+    factors: mockMfa.enrolled
+      ? [{ id: 'totp-1', kind: 'totp', label: 'Authenticator app' }]
+      : [],
+    recoveryCodesRemaining: mockMfa.enrolled ? 10 : 0,
+  })),
+
+  route('post', '/me/mfa/totp', () => ({
+    factorId: 'totp-1',
+    otpauthUri:
+      'otpauth://totp/TreasuryPilot:demo?secret=JBSWY3DPEHPK3PXP&issuer=TreasuryPilot',
+  })),
+
+  route('post', '/me/mfa/totp/:factorId/confirm', () => {
+    mockMfa.enrolled = true;
+    return { factor: { id: 'totp-1' }, recoveryCodes: ['mock-recovery-code'] };
+  }),
+
+  route('post', '/me/mfa/step-up', () => undefined),
 
   route('get', '/auth/siwe/nonce', () => ({
     nonce: Math.random().toString(36).slice(2, 12),
