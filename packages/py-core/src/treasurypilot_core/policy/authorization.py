@@ -234,7 +234,7 @@ def _plan_well_formed(i: _Inputs) -> bool:
         and swap.amount > 0
         and swap.min_out is not None
         and swap.min_out > 0
-        and swap.venue == "TEST_ROUTER"
+        and swap.venue in ("TEST_ROUTER", "SIGNED_QUOTE")
     ):
         return False
     actions = [s.action for s in (steps[1:] if swap else steps)]

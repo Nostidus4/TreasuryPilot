@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 
 from treasurypilot_api.recovery.review_queue import ReviewType, route_for
+from treasurypilot_core.engine.swap_quote import QuoteRejected
 from treasurypilot_core.policy import Check, Decision, PolicyReasonCode
 from treasurypilot_worker.executor.outbox import SignerRefused, SignerUnavailable, StepExecution
 from treasurypilot_worker.executor.sequencer import PlanRun, _route, sequence_plan
@@ -295,6 +296,37 @@ def test_first_step_block_is_blocked_not_partial(database_url: str) -> None:
         _sql(database_url, "SELECT type FROM review_items WHERE request_id = $1", run.request_id)
     )
     assert [r["type"] for r in types] == ["NEEDS_AUTHORITY"]
+
+
+def test_a_stale_or_forged_swap_quote_stops_the_plan_before_anything_is_signed(
+    database_url: str,
+) -> None:
+    """EXE-L02: ``before_send`` rejects the quote; no operation, no signer call, one INFRA review."""
+    for code in ("SWAP_QUOTE_EXPIRED", "SWAP_QUOTE_FORGED"):
+        run = asyncio.run(_new_run(database_url, kinds=("SWAP", "REFILL", "PAY")))
+        signer, gate = FakeSigner(), FakeGate()
+        seen: list[str] = []
+
+        async def reject(step: StepExecution, code: str = code, seen: list[str] = seen) -> None:
+            seen.append(step.kind)
+            raise QuoteRejected(code)
+
+        result = asyncio.run(_go(database_url, signer, run, gate, before_send=reject))
+        assert result.status == "Blocked" and result.code == code
+        assert signer.calls == 0 and seen == ["SWAP"]
+        reviews = asyncio.run(
+            _sql(
+                database_url,
+                "SELECT type, primary_code FROM review_items WHERE request_id = $1",
+                run.request_id,
+            )
+        )
+        assert [(r["type"], r["primary_code"]) for r in reviews] == [("INFRA", code)]
+        operations = asyncio.run(
+            _sql(database_url, "SELECT 1 FROM operations WHERE request_id = $1", run.request_id)
+        )
+        assert operations == []
+        assert _request_status(database_url, run) == "NeedsReview"
 
 
 def test_expired_attestation_is_renewed_or_stops(database_url: str) -> None:

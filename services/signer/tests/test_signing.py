@@ -538,12 +538,20 @@ def test_swap_for_gas_payload_is_supported() -> None:
     assert len(node.sent) == 1
 
 
+def test_swap_for_gas_on_the_signed_quote_adapter_is_supported() -> None:
+    service, node, _ = _service()
+
+    asyncio.run(service.sign_and_send(_make_swap_request(venue="SIGNED_QUOTE")))
+
+    assert len(node.sent) == 1
+
+
 @pytest.mark.parametrize(
     "request_fields",
     [
         {"calldata_min_out": 1},  # a lower bound than the engine computed
         {"plan_min_out": None},  # the plan names no swap
-        {"venue": "UNISWAP"},  # anything but the labelled test router
+        {"venue": "UNISWAP"},  # anything but the labelled test router or signed-quote adapter
         {"plan_min_out": 0, "calldata_min_out": 0},
     ],
 )
