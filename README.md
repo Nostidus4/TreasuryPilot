@@ -20,6 +20,8 @@ Built for **FinTechathon 2026 – International Track, Topic F (Agent Wallet)**.
 
 | Read this | For |
 |---|---|
+| [Technical report (EN)](docs/TECHNICAL_REPORT_EN.md) · [Tiếng Việt](docs/TECHNICAL_REPORT_VI.md) · [简体中文](docs/TECHNICAL_REPORT_ZH.md) · [Pages hub](https://nostidus4.github.io/TreasuryPilot/report/) | Trilingual, page-by-page technical report with implementation evidence; English is the default |
+| [Nine-part report (EN)](docs/PRODUCT_REPORT_EN.md) · [DOCX](docs/TreasuryPilot_Product_Technical_Report_EN.docx) · [Slide visuals](docs/TreasuryPilot_Slide_Assets.zip) | Shareable product/technical report and editable slide-ready architecture images |
 | [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) ([Tiếng Việt](docs/vi/01-tong-quan.md)) | Product, problem, users, journeys |
 | [`docs/FEATURES.md`](docs/FEATURES.md) | 99 features with full specs |
 | [`docs/FUNCTIONAL_REQUIREMENTS.md`](docs/FUNCTIONAL_REQUIREMENTS.md) · [`NON_FUNCTIONAL_REQUIREMENTS.md`](docs/NON_FUNCTIONAL_REQUIREMENTS.md) · [`BUSINESS_RULES.md`](docs/BUSINESS_RULES.md) | Requirements and rules |

@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="authority-boundaries" name="Authority Boundaries ZH">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1130" pageHeight="570" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="03 / 每一道边界都检查权限" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="20" width="850" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="human" value="人工审批人" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=17;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="105" width="250" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="human-detail" value="签署收款人、资产、金额选项、期限和请求" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="105" width="700" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="policy" value="策略验证器" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=17;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="210" width="250" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="policy-detail" value="核验 mandate、余额、上限、floor 与链快照" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="210" width="700" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="signer" value="独立 signer" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=17;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="315" width="250" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="signer-detail" value="核验证明与 calldata，并模拟最新状态" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="315" width="700" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="module" value="链上模块" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=17;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="250" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="module-detail" value="再次检查权限、收款人、上限、floor 与重放" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=15;fontStyle=0;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="420" width="700" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="e-human" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="human" target="policy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-policy" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="policy" target="signer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-signer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="signer" target="module">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="foot" value="AI 仅能使用只读工具：可以建议和解释，不能签名或授权转账。" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#566970;fontSize=14;fontStyle=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="1030" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

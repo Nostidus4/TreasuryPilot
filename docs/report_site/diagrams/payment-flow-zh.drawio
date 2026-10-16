@@ -1,0 +1,59 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device" version="24.7.17">
+  <diagram id="payment-flow" name="Payment Flow ZH">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="580" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="02 / 从请求到已核验付款" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="20" width="700" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="intake" value="01  发票输入&#10;字段 · 条款 · 风险标记" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="35" y="125" width="190" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="approve" value="02  人工签批&#10;具体 EIP-712 义务" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="260" y="125" width="190" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="plan" value="03  确定性计划&#10;最新余额 + mandate" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="485" y="125" width="190" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="policy" value="04  策略关卡&#10;ALLOW → 执行&#10;NEEDS_APPROVAL / BLOCK → 暂停" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="710" y="125" width="190" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="execute" value="05  Signer + 模块&#10;复核并广播" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#EAF2F1;strokeColor=#205C62;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="935" y="125" width="190" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="e-intake-approve" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="intake" target="approve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-approve-plan" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="approve" target="plan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-plan-policy" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="plan" target="policy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-policy-execute" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="policy" target="execute">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hold" value="暂停或阻止&#10;不提交交易" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#FFFFFF;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="710" y="350" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="track" value="06  回执与对账&#10;核验结果 · 保存证据" style="rounded=0;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;fillColor=#F7F2E9;strokeColor=#B9C9CA;fontColor=#25343B;fontSize=14;fontStyle=1;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="935" y="350" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e-hold" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="policy" target="hold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-final" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#205C62;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontColor=#566970;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="execute" target="track">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="guard" value="执行条件" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#205C62;fontSize=13;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="340" width="120" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="guardtxt" value="没有审批签名 → 不执行。&#10;回执未知 → 先对账再重试。&#10;AI 建议 → 不构成付款授权。" style="text;html=0;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=visible;fontColor=#566970;fontSize=16;fontStyle=0;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="35" y="375" width="595" height="95" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
