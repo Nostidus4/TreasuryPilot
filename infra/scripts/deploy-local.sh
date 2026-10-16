@@ -39,6 +39,11 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 
+# A bare Anvil has no Multicall3; the worker's block-pinned snapshots need it (CHR-002).
+cast rpc anvil_setCode 0xcA11bde05977b3631167028862bE2a173976CA11 \
+  "$(tr -d '[:space:]' < "$repo_root/services/worker/tests/chain/multicall3.runtime.hex")" \
+  --rpc-url http://127.0.0.1:8545 >/dev/null
+
 export FOUNDRY_PROFILE=deploy
 export DEMO_OWNER="${DEMO_OWNER:-0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266}"
 export DEMO_EXECUTOR="${DEMO_EXECUTOR:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}"
