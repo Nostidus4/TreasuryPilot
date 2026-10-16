@@ -21,6 +21,8 @@ compose=(docker compose --env-file infra/env/.env
 
 "${compose[@]}" config --quiet
 "${compose[@]}" pull
+# MinIO and its bucket init are built from infra/minio, not published to GHCR.
+"${compose[@]}" build minio minio-init
 "${compose[@]}" run --rm migrate
 "${compose[@]}" up -d --no-build --remove-orphans
 "${compose[@]}" ps
