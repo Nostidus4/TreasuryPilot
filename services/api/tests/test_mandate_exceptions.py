@@ -317,3 +317,34 @@ def test_reject_proposed_exception_with_failed_grant_tx_is_allowed(
         )
     assert response.status_code == 200
     assert response.json()["exception"]["status"] == "Rejected"
+
+
+def test_get_exception_reports_the_grant_tx_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _governance, _sessions = _client(monkeypatch, context=_context(), daily_used=0)
+    proposed = SimpleNamespace(
+        id=uuid.uuid4(),
+        status=ExceptionStatus.PROPOSED,
+        governance_tx_id=GOVERNANCE_TX_ID,
+        reason=None,
+        request_id=REQUEST_ID,
+        mandate_onchain_version=7,
+        amount=150,
+        payee=PAYEE_ADDRESS,
+        expiry=datetime.now(UTC),
+        draft=None,
+    )
+    results = iter([proposed, GovernanceTxStatus.FAILED])
+
+    async def scalar(*_: object, **__: object) -> object:
+        return next(results)
+
+    async def no_approvals(*_: object, **__: object) -> list[object]:
+        return []
+
+    monkeypatch.setattr(FakeSession, "scalar", scalar)
+    monkeypatch.setattr(exceptions, "_valid_approvals", no_approvals)
+    monkeypatch.setattr(exceptions, "_value_if_granted", lambda *_: None)
+    with client:
+        response = client.get(f"/v1/orgs/{ORG_ID}/requests/{REQUEST_ID}/exception")
+    assert response.status_code == 200
+    assert response.json()["exception"]["governanceTxStatus"] == "Failed"

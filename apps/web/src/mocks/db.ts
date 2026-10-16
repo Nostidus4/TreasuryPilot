@@ -12,7 +12,7 @@ import type {
   CopilotMessage,
   DecodedCall,
   DiffEntry,
-  ExceptionDetail,
+  ExceptionWire,
   FeePolicyResponse,
   FeeReviewItem,
   Flag,
@@ -136,7 +136,7 @@ export interface Db {
   requests: RequestDetail[];
   plans: PlanDetail[];
   reviewItems: MockReviewItem[];
-  exceptions: Record<string, ExceptionDetail>;
+  exceptions: Record<string, ExceptionWire>;
   reconciliations: Reconciliation[];
   feePolicy: FeePolicyResponse;
   /** Real-shape FEE_APPROVAL review items; the review-items mock returns these for that type. */
@@ -1356,13 +1356,14 @@ export function seed(): Db {
     ],
     exceptions: {
       req_512: {
-        exception: { requestId: 'req_512', status: 'Open' },
+        // Like the API, no exception row exists until the Owner acts.
+        exception: null,
         numbers: {
-          requested: usdc(3200),
-          perRequestCap: usdc(2000),
-          overBy: usdc(1200),
+          amount: usdc(3200),
+          cap: usdc(2000),
           dailyUsed: usdc(2600),
-          dailyLimit: usdc(10000),
+          dailyRemainingAfter: usdc(10000 - 2600 - 3200),
+          valueIfGranted: null,
         },
         aiDraft: {
           source: 'AI',
@@ -1755,6 +1756,26 @@ export function logActivity(
     text,
     href,
   });
+}
+
+/** An exception row as the API returns it. */
+export function exceptionRow(
+  requestId: string,
+  status: NonNullable<ExceptionWire['exception']>['status'],
+  init: Partial<NonNullable<ExceptionWire['exception']>> = {},
+): NonNullable<ExceptionWire['exception']> {
+  return {
+    id: `exc_${requestId}`,
+    requestId,
+    status,
+    governanceTxId: null,
+    reason: null,
+    expiry: iso(24 * HOUR),
+    amount: '0',
+    payee: h32('payee'),
+    mandateVersion: 1,
+    ...init,
+  };
 }
 
 export type MockReviewItem = ReviewItem & { evidenceResolved?: boolean };
