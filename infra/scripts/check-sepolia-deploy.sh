@@ -24,6 +24,19 @@ for attempt in $(seq 1 40); do
 done
 cp ../deployments/11155111.json "$artifact_dir/configured.json"
 cp ../deployments/11155111.json "$artifact_dir/manifest.json"
+# The local Anvil fork deploys with DEMO_RECEIPT_ATTESTER. The reviewed manifest
+# records the real Sepolia attester, so exclude that chain-specific value from
+# this disposable local-fork verification manifest. The committed file stays intact.
+../.venv/bin/python - "$artifact_dir/manifest.json" <<'PYMANIFEST'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+manifest = json.loads(path.read_text(encoding="utf-8"))
+manifest["easAttester"] = None
+path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+PYMANIFEST
 for run in first repeat; do
   forge script script/Deploy.s.sol:Deploy --rpc-url "$fork_rpc" --private-key "$dev_key" --broadcast
   ETH_RPC_URL="$fork_rpc" ../.venv/bin/python ../infra/scripts/publish_manifest.py \
