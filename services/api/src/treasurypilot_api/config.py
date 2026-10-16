@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("TP_S3_SECRET_KEY", "S3_SECRET_KEY"),
     )
-    magic_link_base_url: str = "http://localhost:5173/auth/verify"
+    magic_link_base_url: str = "http://localhost:5173/verify"
     # Where the browser lands after SSO sign-in; falls back to the first CORS origin.
     web_app_url: str | None = None
     oidc_issuer: str | None = None
