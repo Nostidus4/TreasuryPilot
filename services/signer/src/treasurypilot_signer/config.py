@@ -1,7 +1,7 @@
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from eth_utils import to_checksum_address
 from pydantic import Field, field_validator
@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     trusted_policy_signers: list[str] = Field(default_factory=list)
     executor_keystore_map: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
     executor_keystore_password_file: Path | None = None
+    # Executor key backend: the local encrypted keystore (default) or AWS KMS (ADR-006, EXE-L01).
+    executor_key_backend: Literal["keystore", "kms"] = "keystore"
+    # treasury UUID -> KMS key id/ARN/alias (an ECC_SECG_P256K1, SIGN_VERIFY key).
+    executor_kms_key_map: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
+    kms_region: str | None = None
+    kms_endpoint_url: str | None = None
+    kms_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    kms_max_attempts: int = Field(default=3, ge=1, le=10)
     # Sentinel (pause-only) key; separate from the executor key. Targets map treasury UUID ->
     # {"guardianSafe": 0x.., "module": 0x..}; the sentinel is idle until targets are set.
     sentinel_keystore_path: Path | None = None
@@ -34,7 +42,7 @@ class Settings(BaseSettings):
     # attested plan hash, so it can only lower this value.
     max_fee_cap_wei: int = Field(default=10**17, ge=0)
 
-    @field_validator("executor_keystore_map", mode="before")
+    @field_validator("executor_keystore_map", "executor_kms_key_map", mode="before")
     @classmethod
     def parse_keystore_map(cls, value: Any) -> dict[str, str]:
         if value is None or value == "":
